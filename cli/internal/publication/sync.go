@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelplan/clients/cli/internal/digest"
-	"github.com/modelplan/clients/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 const (

@@ -27,7 +27,7 @@ The status line reads only the local cache. Claude Code passes the model, not th
 2. 在 Claude Code 里：
 
    ```text
-   /plugin marketplace add modelplan/clients
+   /plugin marketplace add modelplan/modelplan
    /plugin install modelplan@modelplan
    ```
 

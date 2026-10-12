@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelplan/clients/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/digest"
 )
 
 func TestStatuslineReviewedIdentityAndLocalizedUnknown(t *testing.T) {

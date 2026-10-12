@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/modelplan/clients/cli/internal/lineup"
+	"github.com/modelplan/modelplan/cli/internal/lineup"
 	"sort"
 	"strings"
 )

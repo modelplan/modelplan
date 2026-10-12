@@ -1,3 +1,3 @@
-module github.com/modelplan/clients/cli
+module github.com/modelplan/modelplan/cli
 
 go 1.24

@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelplan/clients/cli/internal/detach"
-	"github.com/modelplan/clients/cli/internal/digest"
-	"github.com/modelplan/clients/cli/internal/publication"
-	"github.com/modelplan/clients/cli/internal/render"
-	"github.com/modelplan/clients/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/detach"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 var version = "0.1.0-dev"

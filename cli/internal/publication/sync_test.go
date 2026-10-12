@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/modelplan/clients/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 func hashOf(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }

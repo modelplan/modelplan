@@ -2,10 +2,10 @@
 # Install the modelplan CLI from the latest GitHub release into ~/.local/bin (or $MODELPLAN_BIN).
 set -eu
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
-case "$os" in darwin|linux) ;; *) echo "Unsupported OS: $os (download from https://github.com/modelplan/clients/releases)" >&2; exit 1 ;; esac
+case "$os" in darwin|linux) ;; *) echo "Unsupported OS: $os (download from https://github.com/modelplan/modelplan/releases)" >&2; exit 1 ;; esac
 case "$(uname -m)" in x86_64|amd64) arch=amd64 ;; arm64|aarch64) arch=arm64 ;; *) echo "Unsupported CPU: $(uname -m)" >&2; exit 1 ;; esac
 name="modelplan_${os}_${arch}"
-base="https://github.com/modelplan/clients/releases/latest/download"
+base="https://github.com/modelplan/modelplan/releases/latest/download"
 dest="${MODELPLAN_BIN:-$HOME/.local/bin}"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

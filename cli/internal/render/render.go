@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/modelplan/clients/cli/internal/digest"
-	"github.com/modelplan/clients/cli/internal/lineup"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/lineup"
 )
 
 type Style struct {
