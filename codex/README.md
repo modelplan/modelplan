@@ -27,7 +27,7 @@ codex plugin add modelplan-codex@modelplan
 - Gold ★ means recommended effort only. Capability changes are additive points; cost/time are multiples of that model's recommendation. Estimates are marked ≈; missing or incompatible time evidence leaves gaps.
 - Public Codex reset notices with source, scope and stated time precision. They do not establish personal eligibility or remaining quota.
 
-The dashboard reads the same verified client publication as [Model Plan](https://modelplan.guanbear.com/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.
+The dashboard reads the same verified client publication as [Model Plan](https://modelplan.ai/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.
 
 ## Transport and development
 

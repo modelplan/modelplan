@@ -4,7 +4,7 @@ Read the lookup section for every query. Read time-of-use or personal state only
 
 ## Lookup and publication consistency
 
-Default origin: `https://modelplan.guanbear.com`. The Skill does not scrape vendors, require a key, or use the old `/v1/explore` and `/v1/recommendations` paths. Fetch only what the question needs, keep responses for the current answer, and report HTTP/schema failures rather than interpreting an error body as data. Use bounded requests and at most one retry of a failed read.
+Default origin: `https://modelplan.ai`. The Skill does not scrape vendors, require a key, or use the old `/v1/explore` and `/v1/recommendations` paths. Fetch only what the question needs, keep responses for the current answer, and report HTTP/schema failures rather than interpreting an error body as data. Use bounded requests and at most one retry of a failed read.
 
 Check `command -v modelplan` and `modelplan --help`. Supported phase-1 CLI commands:
 
@@ -22,7 +22,7 @@ Without the CLI:
 
 ```sh
 curl --fail --silent --show-error --max-time 20 \
-  'https://modelplan.guanbear.com/v1/client'
+  'https://modelplan.ai/v1/client'
 ```
 
 REST JSON is an envelope: `schemaVersion`, `releaseVersion`, `publication`, `asOf`, `sourceSnapshots`, `data`. The publication ID is **`publication.publicationId`**, not a top-level field. Reject unsupported schema. CLI JSON and REST data have different wrappers but the same published model/lineup semantics. REST `data.lineups` is an array keyed by `developerId`; CLI `lineups` is an object. Never rebuild an absent lineup.
@@ -61,13 +61,13 @@ Use public IDs only; never place balances, reset-card counts, tokens or task tex
 
 ```sh
 curl --fail --silent --show-error --max-time 20 \
-  'https://modelplan.guanbear.com/v1/plans?provider=zhipu'
+  'https://modelplan.ai/v1/plans?provider=zhipu'
 curl --fail --silent --show-error --max-time 20 --get \
   --data-urlencode 'plan=<plan id>' --data-urlencode 'model=<model id>' \
   --data-urlencode 'effort=<effort id>' \
-  'https://modelplan.guanbear.com/v1/plan-coverage'
+  'https://modelplan.ai/v1/plan-coverage'
 curl --fail --silent --show-error --max-time 20 \
-  'https://modelplan.guanbear.com/v1/rules?provider=zhipu'
+  'https://modelplan.ai/v1/rules?provider=zhipu'
 ```
 
 `/v1/plans` data is an array; read the precise plan's `provider`, `region`, `generation`, `models`, `clients`, `quotaTerms`, conditions and source dates. Domestic `zhipu` and international `zai` are distinct scopes. Coverage data is an array: check `modelStatus` and `effortStatus` (or selected `effortStatuses`), `channel`, qualification, validity and source flags. Unknown is not available, and conditional is not confirmed entitlement. A model's harness alias and a plan's advertised list do not replace exact coverage.
@@ -94,10 +94,10 @@ The multiplier describes **plan quota deduction**. Keep `cost` USD unchanged; ne
 
 ```sh
 curl --fail --silent --show-error --max-time 20 \
-  'https://modelplan.guanbear.com/v1/reset-events?provider=openai&lang=en'
+  'https://modelplan.ai/v1/reset-events?provider=openai&lang=en'
 curl --fail --silent --show-error --max-time 20 --get \
   --data-urlencode 'provider=zhipu' --data-urlencode 'tz=Asia/Shanghai' \
-  'https://modelplan.guanbear.com/v1/opportunities'
+  'https://modelplan.ai/v1/opportunities'
 ```
 
 `client.data.resets` is a summary: `status`, `at`, `precision`, `publishedAt`, `url`, `scope`. Read `/v1/reset-events` (`data.events`) for `eventType`, `verificationStatus`, `eligibilityStatus`, `sourcePosts`, `sourceUrl`, `occurredOn`/`datePrecision`, `schedule`, `claimDeadline`. A schedule/deadline is an announcement, not confirmed execution. Publication/fetch/confirmation timestamps do not fill an unknown reset time. Even a confirmed completed public reset does not establish this user's restored balance. Withdrawn/cancelled reports are not current opportunities.
