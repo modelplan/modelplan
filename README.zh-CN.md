@@ -9,11 +9,23 @@
 
 | | 目录 | 说明 |
 | --- | --- | --- |
+| Codex 插件 | [`codex/`](codex/) | GPT 档位看板、能力／成本／耗时曲线及公开重置公告 |
 | Claude Code 插件 | [`claude-code/`](claude-code/) | `/modelplan:lineup`、`/modelplan:effort`、状态栏和 Model Plan Skill |
 | Model Plan Skill | [`skills/model-plan/`](skills/model-plan/) | 任何支持 Skill 的 Agent 都能用，只需要 shell 和匿名 HTTPS |
 | `modelplan` 命令行 | [`cli/`](cli/) | 单个可执行文件，只读、匿名；插件的命令和状态栏用它取数 |
 
 所有客户端只读取 Model Plan 已核验的公开数据：不需要账号，不收集任何数据，也不会替你切换模型或档位。
+
+## Codex 插件
+
+GPT 推荐档、能力／成本／耗时曲线和公开重置公告，桌面看板与 CLI 文字回退。需要 Node.js 24+。
+
+```sh
+codex plugin marketplace add modelplan/modelplan
+codex plugin add modelplan-codex@modelplan
+```
+
+[安装和使用](codex/README.zh-CN.md)
 
 ## 安装
 

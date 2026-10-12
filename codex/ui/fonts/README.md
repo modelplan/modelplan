@@ -1,0 +1,1 @@
+Fonts are bundled for offline UI rendering. Fontsource packages, version 5.3.0: Manrope (400/600), JetBrains Mono (400), Share Tech Mono (400), Latin subsets. Each font is licensed under the SIL Open Font License; the full notices are retained beside the files. CJK text uses the host system font.

@@ -1,0 +1,22 @@
+{
+  "name": "@modelplan/codex",
+  "version": "0.5.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs --http",
+    "mcp": "node server.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
+    "zod": "^4.6.5"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  },
+  "license": "MIT"
+}
