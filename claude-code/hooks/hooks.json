@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v modelplan >/dev/null 2>&1 && modelplan sync --background >/dev/null 2>&1; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}

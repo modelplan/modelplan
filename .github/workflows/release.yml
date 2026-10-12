@@ -1,0 +1,39 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Test
+        working-directory: cli
+        run: go test ./...
+      - name: Build
+        working-directory: cli
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          mkdir -p ../dist
+          for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64 windows/arm64; do
+            os=${target%/*}; arch=${target#*/}; ext=""; [ "$os" = windows ] && ext=".exe"
+            out="modelplan_${os}_${arch}"
+            mkdir -p "/tmp/$out"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${VERSION#v}" \
+              -o "/tmp/$out/modelplan$ext" ./cmd/modelplan
+            if [ "$os" = windows ]; then (cd /tmp && zip -qr "$GITHUB_WORKSPACE/dist/$out.zip" "$out")
+            else tar -C /tmp -czf "../dist/$out.tar.gz" "$out"; fi
+          done
+          (cd ../dist && sha256sum * > checksums.txt)
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --title "${{ github.ref_name }}" --generate-notes

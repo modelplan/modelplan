@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "modelplan",
+  "description": "Model Plan for Claude Code: choose models and efforts from Model Plan's verified public data.",
+  "owner": {
+    "name": "Model Plan",
+    "url": "https://modelplan.guanbear.com"
+  },
+  "plugins": [
+    {
+      "name": "modelplan",
+      "source": "./claude-code",
+      "description": "Which model and effort to use, what each step up costs, and a status line that flags cheaper models that are just as strong."
+    }
+  ]
+}
