@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "modelplan-codex",
+  "version": "0.5.0",
+  "description": "Read-only Codex GPT console and public reset notices. Requires Node 24 or newer.",
+  "author": {
+    "name": "Model Plan",
+    "url": "https://github.com/modelplan/modelplan"
+  },
+  "homepage": "https://modelplan.guanbear.com/effort",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "ModelPlan · Codex",
+        "shortDescription": "GPT efforts & resets. Requires Node 24+.",
+        "developerName": "ModelPlans",
+        "category": "Productivity",
+        "capabilities": [
+          "Read"
+        ],
+        "brandColor": "#df604c",
+        "defaultPrompt": [
+          "Open the ModelPlan model dashboard."
+        ],
+        "logo": "./ui/kit/logo.svg"
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": "https://github.com/modelplan/modelplan"
+}

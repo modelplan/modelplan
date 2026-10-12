@@ -1,0 +1,31 @@
+/* Local surface mapping to the Space UI. The shared kit remains vendored intact. */
+:root{--mp-f-body:"Manrope","PingFang SC","Noto Sans SC",system-ui,sans-serif;--mp-r-panel:20px;--mp-gold:#d4b994;--mp-gold-2:#d4b994;--star:linear-gradient(180deg,#f6d38a,#d9a94e);--star-ink:#2a1d0c;--act-fill:#4b302488;--act-edge:#a96b4d;--ease:cubic-bezier(.2,.8,.2,1)}
+button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,.mp-lever:focus-visible{outline:2px solid var(--mp-flame);outline-offset:4px}
+.sidebar{padding:14px;background:linear-gradient(180deg,#2b2622,#1b1714);border-color:#45392f;box-shadow:inset 0 1px 0 #ffffff14,0 6px 24px #0005}
+.mp-plate{background:linear-gradient(180deg,#3a322c,#2a2420);border-radius:9px;box-shadow:inset 0 1px 0 #ffffff1a,0 2px 6px #0008}
+.mp-chip.on,.mp-row.on{color:var(--mp-text);background:var(--act-fill);border:1px solid var(--act-edge);box-shadow:inset 0 1px 0 #ffffff0c}
+.mp-chip{border-radius:99px}.scope .mp-chip{display:inline-flex;align-items:center;height:28px}
+.mp-tag.strongest,.mp-tag.best_value,.mp-tag.cheapest{color:var(--mp-lcd);border:1px solid #725440;background:#3c281a55;box-shadow:none;font-weight:400}
+.mp-tag.cheapest{color:#a6ffc4;border-color:#455e49;background:#22362855}
+.mp-tag.dominated,.mp-tag.equivalent_costlier{border:1px solid #704630;background:#44271b55;font-weight:400}
+.mp-verdict{border:1px solid #4f3c2e;background:#160d08;font-size:11px;line-height:1.5}
+.mp-lcd{background:radial-gradient(130% 120% at 25% 0%,#2e1a0c,#120a05 70%);box-shadow:inset 0 0 0 1px #4a2c14,inset 0 2px 18px #000d,0 0 0 3px #0f0d0b,0 0 0 4px #3d342d}
+.mp-lcd::after{background:repeating-linear-gradient(0deg,#00000024 0 1px,transparent 1px 3px),linear-gradient(160deg,#ffffff0d,transparent 40%)}
+.mp-lcd-h,.reset-heading,.state,.gain-reading{font:400 10px/1.5 var(--mp-f-mono);letter-spacing:.12em}
+.mp-lcd-h em{font:400 10px var(--mp-f-mono);letter-spacing:0}.mp-row .n em{color:var(--mp-lcd)}
+.mp-bars,.mp-log,.ability-reading,.metric-reading b{font-family:var(--mp-f-lcd)}
+.lever-well{flex:none;width:132px;border:1px solid #3a312a;border-radius:14px;background:linear-gradient(180deg,#221d1a,#171311);box-shadow:inset 0 1px 0 #ffffff06,inset 0 4px 12px #0008}
+.mp-lever{--slot-x:31px;width:100%;height:146px}.mp-lever .slot,.mp-lever .zone{left:var(--slot-x);width:12px;top:12px;bottom:12px}
+.mp-lever .zone{background:repeating-linear-gradient(135deg,#ff7a4a8c 0 4px,transparent 4px 8px)}
+.mp-lever .det{left:7px;width:15px;background:#6b6058;box-shadow:none}.mp-lever .det.rc{background:#d4b994;box-shadow:none}
+.mp-lever .det small{left:47px;font:400 10px var(--mp-f-mono);letter-spacing:.02em}
+.mp-lever .det.rc small{background:var(--star);color:var(--star-ink);padding:2px 5px;border-radius:99px;box-shadow:none}
+.mp-lever .det button{left:-7px;width:130px;height:24px}
+.mp-lever .knob{left:18px;width:38px;height:24px;border-radius:8px;transition:top .35s var(--ease);background:linear-gradient(180deg,#f3f4f7,#c4cad6 45%,#8f97a8);box-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 #687080,0 4px 8px #000a}
+.mp-lever .knob::before{left:6px;right:6px;top:10px;height:4px;background:var(--mp-flame);box-shadow:0 0 6px #df604c66}
+.mp-lever .knob::after{content:"";position:absolute;left:15px;top:24px;width:8px;height:4px;border-radius:0 0 2px 2px;background:linear-gradient(90deg,#78808e,#c4cad6,#78808e)}
+.mp-lever:focus-visible .knob{box-shadow:inset 0 1px 0 #fff,0 4px 8px #000a}.mp-lever.dragging .knob{transition:none}
+.compact-display{height:148px}.curve .recommended-guide{stroke:#d4b994}.curve .baseline{stroke:#d4b994}.curve .rec-label{fill:#d4b994}
+@media(min-width:480px){.lever-well{width:150px}.mp-lever{width:100%}.mp-lever .det button{width:148px}}
+@media(max-width:360px){.sidebar{padding:10px}.mp-plate .screw{display:none}.lever-well{width:112px}.mp-lever{--slot-x:24px;width:100%}.mp-lever .knob{left:11px}.mp-lever .det{left:3px;width:12px}.mp-lever .det small{left:40px;font-size:10px}.mp-lever .det.rc small{padding:2px 4px}.mp-lever .det button{left:-3px;width:110px}.gain-reading{letter-spacing:0;font-size:10px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

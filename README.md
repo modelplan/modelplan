@@ -9,11 +9,23 @@ This repository holds Model Plan's open-source clients. The method behind the nu
 
 | | Directory | What it is |
 | --- | --- | --- |
+| Codex plugin | [`codex/`](codex/) | GPT effort dashboard, capability/cost/time curves and public reset notices |
 | Claude Code plugin | [`claude-code/`](claude-code/) | `/modelplan:lineup`, `/modelplan:effort`, a status line and the Model Plan Skill |
 | Model Plan Skill | [`skills/model-plan/`](skills/model-plan/) | Works in any agent that supports Skills. Needs only a shell and anonymous HTTPS |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary, read-only and anonymous. The plugin's commands and status line use it |
 
 Every client reads only Model Plan's verified public publication. There is no account and no telemetry, and it never switches your model or effort for you.
+
+## Codex plugin
+
+GPT effort recommendations, capability/cost/time curves and public reset notices, with a desktop panel and CLI text fallback. Requires Node.js 24+.
+
+```sh
+codex plugin marketplace add modelplan/modelplan
+codex plugin add modelplan-codex@modelplan
+```
+
+[Installation and usage](codex/README.md)
 
 ## Install
 
