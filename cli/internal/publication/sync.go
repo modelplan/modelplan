@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	DefaultBase = "https://modelplan.guanbear.com"
+	DefaultBase = "https://modelplan.ai"
 	// MinCheckInterval bounds how often interactive commands re-check the pointer.
 	MinCheckInterval = 10 * time.Minute
 	maxObjectBytes   = 150000

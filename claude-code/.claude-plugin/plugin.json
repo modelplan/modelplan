@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "modelplan",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Model Plan inside Claude Code: which model and effort to use, what each step up costs, and a status line that says when a cheaper model is just as strong. Read-only, advisory, anonymous.",
   "author": {
     "name": "Model Plan",
-    "url": "https://modelplan.guanbear.com"
+    "url": "https://modelplan.ai"
   },
-  "homepage": "https://modelplan.guanbear.com/hangar",
+  "homepage": "https://modelplan.ai/hangar",
   "keywords": [
     "models",
     "effort",

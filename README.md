@@ -1,7 +1,7 @@
 # Model Plan
 
 **Which AI coding model should you use, at which effort, and is the next step up worth it?**
-[Model Plan](https://modelplan.guanbear.com) answers that from verified public data: ability, cost per reference task and task time for every model and native effort, plus Coding Plan pricing, quota resets and usage windows.
+[Model Plan](https://modelplan.ai) answers that from verified public data: ability, cost per reference task and task time for every model and native effort, plus Coding Plan pricing, quota resets and usage windows.
 
 English · [简体中文](README.zh-CN.md)
 
@@ -66,7 +66,7 @@ WHICH ENGINE Which engine · Anthropic · every model at its ★ recommended eff
 
 ## Data
 
-All numbers and verdicts come from Model Plan's published data: ability, reference-task cost and time, the ★ recommended effort, and verdicts such as "strongest" and "best value". Clients never compute their own rankings. Methods and sources are on [modelplan.guanbear.com](https://modelplan.guanbear.com).
+All numbers and verdicts come from Model Plan's published data: ability, reference-task cost and time, the ★ recommended effort, and verdicts such as "strongest" and "best value". Clients never compute their own rankings. Methods and sources are on [modelplan.ai](https://modelplan.ai).
 
 ## License
 

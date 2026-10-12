@@ -1,7 +1,7 @@
 # Model Plan
 
 **写代码用哪个 AI 模型、开哪一档推理、往上推一档值不值？**
-[Model Plan](https://modelplan.guanbear.com) 用已核验的公开数据回答这些问题：覆盖每个模型、每个原生档位的能力、参考任务成本和耗时，还有 Coding 套餐的价格、额度重置和用量时段。
+[Model Plan](https://modelplan.ai) 用已核验的公开数据回答这些问题：覆盖每个模型、每个原生档位的能力、参考任务成本和耗时，还有 Coding 套餐的价格、额度重置和用量时段。
 
 [English](README.md) · 简体中文
 
@@ -52,7 +52,7 @@ Windows 或想手动安装：从 [Releases](https://github.com/modelplan/modelpl
 
 ## 数据
 
-所有数字和结论都来自 Model Plan 公开发布的数据：能力、参考任务成本和耗时、★ 推荐档，以及「最强」「最划算」这类结论。客户端不会自己算排名。方法和数据来源见 [modelplan.guanbear.com](https://modelplan.guanbear.com)。
+所有数字和结论都来自 Model Plan 公开发布的数据：能力、参考任务成本和耗时、★ 推荐档，以及「最强」「最划算」这类结论。客户端不会自己算排名。方法和数据来源见 [modelplan.ai](https://modelplan.ai)。
 
 ## 许可证
 

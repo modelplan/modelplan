@@ -1,6 +1,6 @@
 import { ClientDataReader,verifyClientDigest } from './lib/client-reader.mjs';
 import { diskCache } from './disk-cache.mjs';
-export const DEFAULT_BASE='https://modelplan.guanbear.com';
+export const DEFAULT_BASE='https://modelplan.ai';
 export const recommendation=m=>m.configurations.find(c=>c.effort===m.recommended);
 
 // A shape adapter only. The producer supplies every metric, basis and verdict.
