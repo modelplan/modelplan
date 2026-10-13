@@ -69,7 +69,7 @@ Efforts below `Q_guard` are not picked.
 
 ## Which models appear
 
-- **Default fleet.** The latest reviewed flagship and everyday lines from OpenAI, Anthropic and Zhipu, plus the strongest current DeepSeek model, up to ten. Visitors can change their own fleet.
+- **Default fleet.** The latest reviewed flagship and everyday lines from OpenAI, Anthropic and Zhipu, up to ten. Visitors can change their own fleet.
 - **Model pool.** One seat per reviewed series. A replaced generation spends 14 days as "comparing" before it leaves. Each maker has at most five seats.
 - **Popularity routes.** Models that enter on popularity must also pass a quality floor: independent coding evidence, or a best AA rank within 60 to enter (80 to stay).
 
