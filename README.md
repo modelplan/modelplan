@@ -5,6 +5,13 @@
 
 English · [简体中文](README.zh-CN.md)
 
+## Why Model Plan
+
+- **★ Effort recommendation.** Within one model, Low to Max changes not just the score but cost and time, often by several times. Every model gets its best-value ★ effort, and you see what one more step up buys and costs.
+- **A leaderboard at the recommended effort.** Most leaderboards compare each model's top setting. Model Plan ranks every model at its own ★ effort, the setup you would actually run. A 3D launch field and the Which Engine chart show ability, cost and time together.
+- **Plan recommendations** *(in progress).* Coding plans are compared by maker, model and price band: price, quota and which models and efforts each plan covers. Off-peak hours and quota resets are on a week calendar. Exact plan-model-effort coverage is still being completed.
+- **In your tools.** The same answers are inside Claude Code, Codex and the terminal through this repository's plugins, Skill and CLI.
+
 This repository holds Model Plan's open-source clients and the [methodology](METHODOLOGY.md): how ability, cost, time and the ★ recommended effort are worked out, and the sources behind them.
 
 | | Directory | What it is |
@@ -67,6 +74,8 @@ WHICH ENGINE Which engine · Anthropic · every model at its ★ recommended eff
 ## Data
 
 All numbers and verdicts come from Model Plan's published data: ability, reference-task cost and time, the ★ recommended effort, and verdicts such as "strongest" and "best value". Clients never compute their own rankings. Methods and sources: [METHODOLOGY.md](METHODOLOGY.md) and [modelplan.ai/methodology](https://modelplan.ai/methodology).
+
+See a wrong price, quota, effort or news item? [Report a data problem](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml). The **Report** links on modelplan.ai fill in the page and item for you.
 
 ## License
 
