@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Methodology / 方法与来源
+    url: https://modelplan.ai/methodology
+    about: How ability, cost, time and the recommended effort are worked out. 能力、成本、耗时和推荐档怎么算。
