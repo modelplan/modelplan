@@ -5,7 +5,7 @@
 
 [English](README.md) · 简体中文
 
-本仓库是 Model Plan 的开源客户端。数字背后的方法以后也会在这里公开。
+本仓库是 Model Plan 的开源客户端，也公开了[方法与来源](METHODOLOGY.zh-CN.md)：能力、成本、耗时和 ★ 推荐档怎么算，以及背后的数据源。
 
 | | 目录 | 说明 |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ Windows 或想手动安装：从 [Releases](https://github.com/modelplan/modelpl
 
 ## 数据
 
-所有数字和结论都来自 Model Plan 公开发布的数据：能力、参考任务成本和耗时、★ 推荐档，以及「最强」「最划算」这类结论。客户端不会自己算排名。方法和数据来源见 [modelplan.ai](https://modelplan.ai)。
+所有数字和结论都来自 Model Plan 公开发布的数据：能力、参考任务成本和耗时、★ 推荐档，以及「最强」「最划算」这类结论。客户端不会自己算排名。方法和数据来源见 [METHODOLOGY.zh-CN.md](METHODOLOGY.zh-CN.md) 和 [modelplan.ai/methodology](https://modelplan.ai/methodology)。
 
 ## 许可证
 

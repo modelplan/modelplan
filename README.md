@@ -5,7 +5,7 @@
 
 English · [简体中文](README.zh-CN.md)
 
-This repository holds Model Plan's open-source clients. The method behind the numbers will be published here as well.
+This repository holds Model Plan's open-source clients and the [methodology](METHODOLOGY.md): how ability, cost, time and the ★ recommended effort are worked out, and the sources behind them.
 
 | | Directory | What it is |
 | --- | --- | --- |
@@ -66,7 +66,7 @@ WHICH ENGINE Which engine · Anthropic · every model at its ★ recommended eff
 
 ## Data
 
-All numbers and verdicts come from Model Plan's published data: ability, reference-task cost and time, the ★ recommended effort, and verdicts such as "strongest" and "best value". Clients never compute their own rankings. Methods and sources are on [modelplan.ai](https://modelplan.ai).
+All numbers and verdicts come from Model Plan's published data: ability, reference-task cost and time, the ★ recommended effort, and verdicts such as "strongest" and "best value". Clients never compute their own rankings. Methods and sources: [METHODOLOGY.md](METHODOLOGY.md) and [modelplan.ai/methodology](https://modelplan.ai/methodology).
 
 ## License
 
