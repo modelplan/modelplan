@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -36,8 +38,9 @@ const (
 const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
   modelplan lineup [--dev anthropic]   WHICH ENGINE: a developer's models at ★ recommended effort
-  modelplan effort <model>             one model's effort ladder relative to ★
+  modelplan effort [model]             one model's effort ladder (default: Claude Code's current model)
   modelplan models [--dev openai]      models with ★ effort, ability and cost
+  modelplan quota                      your own usage windows, read from this machine only
   modelplan statusline                 one line for Claude Code / other status bars (cache only)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
@@ -87,6 +90,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	harness := fs.String("harness", "claude-code", "statusline: which harness feeds stdin")
 	modelFlag := fs.String("model", "", "statusline: model id when stdin has none")
 	effortFlag := fs.String("effort", "", "statusline: current effort when the harness knows it")
+	recordOnly := fs.Bool("record-only", false, "statusline: record Claude Code usage windows and print nothing")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
@@ -144,7 +148,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return 0
 
+	case "quota":
+		r := quota.Read(quotaPaths(st), time.Now())
+		if c.json {
+			return printJSON(stdout, r)
+		}
+		style.Quota(stdout, r)
+		return 0
+
 	case "statusline":
+		if *recordOnly {
+			stdout = io.Discard
+		}
 		return statusline(stdin, stdout, style, st, c, *harness, *modelFlag, *effortFlag)
 
 	case "doctor":
@@ -187,11 +202,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		}
 	case "effort":
-		if fs.NArg() < 1 {
+		q := strings.Join(fs.Args(), " ")
+		if q == "" {
+			// No model given: the one Claude Code last reported to the status line.
+			for _, a := range quota.Read(quotaPaths(st), time.Now()).Accounts {
+				if a.Source == "claude-code" && a.Harness != nil && a.Harness.Model != "" {
+					q, *harness = a.Harness.Model, "claude-code"
+				}
+			}
+		}
+		if q == "" {
 			fmt.Fprintln(stderr, "usage: modelplan effort <model id or name>")
 			return exitUsage
 		}
-		q := strings.Join(fs.Args(), " ")
 		m := d.Model(q)
 		if m == nil {
 			m = d.Match(*harness, q)
@@ -258,13 +281,10 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 }
 
 // statusline is cache-only: it may start a detached sync but never waits on the network.
+// For Claude Code it also records the usage windows the harness passes on stdin, so the
+// Skill and `modelplan quota` can read them later.
 func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, modelID, effort string) int {
-	var in struct {
-		Model struct {
-			ID          string `json:"id"`
-			DisplayName string `json:"display_name"`
-		} `json:"model"`
-	}
+	var in quota.StatuslineInput
 	if f, ok := stdin.(*os.File); !ok || !isTTY(f) {
 		b, _ := io.ReadAll(io.LimitReader(stdin, 1<<16))
 		_ = json.Unmarshal(b, &in)
@@ -272,13 +292,31 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if modelID == "" {
 		modelID = in.Model.ID
 	}
+	if effort == "" && in.Effort != nil {
+		effort = in.Effort.Level
+	}
+	now := time.Now()
+	var acct *quota.Account
+	if harness == "claude-code" {
+		_ = quota.RecordClaudeCode(st.Dir, in, now)
+		a := in.Account(now)
+		quota.Evaluate(&a, now)
+		acct = &a
+	}
 	s, _ := st.State()
 	if !c.offline && time.Since(s.CheckedAt) > staleAfter && time.Since(s.LastAttemptAt) > backgroundEvery {
 		_ = detach.Start("sync", "--quiet", "--base", c.base)
 	}
+	tail := ""
+	if in.FastMode != nil && *in.FastMode {
+		tail += " ⚡fast"
+	}
+	if q := style.QuotaSegment(acct); q != "" {
+		tail += " │ " + q
+	}
 	d, s, err := publication.Load(st)
 	if err != nil {
-		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "")+" · "+style.T.Syncing)
+		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "")+" · "+style.T.Syncing+tail)
 		return 0
 	}
 	m := d.Match(harness, modelID, in.Model.DisplayName)
@@ -286,8 +324,18 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if raw == "" {
 		raw = modelID
 	}
-	fmt.Fprintln(stdout, style.Statusline(d, m, effort, time.Since(s.CheckedAt) > alarmAfter, raw))
+	fmt.Fprintln(stdout, style.Statusline(d, m, effort, time.Since(s.CheckedAt) > alarmAfter, raw)+tail)
 	return 0
+}
+
+// quotaPaths: the shared cache, $CODEX_HOME (default ~/.codex) and ~/.config/modelplan/local.json.
+func quotaPaths(st *store.Store) quota.Paths {
+	home, _ := os.UserHomeDir()
+	codex := os.Getenv("CODEX_HOME")
+	if codex == "" {
+		codex = filepath.Join(home, ".codex")
+	}
+	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.

@@ -10,18 +10,19 @@ English · [简体中文](README.zh-CN.md)
 - **★ Effort recommendation.** Within one model, Low to Max changes not just the score but cost and time, often by several times. Every model gets its best-value ★ effort, and you see what one more step up buys and costs.
 - **A leaderboard at the recommended effort.** Most leaderboards compare each model's top setting. Model Plan ranks every model at its own ★ effort, the setup you would actually run. A 3D launch field and the Which Engine chart show ability, cost and time together.
 - **Plan recommendations** *(in progress).* Coding plans are compared by maker, model and price band: price, quota and which models and efforts each plan covers. Off-peak hours and quota resets are on a week calendar. Exact plan-model-effort coverage is still being completed.
+- **Plans around your own quota.** Reads your Claude Code and Codex 5-hour / weekly usage and reset times on your machine (never uploaded). With plenty left just before a reset it says stepping up or fast mode is cheap; when a window is tight it says stay at ★ or step down.
 - **In your tools.** The same answers are inside Claude Code, Codex and the terminal through this repository's plugins, Skill and CLI.
 
 This repository holds Model Plan's open-source clients and the [methodology](METHODOLOGY.md): how ability, cost, time and the ★ recommended effort are worked out, and the sources behind them.
 
 | | Directory | What it is |
 | --- | --- | --- |
-| Codex plugin | [`codex/`](codex/) | GPT effort dashboard, capability/cost/time curves and public reset notices |
-| Claude Code plugin | [`claude-code/`](claude-code/) | `/modelplan:lineup`, `/modelplan:effort`, a status line and the Model Plan Skill |
-| Model Plan Skill | [`skills/model-plan/`](skills/model-plan/) | Works in any agent that supports Skills. Needs only a shell and anonymous HTTPS |
-| `modelplan` CLI | [`cli/`](cli/) | Single static binary, read-only and anonymous. The plugin's commands and status line use it |
+| **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client. Works in Claude Code, Codex and any agent that supports Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times. Needs only a shell and anonymous HTTPS |
+| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill plus `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup` and a status line with live effort and 5h/7d quota |
+| Codex plugin | [`codex/`](codex/) | The Skill plus a GPT effort dashboard: capability/cost/time curves, your Codex quota and reset countdown, public reset notices |
+| `modelplan` CLI | [`cli/`](cli/) | Single static binary, read-only and anonymous. `modelplan quota` gathers local quota; the status line and plugin commands use it |
 
-Every client reads only Model Plan's verified public publication. There is no account and no telemetry, and it never switches your model or effort for you.
+Every client reads only Model Plan's verified public publication, plus quota files the harnesses already write on your machine. There is no account and no telemetry, nothing personal is uploaded, and it never switches your model or effort for you.
 
 ## Codex plugin
 

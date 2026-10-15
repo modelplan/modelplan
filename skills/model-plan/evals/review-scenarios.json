@@ -1,0 +1,1634 @@
+{
+  "schemaVersion": 1,
+  "note": "Synthetic client-v1.1 review regression scenarios. Expected answers are withheld from host prompts.",
+  "scenarios": [
+    {
+      "id": "published-legacy-peak",
+      "prompt": "已确认任务与访问适配。旧版中国站套餐，GLM-5.3，Claude Code，周一15点，截止21点。给当前倍率和是否等18点再开始。旧规则文本写9倍，该听谁？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "status": "wait",
+        "multiplier": 3,
+        "futureMultiplier": 1,
+        "waitSeconds": 10800,
+        "source": "client-multipliers",
+        "localStateStatus": "missing",
+        "permissionDenied": false
+      },
+      "selectorExpected": {
+        "status": "match",
+        "multiplier": 3
+      }
+    },
+    {
+      "id": "exclusive-end",
+      "prompt": "现在正好18点，旧版套餐还有高峰3倍吗？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T18:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "multiplier": 1,
+        "source": "client-multipliers"
+      },
+      "selectorExpected": {
+        "status": "match",
+        "multiplier": 1
+      }
+    },
+    {
+      "id": "modern-generation",
+      "prompt": "现行中国站Pro而不是旧版，同一模型/工具。当前与18点后的倍率是什么？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-pro",
+          "generation": "credits-2026",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "multiplier": 1,
+        "futureMultiplier": 0.5,
+        "source": "client-multipliers"
+      },
+      "selectorExpected": {
+        "status": "match",
+        "multiplier": 1
+      }
+    },
+    {
+      "id": "tentative-top",
+      "prompt": "高优先级高峰记录待核验、低优先级基准已确认，可以承诺当前按基准1倍扣吗？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "TENTATIVE",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "status": "needs_confirmation",
+        "multiplier": null,
+        "rateGuaranteed": false
+      },
+      "selectorExpected": {
+        "status": "unknown",
+        "multiplier": null
+      }
+    },
+    {
+      "id": "missing-plan-context",
+      "prompt": "我没说套餐与代际，可以挑最便宜倍率吗？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": null,
+          "generation": null,
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "status": "needs_confirmation",
+        "multiplier": null,
+        "rateGuaranteed": false
+      },
+      "selectorExpected": {
+        "status": "unknown",
+        "multiplier": null
+      }
+    },
+    {
+      "id": "outside-horizon",
+      "prompt": "我想知道15号15点一定是什么倍率。目前没有扩展日历或其他未来数据。",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-15T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "status": [
+          "needs_confirmation",
+          "abstain"
+        ],
+        "multiplier": null,
+        "rateGuaranteed": false
+      },
+      "selectorExpected": {
+        "status": "unknown",
+        "multiplier": null
+      }
+    },
+    {
+      "id": "missing-local",
+      "prompt": "读取器明确返回missing。为何看不到个人额度？应怎样登记？不要读取或创建文件。",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "localStateStatus": "missing",
+        "permissionDenied": false,
+        "setupPath": "~/.config/modelplan/local.json"
+      }
+    },
+    {
+      "id": "unreadable-local",
+      "prompt": "读取器返回unreadable和permission_denied。这是没登记还是读失败？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "unreadable",
+          "reason": "permission_denied",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "localStateStatus": "unreadable",
+        "permissionDenied": true
+      }
+    },
+    {
+      "id": "invalid-local",
+      "prompt": "读取器返回invalid。可以说权限不够吗？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "invalid",
+          "data": null
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "localStateStatus": "invalid",
+        "permissionDenied": false
+      }
+    },
+    {
+      "id": "reader-not-run",
+      "prompt": "宿主禁止执行读取器，没有任何读取器返回结果，可以断言文件不存在吗？",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T15:00:00+08:00",
+        "client": {
+          "schemaVersion": 1,
+          "releaseVersion": "synthetic",
+          "publication": {
+            "publicationId": "review-fixture-v1.1"
+          },
+          "asOf": "2026-10-12T00:00:00+08:00",
+          "data": {
+            "projectionVersion": "client-v1.1",
+            "multipliers": [
+              {
+                "ruleId": "zhipu-cn-legacy-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-legacy-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-legacy"
+                ],
+                "generations": [
+                  "legacy-v2"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 3,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-base",
+                "provider": "zhipu",
+                "kind": "base",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 0.5,
+                "startsAt": "2026-10-12T00:00:00+08:00",
+                "endsAt": "2026-10-13T00:00:00+08:00",
+                "priority": 0,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              },
+              {
+                "ruleId": "zhipu-cn-pro-peak",
+                "provider": "zhipu",
+                "kind": "peak",
+                "models": [
+                  "GLM-5.3"
+                ],
+                "clients": [
+                  "Claude Code"
+                ],
+                "planIds": [
+                  "zhipu-cn-pro"
+                ],
+                "generations": [
+                  "credits-2026"
+                ],
+                "region": "cn",
+                "timezone": "Asia/Shanghai",
+                "multiplier": 1,
+                "startsAt": "2026-10-12T14:00:00+08:00",
+                "endsAt": "2026-10-12T18:00:00+08:00",
+                "priority": 10,
+                "status": "CONFIRMED",
+                "minClientVersions": {},
+                "requiresQuotaAvailable": false,
+                "conditions": [],
+                "url": "https://example.com/rules"
+              }
+            ],
+            "multiplierHorizon": {
+              "from": "2026-10-12T00:00:00+08:00",
+              "to": "2026-10-14T00:00:00+08:00",
+              "selection": "highest-priority-no-stacking"
+            }
+          }
+        },
+        "context": {
+          "provider": "zhipu",
+          "model": "GLM-5.3",
+          "client": "Claude Code",
+          "planId": "zhipu-cn-legacy",
+          "generation": "legacy-v2",
+          "region": "cn"
+        },
+        "local": {
+          "status": "not_observed",
+          "toolError": "execution blocked"
+        },
+        "sourceUrl": "https://example.com/client",
+        "rawRules": {
+          "note": "Contradictory old condition data must not replace a covered digest coefficient",
+          "peakMultiplier": 9
+        }
+      },
+      "expected": {
+        "localStateStatus": "not_observed",
+        "missingFileConfirmed": false
+      }
+    }
+  ]
+}

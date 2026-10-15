@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "evaluatedAt": "2026-10-14T10:00:00Z",
+  "accounts": [
+    {
+      "source": "claude-code",
+      "observedAt": "2026-10-14T09:58:00Z",
+      "stale": false,
+      "harness": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "fastMode": false,
+        "version": "2.1.300"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 39,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-14T10:42:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:58:00Z",
+          "remainingPercent": 61,
+          "resetsInMinutes": 42,
+          "elapsedPercent": 86,
+          "projectedPercent": 45.3,
+          "ageMinutes": 2,
+          "pace": "surplus"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 41,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-17T14:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:58:00Z",
+          "remainingPercent": 59,
+          "resetsInMinutes": 4560,
+          "elapsedPercent": 54.8,
+          "projectedPercent": 74.9,
+          "ageMinutes": 2,
+          "pace": "on_track"
+        }
+      ],
+      "headroom": "spend",
+      "deciding": "five_hour"
+    },
+    {
+      "source": "codex",
+      "plan": "plus",
+      "observedAt": "2026-10-14T09:55:00Z",
+      "stale": false,
+      "harness": {
+        "model": "gpt-6-sol",
+        "effort": "high"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 72,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-14T13:20:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:55:00Z",
+          "remainingPercent": 28,
+          "resetsInMinutes": 200,
+          "elapsedPercent": 33.3,
+          "projectedPercent": 216,
+          "ageMinutes": 5,
+          "pace": "tight"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 30,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-19T10:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:55:00Z",
+          "remainingPercent": 70,
+          "resetsInMinutes": 7200,
+          "elapsedPercent": 28.6,
+          "projectedPercent": 105,
+          "ageMinutes": 5,
+          "pace": "tight"
+        }
+      ],
+      "headroom": "conserve",
+      "deciding": "weekly"
+    },
+    {
+      "source": "user",
+      "plan": "zhipu-coding-pro",
+      "observedAt": "2026-10-14T09:00:00Z",
+      "stale": false,
+      "windows": [
+        {
+          "kind": "weekly",
+          "usedPercent": 60,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-16T10:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:00:00Z",
+          "remainingPercent": 40,
+          "resetsInMinutes": 2880,
+          "elapsedPercent": 71.4,
+          "projectedPercent": 84,
+          "ageMinutes": 60,
+          "pace": "on_track"
+        }
+      ],
+      "cards": [
+        {
+          "kind": "five_hour",
+          "count": 2,
+          "expiresAt": "2026-10-19T16:00:00Z"
+        }
+      ],
+      "headroom": "normal",
+      "deciding": "weekly"
+    },
+    {
+      "source": "user",
+      "plan": "kimi-andante",
+      "observedAt": "2026-10-12T09:00:00Z",
+      "stale": true,
+      "windows": [
+        {
+          "kind": "weekly",
+          "usedPercent": 20,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-13T10:00:00Z",
+          "resetMode": "unknown",
+          "observedAt": "2026-10-12T09:00:00Z",
+          "remainingPercent": null,
+          "resetsInMinutes": null,
+          "elapsedPercent": null,
+          "projectedPercent": null,
+          "ageMinutes": 2940,
+          "pace": "reset_passed"
+        }
+      ],
+      "headroom": "unknown"
+    }
+  ],
+  "sources": [
+    {
+      "source": "claude-code",
+      "status": "ok"
+    },
+    {
+      "source": "codex",
+      "status": "ok"
+    },
+    {
+      "source": "user",
+      "status": "ok"
+    }
+  ],
+  "note": "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
+}

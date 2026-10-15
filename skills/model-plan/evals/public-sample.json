@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "0.20.0",
+  "publication": {
+    "planMeteringHash": "2fb246ffe78b7d9c9e98c3d79d41491350d0a6a7f2e112222ff30e9b48f2d3f5",
+    "planValueFormulaVersion": "plan-value-v0.2",
+    "aaSnapshotId": "aa-f7e615e7-a01e-4bf4-9ea4-01e994f50506",
+    "throughputHistoryHash": "cdb3d2c74ac21897b163f3e132c7f9dd2f1cab554643abd1a697578dffa1a885",
+    "reviewedSpeedClaimsHash": "d57c526bc419daae9b472065c139bb89ca4f62609627f2099ce9f9619e6f52a6",
+    "portfolioRevision": "2a5b9c961bb14325a357e6a66a4c1c40ab97cb47b10f7929244f1d245b4ee3fe",
+    "publicGenerationEvidenceHash": "11abe51bbb41ef12d485d1d727cd1239a177e61c2a1a734ac91212d6b349cbde",
+    "modelsdevSnapshotId": "modelsdev-15c0cbe991b43e01bb49",
+    "codingRosterRevision": "2026-10-09.1",
+    "codingRosterContentHash": "be95532ac265d0ce9db29220672542b39de9d1d38f3c7d34387a23d0fedb0157",
+    "releaseIdentityRevision": "2026-10-09.1",
+    "releaseIdentityContentHash": "1f7258a07242d261df470d2b845c8c78e70c2b434635431ce1eed9e324aa501e",
+    "defaultLineagePolicyVersion": "2026-10-09.1",
+    "defaultLineageContentHash": "650e430e30a8cd7abe99aa577de7f7924e7b5bb4194d9889988d2e6d7da60d09",
+    "planIndexAliasRevision": "2026-10-11.2",
+    "planIndexAliasContentHash": "5a27ed87515af43aae484ef4661929350953cc46e0c82de6f6ac77e34fb6bda7",
+    "planAccessRevision": "2026-10-10.2",
+    "planAccessContentHash": "5ff2487b51787bbee9611d61d6f21e4ab6e1528eb49a3f47ac76003f9f31c5c7",
+    "publicPriceConfigHash": "c73bb3a812c9301508a1963d54ee97b58aa46798277fef9b910c292a24355488",
+    "proOfferingHash": "d19034a0de0a77933255f6a0b91b018af845113b884b62475e5719afaeb84720",
+    "reviewedPlanRegistryRevision": "2026-10-11.1",
+    "reviewedPlanRegistryContentHash": "01e0cd5a57c1f7585537d8487b9aee49727abd4625c2d9df19a5541447fa6a70",
+    "planProviderRegistryContentHash": "5b7f7783e7e2a4e6d2ce6b321d7083cbf4223820485904584dbe0f221d1b5bdc",
+    "planAliasContentHash": "451a4223145764e23d37489140220d82e4ccb2c23b164a2a9864462c08cdd71d",
+    "corePlanEvidenceHash": "a90880ea63eb1ffe405ee11561f769043a08f862437d9d17abc362ab47020dff",
+    "publicPriceSnapshotId": "bigmodel-public-pricing-4a747e478c5fbcaebc66",
+    "internationalPriceSnapshotId": "zai-public-pricing-97fd766fab8b5a7cde2a",
+    "approvedPlanRulesHash": "b3c41e48043e838fc403db433f08f77845d568f9addc0561bc251c805e70e1bc",
+    "releaseVersion": "0.20.0",
+    "publicationVersion": "8a9aec381e7e2f0c887f",
+    "publicationId": "02dd66162ee6828e005bc374"
+  },
+  "asOf": "2026-10-11T01:21:08.289Z",
+  "aaSnapshotId": "aa-f7e615e7-a01e-4bf4-9ea4-01e994f50506",
+  "sourceSnapshots": {
+    "aa-agent": "aa-agent-fb765aa9a69446144987",
+    "didreset": "didreset-e94c6e36353b0995eac3",
+    "semianalysis-public": "semianalysis-public-c0f1556d65163cf911c6",
+    "current-model-products": "current-model-products-60010f23b78f67dc0efd",
+    "real-api-pricing": "real-api-pricing-c1da0e8737de00d3f5a2",
+    "opencode-go-terms": "opencode-go-terms-e2be752b7d2528916fea",
+    "opencode-zen-terms": "opencode-zen-terms-15649d4969b1ef82821b",
+    "alibaba-cn-coding": "alibaba-cn-coding-83d936c9575f4123930f",
+    "alibaba-int-coding": "alibaba-int-coding-9e93a3c239d884d94351",
+    "kimi-membership": "kimi-membership-be6e48e8713dde1f5a47",
+    "kimi-code-models": "kimi-code-models-b5cb0d65c0caba554579",
+    "minimax-token-intro": "minimax-token-intro-e91238f24a92ae9de1a1",
+    "minimax-token-pricing": "minimax-token-pricing-9bebea789b9a80dfb6df",
+    "minimax-cn-terms": "minimax-cn-terms-039399beea272d54abee",
+    "grok-build-terms": "grok-build-terms-dde432bf10073a27c806",
+    "grok-web-terms": "grok-web-terms-de137bfff621b2d482fa",
+    "volcengine-coding-terms": "volcengine-coding-terms-d3b67cbb5f4ffbb267a4",
+    "minimax-m-plan-intro": "minimax-m-plan-intro-55177a91dfd93dc752fe",
+    "minimax-m-plan-usage": "minimax-m-plan-usage-1b8478dce475f9a34292",
+    "minimax-m-plan-pricing": "minimax-m-plan-pricing-43e6f170c77310b5c3e0",
+    "minimax-cn-m-plan-intro": "minimax-cn-m-plan-intro-6429948372c11ccd4628",
+    "minimax-cn-m-plan-usage": "minimax-cn-m-plan-usage-beee2b7b74a9f73eac42",
+    "minimax-cn-m-plan-pricing": "minimax-cn-m-plan-pricing-6710562254e049cd42c6",
+    "claude-max-api-credits": "claude-max-api-credits-3afce999317feb64a405",
+    "volcengine-personal-coding": null,
+    "volcengine-enterprise-coding": null,
+    "livebench": "livebench-5880b32c61d1a3d4b38a",
+    "cursorbench": "cursorbench-56a0aa785b937ebc257d",
+    "coding-model-docs": "coding-model-docs-fd348ed4a9d6516b3345",
+    "bigmodel-public-pricing": "bigmodel-public-pricing-4a747e478c5fbcaebc66",
+    "zai-public-pricing": "zai-public-pricing-97fd766fab8b5a7cde2a",
+    "swebench": "swebench-544c43b6ab8f046b3bde",
+    "aider": "aider-dd496c35eb51b52b8bfc",
+    "livecodebench": "livecodebench-05e3477cc92d819d65fa",
+    "terminalbench": "terminalbench-13678220dcf73850be7e",
+    "modelsdev": "modelsdev-15c0cbe991b43e01bb49",
+    "openrouter": "openrouter-9c71149c123509e74dab",
+    "openrouter-popularity": "openrouter-popularity-67733467eb9bad3aee1d",
+    "openrouter-daily": "openrouter-daily-1f309706566b836e3eec",
+    "bughunt": "bughunt-b7515364ad211759ee58",
+    "resets": "resets-4df5db708be391cd9f9b",
+    "news-models": "news-models-211f80ac88d76bf04eef",
+    "news-products": "news-products-13600225450b8429c10d",
+    "glm-overview": "glm-overview-58cc06a6f8eb3f64077c",
+    "glm-campaign": "glm-campaign-408d970242e101f300c4",
+    "glm-legacy": "glm-legacy-3ceef8f37dd55bbd7a22",
+    "bigmodel-overview": "bigmodel-overview-9bb37add1f5a5e09f8d4",
+    "bigmodel-campaign": "bigmodel-campaign-d3e51f8c01a26b05a32d",
+    "openai-pricing": "openai-pricing-4b12470bb5c07a16e74f",
+    "openai-pro-tiers": "openai-pro-tiers-4b12470bb5c07a16e74f",
+    "claude-pricing": "claude-pricing-2c1b91af39e838c269bd",
+    "zcode-config": "zcode-config-4dcd2fd3c7c6d286dd96"
+  },
+  "data": {
+    "units": {
+      "ability": "websiteAbility",
+      "cost": "usdPerReferenceTask",
+      "time": "taskTimeCrossModel"
+    },
+    "builtAt": "2026-10-11T07:10:44.071Z",
+    "aliasRevision": "2026-10-11.1",
+    "models": [
+      {
+        "id": "luna",
+        "name": "GPT-6 Luna",
+        "developerId": "openai",
+        "current": true,
+        "recommended": "max",
+        "harnessIds": {
+          "api": [
+            "gpt-6-luna"
+          ],
+          "claude-code": [],
+          "codex": [
+            "gpt-6-luna"
+          ]
+        },
+        "harnessEvidence": {
+          "checkedAt": "2026-10-11",
+          "sourceUrls": [
+            "https://developers.openai.com/api/docs/models",
+            "https://learn.chatgpt.com/docs/models"
+          ],
+          "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+          "requiredEndpoints": {}
+        },
+        "efforts": [
+          {
+            "effort": "none",
+            "label": "None",
+            "available": true,
+            "ability": -4.1682047202747325,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.03218916098939755,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.2848207179140037,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          },
+          {
+            "effort": "low",
+            "label": "Low",
+            "available": true,
+            "ability": 2.105709593829072,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.012818692429406099,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.18205931339636716,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          },
+          {
+            "effort": "medium",
+            "label": "Med",
+            "available": true,
+            "ability": 18.574734668351557,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.04985047055880153,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.0811248753994175,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          },
+          {
+            "effort": "high",
+            "label": "High",
+            "available": true,
+            "ability": 24.703644591051024,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.0826093512117282,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.23016825113323103,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          },
+          {
+            "effort": "xhigh",
+            "label": "XHigh",
+            "available": true,
+            "ability": 28.283776823645827,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.12021084900465281,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.537688127647302,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          },
+          {
+            "effort": "max",
+            "label": "Max",
+            "available": true,
+            "ability": 35.35838972247221,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.16786961741278758,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.9357660046072344,
+            "timeEstimated": true,
+            "timeBasis": {
+              "source": "bughunt",
+              "cohort": "Bug Hunt 105 / Codex CLI",
+              "boundary": "reported_run_wall",
+              "referenceSeconds": 4655.859204661198
+            }
+          }
+        ]
+      },
+      {
+        "id": "sol-6.1",
+        "name": "GPT-6.1 Sol",
+        "developerId": "openai",
+        "current": true,
+        "recommended": "medium",
+        "harnessIds": {
+          "api": [
+            "gpt-6.1-sol"
+          ],
+          "claude-code": [],
+          "codex": [
+            "gpt-6.1-sol"
+          ]
+        },
+        "harnessEvidence": {
+          "checkedAt": "2026-10-11",
+          "sourceUrls": [
+            "https://developers.openai.com/api/docs/models",
+            "https://learn.chatgpt.com/docs/models"
+          ],
+          "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+          "requiredEndpoints": {}
+        },
+        "efforts": [
+          {
+            "effort": "low",
+            "label": "Low",
+            "available": true,
+            "ability": 42.39185040672775,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.41441306259235217,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.23366970570983542,
+            "timeEstimated": false,
+            "timeBasis": {
+              "source": "aa-agent",
+              "cohort": "AA Coding Agent v1.5 / Codex",
+              "boundary": "agent_wall",
+              "referenceSeconds": 2216.0078167447414
+            }
+          },
+          {
+            "effort": "medium",
+            "label": "Med",
+            "available": true,
+            "ability": 51.22466200628702,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.6131606472449949,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.29391722446334434,
+            "timeEstimated": false,
+            "timeBasis": {
+              "source": "aa-agent",
+              "cohort": "AA Coding Agent v1.5 / Codex",
+              "boundary": "agent_wall",
+              "referenceSeconds": 2216.0078167447414
+            }
+          },
+          {
+            "effort": "high",
+            "label": "High",
+            "available": true,
+            "ability": 53.818529582287006,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 0.8517969556250454,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.36090360615066197,
+            "timeEstimated": false,
+            "timeBasis": {
+              "source": "aa-agent",
+              "cohort": "AA Coding Agent v1.5 / Codex",
+              "boundary": "agent_wall",
+              "referenceSeconds": 2216.0078167447414
+            }
+          },
+          {
+            "effort": "xhigh",
+            "label": "XHigh",
+            "available": true,
+            "ability": 56.127361022856846,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 1.0113087334696724,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.4202973933995819,
+            "timeEstimated": false,
+            "timeBasis": {
+              "source": "aa-agent",
+              "cohort": "AA Coding Agent v1.5 / Codex",
+              "boundary": "agent_wall",
+              "referenceSeconds": 2216.0078167447414
+            }
+          },
+          {
+            "effort": "max",
+            "label": "Max",
+            "available": true,
+            "ability": 55.47529170506144,
+            "abilityBasis": "abilityWithinModel",
+            "cost": 1.4388777496918637,
+            "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+            "time": 0.6602171758542897,
+            "timeEstimated": false,
+            "timeBasis": {
+              "source": "aa-agent",
+              "cohort": "AA Coding Agent v1.5 / Codex",
+              "boundary": "agent_wall",
+              "referenceSeconds": 2216.0078167447414
+            }
+          }
+        ]
+      }
+    ],
+    "lineups": [
+      {
+        "developerId": "openai",
+        "costBasisId": "aa-agent-v1.5-api-reference-task-2026-09-30",
+        "method": "lineup-v1",
+        "tie": 1,
+        "baseline": "luna",
+        "frontier": [
+          "luna",
+          "sol-6.1"
+        ],
+        "steps": [
+          {
+            "from": "luna",
+            "to": "sol-6.1",
+            "abilityDelta": 15.866272283814808,
+            "costRatio": 3.6526004925432503
+          }
+        ],
+        "members": [
+          {
+            "id": "astra",
+            "ability": 51.422135065639196,
+            "cost": 3.403756503909741,
+            "costRelative": 20.276191465546628,
+            "tags": [
+              "equivalent_costlier"
+            ],
+            "dominatedBy": {
+              "id": "sol-6.1",
+              "kind": "equivalent"
+            }
+          },
+          {
+            "id": "luna",
+            "ability": 35.35838972247221,
+            "cost": 0.16786961741278758,
+            "costRelative": 1,
+            "tags": [
+              "cheapest"
+            ],
+            "dominatedBy": null
+          },
+          {
+            "id": "sol-5.6",
+            "ability": 33.86089078134607,
+            "cost": 1.483179821473022,
+            "costRelative": 8.835308284678558,
+            "tags": [
+              "dominated"
+            ],
+            "dominatedBy": {
+              "id": "luna",
+              "kind": "weaker"
+            }
+          },
+          {
+            "id": "sol-6.1",
+            "ability": 51.22466200628702,
+            "cost": 0.6131606472449949,
+            "costRelative": 3.6526004925432503,
+            "tags": [
+              "strongest",
+              "best_value"
+            ],
+            "dominatedBy": null
+          },
+          {
+            "id": "terra-5.6",
+            "ability": 26.783397984652183,
+            "cost": 0.9005001872718307,
+            "costRelative": 5.364283311955856,
+            "tags": [
+              "dominated"
+            ],
+            "dominatedBy": {
+              "id": "luna",
+              "kind": "weaker"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

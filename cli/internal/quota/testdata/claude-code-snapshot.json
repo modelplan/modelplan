@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "source": "claude-code-statusline",
+  "observedAt": "2026-10-14T09:58:00Z",
+  "harness": {
+    "model": "claude-opus-5-5",
+    "effort": "high",
+    "fastMode": false,
+    "version": "2.1.300"
+  },
+  "windows": [
+    {
+      "kind": "five_hour",
+      "usedPercent": 39,
+      "resetsAt": "2026-10-14T10:42:00Z",
+      "resetMode": "fixed",
+      "observedAt": "2026-10-14T09:58:00Z",
+      "remainingPercent": null,
+      "resetsInMinutes": null,
+      "elapsedPercent": null,
+      "projectedPercent": null,
+      "ageMinutes": null,
+      "pace": ""
+    },
+    {
+      "kind": "weekly",
+      "usedPercent": 41,
+      "resetsAt": "2026-10-17T14:00:00Z",
+      "resetMode": "fixed",
+      "observedAt": "2026-10-14T09:58:00Z",
+      "remainingPercent": null,
+      "resetsInMinutes": null,
+      "elapsedPercent": null,
+      "projectedPercent": null,
+      "ageMinutes": null,
+      "pace": ""
+    }
+  ]
+}

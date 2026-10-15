@@ -1,8 +1,8 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "modelplan",
-  "version": "0.2.1",
-  "description": "Model Plan inside Claude Code: which model and effort to use, what each step up costs, and a status line that says when a cheaper model is just as strong. Read-only, advisory, anonymous.",
+  "version": "0.3.0",
+  "description": "Model Plan inside Claude Code: which model and effort to use, what each step up costs, and how to spend your remaining quota before it resets. Status line with live effort and 5h/7d quota. Read-only, advisory, anonymous.",
   "author": {
     "name": "Model Plan",
     "url": "https://modelplan.ai"

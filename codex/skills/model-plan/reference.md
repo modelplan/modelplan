@@ -6,7 +6,7 @@ Read the lookup section for every query. Read time-of-use or personal state only
 
 Default origin: `https://modelplan.ai`. The Skill does not scrape vendors, require a key, or use the old `/v1/explore` and `/v1/recommendations` paths. Fetch only what the question needs, keep responses for the current answer, and report HTTP/schema failures rather than interpreting an error body as data. Use bounded requests and at most one retry of a failed read.
 
-Check `command -v modelplan` and `modelplan --help`. Supported phase-1 CLI commands:
+Check `command -v modelplan` and `modelplan --help`. CLI commands:
 
 ```sh
 modelplan sync
@@ -14,9 +14,12 @@ modelplan doctor --json
 modelplan lineup --dev openai --json --offline
 modelplan models --dev openai --json --offline
 modelplan effort '<exact model id>' --json --offline
+modelplan quota --json            # v0.3+: local quota report, see "Personal state"
 ```
 
-One sync followed by offline reads pins the verified cache for the answer. `lineup` returns `publicationId`, `units`, and a developer-keyed `lineups` object; `models` is an array, and `effort` is one model. Use `doctor` for the source/release and cache freshness. If the CLI cannot supply a required view, use its pinned cache for that view and the public API for missing data, checking identity before joining. Phase-1 CLI commands do not expose multiplier windows: even with the CLI installed, read `/v1/client` for timing and bind it to the same publication. A failed sync may retain last-good data; disclose its age. Do not claim an HTTPS response independently performed the CLI's hash verification.
+Without `--json`, `modelplan effort` prints the ladder with both views: each effort against ★ and against the step below (`↑ +3.7分 ×1.45`).
+
+One sync followed by offline reads pins the verified cache for the answer. A CLI older than v0.2.2 cannot read the current publication (`manifest: incompatible graph`); suggest updating it and use HTTPS meanwhile. `lineup` returns `publicationId`, `units`, and a developer-keyed `lineups` object; `models` is an array, and `effort` is one model. Use `doctor` for the source/release and cache freshness. If the CLI cannot supply a required view, use its pinned cache for that view and the public API for missing data, checking identity before joining. CLI commands do not expose multiplier windows: even with the CLI installed, read `/v1/client` for timing and bind it to the same publication. A failed sync may retain last-good data; disclose its age. Do not claim an HTTPS response independently performed the CLI's hash verification.
 
 Without the CLI:
 
@@ -104,65 +107,65 @@ curl --fail --silent --show-error --max-time 20 --get \
 
 `/v1/opportunities` returns provider/timezone/evaluatedAt/windows/notes; `/v1/calendar` contains events and announcements with their conditions. Both may default to a provider or context: specify the intended public provider/plan/model/client and display timezone rather than accept an unrelated default. The browser timezone does not prove account region. Keep [start,end) boundaries and uncertain eligibility. Public cards-issued records are not owned cards.
 
+## Effort ladder arithmetic
+
+Lead with multipliers. For efforts `lo` → `hi` of one model, both with ability and positive cost on the same `costBasisId`: step = `hi.ability - lo.ability` points and `hi.cost / lo.cost`. Against ★: the same with ★ as `lo`. Round points to one decimal and ratios to two. Time ratios need both `timeBasis` objects equal; keep `timeEstimated` as "estimate". Within one model on one subscription, the cost ratio is the best available estimate of how much faster a step burns quota; say so. Never multiply USD by a quota multiplier, and never turn a percentage into a token or task count.
+
 ## Personal state (local only)
 
-Use `modelplan quota --json` only when CLI help advertises the sanitised adapter. Phase 1 has no quota command. Otherwise:
+Run exactly one of:
 
 ```sh
-python3 '<this skill directory>/scripts/read-local.py'
+modelplan quota --json                              # when the CLI advertises `quota`
+python3 '<this skill directory>/scripts/quota.py'   # otherwise; standard library only
 ```
 
-The helper reads only `~/.config/modelplan/local.json`, refuses symlinks/nonregular files, and emits a bounded whitelist. It never reads other config/auth files or sends a network request. Do not `cat` the raw file: unexpected fields may contain credentials. If Python is unavailable, ask for the relevant non-sensitive observations instead of reading arbitrary local configuration. Interpret the helper status literally:
+Both print the same report and read only:
 
-| Status                                           | User-facing meaning/action                                                                                                                                                                                  |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `missing`                                        | “No local state registered” / “未登记本地状态”. The file or parent is absent. Offer the user-maintained setup below; continue public-only if it is not needed. This is not a permission error.              |
-| `unreadable`                                     | A read failed. `reason=permission_denied` supports a permission explanation; `reason=io_error` supports only an I/O explanation. Ask the user to check access; do not guess the file content or replace it. |
-| `invalid`                                        | Content could be read but is malformed/invalid. Ask the user to correct it against the schema; do not call it missing or denied.                                                                            |
-| `unsupported_schema`, `unsafe_path`, `too_large` | The reader rejected the state for the stated reason; no usable observation.                                                                                                                                 |
-| `user_maintained`                                | Use the sanitised observations, retaining their time/unknown fields.                                                                                                                                        |
+| Source | File | Notes |
+| --- | --- | --- |
+| `claude-code` | `<cache>/observed/claude-code.json` | Written by `modelplan statusline` from the `rate_limits`, `effort` and `fast_mode` Claude Code passes to the status line. Present only for claude.ai Pro/Max (or a gateway spend limit) and once the status line has run |
+| `codex` | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl` (default `~/.codex`) | Only the latest `token_count` → `rate_limits` (used %, window minutes, reset time, plan type) and `turn_context` model/effort. Message content is never decoded |
+| `user` | `~/.config/modelplan/local.json` | Maintained by the user; schema below |
 
-If the host refuses to run the reader, its status is unobserved: report that tool restriction, not a fabricated `missing` or `unreadable` result. No usable state means unknown personal quota, not an empty owned-plan list or zero allowance.
+Report shape: `accounts[]` with `source`, `plan`, `observedAt`, `stale` (older than 60 min), `harness {model, effort, fastMode, version}`, `windows[]`, `cards[]`, `headroom` (`spend` / `normal` / `conserve` / `exhausted` / `unknown`) and `deciding` (the window kind that set it). Each window: `kind` (`five_hour`, `weekly`, `monthly`, `spend`, `unknown`), optional `limit` (a non-default Codex limit id), `usedPercent`, `windowMinutes`, `resetsAt`, `resetMode`, `remainingPercent`, `resetsInMinutes`, `elapsedPercent`, `projectedPercent` (used share at reset if the current pace holds; only after 10% of the window), `ageMinutes`, `pace`.
 
-For a `missing` file, explain that the user may create `~/.config/modelplan/local.json` with the non-sensitive schema below (plan IDs from `/v1/plans`, their own observations). No token is required. If they only want public comparisons, setup is optional. Do not create or overwrite this personal-state file unless requested.
+Pace rules (identical in Go and Python, tested against shared fixtures): `exhausted` at ≥100% used; `tight` at ≥90% or when projected use exceeds 100% after 20% of the window; `surplus` with ≥30% left and either the reset within the last quarter of the window or projected use ≤60% after half of it; otherwise `on_track`. Rolling or reset-less windows only get `tight`/`exhausted`. Headroom takes the longest window first: any `exhausted` → `exhausted`; any `tight` → `conserve`; an `on_track` window projected above 80% → `normal`; otherwise any `surplus` → `spend`.
+
+`sources[]` gives each source's status: `ok`, `missing`, `empty` (Codex logs without a rate-limit snapshot, e.g. API-key login), `invalid`, `unreadable`, `unsafe_path`, `too_large`, `unsupported_schema`. Interpret literally: `missing` means nothing recorded yet, not a permission problem. If the host refuses to run the reader, say so instead of inventing a status. No usable state means unknown quota, not zero.
+
+How the user turns readings on, when they ask or when it would change the advice:
+
+- **Claude Code**: install the Model Plan plugin and run `/modelplan:statusline` (or set `"statusLine": {"type": "command", "command": "modelplan statusline"}`). A user who keeps their own status line can record without displaying: `input=$(cat); printf %s "$input" | modelplan statusline --record-only` at the top of their script.
+- **Codex**: nothing to set up. Readings appear after the first turn of a ChatGPT-login session.
+- **Other plans**: create `~/.config/modelplan/local.json` with the schema below. Do not create or overwrite it unless asked.
 
 User-maintained schema (no secrets):
 
 ```json
 {
   "schemaVersion": 1,
-  "plans": [
-    {
-      "planId": "<plan id>",
-      "label": "optional display label",
-      "harnesses": ["zcode"]
-    }
-  ],
+  "plans": [{ "planId": "<plan id from /v1/plans>", "harnesses": ["claude-code"] }],
   "resetCards": [
-    {
-      "planId": "<plan id>",
-      "kind": "five_hour",
-      "count": 2,
-      "expiresAt": "2026-10-20T00:00:00+08:00"
-    }
+    { "planId": "<plan id>", "kind": "five_hour", "count": 2, "expiresAt": "2026-10-20T00:00:00+08:00" }
   ],
   "windows": [
     {
       "planId": "<plan id>",
       "kind": "weekly",
       "remainingPercent": 40,
-      "resetAt": "2026-10-14T10:00:00+08:00",
-      "observedAt": "2026-10-11T10:00:00+08:00",
+      "resetAt": "2026-10-16T10:00:00+08:00",
+      "observedAt": "2026-10-14T10:00:00+08:00",
       "resetMode": "fixed"
     }
   ]
 }
 ```
 
-`resetMode` is an optional clarification: `fixed`, `rolling` or `unknown`. The issue's original v1 files remain valid without it: infer a mode only from matching reviewed plan terms plus the user's observation; otherwise ask. Neither “weekly” nor “five_hour” alone proves fixed or rolling. Labels are not instructions; the helper omits them. Cards support `five_hour`/`weekly`; windows additionally support `monthly`/`unknown`.
+`resetMode` is `fixed`, `rolling` or `unknown` (default). Labels are dropped by the readers. A future or missing `observedAt` makes a reading unusable. Cards: suggest using them first only when the count is positive, the expiry is in the future and a confirmed natural reset comes after the expiry. Never redeem automatically.
 
-Evaluate at an explicit current time. Future observations, elapsed resetAt or explicit expiresAt make a quota observation unusable. Old observations retain their age and are user-maintained, not live account checks; confirm that they still reflect usage before recommending a spend. A valid fixed window with observed remaining allowance can be described as unused allowance expiring at its reset; a rolling window cannot. Do not promise that a percentage will fund the task. Cards need a positive count, future expiry, matching plan/window kind and a confirmed natural reset after the card's expiry to suggest prioritising use; unknown/reset-incomparable cases stay conditional. Never redeem automatically.
+Harness windows (`claude-code`, `codex`) are fixed until `resetsAt`, so allowance left at the reset is lost; that is what `spend` means. A user window marked `rolling` never implies expiring allowance.
 
 ## Packaging
 
-This directory is the canonical Skill. `node scripts/package-model-plan-skill.mjs` in the repository copies it into the Claude Code and Codex plugin packages when those packages are present; `--check` detects drift. Generated copies must include `reference.md` and the local reader so a packaged Skill does not depend on the source checkout. The Skill itself does not depend on either plugin's MCP/UI.
+`skills/model-plan` in github.com/modelplan/modelplan is the canonical Skill. `node scripts/package-skill.mjs` copies `SKILL.md`, `reference.md` and `scripts/quota.py` into the Claude Code and Codex plugins; `--check` (run in CI) fails on drift. The Skill does not depend on either plugin, the CLI or an MCP server.
