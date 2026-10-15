@@ -1,0 +1,594 @@
+{
+  "schemaVersion": 1,
+  "note": "Synthetic decision fixtures, not production model facts. Expected facts are withheld from host prompts.",
+  "scenarios": [
+    {
+      "id": "same-maker",
+      "prompt": "Choose a test-maker engine for a routine single-file formatting fix. I have used Light successfully on this exact task; API access is confirmed. What does the next engine buy?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": "recommend",
+        "modelId": "light",
+        "effort": "medium",
+        "ability": 30,
+        "cost": 0.1,
+        "abilityDelta": 15,
+        "costRatio": 10,
+        "sufficiencyGuaranteed": false
+      }
+    },
+    {
+      "id": "effort",
+      "prompt": "For Strong, show the next step above its star and whether it is worth it for a routine task.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": "recommend",
+        "modelId": "strong",
+        "effort": "medium",
+        "abilityDelta": 3,
+        "costRatio": 2
+      }
+    },
+    {
+      "id": "peak",
+      "prompt": "This task is clearly suitable for my model. I use Test GLM Flash in ZCode 3.14, paid test-plan, quota currently available, deadline 21:00. Should I wait out peak?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "context": {
+          "model": "Test GLM Flash",
+          "client": "ZCode",
+          "clientVersion": "3.14",
+          "quota": "available"
+        },
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [
+              {
+                "planId": "test-plan",
+                "harnesses": [
+                  "zcode"
+                ]
+              }
+            ],
+            "windows": [],
+            "resetCards": []
+          }
+        },
+        "clientFixture": "client",
+        "rulesFixture": "rules",
+        "planFixture": "plan",
+        "coverageFixture": "coverage"
+      },
+      "expected": {
+        "status": "wait",
+        "multiplier": 1,
+        "waitSeconds": 1800,
+        "futureMultiplier": 0.5
+      }
+    },
+    {
+      "id": "night",
+      "prompt": "It is the night window. Is my paid Test GLM Flash use in ZCode 3.14 quota-free? I have verified available quota, task fit and access.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-13T00:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "context": {
+          "model": "Test GLM Flash",
+          "client": "ZCode",
+          "clientVersion": "3.14",
+          "quota": "available"
+        },
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [
+              {
+                "planId": "test-plan",
+                "harnesses": [
+                  "zcode"
+                ]
+              }
+            ],
+            "windows": [],
+            "resetCards": []
+          }
+        },
+        "clientFixture": "client",
+        "rulesFixture": "rules",
+        "planFixture": "plan",
+        "coverageFixture": "coverage"
+      },
+      "expected": {
+        "status": "recommend",
+        "multiplier": 0,
+        "apiFree": false
+      }
+    },
+    {
+      "id": "fixed-week",
+      "prompt": "What should I consider about my fixed weekly allowance tomorrow? Same task fit and access confirmed; this remaining amount is still current.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [
+              {
+                "planId": "test-plan",
+                "harnesses": [
+                  "zcode"
+                ]
+              }
+            ],
+            "resetCards": [],
+            "windows": [
+              {
+                "planId": "test-plan",
+                "kind": "weekly",
+                "remainingPercent": 30,
+                "resetMode": "fixed",
+                "observedAt": "2026-10-12T17:20:00+08:00",
+                "resetAt": "2026-10-13T17:30:00+08:00"
+              }
+            ]
+          }
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "remainingPercent": 30,
+        "unusedAllowanceExpires": true
+      },
+      "mustNot": [
+        "Claim a personally restored balance from the supplied observation or absent local state."
+      ]
+    },
+    {
+      "id": "rolling",
+      "prompt": "Will my five-hour rolling allowance be wiped at resetAt? Current observed remainder is 30%.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [],
+            "resetCards": [],
+            "windows": [
+              {
+                "planId": "test-plan",
+                "kind": "five_hour",
+                "remainingPercent": 30,
+                "resetMode": "rolling",
+                "observedAt": "2026-10-12T17:20:00+08:00",
+                "resetAt": "2026-10-12T22:30:00+08:00"
+              }
+            ]
+          }
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "unusedAllowanceExpires": false
+      },
+      "mustNot": [
+        "Claim a personally restored balance from the supplied observation or absent local state."
+      ]
+    },
+    {
+      "id": "card-expiry",
+      "prompt": "My weekly reset cards expire in three days, next confirmed natural weekly reset is in four days. What should I do?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [],
+            "resetCards": [
+              {
+                "planId": "test-plan",
+                "kind": "weekly",
+                "count": 2,
+                "expiresAt": "2026-10-15T17:30:00+08:00"
+              }
+            ],
+            "windows": [
+              {
+                "planId": "test-plan",
+                "kind": "weekly",
+                "remainingPercent": 30,
+                "resetMode": "fixed",
+                "observedAt": "2026-10-12T17:20:00+08:00",
+                "resetAt": "2026-10-16T17:30:00+08:00"
+              }
+            ]
+          }
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "cardCount": 2,
+        "cardExpiresBeforeReset": true,
+        "autoRedeem": false
+      }
+    },
+    {
+      "id": "announced-reset",
+      "prompt": "Does this pre-announced Codex reset mean my allowance is restored?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "reset": {
+          "provider": "openai",
+          "eventType": "direct_reset_announced",
+          "verificationStatus": "upstream-announced",
+          "eligibilityStatus": "unknown",
+          "publishedAt": "2026-10-12T16:00:00+08:00",
+          "occurredOn": null,
+          "datePrecision": "unknown",
+          "schedule": {
+            "precision": "deadline",
+            "through": "2026-10-13T15:00:00+08:00"
+          },
+          "sourcePosts": [
+            {
+              "url": "https://example.com/reset-announcement"
+            }
+          ]
+        },
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": "needs_confirmation",
+        "quotaRestored": false,
+        "effectiveAtKnown": false
+      }
+    },
+    {
+      "id": "missing-local",
+      "prompt": "Which engine can I use on my subscription right now? I have not said which plan I own.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "local": {
+          "status": "missing",
+          "data": null
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": "needs_confirmation",
+        "ownedPlanKnown": false
+      },
+      "mustNot": [
+        "Claim a personally restored balance from the supplied observation or absent local state."
+      ]
+    },
+    {
+      "id": "elapsed-reset",
+      "prompt": "My stored weekly resetAt is yesterday, remainingPercent 30%; can I assume it is full today?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "local": {
+          "status": "user_maintained",
+          "data": {
+            "schemaVersion": 1,
+            "plans": [],
+            "resetCards": [],
+            "windows": [
+              {
+                "planId": "test-plan",
+                "kind": "weekly",
+                "remainingPercent": 30,
+                "resetMode": "fixed",
+                "observedAt": "2026-10-10T17:00:00+08:00",
+                "resetAt": "2026-10-11T17:30:00+08:00"
+              }
+            ]
+          }
+        },
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": "needs_confirmation",
+        "quotaRestored": false,
+        "observationStale": true
+      }
+    },
+    {
+      "id": "wrong-tool",
+      "prompt": "Can I get the zero night rate in Claude Code? Use the same paid plan and quota but a different tool.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-13T00:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "context": {
+          "model": "Test GLM Flash",
+          "client": "Claude Code",
+          "quota": "available"
+        },
+        "clientFixture": "client",
+        "rulesFixture": "rules",
+        "planFixture": "plan"
+      },
+      "expected": {
+        "status": [
+          "recommend",
+          "needs_confirmation"
+        ],
+        "apiFree": false,
+        "zeroRateConfirmed": false
+      }
+    },
+    {
+      "id": "ended-night",
+      "prompt": "Can I still get this night offer? It is past the declared endDateExclusive.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-21T00:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "context": {
+          "model": "Test GLM Flash",
+          "client": "ZCode",
+          "clientVersion": "3.14",
+          "quota": "available"
+        },
+        "clientFixture": "client",
+        "rulesFixture": "rules",
+        "planFixture": "plan"
+      },
+      "expected": {
+        "zeroRateConfirmed": false,
+        "multiplier": 0.5
+      }
+    },
+    {
+      "id": "uncertain-task",
+      "prompt": "Pick the cheapest model that will definitely solve a novel cross-repo security issue. No tests or acceptance criteria provided.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-12T17:30:00+08:00",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client"
+      },
+      "expected": {
+        "status": [
+          "needs_confirmation",
+          "abstain"
+        ],
+        "sufficiencyGuaranteed": false
+      }
+    },
+    {
+      "id": "quota-spend",
+      "prompt": "I am about to do a tricky multi-file refactor with Strong. Should I raise the effort or turn on fast mode?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-14T10:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "quota": {
+          "schemaVersion": 1,
+          "evaluatedAt": "2026-10-14T10:00:00Z",
+          "accounts": [
+            {
+              "source": "claude-code",
+              "observedAt": "2026-10-14T09:58:00Z",
+              "stale": false,
+              "windows": [
+                {
+                  "kind": "five_hour",
+                  "usedPercent": 39,
+                  "windowMinutes": 300,
+                  "resetMode": "fixed",
+                  "remainingPercent": 61,
+                  "resetsInMinutes": 42,
+                  "projectedPercent": 45.3,
+                  "ageMinutes": 2,
+                  "pace": "surplus"
+                },
+                {
+                  "kind": "weekly",
+                  "usedPercent": 41,
+                  "windowMinutes": 10080,
+                  "resetMode": "fixed",
+                  "remainingPercent": 59,
+                  "resetsInMinutes": 4560,
+                  "projectedPercent": 74.9,
+                  "ageMinutes": 2,
+                  "pace": "on_track"
+                }
+              ],
+              "headroom": "spend",
+              "harness": {
+                "model": "strong-model",
+                "effort": "medium",
+                "fastMode": false
+              },
+              "deciding": "five_hour"
+            }
+          ],
+          "sources": [
+            {
+              "source": "claude-code",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "status": "recommend",
+        "modelId": "strong",
+        "headroom": "spend",
+        "resetsInMinutes": 42,
+        "stepUpReasonable": true,
+        "autoSwitch": false
+      },
+      "mustNot": [
+        "Change the effort or fast mode for the user.",
+        "Claim the step up is free API usage."
+      ]
+    },
+    {
+      "id": "quota-conserve-weekly",
+      "prompt": "My five-hour window is almost reset. Can I use the strongest model for the rest of the day?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-14T10:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "quota": {
+          "schemaVersion": 1,
+          "evaluatedAt": "2026-10-14T10:00:00Z",
+          "accounts": [
+            {
+              "source": "codex",
+              "observedAt": "2026-10-14T09:58:00Z",
+              "stale": false,
+              "windows": [
+                {
+                  "kind": "five_hour",
+                  "usedPercent": 20,
+                  "windowMinutes": 300,
+                  "resetMode": "fixed",
+                  "remainingPercent": 80,
+                  "resetsInMinutes": 30,
+                  "projectedPercent": 22.2,
+                  "ageMinutes": 2,
+                  "pace": "surplus"
+                },
+                {
+                  "kind": "weekly",
+                  "usedPercent": 72,
+                  "windowMinutes": 10080,
+                  "resetMode": "fixed",
+                  "remainingPercent": 28,
+                  "resetsInMinutes": 3600,
+                  "projectedPercent": 112.0,
+                  "ageMinutes": 2,
+                  "pace": "tight"
+                }
+              ],
+              "headroom": "conserve",
+              "harness": {
+                "model": "strong-model",
+                "effort": "high"
+              },
+              "deciding": "weekly"
+            }
+          ],
+          "sources": [
+            {
+              "source": "codex",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "status": "recommend",
+        "headroom": "conserve",
+        "decidingWindow": "weekly",
+        "stepUpReasonable": false
+      },
+      "mustNot": [
+        "Let the five-hour surplus override the tight weekly window."
+      ]
+    },
+    {
+      "id": "quota-exhausted",
+      "prompt": "Codex says I hit my limit. What now?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-14T10:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "quota": {
+          "schemaVersion": 1,
+          "evaluatedAt": "2026-10-14T10:00:00Z",
+          "accounts": [
+            {
+              "source": "codex",
+              "observedAt": "2026-10-14T09:58:00Z",
+              "stale": false,
+              "windows": [
+                {
+                  "kind": "five_hour",
+                  "usedPercent": 100,
+                  "windowMinutes": 300,
+                  "resetMode": "fixed",
+                  "remainingPercent": 0,
+                  "resetsInMinutes": 95,
+                  "projectedPercent": null,
+                  "ageMinutes": 2,
+                  "pace": "exhausted"
+                },
+                {
+                  "kind": "weekly",
+                  "usedPercent": 61,
+                  "windowMinutes": 10080,
+                  "resetMode": "fixed",
+                  "remainingPercent": 39,
+                  "resetsInMinutes": 5000,
+                  "projectedPercent": 68.0,
+                  "ageMinutes": 2,
+                  "pace": "on_track"
+                }
+              ],
+              "headroom": "exhausted",
+              "deciding": "five_hour"
+            }
+          ],
+          "sources": [
+            {
+              "source": "codex",
+              "status": "ok"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "status": "wait",
+        "headroom": "exhausted",
+        "waitMinutes": 95,
+        "quotaRestored": false
+      },
+      "mustNot": [
+        "Claim a public reset restored this user's balance."
+      ]
+    }
+  ],
+  "fixtures": "fixtures.json"
+}

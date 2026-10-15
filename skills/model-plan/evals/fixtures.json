@@ -1,0 +1,257 @@
+{
+  "synthetic": true,
+  "fixtures": {
+    "client": {
+      "schemaVersion": 1,
+      "releaseVersion": "synthetic",
+      "publication": {
+        "publicationId": "skill-fixture-1",
+        "publicationVersion": "skill-fixture-1"
+      },
+      "asOf": "2026-10-12T09:00:00+08:00",
+      "data": {
+        "units": {
+          "ability": "websiteAbility",
+          "cost": "usdPerReferenceTask",
+          "time": "taskTimeCrossModel"
+        },
+        "models": [
+          {
+            "id": "light",
+            "name": "Test Light",
+            "developerId": "test-maker",
+            "recommended": "medium",
+            "current": true,
+            "efforts": [
+              {
+                "effort": "medium",
+                "label": "medium",
+                "available": true,
+                "ability": 30,
+                "abilityBasis": "abilityWithinModel",
+                "cost": 0.1,
+                "costBasisId": "synthetic-task",
+                "time": null,
+                "timeEstimated": false,
+                "timeBasis": null
+              },
+              {
+                "effort": "high",
+                "label": "high",
+                "available": true,
+                "ability": 32,
+                "abilityBasis": "abilityWithinModel",
+                "cost": 0.3,
+                "costBasisId": "synthetic-task",
+                "time": null,
+                "timeEstimated": false,
+                "timeBasis": null
+              }
+            ]
+          },
+          {
+            "id": "strong",
+            "name": "Test Strong",
+            "developerId": "test-maker",
+            "recommended": "medium",
+            "current": true,
+            "efforts": [
+              {
+                "effort": "medium",
+                "label": "medium",
+                "available": true,
+                "ability": 45,
+                "abilityBasis": "abilityWithinModel",
+                "cost": 1,
+                "costBasisId": "synthetic-task",
+                "time": null,
+                "timeEstimated": false,
+                "timeBasis": null
+              },
+              {
+                "effort": "high",
+                "label": "high",
+                "available": true,
+                "ability": 48,
+                "abilityBasis": "abilityWithinModel",
+                "cost": 2,
+                "costBasisId": "synthetic-task",
+                "time": null,
+                "timeEstimated": false,
+                "timeBasis": null
+              }
+            ]
+          }
+        ],
+        "lineups": [
+          {
+            "developerId": "test-maker",
+            "method": "lineup-v1",
+            "tie": 1,
+            "baseline": "light",
+            "costBasisId": "synthetic-task",
+            "frontier": [
+              "light",
+              "strong"
+            ],
+            "steps": [
+              {
+                "from": "light",
+                "to": "strong",
+                "abilityDelta": 15,
+                "costRatio": 10
+              }
+            ],
+            "members": [
+              {
+                "id": "light",
+                "ability": 30,
+                "cost": 0.1,
+                "costRelative": 1,
+                "tags": [
+                  "cheapest"
+                ],
+                "dominatedBy": null
+              },
+              {
+                "id": "strong",
+                "ability": 45,
+                "cost": 1,
+                "costRelative": 10,
+                "tags": [
+                  "strongest",
+                  "best_value"
+                ],
+                "dominatedBy": null
+              }
+            ]
+          }
+        ],
+        "resets": [],
+        "windows": []
+      }
+    },
+    "rules": {
+      "schemaVersion": 1,
+      "releaseVersion": "synthetic",
+      "publication": {
+        "publicationId": "skill-fixture-1",
+        "publicationVersion": "skill-fixture-1"
+      },
+      "asOf": "2026-10-12T09:00:00+08:00",
+      "data": {
+        "rules": [
+          {
+            "id": "base",
+            "provider": "zhipu",
+            "generations": [
+              "credits-2026"
+            ],
+            "models": [],
+            "clients": [],
+            "kind": "base",
+            "startHour": 0,
+            "endHour": 24,
+            "timezone": "Asia/Shanghai",
+            "multiplier": 0.5,
+            "priority": 0,
+            "conditions": [],
+            "sourceUrl": "https://example.com/usage",
+            "status": "enabled",
+            "sourceHealth": {
+              "stale": false,
+              "reviewRequired": false
+            }
+          },
+          {
+            "id": "peak",
+            "provider": "zhipu",
+            "generations": [
+              "credits-2026"
+            ],
+            "models": [],
+            "clients": [],
+            "kind": "peak",
+            "startHour": 14,
+            "endHour": 18,
+            "timezone": "Asia/Shanghai",
+            "multiplier": 1,
+            "priority": 10,
+            "conditions": [],
+            "sourceUrl": "https://example.com/usage",
+            "status": "enabled",
+            "sourceHealth": {
+              "stale": false,
+              "reviewRequired": false
+            },
+            "weekdays": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          {
+            "id": "night",
+            "provider": "zhipu",
+            "generations": [
+              "credits-2026"
+            ],
+            "models": [
+              "Test GLM Flash"
+            ],
+            "clients": [],
+            "kind": "night",
+            "startHour": 23,
+            "endHour": 9,
+            "timezone": "Asia/Shanghai",
+            "multiplier": 0,
+            "priority": 30,
+            "conditions": [],
+            "sourceUrl": "https://example.com/usage",
+            "status": "enabled",
+            "sourceHealth": {
+              "stale": false,
+              "reviewRequired": false
+            },
+            "startDate": "2026-10-01",
+            "endDateExclusive": "2026-10-20",
+            "directMultiplierClients": [
+              "ZCode"
+            ],
+            "requiresQuotaAvailable": true,
+            "minClientVersions": {
+              "ZCode": "3.10"
+            }
+          }
+        ],
+        "unresolved": []
+      }
+    },
+    "plan": {
+      "id": "test-plan",
+      "provider": "zhipu",
+      "generation": "credits-2026",
+      "region": "cn",
+      "models": [
+        "Test GLM Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "Claude Code"
+      ]
+    },
+    "coverage": {
+      "planId": "test-plan",
+      "modelId": "strong",
+      "channel": "ZCode",
+      "modelStatus": "available",
+      "effortStatus": "available",
+      "sourceStale": false,
+      "sourceReviewRequired": false,
+      "qualification": null,
+      "sourceUrl": "https://example.com/access"
+    }
+  }
+}

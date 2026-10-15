@@ -42,7 +42,7 @@ func (s Style) c(code, v string) string {
 // Text holds every user-visible string; zh is the default, en mirrors the website's English.
 type Text struct {
 	WhichEngine, AtRec, BaseIs, Ability, Cost, Time, Skip, SkipWhy, Strongest, BestValue, Cheapest,
-	NotBetter, Equivalent, Recommended, AboveRec, Estimated, Stale, NotListed, Syncing, VsRec, Pts, SkipFmt string
+	NotBetter, Equivalent, Recommended, AboveRec, Estimated, Stale, NotListed, Syncing, VsRec, Pts, SkipFmt, StepUp string
 }
 
 var ZH = Text{
@@ -50,7 +50,7 @@ var ZH = Text{
 	Ability: "能力", Cost: "成本", Time: "耗时", Skip: "跳过", SkipWhy: "又贵又不更强",
 	Strongest: "最强", BestValue: "最划算", Cheapest: "最省", NotBetter: "不如 %s", Equivalent: "≈ %s 但更贵",
 	Recommended: "推荐", AboveRec: "超推荐", Estimated: "估算", Stale: "数据过期", NotListed: "未核对型号",
-	Syncing: "正在同步数据…", VsRec: "相对 ★推荐", Pts: "分", SkipFmt: "%s：%s（%s）",
+	Syncing: "正在同步数据…", VsRec: "相对 ★推荐", Pts: "分", SkipFmt: "%s：%s（%s）", StepUp: "↑ 比低一档",
 }
 
 var EN = Text{
@@ -58,7 +58,7 @@ var EN = Text{
 	Ability: "ability", Cost: "cost", Time: "time", Skip: "Skip", SkipWhy: "costs more, not stronger",
 	Strongest: "strongest", BestValue: "best value", Cheapest: "cheapest", NotBetter: "not better than %s", Equivalent: "≈ %s, costs more",
 	Recommended: "recommended", AboveRec: "above rec.", Estimated: "estimate", Stale: "stale data", NotListed: "id not reviewed",
-	Syncing: "syncing data…", VsRec: "vs ★", Pts: "pts", SkipFmt: "%s: %s (%s)",
+	Syncing: "syncing data…", VsRec: "vs ★", Pts: "pts", SkipFmt: "%s: %s (%s)", StepUp: "↑ vs one below",
 }
 
 // Short drops the developer prefix the website also drops in tight spaces ("Claude Opus 5.5" → "Opus 5.5").
@@ -193,7 +193,7 @@ func (s Style) Lineup(w io.Writer, d *digest.Digest, dev string) error {
 // Effort prints one model's ladder relative to its ★ recommended effort.
 func (s Style) Effort(w io.Writer, m *digest.Model) {
 	rec := m.Rec()
-	fmt.Fprintf(w, "%s  %s\n", s.c(bold+";"+hi, m.Name), s.c(dim, fmt.Sprintf("%d · ★ %s %s · %s", len(m.Efforts), labelOf(rec), s.T.Recommended, s.T.VsRec)))
+	fmt.Fprintf(w, "%s  %s\n", s.c(bold+";"+hi, m.Name), s.c(dim, fmt.Sprintf("%d · ★ %s %s · %s · %s", len(m.Efforts), labelOf(rec), s.T.Recommended, s.T.VsRec, s.T.StepUp)))
 	ri := -1
 	for i := range m.Efforts {
 		if &m.Efforts[i] == rec {
@@ -209,11 +209,24 @@ func (s Style) Effort(w io.Writer, m *digest.Model) {
 		case ri >= 0 && i > ri:
 			lever = s.c(cost, "┆")
 		}
-		fmt.Fprintf(w, "  %s %s  %s %s  %s %s  %s %s\n", lever, label,
+		fmt.Fprintf(w, "  %s %s  %s %s  %s %s  %s %s  %s\n", lever, label,
 			s.c(dim, s.T.Ability), s.c(hi, pad(num(e.Ability, rec, true, s.T.Pts), 14)),
 			s.c(dim, s.T.Cost), s.c(cost, pad(num(e.Cost, rec, false, ""), 7)),
-			s.c(dim, s.T.Time), s.c(tcyan, timeOf(e, rec, s.T.Estimated)))
+			s.c(dim, s.T.Time), s.c(tcyan, pad(timeOf(e, rec, s.T.Estimated), 6)),
+			s.c(dim, step(m.Efforts, i, s.T.Pts)))
 	}
+}
+
+// step is one effort against the next lower one: "↑ +3.7分 ×1.45". Empty for the lowest.
+func step(es []digest.Effort, i int, pts string) string {
+	if i == 0 {
+		return ""
+	}
+	lo, hi := es[i-1], es[i]
+	if lo.Ability == nil || hi.Ability == nil || lo.Cost == nil || hi.Cost == nil || *lo.Cost <= 0 {
+		return "↑ —"
+	}
+	return fmt.Sprintf("↑ %+.1f%s ×%.2f", *hi.Ability-*lo.Ability, pts, *hi.Cost / *lo.Cost)
 }
 
 func sep(t Text) string {
