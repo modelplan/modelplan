@@ -1,0 +1,25 @@
+name: Bug / 问题
+description: Something in the Skill, CLI or a plugin does not work. 客户端出错。
+labels: [bug]
+body:
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client / 客户端
+      options: [Skill, modelplan CLI, Claude Code plugin, Codex plugin, Website]
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      description: "`modelplan version`, plugin version, OS"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / 发生了什么
+      description: Steps, the command or prompt, and the output. 复现步骤、命令或提问、输出。
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected / 期望结果

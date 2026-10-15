@@ -1,0 +1,14 @@
+name: Idea / 想法
+description: Suggest something that helps choose a model, an effort or a plan. 帮助选模型、档位或套餐的建议。
+labels: [enhancement]
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: The decision / 你想做的决定
+      description: What were you trying to decide, and what was missing? 当时想决定什么、缺了什么？
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea / 建议
