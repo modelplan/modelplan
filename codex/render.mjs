@@ -52,9 +52,9 @@ export function stepUp(es,i,pts) {
 
 export const quotaWords = {
   zh:{title:"你的 Codex 额度（本机读取）",none:"本机没有可读的 Codex 额度",used:"已用",resets:"重置还有",kinds:{five_hour:"5小时",weekly:"每周",monthly:"每月",unknown:"窗口"},pace:{surplus:"富余",on_track:"正常",tight:"偏紧",exhausted:"用完",reset_passed:"已过重置",unknown:"—"},
-    headroom:{spend:"额度富余：重置前用不完，可升档或开 fast",normal:"额度正常：按 ★ 推荐档用",conserve:"额度偏紧：保持 ★ 或降一档",exhausted:"额度已用完：等重置或换用其他套餐",unknown:"额度未知"},stale:"读数较旧",d:"天",h:"时",m:"分"},
+    headroom:{spend:"额度富余：重置前用不完，可升档或开 Fast",normal:"额度正常：按 ★ 推荐档用",conserve:"额度偏紧：保持 ★ 或降一档",exhausted:"额度已用完：等重置或换用其他套餐",unknown:"额度未知"},stale:"读数较旧",d:"天",h:"时",m:"分"},
   en:{title:"Your Codex quota (read on this machine)",none:"No Codex quota readable on this machine",used:"used",resets:"resets in",kinds:{five_hour:"5h",weekly:"week",monthly:"month",unknown:"window"},pace:{surplus:"surplus",on_track:"on track",tight:"tight",exhausted:"exhausted",reset_passed:"reset since",unknown:"—"},
-    headroom:{spend:"Surplus: it resets unused, step up or use fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m"},
+    headroom:{spend:"Surplus: it resets unused, step up or use Fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m"},
 };
 export function duration(min,q) {
   if(min<60)return `${min}${q.m}`;
