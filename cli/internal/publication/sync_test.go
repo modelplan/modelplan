@@ -223,3 +223,57 @@ func TestRealProducerManifestIdentity(t *testing.T) {
 		t.Fatalf("producer identity mismatch: got %s want %s", got, m.PublicationID)
 	}
 }
+
+func TestThinClientAcceptsCompactComponentsAndLazyExtras(t *testing.T) {
+	f := &fakeServer{objects: map[string][]byte{}, hits: map[string]int{}}
+	publish(f, "compact", 70, false)
+	var m manifest
+	if err := json.Unmarshal(f.manifest, &m); err != nil {
+		t.Fatal(err)
+	}
+	for name, r := range m.Components {
+		if name != "client" {
+			r.SchemaVersion = 2
+			r.Bytes = 2500000
+			m.Components[name] = r
+		}
+	}
+	m.Components["display"] = component{2, strings.Repeat("b", 64), 100000}
+	m.Components["plan-value"] = component{2, strings.Repeat("c", 64), 1000000}
+	refs := []byte("{")
+	for i, name := range []string{"methods", "registry", "models", "plans", "rules", "news", "calendar", "client", "plan-value", "display"} {
+		if i > 0 {
+			refs = append(refs, ',')
+		}
+		key, _ := json.Marshal(name)
+		refs = append(refs, key...)
+		refs = append(refs, ':')
+		refs = append(refs, orderedJSON(m.Components[name])...)
+	}
+	refs = append(refs, '}')
+	core := orderedJSON(identityCore{json.RawMessage("1"), json.RawMessage(`"compact"`), json.RawMessage(`{"index":"unified-v03-estimator-0.1.0-internal","recommendation":"balanced-coding-absolute-v4"}`), refs})
+	id := sum(core)[:24]
+	f.manifest = append(core[:len(core)-1], []byte(`,"publicationId":"`+id+`","publishedAt":"2026-10-13T00:00:00Z"}`)...)
+	f.pointer = canonical(map[string]any{"schemaVersion": 1, "publicationId": id, "manifestHash": hashOf(f.manifest)})
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	t.Setenv("MODELPLAN_CACHE", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(srv.URL, st, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Sync(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PublicationID != id {
+		t.Fatalf("wrong publication: %+v", result)
+	}
+	if len(f.hits) != 3 {
+		t.Fatalf("thin client fetched non-client components: %+v", f.hits)
+	}
+}
