@@ -84,11 +84,11 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 
 推动推力杆，看每个原生档位的能力、成本和耗时；打开 ⚡ Fast 或 ⚡⚡ Ultrafast，看套餐额度和耗时怎么变。
 
-<img src="docs/assets/effort-zh.gif" alt="档位控制台：GPT-6 Astra 从 Med 推到 Max，再切 Fast 和 Ultrafast" width="100%">
+<img src="docs/assets/effort-zh.webp" alt="档位控制台：GPT-6 Astra 从 Med 推到 Max，再切 Fast 和 Ultrafast" width="100%">
 
 ### 推荐档下的模型榜单
 
-<img src="docs/assets/hero-zh.jpg" alt="发射场：每个模型都在它的推荐档" width="100%">
+<img src="docs/assets/launch-zh.webp" alt="发射：每个模型按推荐档的能力升到对应高度；拖动可旋转坐标轴" width="100%">
 
 <img src="docs/assets/engine-zh.jpg" alt="选哪台：能力对成本，金色虚线连起值得选的模型" width="100%">
 
