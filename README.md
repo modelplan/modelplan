@@ -84,11 +84,11 @@ Copy [`skills/model-plan`](skills/model-plan/) into `~/.claude/skills/model-plan
 
 Move the throttle and see ability, cost and task time for every native effort; switch on ⚡ Fast or ⚡⚡ Ultrafast to see how plan quota and time change.
 
-<img src="docs/assets/effort-en.gif" alt="Effort console: GPT-6 Astra from Med to Max, then Fast and Ultrafast" width="100%">
+<img src="docs/assets/effort-en.webp" alt="Effort console: GPT-6 Astra from Med to Max, then Fast and Ultrafast" width="100%">
 
 ### A leaderboard at each model's recommended effort
 
-<img src="docs/assets/hero-en.jpg" alt="The launch field: every model at its recommended effort" width="100%">
+<img src="docs/assets/launch-en.webp" alt="Lift-off: every model climbs to its ability at its recommended effort; dragging turns the axes" width="100%">
 
 <img src="docs/assets/engine-en.jpg" alt="Which engine: ability against cost, the gold line joins the models worth picking" width="100%">
 
