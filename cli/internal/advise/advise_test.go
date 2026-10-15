@@ -280,3 +280,17 @@ func TestCodexSurplusMentionsFastClaudeNever(t *testing.T) {
 		t.Fatalf("claude = %+v", es[0])
 	}
 }
+
+func TestSwitchBackOncePerWindow(t *testing.T) {
+	s := Load(t.TempDir())
+	r1, r2 := now.Add(-30*time.Minute), now.Add(-10*time.Minute)
+	s.arm([]Event{
+		{Type: ResetSoonSurplus, Key: "a", Source: "claude-code", Window: "five_hour", At: &r1},
+		{Type: WindowTight, Key: "b", Source: "claude-code", Window: "five_hour", At: &r2},
+		{Type: ResetSoonSurplus, Key: "c", Source: "claude-code", Window: "five_hour", At: &r2},
+	})
+	es := s.switchBack(quota.Report{Accounts: []quota.Account{claudeAt("high", now)}}, fixtureDigest(), now)
+	if len(es) != 1 || !es[0].At.Equal(r2) || es[0].Suggest.Effort != "medium" {
+		t.Fatalf("events = %+v", es)
+	}
+}

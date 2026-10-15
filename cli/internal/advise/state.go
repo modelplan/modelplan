@@ -151,11 +151,27 @@ func (s *State) arm(es []Event) {
 // switchBack: an advised window has reset. Suggest the ★ effort again when the harness is
 // elsewhere, or say the allowance is back after an exhausted window.
 func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Event {
-	var out []Event
+	// One hint per window: a window advised more than once (surplus, then tight) or over
+	// several resets reports only its latest passed reset; exhausted wins at that reset.
+	latest := map[string]Armed{}
+	var order []string
 	for _, a := range s.Armed {
 		if now.Before(a.ResetAt) || now.Sub(a.ResetAt) > switchBackFor {
 			continue
 		}
+		k := strings.Join([]string{a.Source, a.Plan, a.Window}, "|")
+		prev, seen := latest[k]
+		switch {
+		case !seen:
+			order = append(order, k)
+			latest[k] = a
+		case a.ResetAt.After(prev.ResetAt), a.ResetAt.Equal(prev.ResetAt) && a.Type == WindowExhausted:
+			latest[k] = a
+		}
+	}
+	var out []Event
+	for _, k := range order {
+		a := latest[k]
 		var acct *quota.Account
 		for i := range r.Accounts {
 			if r.Accounts[i].Source == a.Source && r.Accounts[i].Plan == a.Plan {
@@ -170,7 +186,7 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 			continue
 		}
 		cfg := current(acct, d)
-		e := Event{Type: SwitchBack, Key: strings.Join([]string{SwitchBack, a.Key}, "|"), Severity: "info", Source: a.Source, Plan: a.Plan, Window: a.Window}
+		e := Event{Type: SwitchBack, Key: strings.Join([]string{SwitchBack, k, a.ResetAt.UTC().Format(time.RFC3339)}, "|"), Severity: "info", Source: a.Source, Plan: a.Plan, Window: a.Window}
 		t := a.ResetAt.UTC()
 		e.At = &t
 		if h := acct.Harness; h != nil {
