@@ -297,13 +297,23 @@ func canonical(v any) []byte {
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
 func verify(m manifest, ob []byte) error {
-	if m.SchemaVersion != 1 || len(m.Components) != 8 || m.Methods["index"] != "unified-v03-estimator-0.1.0-internal" || m.Methods["recommendation"] != "balanced-coding-absolute-v4" {
+	if m.SchemaVersion != 1 || len(m.Components) < 8 || len(m.Components) > 10 || m.Methods["index"] != "unified-v03-estimator-0.1.0-internal" || m.Methods["recommendation"] != "balanced-coding-absolute-v4" {
 		return errors.New("manifest: incompatible graph")
 	}
 	for _, name := range []string{"methods", "registry", "models", "plans", "rules", "news", "calendar", "client"} {
 		r, ok := m.Components[name]
-		if !ok || r.SchemaVersion != 1 || !hashRe.MatchString(r.Hash) || r.Bytes < 2 {
+		if !ok || (r.SchemaVersion != 1 && r.SchemaVersion != 2) || (name == "client" && r.SchemaVersion != 1) || !hashRe.MatchString(r.Hash) || r.Bytes < 2 || r.Bytes > 50000000 {
 			return errors.New("manifest: invalid references")
+		}
+	}
+	for name, r := range m.Components {
+		switch name {
+		case "methods", "registry", "models", "plans", "rules", "news", "calendar", "client", "display", "plan-value":
+		default:
+			return errors.New("manifest: unknown component")
+		}
+		if (r.SchemaVersion != 1 && r.SchemaVersion != 2) || !hashRe.MatchString(r.Hash) || r.Bytes < 2 || r.Bytes > 50000000 {
+			return errors.New("manifest: invalid optional reference")
 		}
 	}
 	if manifestIdentity(m) != m.PublicationID {
