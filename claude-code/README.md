@@ -21,7 +21,7 @@ Model Plan's verified public data plus your own quota inside Claude Code. Read-o
 
 - 档位和 fast 状态来自 Claude Code 本身；★ 是 Model Plan 的推荐档。
 - 额度：Claude Code 只把 5 小时 / 7 天用量传给状态栏（Pro / Max 订阅）。Model Plan 状态栏把这几个数字存进本机缓存，`/modelplan:plan` 和 Skill 才读得到。不上传任何东西。
-- `↑`：这个窗口重置前大概率用不完，升档或开 fast 不浪费。`↓`：按当前速度会提前用完，保持 ★ 或降一档。
+- `↑`：这个窗口重置前大概率用不完，升档不浪费。注意 Claude Code 的 fast 模式扣的是 usage credits（另付费），不占订阅额度，额度富余不是开 fast 的理由。`↓`：按当前速度会提前用完，保持 ★ 或降一档。
 - 状态栏只读本地缓存，从不等网络。
 
 The status line shows the live effort and fast mode Claude Code reports, Model Plan's ★ effort, and your 5-hour / 7-day usage with time to reset. It saves those numbers in the local Model Plan cache so `/modelplan:plan` and the Skill can plan around them. Nothing leaves your machine.

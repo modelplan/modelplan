@@ -39,7 +39,7 @@ python3 '<this skill directory>/scripts/quota.py'
 
 | `headroom` | What it means | What to suggest |
 | --- | --- | --- |
-| `spend` | A window resets soon with ≥30% unused, or is far below pace, and no window is near its limit | Unused allowance is lost at the reset. A step up, the stronger model or fast mode is reasonable for real work before `resetsInMinutes` |
+| `spend` | A window resets soon with ≥30% unused, or is far below pace, and no window is near its limit | Unused allowance is lost at the reset. A step up or the stronger model is reasonable for real work before `resetsInMinutes`; on Codex, Fast too (it draws included usage) |
 | `normal` | On pace | Stay at ★ |
 | `conserve` | The `deciding` window is on pace to run out before it resets | Stay at ★ or one step lower, use the cheaper sibling for routine work, keep the strong model for the hard parts |
 | `exhausted` | A window is used up | Wait for its reset, or use another plan or the API |
@@ -48,7 +48,11 @@ python3 '<this skill directory>/scripts/quota.py'
 - Within one model, quota burn per task scales roughly with the cost multiplier: a ×1.45 step burns about 1.45× as much quota per task. Say it is an estimate. Across different models, vendors weight usage their own way; treat that as unknown.
 - The longer window decides: a five-hour surplus does not justify spending when the weekly window is `conserve`.
 - A reading older than an hour (`stale`) may have moved; say how old it is. `reset_passed` means the window has reset since the reading.
-- Fast mode trades more quota or money for speed. Suggest it only with `spend` headroom or when the user puts time first, and do not invent a multiplier for it.
+- Speed tiers bill differently per harness (official docs, October 2026):
+  - **Codex Fast** (Sol 6.1, Astra, Sol 6, Luna): about 2.5× included usage (2× credits); speed gain stated only as "about 1.5×" for older models. Reasonable with `spend` headroom or when time matters.
+  - **Codex Ultrafast** (Astra, Sol 6.1; Pro $500 and eligible Enterprise/Edu only): 8× included usage (6× credits), up to 8× faster on Astra. Only for urgent work with plenty of allowance.
+  - **Claude Code fast mode** (Opus 5.5, Opus 5, Opus 4.8): about 2× the token price, up to 2.5× faster, billed to **usage credits (money) even when plan allowance is left**, and enabling it mid-conversation re-bills the whole context once. Plan quota headroom is never a reason for it; suggest it only when the user puts time first and accepts the extra spend.
+  - Without published data for a model, say its speed tier is unknown; never invent a multiplier.
 
 ## 4. Public timing (when it matters)
 

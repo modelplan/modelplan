@@ -10,7 +10,7 @@ English · [简体中文](README.zh-CN.md)
 - **★ Effort recommendation.** Within one model, Low to Max changes not just the score but cost and time, often by several times. Every model gets its best-value ★ effort, and you see what one more step up buys and costs.
 - **A leaderboard at the recommended effort.** Most leaderboards compare each model's top setting. Model Plan ranks every model at its own ★ effort, the setup you would actually run. A 3D launch field and the Which Engine chart show ability, cost and time together.
 - **Plan recommendations** *(in progress).* Coding plans are compared by maker, model and price band: price, quota and which models and efforts each plan covers. Off-peak hours and quota resets are on a week calendar. Exact plan-model-effort coverage is still being completed.
-- **Plans around your own quota.** Reads your Claude Code and Codex 5-hour / weekly usage and reset times on your machine (never uploaded). With plenty left just before a reset it says stepping up or fast mode is cheap; when a window is tight it says stay at ★ or step down.
+- **Plans around your own quota.** Reads your Claude Code and Codex 5-hour / weekly usage and reset times on your machine (never uploaded). With plenty left just before a reset it says stepping up (or Codex Fast) is cheap; when a window is tight it says stay at ★ or step down.
 - **In your tools.** The same answers are inside Claude Code, Codex and the terminal through this repository's plugins, Skill and CLI.
 
 This repository holds Model Plan's open-source clients and the [methodology](METHODOLOGY.md): how ability, cost, time and the ★ recommended effort are worked out, and the sources behind them.
