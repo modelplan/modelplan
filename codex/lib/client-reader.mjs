@@ -2095,6 +2095,7 @@ var schemas = {
   rules: z11.object({
     version: text6,
     clientMultipliers: clientMultiplierPackSchema.optional(),
+    clientWindowDays: z11.number().int().min(1).max(14).optional(),
     speedTiers: z11.array(speedTierSchema).optional(),
     rules: z11.array(
       z11.object({
