@@ -10,7 +10,7 @@
 - **★ 档位推荐：** 同一个模型从 Low 到 Max，差的不只是分数，成本和时间往往差好几倍。我们给每个模型算出最值的 ★ 推荐档，并告诉你再往上推一档能多拿几分、要多花几倍。
 - **推荐档下的模型榜单：** 别家榜单通常只比各模型的最高档。Model Plan 让每个模型都按自己的推荐档上场，比的是你实际会用的配置；3D 发射场和「选哪台」图把能力、成本、耗时放在一起看。
 - **套餐推荐**（完善中）：Coding 套餐按厂商、模型、价位比较，看价格、额度，以及每个套餐能用哪些模型和档位；优惠时段和额度重置放在周历上。精确的套餐—模型—档位对应还在补全。
-- **按你的剩余额度规划：** 读取本机 Claude Code 和 Codex 的 5 小时 / 每周额度和重置时间（只在本机读，不上传）。快重置还剩很多时提示可以升档（Codex 还可以开 Fast），额度偏紧时提示保持 ★ 或降档。
+- **按你的剩余额度规划：** 读取本机 Claude Code 和 Codex 的 5 小时 / 每周额度和重置时间（只在本机读，不上传）。快重置还剩很多时提示可以升档（Codex 还可以开 Fast），额度偏紧时提示保持 ★ 或降档。装了 CLI 后，插件还会主动提醒，同一件事只说一次：快重置还有余量、额度偏紧或用完、重置后「换回 ★」、你的套餐快进入高峰时段、重置卡快过期、Codex 官方刚重置。
 - **在你的工具里：** 同样的答案，通过本仓库的插件、Skill 和命令行，直接出现在 Claude Code、Codex 和终端里。
 
 本仓库是 Model Plan 的开源客户端，也公开了[方法与来源](METHODOLOGY.zh-CN.md)：能力、成本、耗时和 ★ 推荐档怎么算，以及背后的数据源。
@@ -18,9 +18,9 @@
 | | 目录 | 说明 |
 | --- | --- | --- |
 | **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角。Claude Code、Codex 和任何支持 Skill 的 Agent 都能用：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划。只需要 shell 和匿名 HTTPS |
-| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill + `/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及显示实时档位和 5 小时 / 7 天额度的状态栏 |
-| Codex 插件 | [`codex/`](codex/) | Skill + GPT 档位看板：能力／成本／耗时曲线、你的 Codex 额度和重置倒计时、公开重置公告 |
-| `modelplan` 命令行 | [`cli/`](cli/) | 单个可执行文件，只读、匿名；`modelplan quota` 汇总本机额度，状态栏和插件命令用它取数 |
+| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill + `/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，显示实时档位、5 小时 / 7 天额度和当前提示（`↑High ×1.37`、`↺★Med`）的状态栏，以及把新提示转告 Claude 一次的提问钩子 |
+| Codex 插件 | [`codex/`](codex/) | Skill + GPT 档位看板：能力／成本／耗时曲线、你的 Codex 额度、重置倒计时和提示、公开重置公告；提问钩子把新提示转告 Codex 一次 |
+| `modelplan` 命令行 | [`cli/`](cli/) | 单个可执行文件，只读、匿名；`modelplan quota` 汇总本机额度，`modelplan advise` 判断现在值得提醒什么并记住提过什么；状态栏、钩子和插件命令都用它们 |
 
 所有客户端只读取 Model Plan 已核验的公开数据，以及各工具本来就写在你电脑上的额度记录：不需要账号，不收集、不上传任何个人数据，也不会替你切换模型或档位。
 

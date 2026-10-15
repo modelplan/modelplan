@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { createReader, filterDashboard } from "./data.mjs";
 import { renderLineup, renderEffort, renderQuota } from "./render.mjs";
-import { readQuota } from "./quota.mjs";
+import { readAdvice, readQuota } from "./quota.mjs";
 
 const version = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 const UI_URI = "ui://modelplans/model-dashboard.html";
@@ -29,15 +29,15 @@ const inputSchema = { modelIds: z.array(z.string().max(180)).max(32).optional(),
   lang: z.enum(["zh", "en"]).optional(), view: z.enum(["lineup", "effort"]).optional(), modelId: z.string().max(180).optional() };
 async function result(args) {
   try {
-    const [published, quota] = await Promise.all([reader({ refresh: args.refresh }), readQuota()]);
+    const [published, quota, advice] = await Promise.all([reader({ refresh: args.refresh }), readQuota(), readAdvice()]);
     const data = filterDashboard(published, args.modelIds);
     const model = args.modelId ? data.models.find(m => m.id === args.modelId) : null;
     if (args.modelId && !model) throw Error("unknown_model_id");
     if (args.view === "effort" && !model) throw Error("effort_view_requires_modelId");
     return {
-      structuredContent: { ...data, quota, focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
+      structuredContent: { ...data, quota, advice, focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
       content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang) : renderLineup(data, args.lang) },
-        { type: "text", text: renderQuota(quota, args.lang) },
+        { type: "text", text: renderQuota(quota, args.lang, advice) },
         { type: "text", text: `Publication ${data.publicationId}${data.stale ? " (last-good: " + data.error + ")" : ""}.\n` +
           "Codex public reset notices · not your own meter\n" + (data.resetFeed.events.slice(0,3).map(e =>
             `${e.publishedAt} · ${e.scope ?? "scope unknown"} · ${e.status} · ${e.url}`).join("\n") || data.resetFeed.status) }],
@@ -85,8 +85,8 @@ if (!process.argv.includes("--http")) {
       }
       if (req.method !== "GET") { res.writeHead(405); return res.end(); }
       if (url.pathname === "/api/dashboard") {
-        const [data, quota] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota()]);
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota }));
+        const [data, quota, advice] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice()]);
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice }));
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }
       if (["/", "/dashboard"].includes(url.pathname)) {

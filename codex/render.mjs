@@ -61,12 +61,13 @@ export function duration(min,q) {
   if(min<48*60)return min%60?`${Math.floor(min/60)}${q.h}${min%60}${q.m}`:`${min/60}${q.h}`;
   const d=Math.floor(min/1440),h=Math.floor((min%1440)/60);return h?`${d}${q.d}${h}${q.h}`:`${d}${q.d}`;
 }
-export function renderQuota(quota,lang="zh") {
+export function renderQuota(quota,lang="zh",advice=null) {
   const q=quotaWords[lang],a=quota?.account;
   if(!a)return `${q.none}${quota?.reason?" ("+quota.reason+")":""}.\n`;
   const head=[q.title,a.plan,a.harness?.model,a.harness?.effort].filter(Boolean).join(" · ")+(a.stale?` · ${q.stale}`:"");
   const lines=a.windows.map(w=>{const kind=q.kinds[w.kind]??w.kind,used=typeof w.usedPercent==="number"?`${Math.round(w.usedPercent)}% ${q.used}`:"—";
     const reset=typeof w.resetsInMinutes==="number"?` · ${q.resets} ${duration(w.resetsInMinutes,q)}`:"";
     return `  ${kind}${w.limit?" "+w.limit:""} ${used}${reset} · ${q.pace[w.pace]??w.pace}`;});
-  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`].join("\n")+"\n";
+  const hints=(advice?.events??[]).map(e=>`  ${e.severity==="warn"?"!":"↑"} ${e.text[lang]??e.text.en}`);
+  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints].join("\n")+"\n";
 }

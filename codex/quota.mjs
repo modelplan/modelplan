@@ -15,6 +15,21 @@ export function pickCodex(report) {
   return { status: account ? 'ok' : source.status, reason: source.reason ?? null, evaluatedAt: report.evaluatedAt, account, note: report.note };
 }
 
+// Proactive hints (reset soon with allowance left, tight, switch back after a reset, public
+// resets) come only from the CLI, which remembers what it advised. Without it: no hints.
+export function pickAdvice(out) {
+  if (out?.schemaVersion !== 1 || !Array.isArray(out.events)) throw Error('advice_invalid');
+  const text = v => typeof v === 'string' ? v.slice(0, 300) : null;
+  const events = out.events.filter(e => e?.source === 'codex' && text(e.text?.zh) && text(e.text?.en)).slice(0, 5)
+    .map(e => ({ type: String(e.type), severity: e.severity === 'warn' ? 'warn' : 'info', text: { zh: text(e.text.zh), en: text(e.text.en) } }));
+  return { status: 'ok', events };
+}
+
+export async function readAdvice({ exec = run } = {}) {
+  try { return pickAdvice(JSON.parse(await exec('modelplan', ['advise', '--json', '--source', 'codex']))); }
+  catch { return { status: 'unavailable', events: [] }; }
+}
+
 export async function readQuota({ exec = run } = {}) {
   for (const [cmd, args] of [['modelplan', ['quota', '--json']], ['python3', [READER]], ['python', [READER]]]) {
     try { return pickCodex(JSON.parse(await exec(cmd, args))); } catch { /* next reader */ }

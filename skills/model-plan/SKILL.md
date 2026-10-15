@@ -16,6 +16,7 @@ modelplan sync                                   # once per answer; later reads 
 modelplan effort '<model>' --json --offline      # one model's effort ladder
 modelplan lineup --dev <maker> --json --offline  # a maker's models at their ★ effort
 modelplan quota --json                           # the user's own windows, read locally
+modelplan advise --json                          # what is worth saying about them now (v0.4+)
 ```
 
 Without it:
@@ -45,6 +46,7 @@ python3 '<this skill directory>/scripts/quota.py'
 | `exhausted` | A window is used up | Wait for its reset, or use another plan or the API |
 | `unknown` | No usable reading | Give public advice and say how to enable readings (see reference) |
 
+- With the CLI, start from `modelplan advise --json`: it already matched the harness's current model and effort, picked the next effort that scores higher, and remembers windows it advised on so it can say "switch back to ★" after their reset.
 - Within one model, quota burn per task scales roughly with the cost multiplier: a ×1.45 step burns about 1.45× as much quota per task. Say it is an estimate. Across different models, vendors weight usage their own way; treat that as unknown.
 - The longer window decides: a five-hour surplus does not justify spending when the weekly window is `conserve`.
 - A reading older than an hour (`stale`) may have moved; say how old it is. `reset_passed` means the window has reset since the reading.

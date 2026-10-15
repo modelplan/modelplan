@@ -15,7 +15,10 @@ modelplan lineup --dev openai --json --offline
 modelplan models --dev openai --json --offline
 modelplan effort '<exact model id>' --json --offline
 modelplan quota --json            # v0.3+: local quota report, see "Personal state"
+modelplan advise --json           # v0.4+: current hints derived from quota + publication
 ```
+
+`advise` events (most urgent first): `window_exhausted`, `window_tight`, `reset_passed_switch_back`, `reset_soon_with_surplus`, `peak_starts_soon`, `offpeak_starts_soon`, `cards_expiring`, `public_reset_announced`. Each has `source`, `window`, `at`/`inMinutes`, `remainingPercent`, the harness `model`/`effort`, and `suggest` = `{action, model, effort, label, recommended, abilityDelta, costRatio}` against the current configuration (`step_up`, `stronger_model`, `step_down`, `switch_back`, `wait`, `use_card`, `none`), plus `text.zh`/`text.en`. Use them as the starting point for quota questions and relay the arithmetic as given. `reset_passed_switch_back` exists only because the CLI remembers windows it advised on; the Skill alone cannot know it.
 
 Without `--json`, `modelplan effort` prints the ladder with both views: each effort against ★ and against the step below (`↑ +3.7分 ×1.45`).
 
