@@ -78,8 +78,154 @@ var clientMultiplierPackSchema = z.object({
   "invalid_multiplier_horizon"
 );
 
-// shared/client-digest.ts
+// shared/speed-tiers.ts
 import { z as z2 } from "zod";
+
+// data/reviewed-speed-tiers.json
+var reviewed_speed_tiers_default = {
+  schemaVersion: 1,
+  tiers: [
+    {
+      id: "codex-fast",
+      harness: "codex",
+      tier: "fast",
+      label: "Fast",
+      toggle: '/fast; config.toml: service_tier = "fast" with [features].fast_mode = true',
+      eligibility: {
+        plans: ["chatgpt-sign-in"],
+        note: "ChatGPT desktop app, Codex CLI and IDE extension when signed in with ChatGPT, for supported models where available. With an API key Codex uses API token pricing and these multipliers do not apply."
+      },
+      models: [
+        { vendorModelId: "gpt-6.1-sol", speed: { ratio: null, qualifier: "unstated" } },
+        { vendorModelId: "gpt-6-astra", speed: { ratio: null, qualifier: "unstated" } },
+        { vendorModelId: "gpt-6-sol", speed: { ratio: null, qualifier: "unstated" } },
+        { vendorModelId: "gpt-6-luna", speed: { ratio: null, qualifier: "unstated" } }
+      ],
+      billing: [
+        { account: "subscription", billsTo: "plan-quota", basis: "included-usage", ratio: 2.5 },
+        { account: "credits", billsTo: "credits", basis: "credit-rate", ratio: 2 }
+      ],
+      caveats: ["speed-stated-for-older-model-only"],
+      sources: ["https://learn.chatgpt.com/docs/agent-configuration/speed"],
+      reviewedAt: "2026-10-15T06:30:00Z",
+      reviewNote: 'Official page: supported models "including" the four listed; 2.5x included subscription limits; 2x purchased credits and Enterprise pay-as-you-go. The only speed figure (1.5x) is stated for GPT-5.6, which is not in the list, so every listed model keeps an unstated speed.'
+    },
+    {
+      id: "codex-ultrafast",
+      harness: "codex",
+      tier: "ultrafast",
+      label: "Ultrafast",
+      toggle: "Codex speed selector",
+      eligibility: {
+        plans: ["chatgpt-pro-500", "enterprise-eligible", "edu-eligible"],
+        note: "Pro $500 and eligible Enterprise (credit or USD usage-based agreements; off by default, enabled by workspace owners) and Edu (credits) plans. Other self-serve plans have no access, even with purchased credits. On Pro $500 it uses included usage first, then credits."
+      },
+      models: [
+        { vendorModelId: "gpt-6-astra", speed: { ratio: 8, qualifier: "up-to" } },
+        { vendorModelId: "gpt-6.1-sol", speed: { ratio: null, qualifier: "unstated" } }
+      ],
+      billing: [
+        { account: "subscription", billsTo: "plan-quota", basis: "included-usage", ratio: 8 },
+        { account: "credits", billsTo: "credits", basis: "credit-rate", ratio: 6 }
+      ],
+      caveats: ["restricted-plans", "enterprise-off-by-default"],
+      sources: ["https://learn.chatgpt.com/docs/agent-configuration/speed"],
+      reviewedAt: "2026-10-15T06:30:00Z",
+      reviewNote: "Official page: GPT-6 Astra Ultrafast generates tokens up to 8x faster than Astra Standard in Codex (token generation, not task time); no figure for GPT-6.1 Sol. 8x included subscription limits; 6x purchased credits and Enterprise pay-as-you-go. Related ceiling claim: reviewed-speed-claims openai-astra-ultrafast-ceiling-2026-09-29."
+    },
+    {
+      id: "claude-code-fast",
+      harness: "claude-code",
+      tier: "fast",
+      label: "Fast mode",
+      toggle: '/fast; settings: "fastMode": true',
+      eligibility: {
+        plans: ["claude-subscription-usage-credits", "claude-console"],
+        note: "Pro, Max, Team and Enterprise through usage credits only (usage credits must be on; Team and Enterprise need an Owner to enable fast mode), and provisioned Claude Console organizations. Not on Amazon Bedrock, Google Cloud, Microsoft Foundry or Claude Platform on AWS. Research preview."
+      },
+      models: [
+        { vendorModelId: "claude-opus-5-5", speed: { ratio: 2.5, qualifier: "up-to" } },
+        { vendorModelId: "claude-opus-5", speed: { ratio: 2.5, qualifier: "up-to" } },
+        { vendorModelId: "claude-opus-4-8", speed: { ratio: 2.5, qualifier: "up-to" } }
+      ],
+      billing: [
+        { account: "subscription", billsTo: "usage-credits", basis: "token-price", ratio: 2 },
+        { account: "api", billsTo: "api", basis: "token-price", ratio: 2 }
+      ],
+      caveats: ["not-plan-quota", "rebills-context-on-enable", "research-preview", "separate-rate-limit"],
+      sources: [
+        "https://code.claude.com/docs/en/fast-mode",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ],
+      reviewedAt: "2026-10-15T06:30:00Z",
+      reviewNote: "Fast mode $8/$40 per MTok on Opus 5.5 against standard $4/$20, and $10/$50 on Opus 5 and Opus 4.8 against $5/$25: 2x in every case. Up to 2.5x faster, same model. Subscriptions pay from usage credits even with plan allowance left. The first enable in a conversation bills the whole context at the uncached fast input price once."
+    }
+  ]
+};
+
+// shared/speed-tiers.ts
+var text2 = z2.string().min(1);
+var speedTierSchema = z2.object({
+  id: text2,
+  harness: z2.enum(["codex", "claude-code"]),
+  tier: z2.enum(["fast", "ultrafast"]),
+  label: text2,
+  toggle: text2,
+  eligibility: z2.object({ plans: z2.array(text2).min(1), note: text2 }).strict(),
+  models: z2.array(
+    z2.object({
+      vendorModelId: text2,
+      speed: z2.object({
+        ratio: z2.number().finite().gt(1).nullable(),
+        qualifier: z2.enum(["up-to", "approximate", "unstated"])
+      }).strict().refine(
+        (s) => s.ratio === null === (s.qualifier === "unstated"),
+        "speed_ratio_qualifier_mismatch"
+      )
+    }).strict()
+  ).min(1),
+  billing: z2.array(
+    z2.object({
+      account: z2.enum(["subscription", "credits", "api"]),
+      billsTo: z2.enum(["plan-quota", "usage-credits", "credits", "api"]),
+      basis: z2.enum(["included-usage", "credit-rate", "token-price"]),
+      ratio: z2.number().finite().gt(1)
+    }).strict()
+  ).min(1),
+  caveats: z2.array(
+    z2.enum([
+      "not-plan-quota",
+      "rebills-context-on-enable",
+      "research-preview",
+      "separate-rate-limit",
+      "restricted-plans",
+      "enterprise-off-by-default",
+      "speed-stated-for-older-model-only"
+    ])
+  ),
+  sources: z2.array(z2.url()).min(1),
+  reviewedAt: z2.iso.datetime({ offset: true })
+}).strict();
+var reviewedSchema = z2.object({
+  schemaVersion: z2.literal(1),
+  tiers: z2.array(speedTierSchema.safeExtend({ reviewNote: text2 }))
+}).strict().refine(
+  (v) => new Set(v.tiers.map((t) => t.id)).size === v.tiers.length,
+  "duplicate_speed_tier"
+);
+var REVIEWED_SPEED_TIERS = reviewedSchema.parse(reviewed_speed_tiers_default).tiers.map(({ reviewNote: _note, ...tier }) => tier);
+var clientSpeedTierSchema = speedTierSchema.safeExtend({
+  models: z2.array(
+    z2.object({
+      vendorModelId: text2,
+      modelId: text2.nullable(),
+      speed: speedTierSchema.shape.models.element.shape.speed
+    }).strict()
+  ).min(1)
+});
+
+// shared/client-digest.ts
+import { z as z3 } from "zod";
 
 // data/client-harness-aliases.json
 var client_harness_aliases_default = {
@@ -440,13 +586,13 @@ var LINEUP_TIE = 1;
 
 // shared/client-digest.ts
 var CLIENT_RAW_LIMIT = 15e4;
-var text2 = z2.string().min(1);
-var scalar = z2.number().finite();
+var text3 = z3.string().min(1);
+var scalar = z3.number().finite();
 var nullable = scalar.nullable();
-var date = z2.string().refine((v) => Number.isFinite(Date.parse(v)));
-var ids2 = z2.array(text2);
-var tags = z2.array(
-  z2.enum([
+var date = z3.string().refine((v) => Number.isFinite(Date.parse(v)));
+var ids2 = z3.array(text3);
+var tags = z3.array(
+  z3.enum([
     "cheapest",
     "strongest",
     "best_value",
@@ -454,148 +600,158 @@ var tags = z2.array(
     "dominated"
   ])
 );
-var clientAliasRegistrySchema = z2.object({
-  revision: text2,
-  checkedAt: text2,
-  records: z2.array(
-    z2.object({
-      modelId: text2,
-      sourceModelId: text2,
-      harnessIds: z2.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
-      sourceUrls: z2.array(z2.url()),
-      qualification: text2,
-      requiredEndpoints: z2.record(z2.string(), z2.url())
+var clientAliasRegistrySchema = z3.object({
+  revision: text3,
+  checkedAt: text3,
+  records: z3.array(
+    z3.object({
+      modelId: text3,
+      sourceModelId: text3,
+      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      sourceUrls: z3.array(z3.url()),
+      qualification: text3,
+      requiredEndpoints: z3.record(z3.string(), z3.url())
     }).strict()
   )
 }).strict();
 var REVIEWED_CLIENT_ALIASES = clientAliasRegistrySchema.parse(client_harness_aliases_default);
-var member = z2.object({
-  id: text2,
+var member = z3.object({
+  id: text3,
   ability: scalar.optional(),
   cost: scalar.positive().optional(),
   costRelative: scalar.positive().optional(),
-  status: z2.literal("incomplete").optional(),
+  status: z3.literal("incomplete").optional(),
   tags,
-  dominatedBy: z2.object({ id: text2, kind: z2.enum(["equivalent", "weaker"]) }).strict().nullable()
+  dominatedBy: z3.object({ id: text3, kind: z3.enum(["equivalent", "weaker"]) }).strict().nullable()
 }).strict();
-var clientDigestSchema = z2.object({
-  projectionVersion: z2.literal("client-v1.1").optional(),
-  multipliers: z2.array(clientMultiplierSchema).optional(),
-  multiplierHorizon: z2.object({
+var clientDigestSchema = z3.object({
+  // Readers accept later client-v1.x projections: they only add top-level fields, which
+  // `.loose()` below keeps. The producer is held exact by the publication replay check.
+  projectionVersion: z3.string().regex(/^client-v1\.[1-9]\d*$/).optional(),
+  multipliers: z3.array(clientMultiplierSchema).optional(),
+  // client-v1.2 (#347): Fast / Ultrafast and their billing multipliers per harness.
+  speedTiers: z3.array(clientSpeedTierSchema).optional(),
+  multiplierHorizon: z3.object({
     from: date,
     to: date,
-    selection: z2.literal("highest-priority-no-stacking")
+    selection: z3.literal("highest-priority-no-stacking")
   }).strict().optional(),
-  units: z2.object({
-    ability: z2.literal("websiteAbility"),
-    cost: z2.literal("usdPerReferenceTask"),
-    time: z2.literal("taskTimeCrossModel")
+  units: z3.object({
+    ability: z3.literal("websiteAbility"),
+    cost: z3.literal("usdPerReferenceTask"),
+    time: z3.literal("taskTimeCrossModel")
   }).strict(),
   builtAt: date,
-  aliasRevision: text2,
-  developers: z2.array(
-    z2.object({ id: text2, name: text2, color: text2, region: text2.nullable() }).strict()
+  aliasRevision: text3,
+  developers: z3.array(
+    z3.object({ id: text3, name: text3, color: text3, region: text3.nullable() }).strict()
   ),
-  models: z2.array(
-    z2.object({
-      id: text2,
-      name: text2,
-      developerId: text2,
-      current: z2.boolean(),
-      recommended: text2.nullable(),
+  models: z3.array(
+    z3.object({
+      id: text3,
+      name: text3,
+      developerId: text3,
+      current: z3.boolean(),
+      recommended: text3.nullable(),
       // ADR 0033; optional so digests published before it still validate.
-      recommendationBasis: z2.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
-      harnessIds: z2.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
-      harnessEvidence: z2.object({
-        checkedAt: text2,
-        sourceUrls: z2.array(z2.url()),
-        qualification: text2,
-        requiredEndpoints: z2.record(z2.string(), z2.url())
+      recommendationBasis: z3.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
+      harnessIds: z3.object({ api: ids2, "claude-code": ids2, codex: ids2 }).strict(),
+      harnessEvidence: z3.object({
+        checkedAt: text3,
+        sourceUrls: z3.array(z3.url()),
+        qualification: text3,
+        requiredEndpoints: z3.record(z3.string(), z3.url())
       }).strict().nullable(),
-      efforts: z2.array(
-        z2.object({
-          effort: text2,
-          label: text2,
-          available: z2.boolean(),
+      efforts: z3.array(
+        z3.object({
+          effort: text3,
+          label: text3,
+          available: z3.boolean(),
           ability: nullable,
-          abilityBasis: z2.enum(["abilityWithinModel", "capability"]),
+          abilityBasis: z3.enum(["abilityWithinModel", "capability"]),
           cost: scalar.nonnegative().nullable(),
-          costBasisId: text2.nullable(),
+          costBasisId: text3.nullable(),
           time: scalar.nonnegative().nullable(),
-          timeEstimated: z2.boolean(),
-          timeBasis: z2.object({
-            source: text2,
-            cohort: text2,
-            boundary: text2,
+          timeEstimated: z3.boolean(),
+          timeBasis: z3.object({
+            source: text3,
+            cohort: text3,
+            boundary: text3,
             referenceSeconds: scalar.positive()
           }).strict().nullable()
         }).strict()
       )
     }).strict()
   ),
-  lineups: z2.array(
-    z2.object({
-      developerId: text2,
-      costBasisId: text2,
-      method: z2.literal(LINEUP_METHOD),
-      tie: z2.literal(LINEUP_TIE),
-      baseline: text2,
+  lineups: z3.array(
+    z3.object({
+      developerId: text3,
+      costBasisId: text3,
+      method: z3.literal(LINEUP_METHOD),
+      tie: z3.literal(LINEUP_TIE),
+      baseline: text3,
       frontier: ids2,
-      steps: z2.array(
-        z2.object({
-          from: text2,
-          to: text2,
+      steps: z3.array(
+        z3.object({
+          from: text3,
+          to: text3,
           abilityDelta: scalar,
           costRatio: scalar.positive()
         }).strict()
       ),
-      members: z2.array(member)
+      members: z3.array(member)
     }).strict()
   ),
-  resets: z2.array(
-    z2.object({
-      id: text2,
-      provider: text2,
-      eventType: z2.enum([
+  resets: z3.array(
+    z3.object({
+      id: text3,
+      provider: text3,
+      eventType: z3.enum([
         "reset_credit_issued",
         "direct_reset_announced",
         "direct_reset_reported_complete"
       ]).optional(),
-      schedule: z2.object({
-        precision: z2.enum(["window", "date", "approximate", "deadline"]),
+      schedule: z3.object({
+        precision: z3.enum(["window", "date", "approximate", "deadline"]),
         from: date,
         through: date,
-        label: z2.string()
+        label: z3.string()
       }).strict().nullable().optional(),
-      observationUrl: z2.url().optional(),
-      scope: text2.nullable(),
-      status: text2,
+      observationUrl: z3.url().optional(),
+      scope: text3.nullable(),
+      status: text3,
       at: date.nullable(),
-      precision: text2,
+      precision: text3,
       publishedAt: date,
-      url: z2.url()
+      url: z3.url()
     }).strict()
   ),
-  windows: z2.array(
-    z2.object({
-      id: text2,
-      provider: text2,
-      title: z2.object({ zh: text2, en: text2 }).strict(),
+  windows: z3.array(
+    z3.object({
+      id: text3,
+      provider: text3,
+      title: z3.object({ zh: text3, en: text3 }).strict(),
       startsAt: date,
       endsAt: date,
-      status: text2,
-      eligibility: text2,
-      url: z2.url()
+      status: text3,
+      eligibility: text3,
+      url: z3.url()
     }).strict()
   )
-}).strict().superRefine((d, ctx) => {
+}).loose().superRefine((d, ctx) => {
   const fail = (message) => ctx.addIssue({ code: "custom", message });
   const unique = (items) => new Set(items).size === items.length;
   if (!unique(d.models.map((m) => m.id)) || !unique(d.developers.map((m) => m.id)) || !unique(d.lineups.map((l) => l.developerId)))
     fail("duplicate_client_identity");
   if (d.projectionVersion !== void 0 !== (d.multipliers !== void 0) || d.projectionVersion !== void 0 !== (d.multiplierHorizon !== void 0))
     fail("incomplete_multiplier_projection");
+  if (d.projectionVersion === "client-v1.2" && d.speedTiers === void 0 || d.speedTiers !== void 0 && (d.projectionVersion === void 0 || d.projectionVersion === "client-v1.1"))
+    fail("incomplete_speed_tier_projection");
   const models = new Map(d.models.map((m) => [m.id, m]));
+  for (const t of d.speedTiers ?? [])
+    for (const m of t.models)
+      if (m.modelId !== null && !models.get(m.modelId)?.harnessIds[t.harness].includes(m.vendorModelId))
+        fail("invalid_speed_tier_model");
   for (const m of d.models) {
     if (!d.developers.some((v) => v.id === m.developerId) || !unique(m.efforts.map((e) => e.effort)) || m.recommended !== null && !m.efforts.some((e) => e.effort === m.recommended))
       fail("invalid_client_configuration");
@@ -617,7 +773,7 @@ var clientDigestSchema = z2.object({
 });
 
 // shared/effort-reference.ts
-import { z as z3 } from "zod";
+import { z as z4 } from "zod";
 var EFFORT_REFERENCE_POLICY = Object.freeze({
   id: "bughunt-effort-reference-v1",
   version: "2026-10-13.1",
@@ -628,44 +784,44 @@ var EFFORT_REFERENCE_POLICY = Object.freeze({
   defaultRecommendationChanged: false,
   automaticRoutingEligible: false
 });
-var effortReferenceSchema = z3.object({
-  policyId: z3.literal("bughunt-effort-reference-v1"),
-  policyVersion: z3.string(),
-  reviewRevision: z3.string(),
-  reviewedSourceCommit: z3.string().regex(/^[a-f0-9]{40}$/),
-  source: z3.literal("bughunt"),
-  scope: z3.literal("debugging-benchmark-only"),
-  scoreBasis: z3.literal("fraction-of-best-observed-in-cohort"),
-  costBasis: z3.literal("multiple-of-lowest-complete-run-cost-in-cohort"),
-  status: z3.enum(["provisional", "unavailable", "review-required"]),
-  effort: z3.string().nullable(),
-  nativeEffortSupport: z3.literal("not-established-by-reference"),
-  defaultRecommendationChanged: z3.literal(false),
-  automaticRoutingEligible: z3.literal(false),
-  cohortId: z3.string(),
-  sourceModel: z3.string(),
-  harness: z3.string(),
-  costKind: z3.enum(["bill", "list"]),
-  comparability: z3.enum(["documented", "limited"]),
-  sourceUrl: z3.url(),
-  snapshotId: z3.string().nullable(),
-  sourceContentHash: z3.string().regex(/^[a-f0-9]{64}$/).nullable(),
-  observedAt: z3.iso.datetime({ offset: true }).nullable(),
-  checkedAt: z3.iso.datetime({ offset: true }).nullable(),
-  qualityFloorFraction: z3.number().finite().min(0).max(1).nullable(),
-  rows: z3.array(
-    z3.object({
-      recordId: z3.string(),
-      effort: z3.string(),
-      benchmarkScoreFraction: z3.number().finite().min(0).max(1),
-      costMultiplier: z3.number().finite().min(1),
-      repetitions: z3.number().int().positive(),
-      effortEvidence: z3.string(),
-      eligible: z3.boolean()
+var effortReferenceSchema = z4.object({
+  policyId: z4.literal("bughunt-effort-reference-v1"),
+  policyVersion: z4.string(),
+  reviewRevision: z4.string(),
+  reviewedSourceCommit: z4.string().regex(/^[a-f0-9]{40}$/),
+  source: z4.literal("bughunt"),
+  scope: z4.literal("debugging-benchmark-only"),
+  scoreBasis: z4.literal("fraction-of-best-observed-in-cohort"),
+  costBasis: z4.literal("multiple-of-lowest-complete-run-cost-in-cohort"),
+  status: z4.enum(["provisional", "unavailable", "review-required"]),
+  effort: z4.string().nullable(),
+  nativeEffortSupport: z4.literal("not-established-by-reference"),
+  defaultRecommendationChanged: z4.literal(false),
+  automaticRoutingEligible: z4.literal(false),
+  cohortId: z4.string(),
+  sourceModel: z4.string(),
+  harness: z4.string(),
+  costKind: z4.enum(["bill", "list"]),
+  comparability: z4.enum(["documented", "limited"]),
+  sourceUrl: z4.url(),
+  snapshotId: z4.string().nullable(),
+  sourceContentHash: z4.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  observedAt: z4.iso.datetime({ offset: true }).nullable(),
+  checkedAt: z4.iso.datetime({ offset: true }).nullable(),
+  qualityFloorFraction: z4.number().finite().min(0).max(1).nullable(),
+  rows: z4.array(
+    z4.object({
+      recordId: z4.string(),
+      effort: z4.string(),
+      benchmarkScoreFraction: z4.number().finite().min(0).max(1),
+      costMultiplier: z4.number().finite().min(1),
+      repetitions: z4.number().int().positive(),
+      effortEvidence: z4.string(),
+      eligible: z4.boolean()
     }).strict()
   ).max(10),
-  limitations: z3.array(z3.string()).max(24),
-  reason: z3.string()
+  limitations: z4.array(z4.string()).max(24),
+  reason: z4.string()
 }).strict().superRefine((value, ctx) => {
   if (value.status === "provisional" && (!value.snapshotId || !value.sourceContentHash || !value.observedAt || !value.checkedAt || !value.effort || value.rows.length < 2 || !value.rows.some((r) => r.effort === value.effort && r.eligible)))
     ctx.addIssue({
@@ -721,7 +877,7 @@ function assertPublicOnly(value) {
 }
 
 // shared/reference-expense-usd.ts
-import { z as z4 } from "zod";
+import { z as z5 } from "zod";
 
 // data/reference-expense-usd.json
 var reference_expense_usd_default = {
@@ -746,50 +902,50 @@ var reference_expense_usd_default = {
 };
 
 // shared/reference-expense-usd.ts
-var positive = z4.number().finite().positive();
-var date2 = z4.iso.datetime({ offset: true });
-var referenceExpenseWorkloadSchema = z4.object({
-  id: z4.literal(reference_expense_usd_default.id),
-  sourceId: z4.literal("aa-agent"),
-  sourceUrl: z4.url(),
-  protocolVersion: z4.literal("1.5"),
-  currency: z4.literal("USD"),
-  referenceCostUsd: z4.literal(reference_expense_usd_default.referenceCostUsd),
-  frozenAt: z4.literal(reference_expense_usd_default.frozenAt),
-  statistic: z4.string().min(1),
+var positive = z5.number().finite().positive();
+var date2 = z5.iso.datetime({ offset: true });
+var referenceExpenseWorkloadSchema = z5.object({
+  id: z5.literal(reference_expense_usd_default.id),
+  sourceId: z5.literal("aa-agent"),
+  sourceUrl: z5.url(),
+  protocolVersion: z5.literal("1.5"),
+  currency: z5.literal("USD"),
+  referenceCostUsd: z5.literal(reference_expense_usd_default.referenceCostUsd),
+  frozenAt: z5.literal(reference_expense_usd_default.frozenAt),
+  statistic: z5.string().min(1),
   referenceModels: positive.int(),
   referenceMakers: positive.int(),
-  taskDefinition: z4.string().min(1),
-  datasets: z4.array(z4.string().min(1)).length(3),
-  pricingDefinition: z4.string().min(1),
-  limitation: z4.string().min(1)
+  taskDefinition: z5.string().min(1),
+  datasets: z5.array(z5.string().min(1)).length(3),
+  pricingDefinition: z5.string().min(1),
+  limitation: z5.string().min(1)
 }).strict();
 var parsedReference = referenceExpenseWorkloadSchema.parse(reference_expense_usd_default);
 Object.freeze(parsedReference.datasets);
 var REFERENCE_EXPENSE_WORKLOAD = Object.freeze(parsedReference);
-var expenseUsdEvidenceSchema = z4.object({
-  policyId: z4.literal("reference-task-usd-v1"),
-  basis: z4.literal("api-list-price"),
-  priceBasisScope: z4.literal("reference-anchor"),
-  status: z4.enum(["converted", "estimated", "unavailable"]),
-  conversion: z4.enum(["same-source-denormalization", "index-reference-rebase"]).nullable(),
-  reason: z4.string().min(1).nullable(),
+var expenseUsdEvidenceSchema = z5.object({
+  policyId: z5.literal("reference-task-usd-v1"),
+  basis: z5.literal("api-list-price"),
+  priceBasisScope: z5.literal("reference-anchor"),
+  status: z5.enum(["converted", "estimated", "unavailable"]),
+  conversion: z5.enum(["same-source-denormalization", "index-reference-rebase"]).nullable(),
+  reason: z5.string().min(1).nullable(),
   referenceWorkload: referenceExpenseWorkloadSchema,
   observedAt: date2.nullable(),
-  observedAtMeaning: z4.literal("oldest-contributing-cost-evidence-window"),
-  sources: z4.array(
-    z4.object({
-      id: z4.string().min(1),
-      url: z4.url(),
-      cohort: z4.string().min(1),
+  observedAtMeaning: z5.literal("oldest-contributing-cost-evidence-window"),
+  sources: z5.array(
+    z5.object({
+      id: z5.string().min(1),
+      url: z5.url(),
+      cohort: z5.string().min(1),
       observedAt: date2,
-      windowBasis: z4.enum(["source-evidence-window", "input-capture"])
+      windowBasis: z5.enum(["source-evidence-window", "input-capture"])
     }).strict()
   ),
-  measured: z4.literal(false),
-  empiricalWorkloadCalibration: z4.literal(false),
-  isSubscriptionConsumption: z4.literal(false),
-  isRealBill: z4.literal(false)
+  measured: z5.literal(false),
+  empiricalWorkloadCalibration: z5.literal(false),
+  isSubscriptionConsumption: z5.literal(false),
+  isRealBill: z5.literal(false)
 }).strict().superRefine((v, ctx) => {
   if (v.status === "unavailable" !== (v.reason !== null) || v.status === "unavailable" && v.conversion !== null || v.status !== "unavailable" && (!v.observedAt || !v.conversion || !v.sources.length))
     ctx.addIssue({
@@ -799,110 +955,110 @@ var expenseUsdEvidenceSchema = z4.object({
 });
 
 // shared/plan-value-contract.ts
-import { z as z5 } from "zod";
+import { z as z6 } from "zod";
 var PLAN_VALUE_VERSION = "plan-value-v0.2";
-var planValuePublicationSchema = z5.object({
-  formulaVersion: z5.enum(["plan-value-v0.1", PLAN_VALUE_VERSION]),
-  inputHash: z5.string(),
-  computedAt: z5.string(),
-  calibration: z5.object({
-    status: z5.literal("scenario-not-calibrated"),
-    fitError: z5.null(),
-    reason: z5.string()
+var planValuePublicationSchema = z6.object({
+  formulaVersion: z6.enum(["plan-value-v0.1", PLAN_VALUE_VERSION]),
+  inputHash: z6.string(),
+  computedAt: z6.string(),
+  calibration: z6.object({
+    status: z6.literal("scenario-not-calibrated"),
+    fitError: z6.null(),
+    reason: z6.string()
   }),
-  policy: z5.record(z5.string(), z5.unknown()),
-  history: z5.record(z5.string(), z5.unknown()).optional(),
-  rows: z5.array(z5.record(z5.string(), z5.unknown())).max(5e3)
+  policy: z6.record(z6.string(), z6.unknown()),
+  history: z6.record(z6.string(), z6.unknown()).optional(),
+  rows: z6.array(z6.record(z6.string(), z6.unknown())).max(5e3)
 }).strict();
-var planValueSummarySchema = planValuePublicationSchema.omit({ rows: true }).extend({ rowCount: z5.number().int().nonnegative().max(5e3) }).strict();
+var planValueSummarySchema = planValuePublicationSchema.omit({ rows: true }).extend({ rowCount: z6.number().int().nonnegative().max(5e3) }).strict();
 
 // shared/plan-metering.ts
-import { z as z6 } from "zod";
-var number = z6.number().finite().nonnegative();
-var meteringEvidenceSchema = z6.object({
-  sourceId: z6.string(),
-  sourceUrl: z6.url(),
-  sourceHash: z6.string(),
-  verifiedAt: z6.iso.datetime({ offset: true }),
-  note: z6.string()
+import { z as z7 } from "zod";
+var number = z7.number().finite().nonnegative();
+var meteringEvidenceSchema = z7.object({
+  sourceId: z7.string(),
+  sourceUrl: z7.url(),
+  sourceHash: z7.string(),
+  verifiedAt: z7.iso.datetime({ offset: true }),
+  note: z7.string()
 }).strict();
-var planMeteringSchema = z6.object({
-  schemaVersion: z6.literal(1),
-  revision: z6.string(),
-  priceBasis: z6.object({
-    kind: z6.enum([
+var planMeteringSchema = z7.object({
+  schemaVersion: z7.literal(1),
+  revision: z7.string(),
+  priceBasis: z7.object({
+    kind: z7.enum([
       "monthly-list",
       "annual",
       "promotion",
       "usage",
       "unknown"
     ]),
-    tax: z6.enum(["excluded", "included", "unknown"]),
-    currency: z6.string(),
+    tax: z7.enum(["excluded", "included", "unknown"]),
+    currency: z7.string(),
     evidence: meteringEvidenceSchema.nullable()
   }).strict(),
-  gates: z6.array(
-    z6.object({
-      id: z6.string(),
-      poolId: z6.string(),
-      modelAliases: z6.array(z6.string()).nullable(),
-      unit: z6.enum(["USD", "credits", "requests", "tokens", "unknown"]),
+  gates: z7.array(
+    z7.object({
+      id: z7.string(),
+      poolId: z7.string(),
+      modelAliases: z7.array(z7.string()).nullable(),
+      unit: z7.enum(["USD", "credits", "requests", "tokens", "unknown"]),
       amount: number.nullable(),
-      window: z6.enum(["rolling", "fixed", "unknown"]),
-      hours: z6.number().positive().nullable(),
-      anchor: z6.iso.datetime({ offset: true }).nullable(),
-      timezone: z6.string().nullable(),
+      window: z7.enum(["rolling", "fixed", "unknown"]),
+      hours: z7.number().positive().nullable(),
+      anchor: z7.iso.datetime({ offset: true }).nullable(),
+      timezone: z7.string().nullable(),
       evidence: meteringEvidenceSchema
     }).strict()
   ).max(500),
-  rates: z6.array(
-    z6.object({
-      modelAlias: z6.string(),
-      poolId: z6.string(),
-      unit: z6.enum(["USD", "credits", "requests", "tokens"]),
-      perTokens: z6.number().positive(),
+  rates: z7.array(
+    z7.object({
+      modelAlias: z7.string(),
+      poolId: z7.string(),
+      unit: z7.enum(["USD", "credits", "requests", "tokens"]),
+      perTokens: z7.number().positive(),
       input: number,
       output: number,
       cacheRead: number.nullable(),
       cacheWrite: number.nullable(),
       minContextTokens: number.nullable(),
       maxContextTokens: number.nullable(),
-      condition: z6.string(),
+      condition: z7.string(),
       evidence: meteringEvidenceSchema
     }).strict()
   ).max(500),
-  timeBands: z6.array(
-    z6.object({
-      weekdays: z6.array(z6.number().int().min(1).max(7)),
-      startHour: z6.number().min(0).max(23),
-      endHour: z6.number().min(1).max(24),
-      outsideMultiplier: z6.number().positive(),
-      timezone: z6.string(),
+  timeBands: z7.array(
+    z7.object({
+      weekdays: z7.array(z7.number().int().min(1).max(7)),
+      startHour: z7.number().min(0).max(23),
+      endHour: z7.number().min(1).max(24),
+      outsideMultiplier: z7.number().positive(),
+      timezone: z7.string(),
       evidence: meteringEvidenceSchema
     }).strict()
   ).max(4).optional(),
-  relativeAllowances: z6.array(
-    z6.object({
-      basePlanId: z6.string(),
-      factor: z6.number().positive(),
-      window: z6.string(),
+  relativeAllowances: z7.array(
+    z7.object({
+      basePlanId: z7.string(),
+      factor: z7.number().positive(),
+      window: z7.string(),
       evidence: meteringEvidenceSchema
     }).strict()
   ).max(20),
-  overflow: z6.object({
-    policy: z6.enum(["wait", "optional-paid", "unknown"]),
-    automatic: z6.boolean().nullable(),
-    priceKnown: z6.boolean(),
+  overflow: z7.object({
+    policy: z7.enum(["wait", "optional-paid", "unknown"]),
+    automatic: z7.boolean().nullable(),
+    priceKnown: z7.boolean(),
     evidence: meteringEvidenceSchema.nullable()
   }).strict(),
-  limitations: z6.array(z6.string()).max(30)
+  limitations: z7.array(z7.string()).max(30)
 }).strict();
 
 // shared/public-publication.ts
-import { z as z10 } from "zod";
+import { z as z11 } from "zod";
 
 // shared/speed-evidence.ts
-import { z as z7 } from "zod";
+import { z as z8 } from "zod";
 var SPEED_CHANNELS = [
   "api",
   "subscription-default",
@@ -910,13 +1066,13 @@ var SPEED_CHANNELS = [
   "ultrafast",
   "unknown"
 ];
-var speedChannelSchema = z7.enum(SPEED_CHANNELS);
-var speedDateSchema = z7.string().refine((v) => v === "unknown" || Number.isFinite(Date.parse(v)));
-var date3 = z7.string().refine((v) => Number.isFinite(Date.parse(v)));
-var id = z7.string().min(1).max(200);
-var text3 = z7.string().min(1).max(4e3);
-var number2 = z7.number().finite().nonnegative();
-var url = z7.string().url().refine((v) => v.startsWith("https://"));
+var speedChannelSchema = z8.enum(SPEED_CHANNELS);
+var speedDateSchema = z8.string().refine((v) => v === "unknown" || Number.isFinite(Date.parse(v)));
+var date3 = z8.string().refine((v) => Number.isFinite(Date.parse(v)));
+var id = z8.string().min(1).max(200);
+var text4 = z8.string().min(1).max(4e3);
+var number2 = z8.number().finite().nonnegative();
+var url = z8.string().url().refine((v) => v.startsWith("https://"));
 var SPEED_POLICY = {
   version: "channel-speed-evidence-v1",
   maximumChangesPerConfiguration: 32,
@@ -926,156 +1082,156 @@ var SPEED_POLICY = {
   population: "native recommended configurations with both observed cross-model task coordinates and measured API throughput; before request filters",
   clientRule: "taskTimeQuantile <= 0.25 and throughputQuantile >= 2/3; clients decide eligibility using provenance and uncertainty flags"
 };
-var aaThroughputRecordSchema = z7.object({
-  channel: z7.literal("api"),
-  source: z7.literal("artificial-analysis"),
-  unit: z7.literal("output_tokens_per_second"),
-  claim: z7.literal(false),
+var aaThroughputRecordSchema = z8.object({
+  channel: z8.literal("api"),
+  source: z8.literal("artificial-analysis"),
+  unit: z8.literal("output_tokens_per_second"),
+  claim: z8.literal(false),
   configurationId: id,
   value: number2.nullable(),
-  status: z7.enum(["available", "missing", "invalid"]),
-  field: z7.literal("median_output_tokens_per_second"),
+  status: z8.enum(["available", "missing", "invalid"]),
+  field: z8.literal("median_output_tokens_per_second"),
   observedAt: date3,
   firstObservedAt: date3,
-  sourceSnapshotHash: z7.string().regex(/^[a-f0-9]{64}$/)
+  sourceSnapshotHash: z8.string().regex(/^[a-f0-9]{64}$/)
 }).strict().refine(
   (r) => r.status === "available" === (r.value !== null) && Date.parse(r.firstObservedAt) <= Date.parse(r.observedAt)
 );
-var aaThroughputHistorySchema = z7.record(
+var aaThroughputHistorySchema = z8.record(
   id,
-  z7.array(aaThroughputRecordSchema).min(1).max(SPEED_POLICY.maximumChangesPerConfiguration)
+  z8.array(aaThroughputRecordSchema).min(1).max(SPEED_POLICY.maximumChangesPerConfiguration)
 ).refine(
   (v) => Object.keys(v).length <= 1e4 && Object.entries(v).every(
     ([key, rows]) => rows.every((r) => r.configurationId === key)
   )
 );
-var outputThroughputSchema = z7.object({
+var outputThroughputSchema = z8.object({
   value: number2.nullable(),
-  unit: z7.literal("output_tokens_per_second"),
+  unit: z8.literal("output_tokens_per_second"),
   channel: speedChannelSchema,
   observedAt: speedDateSchema,
   firstObservedAt: speedDateSchema,
-  source: text3.nullable(),
+  source: text4.nullable(),
   sourceUrl: url.nullable(),
   sourceSnapshotId: id.nullable(),
   configurationId: id.nullable(),
-  claim: z7.literal(false),
-  statistic: z7.literal("source-reported-median"),
-  tokenBasis: z7.literal("source-defined-output"),
-  sourceField: z7.literal("median_output_tokens_per_second"),
-  status: z7.enum(["available", "missing", "invalid"]),
-  reason: text3.nullable(),
-  stale: z7.boolean(),
-  history: z7.array(aaThroughputRecordSchema)
+  claim: z8.literal(false),
+  statistic: z8.literal("source-reported-median"),
+  tokenBasis: z8.literal("source-defined-output"),
+  sourceField: z8.literal("median_output_tokens_per_second"),
+  status: z8.enum(["available", "missing", "invalid"]),
+  reason: text4.nullable(),
+  stale: z8.boolean(),
+  history: z8.array(aaThroughputRecordSchema)
 }).strict().refine(
   (r) => r.status === "available" === (r.value !== null) && r.history.every((h) => h.configurationId === r.configurationId)
 );
-var speedClaimSchema = z7.object({
+var speedClaimSchema = z8.object({
   id,
-  modelIds: z7.array(id).min(1).max(30),
-  effortScope: z7.enum(["explicit", "unknown", "all-declared"]),
-  efforts: z7.array(id).max(10),
+  modelIds: z8.array(id).min(1).max(30),
+  effortScope: z8.enum(["explicit", "unknown", "all-declared"]),
+  efforts: z8.array(id).max(10),
   channel: speedChannelSchema,
-  claim: z7.literal(true),
-  sourceKind: z7.enum(["vendor-announcement", "public-report"]),
-  metric: z7.enum(["output-throughput", "output-throughput-ratio"]),
+  claim: z8.literal(true),
+  sourceKind: z8.enum(["vendor-announcement", "public-report"]),
+  metric: z8.enum(["output-throughput", "output-throughput-ratio"]),
   value: number2.nullable(),
-  ratio: z7.number().finite().positive().nullable(),
-  qualifier: z7.enum(["approximate", "upper-bound", "reported"]),
-  boundary: text3,
-  tokenBasis: text3,
+  ratio: z8.number().finite().positive().nullable(),
+  qualifier: z8.enum(["approximate", "upper-bound", "reported"]),
+  boundary: text4,
+  tokenBasis: text4,
   publishedAt: speedDateSchema,
   effectiveAt: date3.nullable(),
-  effectiveTiming: text3,
+  effectiveTiming: text4,
   observedAt: date3,
-  source: text3,
+  source: text4,
   sourceUrl: url,
-  evidenceUrls: z7.array(url).min(1).max(8),
-  evidenceHash: z7.string().regex(/^[a-f0-9]{64}$/).nullable(),
-  qualification: text3
+  evidenceUrls: z8.array(url).min(1).max(8),
+  evidenceHash: z8.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  qualification: text4
 }).strict().refine(
   (c) => (c.effortScope === "explicit" ? c.efforts.length > 0 : c.efforts.length === 0) && (c.metric === "output-throughput" ? c.value !== null && c.ratio === null : c.value === null && c.ratio !== null)
 );
 var reviewedSpeedClaimSchema = speedClaimSchema.safeExtend({
-  review: z7.object({
-    status: z7.literal("approved"),
+  review: z8.object({
+    status: z8.literal("approved"),
     reviewedAt: date3,
-    contentHash: z7.string().regex(/^[a-f0-9]{64}$/)
+    contentHash: z8.string().regex(/^[a-f0-9]{64}$/)
   }).strict(),
-  current: z7.boolean()
+  current: z8.boolean()
 });
-var speedReviewSchema = z7.object({
+var speedReviewSchema = z8.object({
   claim: speedClaimSchema,
-  contentHash: z7.string().regex(/^[a-f0-9]{64}$/),
-  status: z7.enum(["pending", "approved", "rejected"]),
+  contentHash: z8.string().regex(/^[a-f0-9]{64}$/),
+  status: z8.enum(["pending", "approved", "rejected"]),
   createdAt: date3,
   reviewedAt: date3.nullable(),
-  reviewNote: z7.string().max(4e3).nullable()
+  reviewNote: z8.string().max(4e3).nullable()
 }).strict().refine(
   (r) => r.status === "pending" || !!r.reviewedAt && !!r.reviewNote?.trim()
 );
-var speedClaimJournalSchema = z7.object({
-  schemaVersion: z7.literal(1),
-  entries: z7.array(speedReviewSchema).max(2e4)
+var speedClaimJournalSchema = z8.object({
+  schemaVersion: z8.literal(1),
+  entries: z8.array(speedReviewSchema).max(2e4)
 }).strict();
 
 // shared/plan-knowledge.ts
-import { z as z8 } from "zod";
-var text4 = z8.string().min(1).max(4e3);
-var id2 = z8.string().regex(/^[\w:.-]{1,160}$/);
-var number3 = z8.number().finite().nonnegative();
-var hash = z8.string().regex(/^[a-f0-9]{64}$/);
-var date4 = text4.refine((value) => Number.isFinite(Date.parse(value)));
-var url2 = z8.string().url().refine((value) => value.startsWith("https://"));
-var knowledgeProductSchema = z8.object({
+import { z as z9 } from "zod";
+var text5 = z9.string().min(1).max(4e3);
+var id2 = z9.string().regex(/^[\w:.-]{1,160}$/);
+var number3 = z9.number().finite().nonnegative();
+var hash = z9.string().regex(/^[a-f0-9]{64}$/);
+var date4 = text5.refine((value) => Number.isFinite(Date.parse(value)));
+var url2 = z9.string().url().refine((value) => value.startsWith("https://"));
+var knowledgeProductSchema = z9.object({
   id: id2,
-  name: text4,
-  vendor: text4,
-  category: z8.enum(["direct", "tool", "aggregator", "api", "unknown"])
+  name: text5,
+  vendor: text5,
+  category: z9.enum(["direct", "tool", "aggregator", "api", "unknown"])
 }).strict();
-var knowledgeEntrySchema = z8.object({
+var knowledgeEntrySchema = z9.object({
   id: id2,
   upstreamPlanId: id2,
   productId: id2,
   tierGroupId: id2,
-  name: text4,
-  nameEn: z8.string().max(4e3),
-  upstreamNames: z8.array(text4),
-  billing: z8.enum(["subscription", "metered"]),
-  scenario: z8.string().max(4e3),
-  region: z8.enum(["cn", "international", "us", "unknown"]),
-  generation: z8.string().max(100),
+  name: text5,
+  nameEn: z9.string().max(4e3),
+  upstreamNames: z9.array(text5),
+  billing: z9.enum(["subscription", "metered"]),
+  scenario: z9.string().max(4e3),
+  region: z9.enum(["cn", "international", "us", "unknown"]),
+  generation: z9.string().max(100),
   formalPlanId: id2.nullable(),
-  mappingStatus: z8.enum(["unmapped", "linked"])
+  mappingStatus: z9.enum(["unmapped", "linked"])
 }).strict();
-var knowledgeObservationSchema = z8.object({
+var knowledgeObservationSchema = z9.object({
   id: id2,
   entryId: id2,
-  upstreamModel: text4,
+  upstreamModel: text5,
   formalModelId: id2.nullable(),
-  upstreamGeneration: z8.string().max(100),
-  price: z8.object({
+  upstreamGeneration: z9.string().max(100),
+  price: z9.object({
     amount: number3.nullable(),
-    currency: z8.string().max(10),
-    period: z8.enum(["month", "year", "usage", "unknown"]),
+    currency: z9.string().max(10),
+    period: z9.enum(["month", "year", "usage", "unknown"]),
     upstreamAmount: number3.nullable(),
     monthlyEquivalent: number3.nullable(),
     comparisonMonthlyUsd: number3.nullable(),
-    status: z8.literal("upstream-observation")
+    status: z9.literal("upstream-observation")
   }).strict(),
-  economics: z8.object({
+  economics: z9.object({
     monthlyTokens: number3.nullable(),
     effectiveUsdPerMillionTokens: number3.nullable(),
     upstreamEffectiveUsdPerMillionTokens: number3.nullable(),
-    unmeteredPromotion: z8.boolean(),
-    promotionUntil: z8.string().nullable(),
-    sharedPool: z8.enum(["shared", "unknown", "not-applicable"]),
-    additiveCapacity: z8.literal(false),
-    comparisonEligible: z8.boolean(),
-    diagnostics: z8.array(text4)
+    unmeteredPromotion: z9.boolean(),
+    promotionUntil: z9.string().nullable(),
+    sharedPool: z9.enum(["shared", "unknown", "not-applicable"]),
+    additiveCapacity: z9.literal(false),
+    comparisonEligible: z9.boolean(),
+    diagnostics: z9.array(text5)
   }).strict(),
-  workload: z8.object({
-    kind: z8.enum([
+  workload: z9.object({
+    kind: z9.enum([
       "standard",
       "lowCache",
       "anthropic",
@@ -1087,63 +1243,63 @@ var knowledgeObservationSchema = z8.object({
     output: number3.max(1).nullable(),
     cacheWrite: number3.max(1).nullable(),
     monthWeeks: number3.nullable(),
-    saturatedUsage: z8.literal(true),
-    contextAndEffort: z8.literal("source-specific-or-unknown")
+    saturatedUsage: z9.literal(true),
+    contextAndEffort: z9.literal("source-specific-or-unknown")
   }).strict(),
-  sample: z8.object({
-    label: z8.string().max(4e3),
-    kind: z8.string().max(100),
-    precision: z8.enum(["day", "month", "range", "unknown"]),
-    derivedFrom: z8.string().max(4e3)
+  sample: z9.object({
+    label: z9.string().max(4e3),
+    kind: z9.string().max(100),
+    precision: z9.enum(["day", "month", "range", "unknown"]),
+    derivedFrom: z9.string().max(4e3)
   }).strict(),
-  confidence: z8.enum(["high", "medium", "low", "unknown"]),
-  evidence: z8.object({
-    sourceLabel: z8.string().max(4e3),
+  confidence: z9.enum(["high", "medium", "low", "unknown"]),
+  evidence: z9.object({
+    sourceLabel: z9.string().max(4e3),
     sourceUrl: url2,
-    links: z8.array(url2),
-    note: z8.string().max(4e3),
+    links: z9.array(url2),
+    note: z9.string().max(4e3),
     observedAt: date4,
     recordHash: hash
   }).strict()
 }).strict();
-var knowledgeChangeSchema = z8.object({
+var knowledgeChangeSchema = z9.object({
   id: id2,
-  kind: z8.enum(["added", "updated", "withdrawn", "assumptions-review"]),
+  kind: z9.enum(["added", "updated", "withdrawn", "assumptions-review"]),
   observationId: id2.nullable(),
   beforeHash: hash.nullable(),
   afterHash: hash.nullable(),
-  sourceCommit: z8.string().regex(/^[a-f0-9]{40}$/),
+  sourceCommit: z9.string().regex(/^[a-f0-9]{40}$/),
   observedAt: date4,
-  status: z8.enum(["published-observation", "review-required"])
+  status: z9.enum(["published-observation", "review-required"])
 }).strict();
-var clock = z8.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
-var knowledgeCalendarLeadSchema = z8.object({
+var clock = z9.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+var knowledgeCalendarLeadSchema = z9.object({
   id: id2,
   entryId: id2,
-  status: z8.literal("UNVERIFIED"),
-  formalPlanId: z8.null(),
-  formalModelId: z8.null(),
-  personalQualification: z8.literal("unknown"),
-  requiresOfficialReview: z8.literal(true),
-  observationIds: z8.array(id2).min(1),
-  sourceCommit: z8.string().regex(/^[a-f0-9]{40}$/),
+  status: z9.literal("UNVERIFIED"),
+  formalPlanId: z9.null(),
+  formalModelId: z9.null(),
+  personalQualification: z9.literal("unknown"),
+  requiresOfficialReview: z9.literal(true),
+  observationIds: z9.array(id2).min(1),
+  sourceCommit: z9.string().regex(/^[a-f0-9]{40}$/),
   sourceHash: hash,
-  evidence: z8.array(
-    z8.object({
+  evidence: z9.array(
+    z9.object({
       observationId: id2,
       recordHash: hash,
       sourceUrl: url2,
-      originalText: text4,
+      originalText: text5,
       observedAt: date4
     }).strict()
   ).min(1),
-  proposed: z8.object({
-    kind: z8.enum([
+  proposed: z9.object({
+    kind: z9.enum([
       "recurring-window",
       "time-dependent-pricing",
       "limited-promotion"
     ]),
-    timezone: z8.string().max(100).refine((value) => {
+    timezone: z9.string().max(100).refine((value) => {
       try {
         new Intl.DateTimeFormat("en", { timeZone: value });
         return true;
@@ -1151,69 +1307,69 @@ var knowledgeCalendarLeadSchema = z8.object({
         return false;
       }
     }).nullable(),
-    windows: z8.array(
-      z8.object({
+    windows: z9.array(
+      z9.object({
         start: clock,
         end: clock,
-        weekdays: z8.array(z8.number().int().min(1).max(7)).max(7)
+        weekdays: z9.array(z9.number().int().min(1).max(7)).max(7)
       }).strict().refine(
         (window) => window.start !== window.end && new Set(window.weekdays).size === window.weekdays.length
       )
     ),
-    coefficient: z8.object({
-      value: z8.number().finite().positive(),
-      meaning: z8.enum([
+    coefficient: z9.object({
+      value: z9.number().finite().positive(),
+      meaning: z9.enum([
         "deduction-multiplier",
         "price-multiplier",
         "capacity-multiplier"
       ])
     }).strict().nullable(),
     validUntil: date4.nullable(),
-    conditions: z8.array(text4)
+    conditions: z9.array(text5)
   }).strict()
 }).strict();
-var planKnowledgeSchema = z8.object({
-  schemaVersion: z8.literal(1),
-  revision: text4,
-  source: z8.object({
-    id: z8.literal("real-api-pricing"),
-    name: z8.literal("Real API Pricing"),
+var planKnowledgeSchema = z9.object({
+  schemaVersion: z9.literal(1),
+  revision: text5,
+  source: z9.object({
+    id: z9.literal("real-api-pricing"),
+    name: z9.literal("Real API Pricing"),
     url: url2,
-    commit: z8.string().regex(/^[a-f0-9]{40}$/),
+    commit: z9.string().regex(/^[a-f0-9]{40}$/),
     adoptedHash: hash,
     conventionsHash: hash,
     capturedAt: date4,
-    mappingRevision: text4,
-    parserVersion: z8.literal(1),
-    attribution: text4
+    mappingRevision: text5,
+    parserVersion: z9.literal(1),
+    attribution: text5
   }).strict(),
-  assumptions: z8.object({
-    formula: text4,
-    tokenPolicy: text4,
-    unmeteredPolicy: text4,
-    calculationVersion: text4,
+  assumptions: z9.object({
+    formula: text5,
+    tokenPolicy: text5,
+    unmeteredPolicy: text5,
+    calculationVersion: text5,
     monthWeeks: number3,
-    exchangeRate: z8.object({
+    exchangeRate: z9.object({
       value: number3,
-      units: z8.literal("CNY per USD"),
-      date: text4,
+      units: z9.literal("CNY per USD"),
+      date: text5,
       sourceUrl: url2
     }).strict(),
-    capacityMeaning: z8.literal("scenario-estimate-at-saturated-usage"),
-    confidenceMeaning: z8.literal("upstream-evidence-grade-not-probability")
+    capacityMeaning: z9.literal("scenario-estimate-at-saturated-usage"),
+    confidenceMeaning: z9.literal("upstream-evidence-grade-not-probability")
   }).strict(),
-  products: z8.array(knowledgeProductSchema),
-  entries: z8.array(knowledgeEntrySchema),
-  observations: z8.array(knowledgeObservationSchema),
-  changes: z8.array(knowledgeChangeSchema),
-  calendarLeads: z8.array(knowledgeCalendarLeadSchema).optional(),
-  reconciliation: z8.object({
-    sourceRows: z8.number().int().nonnegative(),
-    subscriptionRows: z8.number().int().nonnegative(),
-    apiRows: z8.number().int().nonnegative(),
-    subscriptionKeys: z8.number().int().nonnegative(),
-    apiKeys: z8.number().int().nonnegative(),
-    unmappedEntries: z8.number().int().nonnegative()
+  products: z9.array(knowledgeProductSchema),
+  entries: z9.array(knowledgeEntrySchema),
+  observations: z9.array(knowledgeObservationSchema),
+  changes: z9.array(knowledgeChangeSchema),
+  calendarLeads: z9.array(knowledgeCalendarLeadSchema).optional(),
+  reconciliation: z9.object({
+    sourceRows: z9.number().int().nonnegative(),
+    subscriptionRows: z9.number().int().nonnegative(),
+    apiRows: z9.number().int().nonnegative(),
+    subscriptionKeys: z9.number().int().nonnegative(),
+    apiKeys: z9.number().int().nonnegative(),
+    unmappedEntries: z9.number().int().nonnegative()
   }).strict()
 }).strict().superRefine((knowledge, ctx) => {
   const products = new Set(knowledge.products.map((row) => row.id));
@@ -1250,60 +1406,60 @@ var planKnowledgeSchema = z8.object({
 });
 
 // shared/portfolio-contract.ts
-import { z as z9 } from "zod";
-var publicPortfolioSchema = z9.object({
-  policyVersion: z9.string().min(1),
-  revision: z9.string().regex(/^[a-f0-9]{64}$/),
-  activeIds: z9.array(z9.string().min(1)).max(32),
-  counts: z9.object({
-    candidates: z9.number().int().min(0).max(200),
-    active: z9.number().int().min(0).max(32),
-    observing: z9.number().int().min(0).max(32),
-    configurations: z9.number().int().min(0).max(256),
-    frozen: z9.number().int().min(0).max(100)
+import { z as z10 } from "zod";
+var publicPortfolioSchema = z10.object({
+  policyVersion: z10.string().min(1),
+  revision: z10.string().regex(/^[a-f0-9]{64}$/),
+  activeIds: z10.array(z10.string().min(1)).max(32),
+  counts: z10.object({
+    candidates: z10.number().int().min(0).max(200),
+    active: z10.number().int().min(0).max(32),
+    observing: z10.number().int().min(0).max(32),
+    configurations: z10.number().int().min(0).max(256),
+    frozen: z10.number().int().min(0).max(100)
   }),
-  vendors: z9.array(
-    z9.object({
-      developerId: z9.string().min(1),
-      name: z9.string().min(1),
-      metric: z9.enum(["aa-coding", "aa-intelligence"]),
-      score: z9.number().finite(),
-      modelId: z9.string().min(1),
-      modelName: z9.string().min(1),
-      effort: z9.string().min(1),
-      sourceUrl: z9.url(),
-      observedAt: z9.iso.datetime({ offset: true }),
-      provisional: z9.boolean()
+  vendors: z10.array(
+    z10.object({
+      developerId: z10.string().min(1),
+      name: z10.string().min(1),
+      metric: z10.enum(["aa-coding", "aa-intelligence"]),
+      score: z10.number().finite(),
+      modelId: z10.string().min(1),
+      modelName: z10.string().min(1),
+      effort: z10.string().min(1),
+      sourceUrl: z10.url(),
+      observedAt: z10.iso.datetime({ offset: true }),
+      provisional: z10.boolean()
     })
   ).max(32),
-  mainstays: z9.record(z9.string(), z9.array(z9.string().min(1)).max(4)),
-  states: z9.array(
-    z9.object({
-      id: z9.string().min(1),
-      status: z9.enum(["candidate", "observing", "tracked", "frozen"]),
-      basis: z9.enum(["benchmark", "paid-popularity", "official-product"]).nullable(),
-      reason: z9.string().min(1),
-      nextDecisionAt: z9.iso.datetime({ offset: true }).optional(),
-      comparisonUntil: z9.iso.datetime({ offset: true }).optional(),
-      replacementId: z9.string().min(1).optional(),
-      admission: z9.object({
-        weeklyRank: z9.number().int().positive().nullable(),
-        daily: z9.object({
-          date: z9.string().nullable(),
-          rank: z9.number().int().positive().nullable(),
-          known: z9.boolean(),
-          fresh: z9.boolean(),
-          previousDate: z9.string().nullable(),
-          previousRank: z9.number().int().positive().nullable(),
-          confirmed: z9.boolean()
+  mainstays: z10.record(z10.string(), z10.array(z10.string().min(1)).max(4)),
+  states: z10.array(
+    z10.object({
+      id: z10.string().min(1),
+      status: z10.enum(["candidate", "observing", "tracked", "frozen"]),
+      basis: z10.enum(["benchmark", "paid-popularity", "official-product"]).nullable(),
+      reason: z10.string().min(1),
+      nextDecisionAt: z10.iso.datetime({ offset: true }).optional(),
+      comparisonUntil: z10.iso.datetime({ offset: true }).optional(),
+      replacementId: z10.string().min(1).optional(),
+      admission: z10.object({
+        weeklyRank: z10.number().int().positive().nullable(),
+        daily: z10.object({
+          date: z10.string().nullable(),
+          rank: z10.number().int().positive().nullable(),
+          known: z10.boolean(),
+          fresh: z10.boolean(),
+          previousDate: z10.string().nullable(),
+          previousRank: z10.number().int().positive().nullable(),
+          confirmed: z10.boolean()
         }).optional(),
-        codingEvidenceSources: z9.array(z9.string()).max(10),
-        efficientProduct: z9.boolean(),
-        diagnostics: z9.array(z9.string()).max(20)
+        codingEvidenceSources: z10.array(z10.string()).max(10),
+        efficientProduct: z10.boolean(),
+        diagnostics: z10.array(z10.string()).max(20)
       }).optional()
     })
   ).max(300),
-  nextCheckAt: z9.iso.datetime({ offset: true })
+  nextCheckAt: z10.iso.datetime({ offset: true })
 }).strict().superRefine((p, ctx) => {
   const active = new Set(p.activeIds), ids3 = new Set(p.states.map((s) => s.id));
   if (active.size !== p.activeIds.length || ids3.size !== p.states.length || p.counts.active !== active.size || p.states.filter((s) => s.status === "tracked").length > 28 || p.states.filter((s) => s.status === "observing").length !== p.counts.observing || p.states.filter((s) => s.status === "frozen").length !== p.counts.frozen || p.states.some(
@@ -1344,108 +1500,108 @@ var COMPONENT_DEPENDENCIES = {
 var PUBLIC_HASH = /^[a-f0-9]{64}$/;
 var PUBLIC_ID = /^[a-f0-9]{24}$/;
 var isRecord = (value) => !!value && typeof value === "object" && !Array.isArray(value);
-var text5 = z10.string().min(1);
-var date5 = text5.refine((value) => Number.isFinite(Date.parse(value)));
-var finite = z10.number().finite();
-var record = z10.record(z10.string(), z10.unknown());
-var indexMetric = z10.object({
-  methodId: z10.literal("unified-v03-estimator-0.1.0-internal"),
+var text6 = z11.string().min(1);
+var date5 = text6.refine((value) => Number.isFinite(Date.parse(value)));
+var finite = z11.number().finite();
+var record = z11.record(z11.string(), z11.unknown());
+var indexMetric = z11.object({
+  methodId: z11.literal("unified-v03-estimator-0.1.0-internal"),
   outputThroughput: outputThroughputSchema.optional(),
-  speedDiagnostics: z10.object({
+  speedDiagnostics: z11.object({
     taskTimeQuantile: finite.min(0).max(1).nullable(),
     throughputQuantile: finite.min(0).max(1).nullable(),
     throughputVsMedian: finite.nonnegative().nullable(),
-    populationId: text5,
-    reason: text5.nullable()
+    populationId: text6,
+    reason: text6.nullable()
   }).optional(),
   taskChannel: speedChannelSchema.optional(),
   taskObservedAt: speedDateSchema.optional(),
   abilityIndex: finite.nullable(),
   abilityWithinModel: finite.nullable().optional(),
-  abilityWithinModelBasis: z10.enum(["anchor", "same-source-chain", "offset-calibrated"]).nullable().optional(),
-  abilityComparability: z10.object({
-    version: text5,
-    anchorEffort: text5.nullable(),
-    path: z10.array(text5),
-    sources: z10.array(text5),
-    adjacent: z10.array(
-      z10.object({
-        effort: text5,
-        status: z10.enum(["same-source", "unavailable"]),
+  abilityWithinModelBasis: z11.enum(["anchor", "same-source-chain", "offset-calibrated"]).nullable().optional(),
+  abilityComparability: z11.object({
+    version: text6,
+    anchorEffort: text6.nullable(),
+    path: z11.array(text6),
+    sources: z11.array(text6),
+    adjacent: z11.array(
+      z11.object({
+        effort: text6,
+        status: z11.enum(["same-source", "unavailable"]),
         points: finite.nullable(),
-        sources: z10.array(text5)
+        sources: z11.array(text6)
       })
     ),
-    reason: z10.enum([
+    reason: z11.enum([
       "anchor",
       "same-source-chain",
       "disconnected-evidence"
     ])
   }).optional(),
   taskTimeWithinModel: finite.positive().nullable().optional(),
-  taskTimeCrossModel: z10.object({
+  taskTimeCrossModel: z11.object({
     channel: speedChannelSchema.optional(),
     observedAt: speedDateSchema.optional(),
-    version: text5,
+    version: text6,
     value: finite.positive().nullable(),
     estimateValue: finite.positive().nullable(),
     sourceMultiplier: finite.positive().nullable(),
     scaleFactor: finite.positive().nullable(),
-    source: text5.nullable(),
+    source: text6.nullable(),
     sourceSeconds: finite.positive().nullable(),
     referenceSeconds: finite.positive().nullable(),
-    cohort: text5.nullable(),
-    boundary: text5.nullable(),
-    sourceUrl: z10.string().nullable(),
-    protocolId: text5.nullable(),
-    selectedProtocolId: text5.nullable(),
-    anchorEffort: text5.nullable(),
+    cohort: text6.nullable(),
+    boundary: text6.nullable(),
+    sourceUrl: z11.string().nullable(),
+    protocolId: text6.nullable(),
+    selectedProtocolId: text6.nullable(),
+    anchorEffort: text6.nullable(),
     anchorLevel: finite.positive().nullable(),
     withinModelRatio: finite.positive().nullable(),
-    calibrationId: text5,
-    calibrationPath: z10.array(text5),
-    status: z10.enum([
+    calibrationId: text6,
+    calibrationPath: z11.array(text6),
+    status: z11.enum([
       "baseline",
       "calibrated",
       "uncalibrated",
       "unavailable"
     ]),
-    protocolFallback: z10.boolean(),
-    flags: z10.array(text5)
+    protocolFallback: z11.boolean(),
+    flags: z11.array(text6)
   }).optional(),
-  taskTimeWithinModelBasis: z10.enum(["anchor", "same-protocol-chain"]).nullable().optional(),
-  taskTimeComparability: z10.object({
+  taskTimeWithinModelBasis: z11.enum(["anchor", "same-protocol-chain"]).nullable().optional(),
+  taskTimeComparability: z11.object({
     channel: speedChannelSchema.optional(),
     observedAt: speedDateSchema.optional(),
-    version: text5,
-    protocolId: text5.nullable(),
-    source: text5.nullable(),
-    cohort: text5.nullable(),
-    boundary: text5.nullable(),
+    version: text6,
+    protocolId: text6.nullable(),
+    source: text6.nullable(),
+    cohort: text6.nullable(),
+    boundary: text6.nullable(),
     referenceSeconds: finite.positive().nullable(),
-    coveredEfforts: z10.array(text5),
-    anchorEffort: text5.nullable(),
-    componentId: text5.nullable(),
-    path: z10.array(text5),
-    adjacent: z10.array(
-      z10.object({
-        effort: text5,
+    coveredEfforts: z11.array(text6),
+    anchorEffort: text6.nullable(),
+    componentId: text6.nullable(),
+    path: z11.array(text6),
+    adjacent: z11.array(
+      z11.object({
+        effort: text6,
         ratio: finite.positive().nullable(),
-        status: z10.enum(["same-protocol", "disconnected"])
+        status: z11.enum(["same-protocol", "disconnected"])
       })
     ),
-    reason: z10.enum([
+    reason: z11.enum([
       "measured",
       "missing-in-selected-protocol",
       "no-measured-protocol"
     ])
   }).optional(),
-  taskTimeEstimate: z10.object({
+  taskTimeEstimate: z11.object({
     channel: speedChannelSchema.optional(),
     observedAt: speedDateSchema.optional(),
     value: finite.positive(),
     seconds: finite.positive(),
-    method: z10.enum([
+    method: z11.enum([
       "interpolated",
       "extrapolated",
       "proxy-aa-generation",
@@ -1455,72 +1611,72 @@ var indexMetric = z10.object({
     ]),
     steps: finite.int().nonnegative().nullable().optional(),
     generationBeta: finite.nullable().optional(),
-    interval: z10.object({ low: finite.positive(), high: finite.positive() }).refine((i) => i.low <= i.high).optional(),
-    intervalBasis: z10.literal("held-out-residual-p10-p90").optional(),
-    anchors: z10.array(text5),
+    interval: z11.object({ low: finite.positive(), high: finite.positive() }).refine((i) => i.low <= i.high).optional(),
+    intervalBasis: z11.literal("held-out-residual-p10-p90").optional(),
+    anchors: z11.array(text6),
     beta: finite,
-    betaVersion: text5,
-    expectedError: z10.object({
+    betaVersion: text6,
+    expectedError: z11.object({
       median: finite.min(1),
       p90: finite.min(1),
-      unit: z10.literal("multiplicative-factor"),
+      unit: z11.literal("multiplicative-factor"),
       tests: finite.positive(),
-      validation: z10.enum([
+      validation: z11.enum([
         "leave-one-model-out",
         "leave-one-effort-out",
         "conditional-model-holdout"
       ])
     }).nullable(),
-    protocolId: text5.optional(),
-    source: text5,
-    cohort: text5,
-    boundary: text5.nullable(),
+    protocolId: text6.optional(),
+    source: text6,
+    cohort: text6,
+    boundary: text6.nullable(),
     referenceSeconds: finite.positive(),
-    costSource: text5.nullable(),
-    fitId: text5,
-    evidenceIds: z10.array(text5),
-    exclusions: z10.array(text5).optional(),
-    rankingEligible: z10.literal(false)
+    costSource: text6.nullable(),
+    fitId: text6,
+    evidenceIds: z11.array(text6),
+    exclusions: z11.array(text6).optional(),
+    rankingEligible: z11.literal(false)
   }).nullable().optional(),
-  taskTimeEstimateReason: text5.optional(),
+  taskTimeEstimateReason: text6.optional(),
   expenseMultiplier: finite.nonnegative().nullable(),
   expenseUsdPerTask: finite.nonnegative().nullable().optional(),
   expenseUsdEvidence: expenseUsdEvidenceSchema.optional(),
   taskTimeMultiplier: finite.nonnegative().nullable(),
   taskSeconds: finite.nonnegative().nullable(),
-  taskSource: text5.nullable(),
-  taskBoundary: text5.nullable(),
-  taskCohort: text5.nullable(),
+  taskSource: text6.nullable(),
+  taskBoundary: text6.nullable(),
+  taskCohort: text6.nullable(),
   taskReferenceSeconds: finite.nonnegative().nullable(),
-  taskSourceUrl: text5.nullable(),
-  basis: text5,
-  completeness: z10.object({
+  taskSourceUrl: text6.nullable(),
+  basis: text6,
+  completeness: z11.object({
     ability: finite,
     expense: finite,
     taskTime: finite
   }),
-  sources: z10.array(
-    z10.object({
-      id: text5,
-      label: text5,
-      cohort: text5,
-      url: text5,
-      evidenceWindow: text5
+  sources: z11.array(
+    z11.object({
+      id: text6,
+      label: text6,
+      cohort: text6,
+      url: text6,
+      evidenceWindow: text6
     }).passthrough()
   ),
-  effortGains: z10.record(
-    z10.string(),
-    z10.object({
+  effortGains: z11.record(
+    z11.string(),
+    z11.object({
       points: finite.nullable(),
-      sources: z10.array(text5),
+      sources: z11.array(text6),
       completeness: finite
     })
   ),
-  expenseRatios: z10.record(
-    z10.string(),
-    z10.object({
+  expenseRatios: z11.record(
+    z11.string(),
+    z11.object({
       ratio: finite.nonnegative().nullable(),
-      sources: z10.array(text5)
+      sources: z11.array(text6)
     })
   )
 }).passthrough().superRefine((v, ctx) => {
@@ -1535,24 +1691,24 @@ var indexMetric = z10.object({
       message: "inconsistent_expense_usd_projection"
     });
 });
-var publicModelSchema = z10.object({
+var publicModelSchema = z11.object({
   referenceEffort: effortReferenceSchema.optional(),
-  throughputClaims: z10.array(reviewedSpeedClaimSchema).optional(),
-  id: text5,
-  family: z10.enum(["gpt6", "claude", "zhipu", "other"]),
-  name: text5,
-  subtitle: z10.string(),
-  color: text5,
-  recommended: text5.nullable(),
-  developerId: text5.optional(),
-  efforts: z10.array(
-    z10.object({
-      effort: text5,
-      label: text5,
+  throughputClaims: z11.array(reviewedSpeedClaimSchema).optional(),
+  id: text6,
+  family: z11.enum(["gpt6", "claude", "zhipu", "other"]),
+  name: text6,
+  subtitle: z11.string(),
+  color: text6,
+  recommended: text6.nullable(),
+  developerId: text6.optional(),
+  efforts: z11.array(
+    z11.object({
+      effort: text6,
+      label: text6,
       capability: finite.nullable(),
       cost: finite.nullable(),
       time: finite.nullable(),
-      available: z10.boolean(),
+      available: z11.boolean(),
       indexMetrics: indexMetric.optional(),
       expenseUsdPerTask: finite.nonnegative().nullable().optional(),
       expenseUsdEvidence: expenseUsdEvidenceSchema.optional()
@@ -1567,99 +1723,99 @@ var publicModelSchema = z10.object({
     })
   ).min(1)
 }).passthrough();
-var dataset = z10.object({
-  releaseVersion: z10.string().regex(/^\d+\.\d+\.\d+$/).optional(),
-  models: z10.array(publicModelSchema),
-  mode: z10.enum(["index", "aa", "demo", "live"]),
-  timeMetric: z10.enum(["task_duration", "agent_wall_time"]),
-  statistic: z10.enum(["mean", "source_reported"]),
+var dataset = z11.object({
+  releaseVersion: z11.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+  models: z11.array(publicModelSchema),
+  mode: z11.enum(["index", "aa", "demo", "live"]),
+  timeMetric: z11.enum(["task_duration", "agent_wall_time"]),
+  statistic: z11.enum(["mean", "source_reported"]),
   updatedAt: date5
 }).passthrough();
-var coverageStatus = z10.enum([
+var coverageStatus = z11.enum([
   "available",
   "conditional",
   "unavailable",
   "unknown"
 ]);
-var coverage = z10.object({
-  matchBasis: z10.enum(["reviewed", "advertised", "conditional"]).optional(),
-  advertisedAliases: z10.array(text5).optional(),
-  aliasRevision: text5.optional(),
-  planId: text5,
-  modelId: text5,
-  modelVersion: text5,
+var coverage = z11.object({
+  matchBasis: z11.enum(["reviewed", "advertised", "conditional"]).optional(),
+  advertisedAliases: z11.array(text6).optional(),
+  aliasRevision: text6.optional(),
+  planId: text6,
+  modelId: text6,
+  modelVersion: text6,
   modelStatus: coverageStatus,
   effortStatus: coverageStatus,
-  supportedEfforts: z10.array(text5).nullable(),
-  region: text5,
-  channel: text5,
-  qualification: z10.string().nullable(),
-  qualificationSummary: z10.string().max(40).nullable().optional(),
-  qualificationSummaryZh: z10.string().max(24).nullable().optional(),
+  supportedEfforts: z11.array(text6).nullable(),
+  region: text6,
+  channel: text6,
+  qualification: z11.string().nullable(),
+  qualificationSummary: z11.string().max(40).nullable().optional(),
+  qualificationSummaryZh: z11.string().max(24).nullable().optional(),
   effectiveFrom: date5.nullable(),
   effectiveUntil: date5.nullable(),
-  sourceId: text5.nullable(),
-  sourceUrl: z10.string().nullable(),
+  sourceId: text6.nullable(),
+  sourceUrl: z11.string().nullable(),
   verifiedAt: date5.nullable()
 }).passthrough();
-var plan = z10.object({
-  id: text5,
-  provider: text5,
-  name: text5,
-  region: text5,
-  generation: text5,
-  price: z10.object({
+var plan = z11.object({
+  id: text6,
+  provider: text6,
+  name: text6,
+  region: text6,
+  generation: text6,
+  price: z11.object({
     amount: finite.nonnegative().nullable(),
-    currency: z10.string(),
-    period: z10.enum(["month", "quarter", "year", "usage", "unknown"]),
-    qualifier: z10.string()
+    currency: z11.string(),
+    period: z11.enum(["month", "quarter", "year", "usage", "unknown"]),
+    qualifier: z11.string()
   }).passthrough(),
-  models: z10.array(text5),
-  clients: z10.array(text5),
-  quota: z10.string(),
-  sourceId: text5.nullable(),
-  sourceUrl: text5,
+  models: z11.array(text6),
+  clients: z11.array(text6),
+  quota: z11.string(),
+  sourceId: text6.nullable(),
+  sourceUrl: text6,
   reviewedAt: date5,
-  notes: z10.array(z10.string()),
-  coverage: z10.array(coverage).optional(),
-  catalogueEvidence: z10.object({
-    status: z10.enum(["confirmed", "catalogue-unpublished", "unknown"]),
-    sourceUrl: text5,
+  notes: z11.array(z11.string()),
+  coverage: z11.array(coverage).optional(),
+  catalogueEvidence: z11.object({
+    status: z11.enum(["confirmed", "catalogue-unpublished", "unknown"]),
+    sourceUrl: text6,
     verifiedAt: date5,
-    note: z10.string()
+    note: z11.string()
   }).strict().optional(),
-  modelCatalog: z10.object({
-    status: z10.enum(["listed", "unpublished", "unknown"]),
-    reason: text5,
-    sourceUrl: text5,
+  modelCatalog: z11.object({
+    status: z11.enum(["listed", "unpublished", "unknown"]),
+    reason: text6,
+    sourceUrl: text6,
     verifiedAt: date5,
-    note: z10.string(),
-    entries: z10.array(
-      z10.object({
-        name: text5,
-        aliases: z10.array(text5),
-        status: z10.enum(["indexed", "listed-only", "not-in-index"]),
-        reason: text5,
-        developerId: text5.nullable(),
-        sourceModelId: text5.nullable(),
-        modelId: text5.nullable(),
-        modelVersion: text5.nullable(),
-        kind: z10.enum(["text", "embedding", "unknown"]),
-        availability: z10.enum(["listed", "sunsetting", "unknown"]),
-        ability: z10.object({
+    note: z11.string(),
+    entries: z11.array(
+      z11.object({
+        name: text6,
+        aliases: z11.array(text6),
+        status: z11.enum(["indexed", "listed-only", "not-in-index"]),
+        reason: text6,
+        developerId: text6.nullable(),
+        sourceModelId: text6.nullable(),
+        modelId: text6.nullable(),
+        modelVersion: text6.nullable(),
+        kind: z11.enum(["text", "embedding", "unknown"]),
+        availability: z11.enum(["listed", "sunsetting", "unknown"]),
+        ability: z11.object({
           value: finite,
-          kind: z10.enum(["index", "single-source-reference"]),
-          methodId: text5,
-          configuration: text5.nullable(),
-          sourceUrl: text5,
+          kind: z11.enum(["index", "single-source-reference"]),
+          methodId: text6,
+          configuration: text6.nullable(),
+          sourceUrl: text6,
           observedAt: date5,
-          sourceStale: z10.boolean(),
-          comparableWithIndex: z10.boolean()
+          sourceStale: z11.boolean(),
+          comparableWithIndex: z11.boolean()
         }).strict().nullable(),
-        recommendedEffort: text5.nullable(),
-        sourceUrl: text5,
+        recommendedEffort: text6.nullable(),
+        sourceUrl: text6,
         verifiedAt: date5,
-        qualification: z10.string()
+        qualification: z11.string()
       }).strict().superRefine((entry, ctx) => {
         const indexed = entry.status === "indexed";
         if (indexed && !entry.modelId || !indexed && (entry.modelId !== null || entry.recommendedEffort !== null))
@@ -1675,67 +1831,67 @@ var plan = z10.object({
       })
     )
   }).strict().optional(),
-  quotaEstimates: z10.array(
-    z10.object({
+  quotaEstimates: z11.array(
+    z11.object({
       amount: finite.nonnegative(),
-      unit: z10.literal("requests"),
-      window: z10.enum(["5h", "week", "month"]),
+      unit: z11.literal("requests"),
+      window: z11.enum(["5h", "week", "month"]),
       windowHours: finite.nonnegative().nullable(),
-      modelAlias: text5,
-      client: text5,
-      agentTeam: z10.boolean(),
-      perSeat: z10.boolean(),
-      qualification: z10.string(),
-      evidenceIds: z10.array(text5)
+      modelAlias: text6,
+      client: text6,
+      agentTeam: z11.boolean(),
+      perSeat: z11.boolean(),
+      qualification: z11.string(),
+      evidenceIds: z11.array(text6)
     }).strict()
   ).optional(),
-  modelListingStatus: z10.enum(["listed", "unknown"]).optional(),
-  productLine: z10.object({ id: text5, name: text5, nameZh: text5.optional() }).strict().optional(),
-  tierId: text5.optional(),
-  listing: z10.enum(["model", "tool"]).optional(),
-  variant: z10.object({ scope: z10.enum(["personal", "team", "unknown"]), market: text5, billing: z10.enum(["month", "quarter", "year", "usage", "unknown"]) }).strict().optional(),
-  modelListings: z10.array(
-    z10.object({
-      alias: text5,
-      aliases: z10.array(text5),
-      advertisedVersion: text5,
-      channel: text5,
-      channelModelId: text5.nullable(),
-      modelId: text5.nullable(),
-      modelVersion: text5.nullable(),
-      targetModelId: text5.nullable(),
-      status: z10.enum(["matched", "not-in-index", "unresolved"]),
-      reason: text5,
-      matchBasis: z10.enum(["reviewed", "advertised", "conditional"]).nullable(),
-      sourceId: text5.nullable(),
-      sourceUrl: z10.string(),
-      sourceHash: text5.nullable(),
+  modelListingStatus: z11.enum(["listed", "unknown"]).optional(),
+  productLine: z11.object({ id: text6, name: text6, nameZh: text6.optional() }).strict().optional(),
+  tierId: text6.optional(),
+  listing: z11.enum(["model", "tool"]).optional(),
+  variant: z11.object({ scope: z11.enum(["personal", "team", "unknown"]), market: text6, billing: z11.enum(["month", "quarter", "year", "usage", "unknown"]) }).strict().optional(),
+  modelListings: z11.array(
+    z11.object({
+      alias: text6,
+      aliases: z11.array(text6),
+      advertisedVersion: text6,
+      channel: text6,
+      channelModelId: text6.nullable(),
+      modelId: text6.nullable(),
+      modelVersion: text6.nullable(),
+      targetModelId: text6.nullable(),
+      status: z11.enum(["matched", "not-in-index", "unresolved"]),
+      reason: text6,
+      matchBasis: z11.enum(["reviewed", "advertised", "conditional"]).nullable(),
+      sourceId: text6.nullable(),
+      sourceUrl: z11.string(),
+      sourceHash: text6.nullable(),
       verifiedAt: date5,
-      aliasRevision: text5,
-      qualification: z10.string()
+      aliasRevision: text6,
+      qualification: z11.string()
     })
   ).optional(),
-  fieldEvidence: z10.record(
-    z10.string(),
-    z10.object({
-      status: z10.enum(["confirmed", "unknown"]),
-      qualification: z10.string(),
-      sources: z10.array(
-        z10.object({
-          sourceUrl: text5,
-          sourceHash: text5,
+  fieldEvidence: z11.record(
+    z11.string(),
+    z11.object({
+      status: z11.enum(["confirmed", "unknown"]),
+      qualification: z11.string(),
+      sources: z11.array(
+        z11.object({
+          sourceUrl: text6,
+          sourceHash: text6,
           observedAt: date5,
-          quote: z10.string()
+          quote: z11.string()
         })
       )
     })
   ).optional(),
   metering: planMeteringSchema.optional(),
-  quotaTerms: z10.array(
-    z10.object({
-      id: text5,
+  quotaTerms: z11.array(
+    z11.object({
+      id: text6,
       amount: finite.nonnegative().nullable(),
-      unit: z10.enum([
+      unit: z11.enum([
         "requests",
         "tokens",
         "credits",
@@ -1743,223 +1899,225 @@ var plan = z10.object({
         "percentage",
         "unknown"
       ]),
-      window: z10.enum(["rolling", "week", "month", "unknown"]),
+      window: z11.enum(["rolling", "week", "month", "unknown"]),
       windowHours: finite.nonnegative().nullable(),
-      resetKind: z10.enum([
+      resetKind: z11.enum([
         "rolling",
         "calendar",
         "subscription-anniversary",
         "unknown"
       ]),
-      timezone: text5.nullable(),
-      anchor: text5.nullable(),
-      poolId: text5,
-      aggregation: z10.enum(["simultaneous-gates", "do-not-sum"]),
-      qualification: z10.string(),
-      evidenceIds: z10.array(text5)
+      timezone: text6.nullable(),
+      anchor: text6.nullable(),
+      poolId: text6,
+      aggregation: z11.enum(["simultaneous-gates", "do-not-sum"]),
+      qualification: z11.string(),
+      evidenceIds: z11.array(text6)
     }).passthrough()
   ).optional(),
-  constraints: z10.array(
-    z10.object({
-      kind: text5,
-      value: z10.union([z10.string(), z10.boolean()]),
-      qualification: z10.string(),
-      evidenceIds: z10.array(text5)
+  constraints: z11.array(
+    z11.object({
+      kind: text6,
+      value: z11.union([z11.string(), z11.boolean()]),
+      qualification: z11.string(),
+      evidenceIds: z11.array(text6)
     })
   ).optional(),
-  advertisedAccess: z10.array(
-    z10.object({
-      alias: text5,
-      modelVersion: text5.optional(),
-      nativeEfforts: z10.array(text5).optional(),
-      qualification: z10.string(),
-      evidenceIds: z10.array(text5)
+  advertisedAccess: z11.array(
+    z11.object({
+      alias: text6,
+      modelVersion: text6.optional(),
+      nativeEfforts: z11.array(text6).optional(),
+      qualification: z11.string(),
+      evidenceIds: z11.array(text6)
     })
   ).optional(),
-  usageRates: z10.array(
-    z10.object({
-      modelAlias: text5,
-      currency: z10.string(),
+  usageRates: z11.array(
+    z11.object({
+      modelAlias: text6,
+      currency: z11.string(),
       perTokens: finite.positive(),
       input: finite.nonnegative(),
       output: finite.nonnegative(),
       cacheRead: finite.nonnegative().optional(),
-      qualification: z10.string(),
-      evidenceIds: z10.array(text5)
+      qualification: z11.string(),
+      evidenceIds: z11.array(text6)
     })
   ).optional()
 }).passthrough();
-var event = z10.object({
-  id: text5,
-  uid: text5,
-  sequence: z10.number().int().nonnegative(),
+var event = z11.object({
+  id: text6,
+  uid: text6,
+  sequence: z11.number().int().nonnegative(),
   start: date5,
   end: date5,
-  title: z10.string(),
-  kind: text5,
+  title: z11.string(),
+  kind: text6,
   multiplier: finite.nullable(),
-  eligibility: z10.enum(["conditional", "eligible", "ineligible", "unknown"]),
-  sourceUrl: z10.string(),
-  status: z10.enum(["CONFIRMED", "TENTATIVE", "CANCELLED"]),
-  description: z10.string(),
-  ruleIds: z10.array(text5),
+  eligibility: z11.enum(["conditional", "eligible", "ineligible", "unknown"]),
+  sourceUrl: z11.string(),
+  status: z11.enum(["CONFIRMED", "TENTATIVE", "CANCELLED"]),
+  description: z11.string(),
+  ruleIds: z11.array(text6),
   lastModified: date5
 }).passthrough().refine((value) => Date.parse(value.end) > Date.parse(value.start));
-var calendarView = z10.object({
-  provider: text5,
-  language: z10.enum(["zh", "en"]),
-  context: z10.null(),
-  timezone: text5,
+var calendarView = z11.object({
+  provider: text6,
+  language: z11.enum(["zh", "en"]),
+  context: z11.null(),
+  timezone: text6,
   from: date5,
   to: date5,
-  events: z10.array(event),
-  announcements: z10.array(record),
-  notes: z10.array(z10.string()),
-  sources: z10.array(record)
+  events: z11.array(event),
+  announcements: z11.array(record),
+  notes: z11.array(z11.string()),
+  sources: z11.array(record)
 }).passthrough();
-var newsView = z10.object({
-  data: z10.array(
-    z10.object({
-      id: text5,
-      title: z10.string(),
-      summary: z10.string(),
-      provider: text5,
-      topic: text5,
-      originalUrl: text5,
+var newsView = z11.object({
+  data: z11.array(
+    z11.object({
+      id: text6,
+      title: z11.string(),
+      summary: z11.string(),
+      provider: text6,
+      topic: text6,
+      originalUrl: text6,
       observedAt: date5,
       publishedAt: date5.nullable(),
-      verification: text5
+      verification: text6
     }).passthrough()
   )
 }).passthrough();
 var schemas = {
   "plan-value": planValuePublicationSchema,
-  display: z10.object({ registry: record, speed: z10.record(z10.string(), z10.record(z10.string(), z10.object({ throughputStatus: text5.nullable(), reason: z10.string().nullable(), taskTimeQuantile: finite.nullable(), throughputQuantile: finite.nullable() }).strict())) }).strict(),
+  display: z11.object({ registry: record, speed: z11.record(z11.string(), z11.record(z11.string(), z11.object({ throughputStatus: text6.nullable(), reason: z11.string().nullable(), taskTimeQuantile: finite.nullable(), throughputQuantile: finite.nullable() }).strict())) }).strict(),
   client: clientDigestSchema,
-  methods: z10.object({
-    releaseVersion: z10.string().regex(/^\d+\.\d+\.\d+$/).optional(),
+  methods: z11.object({
+    releaseVersion: z11.string().regex(/^\d+\.\d+\.\d+$/).optional(),
     release: record.optional(),
     methodology: record,
     sources: record,
     snapshot: record,
     legacyPublication: record,
-    sourceSnapshots: z10.record(z10.string(), text5.nullable()),
+    sourceSnapshots: z11.record(z11.string(), text6.nullable()),
     asOf: date5.nullable()
   }).passthrough(),
-  registry: z10.object({
+  registry: z11.object({
     portfolio: publicPortfolioSchema.optional(),
     clientAliases: clientAliasRegistrySchema.optional(),
-    revision: text5,
-    developers: z10.array(
-      z10.object({ id: text5, name: text5, shortName: text5, mark: text5 })
+    revision: text6,
+    developers: z11.array(
+      z11.object({ id: text6, name: text6, shortName: text6, mark: text6 })
     ),
-    releases: z10.array(
-      z10.object({
-        id: text5,
-        displayName: text5,
-        modelsdev: text5,
-        developerId: text5,
-        lineageId: text5,
-        status: z10.enum(["stable", "preview", "retired"]),
-        role: text5
+    releases: z11.array(
+      z11.object({
+        id: text6,
+        displayName: text6,
+        modelsdev: text6,
+        developerId: text6,
+        lineageId: text6,
+        status: z11.enum(["stable", "preview", "retired"]),
+        role: text6
       }).passthrough()
     ),
-    codingRecords: z10.array(
-      z10.object({
-        modelId: text5,
-        tool: text5,
-        status: z10.enum(["current", "retired"]),
+    codingRecords: z11.array(
+      z11.object({
+        modelId: text6,
+        tool: text6,
+        status: z11.enum(["current", "retired"]),
         verifiedAt: date5,
-        sourceUrl: text5,
-        qualification: z10.string()
+        sourceUrl: text6,
+        qualification: z11.string()
       }).passthrough()
     ),
     codingArchiveDays: finite.nonnegative(),
-    defaultPolicy: z10.object({
-      defaultDevelopers: z10.array(text5),
-      lineagesByDeveloper: z10.record(z10.string(), z10.array(text5)),
-      maxModels: z10.number().int().positive().optional()
+    defaultPolicy: z11.object({
+      defaultDevelopers: z11.array(text6),
+      lineagesByDeveloper: z11.record(z11.string(), z11.array(text6)),
+      maxModels: z11.number().int().positive().optional()
     }).passthrough(),
-    providers: z10.array(
-      z10.object({
-        id: text5.regex(/^[\w:.-]{1,96}$/),
-        name: text5,
-        category: z10.enum(["direct", "aggregator"])
+    providers: z11.array(
+      z11.object({
+        id: text6.regex(/^[\w:.-]{1,96}$/),
+        name: text6,
+        category: z11.enum(["direct", "aggregator"])
       })
     ),
-    planAliases: z10.record(
-      z10.string().regex(/^[\w:.-]{1,96}$/),
-      text5.regex(/^[\w:.-]{1,96}$/)
+    planAliases: z11.record(
+      z11.string().regex(/^[\w:.-]{1,96}$/),
+      text6.regex(/^[\w:.-]{1,96}$/)
     ),
-    versions: z10.array(
-      z10.object({ id: text5, name: text5, developerId: text5 }).passthrough()
+    versions: z11.array(
+      z11.object({ id: text6, name: text6, developerId: text6 }).passthrough()
     ),
-    catalog: z10.object({
-      entries: z10.array(record),
-      models: z10.array(record),
-      configurations: z10.array(record),
-      services: z10.array(record)
+    catalog: z11.object({
+      entries: z11.array(record),
+      models: z11.array(record),
+      configurations: z11.array(record),
+      services: z11.array(record)
     })
   }).passthrough(),
-  models: z10.object({
+  models: z11.object({
     index: dataset,
     legacy: dataset,
-    publicModels: z10.array(
-      z10.object({ id: text5, name: text5, configurations: z10.array(record) }).passthrough()
+    publicModels: z11.array(
+      z11.object({ id: text6, name: text6, configurations: z11.array(record) }).passthrough()
     ),
-    configurations: z10.array(
-      z10.object({
-        id: text5,
-        slug: text5,
-        originalName: text5,
-        mappingStatus: z10.enum(["verified", "pending"]),
-        evidence: z10.object({ observedAt: date5, snapshotId: text5 }).passthrough()
+    configurations: z11.array(
+      z11.object({
+        id: text6,
+        slug: text6,
+        originalName: text6,
+        mappingStatus: z11.enum(["verified", "pending"]),
+        evidence: z11.object({ observedAt: date5, snapshotId: text6 }).passthrough()
       }).passthrough()
     ),
-    metrics: z10.object({
-      profiles: z10.array(
-        z10.object({
-          modelId: text5,
-          name: text5,
-          recommended: text5.nullable(),
-          configurations: z10.array(
-            indexMetric.safeExtend({ effort: text5 })
+    metrics: z11.object({
+      profiles: z11.array(
+        z11.object({
+          modelId: text6,
+          name: text6,
+          recommended: text6.nullable(),
+          configurations: z11.array(
+            indexMetric.safeExtend({ effort: text6 })
           )
         }).passthrough()
       ).optional()
     }).passthrough()
   }).passthrough(),
-  plans: z10.object({
-    plans: z10.array(plan),
-    coverage: z10.array(coverage),
+  plans: z11.object({
+    plans: z11.array(plan),
+    coverage: z11.array(coverage),
     knowledge: planKnowledgeSchema.optional(),
     value: planValuePublicationSchema.optional(),
     valueSummary: planValueSummarySchema.optional()
   }).passthrough(),
-  rules: z10.object({
-    version: text5,
+  rules: z11.object({
+    version: text6,
     clientMultipliers: clientMultiplierPackSchema.optional(),
-    rules: z10.array(
-      z10.object({
-        id: text5,
-        provider: text5,
-        generations: z10.array(text5),
-        models: z10.array(text5),
-        clients: z10.array(text5),
-        timezone: text5,
+    clientWindowDays: z11.number().int().min(1).max(14).optional(),
+    speedTiers: z11.array(speedTierSchema).optional(),
+    rules: z11.array(
+      z11.object({
+        id: text6,
+        provider: text6,
+        generations: z11.array(text6),
+        models: z11.array(text6),
+        clients: z11.array(text6),
+        timezone: text6,
         startHour: finite,
         endHour: finite
       }).passthrough()
     ),
-    unresolved: z10.array(record)
+    unresolved: z11.array(record)
   }).passthrough(),
-  news: z10.object({ zh: newsView, en: newsView }).passthrough(),
-  calendar: z10.object({
+  news: z11.object({ zh: newsView, en: newsView }).passthrough(),
+  calendar: z11.object({
     from: date5,
     to: date5,
-    providers: z10.record(
-      z10.string(),
-      z10.object({ zh: calendarView, en: calendarView })
+    providers: z11.record(
+      z11.string(),
+      z11.object({ zh: calendarView, en: calendarView })
     )
   }).passthrough()
 };
@@ -1990,10 +2148,10 @@ function validateComponent(kind, value, manifest) {
   if (!isRecord(value) || value.schemaVersion !== 1 && value.schemaVersion !== 2 || value.schemaVersion !== manifest.components[kind]?.schemaVersion || value.kind !== kind || !isRecord(value.dependencies) || !Array.isArray(value.evidence) || !isRecord(value.data))
     throw new Error("publication_incompatible_component");
   assertPublicOnly(value);
-  if (!z10.array(
-    z10.object({
-      source: text5,
-      snapshotId: text5.nullable(),
+  if (!z11.array(
+    z11.object({
+      source: text6,
+      snapshotId: text6.nullable(),
       observedAt: date5.nullable(),
       validUntil: date5.nullable().optional()
     }).passthrough()

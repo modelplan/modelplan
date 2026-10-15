@@ -166,6 +166,10 @@ const codexTail = 4 << 20
 
 func readCodex(home string) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "codex"}
+	if home == "" {
+		st.Status, st.Reason = "missing", "not read"
+		return nil, st
+	}
 	files := newestRollouts(filepath.Join(home, "sessions"), codexFiles)
 	if len(files) == 0 {
 		st.Status, st.Reason = "missing", "no Codex session logs found"

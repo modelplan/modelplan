@@ -55,3 +55,22 @@ func TestMultiplierContractPreservesZeroAndLegacyAbsence(t *testing.T) {
 		t.Fatal("incomplete horizon accepted")
 	}
 }
+
+func TestSpeedTiersClientV12(t *testing.T) {
+	raw := `{"schemaVersion":1,"kind":"client","data":{"projectionVersion":"client-v1.2","multipliers":[],"multiplierHorizon":{"from":"2026-10-15T00:00:00Z","to":"2026-10-17T00:00:00Z","selection":"highest-priority-no-stacking"},
+"speedTiers":[{"id":"codex-fast","harness":"codex","tier":"fast","label":"Fast","toggle":"/fast","eligibility":{"plans":["chatgpt-sign-in"],"note":"n"},
+"models":[{"vendorModelId":"gpt-6-astra","modelId":"astra","speed":{"ratio":null,"qualifier":"unstated"}},{"vendorModelId":"gpt-6-sol","modelId":null,"speed":{"ratio":null,"qualifier":"unstated"}}],
+"billing":[{"account":"subscription","billsTo":"plan-quota","basis":"included-usage","ratio":2.5}],"caveats":[],"sources":["https://example.test"],"reviewedAt":"2026-10-15T06:30:00Z"}],
+"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"models":[],"lineups":[],"resets":[],"windows":[]}}`
+	d, err := Parse("client", []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := d.SpeedTiers("astra", "codex")
+	if len(ts) != 1 || ts[0].Rate("subscription").Ratio != 2.5 || ts[0].Rate("api") != nil || ts[0].Model.Speed.Ratio != nil {
+		t.Fatalf("tiers = %+v", ts)
+	}
+	if len(d.SpeedTiers("astra", "claude-code")) != 0 || len(d.SpeedTiers("sol", "")) != 0 {
+		t.Fatal("tier leaked to another harness or model")
+	}
+}

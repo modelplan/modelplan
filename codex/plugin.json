@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "modelplan-codex",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Read-only Codex GPT console: recommended efforts, your own quota and reset countdown (read locally), and public reset notices. Requires Node 24 or newer.",
   "author": {
     "name": "Model Plan",

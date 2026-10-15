@@ -16,6 +16,7 @@ modelplan sync                                   # once per answer; later reads 
 modelplan effort '<model>' --json --offline      # one model's effort ladder
 modelplan lineup --dev <maker> --json --offline  # a maker's models at their ★ effort
 modelplan quota --json                           # the user's own windows, read locally
+modelplan advise --json                          # what is worth saying about them now (v0.4+)
 ```
 
 Without it:
@@ -45,10 +46,11 @@ python3 '<this skill directory>/scripts/quota.py'
 | `exhausted` | A window is used up | Wait for its reset, or use another plan or the API |
 | `unknown` | No usable reading | Give public advice and say how to enable readings (see reference) |
 
+- With the CLI, start from `modelplan advise --json`: it already matched the harness's current model and effort, picked the next effort that scores higher, and remembers windows it advised on so it can say "switch back to ★" after their reset.
 - Within one model, quota burn per task scales roughly with the cost multiplier: a ×1.45 step burns about 1.45× as much quota per task. Say it is an estimate. Across different models, vendors weight usage their own way; treat that as unknown.
 - The longer window decides: a five-hour surplus does not justify spending when the weekly window is `conserve`.
 - A reading older than an hour (`stale`) may have moved; say how old it is. `reset_passed` means the window has reset since the reading.
-- Speed tiers bill differently per harness (official docs, October 2026):
+- Speed tiers bill differently per harness. Read them from `/v1/client` `data.speedTiers` (client-v1.2; `modelplan effort --json` includes the model's `speedTiers`): each tier lists models (`modelId`, `speed.ratio` with `up-to`/`approximate`/`unstated`) and `billing[]` with what it draws on (`plan-quota`, `usage-credits`, `credits`, `api`). Speed is token generation, not task time: an `up-to ×8` tier means generation time ≥ ×0.13, never a promise. If the publication has no `speedTiers` yet, use these official figures (October 2026):
   - **Codex Fast** (Sol 6.1, Astra, Sol 6, Luna): about 2.5× included usage (2× credits); speed gain stated only as "about 1.5×" for older models. Reasonable with `spend` headroom or when time matters.
   - **Codex Ultrafast** (Astra, Sol 6.1; Pro $500 and eligible Enterprise/Edu only): 8× included usage (6× credits), up to 8× faster on Astra. Only for urgent work with plenty of allowance.
   - **Claude Code fast mode** (Opus 5.5, Opus 5, Opus 4.8): about 2× the token price, up to 2.5× faster, billed to **usage credits (money) even when plan allowance is left**, and enabling it mid-conversation re-bills the whole context once. Plan quota headroom is never a reason for it; suggest it only when the user puts time first and accepts the extra spend.

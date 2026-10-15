@@ -33,3 +33,15 @@ test('effort text and UI curves abstain on differing/missing time bases; zero an
 });
 
 test('compatible v1.1 multiplier scope is passed through without picking an entitlement or faking absence',()=>{const v=structuredClone(fixture);v.component.data.projectionVersion='client-v1.1';const h={from:'2026-10-11T00:00:00Z',to:'2026-10-13T00:00:00Z',selection:'highest-priority-no-stacking'};v.component.data.multiplierHorizon=h;v.component.data.multipliers=[{provider:'openai',multiplier:null},{provider:'zhipu',multiplier:0}];const d=projectClient(v);assert.deepEqual(d.multipliers,[v.component.data.multipliers[0]]);assert.strictEqual(d.multiplierHorizon,h);assert.equal(d.multipliers[0].multiplier,null);assert.equal(projectClient(fixture).multipliers,undefined);});
+test('speed tiers: only Codex tiers reach the dashboard, and text shows quota multiples and unstated speed',()=>{
+ const f=structuredClone(fixture);const astra={vendorModelId:'gpt-6-astra',modelId:'astra',speed:{ratio:8,qualifier:'up-to'}};
+ f.component.data.speedTiers=[
+  {id:'codex-fast',harness:'codex',tier:'fast',label:'Fast',models:[{...astra,speed:{ratio:null,qualifier:'unstated'}}],billing:[{account:'subscription',billsTo:'plan-quota',basis:'included-usage',ratio:2.5},{account:'credits',billsTo:'credits',basis:'credit-rate',ratio:2}],caveats:[],eligibility:{plans:['chatgpt-sign-in'],note:'n'}},
+  {id:'codex-ultrafast',harness:'codex',tier:'ultrafast',label:'Ultrafast',models:[astra],billing:[{account:'subscription',billsTo:'plan-quota',basis:'included-usage',ratio:8}],caveats:['restricted-plans'],eligibility:{plans:['chatgpt-pro-500'],note:'n'}},
+  {id:'claude-code-fast',harness:'claude-code',tier:'fast',label:'Fast mode',models:[],billing:[],caveats:[],eligibility:{plans:['x'],note:'n'}}];
+ const d=projectClient(f);assert.deepEqual(d.speedTiers.map(t=>t.id),['codex-fast','codex-ultrafast']);
+ const text=renderEffort(d.models.find(m=>m.id==='astra'),'en',d.speedTiers);
+ assert.match(text,/⚡ Codex Fast  plan quota ×2\.5 · credits ×2 · speed-up not stated/);
+ assert.match(text,/⚡⚡ Codex Ultrafast  plan quota ×8 · up to ×8 faster · generation time ≥ ×0\.13/);
+ assert.deepEqual(projectClient(fixture).speedTiers,[]);
+});

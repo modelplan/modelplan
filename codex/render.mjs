@@ -30,7 +30,17 @@ export function renderLineup(data,lang="zh") {
   }
   return out.join("\n")+"\n";
 }
-export function renderEffort(m,lang="zh") {
+// Speed tiers for one model, as in `modelplan effort`: "⚡ Codex Fast  plan quota ×2.5 · credits ×2 · speed-up not stated".
+const g2=v=>String(Math.round(v*100)/100);
+export function renderSpeed(m,tiers=[],lang="zh") {
+  const zh=lang==="zh",out=[];
+  for(const t of tiers){const x=t.models.find(v=>v.modelId===m.id);if(!x)continue;
+    const parts=t.billing.map(b=>b.billsTo==="plan-quota"?(zh?"套餐额度 ×":"plan quota ×")+g2(b.ratio):b.billsTo==="credits"?(zh?"积分 ×":"credits ×")+g2(b.ratio):null).filter(Boolean);
+    const s=x.speed.ratio;parts.push(s==null?(zh?"提速未公布":"speed-up not stated"):(zh?`提速最多 ×${g2(s)} · 生成耗时最低 ×${g2(1/s)}`:`up to ×${g2(s)} faster · generation time ≥ ×${g2(1/s)}`));
+    out.push(`  ${t.tier==="ultrafast"?"⚡⚡":"⚡"} Codex ${t.label}  ${parts.join(" · ")}`);}
+  return out.length?out.join("\n")+"\n":"";
+}
+export function renderEffort(m,lang="zh",tiers=[]) {
   const t=words[lang],rec=recommendation(m),ri=m.configurations.indexOf(rec);
   const out=[`${m.name}  ${m.configurations.length} · ★ ${rec?.label??"—"} ${t.recommended} · ${t.vs} · ${t.step}`];
   for(let i=m.configurations.length-1;i>=0;i--){const c=m.configurations[i];
@@ -40,7 +50,7 @@ export function renderEffort(m,lang="zh") {
     const time=value===null?"—":ratio(value)+((c.timeEstimated||rec.timeEstimated)?" "+t.estimated:"");
     out.push(`  ${i===ri?"◆":ri>=0&&i>ri?"┆":"│"} ${pad(i===ri?"★ "+c.label:c.label,8)}  ${t.ability} ${pad(a,14)}  ${t.cost} ${pad(cost,7)}  ${t.time} ${pad(time,6)}  ${stepUp(m.configurations,i,t.pts)}`.trimEnd());
   }
-  return out.join("\n")+"\n";
+  return out.join("\n")+"\n"+renderSpeed(m,tiers,lang);
 }
 
 // One effort against the next lower one, as in the CLI: "↑ +3.7分 ×1.45".
@@ -61,12 +71,13 @@ export function duration(min,q) {
   if(min<48*60)return min%60?`${Math.floor(min/60)}${q.h}${min%60}${q.m}`:`${min/60}${q.h}`;
   const d=Math.floor(min/1440),h=Math.floor((min%1440)/60);return h?`${d}${q.d}${h}${q.h}`:`${d}${q.d}`;
 }
-export function renderQuota(quota,lang="zh") {
+export function renderQuota(quota,lang="zh",advice=null) {
   const q=quotaWords[lang],a=quota?.account;
   if(!a)return `${q.none}${quota?.reason?" ("+quota.reason+")":""}.\n`;
   const head=[q.title,a.plan,a.harness?.model,a.harness?.effort].filter(Boolean).join(" · ")+(a.stale?` · ${q.stale}`:"");
   const lines=a.windows.map(w=>{const kind=q.kinds[w.kind]??w.kind,used=typeof w.usedPercent==="number"?`${Math.round(w.usedPercent)}% ${q.used}`:"—";
     const reset=typeof w.resetsInMinutes==="number"?` · ${q.resets} ${duration(w.resetsInMinutes,q)}`:"";
     return `  ${kind}${w.limit?" "+w.limit:""} ${used}${reset} · ${q.pace[w.pace]??w.pace}`;});
-  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`].join("\n")+"\n";
+  const hints=(advice?.events??[]).map(e=>`  ${e.severity==="warn"?"!":"↑"} ${e.text[lang]??e.text.en}`);
+  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints].join("\n")+"\n";
 }

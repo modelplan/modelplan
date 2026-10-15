@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
@@ -41,6 +42,9 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan effort [model]             one model's effort ladder (default: Claude Code's current model)
   modelplan models [--dev openai]      models with ★ effort, ability and cost
   modelplan quota                      your own usage windows, read from this machine only
+  modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
+                                       switch back after it, peak hours, cards, public resets
+                                       (--hook claude-code|codex: prompt hook, each hint once)
   modelplan statusline                 one line for Claude Code / other status bars (cache only)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
@@ -91,6 +95,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	modelFlag := fs.String("model", "", "statusline: model id when stdin has none")
 	effortFlag := fs.String("effort", "", "statusline: current effort when the harness knows it")
 	recordOnly := fs.Bool("record-only", false, "statusline: record Claude Code usage windows and print nothing")
+	source := fs.String("source", "", "advise: only claude-code, codex or user events")
+	hook := fs.String("hook", "", "advise: run as a harness hook (claude-code); print only hints not shown before")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
@@ -154,6 +160,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return printJSON(stdout, r)
 		}
 		style.Quota(stdout, r)
+		return 0
+
+	case "advise":
+		if *hook != "" {
+			return adviseHook(stdin, stdout, style, st, *hook)
+		}
+		d, _, _ := publication.Load(st)
+		state := advise.Load(st.Dir)
+		now := time.Now()
+		es := filterSource(advise.Derive(advise.Input{Report: quota.Read(quotaPaths(st), now), Digest: d, State: state, Now: now}), *source)
+		_ = state.Save(st.Dir, now)
+		if c.json {
+			for i := range es {
+				es[i].Text = map[string]string{"zh": render.Style{T: render.ZH}.AdviceLine(es[i]), "en": render.Style{T: render.EN}.AdviceLine(es[i])}
+			}
+			return printJSON(stdout, map[string]any{"schemaVersion": 1, "evaluatedAt": now.UTC(), "events": nonNil(es)})
+		}
+		style.Advice(stdout, es)
 		return 0
 
 	case "statusline":
@@ -223,10 +247,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%s: %s\n", style.T.NotListed, q)
 			return exitErr
 		}
+		tiers := d.SpeedTiers(m.ID, "")
 		if c.json {
-			return printJSON(stdout, m)
+			return printJSON(stdout, struct {
+				*digest.Model
+				SpeedTiers []digest.ModelTier `json:"speedTiers,omitempty"`
+			}{m, tiers})
 		}
 		style.Effort(stdout, m)
+		style.Speed(stdout, tiers)
 	case "models":
 		var ms []digest.Model
 		for _, m := range d.Models {
@@ -311,10 +340,14 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if in.FastMode != nil && *in.FastMode {
 		tail += " ⚡fast"
 	}
-	if q := style.QuotaSegment(acct); q != "" {
+	d, s, err := publication.Load(st)
+	hint := ""
+	if acct != nil {
+		hint = statuslineHint(style, st, d, *acct, now)
+	}
+	if q := style.QuotaSegment(acct, hint); q != "" {
 		tail += " │ " + q
 	}
-	d, s, err := publication.Load(st)
 	if err != nil {
 		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "")+" · "+style.T.Syncing+tail)
 		return 0
@@ -326,6 +359,74 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	fmt.Fprintln(stdout, style.Statusline(d, m, effort, time.Since(s.CheckedAt) > alarmAfter, raw)+tail)
 	return 0
+}
+
+// statuslineHint: the most urgent Claude Code advice as a few characters ("↑High ×1.37",
+// "↺★Med"). It remembers advised windows so the switch-back hint appears after the reset.
+func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct quota.Account, now time.Time) string {
+	state := advise.Load(st.Dir)
+	es := advise.Derive(advise.Input{Report: quota.Report{Accounts: []quota.Account{acct}}, Digest: d, State: state, Now: now})
+	_ = state.Save(st.Dir, now)
+	for _, e := range es {
+		if e.Source == "claude-code" {
+			if h := style.AdviceShort(e); h != "" {
+				return h
+			}
+		}
+	}
+	return ""
+}
+
+// adviseHook is a UserPromptSubmit hook for Claude Code or Codex (both accept the same
+// output): new advice goes to the model as additional context, once per event. It never
+// fails the prompt and never touches the network.
+func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, harness string) int {
+	_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 1<<20))
+	if harness != "claude-code" && harness != "codex" {
+		return 0
+	}
+	now := time.Now()
+	d, _, _ := publication.Load(st)
+	state := advise.Load(st.Dir)
+	paths := quotaPaths(st)
+	if harness == "claude-code" {
+		paths.CodexHome = "" // Codex advice belongs to Codex; skip scanning its logs on every prompt
+	}
+	var es []advise.Event
+	for _, e := range advise.Derive(advise.Input{Report: quota.Read(paths, now), Digest: d, State: state, Now: now}) {
+		if e.Source == harness || (harness == "claude-code" && e.Source == "user") {
+			es = append(es, e)
+		}
+	}
+	es = state.Unseen(es)
+	if len(es) > 0 {
+		out := map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": style.AdviceContext(es)}}
+		b, _ := json.Marshal(out)
+		fmt.Fprintln(stdout, string(b))
+		state.MarkSeen(es, now)
+	}
+	_ = state.Save(st.Dir, now)
+	return 0
+}
+
+func filterSource(es []advise.Event, source string) []advise.Event {
+	if source == "" {
+		return es
+	}
+	var out []advise.Event
+	for _, e := range es {
+		if e.Source == source {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func nonNil(es []advise.Event) []advise.Event {
+	if es == nil {
+		return []advise.Event{}
+	}
+	return es
 }
 
 // quotaPaths: the shared cache, $CODEX_HOME (default ~/.codex) and ~/.config/modelplan/local.json.
@@ -357,7 +458,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true}
+var takesValue = map[string]bool{"lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

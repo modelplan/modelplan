@@ -113,6 +113,7 @@ type Digest struct {
 	Units             Units              `json:"units"`
 	Models            []Model            `json:"models"`
 	Lineups           []PublishedLineup  `json:"lineups"`
+	Speed             []SpeedTier        `json:"speedTiers,omitempty"`
 	Resets            []json.RawMessage  `json:"resets"`
 	Windows           []json.RawMessage  `json:"windows"`
 }
@@ -233,7 +234,8 @@ func Parse(component string, b []byte) (*Digest, error) {
 		}
 	}
 	if d.ProjectionVersion != "" {
-		if d.ProjectionVersion != "client-v1.1" || d.Multipliers == nil || d.MultiplierHorizon == nil || d.MultiplierHorizon.Selection != "highest-priority-no-stacking" {
+		// client-v1.x only adds fields (v1.2: speedTiers); unknown additions are ignored.
+		if !strings.HasPrefix(d.ProjectionVersion, "client-v1.") || d.Multipliers == nil || d.MultiplierHorizon == nil || d.MultiplierHorizon.Selection != "highest-priority-no-stacking" {
 			return nil, errors.New("client: incomplete multiplier contract")
 		}
 	}

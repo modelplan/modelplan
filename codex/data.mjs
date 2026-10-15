@@ -11,6 +11,7 @@ export function projectClient({manifest,component}){
     builtAt:d.builtAt,units:d.units,models,modelNames:Object.fromEntries(models.map(m=>[m.id,m.name])),
     lineup:d.lineups.find(l=>l.developerId==='openai')??null,
     resetFeed:{status:'published',publicationId:manifest.publicationId,events:d.resets.filter(r=>r.provider==='openai'),personalEligibility:'unknown'},
+    speedTiers:(d.speedTiers??[]).filter(t=>t.harness==='codex'),
     windows:d.windows.filter(w=>w.provider==='openai'),sourceUrl:DEFAULT_BASE+'/v1/client'};
 }
 export function createReader({base=process.env.MODELPLAN_BASE||DEFAULT_BASE,cacheDir,fetcher=fetch,now=Date.now,ttlMs=600000}={}){

@@ -129,8 +129,9 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 	}
 }
 
-// QuotaSegment is the status-line part: "5h 39% ↻42m · week 41%" with a headroom arrow.
-func (s Style) QuotaSegment(a *quota.Account) string {
+// QuotaSegment is the status-line part: "5h 39% ↻42m · week 41%" with a headroom arrow,
+// or with the advice hint in its place ("↑High ×1.37").
+func (s Style) QuotaSegment(a *quota.Account, hint string) string {
 	if a == nil || len(a.Windows) == 0 {
 		return ""
 	}
@@ -150,5 +151,8 @@ func (s Style) QuotaSegment(a *quota.Account) string {
 		return ""
 	}
 	arrow := map[string]string{"spend": s.c(okc, " ↑"), "conserve": s.c(warn, " ↓"), "exhausted": s.c(warn, " ✕")}[a.Headroom]
+	if hint != "" {
+		arrow = " " + hint
+	}
 	return strings.Join(parts, s.c(dim, " · ")) + arrow
 }
