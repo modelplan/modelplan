@@ -250,3 +250,33 @@ func TestFiveHourSurplusWhileWeekDecidesSpend(t *testing.T) {
 		t.Fatalf("events = %+v", es)
 	}
 }
+
+func TestCodexSurplusMentionsFastClaudeNever(t *testing.T) {
+	d := fixtureDigest()
+	astra := digest.Model{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium",
+		HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+		Efforts:    []digest.Effort{eff("medium", "Med", 51, 3.4), eff("high", "High", 54, 4.1)}}
+	d.Models = append(d.Models, astra)
+	id, opus := "astra", "opus-id"
+	d.Models[0].ID = opus
+	tier := func(id, harness, billsTo string, model *string) digest.SpeedTier {
+		t := digest.SpeedTier{ID: id, Harness: harness, Tier: "fast", Label: "Fast",
+			Billing: []digest.SpeedBilling{{Account: "subscription", BillsTo: billsTo, Ratio: 2.5}}}
+		m := digest.SpeedTierModel{ModelID: model}
+		m.Speed.Qualifier = "unstated"
+		t.Models = []digest.SpeedTierModel{m}
+		return t
+	}
+	d.Speed = []digest.SpeedTier{tier("codex-fast", "codex", "plan-quota", &id), tier("claude-code-fast", "claude-code", "usage-credits", &opus)}
+	codex := quota.Account{Source: "codex", ObservedAt: now.Add(-time.Minute), Harness: &quota.Harness{Model: "gpt-6-astra", Effort: "medium"},
+		Windows: []quota.Window{{Kind: "five_hour", UsedPercent: f(20), ResetsAt: at(50 * time.Minute), WindowMinutes: 300, ResetMode: "fixed", ObservedAt: now}}}
+	quota.Evaluate(&codex, now)
+	es := derive(t, nil, d, codex)
+	if len(es) == 0 || es[0].Speed == nil || es[0].Speed.QuotaRatio != 2.5 || es[0].Suggest.Effort != "high" {
+		t.Fatalf("codex = %+v", es)
+	}
+	es = derive(t, nil, d, claude("medium", 30, 40*time.Minute, 300))
+	if len(es) != 1 || es[0].Speed != nil {
+		t.Fatalf("claude = %+v", es[0])
+	}
+}

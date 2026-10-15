@@ -13,6 +13,7 @@ type adviceText struct {
 	Exhausted, Wait, UseCard          string
 	Tight, Down, Stay                 string
 	Surplus, Up, UpAny, Stronger, Top string
+	OrFast, FastUnstated, FastUpTo    string
 	Back, BackTo, BackNone            string
 	Peak, Offpeak                     string
 	CardsExpire                       string
@@ -25,7 +26,8 @@ var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
 	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s", Stay: "保持当前档，重活留给强模型",
-	Surplus: "%s还剩 %s，%s后重置，用不完就作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
+	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
+	Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
 	Peak: "%s %s后进入高峰：%s 额度消耗 %s → %s%s，重活可以提前做", Offpeak: "%s %s后进入优惠时段：%s 额度消耗 %s → %s%s，不急的活可以等",
 	CardsExpire: "%s 有 %d 张%s重置卡 %s后过期",
@@ -41,7 +43,8 @@ var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
 	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s", Stay: "stay at this effort and keep the strong model for the hard parts",
-	Surplus: "%s has %s left and resets in %s; unused allowance is lost", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
+	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
+	Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
 	Peak: "%s enters peak hours in %s: %s quota rate %s → %s%s; do heavy work first", Offpeak: "%s enters off-peak in %s: %s quota rate %s → %s%s; work that can wait is cheaper then",
 	CardsExpire: "%s: %d %s reset card(s) expire in %s",
@@ -151,6 +154,13 @@ func (s Style) AdviceLine(e advise.Event) string {
 			act = t.UpAny
 		case st.Action == "stronger_model":
 			act = fmt.Sprintf(t.Stronger, Short(st.ModelName), label(st), tail)
+		}
+		if sp := e.Speed; sp != nil {
+			speed := t.FastUnstated
+			if sp.SpeedRatio != nil {
+				speed = fmt.Sprintf(t.FastUpTo, g(*sp.SpeedRatio))
+			}
+			act += fmt.Sprintf(t.OrFast, sp.Label, g(sp.QuotaRatio), speed)
 		}
 		return fmt.Sprintf(t.Surplus, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
 	case advise.SwitchBack:

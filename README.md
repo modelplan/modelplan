@@ -19,7 +19,7 @@ This repository holds Model Plan's open-source clients and the [methodology](MET
 | --- | --- | --- |
 | **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client. Works in Claude Code, Codex and any agent that supports Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times. Needs only a shell and anonymous HTTPS |
 | Claude Code plugin | [`claude-code/`](claude-code/) | The Skill plus `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup`, a status line with live effort, 5h/7d quota and the current hint (`↑High ×1.37`, `↺★Med`), and a prompt hook that passes new hints to Claude once |
-| Codex plugin | [`codex/`](codex/) | The Skill plus a GPT effort dashboard: capability/cost/time curves, your Codex quota, reset countdown and hints, public reset notices; a prompt hook passes new hints to Codex once |
+| Codex plugin | [`codex/`](codex/) | The Skill plus a GPT effort dashboard: capability/cost/time curves with a ⚡ Fast / ⚡⚡ Ultrafast switch (quota and time multiples), your Codex quota, reset countdown and hints, public reset notices; a prompt hook passes new hints to Codex once |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary, read-only and anonymous. `modelplan quota` gathers local quota and `modelplan advise` decides what is worth saying now and remembers what it said; the status line, hooks and plugin commands use them |
 
 Every client reads only Model Plan's verified public publication, plus quota files the harnesses already write on your machine. There is no account and no telemetry, nothing personal is uploaded, and it never switches your model or effort for you.

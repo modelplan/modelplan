@@ -68,6 +68,15 @@ type Rate struct {
 	URL    string   `json:"url,omitempty"`
 }
 
+// Speed is a speed tier worth mentioning with a surplus: it draws the same plan quota faster.
+type Speed struct {
+	Tier       string   `json:"tier"`
+	Label      string   `json:"label"`
+	QuotaRatio float64  `json:"quotaRatio"`
+	SpeedRatio *float64 `json:"speedRatio"`
+	Qualifier  string   `json:"qualifier"`
+}
+
 type Public struct {
 	ID        string `json:"id"`
 	Provider  string `json:"provider"`
@@ -90,6 +99,7 @@ type Event struct {
 	Effort           string            `json:"effort,omitempty"` // harness effort as reported
 	Count            *int              `json:"count,omitempty"`  // reset cards
 	Suggest          *Step             `json:"suggest,omitempty"`
+	Speed            *Speed            `json:"speed,omitempty"`
 	Rate             *Rate             `json:"rate,omitempty"`
 	Public           *Public           `json:"public,omitempty"`
 	Stale            bool              `json:"stale,omitempty"`
@@ -211,6 +221,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 	case "spend":
 		e := base(ResetSoonSurplus, "info")
 		e.Suggest = cfg.up(d)
+		e.Speed = quotaSpeed(cfg, d, a.Source)
 		return []Event{e}
 	}
 	return nil
@@ -298,6 +309,20 @@ func (c config) up(d *digest.Digest) *Step {
 		}
 	}
 	return &Step{Action: "none"}
+}
+
+// quotaSpeed: the harness's Fast tier for this model when it draws plan quota (Codex), so
+// a surplus can pay for speed. Claude Code fast mode bills usage credits and never qualifies.
+func quotaSpeed(c config, d *digest.Digest, harness string) *Speed {
+	if c.model == nil || d == nil {
+		return nil
+	}
+	for _, t := range d.SpeedTiers(c.model.ID, harness) {
+		if r := t.Rate("subscription"); t.Tier == "fast" && r != nil && r.BillsTo == "plan-quota" {
+			return &Speed{Tier: t.Tier, Label: t.Label, QuotaRatio: r.Ratio, SpeedRatio: t.Model.Speed.Ratio, Qualifier: t.Model.Speed.Qualifier}
+		}
+	}
+	return nil
 }
 
 // down: back to ★ when above it, otherwise one effort lower.

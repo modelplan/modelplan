@@ -36,7 +36,7 @@ async function result(args) {
     if (args.view === "effort" && !model) throw Error("effort_view_requires_modelId");
     return {
       structuredContent: { ...data, quota, advice, focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
-      content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang) : renderLineup(data, args.lang) },
+      content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang, data.speedTiers) : renderLineup(data, args.lang) },
         { type: "text", text: renderQuota(quota, args.lang, advice) },
         { type: "text", text: `Publication ${data.publicationId}${data.stale ? " (last-good: " + data.error + ")" : ""}.\n` +
           "Codex public reset notices · not your own meter\n" + (data.resetFeed.events.slice(0,3).map(e =>

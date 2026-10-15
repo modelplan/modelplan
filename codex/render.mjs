@@ -30,7 +30,17 @@ export function renderLineup(data,lang="zh") {
   }
   return out.join("\n")+"\n";
 }
-export function renderEffort(m,lang="zh") {
+// Speed tiers for one model, as in `modelplan effort`: "⚡ Codex Fast  plan quota ×2.5 · credits ×2 · speed-up not stated".
+const g2=v=>String(Math.round(v*100)/100);
+export function renderSpeed(m,tiers=[],lang="zh") {
+  const zh=lang==="zh",out=[];
+  for(const t of tiers){const x=t.models.find(v=>v.modelId===m.id);if(!x)continue;
+    const parts=t.billing.map(b=>b.billsTo==="plan-quota"?(zh?"套餐额度 ×":"plan quota ×")+g2(b.ratio):b.billsTo==="credits"?(zh?"积分 ×":"credits ×")+g2(b.ratio):null).filter(Boolean);
+    const s=x.speed.ratio;parts.push(s==null?(zh?"提速未公布":"speed-up not stated"):(zh?`提速最多 ×${g2(s)} · 生成耗时最低 ×${g2(1/s)}`:`up to ×${g2(s)} faster · generation time ≥ ×${g2(1/s)}`));
+    out.push(`  ${t.tier==="ultrafast"?"⚡⚡":"⚡"} Codex ${t.label}  ${parts.join(" · ")}`);}
+  return out.length?out.join("\n")+"\n":"";
+}
+export function renderEffort(m,lang="zh",tiers=[]) {
   const t=words[lang],rec=recommendation(m),ri=m.configurations.indexOf(rec);
   const out=[`${m.name}  ${m.configurations.length} · ★ ${rec?.label??"—"} ${t.recommended} · ${t.vs} · ${t.step}`];
   for(let i=m.configurations.length-1;i>=0;i--){const c=m.configurations[i];
@@ -40,7 +50,7 @@ export function renderEffort(m,lang="zh") {
     const time=value===null?"—":ratio(value)+((c.timeEstimated||rec.timeEstimated)?" "+t.estimated:"");
     out.push(`  ${i===ri?"◆":ri>=0&&i>ri?"┆":"│"} ${pad(i===ri?"★ "+c.label:c.label,8)}  ${t.ability} ${pad(a,14)}  ${t.cost} ${pad(cost,7)}  ${t.time} ${pad(time,6)}  ${stepUp(m.configurations,i,t.pts)}`.trimEnd());
   }
-  return out.join("\n")+"\n";
+  return out.join("\n")+"\n"+renderSpeed(m,tiers,lang);
 }
 
 // One effort against the next lower one, as in the CLI: "↑ +3.7分 ×1.45".

@@ -247,10 +247,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%s: %s\n", style.T.NotListed, q)
 			return exitErr
 		}
+		tiers := d.SpeedTiers(m.ID, "")
 		if c.json {
-			return printJSON(stdout, m)
+			return printJSON(stdout, struct {
+				*digest.Model
+				SpeedTiers []digest.ModelTier `json:"speedTiers,omitempty"`
+			}{m, tiers})
 		}
 		style.Effort(stdout, m)
+		style.Speed(stdout, tiers)
 	case "models":
 		var ms []digest.Model
 		for _, m := range d.Models {
