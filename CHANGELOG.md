@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI (unreleased)
+
+- `modelplan advise`: **spend ahead of an announced Codex reset.** When OpenAI has announced a reset with a time in the next 24 hours and the longer Codex window still has 20% or more that would otherwise last past it, `announced_reset_with_surplus` suggests the next effort, a stronger model or Fast, worded as applying only if the reset covers the account. The switch-back hint after it waits for a reading taken after the announced time that shows the window restarted, and is kept for up to six hours for that proof. An announcement whose time has passed is no longer shown as news.
+
 ## Codex plugin 0.10.0 (unreleased)
 
 - **Panel beside the chat:** a separate `Effort & quota` thread entry (tool `open_model_panel`) opens the dashboard in the conversation's side panel; the sidebar board is its own `Model Plan` global entry. OpenAI's extension spec allows one entrypoint per tool; 0.9 declared both on `open_model_dashboard`. Each surface has its own UI resource, so the model's call still shows the inline card and a tool call never claims to open the side panel. The inline card says how to open the panel instead.

@@ -294,3 +294,70 @@ func TestSwitchBackOncePerWindow(t *testing.T) {
 		t.Fatalf("events = %+v", es)
 	}
 }
+
+func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
+	ann := func(id, status string, through time.Duration) json.RawMessage {
+		return json.RawMessage(`{"id":"` + id + `","provider":"openai","eventType":"direct_reset_announced","status":"` + status +
+			`","publishedAt":"` + now.Add(-time.Hour).Format(time.RFC3339) + `","url":"https://x.com/r","schedule":{"precision":"deadline","from":"` +
+			now.Add(through).Format(time.RFC3339) + `","through":"` + now.Add(through).Format(time.RFC3339) + `","label":"before 16:00"}}`)
+	}
+	withResets := func(rs ...json.RawMessage) *digest.Digest {
+		d := fixtureDigest()
+		d.Models = append(d.Models, digest.Model{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium",
+			HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+			Efforts:    []digest.Effort{eff("medium", "Med", 51, 3.4), eff("high", "High", 54, 4.1)}})
+		d.Resets = rs
+		return d
+	}
+	weekReset := now.Add(6 * 24 * time.Hour)
+	codex := func(effort string, observed time.Time, weekUsed float64, weekResets time.Time) quota.Account {
+		a := quota.Account{Source: "codex", ObservedAt: observed, Harness: &quota.Harness{Model: "gpt-6-astra", Effort: effort},
+			Windows: []quota.Window{
+				{Kind: "five_hour", UsedPercent: f(10), ResetsAt: at(3 * time.Hour), WindowMinutes: 300, ResetMode: "fixed", ObservedAt: observed},
+				{Kind: "weekly", UsedPercent: f(weekUsed), ResetsAt: &weekResets, WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: observed}}}
+		quota.Evaluate(&a, observed)
+		return a
+	}
+	d, s := withResets(ann("r-ann", "upstream-announced", 6*time.Hour)), Load(t.TempDir())
+	es := derive(t, s, d, codex("medium", now.Add(-time.Minute), 48, weekReset))
+	if len(es) != 1 || es[0].Type != AnnouncedSurplus || es[0].Window != "weekly" || *es[0].RemainingPercent != 52 ||
+		es[0].Suggest.Effort != "high" || es[0].Public.ID != "r-ann" || es[0].Public.When != "before 16:00" || *es[0].InMinutes != 360 {
+		t.Fatalf("events = %+v", es)
+	}
+	if len(s.Armed) != 1 || !s.Armed[0].ResetAt.Equal(now.Add(6*time.Hour)) || !s.Armed[0].WindowResetAt.Equal(weekReset) {
+		t.Fatalf("armed = %+v", s.Armed)
+	}
+
+	// After the announced time the week still shows its old reset: not proof, say nothing.
+	later := now.Add(7 * time.Hour)
+	same := Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", later, 70, weekReset)}}, Digest: d, State: s, Now: later})
+	if len(same) != 0 {
+		t.Fatalf("unproven reset = %v", types(same))
+	}
+	// A reading after it with a restarted week: the reset reached this account, back to ★.
+	fresh := Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", later, 0, later.Add(7*24*time.Hour))}}, Digest: d, State: s, Now: later})
+	if len(fresh) != 1 || fresh[0].Type != SwitchBack || fresh[0].Suggest.Effort != "medium" || !fresh[0].Suggest.Recommended {
+		t.Fatalf("after proven reset = %+v", fresh)
+	}
+
+	for name, c := range map[string]struct {
+		d *digest.Digest
+		a quota.Account
+	}{
+		"little left":           {d, codex("medium", now.Add(-time.Minute), 85, weekReset)},
+		"week resets first":     {d, codex("medium", now.Add(-time.Minute), 48, now.Add(5*time.Hour))},
+		"beyond a day":          {withResets(ann("r-far", "upstream-announced", 30*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
+		"withdrawn":             {withResets(ann("r-w", "withdrawn", 6*time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
+		"announced time passed": {withResets(ann("r-past", "upstream-announced", -time.Hour)), codex("medium", now.Add(-time.Minute), 48, weekReset)},
+	} {
+		for _, e := range derive(t, nil, c.d, c.a) {
+			if e.Type == AnnouncedSurplus {
+				t.Errorf("%s: %+v", name, e)
+			}
+		}
+	}
+	// The same announcement for a Claude Code user is not theirs.
+	if es := derive(t, nil, d, claude("medium", 20, 3*time.Hour, 300)); len(es) != 0 {
+		t.Fatalf("claude = %v", types(es))
+	}
+}
