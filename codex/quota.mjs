@@ -25,14 +25,22 @@ export function pickAdvice(out) {
   return { status: 'ok', events };
 }
 
+const missing = e => e?.code === 'ENOENT';
+
+// Hints need the optional CLI 0.4+ (`advise`). The reason says which part is absent.
 export async function readAdvice({ exec = run } = {}) {
-  try { return pickAdvice(JSON.parse(await exec('modelplan', ['advise', '--json', '--source', 'codex']))); }
-  catch { return { status: 'unavailable', events: [] }; }
+  let out;
+  try { out = await exec('modelplan', ['advise', '--json', '--source', 'codex']); }
+  catch (e) { return { status: 'unavailable', reason: missing(e) ? 'cli_missing' : 'cli_without_advise', events: [] }; }
+  try { return pickAdvice(JSON.parse(out)); } catch { return { status: 'unavailable', reason: 'advice_invalid', events: [] }; }
 }
 
+// The CLI first, then the Skill's standard-library reader. `reader` names the one that answered.
 export async function readQuota({ exec = run } = {}) {
-  for (const [cmd, args] of [['modelplan', ['quota', '--json']], ['python3', [READER]], ['python', [READER]]]) {
-    try { return pickCodex(JSON.parse(await exec(cmd, args))); } catch { /* next reader */ }
+  const tried = [];
+  for (const [reader, cmd, args] of [['cli', 'modelplan', ['quota', '--json']], ['python', 'python3', [READER]], ['python', 'python', [READER]]]) {
+    try { return { ...pickCodex(JSON.parse(await exec(cmd, args))), reader }; }
+    catch (e) { tried.push(cmd + (missing(e) ? ' missing' : ' failed')); }
   }
-  return { status: 'unavailable', reason: 'neither the modelplan CLI nor Python 3 could read local quota', account: null };
+  return { status: 'unavailable', reader: null, reason: 'no local reader: ' + tried.join(', ') + ' (install Python 3 or the modelplan CLI)', account: null };
 }

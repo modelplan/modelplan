@@ -62,9 +62,11 @@ export function stepUp(es,i,pts) {
 
 export const quotaWords = {
   zh:{title:"你的 Codex 额度（本机读取）",none:"本机没有可读的 Codex 额度",used:"已用",resets:"重置还有",kinds:{five_hour:"5小时",weekly:"每周",monthly:"每月",unknown:"窗口"},pace:{surplus:"富余",on_track:"正常",tight:"偏紧",exhausted:"用完",reset_passed:"已过重置",unknown:"—"},
-    headroom:{spend:"额度富余：重置前用不完，可升档或开 Fast",normal:"额度正常：按 ★ 推荐档用",conserve:"额度偏紧：保持 ★ 或降一档",exhausted:"额度已用完：等重置或换用其他套餐",unknown:"额度未知"},stale:"读数较旧",d:"天",h:"时",m:"分"},
+    headroom:{spend:"额度富余：重置前用不完，可升档或开 Fast",normal:"额度正常：按 ★ 推荐档用",conserve:"额度偏紧：保持 ★ 或降一档",exhausted:"额度已用完：等重置或换用其他套餐",unknown:"额度未知"},stale:"读数较旧",d:"天",h:"时",m:"分",
+    reader:{cli:"modelplan CLI 读取",python:"Python 回退读取"},hintsOff:"主动提醒未启用",hintReason:{cli_missing:"需要可选的 modelplan CLI 0.4+，本机未安装",cli_without_advise:"本机 modelplan CLI 不支持 advise，升级到 0.4+",advice_invalid:"CLI 返回的提醒无法解析"}},
   en:{title:"Your Codex quota (read on this machine)",none:"No Codex quota readable on this machine",used:"used",resets:"resets in",kinds:{five_hour:"5h",weekly:"week",monthly:"month",unknown:"window"},pace:{surplus:"surplus",on_track:"on track",tight:"tight",exhausted:"exhausted",reset_passed:"reset since",unknown:"—"},
-    headroom:{spend:"Surplus: it resets unused, step up or use Fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m"},
+    headroom:{spend:"Surplus: it resets unused, step up or use Fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m",
+    reader:{cli:"read by the modelplan CLI",python:"read by the Python fallback"},hintsOff:"Proactive hints off",hintReason:{cli_missing:"they need the optional modelplan CLI 0.4+, not installed here",cli_without_advise:"the installed modelplan CLI has no advise; upgrade to 0.4+",advice_invalid:"the CLI's hints could not be parsed"}},
 };
 export function duration(min,q) {
   if(min<60)return `${min}${q.m}`;
@@ -73,11 +75,16 @@ export function duration(min,q) {
 }
 export function renderQuota(quota,lang="zh",advice=null) {
   const q=quotaWords[lang],a=quota?.account;
-  if(!a)return `${q.none}${quota?.reason?" ("+quota.reason+")":""}.\n`;
+  if(!a)return `${q.none}${quota?.reason?" ("+quota.reason+")":""}.\n`+hintStatus(advice,q).map(l=>l+"\n").join("");
   const head=[q.title,a.plan,a.harness?.model,a.harness?.effort].filter(Boolean).join(" · ")+(a.stale?` · ${q.stale}`:"");
   const lines=a.windows.map(w=>{const kind=q.kinds[w.kind]??w.kind,used=typeof w.usedPercent==="number"?`${Math.round(w.usedPercent)}% ${q.used}`:"—";
     const reset=typeof w.resetsInMinutes==="number"?` · ${q.resets} ${duration(w.resetsInMinutes,q)}`:"";
     return `  ${kind}${w.limit?" "+w.limit:""} ${used}${reset} · ${q.pace[w.pace]??w.pace}`;});
   const hints=(advice?.events??[]).map(e=>`  ${e.severity==="warn"?"!":"↑"} ${e.text[lang]??e.text.en}`);
-  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints].join("\n")+"\n";
+  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints,...hintStatus(advice,q),...(quota.reader?[`  · ${q.reader[quota.reader]}`]:[])].join("\n")+"\n";
+}
+// Hints are an optional add-on; say when and why they are off instead of showing nothing.
+function hintStatus(advice,q){
+  if(advice?.status!=="unavailable")return [];
+  return [`  · ${q.hintsOff}${advice.reason?(q===quotaWords.zh?"：":": ")+(q.hintReason[advice.reason]??advice.reason):""}`];
 }

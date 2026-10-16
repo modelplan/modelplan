@@ -4,21 +4,74 @@ A compact, read-only GPT effort dashboard for Codex desktop, with a text fallbac
 
 ## Install
 
-Requires Node.js 24+ on PATH and a Codex version with plugin support. Runtime dependencies and fonts are bundled; no npm install, API key or Model Plan account is required.
+You need a Codex version with `codex plugin` commands. Runtime dependencies and fonts are bundled: no npm install, API key or Model Plan account.
 
 ```sh
-codex plugin marketplace add modelplan/modelplan
+codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
 codex plugin add modelplan-codex@modelplan
 ```
 
-Restart Codex or open a new task after installation. Ask **“Open the Model Plan dashboard”**, or invoke the `model-dashboard` skill. Desktop hosts supporting app panels show the dashboard; use **Expand** if the host offers it. CLI renders the same published comparison as text. Panel placement and expansion depend on the host; this plugin does not force a persistent sidebar.
+1. **Add the source.** Codex clones this repository. The two `--sparse` paths check out only the marketplace file and this plugin, about 2 MB instead of the whole repository with its docs and media. The download, its progress output and retries are Codex's own; on a slow connection it can be quiet for a while. If it fails, run the same command again. Running it again after success only reports that the marketplace is already added. If an interrupted attempt left a broken source, run `codex plugin marketplace remove modelplan` and add it again.
+2. **Install the plugin.** Codex copies it into its plugin cache. Running it again reinstalls the same version.
+3. **Check the setup** (optional): ask Codex *"Check the Model Plan plugin setup"*, or run the check yourself. `codex plugin list` shows the installed version:
 
-To update, refresh the marketplace and reinstall the plugin:
+   ```sh
+   node ~/.codex/plugins/cache/modelplan/modelplan-codex/<version>/doctor.cjs
+   ```
+
+Then ask **"Open the Model Plan dashboard"**. A new task is the reliable place to start; a task that was already open may pick the plugin up as well. You can also invoke the `model-dashboard` skill. Desktop hosts that support app panels show the dashboard inline; use **Expand** if the host offers it. Codex CLI shows the same published comparison as text. Panel placement belongs to the host; the plugin cannot pin itself to a sidebar.
+
+### Setup check
+
+`doctor.cjs` asks Codex's own app-server to start the installed plugin the way a task does, opens a temporary thread without sending a message (no inference, nothing billed, no session log) and calls the read-only data tool once. It reports:
+
+- whether Codex has the plugin commands, and whether the plugin is installed and enabled;
+- the Node.js that Codex actually runs the plugin with, and how it was found;
+- whether the MCP server started with both tools, and whether the dashboard resource is readable;
+- whether the public data is current or a last-good snapshot;
+- whether your quota is readable and by which reader, and whether proactive hints are on, with the missing piece if not.
+
+It ends with three separate verdicts: **installed**, **tools callable**, and **panel shown**. The last one stays *unverified*: only opening the dashboard in Codex desktop proves the panel renders. Add `--json` for machine-readable output and `--lang zh` for Chinese.
+
+### Node.js
+
+The plugin's server needs Node.js 22 or newer. Codex starts `launch.cjs` with the `node` on its PATH; that Node only has to run the launcher (14+). The launcher uses the first runtime in this order that passes a version and feature check:
+
+1. a pin in `~/.config/modelplan/runtime.json`: `{"node": "/path/to/node"}`. Codex does not pass your shell variables to plugin servers, so this file, not an environment variable, is how to choose a runtime. A pin that no longer works is reported and skipped;
+2. the `node` Codex started the launcher with;
+3. Codex desktop's own runtime under `~/.cache/codex-runtimes/`, when this Codex installed one. It is optional and its layout is Codex's; the plugin does not assume it exists;
+4. other `node` entries on PATH;
+5. standard locations: Homebrew and `/usr/local/bin` on macOS, `/usr/local/bin` and `/usr/bin` on Linux, Program Files and nvm-windows on Windows;
+6. nvm, fnm, mise, asdf and Volta installs.
+
+The choice is made again at every start and never cached, so an upgraded or removed runtime is picked up by the next task. The launcher never changes PATH or your global Node. When nothing fits, both tools still register and answer with the list of runtimes checked and how to fix it.
+
+Limits: if Codex finds no `node` at all on its PATH, it cannot start the launcher and shows its own MCP startup error; install Node.js 22+ or make `node` visible to Codex. On Windows the Program Files and nvm-windows locations are covered; Codex desktop's runtime location there is unverified.
+
+### What is required
+
+| Component | Needed for | Without it |
+| --- | --- | --- |
+| Codex with `codex plugin` commands | everything | the plugin cannot be installed |
+| Node.js 22+ (found automatically, see above) | dashboard and both tools | the tools return a setup diagnosis |
+| Python 3 | reading your quota when the `modelplan` CLI is absent | quota shows as unavailable, with the reason |
+| `modelplan` CLI 0.4+ (**optional**) | proactive hints (`modelplan advise`) and the prompt hook; also the preferred quota reader | no hints; the dashboard says hints are off and why |
+
+The plugin already contains both Skills, `model-dashboard` (dashboard, model and effort comparison) and `model-plan` (advice that combines your task, the public data and your quota). Do not install the same Skill separately. Install the CLI with `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` or from [Releases](https://github.com/modelplan/modelplan/releases).
+
+### Update and uninstall
 
 ```sh
 codex plugin marketplace upgrade modelplan
 codex plugin add modelplan-codex@modelplan
 ```
+
+```sh
+codex plugin remove modelplan-codex@modelplan
+codex plugin marketplace remove modelplan
+```
+
+`plugin remove` deletes the plugin's cache. The public-data cache (`~/Library/Caches/modelplan`, `~/.cache/modelplan` or `%LOCALAPPDATA%\modelplan`) is shared with the CLI; delete it if you use neither.
 
 ## What you see
 
@@ -26,14 +79,14 @@ codex plugin add modelplan-codex@modelplan
 - One model's native effort lever and a compact capability/cost/time curve. Click a metric to isolate it; click again to restore all. Use arrow keys or Home/End on the lever.
 - Gold ★ means recommended effort only. Capability changes are additive points; cost/time are multiples of that model's recommendation. Estimates are marked ≈; missing or incompatible time evidence leaves gaps.
 - **Your quota**: 5-hour and weekly usage, time to reset and a headroom hint (surplus before a reset → stepping up is cheap; tight → stay at ★). Read on this machine from the rate-limit snapshot Codex writes to its session logs, via `modelplan quota` or the bundled Skill reader (Python 3). Nothing is uploaded; credentials are never read.
-- **Hints** (with the `modelplan` CLI installed): the window resets soon with allowance left → which effort to step up to and its cost multiplier; tight → back to ★ or one step down; after an advised reset → switch back to ★; a public Codex reset in the last day. The plugin's `UserPromptSubmit` hook (`hooks/hooks.json`, enabled once you trust it in Codex) tells Codex each new hint once. It reads local files only and never changes the model, effort or Fast.
+- **Hints** (optional, need the `modelplan` CLI 0.4+; without it the dashboard says hints are off): the window resets soon with allowance left → which effort to step up to and its cost multiplier; tight → back to ★ or one step down; after an advised reset → switch back to ★; a public Codex reset in the last day. The plugin's `UserPromptSubmit` hook (`hooks/hooks.json`, enabled once you trust it in Codex) tells Codex each new hint once. It reads local files only and never changes the model, effort or Fast.
 - Public Codex reset notices with source, scope and stated time precision. They are not your own meter.
 
 The dashboard reads the same verified client publication as [Model Plan](https://modelplan.ai/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.
 
 ## Transport and development
 
-`mcp.json` configures an internal stdio transport for `open_model_dashboard` and `get_model_dashboard`. Node starts `server.bundle.mjs` from the installed package. The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts Model Plan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
+`mcp.json` configures an internal stdio transport for `open_model_dashboard` and `get_model_dashboard`. Codex runs `launch.cjs`, which starts `server.bundle.mjs` on a compatible Node (see above). The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts Model Plan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
 
 ```sh
 cd codex
@@ -42,6 +95,7 @@ npm test
 npm run build
 node tests/mcp-smoke.mjs --fresh
 node tests/codex-host-smoke.mjs
+node doctor.cjs
 ```
 
 The last command requires this version to be installed in Codex. It checks registration, tools and app-resource transport without creating a thread or running inference; it does not validate native panel placement. `npm start` provides an optional loopback preview for UI development. It is not a public server.
