@@ -28,6 +28,17 @@ jobs:
       - working-directory: codex
         run: npm ci --ignore-scripts && npm test && npm run build
       - run: git diff --exit-code -- codex/server.bundle.mjs codex/THIRD-PARTY-NOTICES.md
+  claude-code:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: node --test claude-code/tests/*.test.mjs
   skill:
     runs-on: ubuntu-latest
     steps:

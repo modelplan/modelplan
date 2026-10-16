@@ -1,21 +1,11 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "command -v modelplan >/dev/null 2>&1 && modelplan sync --background >/dev/null 2>&1; exit 0"
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "command -v modelplan >/dev/null 2>&1 && modelplan advise --hook claude-code 2>/dev/null; exit 0",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/modelplan-quota-hints.sh\"",
             "timeout": 5
           }
         ]

@@ -47,7 +47,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook, each hint once)
-  modelplan statusline                 one line for Claude Code / other status bars (cache only)
+  modelplan statusline                 one line for Claude Code / other status bars (cache only;
+                                       --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
   modelplan version
@@ -97,8 +98,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	modelFlag := fs.String("model", "", "statusline: model id when stdin has none")
 	effortFlag := fs.String("effort", "", "statusline: current effort when the harness knows it")
 	recordOnly := fs.Bool("record-only", false, "statusline: record Claude Code usage windows and print nothing")
+	preview := fs.Bool("preview", false, "statusline: render the input without recording it (a sample)")
 	source := fs.String("source", "", "advise: only claude-code, codex or user events")
 	hook := fs.String("hook", "", "advise: run as a harness hook (claude-code); print only hints not shown before")
+	addSystem := fs.String("add-system", "", "advise --hook: a message for the user to show with the hints (a plugin's setup notice)")
+	addContext := fs.String("add-context", "", "advise --hook: context for the model to hand over with the hints")
 	refreshAccount := fs.Bool("refresh-account", false, "quota: ask Codex for the account's windows and reset credits now")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -179,7 +183,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "advise":
 		if *hook != "" {
-			return adviseHook(stdin, stdout, style, st, *hook)
+			return adviseHook(stdin, stdout, style, st, c, *hook, *addSystem, *addContext)
 		}
 		if !c.offline {
 			refreshAccountLater(st)
@@ -202,7 +206,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if *recordOnly {
 			stdout = io.Discard
 		}
-		return statusline(stdin, stdout, style, st, c, *harness, *modelFlag, *effortFlag)
+		return statusline(stdin, stdout, style, st, c, *harness, *modelFlag, *effortFlag, *preview)
 
 	case "doctor":
 		s, _ := st.State()
@@ -330,7 +334,7 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 // statusline is cache-only: it may start a detached sync but never waits on the network.
 // For Claude Code it also records the usage windows the harness passes on stdin, so the
 // Skill and `modelplan quota` can read them later.
-func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, modelID, effort string) int {
+func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, modelID, effort string, preview bool) int {
 	var in quota.StatuslineInput
 	if f, ok := stdin.(*os.File); !ok || !isTTY(f) {
 		b, _ := io.ReadAll(io.LimitReader(stdin, 1<<16))
@@ -345,7 +349,9 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	now := time.Now()
 	var acct *quota.Account
 	if harness == "claude-code" {
-		_ = quota.RecordClaudeCode(st.Dir, in, now)
+		if !preview {
+			_ = quota.RecordClaudeCode(st.Dir, in, now)
+		}
 		a := in.Account(now)
 		quota.Evaluate(&a, now)
 		acct = &a
@@ -361,7 +367,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	d, s, err := publication.Load(st)
 	hint := ""
 	if acct != nil {
-		hint = statuslineHint(style, st, d, *acct, now)
+		hint = statuslineHint(style, st, d, *acct, now, !preview)
 	}
 	if q := style.QuotaSegment(acct, hint); q != "" {
 		tail += " │ " + q
@@ -381,10 +387,12 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 
 // statuslineHint: the most urgent Claude Code advice as a few characters ("↑High ×1.37",
 // "↺★Med"). It remembers advised windows so the switch-back hint appears after the reset.
-func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct quota.Account, now time.Time) string {
+func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct quota.Account, now time.Time, save bool) string {
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: quota.Report{Accounts: []quota.Account{acct}}, Digest: d, State: state, Now: now})
-	_ = state.Save(st.Dir, now)
+	if save {
+		_ = state.Save(st.Dir, now)
+	}
 	for _, e := range es {
 		if e.Source == "claude-code" {
 			if h := style.AdviceShort(e); h != "" {
@@ -396,9 +404,11 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct 
 }
 
 // adviseHook is a UserPromptSubmit hook for Claude Code or Codex (both accept the same
-// output): new advice goes to the model as additional context, once per event. It never
-// fails the prompt and never touches the network.
-func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, harness string) int {
+// output): new advice goes to the model as additional context, once per event, and the first
+// prompt of a thread also gets the task-start brief. A plugin may pass its own setup notice
+// (system, context) so the hook prints one object. It never fails the prompt and never waits
+// on the network.
+func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, system, notice string) int {
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
@@ -410,11 +420,18 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	_ = json.Unmarshal(b, &in)
 	now := time.Now()
+	// Without the status line nothing else keeps the publication fresh for Claude Code.
+	if s, _ := st.State(); !c.offline && time.Since(s.CheckedAt) > staleAfter && time.Since(s.LastAttemptAt) > backgroundEvery {
+		_ = detach.Start("sync", "--quiet", "--base", c.base)
+	}
 	d, _, _ := publication.Load(st)
 	state := advise.Load(st.Dir)
 	paths := quotaPaths(st)
 	if harness == "claude-code" {
 		paths.CodexHome = "" // Codex advice belongs to Codex; skip scanning its logs on every prompt
+		if in.SessionID != "" {
+			paths.ClaudeSession = in.SessionID
+		}
 	} else {
 		if in.SessionID != "" {
 			paths.CodexThread = in.SessionID
@@ -430,33 +447,48 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	es = state.Unseen(es)
 	var parts []string
+	if notice != "" {
+		parts = append(parts, notice)
+	}
 	if len(es) > 0 {
 		parts = append(parts, style.AdviceContext(es))
 		state.MarkSeen(es, now)
 	}
-	// The first prompt of a Codex thread also gets the task-start brief: the model judges the
-	// task, the publication supplies the options. Once per thread.
-	if harness == "codex" && in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
-		// Without any Codex reading yet (a first thread, an API-key login) the brief still lists
-		// the options and the default; the quota and current model are then unknown.
-		acct := &quota.Account{Source: "codex", Headroom: "unknown"}
+	// The first prompt of a thread also gets the task-start brief: the model judges the task,
+	// the publication supplies the options. Once per thread.
+	if in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
+		// Without a reading yet (a first thread, an API-key login, no status line) the brief
+		// still lists the options and the default; the quota and current model are then unknown.
+		acct := &quota.Account{Source: harness, Headroom: "unknown"}
 		for i := range report.Accounts {
-			if report.Accounts[i].Source == "codex" {
+			if report.Accounts[i].Source == harness {
 				acct = &report.Accounts[i]
 			}
 		}
-		// The hook names the thread's model; its effort is known only from that thread's log.
-		if in.Model != "" && (acct.Harness == nil || acct.Harness.Model != in.Model) {
+		switch {
+		case in.Model != "" && (acct.Harness == nil || acct.Harness.Model != in.Model):
+			// The hook names the thread's model (Codex); its effort is known only from that thread's log.
 			x := *acct
 			x.Harness = &quota.Harness{Model: in.Model}
+			acct = &x
+		case harness == "claude-code" && acct.Harness != nil && acct.Harness.Attribution != "current-thread":
+			// The status line's model and effort are another session's (or of unknown session).
+			x := *acct
+			x.Harness = nil
 			acct = &x
 		}
 		if brief := advise.TaskStart(acct, d, now); brief != nil && state.Once("task_start|"+in.SessionID, now) {
 			parts = append(parts, render.TaskBrief(brief))
 		}
 	}
-	if len(parts) > 0 {
-		out := map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": strings.Join(parts, "\n\n")}}
+	if len(parts) > 0 || system != "" {
+		out := map[string]any{}
+		if system != "" {
+			out["systemMessage"] = system
+		}
+		if len(parts) > 0 {
+			out["hookSpecificOutput"] = map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": strings.Join(parts, "\n\n")}
+		}
 		b, _ := json.Marshal(out)
 		fmt.Fprintln(stdout, string(b))
 	}
@@ -499,9 +531,10 @@ func quotaPaths(st *store.Store) quota.Paths {
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	// Codex sets CODEX_THREAD_ID for the commands a thread runs, so a Skill calling
-	// `modelplan quota` from Codex reads that thread's own model and effort.
-	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"), CodexThread: os.Getenv("CODEX_THREAD_ID")}
+	// Codex sets CODEX_THREAD_ID and Claude Code CLAUDE_CODE_SESSION_ID for the commands a
+	// thread runs, so a Skill calling `modelplan quota` reads that thread's own model and effort.
+	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"),
+		CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.
@@ -523,7 +556,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true}
+var takesValue = map[string]bool{"lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

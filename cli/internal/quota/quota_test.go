@@ -76,7 +76,8 @@ func TestReadMatchesSharedExpectation(t *testing.T) {
 	if fixed, _ := os.ReadFile("testdata/claude-code-snapshot.json"); !bytes.Equal(snap, fixed) {
 		t.Fatalf("recorded snapshot drifted from testdata/claude-code-snapshot.json:\n%s", snap)
 	}
-	for _, leak := range []string{"secret", "/home/u", "transcript", "session", "sk-should", "ignore previous", "please do not"} {
+	// The session id itself never lands; only its one-way sessionKey does.
+	for _, leak := range []string{"secret", "/home/u", "transcript", "session_id", "sk-should", "ignore previous", "please do not"} {
 		if bytes.Contains(got, []byte(leak)) || bytes.Contains(snap, []byte(leak)) {
 			t.Fatalf("private field %q leaked", leak)
 		}
@@ -99,6 +100,22 @@ func TestSnapshotIsRewrittenOnlyWhenItChanges(t *testing.T) {
 	changed, _ := os.ReadFile(snapshotPath(p.Cache))
 	if !strings.Contains(string(changed), `"effort": "max"`) {
 		t.Fatalf("changed snapshot not recorded:\n%s", changed)
+	}
+}
+
+func TestClaudeCodeSnapshotNamesWhoseSessionItIs(t *testing.T) {
+	p := fixture(t)
+	attr := func(session string) string {
+		p.ClaudeSession = session
+		for _, a := range Read(p, now).Accounts {
+			if a.Source == "claude-code" {
+				return a.Harness.Attribution
+			}
+		}
+		return "no account"
+	}
+	if got := []string{attr("secret-session"), attr("another"), attr("")}; got[0] != "current-thread" || got[1] != "recent-thread" || got[2] != "" {
+		t.Fatalf("attribution = %q", got)
 	}
 }
 

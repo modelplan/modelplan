@@ -1,20 +1,20 @@
 ---
 description: Plan your model, effort and fast mode around your remaining quota and reset times
 argument-hint: "[what you are about to do]"
-allowed-tools: Bash(modelplan:*)
+allowed-tools: Bash(sh:*)
 ---
 
 Your quota, read on this machine (from the Model Plan status line's last snapshot):
 
-!`modelplan quota --no-color 2>&1`
+!`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" quota --no-color 2>&1`
 
 What Model Plan would flag now (step up before a reset, step down, switch back after one, peak hours, cards):
 
-!`modelplan advise --no-color 2>&1`
+!`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" advise --no-color 2>&1`
 
 Your current model's effort ladder:
 
-!`modelplan effort --no-color --offline 2>&1`
+!`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" effort --no-color --offline 2>&1`
 
 The user is about to: $ARGUMENTS
 

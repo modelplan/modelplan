@@ -9,7 +9,7 @@ Answer with live Model Plan data (modelplan.ai), never with remembered rankings 
 
 ## 1. Get the data
 
-With the `modelplan` CLI on PATH (`command -v modelplan`):
+With the `modelplan` CLI (`command -v modelplan`, else `~/.local/bin/modelplan`, where its installer puts it):
 
 ```sh
 modelplan sync                                   # once per answer; later reads are offline
@@ -26,7 +26,7 @@ curl -fsS --max-time 20 https://modelplan.ai/v1/client
 python3 '<this skill directory>/scripts/quota.py'
 ```
 
-`quota` reports one account per source: Claude Code (recorded by the Model Plan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace` and its own `ageMinutes`, and each account a `headroom` and a `harness` model/effort when known. For Codex, `harness.attribution` says whose it is: `current-thread` only when the reader ran inside this Codex thread (it matched `CODEX_THREAD_ID`); `recent-thread` is the newest interactive thread on the machine, which may be another conversation. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
+`quota` reports one account per source: Claude Code (recorded by the Model Plan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace` and its own `ageMinutes`, and each account a `headroom` and a `harness` model/effort when known. `harness.attribution` says whose model and effort these are: `current-thread` only when the reader ran inside this thread (Codex: it matched `CODEX_THREAD_ID`; Claude Code: the status line last rendered for this `CLAUDE_CODE_SESSION_ID`); `recent-thread` is another conversation's (Codex: the newest interactive thread on the machine; Claude Code: the session the status line rendered for last). Claude Code's usage windows are the account's either way. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
 
 ## 2. Pick the model and effort
 
