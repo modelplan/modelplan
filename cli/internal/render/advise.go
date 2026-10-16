@@ -13,6 +13,7 @@ type adviceText struct {
 	Exhausted, Wait, UseCard          string
 	Tight, Down, Stay                 string
 	Surplus, Up, UpAny, Stronger, Top string
+	Announced                         string
 	OrFast, FastUnstated, FastUpTo    string
 	Back, BackTo, BackNone            string
 	Peak, Offpeak                     string
@@ -27,7 +28,7 @@ var adviceZH = adviceText{
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
 	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s", Stay: "保持当前档，重活留给强模型",
 	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
-	Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
+	Announced: "Codex 官方预告重置（%s）：如果包含你的账号，%s额度剩下的 %s 届时作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
 	Peak: "%s %s后进入高峰：%s 额度消耗 %s → %s%s，重活可以提前做", Offpeak: "%s %s后进入优惠时段：%s 额度消耗 %s → %s%s，不急的活可以等",
 	CardsExpire: "%s 有 %d 张%s重置卡 %s后过期",
@@ -44,7 +45,7 @@ var adviceEN = adviceText{
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
 	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s", Stay: "stay at this effort and keep the strong model for the hard parts",
 	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
-	Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
+	Announced: "Codex announced a reset (%s): if it covers your account, the %s left in your %s is void then", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
 	Peak: "%s enters peak hours in %s: %s quota rate %s → %s%s; do heavy work first", Offpeak: "%s enters off-peak in %s: %s quota rate %s → %s%s; work that can wait is cheaper then",
 	CardsExpire: "%s: %d %s reset card(s) expire in %s",
@@ -145,7 +146,7 @@ func (s Style) AdviceLine(e advise.Event) string {
 			act = fmt.Sprintf(t.Down, label(st), tail)
 		}
 		return fmt.Sprintf(t.Tight, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
-	case advise.ResetSoonSurplus:
+	case advise.ResetSoonSurplus, advise.AnnouncedSurplus:
 		act := t.Top
 		switch {
 		case st.Action == "step_up" && st.Label != "":
@@ -161,6 +162,14 @@ func (s Style) AdviceLine(e advise.Event) string {
 				speed = fmt.Sprintf(t.FastUpTo, g(*sp.SpeedRatio))
 			}
 			act += fmt.Sprintf(t.OrFast, sp.Label, g(sp.QuotaRatio), speed)
+		}
+		if e.Type == advise.AnnouncedSurplus {
+			// The announcement's own time, in the user's zone; its label is in the publication's language.
+			at := e.At.Local()
+			if s.T.Pts == "pts" {
+				return fmt.Sprintf(t.Announced, "by "+at.Format("Jan 2 15:04"), pct(e.RemainingPercent), s.who(e)) + sep + act
+			}
+			return fmt.Sprintf(t.Announced, fmt.Sprintf("%d月%d日 %s 前", at.Month(), at.Day(), at.Format("15:04")), s.who(e), pct(e.RemainingPercent)) + sep + act
 		}
 		return fmt.Sprintf(t.Surplus, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
 	case advise.SwitchBack:
@@ -214,9 +223,9 @@ func (s Style) AdviceShort(e advise.Event) string {
 		ratio = fmt.Sprintf(" ×%.2f", *st.CostRatio)
 	}
 	switch {
-	case e.Type == advise.ResetSoonSurplus && st.Action == "step_up" && st.Label != "":
+	case (e.Type == advise.ResetSoonSurplus || e.Type == advise.AnnouncedSurplus) && st.Action == "step_up" && st.Label != "":
 		return s.c(okc, "↑"+label(st)) + s.c(dim, ratio)
-	case e.Type == advise.ResetSoonSurplus && st.Action == "stronger_model":
+	case (e.Type == advise.ResetSoonSurplus || e.Type == advise.AnnouncedSurplus) && st.Action == "stronger_model":
 		return s.c(okc, "↑"+Short(st.ModelName)) + s.c(dim, ratio)
 	case e.Type == advise.WindowTight && st.Action == "step_down" && st.Label != "":
 		return s.c(warn, "↓"+label(st)) + s.c(dim, ratio)

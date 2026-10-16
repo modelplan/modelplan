@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +30,10 @@ func TestAdviceLines(t *testing.T) {
 			"zhipu-cn-legacy enters peak hours in 30m: GLM-5.3 quota rate ×1 → ×3 (tentative); do heavy work first"},
 		{advise.Event{Type: advise.PublicReset, Source: "codex", Public: &advise.Public{EventType: "reset_credit_issued"}},
 			"Codex 官方发放了重置卡，你的余量以本机读数为准", "Codex issued reset credits; your own balance is the local reading"},
+		{advise.Event{Type: advise.AnnouncedSurplus, Source: "codex", Window: "weekly", At: &at, RemainingPercent: f(52), Public: &advise.Public{When: "label"},
+			Suggest: &advise.Step{Action: "step_up", Effort: "high", Label: "High", AbilityDelta: f(2.6), CostRatio: f(1.39)}},
+			"Codex 官方预告重置（" + fmt.Sprintf("%d月%d日 %s 前", at.Local().Month(), at.Local().Day(), at.Local().Format("15:04")) + "）：如果包含你的账号，Codex 每周额度剩下的 52% 届时作废：可升到 High（+2.6分 ×1.39）",
+			"Codex announced a reset (by " + at.Local().Format("Jan 2 15:04") + "): if it covers your account, the 52% left in your Codex week window is void then: step up to High (+2.6 pts ×1.39)"},
 		{advise.Event{Type: advise.SwitchBack, Source: "claude-code", Window: "five_hour", At: &at, Suggest: &advise.Step{Action: "switch_back", Label: "Med", Recommended: true, AbilityDelta: f(-4.8), CostRatio: f(0.73)}},
 			"Claude Code 5小时已于 " + at.Local().Format("15:04") + " 重置：可换回 ★Med（-4.8分 ×0.73）",
 			"Claude Code 5h window reset at " + at.Local().Format("15:04") + ": switch back to ★Med (-4.8 pts ×0.73)"},
@@ -41,7 +46,7 @@ func TestAdviceLines(t *testing.T) {
 			t.Errorf("en:\n got %s\nwant %s", got, c.en)
 		}
 	}
-	if h := (Style{T: ZH}).AdviceShort(cases[4].e); h != "↺★Med" {
+	if h := (Style{T: ZH}).AdviceShort(cases[5].e); h != "↺★Med" {
 		t.Errorf("short = %q", h)
 	}
 	if ctx := (Style{T: ZH}).AdviceContext([]advise.Event{cases[0].e}); !strings.HasPrefix(ctx, "Model Plan 本机额度提醒") || !strings.Contains(ctx, "\n- Claude Code 5小时") {

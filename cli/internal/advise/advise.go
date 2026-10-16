@@ -1,8 +1,8 @@
 // Package advise turns the local quota report and the public publication into a short list
 // of things worth telling the user now: a window that resets soon with allowance left, a
 // window running tight or used up, a reset that has passed since we suggested stepping up or
-// down, a quota-rate change for a plan coming up, reset cards about to expire, and a public
-// reset for a harness the user has. It only advises; it never changes a model, effort, fast
+// down, an announced provider reset that would void what is left, a quota-rate change for a
+// plan coming up, reset cards about to expire, and a public reset for a harness the user has. It only advises; it never changes a model, effort, fast
 // mode or setting.
 //
 // Derive is pure. The status line and the Claude Code hook keep a small State next to the
@@ -22,17 +22,20 @@ import (
 
 // Event types, most urgent first (Rank).
 const (
-	WindowExhausted   = "window_exhausted"
-	WindowTight       = "window_tight"
-	SwitchBack        = "reset_passed_switch_back"
-	ResetSoonSurplus  = "reset_soon_with_surplus"
+	WindowExhausted  = "window_exhausted"
+	WindowTight      = "window_tight"
+	SwitchBack       = "reset_passed_switch_back"
+	ResetSoonSurplus = "reset_soon_with_surplus"
+	// AnnouncedSurplus: a provider announced a reset for a stated time; if it covers this account,
+	// what is left in the longer window is void then. Never proof that it covers this account.
+	AnnouncedSurplus  = "announced_reset_with_surplus"
 	PeakStartsSoon    = "peak_starts_soon"
 	OffpeakStartsSoon = "offpeak_starts_soon"
 	CardsExpiring     = "cards_expiring"
 	PublicReset       = "public_reset_announced"
 )
 
-var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, ResetSoonSurplus: 3, PeakStartsSoon: 4, OffpeakStartsSoon: 5, CardsExpiring: 6, PublicReset: 7}
+var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, ResetSoonSurplus: 3, AnnouncedSurplus: 4, PeakStartsSoon: 5, OffpeakStartsSoon: 6, CardsExpiring: 7, PublicReset: 8}
 
 const (
 	// A surplus counts as "reset soon" in the last quarter of the window, as in quota's pace rule.
@@ -46,6 +49,10 @@ const (
 	switchBackFor = 90 * time.Minute
 	// Harness readings older than this belong to a finished session; no hints from them.
 	harnessQuiet = 6 * time.Hour
+	// An announced reset is worth spending ahead of within this lead, when at least this much of
+	// the longer window is left and that window would not reset on its own before it.
+	announcedLead    = 24 * time.Hour
+	announcedMinLeft = 20.0
 )
 
 // Step is a concrete suggestion against what the harness reports now.
@@ -83,6 +90,7 @@ type Public struct {
 	EventType string `json:"eventType"`
 	Status    string `json:"status"`
 	URL       string `json:"url,omitempty"`
+	When      string `json:"when,omitempty"` // the announcement's own schedule label
 }
 
 type Event struct {
@@ -104,6 +112,8 @@ type Event struct {
 	Public           *Public           `json:"public,omitempty"`
 	Stale            bool              `json:"stale,omitempty"`
 	Text             map[string]string `json:"text,omitempty"` // rendered by the CLI for plugins: zh, en
+
+	windowReset *time.Time // AnnouncedSurplus: the window's own reset when advised
 }
 
 // Input bundles everything Derive reads. Digest and State may be nil.
@@ -134,7 +144,7 @@ func Derive(in Input) []Event {
 		if harnessOf(a.Source) != "" && !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > harnessQuiet {
 			continue
 		}
-		es := accountEvents(a, in.Digest, now)
+		es := append(accountEvents(a, in.Digest, now), announcedEvents(a, in.Digest, now)...)
 		if in.State != nil {
 			in.State.arm(es)
 		}
@@ -148,7 +158,18 @@ func Derive(in Input) []Event {
 		out = append(out, in.State.switchBack(in.Report, in.Digest, now)...)
 	}
 	if in.Digest != nil {
-		out = append(out, publicEvents(in.Digest, sources, now)...)
+		// A spend hint already carries its announcement; do not repeat it as news.
+		covered := map[string]bool{}
+		for _, e := range out {
+			if e.Type == AnnouncedSurplus {
+				covered[e.Public.ID] = true
+			}
+		}
+		for _, e := range publicEvents(in.Digest, sources, now) {
+			if !covered[e.Public.ID] {
+				out = append(out, e)
+			}
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Type] < rank[out[j].Type] })
 	return out
@@ -348,6 +369,61 @@ type resetSummary struct {
 	Status      string `json:"status"`
 	PublishedAt string `json:"publishedAt"`
 	URL         string `json:"url"`
+	Schedule    *struct {
+		Through string `json:"through"`
+		Label   string `json:"label"`
+	} `json:"schedule"`
+}
+
+// announcedEvents: a reset the provider announced for a time within announcedLead, while this
+// account's longer window still has announcedMinLeft% that would otherwise last past it. The
+// window is armed for the announced time; switching back waits for a reading that shows the
+// window really restarted (State.switchBack).
+func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
+	if d == nil || harnessOf(a.Source) == "" || a.Headroom == "conserve" || a.Headroom == "exhausted" {
+		return nil
+	}
+	var w *quota.Window
+	for i := range a.Windows {
+		x := &a.Windows[i]
+		if x.WindowMinutes > 300 && x.RemainingPercent != nil && x.ResetsAt != nil && (w == nil || x.WindowMinutes > w.WindowMinutes) {
+			w = x
+		}
+	}
+	if w == nil || *w.RemainingPercent < announcedMinLeft {
+		return nil
+	}
+	var best *resetSummary
+	var bestAt time.Time
+	for _, raw := range d.Resets {
+		var r resetSummary
+		if json.Unmarshal(raw, &r) != nil || r.ID == "" || r.EventType != "direct_reset_announced" || r.Schedule == nil ||
+			providerSource[r.Provider] != a.Source || r.Status == "withdrawn" || r.Status == "cancelled" {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, r.Schedule.Through)
+		if err != nil || !t.After(now) || t.Sub(now) > announcedLead || !w.ResetsAt.After(t) {
+			continue
+		}
+		if best == nil || t.Before(bestAt) {
+			best, bestAt = &r, t
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	t := bestAt.UTC()
+	e := Event{Type: AnnouncedSurplus, Key: strings.Join([]string{AnnouncedSurplus, a.Source, a.Plan, w.Kind, best.ID}, "|"), Severity: "info",
+		Source: a.Source, Plan: a.Plan, Window: w.Kind, At: &t, InMinutes: minutesUntil(t, now), RemainingPercent: w.RemainingPercent, Stale: a.Stale,
+		Public:      &Public{ID: best.ID, Provider: best.Provider, EventType: best.EventType, Status: best.Status, URL: best.URL, When: best.Schedule.Label},
+		windowReset: w.ResetsAt}
+	if h := a.Harness; h != nil {
+		e.Model, e.Effort = h.Model, h.Effort
+	}
+	cfg := current(a, d)
+	e.Suggest = cfg.up(d)
+	e.Speed = quotaSpeed(cfg, d, a.Source)
+	return []Event{e}
 }
 
 // providerSource: whose public resets matter to which local account.
@@ -367,6 +443,12 @@ func publicEvents(d *digest.Digest, sources map[string]bool, now time.Time) []Ev
 		p, err := time.Parse(time.RFC3339, r.PublishedAt)
 		if err != nil || p.After(now.Add(5*time.Minute)) || now.Sub(p) > publicFresh {
 			continue
+		}
+		// An announcement whose own time has passed is no longer news; its completion is.
+		if r.Schedule != nil {
+			if t, err := time.Parse(time.RFC3339, r.Schedule.Through); err == nil && r.EventType == "direct_reset_announced" && t.Before(now) {
+				continue
+			}
 		}
 		out = append(out, Event{Type: PublicReset, Key: PublicReset + "|" + r.ID, Severity: "info", Source: src,
 			Public: &Public{ID: r.ID, Provider: r.Provider, EventType: r.EventType, Status: r.Status, URL: r.URL}})

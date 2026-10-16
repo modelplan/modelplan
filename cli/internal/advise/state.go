@@ -29,6 +29,9 @@ type Armed struct {
 	Plan    string    `json:"plan,omitempty"`
 	Window  string    `json:"window"`
 	ResetAt time.Time `json:"resetAt"`
+	// WindowResetAt: for an announced reset, the window's own reset when we advised. Only a
+	// reading taken after the announced time with a later window reset shows it reached us.
+	WindowResetAt *time.Time `json:"windowResetAt,omitempty"`
 }
 
 const seenFor = 8 * 24 * time.Hour
@@ -104,7 +107,7 @@ func (s *State) prune(now time.Time) {
 	}
 	kept := s.Armed[:0]
 	for _, a := range s.Armed {
-		if now.Sub(a.ResetAt) <= switchBackFor {
+		if now.Sub(a.ResetAt) <= a.lasts() {
 			kept = append(kept, a)
 		}
 	}
@@ -134,7 +137,7 @@ func (s *State) MarkSeen(es []Event, now time.Time) {
 // arm remembers windows we advised on (surplus, tight, exhausted) until their reset.
 func (s *State) arm(es []Event) {
 	for _, e := range es {
-		if e.At == nil || (e.Type != ResetSoonSurplus && e.Type != WindowTight && e.Type != WindowExhausted) {
+		if e.At == nil || (e.Type != ResetSoonSurplus && e.Type != WindowTight && e.Type != WindowExhausted && e.Type != AnnouncedSurplus) {
 			continue
 		}
 		found := false
@@ -142,7 +145,7 @@ func (s *State) arm(es []Event) {
 			found = found || a.Key == e.Key
 		}
 		if !found {
-			s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At})
+			s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At, WindowResetAt: e.windowReset})
 			s.changed = true
 		}
 	}
@@ -156,7 +159,7 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 	latest := map[string]Armed{}
 	var order []string
 	for _, a := range s.Armed {
-		if now.Before(a.ResetAt) || now.Sub(a.ResetAt) > switchBackFor {
+		if now.Before(a.ResetAt) || now.Sub(a.ResetAt) > a.lasts() {
 			continue
 		}
 		k := strings.Join([]string{a.Source, a.Plan, a.Window}, "|")
@@ -185,6 +188,9 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 		if still := windowNow(acct, a.Window); still != nil && still.Pace == "exhausted" {
 			continue
 		}
+		if a.Type == AnnouncedSurplus && !restarted(acct, a) {
+			continue
+		}
 		cfg := current(acct, d)
 		e := Event{Type: SwitchBack, Key: strings.Join([]string{SwitchBack, k, a.ResetAt.UTC().Format(time.RFC3339)}, "|"), Severity: "info", Source: a.Source, Plan: a.Plan, Window: a.Window}
 		t := a.ResetAt.UTC()
@@ -205,6 +211,22 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 		out = append(out, e)
 	}
 	return out
+}
+
+// restarted: a reading taken after the announced time shows the window with a later reset than
+// when we advised, so the announced reset did reach this account.
+func restarted(acct *quota.Account, a Armed) bool {
+	w := windowNow(acct, a.Window)
+	return a.WindowResetAt != nil && w != nil && w.ResetsAt != nil && w.ResetsAt.After(*a.WindowResetAt) && !w.ObservedAt.Before(a.ResetAt)
+}
+
+// lasts: how long after its reset an armed window may still say "switch back". An announced
+// reset needs a new reading as proof, which comes with the user's next turn, so it waits longer.
+func (a Armed) lasts() time.Duration {
+	if a.Type == AnnouncedSurplus {
+		return harnessQuiet
+	}
+	return switchBackFor
 }
 
 func windowNow(a *quota.Account, kind string) *quota.Window {
