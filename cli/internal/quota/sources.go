@@ -3,6 +3,8 @@ package quota
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,9 +20,10 @@ import (
 // ---- Claude Code: the status line receives rate_limits on stdin; we keep a sanitised copy.
 
 // StatuslineInput is the subset of Claude Code's status-line JSON that Model Plan uses.
-// Session ids, paths and costs are deliberately not decoded.
+// Paths and costs are deliberately not decoded; the session id only becomes a one-way key.
 type StatuslineInput struct {
-	Model struct {
+	SessionID string `json:"session_id"`
+	Model     struct {
 		ID          string `json:"id"`
 		DisplayName string `json:"display_name"`
 	} `json:"model"`
@@ -50,6 +53,18 @@ type ccSnapshot struct {
 	ObservedAt    time.Time `json:"observedAt"`
 	Harness       Harness   `json:"harness"`
 	Windows       []Window  `json:"windows"`
+	// SessionKey tells this session's model and effort from another's (the usage windows are
+	// the account's either way); a hash, so the snapshot holds no session id.
+	SessionKey string `json:"sessionKey,omitempty"`
+}
+
+// SessionKey is the one-way key for a Claude Code session id ("" for none).
+func SessionKey(id string) string {
+	if id == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte("modelplan-session:" + id))
+	return hex.EncodeToString(h[:8])
 }
 
 func snapshotPath(cache string) string { return filepath.Join(cache, "observed", "claude-code.json") }
@@ -89,7 +104,7 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	if a.Harness.Model == "" && len(a.Windows) == 0 {
 		return nil
 	}
-	snap := ccSnapshot{SchemaVersion: 1, Source: "claude-code-statusline", ObservedAt: a.ObservedAt, Harness: *a.Harness, Windows: a.Windows}
+	snap := ccSnapshot{SchemaVersion: 1, Source: "claude-code-statusline", ObservedAt: a.ObservedAt, Harness: *a.Harness, Windows: a.Windows, SessionKey: SessionKey(in.SessionID)}
 	p := snapshotPath(cache)
 	if old, err := os.ReadFile(p); err == nil {
 		var prev ccSnapshot
@@ -113,7 +128,9 @@ func content(s ccSnapshot) []byte {
 	return marshal(s)
 }
 
-func readClaudeCode(cache string) ([]Account, SourceStatus) {
+// readClaudeCode: session, when known (the hook's or CLAUDE_CODE_SESSION_ID), marks whose
+// model and effort the snapshot holds: current-thread or recent-thread (another session).
+func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "claude-code"}
 	b, status := readBounded(snapshotPath(cache), 64<<10)
 	if status != "" {
@@ -129,6 +146,12 @@ func readClaudeCode(cache string) ([]Account, SourceStatus) {
 		return nil, st
 	}
 	a := Account{Source: "claude-code", ObservedAt: s.ObservedAt, Harness: &s.Harness, Windows: s.Windows}
+	if session != "" && s.SessionKey != "" {
+		a.Harness.Attribution = "recent-thread"
+		if SessionKey(session) == s.SessionKey {
+			a.Harness.Attribution = "current-thread"
+		}
+	}
 	if a.Windows == nil {
 		a.Windows = []Window{}
 	}

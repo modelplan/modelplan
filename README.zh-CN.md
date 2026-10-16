@@ -43,7 +43,7 @@ npx skills add modelplan/modelplan
 /plugin install modelplan@modelplan
 ```
 
-命令：`/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及 `/modelplan:statusline`（添加状态栏，改设置前会先问你）。[详情](claude-code/)
+装好后运行 `/modelplan:setup`：逐项检查 CLI、状态栏和钩子，缺什么在你同意后补上。命令：`/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及 `/modelplan:statusline`（添加状态栏，改设置前会先问你）。[详情](claude-code/)
 
 </details>
 
@@ -201,7 +201,7 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 | | 目录 | 说明 |
 | --- | --- | --- |
 | **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
-| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及把新提示只告诉 Claude 一次的 prompt hook |
+| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及把新提示和任务开始简报只告诉 Claude 一次的 prompt hook |
 | Codex 插件 | [`codex/`](codex/) | Skill 和 GPT 档位面板：⚡ Fast / Ultrafast 开关、你的 Codex 额度、官方重置公告 |
 | `modelplan` 命令行 | [`cli/`](cli/) | 单个静态可执行文件：`lineup`、`effort`、`models`、`quota`、`advise`、`statusline`、`sync`、`doctor` |
 | 方法与来源 | [`METHODOLOGY.zh-CN.md`](METHODOLOGY.zh-CN.md) | 能力、成本、耗时和 ★ 推荐档怎么算，以及数据源 |

@@ -2,6 +2,20 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.6 (2026-10-16)
+
+- Plugins: Claude Code 0.5.0.
+- **Task-start brief for Claude Code.** `advise --hook claude-code` now also hands the model the brief on the first prompt of each session (Anthropic models at ★, the default configuration, the current model's ladder, the quota headroom), as for Codex. The current model and effort come from the status line's reading only when it was this session's: the snapshot keeps a one-way `sessionKey` (a hash, never the id), and `quota` marks the Claude Code harness `current-thread` or `recent-thread` from the hook's `session_id` or `CLAUDE_CODE_SESSION_ID`. Without it the brief says "model unknown".
+- The hook refreshes the published data in the background when it is older than 6 hours (before, only the status line did), and takes a plugin's setup notice (`--add-system`, `--add-context`) so one JSON object comes out.
+- `statusline --preview` renders a sample without recording it; the plugin's preview used to write its sample windows into the real snapshot.
+
+## Claude Code plugin 0.5.0 (2026-10-16)
+
+- **One hook,** `UserPromptSubmit` → `hooks/modelplan-quota-hints.sh`; `SessionStart` is gone (the CLI refreshes data itself). It finds the CLI off PATH (`~/.local/bin`, Homebrew), records a heartbeat with the plugin version, and shows a setup notice when the CLI is missing or older than 0.5.6, or the status line has never recorded: the first notice asks Claude to offer the fix once (a "no" is recorded), later ones at most weekly without asking, none for 90 days after "not now". A current CLI with a recording status line gets hints and the brief only. Verified in Claude Code 2.1.301 (plugin hooks run without a separate review there).
+- **`/modelplan:setup`** reports plugin, CLI (missing, outdated, failed, ok, and whether it is on PATH), status line (recording, set but no reading, not set), hook (last run, plugin version) and hints, each on its own line, then installs the CLI with consent, syncs and re-checks.
+- `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup` and `/modelplan:statusline` reach the CLI through the plugin, so they work when it is not on PATH; the status line is configured with the CLI's full path.
+- Tests for the hooks and commands run in CI on Ubuntu and macOS.
+
 ## v0.5.5 (2026-10-16)
 
 - Plugins: Codex 0.13.0.

@@ -66,6 +66,13 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
+	b.Harness = "claude-code"
+	got = TaskBrief(b)
+	for _, want := range []string{"model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "The session is on it."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("claude-code brief: missing %q in:\n%s", want, got)
+		}
+	}
 	if TaskBrief(nil) != "" {
 		t.Error("nil brief")
 	}

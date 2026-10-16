@@ -313,7 +313,11 @@ func TaskBrief(b *advise.Brief) string {
 	if b == nil {
 		return ""
 	}
-	lines := []string{"Model Plan task-start brief (advice only: the user switches model, effort and Fast in Codex; never say you changed them)."}
+	where, thread := "model, effort and Fast in Codex", "thread"
+	if b.Harness == "claude-code" {
+		where, thread = "model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "session"
+	}
+	lines := []string{"Model Plan task-start brief (advice only: the user switches " + where + "; never say you changed them)."}
 	now := "Now: model unknown"
 	if b.Model != "" {
 		now = "Now: " + b.Model + " · " + b.Effort
@@ -362,7 +366,7 @@ func TaskBrief(b *advise.Brief) string {
 		}
 		at := ""
 		if b.AtDefault {
-			at = " The thread is on it."
+			at = " The " + thread + " is on it."
 		}
 		lines = append(lines, fmt.Sprintf("Default for ordinary tasks: %s ★%s (%s).%s", df.Name, df.Rec, why, at))
 	}
@@ -381,6 +385,6 @@ func TaskBrief(b *advise.Brief) string {
 		}
 		lines = append(lines, fmt.Sprintf("With the surplus, %s is an option: plan quota ×%s, %s.", sp.Label, g(sp.QuotaRatio), speed))
 	}
-	lines = append(lines, "Judge this task's difficulty from the request. The default fits most tasks. Only when the current setting clearly does not fit, suggest one configuration from the lines above in one sentence with its multipliers, then carry on: one step below the default for a small, well-bounded change; High or XHigh of the default model for a complex, cross-module task, and back to the default once it is done; the default itself when the thread is elsewhere and the task is ordinary. Otherwise say nothing about models or efforts.")
+	lines = append(lines, "Judge this task's difficulty from the request. The default fits most tasks. Only when the current setting clearly does not fit, suggest one configuration from the lines above in one sentence with its multipliers, then carry on: one step below the default for a small, well-bounded change; High or XHigh of the default model for a complex, cross-module task, and back to the default once it is done; the default itself when the "+thread+" is elsewhere and the task is ordinary. Otherwise say nothing about models or efforts.")
 	return strings.Join(lines, "\n")
 }

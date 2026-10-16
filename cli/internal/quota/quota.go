@@ -91,6 +91,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 type Paths struct {
 	Cache, CodexHome, LocalFile string
 	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
+	ClaudeSession               string // the calling Claude Code session, when known
 }
 
 // Read gathers every available source and evaluates it at now.
@@ -100,7 +101,7 @@ func Read(p Paths, now time.Time) Report {
 		r.Accounts = append(r.Accounts, a...)
 		r.Sources = append(r.Sources, st)
 	}
-	add(readClaudeCode(p.Cache))
+	add(readClaudeCode(p.Cache, p.ClaudeSession))
 	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
 	if p.CodexHome != "" {
