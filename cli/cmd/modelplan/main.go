@@ -455,6 +455,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		if in.SessionID != "" {
 			paths.ClaudeSession = in.SessionID
 		}
+		refreshCodexBarLater(st, now)
 	} else {
 		if in.SessionID != "" {
 			paths.CodexThread = in.SessionID
@@ -529,13 +530,19 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	return 0
 }
 
-// refreshAccountLater asks Codex for the account reading in the background when the cached one
-// is due, so hooks and the plugin never wait for it.
+// refreshAccountLater asks Codex for the account reading (and CodexBar for the enabled
+// providers) in the background when the cached one is due, so hooks and the plugin never wait.
 func refreshAccountLater(st *store.Store) {
 	now := time.Now()
 	if quota.AccountDue(st.Dir, now) {
 		_ = detach.Start("quota", "--refresh-account", "--quiet")
 	}
+	refreshCodexBarLater(st, now)
+}
+
+// refreshCodexBarLater runs CodexBar in the background for the enabled providers when the cached
+// reading is due (both hooks, quota and advise), so nothing waits for it.
+func refreshCodexBarLater(st *store.Store, now time.Time) {
 	if quota.CodexBarDue(quotaPaths(st), now) {
 		_ = detach.Start("codexbar", "refresh", "--quiet")
 	}
