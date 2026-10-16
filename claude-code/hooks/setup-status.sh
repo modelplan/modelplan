@@ -1,6 +1,6 @@
 #!/bin/sh
 # /modelplan:setup's check: each part on its own line, from what is on disk now. Reads only; the
-# CLI is asked for its version and nothing else. The status line needs a CLI path that does not
+# CLI is asked for its version and its CodexBar state (read from its files) and nothing else. The status line needs a CLI path that does not
 # change with plugin updates, so it is not reported here (see /modelplan:statusline).
 here=$(dirname "$0")
 . "$here/setup-lib.sh"
@@ -30,6 +30,11 @@ elif grep -q 'modelplan statusline' "$(settings_file)" 2>/dev/null; then
   echo "statusline: set in $(settings_file), no reading recorded yet (it records once the interactive status line renders)"
 else
   echo "statusline: not set up (quota hints need it; /modelplan:statusline)"
+fi
+# Other plans read through CodexBar (optional): the CLI reports its own config and cache.
+if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" 0.5.13; then
+  echo "codexbar (other plans, optional):"
+  "$cli" codexbar --lang en </dev/null 2>&1 | head -16 | sed 's/^/  /'
 fi
 # These records are this machine's, from whichever session ran last.
 if m=$(ago "$state/hook-ran"); then

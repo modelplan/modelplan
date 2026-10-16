@@ -594,8 +594,13 @@ func cbWindowOf(w *cbWindow, label string, observed time.Time) (Window, bool) {
 		x.WindowMinutes = *w.WindowMinutes
 		x.Kind = kindOf(*w.WindowMinutes)
 	}
+	if x.Kind != "unknown" && restatesKind.MatchString(label) {
+		x.Limit = "" // "5 hours", "Weekly": the kind already says it
+	}
 	return x, true
 }
+
+var restatesKind = regexp.MustCompile(`(?i)^(\d+[ -]?(h|hr|hrs|hours?)|session|daily|day|weekly|week|monthly|month)( (window|limit|usage))?$`)
 
 var labelRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._:/+()-]{0,39}$`)
 

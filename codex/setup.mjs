@@ -60,9 +60,24 @@ export async function hookStatus({ home = homedir(), definition = hookDefinition
     result: result?.split('\n')[0].slice(0, 200) ?? null, lastSuccess: ok ? ok.toISOString() : null };
 }
 
+// CodexBar, optional and off until the user enables providers (`modelplan codexbar enable cursor
+// zai`): what the CLI reports from its own config and cache (it runs nothing for this). Null when
+// the CLI is missing, predates it or does not answer.
+export async function codexbarStatus({ exec = run, cli } = {}) {
+  if (!cli) return null;
+  try {
+    const s = JSON.parse(await exec(cli, ['codexbar', '--json']));
+    if (s?.schemaVersion !== 1 || !Array.isArray(s.enabled)) return null;
+    const str = v => typeof v === 'string' && v ? v.slice(0, 400) : null;
+    return { enabled: s.enabled.map(String).slice(0, 8), binary: str(s.binary), pinnedVersion: str(s.pinnedVersion), pinned: s.pinned === true, fetch: str(s.fetch),
+      providers: (Array.isArray(s.providers) ? s.providers : []).slice(0, 8).map(p => ({ id: String(p.id), name: str(p.name) ?? String(p.id), status: String(p.status), reason: str(p.reason), needs: str(p.needs) })) };
+  } catch { return null; }
+}
+
 export async function setupStatus({ home = homedir(), definition, ...opts } = {}) {
   const [cli, hook] = await Promise.all([cliStatus({ home, ...opts }), hookStatus({ home, definition })]);
-  return { cli, hook };
+  const codexbar = cli.status === 'ok' || cli.status === 'outdated' ? await codexbarStatus({ exec: opts.exec, cli: cli.path }) : null;
+  return { cli, hook, codexbar };
 }
 
 // Codex keeps each plugin version in its own directory (…/modelplan-codex/<version>) and an open

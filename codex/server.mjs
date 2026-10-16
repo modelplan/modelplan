@@ -25,7 +25,7 @@ const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME);
   { path: process.execPath, version: process.versions.node, source: 'direct' };
 const setup = (quota, advice, state) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
   advice: { status: advice.status, reason: advice.reason ?? null, error: advice.error ?? null }, adviceEvents: advice.status === "ok" ? advice.events.length : null,
-  cli: { ...state.cli, retryable: supported() }, hook: state.hook, pluginUpdate: state.pluginUpdate ?? null });
+  cli: { ...state.cli, retryable: supported() }, hook: state.hook, codexbar: state.codexbar ?? null, pluginUpdate: state.pluginUpdate ?? null });
 const readHtml = async (preview = false, surface = "widget") => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
     "ui/dashboard.html", "ui/kit/tokens.css", "ui/kit/components.css", "ui/dashboard.js", "ui/kit/logo.svg", "ui/comparison.js", "ui/lineup.js", "ui/presentation.js", "ui/curves.js", "ui/space.css",
