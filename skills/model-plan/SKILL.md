@@ -26,7 +26,7 @@ curl -fsS --max-time 20 https://modelplan.ai/v1/client
 python3 '<this skill directory>/scripts/quota.py'
 ```
 
-`quota` reports one account per source: Claude Code (recorded by the Model Plan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace`, and each account a `headroom` and the current `harness` model/effort when known.
+`quota` reports one account per source: Claude Code (recorded by the Model Plan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace` and its own `ageMinutes`, and each account a `headroom` and a `harness` model/effort when known. For Codex, `harness.attribution` says whose it is: `current-thread` only when the reader ran inside this Codex thread (it matched `CODEX_THREAD_ID`); `recent-thread` is the newest interactive thread on the machine, which may be another conversation. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
 
 ## 2. Pick the model and effort
 

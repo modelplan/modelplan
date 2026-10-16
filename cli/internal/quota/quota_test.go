@@ -143,3 +143,62 @@ func TestHeadroom(t *testing.T) {
 		}
 	}
 }
+
+// threadsFixture: an interactive desktop thread (pro, both windows), a newer CLI thread on a
+// separate limit id, and the newest one, a background review on codex-auto-review that reports
+// only the five-hour window. Mtimes follow the timestamps.
+func threadsFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	src := "testdata/threads/.codex/sessions/2026/10/14"
+	dst := filepath.Join(dir, ".codex/sessions/2026/10/14")
+	os.MkdirAll(dst, 0o755)
+	es, _ := os.ReadDir(src)
+	for i, e := range es {
+		b, _ := os.ReadFile(filepath.Join(src, e.Name()))
+		os.WriteFile(filepath.Join(dst, e.Name()), b, 0o644)
+		at := now.Add(time.Duration(i-len(es)) * 10 * time.Minute)
+		os.Chtimes(filepath.Join(dst, e.Name()), at, at)
+	}
+	return filepath.Join(dir, ".codex")
+}
+
+func TestCodexThreadsKeepTheirOwnModel(t *testing.T) {
+	home := threadsFixture(t)
+	got := marshal(Read(Paths{CodexHome: home}, now))
+	if *update {
+		os.WriteFile("testdata/expected-threads.json", got, 0o644)
+	}
+	want, _ := os.ReadFile("testdata/expected-threads.json")
+	if !bytes.Equal(got, want) {
+		t.Fatalf("drifted from testdata/expected-threads.json:\n%s", got)
+	}
+	r := Read(Paths{CodexHome: home}, now)
+	a := r.Accounts[0]
+	if a.Harness.Model != "gpt-6-sol" || a.Harness.Effort != "medium" || a.Harness.Attribution != "recent-thread" || a.Harness.Origin != "cli" {
+		t.Fatalf("background review must not become the chat's model: %+v", a.Harness)
+	}
+	byKey := map[string]Window{}
+	for _, w := range a.Windows {
+		byKey[w.Limit+"/"+w.Kind] = w
+	}
+	if w := byKey["/five_hour"]; *w.UsedPercent != 45 || !w.ObservedAt.Equal(time.Date(2026, 10, 14, 9, 51, 0, 0, time.UTC)) {
+		t.Fatalf("account five-hour window should be the newest reading: %+v", w)
+	}
+	if w, ok := byKey["/weekly"]; !ok || *w.UsedPercent != 20 || *w.AgeMinutes != 59 {
+		t.Fatalf("a window missing from the newest log is kept with its own age: %+v", byKey)
+	}
+	if w := byKey["codex_sol/five_hour"]; w.UsedPercent == nil || *w.UsedPercent != 10 {
+		t.Fatalf("limit ids stay separate: %+v", byKey)
+	}
+	cur := Read(Paths{CodexHome: home, CodexThread: "01a14000-aaaa-7000-8000-00000000000a"}, now).Accounts[0].Harness
+	if cur.Model != "gpt-6-astra" || cur.Effort != "high" || cur.ServiceTier != "fast" || cur.Attribution != "current-thread" {
+		t.Fatalf("named thread: %+v", cur)
+	}
+	if h := Read(Paths{CodexHome: home, CodexThread: "not-a-thread"}, now).Accounts[0].Harness; h.Attribution != "recent-thread" {
+		t.Fatalf("unknown thread falls back to the recent one: %+v", h)
+	}
+	if bytes.Contains(got, []byte("secret")) || bytes.Contains(got, []byte("/home/u")) {
+		t.Fatal("instructions or paths leaked")
+	}
+}

@@ -11,8 +11,19 @@ const run = (cmd, args) => new Promise((resolve, reject) =>
 export function pickCodex(report) {
   if (report?.schemaVersion !== 1 || !Array.isArray(report.accounts)) throw Error('quota_report_invalid');
   const source = report.sources?.find(s => s.source === 'codex') ?? { status: 'missing' };
-  const account = report.accounts.find(a => a.source === 'codex') ?? null;
+  const account = thread(report.accounts.find(a => a.source === 'codex') ?? null);
   return { status: account ? 'ok' : source.status, reason: source.reason ?? null, evaluatedAt: report.evaluatedAt, account, note: report.note };
+}
+
+// The MCP server is never told which thread called it, so its reading is at best the most
+// recent interactive thread. Readers older than CLI 0.5 did not say so and could return a
+// background review's model; drop that and mark unattributed readings as recent.
+const BACKGROUND_MODELS = new Set(['codex-auto-review']);
+function thread(account) {
+  if (!account?.harness) return account;
+  const h = account.harness;
+  if (BACKGROUND_MODELS.has(h.model) && h.attribution !== 'current-thread') { const { harness, ...rest } = account; return rest; }
+  return { ...account, harness: { ...h, attribution: h.attribution ?? 'recent-thread' } };
 }
 
 // Proactive hints (reset soon with allowance left, tight, switch back after a reset, public

@@ -163,26 +163,142 @@ type codexLimits struct {
 
 const codexFiles = 8
 const codexTail = 4 << 20
+const codexHead = 1 << 20 // session_meta is the first line; it carries the instructions
 
-func readCodex(home string) ([]Account, SourceStatus) {
+// readCodex keeps three things apart. The account's windows are merged across recent rollouts,
+// newest observation per limit id and window, because every thread (background reviews
+// included) reports the same account meters. The model and effort come from one thread: the
+// one named by thread (CODEX_THREAD_ID or a hook's session id) when its log is found, else the
+// most recent interactive thread, marked as such. Background threads never supply them.
+func readCodex(home, thread string) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "codex"}
 	if home == "" {
 		st.Status, st.Reason = "missing", "not read"
 		return nil, st
 	}
-	files := newestRollouts(filepath.Join(home, "sessions"), codexFiles)
+	root := filepath.Join(home, "sessions")
+	files := newestRollouts(root, codexFiles)
+	own := ""
+	if thread = clip(thread); thread != "" {
+		own = findThread(root, thread)
+		if own != "" && !contains(files, own) {
+			files = append([]string{own}, files...)
+		}
+	}
 	if len(files) == 0 {
 		st.Status, st.Reason = "missing", "no Codex session logs found"
 		return nil, st
 	}
+	var rs []*rollout
 	for _, f := range files {
-		if a := scanRollout(f); a != nil {
-			st.Status = "ok"
-			return []Account{*a}, st
+		if r := scanRollout(f); r != nil {
+			rs = append(rs, r)
 		}
 	}
-	st.Status, st.Reason = "empty", "recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)"
-	return nil, st
+	a := mergeCodex(rs)
+	if a == nil {
+		st.Status, st.Reason = "empty", "recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)"
+		return nil, st
+	}
+	a.Harness = codexHarness(rs, own)
+	st.Status = "ok"
+	return []Account{*a}, st
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+// findThread looks for rollout-*-<thread>.jsonl in the most recent day directories.
+func findThread(root, thread string) string {
+	suffix, days := "-"+thread+".jsonl", 0
+	for _, y := range dirsDesc(root) {
+		for _, m := range dirsDesc(y) {
+			for _, d := range dirsDesc(m) {
+				if days++; days > 62 {
+					return ""
+				}
+				es, _ := os.ReadDir(d)
+				for _, e := range es {
+					if e.Type().IsRegular() && rolloutName.MatchString(e.Name()) && strings.HasSuffix(e.Name(), suffix) {
+						return filepath.Join(d, e.Name())
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func background(origin, model string) bool {
+	return strings.HasPrefix(origin, "subagent") || strings.HasPrefix(origin, "internal") || model == "codex-auto-review"
+}
+
+// mergeCodex: plan and observedAt from the newest snapshot; windows from every rollout of the
+// same plan, newest per limit/kind/length, each keeping its own observedAt.
+func mergeCodex(rs []*rollout) *Account {
+	var newest *rollout
+	for _, r := range rs {
+		if !r.observed.IsZero() && (newest == nil || r.observed.After(newest.observed)) {
+			newest = r
+		}
+	}
+	if newest == nil {
+		return nil
+	}
+	a := &Account{Source: "codex", Plan: newest.plan, ObservedAt: newest.observed, Windows: []Window{}}
+	pos := map[string]int{}
+	for _, r := range append([]*rollout{newest}, rs...) {
+		if r.observed.IsZero() || (r.plan != "" && newest.plan != "" && r.plan != newest.plan) {
+			continue
+		}
+		for _, k := range r.order {
+			w := r.windows[k]
+			if i, ok := pos[k]; ok {
+				if w.ObservedAt.After(a.Windows[i].ObservedAt) {
+					a.Windows[i] = w
+				}
+				continue
+			}
+			pos[k] = len(a.Windows)
+			a.Windows = append(a.Windows, w)
+		}
+	}
+	return a
+}
+
+func codexHarness(rs []*rollout, own string) *Harness {
+	var pick *rollout
+	for _, r := range rs {
+		if r.harness == nil {
+			continue
+		}
+		if r.path == own {
+			pick = r
+			break
+		}
+		if background(r.origin, r.harness.Model) {
+			continue
+		}
+		if pick == nil || r.harness.ObservedAt.After(*pick.harness.ObservedAt) {
+			pick = r
+		}
+	}
+	if pick == nil {
+		return nil
+	}
+	h := *pick.harness
+	h.Attribution = "recent-thread"
+	if pick.path == own {
+		h.Attribution = "current-thread"
+	}
+	h.Origin = pick.origin
+	return &h
 }
 
 var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
@@ -233,23 +349,69 @@ func dirsDesc(p string) []string {
 	return out
 }
 
-// scanRollout reads the file's tail and keeps the latest snapshot per limit id, plus the
-// latest turn context (model, effort). It decodes nothing else from the log.
-func scanRollout(path string) *Account {
+type rollout struct {
+	path, origin, plan string
+	observed           time.Time
+	harness            *Harness
+	windows            map[string]Window
+	order              []string
+}
+
+// originOf names where a thread came from: cli, vscode, exec, … or subagent:review,
+// internal:guardian for threads Codex starts itself.
+func originOf(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return clip(s)
+	}
+	var o map[string]json.RawMessage
+	if json.Unmarshal(raw, &o) != nil || len(o) != 1 {
+		return ""
+	}
+	for k, v := range o {
+		var inner string
+		if json.Unmarshal(v, &inner) != nil {
+			var obj map[string]json.RawMessage
+			if json.Unmarshal(v, &obj) == nil {
+				for ik := range obj {
+					if inner == "" || ik < inner {
+						inner = ik
+					}
+				}
+			}
+		}
+		return clip(k + ":" + inner)
+	}
+	return ""
+}
+
+// scanRollout reads the first line (session_meta) and the file's tail. It keeps the latest
+// snapshot per limit id and the latest turn context; it decodes nothing else from the log.
+func scanRollout(path string) *rollout {
 	fh, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer fh.Close()
+	r := &rollout{path: path, windows: map[string]Window{}}
+	head := bufio.NewReaderSize(io.LimitReader(fh, codexHead), 64<<10)
+	if first, err := head.ReadBytes('\n'); err == nil || err == io.EOF {
+		var l rolloutLine
+		if json.Unmarshal(first, &l) == nil && l.Type == "session_meta" {
+			var meta struct {
+				Source json.RawMessage `json:"source"`
+			}
+			if json.Unmarshal(l.Payload, &meta) == nil && len(meta.Source) > 0 {
+				r.origin = originOf(meta.Source)
+			}
+		}
+	}
+	fh.Seek(0, io.SeekStart)
 	if info, err := fh.Stat(); err == nil && info.Size() > codexTail {
 		fh.Seek(info.Size()-codexTail, io.SeekStart)
 	}
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 64<<10), 16<<20)
-	var a *Account
-	var h Harness
-	limits := map[string]Window{}
-	order := []string{}
 	for sc.Scan() {
 		line := sc.Bytes()
 		if !bytes.Contains(line, []byte(`"rate_limits"`)) && !bytes.Contains(line, []byte(`"turn_context"`)) {
@@ -263,11 +425,25 @@ func scanRollout(path string) *Account {
 		switch l.Type {
 		case "turn_context":
 			var tc struct {
-				Model  string `json:"model"`
-				Effort string `json:"effort"`
+				Model       string `json:"model"`
+				Effort      string `json:"effort"`
+				ServiceTier string `json:"service_tier"`
+				Mode        struct {
+					Settings struct {
+						Effort string `json:"reasoning_effort"`
+					} `json:"settings"`
+				} `json:"collaboration_mode"`
 			}
-			if json.Unmarshal(l.Payload, &tc) == nil {
-				h = Harness{Model: clip(tc.Model), Effort: clip(tc.Effort)}
+			if json.Unmarshal(l.Payload, &tc) == nil && !ts.IsZero() {
+				h := Harness{Model: clip(tc.Model), Effort: clip(tc.Effort), ServiceTier: clip(tc.ServiceTier)}
+				if h.Effort == "" {
+					h.Effort = clip(tc.Mode.Settings.Effort)
+				}
+				t := ts.UTC()
+				h.ObservedAt = &t
+				if h.Model != "" || h.Effort != "" {
+					r.harness = &h
+				}
 			}
 		case "event_msg":
 			var ev struct {
@@ -278,12 +454,9 @@ func scanRollout(path string) *Account {
 				continue
 			}
 			rl := ev.RateLimits
-			if a == nil {
-				a = &Account{Source: "codex"}
-			}
-			a.ObservedAt = ts.UTC()
+			r.observed = ts.UTC()
 			if p := clip(rl.PlanType); p != "" {
-				a.Plan = p
+				r.plan = p
 			}
 			for _, cw := range []*codexWindow{rl.Primary, rl.Secondary} {
 				if cw == nil {
@@ -305,24 +478,17 @@ func scanRollout(path string) *Account {
 					w.ResetsAt = &t
 				}
 				key := w.Limit + "/" + w.Kind + "/" + itoa(w.WindowMinutes)
-				if _, seen := limits[key]; !seen {
-					order = append(order, key)
+				if _, seen := r.windows[key]; !seen {
+					r.order = append(r.order, key)
 				}
-				limits[key] = w
+				r.windows[key] = w
 			}
 		}
 	}
-	if a == nil {
+	if r.observed.IsZero() && r.harness == nil {
 		return nil
 	}
-	if h.Model != "" || h.Effort != "" {
-		a.Harness = &h
-	}
-	a.Windows = []Window{}
-	for _, k := range order {
-		a.Windows = append(a.Windows, limits[k])
-	}
-	return a
+	return r
 }
 
 func kindOf(minutes int) string {

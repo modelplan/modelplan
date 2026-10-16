@@ -2,7 +2,9 @@
 """Read the user's own usage windows from files the harnesses already write on this machine.
 
 Sources (read-only; nothing is sent anywhere):
-  - Codex: the latest token_count rate_limits in $CODEX_HOME/sessions/**/rollout-*.jsonl
+  - Codex: token_count rate_limits in the recent $CODEX_HOME/sessions/**/rollout-*.jsonl, merged
+    per limit id; model and effort from the calling thread (CODEX_THREAD_ID) or the newest
+    interactive one, never from background review threads
   - Claude Code: the snapshot `modelplan statusline` records in the Model Plan cache
   - ~/.config/modelplan/local.json, maintained by the user (no secrets)
 
@@ -26,7 +28,7 @@ STALE_AFTER = 60  # minutes
 DEFAULT_MINUTES = {"five_hour": 300, "weekly": 10080, "monthly": 43200}
 IDENT = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}")
 ROLLOUT = re.compile(r"rollout-.*\.jsonl")
-CODEX_FILES, CODEX_TAIL = 8, 4 << 20
+CODEX_FILES, CODEX_TAIL, CODEX_HEAD = 8, 4 << 20, 1 << 20
 
 
 def iso(t):
@@ -177,16 +179,39 @@ def kind_of(minutes):
     return "unknown"
 
 
+def origin_of(v):
+    """Where a thread came from: cli, vscode, exec, ... or subagent:review, internal:guardian."""
+    if isinstance(v, str):
+        return clip(v)
+    if isinstance(v, dict) and len(v) == 1:
+        (k, inner), = v.items()
+        if not isinstance(inner, str):
+            inner = min(inner) if isinstance(inner, dict) and inner else ""
+        return clip(k + ":" + inner)
+    return ""
+
+
+def background(origin, model):
+    return origin.startswith("subagent") or origin.startswith("internal") or model == "codex-auto-review"
+
+
 def scan_rollout(path):
+    """First line (session_meta) and the tail: latest snapshot per limit id, latest turn context."""
     try:
         with open(path, "rb") as f:
+            first = f.readline(CODEX_HEAD)
             size = os.fstat(f.fileno()).st_size
-            if size > CODEX_TAIL:
-                f.seek(size - CODEX_TAIL)
+            f.seek(size - CODEX_TAIL if size > CODEX_TAIL else 0)
             data = f.read()
     except OSError:
         return None
-    acct, harness, limits = None, {}, {}
+    r = {"path": path, "origin": "", "plan": "", "observed": None, "harness": None, "windows": {}}
+    try:
+        row = json.loads(first)
+        if isinstance(row, dict) and row.get("type") == "session_meta" and isinstance(row.get("payload"), dict):
+            r["origin"] = origin_of(row["payload"].get("source"))
+    except ValueError:
+        pass
     for line in data.splitlines():
         if b'"rate_limits"' not in line and b'"turn_context"' not in line:
             continue
@@ -197,14 +222,20 @@ def scan_rollout(path):
         if not isinstance(row, dict) or not isinstance(row.get("payload"), dict):
             continue
         p, ts = row["payload"], parse_time(row.get("timestamp"))
-        if row.get("type") == "turn_context":
-            harness = {k: clip(p.get(k)) for k in ("model", "effort") if clip(p.get(k))}
+        if row.get("type") == "turn_context" and ts:
+            mode = p.get("collaboration_mode") if isinstance(p.get("collaboration_mode"), dict) else {}
+            settings = mode.get("settings") if isinstance(mode.get("settings"), dict) else {}
+            h = {"model": clip(p.get("model")), "effort": clip(p.get("effort")) or clip(settings.get("reasoning_effort")),
+                 "serviceTier": clip(p.get("service_tier"))}
+            h = {k: v for k, v in h.items() if v}
+            if h.get("model") or h.get("effort"):
+                h["observedAt"] = ts
+                r["harness"] = h
         elif row.get("type") == "event_msg" and p.get("type") == "token_count" and isinstance(p.get("rate_limits"), dict) and ts:
             rl = p["rate_limits"]
-            acct = acct or {"source": "codex"}
-            acct["observedAt"] = ts
+            r["observed"] = ts
             if clip(rl.get("plan_type")):
-                acct["plan"] = clip(rl["plan_type"])
+                r["plan"] = clip(rl["plan_type"])
             lim = clip(rl.get("limit_id"))
             lim = "" if lim == "codex" else lim
             for cw in (rl.get("primary"), rl.get("secondary")):
@@ -219,28 +250,100 @@ def scan_rollout(path):
                 else:
                     resets = None
                 kind = kind_of(minutes)
-                limits[(lim, kind, minutes)] = window(kind, finite(cw.get("used_percent"), 0, 1000), resets, ts, minutes, "fixed", lim)
-    if acct is None:
+                r["windows"][(lim, kind, minutes)] = window(kind, finite(cw.get("used_percent"), 0, 1000), resets, ts, minutes, "fixed", lim)
+    if r["observed"] is None and r["harness"] is None:
         return None
-    if harness:
-        acct["harness"] = harness
-    acct["windows"] = list(limits.values())
+    return r
+
+
+def find_thread(root, thread):
+    suffix, days = "-" + thread + ".jsonl", 0
+    for y in dirs_desc(root):
+        for m in dirs_desc(y):
+            for d in dirs_desc(m):
+                days += 1
+                if days > 62:
+                    return ""
+                try:
+                    for e in os.scandir(d):
+                        if e.is_file(follow_symlinks=False) and ROLLOUT.fullmatch(e.name) and e.name.endswith(suffix):
+                            return e.path
+                except OSError:
+                    pass
+    return ""
+
+
+def merge_codex(rs):
+    """Plan and observedAt from the newest snapshot; windows newest per limit/kind/length."""
+    snaps = [r for r in rs if r["observed"]]
+    if not snaps:
+        return None
+    newest = max(snaps, key=lambda r: r["observed"])
+    acct = {"source": "codex", "observedAt": newest["observed"], "windows": []}
+    if newest["plan"]:
+        acct["plan"] = newest["plan"]
+    pos = {}
+    for r in [newest] + snaps:
+        if r["plan"] and newest["plan"] and r["plan"] != newest["plan"]:
+            continue
+        for k, w in r["windows"].items():
+            if k in pos:
+                if w["observedAt"] > acct["windows"][pos[k]]["observedAt"]:
+                    acct["windows"][pos[k]] = w
+                continue
+            pos[k] = len(acct["windows"])
+            acct["windows"].append(w)
     return acct
 
 
-def read_codex(home):
+def codex_harness(rs, own):
+    pick = None
+    for r in rs:
+        h = r["harness"]
+        if not h:
+            continue
+        if r["path"] == own:
+            pick = r
+            break
+        if background(r["origin"], h.get("model", "")):
+            continue
+        if pick is None or h["observedAt"] > pick["harness"]["observedAt"]:
+            pick = r
+    if pick is None:
+        return None
+    h = dict(pick["harness"])
+    h["attribution"] = "current-thread" if pick["path"] == own else "recent-thread"
+    if pick["origin"]:
+        h["origin"] = pick["origin"]
+    return h
+
+
+def read_codex(home, thread=""):
+    """Account windows merged across recent rollouts (every thread reports the same meters);
+    model and effort from one thread: the named one when found, else the newest interactive
+    thread, marked recent-thread. Background threads never supply them."""
     st = {"source": "codex"}
-    files = newest_rollouts(os.path.join(home, "sessions"), CODEX_FILES)
+    root = os.path.join(home, "sessions")
+    files = newest_rollouts(root, CODEX_FILES)
+    own = ""
+    thread = clip(thread or "")
+    if thread:
+        own = find_thread(root, thread)
+        if own and own not in files:
+            files.insert(0, own)
     if not files:
         st.update(status="missing", reason="no Codex session logs found")
         return [], st
-    for f in files:
-        a = scan_rollout(f)
-        if a:
-            st["status"] = "ok"
-            return [a], st
-    st.update(status="empty", reason="recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)")
-    return [], st
+    rs = [r for r in (scan_rollout(f) for f in files) if r]
+    acct = merge_codex(rs)
+    if acct is None:
+        st.update(status="empty", reason="recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)")
+        return [], st
+    h = codex_harness(rs, own)
+    if h:
+        acct["harness"] = h
+    st["status"] = "ok"
+    return [acct], st
 
 
 # ---- user-maintained local.json
@@ -409,9 +512,9 @@ def default_cache():
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or str(home / ".cache"), "modelplan")
 
 
-def report(cache, codex_home, local_file, now):
+def report(cache, codex_home, local_file, now, codex_thread=""):
     accounts, sources = [], []
-    for found, st in (read_claude_code(cache), read_codex(codex_home), read_local(local_file, now)):
+    for found, st in (read_claude_code(cache), read_codex(codex_home, codex_thread), read_local(local_file, now)):
         accounts += found
         sources.append(st)
     for a in accounts:
@@ -430,7 +533,9 @@ def main(argv=None):
     now = parse_time(args.now) if args.now else dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     if now is None:
         ap.error("--now must be an ISO time with a timezone")
-    json.dump(report(args.cache, args.codex_home, args.local, now), sys.stdout, indent=2, ensure_ascii=False)
+    # Codex sets CODEX_THREAD_ID for the commands a thread runs: read that thread's model and effort.
+    thread = os.environ.get("CODEX_THREAD_ID", "")
+    json.dump(report(args.cache, args.codex_home, args.local, now, thread), sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
 
 

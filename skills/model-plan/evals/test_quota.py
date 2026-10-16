@@ -57,5 +57,48 @@ class SharedFixture(unittest.TestCase):
         self.assertEqual("unsafe_path", quota.read_local(str(link), NOW)[1]["status"])
 
 
+class Threads(unittest.TestCase):
+    """Same fixture and expectation as cli/internal/quota TestCodexThreadsKeepTheirOwnModel."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        shutil.copytree(FIX / "threads", self.dir / "home")
+        day = self.dir / "home" / ".codex" / "sessions" / "2026" / "10" / "14"
+        names = sorted(os.listdir(day))
+        for i, name in enumerate(names):
+            t = NOW.timestamp() + (i - len(names)) * 600
+            os.utime(day / name, (t, t))
+        self.home = str(self.dir / "home" / ".codex")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def codex(self, thread=""):
+        return quota.report(str(self.dir / "none"), self.home, str(self.dir / "none.json"), NOW, thread)
+
+    def test_matches_go_expectation(self):
+        want = json.loads((FIX / "expected-threads.json").read_text())
+        self.assertEqual(want, json.loads(json.dumps(self.codex())))
+
+    def test_background_review_is_not_the_chat(self):
+        h = self.codex()["accounts"][0]["harness"]
+        self.assertEqual(("gpt-6-sol", "medium", "recent-thread", "cli"), (h["model"], h["effort"], h["attribution"], h["origin"]))
+
+    def test_named_thread_wins(self):
+        h = self.codex("01a14000-aaaa-7000-8000-00000000000a")["accounts"][0]["harness"]
+        self.assertEqual(("gpt-6-astra", "high", "fast", "current-thread"), (h["model"], h["effort"], h["serviceTier"], h["attribution"]))
+
+    def test_windows_keep_limit_ids_and_their_own_age(self):
+        ws = {(w.get("limit", ""), w["kind"]): w for w in self.codex()["accounts"][0]["windows"]}
+        self.assertEqual(45, ws[("", "five_hour")]["usedPercent"])
+        self.assertEqual((20, 59), (ws[("", "weekly")]["usedPercent"], ws[("", "weekly")]["ageMinutes"]))
+        self.assertEqual(10, ws[("codex_sol", "five_hour")]["usedPercent"])
+
+    def test_instructions_never_printed(self):
+        text = json.dumps(self.codex())
+        self.assertNotIn("secret", text)
+        self.assertNotIn("/home/u", text)
+
+
 if __name__ == "__main__":
     unittest.main()

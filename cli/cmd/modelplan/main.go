@@ -381,16 +381,23 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct 
 // output): new advice goes to the model as additional context, once per event. It never
 // fails the prompt and never touches the network.
 func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, harness string) int {
-	_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 1<<20))
+	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
 	}
+	// Hook input names the prompting thread; nothing else is decoded from it.
+	var in struct {
+		SessionID string `json:"session_id"`
+	}
+	_ = json.Unmarshal(b, &in)
 	now := time.Now()
 	d, _, _ := publication.Load(st)
 	state := advise.Load(st.Dir)
 	paths := quotaPaths(st)
 	if harness == "claude-code" {
 		paths.CodexHome = "" // Codex advice belongs to Codex; skip scanning its logs on every prompt
+	} else if in.SessionID != "" {
+		paths.CodexThread = in.SessionID
 	}
 	var es []advise.Event
 	for _, e := range advise.Derive(advise.Input{Report: quota.Read(paths, now), Digest: d, State: state, Now: now}) {
@@ -436,7 +443,9 @@ func quotaPaths(st *store.Store) quota.Paths {
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}
+	// Codex sets CODEX_THREAD_ID for the commands a thread runs, so a Skill calling
+	// `modelplan quota` from Codex reads that thread's own model and effort.
+	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"), CodexThread: os.Getenv("CODEX_THREAD_ID")}
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.
