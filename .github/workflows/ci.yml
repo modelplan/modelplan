@@ -42,6 +42,9 @@ jobs:
       - name: The plugins pin a published CLI release, checksums matching
         if: matrix.os == 'ubuntu-latest'
         run: node scripts/pin-cli.mjs --check
+      - name: The CLI pins a published CodexBar release, checksums matching
+        if: matrix.os == 'ubuntu-latest'
+        run: node scripts/pin-codexbar.mjs --check
   data:
     runs-on: ubuntu-latest
     steps:

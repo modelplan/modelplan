@@ -16,11 +16,23 @@ echo '{"model":{"id":"claude-opus-5-5"}}' | ./dist/modelplan statusline
 ./dist/modelplan doctor
 ./dist/modelplan quota                # your own windows, read on this machine only
 ./dist/modelplan advise               # what is worth doing about them now
+./dist/modelplan codexbar enable cursor zai   # other plans, read through CodexBar's CLI (opt-in)
 echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":39,"resets_at":2000000000}}}' \
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
 
 `advise` events: a window used up, tight (also early: half used and on pace to run out), reset soon with allowance left, an announced Codex reset, switch back after a reset, peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
+
+### Other plans through CodexBar
+
+`modelplan codexbar enable cursor zai` reads the usage of plans whose meters sit behind the vendor's own sign-in: `copilot`, `cursor`, `kiro`, `opencodego` and `zai`. It does this through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Claude Code and Codex are never read this way; this client reads them itself.
+
+- **Off until enabled.** Enabling is the consent. It is stored in `~/.config/modelplan/codexbar.json`. `modelplan codexbar disable` turns it off again, and `MODELPLAN_CODEXBAR=off` overrides it.
+- **No credentials pass through this client.** CodexBar finds them where the user keeps them: its own config (`config set-api-key`), another CLI's login (kiro-cli), the Cursor app, or browser cookies. In the background it never asks for Keychain access. `modelplan codexbar` shows, per provider, what was read and, when nothing was, what CodexBar needs.
+- **Pinned release.** The first run downloads the CodexBar CLI release pinned in `internal/quota/codexbar-pin.json`: about 14 MB on macOS and 53 MB on Linux. It is checked against the pinned SHA-256 and kept under the cache's `codexbar/` directory. `MODELPLAN_CODEXBAR=<path>` uses another copy, and one the user installed is used when there is no pinned copy. The `codexbar-pin` workflow proposes newer releases weekly, after a live check that their JSON still parses.
+- **Runs in the background.** At most every 10 minutes (30 after every provider failed), one provider per call, with a 60 s limit each and English output. The cached reading (`observed/codexbar.json`) holds windows, reset times and the plan name only. Identities, account ids and error text naming local paths or addresses are dropped.
+- **Shown, not hinted.** `quota` and the dashboards show these plans. They give no prompt hints in Claude Code or Codex, which do not draw on them.
+- **Estimates are not quota.** CodexBar's OpenCode Go estimate from local history uses fixed denominators, so it is reported as `estimated` and not shown as a quota.
 
 `advise --hook claude-code|codex` is the plugins' prompt hook: it reads the hook input from stdin, hands new hints to the model once and, on a thread's first prompt (and again when its model changes), a task-start brief with the published options. It never blocks the prompt; with no publication cached yet it waits up to 3.5 s for a first sync, then goes on in the background. `MODELPLAN_TASK_BRIEF=off` turns the brief off.
 

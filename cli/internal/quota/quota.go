@@ -1,7 +1,8 @@
 // Package quota reads the user's own usage windows from files the harnesses already write
 // on this machine: Codex session logs, the Claude Code status-line snapshot that
-// `modelplan statusline` records, and the user-maintained local.json. It never opens
-// credential files or calls an account endpoint, and nothing it reads leaves the machine.
+// `modelplan statusline` records, the user-maintained local.json and, for providers the user
+// enabled, CodexBar's reading (codexbar.go). It never opens credential files or calls an
+// account endpoint itself, and nothing it reads leaves the machine.
 package quota
 
 import (
@@ -54,21 +55,21 @@ type Card struct {
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	Source     string    `json:"source"` // claude-code | codex | user
+	Source     string    `json:"source"` // claude-code | codex | user | codexbar:<provider>
 	Plan       string    `json:"plan,omitempty"`
 	ObservedAt time.Time `json:"observedAt"`
 	Stale      bool      `json:"stale"`
 	Harness    *Harness  `json:"harness,omitempty"`
 	Windows    []Window  `json:"windows"`
 	Cards      []Card    `json:"cards,omitempty"`
-	Via        string    `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs
+	Via        string    `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs; codexbar: read by CodexBar
 	Headroom   string    `json:"headroom"`      // spend | normal | conserve | exhausted | unknown
 	Deciding   string    `json:"deciding,omitempty"`
 }
 
 type SourceStatus struct {
 	Source string `json:"source"`
-	Status string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema
+	Status string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema; CodexBar also: stale | estimated | unavailable
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -90,6 +91,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
 	Cache, CodexHome, LocalFile string
+	CodexBarFile                string // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
 	ClaudeSession               string // the calling Claude Code session, when known
 }
@@ -107,6 +109,7 @@ func Read(p Paths, now time.Time) Report {
 	if p.CodexHome != "" {
 		applyAccount(&r, p.Cache, now)
 	}
+	applyCodexBar(&r, p, now)
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}

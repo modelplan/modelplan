@@ -45,6 +45,10 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan quota                      your own usage windows: this machine's logs, and Codex's own
                                        account reading (--refresh-account asks it now; at most every
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
+  modelplan codexbar [status|enable <provider…>|disable [provider…]|fetch|refresh]
+                                       other plans through CodexBar's CLI (copilot, cursor, zai, kiro,
+                                       opencodego): off until enabled; CodexBar keeps the sign-ins,
+                                       this client fetches its pinned release and reads its JSON
   modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook, each hint once, plus
@@ -57,7 +61,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
-     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading)
+     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
+     MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
 
 type common struct {
@@ -210,6 +215,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			stdout = io.Discard
 		}
 		return statusline(stdin, stdout, style, st, c, *harness, *modelFlag, *effortFlag, *preview)
+
+	case "codexbar":
+		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
 
 	case "doctor":
 		s, _ := st.State()
@@ -524,8 +532,12 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 // refreshAccountLater asks Codex for the account reading in the background when the cached one
 // is due, so hooks and the plugin never wait for it.
 func refreshAccountLater(st *store.Store) {
-	if quota.AccountDue(st.Dir, time.Now()) {
+	now := time.Now()
+	if quota.AccountDue(st.Dir, now) {
 		_ = detach.Start("quota", "--refresh-account", "--quiet")
+	}
+	if quota.CodexBarDue(quotaPaths(st), now) {
+		_ = detach.Start("codexbar", "refresh", "--quiet")
 	}
 }
 
@@ -549,7 +561,8 @@ func nonNil(es []advise.Event) []advise.Event {
 	return es
 }
 
-// quotaPaths: the shared cache, $CODEX_HOME (default ~/.codex) and ~/.config/modelplan/local.json.
+// quotaPaths: the shared cache, $CODEX_HOME (default ~/.codex), ~/.config/modelplan/local.json and
+// ~/.config/modelplan/codexbar.json.
 func quotaPaths(st *store.Store) quota.Paths {
 	home, _ := os.UserHomeDir()
 	codex := os.Getenv("CODEX_HOME")
@@ -559,7 +572,7 @@ func quotaPaths(st *store.Store) quota.Paths {
 	// Codex sets CODEX_THREAD_ID and Claude Code CLAUDE_CODE_SESSION_ID for the commands a
 	// thread runs, so a Skill calling `modelplan quota` reads that thread's own model and effort.
 	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
+		CodexBarFile: filepath.Join(home, ".config", "modelplan", "codexbar.json"), CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.
