@@ -5,7 +5,8 @@ Sources (read-only; nothing is sent anywhere):
   - Codex: token_count rate_limits in the recent $CODEX_HOME/sessions/**/rollout-*.jsonl, merged
     per limit id; model and effort from the calling thread (CODEX_THREAD_ID) or the newest
     interactive one, never from background review threads
-  - Claude Code: the snapshot `modelplan statusline` records in the Model Plan cache
+  - Claude Code: the snapshot `modelplan statusline` records in the Model Plan cache; its model
+    and effort count as this session's only when CLAUDE_CODE_SESSION_ID matches its session key
   - ~/.config/modelplan/local.json, maintained by the user (no secrets)
 
 Prints one JSON report, the same shape as `modelplan quota --json`. Never reads credential
@@ -100,7 +101,13 @@ def window(kind, used, resets_at, observed, minutes=0, mode="fixed", limit=""):
 
 # ---- Claude Code snapshot (written by `modelplan statusline`)
 
-def read_claude_code(cache):
+def session_key(session_id):
+    """The one-way key `modelplan statusline` stores for a Claude Code session (never the id)."""
+    import hashlib
+    return hashlib.sha256(("modelplan-session:" + session_id).encode()).hexdigest()[:16] if session_id else ""
+
+
+def read_claude_code(cache, session=""):
     st = {"source": "claude-code"}
     raw, status = read_bounded(os.path.join(cache, "observed", "claude-code.json"), 64 << 10)
     if status:
@@ -118,6 +125,10 @@ def read_claude_code(cache):
             harness["fastMode"] = h["fastMode"]
         if clip(h.get("version")):
             harness["version"] = clip(h["version"])
+        # Whose model and effort these are; the usage windows are the account's either way.
+        key = s.get("sessionKey") if isinstance(s.get("sessionKey"), str) else ""
+        if session and key:
+            harness["attribution"] = "current-thread" if session_key(session) == key else "recent-thread"
         windows = []
         for w in s.get("windows") or []:
             kind = w.get("kind") if w.get("kind") in ("five_hour", "weekly", "spend") else "unknown"
@@ -445,7 +456,9 @@ def eval_window(w, now):
     if elapsed >= 0.1:
         w["projectedPercent"] = round1(used / elapsed)
     proj = w["projectedPercent"]
-    if used >= 90 or (proj is not None and proj > 100 and elapsed >= 0.2):
+    # Early projections are noisy: alone they decide after a fifth of the window; a window already
+    # half used that is on pace to run out is tight however early it is.
+    if used >= 90 or (proj is not None and proj > 100 and (elapsed >= 0.2 or used >= 50)):
         w["pace"] = "tight"
     elif 100 - used >= 30 and (left <= length * 0.25 or (proj is not None and proj <= 60 and elapsed >= 0.5)):
         w["pace"] = "surplus"
@@ -512,9 +525,9 @@ def default_cache():
     return os.path.join(os.environ.get("XDG_CACHE_HOME") or str(home / ".cache"), "modelplan")
 
 
-def report(cache, codex_home, local_file, now, codex_thread=""):
+def report(cache, codex_home, local_file, now, codex_thread="", claude_session=""):
     accounts, sources = [], []
-    for found, st in (read_claude_code(cache), read_codex(codex_home, codex_thread), read_local(local_file, now)):
+    for found, st in (read_claude_code(cache, claude_session), read_codex(codex_home, codex_thread), read_local(local_file, now)):
         accounts += found
         sources.append(st)
     for a in accounts:
@@ -533,9 +546,10 @@ def main(argv=None):
     now = parse_time(args.now) if args.now else dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     if now is None:
         ap.error("--now must be an ISO time with a timezone")
-    # Codex sets CODEX_THREAD_ID for the commands a thread runs: read that thread's model and effort.
-    thread = os.environ.get("CODEX_THREAD_ID", "")
-    json.dump(report(args.cache, args.codex_home, args.local, now, thread), sys.stdout, indent=2, ensure_ascii=False)
+    # Codex sets CODEX_THREAD_ID and Claude Code CLAUDE_CODE_SESSION_ID for the commands a thread
+    # runs: read that thread's own model and effort.
+    thread, session = os.environ.get("CODEX_THREAD_ID", ""), os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    json.dump(report(args.cache, args.codex_home, args.local, now, thread, session), sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")
 
 

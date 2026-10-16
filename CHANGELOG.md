@@ -2,6 +2,13 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.10 (2026-10-16)
+
+- Plugins: Codex 0.14.1, Claude Code 0.6.1 (the Skill copies below; CLI 0.5.9 is still enough).
+- **Skill's Python reader matches the CLI again.** `scripts/quota.py` (used when the CLI is not installed, also by the Codex dashboard) still had the old pace rule, so 72% of a week used with six days left was `on_track` there and `tight` in the CLI. It now applies the same early-tight rule and reads Claude Code's `sessionKey` against `CLAUDE_CODE_SESSION_ID` (`current-thread` / `recent-thread`). Both readers now run one shared table, `cli/internal/quota/testdata/pace-cases.json`, so the rules cannot drift apart unnoticed.
+- Skill docs: `alternative` (`cheaper_model`) in `advise`, Claude Code attribution, the early-tight rule, the CLI found in `~/.local/bin`, a status line configured with the CLI's full path and `statusline --preview`, and that a cheaper cross-model reference cost is never a promised quota saving.
+- CLI help and README: the hook's task-start brief, `quota`, `advise`, `statusline --preview`, `MODELPLAN_TASK_BRIEF`, `MODELPLAN_CODEX_ACCOUNT`, and the install command.
+
 ## v0.5.9 (2026-10-16)
 
 - Plugins: Codex 0.14.0, Claude Code 0.6.0 (both need CLI 0.5.9).

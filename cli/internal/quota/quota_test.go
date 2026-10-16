@@ -219,3 +219,38 @@ func TestCodexThreadsKeepTheirOwnModel(t *testing.T) {
 		t.Fatal("instructions or paths leaked")
 	}
 }
+
+// The pace rules are shared with the Skill's Python reader; testdata/pace-cases.json is the
+// contract both run (skills/model-plan/evals/test_quota.py).
+func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
+	b, err := os.ReadFile("testdata/pace-cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Cases []struct {
+			Name, Kind, ResetMode, Pace string
+			Used                        float64
+			ResetsInMinutes             *int
+		}
+	}
+	if err := json.Unmarshal(b, &f); err != nil || len(f.Cases) == 0 {
+		t.Fatalf("cases: %v", err)
+	}
+	for _, c := range f.Cases {
+		mode := c.ResetMode
+		if mode == "" {
+			mode = "fixed"
+		}
+		used := c.Used
+		w := Window{Kind: c.Kind, UsedPercent: &used, ResetMode: mode, ObservedAt: now}
+		if c.ResetsInMinutes != nil {
+			r := now.Add(time.Duration(*c.ResetsInMinutes) * time.Minute)
+			w.ResetsAt = &r
+		}
+		evalWindow(&w, now)
+		if w.Pace != c.Pace {
+			t.Errorf("%s: pace %s, want %s", c.Name, w.Pace, c.Pace)
+		}
+	}
+}
