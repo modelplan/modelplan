@@ -19,12 +19,14 @@ modelplan quota --json                           # the user's own windows, read 
 modelplan advise --json                          # what is worth saying about them now (v0.4+)
 ```
 
-Without it:
+Without it the Skill still works, and the published data is the same:
 
 ```sh
 curl -fsS --max-time 20 https://modelplan.ai/v1/client
 python3 '<this skill directory>/scripts/quota.py'
 ```
+
+What only the CLI adds, so say "unknown" rather than improvise it: `advise` (hints that remember what was already said, "switch back to ★" after a reset, a cheaper model that scores as high when a window is tight), Codex's own account reading with reset credits, Claude Code's quota (only the CLI's status line records it), and a hash-verified local copy of the publication. When the user asks about their own quota or resets and the CLI is missing, mention once, in one sentence, what it would add and how to install it: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`, nothing else changed; Windows: https://github.com/modelplan/modelplan/releases). Never install it yourself. Do not bring it up for model or effort questions, which the public data answers fully, nor again after the user declined it (a ModelPlan plugin may already have asked).
 
 `quota` reports one account per source: Claude Code (recorded by the Model Plan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace` and its own `ageMinutes`, and each account a `headroom` and a `harness` model/effort when known. `harness.attribution` says whose model and effort these are: `current-thread` only when the reader ran inside this thread (Codex: it matched `CODEX_THREAD_ID`; Claude Code: the status line last rendered for this `CLAUDE_CODE_SESSION_ID`); `recent-thread` is another conversation's (Codex: the newest interactive thread on the machine; Claude Code: the session the status line rendered for last). Claude Code's usage windows are the account's either way. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
 

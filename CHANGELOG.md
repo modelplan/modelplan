@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.14.2 and Claude Code plugin 0.6.2 (2026-10-16)
+
+- The Skill stays usable without the CLI and now says what only the CLI adds (`advise` hints with memory and the cheaper-model option, Codex's account reading, Claude Code's quota, a verified local publication), so those stay "unknown" instead of improvised. When the user asks about their own quota or resets without the CLI, it mentions the install command once; never for model or effort questions, and it never installs anything itself.
+
 ## v0.5.10 (2026-10-16)
 
 - Plugins: Codex 0.14.1, Claude Code 0.6.1 (the Skill copies below; CLI 0.5.9 is still enough).
