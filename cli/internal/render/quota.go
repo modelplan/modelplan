@@ -9,13 +9,15 @@ import (
 )
 
 type quotaText struct {
+	RecentThread                                              string // Codex model/effort read from the newest interactive thread, not necessarily this one
 	Title, Observed, Stale, Reset, Remaining, Projected, None string
 	Kinds, Source, Headroom, Pace                             map[string]string
 	Day, Hour, Min                                            string
 }
 
 var quotaZH = quotaText{
-	Title: "额度", Observed: "观测于", Stale: "读数较旧", Reset: "重置", Remaining: "剩", Projected: "按当前速度重置时用到", None: "没有可读的本机额度。",
+	RecentThread: "最近本机会话，不一定是当前对话",
+	Title:        "额度", Observed: "观测于", Stale: "读数较旧", Reset: "重置", Remaining: "剩", Projected: "按当前速度重置时用到", None: "没有可读的本机额度。",
 	Kinds:    map[string]string{"five_hour": "5小时", "weekly": "每周", "monthly": "每月", "spend": "限额", "unknown": "窗口"},
 	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "手填"},
 	Headroom: map[string]string{"spend": "额度富余：重置前用不完，可以升档", "normal": "额度正常：按 ★ 推荐档用", "conserve": "额度偏紧：保持 ★ 或降一档", "exhausted": "额度已用完：等重置或换用其他套餐", "unknown": "额度未知"},
@@ -24,7 +26,8 @@ var quotaZH = quotaText{
 }
 
 var quotaEN = quotaText{
-	Title: "Quota", Observed: "observed", Stale: "old reading", Reset: "resets", Remaining: "left", Projected: "at this pace, used by reset", None: "No local quota readings.",
+	RecentThread: "latest local thread, may not be this one",
+	Title:        "Quota", Observed: "observed", Stale: "old reading", Reset: "resets", Remaining: "left", Projected: "at this pace, used by reset", None: "No local quota readings.",
 	Kinds:    map[string]string{"five_hour": "5h", "weekly": "week", "monthly": "month", "spend": "spend", "unknown": "window"},
 	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "manual"},
 	Headroom: map[string]string{"spend": "Surplus: it resets unused, worth stepping up", "normal": "On track: use the ★ effort", "conserve": "Tight: stay at ★ or step down", "exhausted": "Exhausted: wait for the reset or use another plan", "unknown": "Quota unknown"},
@@ -88,8 +91,11 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			if h.Effort != "" {
 				head = append(head, h.Effort)
 			}
-			if h.FastMode != nil && *h.FastMode {
+			if (h.FastMode != nil && *h.FastMode) || h.ServiceTier == "fast" {
 				head = append(head, "⚡fast")
+			}
+			if h.Attribution == "recent-thread" && (h.Model != "" || h.Effort != "") {
+				head = append(head, s.c(dim, "("+q.RecentThread+")"))
 			}
 		}
 		age := ""

@@ -56,3 +56,24 @@ test('text names the reader and why hints are off', () => {
   assert.match(text, /Python 回退读取/);
   assert.match(renderQuota({ status: 'missing', account: null }, 'en', off), /Proactive hints off/);
 });
+
+test('model and effort are labelled by thread; a background review never becomes the chat', () => {
+  const report = h => ({ schemaVersion: 1, evaluatedAt: '2026-10-14T10:00:00Z', sources: [{ source: 'codex', status: 'ok' }],
+    accounts: [{ source: 'codex', plan: 'pro', observedAt: '2026-10-14T09:51:00Z', harness: h, headroom: 'normal',
+      windows: [{ kind: 'five_hour', usedPercent: 45, resetsInMinutes: 300, ageMinutes: 9, pace: 'on_track' }] }] });
+  // Older CLIs: no attribution, and possibly the newest log's review model.
+  assert.equal(pickCodex(report({ model: 'codex-auto-review', effort: 'low' })).account.harness, undefined);
+  assert.equal(pickCodex(report({ model: 'gpt-6-sol' })).account.harness.attribution, 'recent-thread');
+  const recent = renderQuota(pickCodex(report({ model: 'gpt-6-sol', observedAt: '2026-10-14T09:30:00Z', attribution: 'recent-thread' })), 'zh');
+  assert.match(recent, /最近本机会话：gpt-6-sol · 默认档（30分前观测，不一定是这次对话）/);
+  assert.match(recent, /每周 本机未观测到/, 'a window absent from the readings is unseen, not nonexistent');
+  const own = renderQuota(pickCodex(report({ model: 'gpt-6-astra', effort: 'high', serviceTier: 'fast', observedAt: '2026-10-14T09:00:00Z', attribution: 'current-thread' })), 'en');
+  assert.match(own, /this thread: gpt-6-astra · high · ⚡ Fast \(seen 1h ago\)/);
+  assert.doesNotMatch(own, /may not be/);
+});
+
+test('an old window reading shows its age instead of a countdown', () => {
+  const r = { schemaVersion: 1, evaluatedAt: '2026-10-14T10:00:00Z', sources: [], accounts: [{ source: 'codex', observedAt: '2026-10-14T09:51:00Z', headroom: 'normal',
+    windows: [{ kind: 'five_hour', usedPercent: 45, resetsInMinutes: 300, ageMinutes: 9, pace: 'on_track' }, { kind: 'weekly', usedPercent: 20, resetsInMinutes: 7000, ageMinutes: 180, pace: 'on_track' }] }] };
+  assert.match(renderQuota(pickCodex(r), 'en'), /week 20% used · resets in 4d20h · on track · seen 3h ago/);
+});

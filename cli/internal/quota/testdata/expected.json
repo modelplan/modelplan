@@ -52,7 +52,9 @@
       "stale": false,
       "harness": {
         "model": "gpt-6-sol",
-        "effort": "high"
+        "effort": "high",
+        "observedAt": "2026-10-14T09:50:00Z",
+        "attribution": "recent-thread"
       },
       "windows": [
         {

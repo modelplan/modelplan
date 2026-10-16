@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "evaluatedAt": "2026-10-14T10:00:00Z",
+  "accounts": [
+    {
+      "source": "codex",
+      "plan": "pro",
+      "observedAt": "2026-10-14T09:51:00Z",
+      "stale": false,
+      "harness": {
+        "model": "gpt-6-sol",
+        "effort": "medium",
+        "observedAt": "2026-10-14T09:30:00Z",
+        "attribution": "recent-thread",
+        "origin": "cli"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 45,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-14T15:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:51:00Z",
+          "remainingPercent": 55,
+          "resetsInMinutes": 300,
+          "elapsedPercent": 0,
+          "projectedPercent": null,
+          "ageMinutes": 9,
+          "pace": "on_track"
+        },
+        {
+          "kind": "five_hour",
+          "limit": "codex_sol",
+          "usedPercent": 10,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-14T15:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:31:00Z",
+          "remainingPercent": 90,
+          "resetsInMinutes": 300,
+          "elapsedPercent": 0,
+          "projectedPercent": null,
+          "ageMinutes": 29,
+          "pace": "on_track"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 20,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-19T08:53:20Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-14T09:01:00Z",
+          "remainingPercent": 80,
+          "resetsInMinutes": 7134,
+          "elapsedPercent": 29.2,
+          "projectedPercent": 68.4,
+          "ageMinutes": 59,
+          "pace": "on_track"
+        }
+      ],
+      "headroom": "normal",
+      "deciding": "five_hour"
+    }
+  ],
+  "sources": [
+    {
+      "source": "claude-code",
+      "status": "missing",
+      "reason": "no status-line snapshot yet; install the Model Plan status line in Claude Code"
+    },
+    {
+      "source": "codex",
+      "status": "ok"
+    },
+    {
+      "source": "user",
+      "status": "missing"
+    }
+  ],
+  "note": "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
+}

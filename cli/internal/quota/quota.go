@@ -32,11 +32,18 @@ type Window struct {
 }
 
 // Harness is what the harness itself reported about the session, when it did.
+// For Codex the reading comes from one thread's log: attribution says which (current-thread when
+// the caller named it, else recent-thread, the newest interactive thread on this machine), and
+// observedAt when that thread last reported it. An empty effort means the turn context named none.
 type Harness struct {
-	Model    string `json:"model,omitempty"`
-	Effort   string `json:"effort,omitempty"`
-	FastMode *bool  `json:"fastMode,omitempty"`
-	Version  string `json:"version,omitempty"`
+	Model       string     `json:"model,omitempty"`
+	Effort      string     `json:"effort,omitempty"`
+	FastMode    *bool      `json:"fastMode,omitempty"`
+	Version     string     `json:"version,omitempty"`
+	ServiceTier string     `json:"serviceTier,omitempty"`
+	ObservedAt  *time.Time `json:"observedAt,omitempty"`
+	Attribution string     `json:"attribution,omitempty"` // current-thread | recent-thread
+	Origin      string     `json:"origin,omitempty"`      // cli, vscode, exec, …
 }
 
 type Card struct {
@@ -82,6 +89,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
 	Cache, CodexHome, LocalFile string
+	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
 }
 
 // Read gathers every available source and evaluates it at now.
@@ -92,7 +100,7 @@ func Read(p Paths, now time.Time) Report {
 		r.Sources = append(r.Sources, st)
 	}
 	add(readClaudeCode(p.Cache))
-	add(readCodex(p.CodexHome))
+	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
