@@ -388,7 +388,9 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	d, s, err := publication.Load(st)
 	hint := ""
 	if acct != nil {
-		hint = statuslineHint(style, st, d, *acct, now, !preview)
+		var report quota.Report
+		report, acct = linkedReport(st, d, *acct, now)
+		hint = statuslineHint(style, st, d, report, now, !preview)
 	}
 	if q := style.QuotaSegment(acct, hint); q != "" {
 		tail += " │ " + q
@@ -406,11 +408,34 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	return 0
 }
 
+// linkedReport: what the status line advises on. Usually the session alone; a session on another
+// vendor's model (GLM through Z.ai) also needs the declared plan and that vendor's reading, and
+// its quota segment shows that plan's windows.
+func linkedReport(st *store.Store, d *digest.Digest, acct quota.Account, now time.Time) (quota.Report, *quota.Account) {
+	r := quota.Report{Accounts: []quota.Account{acct}}
+	if d == nil || acct.Harness == nil {
+		return r, &acct
+	}
+	if m := d.MatchAt("claude-code", acct.Harness.Endpoint, acct.Harness.Model); m == nil || !m.ViaEndpoint("claude-code") {
+		return r, &acct
+	}
+	p := quotaPaths(st)
+	p.CodexHome = ""
+	full := quota.Read(p, now)
+	for _, a := range full.Accounts {
+		if a.Source != "claude-code" {
+			r.Accounts = append(r.Accounts, a)
+		}
+	}
+	eff, _ := advise.Link(&acct, r, d)
+	return r, &eff
+}
+
 // statuslineHint: the most urgent Claude Code advice as a few characters ("↑High ×1.37",
 // "↺★Med"). It remembers advised windows so the switch-back hint appears after the reset.
-func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct quota.Account, now time.Time, save bool) string {
+func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, now time.Time, save bool) string {
 	state := advise.Load(st.Dir)
-	es := advise.Derive(advise.Input{Report: quota.Report{Accounts: []quota.Account{acct}}, Digest: d, State: state, Now: now})
+	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
 	if save {
 		_ = state.Save(st.Dir, now)
 	}

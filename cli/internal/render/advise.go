@@ -242,6 +242,8 @@ func (s Style) AdviceShort(e advise.Event) string {
 		return s.c(warn, "↓"+label(st)) + s.c(dim, ratio)
 	case e.Type == advise.WindowTight && st.Action == "wait_offpeak":
 		return s.c(amber, "◷"+s.dur(st.InMinutes))
+	case e.Type == advise.WindowTight && st.Action == "effort_free":
+		return s.c(warn, "!") // tight, but a lower effort would not help: no ↓
 	case e.Type == advise.SwitchBack && st.Action == "switch_back":
 		return s.c(gold, "↺★"+st.Label)
 	case e.Type == advise.SwitchBack:
