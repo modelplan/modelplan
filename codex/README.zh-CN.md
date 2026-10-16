@@ -19,7 +19,7 @@ codex plugin add modelplan-codex@modelplan
    node ~/.codex/plugins/cache/modelplan/modelplan-codex/<版本>/doctor.cjs --lang zh
    ```
 
-然后输入“打开 Model Plan 看板”。建议在新任务中使用；已打开的任务也可能已经加载插件。也可以调用 `model-dashboard` 技能。支持应用面板的桌面客户端会在对话内显示看板；客户端提供展开能力时可点击“展开”。Codex CLI 显示相同口径的文字比较。面板位置由宿主决定，插件不能把自己固定到侧栏。
+然后输入“打开 Model Plan 看板”。建议在新任务中使用；已打开的任务也可能已经加载插件。也可以调用 `model-dashboard` 技能。在对话里请求时，看板以紧凑卡片显示在对话内。想让它常驻在聊天右侧，请在对话的侧边面板中打开 **Effort & quota**：这个入口由你手动打开，工具调用打不开它，每个对话各有一份。侧栏中的 **Model Plan** 会单独打开看板。Codex CLI 显示相同口径的文字比较。
 
 ### 安装检查
 
@@ -75,7 +75,7 @@ codex plugin marketplace remove modelplan
 
 ## 看板内容
 
-看板默认以约 360–420px 宽在对话内显示，高度随内容变化，滚动和位置由宿主负责。点击“展开”会请求宿主的大视图，同时展开曲线和模型榜。首屏依次显示：最近本机会话的 Codex 模型、档位和速度模式，相对 ★ 的倍率，以及你的额度；其下是比较台。档位曲线、全部模型和公开重置公告默认折叠，按需展开。
+无论在哪里显示，内容宽度都不超过 420px（含边框和内边距），高度随内容变化。在对话内，卡片向宿主申请自身宽度，而不是整个聊天栏的宽度；在聊天右侧，它在窄面板内最多占满这个宽度。宿主总是以“fullscreen”显示入口，在侧边面板里这只表示占满面板，所以宽度不随显示模式变化。对话内卡片上的“展开”会请求宿主的大视图，同时展开曲线和模型榜。“数据与依据”末尾的**显示**一行列出所在位置、宿主报告的显示模式和容器尺寸，以及实际测得的宽度；反馈布局问题时请附上这一行。首屏依次显示：最近本机会话的 Codex 模型、档位和速度模式，相对 ★ 的倍率，以及你的额度；其下是比较台。档位曲线、全部模型和公开重置公告默认折叠，按需展开。
 
 
 - 已发布的 OpenAI 推荐档、高能力优选、最划算和最省配置。
@@ -90,7 +90,7 @@ codex plugin marketplace remove modelplan
 
 ## 开发与内部传输
 
-`mcp.json` 配置内部 stdio 传输，提供 `open_model_dashboard` 和 `get_model_dashboard`；Codex 运行 `launch.cjs`，由它在兼容的 Node 上启动已打包的 `server.bundle.mjs`。界面内嵌样式和字体，不依赖第三方浏览器请求。正常使用仅读取 Model Plan 公开发布端点；本地缓存只存公共数据，不收集遥测或凭证。
+`mcp.json` 配置内部 stdio 传输，提供 `open_model_dashboard`（对话内卡片）、`get_model_dashboard`（文字和数据），以及由用户打开的入口 `open_model_panel`（对话侧边面板）和 `open_model_board`（侧栏）。每个工具只声明一个入口，每个位置一个界面资源；Codex 运行 `launch.cjs`，由它在兼容的 Node 上启动已打包的 `server.bundle.mjs`。界面内嵌样式和字体，不依赖第三方浏览器请求。正常使用仅读取 Model Plan 公开发布端点；本地缓存只存公共数据，不收集遥测或凭证。
 
 ```sh
 cd codex

@@ -27,11 +27,23 @@ const client = new Client({ name: "modelplans-demo-acceptance", version: "0.1.0"
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(t => t.name).sort(), ["get_model_dashboard", "open_model_dashboard"]);
+  assert.deepEqual(tools.tools.map(t => t.name).sort(), ["get_model_dashboard", "open_model_board", "open_model_dashboard", "open_model_panel"]);
   const view = tools.tools.find(t => t.name === "open_model_dashboard");
   assert.equal(view._meta.ui.resourceUri, "ui://modelplans/model-dashboard.html");
+  assert.equal(view._meta["openai/ui"], undefined, "the model's card declares no entrypoint");
   const resource = await client.readResource({ uri: view._meta.ui.resourceUri });
-  assert.deepEqual(resource.contents[0]._meta?.["openai/ui"]?.availableDisplayModes, ["inline", "fullscreen"]);
+  assert.deepEqual(resource.contents[0]._meta?.["openai/ui"], { availableDisplayModes: ["inline", "fullscreen"], preferredDisplayMode: "inline" });
+  assert.match(resource.contents[0].text, /<html data-surface="widget"/);
+  // One entrypoint per tool; entrypoints render fullscreen, which in the side panel means "fill the panel".
+  for (const [name, type, surface] of [["open_model_panel", "thread", "thread"], ["open_model_board", "global", "global"]]) {
+    const entry = tools.tools.find(t => t.name === name);
+    assert.deepEqual(entry._meta["openai/ui"].entrypoints, [{ type }]);
+    assert.deepEqual(entry._meta.ui.visibility, ["app"]);
+    const page = (await client.readResource({ uri: entry._meta.ui.resourceUri })).contents[0];
+    assert.deepEqual(page._meta["openai/ui"], { availableDisplayModes: ["fullscreen"], preferredDisplayMode: "fullscreen" });
+    assert.match(page.text, new RegExp(`<html data-surface="${surface}"`));
+    assert.equal((await client.callTool({ name, arguments: {} })).isError, undefined);
+  }
   assert.match(resource.contents[0].text, /ui\/initialize/);
   const script=resource.contents[0].text.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
   execFileSync(process.execPath,["--input-type=module","--check"],{input:script});

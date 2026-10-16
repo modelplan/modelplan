@@ -3,7 +3,7 @@ name: model-dashboard
 description: Compare Codex GPT engines and native effort recommendations in the Model Plan console, read public Codex reset notices, or check the plugin's own setup (Node runtime, tools, quota reader, optional hints).
 ---
 
-Call `open_model_dashboard` for the sidebar. For a terminal or data answer call `get_model_dashboard`: `view: "lineup"` compares OpenAI models at their ★ recommendations; `view: "effort", modelId: "<exact result ID>"` compares one model's native efforts relative to ★. Choose `lang: "zh"` or `"en"`. Completion: show the published values, verdicts and publication identity, or the explicit unavailable/last-good state.
+Call `open_model_dashboard` to show the compact card in the conversation. A tool call cannot open the panel beside the chat: when the user wants it there, tell them to open "Effort & quota" from the conversation's side panel. For a terminal or data answer call `get_model_dashboard`: `view: "lineup"` compares OpenAI models at their ★ recommendations; `view: "effort", modelId: "<exact result ID>"` compares one model's native efforts relative to ★. Choose `lang: "zh"` or `"en"`. Completion: show the published values, verdicts and publication identity, or the explicit unavailable/last-good state.
 
 In Codex CLI the HTML is unavailable. Present the tool's text blocks in their returned order. If MCP is unavailable and the `modelplan` Go binary is installed, run `modelplan lineup --dev openai --no-color`; for a specific model use `modelplan effort <exact ID> --no-color`. Keep the published lineup verdict and baseline; lineups are the published client digest's verdicts, also used by the website kit and Go CLI.
 
