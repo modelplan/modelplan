@@ -63,10 +63,10 @@ export function stepUp(es,i,pts) {
 export const quotaWords = {
   zh:{title:"你的 Codex 额度（本机读取）",none:"本机没有可读的 Codex 额度",used:"已用",resets:"重置还有",kinds:{five_hour:"5小时",weekly:"每周",monthly:"每月",unknown:"窗口"},pace:{surplus:"富余",on_track:"正常",tight:"偏紧",exhausted:"用完",reset_passed:"已过重置",unknown:"—"},
     headroom:{spend:"额度富余：重置前用不完，可升档或开 Fast",normal:"额度正常：按 ★ 推荐档用",conserve:"额度偏紧：保持 ★ 或降一档",exhausted:"额度已用完：等重置或换用其他套餐",unknown:"额度未知"},stale:"读数较旧",d:"天",h:"时",m:"分",
-    reader:{cli:"modelplan CLI 读取",python:"Python 回退读取"},thread:{"current-thread":"当前会话","recent-thread":"最近本机会话"},threadUnknown:"不一定是这次对话",defaultEffort:"默认档",observed:"%s前观测",unseen:"本机未观测到",hintsOff:"主动提醒未启用",hintReason:{cli_missing:"需要可选的 modelplan CLI 0.4+，本机未安装",cli_without_advise:"本机 modelplan CLI 不支持 advise，升级到 0.4+",advice_invalid:"CLI 返回的提醒无法解析"}},
+    reader:{cli:"modelplan CLI 读取",python:"Python 回退读取",account:"Codex 账号读数"},credits:"%n 次完整重置可用%e · 需在 Codex 中自己兑换",creditsExpire:"，最早 %s 到期",thread:{"current-thread":"当前会话","recent-thread":"最近本机会话"},threadUnknown:"不一定是这次对话",defaultEffort:"默认档",observed:"%s前观测",unseen:"本机未观测到",hintsOff:"主动提醒未启用",hintReason:{cli_missing:"需要可选的 modelplan CLI 0.4+，本机未安装",cli_without_advise:"本机 modelplan CLI 不支持 advise，升级到 0.4+",advice_invalid:"CLI 返回的提醒无法解析"}},
   en:{title:"Your Codex quota (read on this machine)",none:"No Codex quota readable on this machine",used:"used",resets:"resets in",kinds:{five_hour:"5h",weekly:"week",monthly:"month",unknown:"window"},pace:{surplus:"surplus",on_track:"on track",tight:"tight",exhausted:"exhausted",reset_passed:"reset since",unknown:"—"},
     headroom:{spend:"Surplus: it resets unused, step up or use Fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m",
-    reader:{cli:"read by the modelplan CLI",python:"read by the Python fallback"},thread:{"current-thread":"this thread","recent-thread":"latest local thread"},threadUnknown:"may not be this conversation",defaultEffort:"default effort",observed:"seen %s ago",unseen:"not seen on this machine",hintsOff:"Proactive hints off",hintReason:{cli_missing:"they need the optional modelplan CLI 0.4+, not installed here",cli_without_advise:"the installed modelplan CLI has no advise; upgrade to 0.4+",advice_invalid:"the CLI's hints could not be parsed"}},
+    reader:{cli:"read by the modelplan CLI",python:"read by the Python fallback",account:"Codex account reading"},credits:"%n full reset credit(s) available%e · redeem them in Codex yourself",creditsExpire:", first expires %s",thread:{"current-thread":"this thread","recent-thread":"latest local thread"},threadUnknown:"may not be this conversation",defaultEffort:"default effort",observed:"seen %s ago",unseen:"not seen on this machine",hintsOff:"Proactive hints off",hintReason:{cli_missing:"they need the optional modelplan CLI 0.4+, not installed here",cli_without_advise:"the installed modelplan CLI has no advise; upgrade to 0.4+",advice_invalid:"the CLI's hints could not be parsed"}},
 };
 export function duration(min,q) {
   if(min<60)return `${min}${q.m}`;
@@ -83,7 +83,10 @@ export function renderQuota(quota,lang="zh",advice=null) {
     return `  ${kind}${w.limit?" "+w.limit:""} ${used}${reset} · ${q.pace[w.pace]??w.pace}${age(w)}`;}),
     ...["five_hour","weekly"].filter(k=>!a.windows.some(w=>w.kind===k&&!w.limit)).map(k=>`  ${q.kinds[k]} ${q.unseen}`)];
   const hints=(advice?.events??[]).map(e=>`  ${e.severity==="warn"?"!":"↑"} ${e.text[lang]??e.text.en}`);
-  return [head,...lines,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints,...hintStatus(advice,q),...(quota.reader?[`  · ${q.reader[quota.reader]}`]:[])].join("\n")+"\n";
+  const cs=(a.cards??[]).filter(c=>c.kind==="full"&&c.count>0),first=cs.map(c=>c.expiresAt).filter(Boolean).sort()[0];
+  const credits=cs.length?[`  ◆ ${q.credits.replace("%n",cs.reduce((s,c)=>s+c.count,0)).replace("%e",first?q.creditsExpire.replace("%s",first.slice(0,16).replace("T"," ")+"Z"):"")}`]:[];
+  const reader=a.via==="codex-account"?q.reader.account:quota.reader?q.reader[quota.reader]:null;
+  return [head,...lines,...credits,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints,...hintStatus(advice,q),...(reader?[`  · ${reader}`]:[])].join("\n")+"\n";
 }
 // Hints are an optional add-on; say when and why they are off instead of showing nothing.
 function hintStatus(advice,q){

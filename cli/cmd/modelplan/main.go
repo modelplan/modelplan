@@ -41,7 +41,9 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan lineup [--dev anthropic]   WHICH ENGINE: a developer's models at ★ recommended effort
   modelplan effort [model]             one model's effort ladder (default: Claude Code's current model)
   modelplan models [--dev openai]      models with ★ effort, ability and cost
-  modelplan quota                      your own usage windows, read from this machine only
+  modelplan quota                      your own usage windows: this machine's logs, and Codex's own
+                                       account reading (--refresh-account asks it now; at most every
+                                       5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
   modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook, each hint once)
@@ -97,6 +99,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	recordOnly := fs.Bool("record-only", false, "statusline: record Claude Code usage windows and print nothing")
 	source := fs.String("source", "", "advise: only claude-code, codex or user events")
 	hook := fs.String("hook", "", "advise: run as a harness hook (claude-code); print only hints not shown before")
+	refreshAccount := fs.Bool("refresh-account", false, "quota: ask Codex for the account's windows and reset credits now")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
@@ -155,6 +158,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 
 	case "quota":
+		if *refreshAccount {
+			home, _ := os.UserHomeDir()
+			err := quota.RefreshCodexAccount(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
+			if *quiet {
+				return 0
+			}
+			if err != nil {
+				fmt.Fprintln(stderr, "codex account:", err)
+			}
+		} else if !c.offline {
+			refreshAccountLater(st)
+		}
 		r := quota.Read(quotaPaths(st), time.Now())
 		if c.json {
 			return printJSON(stdout, r)
@@ -165,6 +180,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "advise":
 		if *hook != "" {
 			return adviseHook(stdin, stdout, style, st, *hook)
+		}
+		if !c.offline {
+			refreshAccountLater(st)
 		}
 		d, _, _ := publication.Load(st)
 		state := advise.Load(st.Dir)
@@ -396,8 +414,11 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	paths := quotaPaths(st)
 	if harness == "claude-code" {
 		paths.CodexHome = "" // Codex advice belongs to Codex; skip scanning its logs on every prompt
-	} else if in.SessionID != "" {
-		paths.CodexThread = in.SessionID
+	} else {
+		if in.SessionID != "" {
+			paths.CodexThread = in.SessionID
+		}
+		refreshAccountLater(st) // the prompt uses the cached reading; the next one gets a fresher one
 	}
 	var es []advise.Event
 	for _, e := range advise.Derive(advise.Input{Report: quota.Read(paths, now), Digest: d, State: state, Now: now}) {
@@ -414,6 +435,14 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	_ = state.Save(st.Dir, now)
 	return 0
+}
+
+// refreshAccountLater asks Codex for the account reading in the background when the cached one
+// is due, so hooks and the plugin never wait for it.
+func refreshAccountLater(st *store.Store) {
+	if quota.AccountDue(st.Dir, time.Now()) {
+		_ = detach.Start("quota", "--refresh-account", "--quiet")
+	}
 }
 
 func filterSource(es []advise.Event, source string) []advise.Event {
