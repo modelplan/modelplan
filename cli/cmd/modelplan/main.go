@@ -34,7 +34,7 @@ const (
 	staleAfter      = 6 * time.Hour  // status line starts a background sync
 	alarmAfter      = 48 * time.Hour // 数据过期 annunciator
 	backgroundEvery = 10 * time.Minute
-	firstSyncWait   = 3 * time.Second // hook timeouts are 5 s
+	firstSyncWait   = 3500 * time.Millisecond // hook timeouts are 5 s
 )
 
 const usage = `modelplan — Model Plan thin client (read-only, anonymous)
@@ -423,14 +423,17 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	now := time.Now()
 	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
 	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
-	// brief; otherwise a stale one is refreshed in the background.
+	// brief, and a sync that does not finish in time goes on in the background for the next
+	// prompt; otherwise a stale one is refreshed in the background.
 	d, _, _ := publication.Load(st)
 	if s, _ := st.State(); !c.offline && time.Since(s.LastAttemptAt) > backgroundEvery {
 		if d == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), firstSyncWait)
 			_, _ = client.Sync(ctx, false)
 			cancel()
-			d, _, _ = publication.Load(st)
+			if d, _, _ = publication.Load(st); d == nil {
+				_ = detach.Start("sync", "--quiet", "--base", c.base)
+			}
 		} else if time.Since(s.CheckedAt) > staleAfter {
 			_ = detach.Start("sync", "--quiet", "--base", c.base)
 		}

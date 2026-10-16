@@ -15,6 +15,6 @@ Report each part above on its own short line in the user's language (plugin, CLI
    CLI failed: show the error and suggest reinstalling with the same command.
 2. **Status line not set up**: it records the 5-hour and weekly usage Claude Code passes to it (Pro/Max), which the quota hints need. Suggest `/modelplan:statusline` (it previews the line and asks before changing settings).
 3. **Hook has not run**: it runs on every message (`UserPromptSubmit`, `sh "${CLAUDE_PLUGIN_ROOT}/hooks/modelplan-quota-hints.sh"`, 5 s). It reads the local quota and the cached publication and only adds context; it installs and changes nothing. If it still has not run after a message, hooks are off (`disableAllHooks` or a managed policy) or the plugin is disabled (`/plugin`).
-4. The user says not now: `mkdir -p ~/.cache/modelplan-claude-code && touch ~/.cache/modelplan-claude-code/cli-declined` (or `statusline-declined`); the hook then stays quiet about it for 90 days.
+4. The user says not now: run `sh "${CLAUDE_PLUGIN_ROOT}/hooks/decline.sh" cli` (or `statusline`); the hook then stays quiet about it for 90 days.
 
 When everything is ready, say so in one line. Never switch the model, effort or fast mode; those stay the user's.
