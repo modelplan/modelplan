@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.7 (2026-10-16)
+
+- `advise --hook`: with no publication on the machine yet (the CLI was just installed), the hook waits up to 3 seconds for a first sync, so the first prompt already gets the task-start brief; before, it only started a background sync and the brief came with the next prompt. A failed attempt is not retried for 10 minutes, so an offline machine is not slowed down. A stale publication is still refreshed in the background.
+
 ## v0.5.6 (2026-10-16)
 
 - Plugins: Claude Code 0.5.0.
