@@ -9,14 +9,21 @@ import { renderLineup, renderEffort, renderQuota } from "./render.mjs";
 import { readAdvice, readQuota } from "./quota.mjs";
 
 const version = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8")).version;
-const UI_URI = "ui://modelplans/model-dashboard.html";
+// One UI resource per surface (OpenAI MCP extensions: at most one entrypoint per tool). The model's
+// tool call renders the inline card; the thread and global entries are opened by the user and the
+// host always shows entrypoints in `fullscreen`, which there means "fill the panel", not "go wide".
+const SURFACES = {
+  widget: { uri: "ui://modelplans/model-dashboard.html", modes: ["inline", "fullscreen"], preferred: "inline" },
+  thread: { uri: "ui://modelplans/model-panel.html", modes: ["fullscreen"], preferred: "fullscreen" },
+  global: { uri: "ui://modelplans/model-board.html", modes: ["fullscreen"], preferred: "fullscreen" },
+};
 const reader = createReader();
 // Which Node runs this server and how launch.cjs chose it; set by the launcher, absent when run directly.
 const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME); } catch { return null; } })() ??
   { path: process.execPath, version: process.versions.node, source: 'direct' };
 const setup = (quota, advice) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
   advice: { status: advice.status, reason: advice.reason ?? null } });
-const readHtml = async (preview = false) => {
+const readHtml = async (preview = false, surface = "widget") => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
     "ui/dashboard.html", "ui/kit/tokens.css", "ui/kit/components.css", "ui/dashboard.js", "ui/kit/logo.svg", "ui/comparison.js", "ui/lineup.js", "ui/presentation.js", "ui/curves.js", "ui/space.css",
   ].map(p => readFile(new URL("./" + p, import.meta.url), "utf8")));
@@ -24,7 +31,7 @@ const readHtml = async (preview = false) => {
     const bytes = await readFile(new URL('./ui/fonts/'+file+'.woff2', import.meta.url));
     return `@font-face{font-family:"${family}";font-weight:${weight};font-style:normal;font-display:swap;src:url(data:font/woff2;base64,${bytes.toString('base64')}) format('woff2')}`;
   }));
-  return html.replace("<html lang=", preview ? "<html data-preview lang=" : "<html lang=")
+  return html.replace("<html lang=", `<html data-surface="${surface}"${preview ? " data-preview" : ""} lang=`)
     .replace("/*MODELPLAN_TOKENS*/", tokens).replace("/*MODELPLAN_COMPONENTS*/", components)
     .replace("/*MODELPLAN_SPACE*/", fontFaces.join("\n")+"\n"+space)
     .replace("/*MODELPLAN_SCRIPT*/", comparison+"\n"+lineup+"\n"+presentation+"\n"+curves+"\n"+script).replace("<!--MODELPLAN_LOGO-->", logo);
@@ -53,19 +60,27 @@ async function result(args) {
 }
 export function makeServer() {
   const s = new McpServer({ name: "modelplans-dashboard", version });
-  s.registerResource("model-dashboard", UI_URI, { mimeType: "text/html;profile=mcp-app" }, async () => ({ contents: [{
-    uri: UI_URI, mimeType: "text/html;profile=mcp-app", text: await readHtml(),
-    _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } }, "openai/ui": { availableDisplayModes: ["inline", "fullscreen"], preferredDisplayMode: "inline" } },
-  }] }));
+  for (const [surface, { uri, modes, preferred }] of Object.entries(SURFACES))
+    s.registerResource(`model-${surface}`, uri, { mimeType: "text/html;profile=mcp-app" }, async () => ({ contents: [{
+      uri, mimeType: "text/html;profile=mcp-app", text: await readHtml(false, surface),
+      _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } }, "openai/ui": { availableDisplayModes: modes, preferredDisplayMode: preferred } },
+    }] }));
   s.registerTool("get_model_dashboard", {
     title: "Read model capability, cost and recommended efforts", inputSchema, annotations,
     description: "Read the verified OpenAI lineup at recommended efforts (view=lineup), or one model's ladder relative to its recommendation (view=effort, modelId required). Text uses the modelplan CLI wording and order; structured values match the website. Includes public reset notices and the user's own Codex usage windows (used %, reset countdown, headroom), read locally from Codex's session logs and never sent anywhere. No host settings change.",
   }, result);
   s.registerTool("open_model_dashboard", {
     title: "Codex models & resets", inputSchema, annotations,
-    description: "Open the visual ModelPlan model dashboard. Shows capability, reference-task cost ratios, recommended native reasoning efforts and effort comparisons. Accepts empty input to browse published OpenAI models, the user's own Codex quota (read locally) and Codex public reset announcements.",
-    _meta: { ui: { resourceUri: UI_URI }, "openai/ui": { entrypoints: [{ type: "global" }, { type: "thread" }] } },
+    description: "Show the compact ModelPlan card in the conversation: the thread's model, effort and speed against the recommendation, the user's own Codex quota (read locally), effort comparisons and public reset notices. Accepts empty input. To keep it beside the conversation instead, the user opens the \"Effort & quota\" panel from the conversation's side panel; a tool call cannot open that panel.",
+    _meta: { ui: { resourceUri: SURFACES.widget.uri } },
   }, result);
+  // User-opened entrypoints. Hidden from the model: called by the model they would render in the thread.
+  const entry = (name, title, description, surface, type) => s.registerTool(name, {
+    title, description, inputSchema, annotations,
+    _meta: { ui: { resourceUri: SURFACES[surface].uri, visibility: ["app"] }, "openai/ui": { entrypoints: [{ type }] } },
+  }, result);
+  entry("open_model_panel", "Effort & quota", "Open the ModelPlan effort and quota panel beside this conversation.", "thread", "thread");
+  entry("open_model_board", "Model Plan", "Open the ModelPlan board from the sidebar.", "global", "global");
   return s;
 }
 
@@ -95,7 +110,7 @@ if (!process.argv.includes("--http")) {
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }
       if (["/", "/dashboard"].includes(url.pathname)) {
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }); return res.end(await readHtml(true));
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }); return res.end(await readHtml(true, ["widget", "thread", "global"].includes(url.searchParams.get("surface")) ? url.searchParams.get("surface") : "widget"));
       }
       res.writeHead(404); res.end("Not found");
     } catch (error) {

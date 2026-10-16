@@ -32,7 +32,12 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,.
 /* Compact inline layout (0.9): content height, one scroll owner (the host), 360–420px target.
    Expand (host fullscreen) widens it and opens the curve and lineup folds. */
 .sidebar{height:auto;max-width:420px;max-height:none;overflow:visible;gap:9px}
-html[data-display=fullscreen] .sidebar{max-width:640px}
+/* Width never follows the display mode: entrypoints are always "fullscreen", which in the
+   conversation's side panel just means "fill the panel". The inline card leaves the chat column
+   transparent around it instead of painting the whole iframe. */
+html[data-surface=widget]:not([data-display=fullscreen]) body{background:transparent}
+.side-hint{margin:0;font:10px/1.5 var(--mp-f-body);color:var(--mp-dim)}
+.host-info{margin:6px 0;font:9px/1.5 var(--mp-f-mono);color:var(--mp-dim);overflow-wrap:anywhere}
 .console-body{overflow:visible;flex:none;gap:10px;padding:2px}
 .notice{font:11px/1.5 var(--mp-f-body);color:var(--mp-lcd-2);padding:6px 4px}
 .notice.error{color:var(--mp-warn)}

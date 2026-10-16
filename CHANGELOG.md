@@ -2,7 +2,13 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## Codex plugin 0.9.0 (unreleased)
+## Codex plugin 0.10.0 (unreleased)
+
+- **Panel beside the chat:** a separate `Effort & quota` thread entry (tool `open_model_panel`) opens the dashboard in the conversation's side panel; the sidebar board is its own `Model Plan` global entry. OpenAI's extension spec allows one entrypoint per tool; 0.9 declared both on `open_model_dashboard`. Each surface has its own UI resource, so the model's call still shows the inline card and a tool call never claims to open the side panel. The inline card says how to open the panel instead.
+- **Width no longer follows the display mode:** hosts show every entrypoint `fullscreen`, which widened 0.9 to 640 px inside the side panel. The content is at most 420 px everywhere (borders and padding included). The inline card reports its own width to the host (`ui/notifications/size-changed`, within `containerDimensions.maxWidth`) and leaves the chat column around it unpainted. Expand appears only on the inline card.
+- **Diagnosable size:** *Data & basis* shows what the host reported (surface, display mode, container dimensions) and the laid-out viewport and panel widths. `doctor.cjs` reports whether the side panel entry is registered.
+
+## Codex plugin 0.9.0 (2026-10-16)
 
 - **Compact inline dashboard:** opens inline (was fullscreen) at a 360–420 px target with content height and no inner scroll areas. The first screen shows the thread's model, effort and speed tier, its step against ★ and the quota. Model chips select the comparison. Curves, the full lineup and reset notices are folded; Expand opens them.
 - **Speed tiers are consistent and honest:** the readout, mini curve and detail curve share one comparison state. Under Fast or Ultrafast, cost becomes an estimated plan-quota multiple vs ★ standard and task time is unknown, never shown as ×1.00 or divided by the generation speed-up. Generation speed is shown as an "up to" ceiling or as not stated, with credit multiples, eligibility, the official source and its review date.

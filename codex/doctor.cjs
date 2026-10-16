@@ -113,7 +113,7 @@ async function host(row) {
     const names = s ? Object.keys(s.tools || {}).sort() : [];
     const stub = !!(s && s.serverInfo && s.serverInfo.title === SETUP_NEEDED);
     const registered = !!s && !stub && TOOLS.every(t => names.includes(t));
-    add('mcp', registered ? 'ok' : 'fail', T('MCP 已启动、两个工具已注册', 'MCP started with both tools'),
+    add('mcp', registered ? 'ok' : 'fail', T('MCP 已启动、工具已注册', 'MCP started with its tools'),
       stub ? T('只启动了诊断占位服务：Codex 启动插件时没有可用的 Node ' + MIN_MAJOR + '+', 'only the diagnosis stand-in started: Codex found no Node ' + MIN_MAJOR + '+ for the plugin')
         : s ? (s.serverInfo ? s.serverInfo.name + ' v' + s.serverInfo.version + ' · ' : '') + (names.join(', ') || s.toolsError || T('没有工具', 'no tools')) : T('Codex 没有列出该服务器', 'Codex lists no such server'),
       registered ? null : stub ? T('Codex 启动插件用的 PATH 与本终端可能不同：在 ~/.config/modelplan/runtime.json 写入 {"node": "<Node ' + MIN_MAJOR + '+ 路径>"} 后新开任务', 'Codex may start plugins with a different PATH than this shell: write {"node": "<Node ' + MIN_MAJOR + '+ path>"} to ~/.config/modelplan/runtime.json, then open a new task')
@@ -125,6 +125,10 @@ async function host(row) {
       const ok = !!item && item.mimeType === 'text/html;profile=mcp-app' && /ui\/initialize/.test(item.text || '');
       const mode = item && item._meta && item._meta['openai/ui'] && item._meta['openai/ui'].preferredDisplayMode;
       add('resource', ok ? 'ok' : 'fail', T('面板资源可读取', 'Dashboard resource readable'), item ? Math.round(Buffer.byteLength(item.text || '') / 1024) + ' KB · ' + T('默认显示', 'preferred display') + ' ' + (mode || 'inline') : T('无内容', 'empty'));
+      const entry = s.tools && s.tools.open_model_panel, types = (((entry && entry._meta && entry._meta['openai/ui']) || {}).entrypoints || []).map(e => e.type);
+      add('threadEntry', types.includes('thread') ? 'ok' : 'warn', T('右侧面板入口（Effort & quota）', 'Side panel entry (Effort & quota)'),
+        types.includes('thread') ? T('已注册；在对话的侧边面板中打开，模型调用只能显示对话内卡片', 'registered; open it from the conversation side panel, a model call only shows the in-chat card') : T('未注册（旧版插件）', 'not registered (older plugin)'),
+        types.includes('thread') ? null : T('更新插件后新开任务', 'Update the plugin, then open a new task'));
     } catch (e) { add('resource', 'fail', T('面板资源可读取', 'Dashboard resource readable'), e.message.split('\n')[0]); }
     const thread = await as.request('thread/start', { cwd: __dirname, ephemeral: true });
     const r = await as.request('mcpServer/tool/call', { threadId: thread.thread.id, server: s.name, tool: 'get_model_dashboard', arguments: { lang } }, 60000);
@@ -162,7 +166,7 @@ async function host(row) {
   const callable = installed && st('mcp') === 'ok' && (st('data') === 'ok' || st('data') === 'warn');
   const summary = {
     installed, toolsCallable: callable, panelShown: 'unverified',
-    panelNote: T('面板是否实际显示只能在 Codex 桌面端确认：新任务中输入“打开 Model Plan 看板”。', 'Whether the panel actually renders can only be confirmed in the Codex desktop app: ask "Open the ModelPlan model dashboard" in a task.'),
+    panelNote: T('面板是否实际显示只能在 Codex 桌面端确认：新任务中输入“打开 Model Plan 看板”看对话内卡片；在对话侧边面板打开“Effort & quota”看右侧面板。面板底部“数据与依据”里的“显示：”一行是宿主报告的模式和宽度。', 'Whether the panel actually renders can only be confirmed in the Codex desktop app: ask "Open the ModelPlan model dashboard" for the in-chat card, and open "Effort & quota" from the conversation side panel for the panel beside the chat. The "Display:" line under Data & basis shows the mode and widths the host reported.'),
   };
   if (flag('--json')) { process.stdout.write(JSON.stringify({ pluginVersion: version, summary, checks }, null, 2) + '\n'); }
   else {

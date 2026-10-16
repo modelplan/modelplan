@@ -19,7 +19,7 @@ codex plugin add modelplan-codex@modelplan
    node ~/.codex/plugins/cache/modelplan/modelplan-codex/<version>/doctor.cjs
    ```
 
-Then ask **"Open the Model Plan dashboard"**. A new task is the reliable place to start; a task that was already open may pick the plugin up as well. You can also invoke the `model-dashboard` skill. Desktop hosts that support app panels show the dashboard inline; use **Expand** if the host offers it. Codex CLI shows the same published comparison as text. Panel placement belongs to the host; the plugin cannot pin itself to a sidebar.
+Then ask **"Open the Model Plan dashboard"**. A new task is the reliable place to start; a task that was already open may pick the plugin up as well. You can also invoke the `model-dashboard` skill. Asked in the chat, the dashboard appears as a compact card in the conversation. To keep it beside the chat, open **Effort & quota** from the conversation's side panel: that thread entry is opened by you, not by a tool call, and each conversation gets its own copy. **Model Plan** in the sidebar opens the board on its own. Codex CLI shows the same published comparison as text.
 
 ### Setup check
 
@@ -75,7 +75,7 @@ codex plugin marketplace remove modelplan
 
 ## What you see
 
-The dashboard opens inline at about 360–420 px wide and grows with its content; the host owns scrolling and placement. **Expand** asks the host for its larger view, which also opens the curve and lineup sections. The first screen shows the Codex model, effort and speed tier from your latest local thread, how that step compares with ★, and your quota. The comparison console comes next. The effort curves, the full model lineup and public reset notices are folded until you open them.
+The content is at most 420 px wide wherever it appears, including borders and padding, and grows in height with its content. In the chat, the card asks the host for its own width rather than the chat column's; beside the chat it fills a narrow panel up to that width. Hosts show every entry "fullscreen", which in the side panel means filling the panel, so the width never follows the display mode. On the in-chat card, **Expand** asks the host for its larger view and opens the curve and lineup sections. *Data & basis* ends with a **Display** line: the surface, the display mode and container size the host reported, and the measured widths. Include it when reporting a layout problem. The first screen shows the Codex model, effort and speed tier from your latest local thread, how that step compares with ★, and your quota. The comparison console comes next. The effort curves, the full model lineup and public reset notices are folded until you open them.
 
 
 - Published OpenAI recommendations, high-capability pick, best value and cheapest.
@@ -90,7 +90,7 @@ The dashboard reads the same verified client publication as [Model Plan](https:/
 
 ## Transport and development
 
-`mcp.json` configures an internal stdio transport for `open_model_dashboard` and `get_model_dashboard`. Codex runs `launch.cjs`, which starts `server.bundle.mjs` on a compatible Node (see above). The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts Model Plan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
+`mcp.json` configures an internal stdio transport for `open_model_dashboard` (the in-chat card), `get_model_dashboard` (text and data), and the user-opened entries `open_model_panel` (thread side panel) and `open_model_board` (sidebar), one entrypoint per tool and one UI resource per surface. Codex runs `launch.cjs`, which starts `server.bundle.mjs` on a compatible Node (see above). The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts Model Plan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
 
 ```sh
 cd codex

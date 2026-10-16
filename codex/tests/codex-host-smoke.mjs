@@ -61,7 +61,8 @@ try {
   } while (cursor);
   const server = servers.find(s => s.pluginId === pluginId && s.name === serverName);
   assert.ok(server, 'Installed plugin absent from Codex MCP inventory');
-  assert.deepEqual(Object.keys(server.tools).sort(), ['get_model_dashboard', 'open_model_dashboard']);
+  assert.deepEqual(Object.keys(server.tools).sort(), ['get_model_dashboard', 'open_model_board', 'open_model_dashboard', 'open_model_panel']);
+  assert.deepEqual(server.tools.open_model_panel._meta?.['openai/ui']?.entrypoints, [{ type: 'thread' }], 'Codex keeps the thread entrypoint');
   assert.equal(server.serverInfo.version, version);
   report.inventory = { name: server.name, pluginId: server.pluginId, serverInfo: server.serverInfo, tools: Object.keys(server.tools) };
   const resource = await request('mcpServer/resource/read', { server: server.name, uri: 'ui://modelplans/model-dashboard.html' });
@@ -70,6 +71,9 @@ try {
   assert.ok(item.text.includes('ui/initialize'));
   assert.deepEqual(item._meta?.['openai/ui']?.availableDisplayModes, ['inline', 'fullscreen']);
   assert.equal(item._meta?.['openai/ui']?.preferredDisplayMode, 'inline');
+  const panel = (await request('mcpServer/resource/read', { server: server.name, uri: 'ui://modelplans/model-panel.html' })).contents[0];
+  assert.equal(panel._meta?.['openai/ui']?.preferredDisplayMode, 'fullscreen');
+  report.threadPanel = { uri: 'ui://modelplans/model-panel.html', displayModes: panel._meta['openai/ui'].availableDisplayModes };
   report.uiResource = { mimeType: item.mimeType, bytes: Buffer.byteLength(item.text), displayModes: item._meta['openai/ui'].availableDisplayModes, preferredDisplayMode: item._meta['openai/ui'].preferredDisplayMode };
   report.status = 'PASS';
 } catch (error) { report.status = 'FAIL'; report.error = error.message; process.exitCode = 1; }
