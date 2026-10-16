@@ -8,6 +8,7 @@ Model Plan answers from live, checkable public data, on the web and inside Claud
 [![Release](https://img.shields.io/github/v/release/modelplan/modelplan?style=flat-square&color=df604c&label=release)](https://github.com/modelplan/modelplan/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/modelplan/modelplan/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/modelplan/modelplan/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-d4b994?style=flat-square)](LICENSE)
+[![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-d4b994?style=flat-square)](data/)
 [![Website](https://img.shields.io/badge/modelplan.ai-live-f0a35e?style=flat-square)](https://modelplan.ai)
 [![Stars](https://img.shields.io/github/stars/modelplan/modelplan?style=flat-square&color=f6d38a)](https://github.com/modelplan/modelplan/stargazers)
 
@@ -204,6 +205,7 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 | Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that passes new hints and a task-start brief to Claude once |
 | Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary: `lineup`, `effort`, `models`, `quota`, `advise`, `statusline`, `sync`, `doctor` |
+| Open data | [`data/`](data/) | The reviewed data behind the site: plan tiers, prices, quota metering, calendars, model identities and effort policies. Mirrored from modelplan.ai on every change, one pull request each |
 | Methodology | [`METHODOLOGY.md`](METHODOLOGY.md) | How ability, cost, time and the ★ effort are worked out, and the sources |
 
 ## Contributing
@@ -216,4 +218,4 @@ If Model Plan saves you quota or money, a ⭐ helps others find it.
 
 ## License
 
-[MIT](LICENSE). Model Plan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.
+Code: [MIT](LICENSE). Data in [`data/`](data/) and from the API: [CC BY 4.0](data/LICENSE), crediting Model Plan; third-party figures keep their sources' terms. Model Plan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.
