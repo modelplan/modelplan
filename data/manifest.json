@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.158",
+  "version": "0.21.164",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -14,7 +14,7 @@
       "path": "data/calendar-rule-registry.json",
       "description": "Reviewed calendar rules: peaks, off-peak hours, promotions and quota resets",
       "license": "CC-BY-4.0",
-      "sha256": "ca761b7719587ddff256d7635b5d3df630189496ae13ebdc476d446a9e859c42"
+      "sha256": "a37f45ee4e6ac9cf24c5a1755c352d1c28338b42b6b5185b2cf9b5033369efae"
     },
     {
       "path": "data/calibration/balanced-coding-v2.json",
@@ -92,13 +92,13 @@
       "path": "data/current-public-plan-registry.json",
       "description": "Current public subscription plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "8a942fc92b57f3e77f9062ad4d2a11a4aecb39f1bc2ca9095f90365b2458ae64"
+      "sha256": "eb305bb8d8c8230725b959d8b7559e5c6cb9118a9b053aaadd5ad2415f504936"
     },
     {
       "path": "data/current-token-plan-registry.json",
       "description": "Current token and credit plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "dfda82e40ba105ed1b1850e471c4b16db0ee17dfe74ce3c7cf26f7cd40a40de2"
+      "sha256": "ec0eada635eeb93432b1259e386ba8e726d97eb208ce5925c4fb977e27ea4cdf"
     },
     {
       "path": "data/current-tool-plan-registry.json",
@@ -152,7 +152,7 @@
       "path": "data/plan-metering.json",
       "description": "How each plan meters usage: windows, limits, multipliers",
       "license": "CC-BY-4.0",
-      "sha256": "ef0814d5592c3095e02d851f621fa025878fb0aa9e2fd4a40725efdda366e68b"
+      "sha256": "0e2a6dbff788177b60ccd253b254f58f2f4df409917f06c5ed82e3d87a9e54ba"
     },
     {
       "path": "data/plan-model-access.json",
@@ -182,7 +182,7 @@
       "path": "data/plan-tier-registry.json",
       "description": "Subscription tiers: the source the plan registries are generated from",
       "license": "CC-BY-4.0",
-      "sha256": "708f34a62ed18aebf0c99b509f1209d38b0d69c8762a404afd37d4e304205308"
+      "sha256": "b17bda9eb6a4b7dba6708d25e92733ceb350152204957a1efd96e2c4ddd6196d"
     },
     {
       "path": "data/real-api-pricing/LICENSE",
@@ -212,7 +212,7 @@
       "path": "data/reviewed-plan-registry.json",
       "description": "Reviewed plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "702b5e0186a094ab281bc2737be3230166c0473261ae5cab4dc2016e4d5c7db8"
+      "sha256": "8a7e02e94bb6d8e13b305a42b67c0fa765dadda3f105275b493c2c65af4a5a5e"
     },
     {
       "path": "data/reviewed-speed-claims.json",
@@ -237,6 +237,12 @@
       "description": "Ranker output schema",
       "license": "CC-BY-4.0",
       "sha256": "3ff3f20d19a127a26745ea13e1269dc6aa80165bf2b368228744c1b0f7b49107"
+    },
+    {
+      "path": "data/time-policy-inventory.json",
+      "description": "Time-of-day quota and price rules per product line: modelled, none found or unverified, with the sources that state them",
+      "license": "CC-BY-4.0",
+      "sha256": "1ad97af56ace9e397d737b898a83ae859a0c6125aa666b03c0edd8edbdc7e3a6"
     },
     {
       "path": "data/tool-plan-facts-history.json",

@@ -48,6 +48,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`reviewed-speed-tiers.json`](reviewed-speed-tiers.json) | Reviewed speed tiers (fast modes) | CC-BY-4.0 |
 | [`schemas/ranker-input.schema.json`](schemas/ranker-input.schema.json) | Ranker input schema | CC-BY-4.0 |
 | [`schemas/ranker-output.schema.json`](schemas/ranker-output.schema.json) | Ranker output schema | CC-BY-4.0 |
+| [`time-policy-inventory.json`](time-policy-inventory.json) | Time-of-day quota and price rules per product line: modelled, none found or unverified, with the sources that state them | CC-BY-4.0 |
 | [`tool-plan-facts-history.json`](tool-plan-facts-history.json) | Frozen usage facts of coding tool plans | CC-BY-4.0 |
 <!-- files:end -->
 
