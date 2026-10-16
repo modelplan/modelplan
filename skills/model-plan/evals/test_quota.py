@@ -57,6 +57,38 @@ class SharedFixture(unittest.TestCase):
         self.assertEqual("unsafe_path", quota.read_local(str(link), NOW)[1]["status"])
 
 
+class Pace(unittest.TestCase):
+    """The pace contract shared with cli/internal/quota TestPaceCasesSharedWithThePythonReader."""
+
+    def test_shared_cases(self):
+        cases = json.loads((FIX / "pace-cases.json").read_text())["cases"]
+        self.assertTrue(cases)
+        for c in cases:
+            resets = NOW + dt.timedelta(minutes=c["resetsInMinutes"]) if "resetsInMinutes" in c else None
+            w = quota.window(c["kind"], c["used"], resets, NOW, 0, c.get("resetMode", "fixed"))
+            quota.eval_window(w, NOW)
+            self.assertEqual(c["pace"], w["pace"], c["name"])
+
+
+class ClaudeSession(unittest.TestCase):
+    """Same key and attribution as cli/internal/quota TestClaudeCodeSnapshotNamesWhoseSessionItIs."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        (self.dir / "observed").mkdir()
+        shutil.copy(FIX / "claude-code-snapshot.json", self.dir / "observed" / "claude-code.json")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def attribution(self, session):
+        accounts, _ = quota.read_claude_code(str(self.dir), session)
+        return accounts[0]["harness"].get("attribution", "")
+
+    def test_attribution(self):
+        self.assertEqual(["current-thread", "recent-thread", ""], [self.attribution(s) for s in ("secret-session", "another", "")])
+
+
 class Threads(unittest.TestCase):
     """Same fixture and expectation as cli/internal/quota TestCodexThreadsKeepTheirOwnModel."""
 

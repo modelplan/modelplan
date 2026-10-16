@@ -1,6 +1,6 @@
 # modelplan — Go thin client
 
-This is a read-only, anonymous, single static binary with no GUI. It reads the verified public publication, keeps the shared local cache (see [`../README.md`](../README.md)) and prints the hangar views in a terminal. The Claude Code mods call it, and the desktop menu-bar app will be built on it later.
+This is a read-only, anonymous, single static binary with no GUI. It reads the verified public publication, keeps the shared local cache (see [`../README.md`](../README.md)) and prints the hangar views in a terminal. The Claude Code and Codex plugins call it (their hooks run `advise --hook`), and the desktop menu-bar app will be built on it later. Install: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`).
 
 ```sh
 cd cli
@@ -14,7 +14,15 @@ go build -o dist/modelplan ./cmd/modelplan
 echo '{"model":{"id":"claude-opus-5-5"}}' | ./dist/modelplan statusline
 ./dist/modelplan statusline --harness codex --model gpt-6-astra --no-color
 ./dist/modelplan doctor
+./dist/modelplan quota                # your own windows, read on this machine only
+./dist/modelplan advise               # what is worth doing about them now
+echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":39,"resets_at":2000000000}}}' \
+  | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
+
+`advise` events: a window used up, tight (also early: half used and on pace to run out), reset soon with allowance left, an announced Codex reset, switch back after a reset, peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
+
+`advise --hook claude-code|codex` is the plugins' prompt hook: it reads the hook input from stdin, hands new hints to the model once and, on a thread's first prompt (and again when its model changes), a task-start brief with the published options. It never blocks the prompt; with no publication cached yet it waits up to 3.5 s for a first sync, then goes on in the background. `MODELPLAN_TASK_BRIEF=off` turns the brief off.
 
 Example output (publication `23cd7308…`, release 0.18.9):
 

@@ -47,7 +47,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
   modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
                                        switch back after it, peak hours, cards, public resets
-                                       (--hook claude-code|codex: prompt hook, each hint once)
+                                       (--hook claude-code|codex: prompt hook, each hint once, plus
+                                       a task-start brief per thread and model)
   modelplan statusline                 one line for Claude Code / other status bars (cache only;
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
@@ -55,7 +56,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan version
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
-Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR
+Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
+     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading)
 `
 
 type common struct {

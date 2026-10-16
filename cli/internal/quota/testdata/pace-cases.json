@@ -1,0 +1,16 @@
+{
+  "note": "Shared by cli/internal/quota (Go) and skills/model-plan/scripts/quota.py (Python): both must give these paces. The Codex review case is 72% of a week used with 15.8% of it gone.",
+  "cases": [
+    {"name": "early and half used: tight", "kind": "weekly", "used": 72, "resetsInMinutes": 8487, "pace": "tight"},
+    {"name": "early and light: waits for a fifth", "kind": "weekly", "used": 30, "resetsInMinutes": 8487, "pace": "on_track"},
+    {"name": "early, under half: waits", "kind": "weekly", "used": 48, "resetsInMinutes": 8669, "pace": "on_track"},
+    {"name": "past a fifth and over pace", "kind": "five_hour", "used": 60, "resetsInMinutes": 150, "pace": "tight"},
+    {"name": "nearly used up", "kind": "five_hour", "used": 92, "resetsInMinutes": 250, "pace": "tight"},
+    {"name": "used up", "kind": "five_hour", "used": 100, "resetsInMinutes": 60, "pace": "exhausted"},
+    {"name": "last quarter with allowance left", "kind": "five_hour", "used": 25, "resetsInMinutes": 60, "pace": "surplus"},
+    {"name": "past half and well under pace", "kind": "weekly", "used": 30, "resetsInMinutes": 4032, "pace": "surplus"},
+    {"name": "on pace", "kind": "weekly", "used": 50, "resetsInMinutes": 4032, "pace": "on_track"},
+    {"name": "rolling, high", "kind": "weekly", "used": 92, "resetMode": "rolling", "pace": "tight"},
+    {"name": "rolling, moderate", "kind": "weekly", "used": 50, "resetMode": "rolling", "pace": "unknown"}
+  ]
+}
