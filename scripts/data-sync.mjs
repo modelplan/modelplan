@@ -107,6 +107,8 @@ export async function sync(source = SOURCE) {
     await rm(path.join(root, f.path), { force: true });
     changes.push({ path: f.path, what: "removed" });
   }
+  // A release that changed no data file changes nothing here: no version-only pull requests.
+  if (!changes.length) return { version: old.version, previous: old.version, changes };
   await writeFile(path.join(DATA, "manifest.json"), manifestOf(bundle));
   await writeFile(path.join(DATA, "README.md"), readme(await readFile(path.join(DATA, "README.md"), "utf8"), bundle));
   return { version: bundle.version, previous: old.version ?? null, changes };
