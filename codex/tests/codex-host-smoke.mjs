@@ -69,7 +69,7 @@ try {
   assert.equal(item.mimeType, 'text/html;profile=mcp-app');
   assert.ok(item.text.includes('ui/initialize'));
   assert.deepEqual(item._meta?.['openai/ui']?.availableDisplayModes, ['inline', 'fullscreen']);
-  assert.equal(item._meta?.['openai/ui']?.preferredDisplayMode, 'fullscreen');
+  assert.equal(item._meta?.['openai/ui']?.preferredDisplayMode, 'inline');
   report.uiResource = { mimeType: item.mimeType, bytes: Buffer.byteLength(item.text), displayModes: item._meta['openai/ui'].availableDisplayModes, preferredDisplayMode: item._meta['openai/ui'].preferredDisplayMode };
   report.status = 'PASS';
 } catch (error) { report.status = 'FAIL'; report.error = error.message; process.exitCode = 1; }

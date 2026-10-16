@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effortCurveData, curveCoordinate, effortCurveSvg, focusCurveSeries } from '../ui/curves.js';
+import { effortCurveData, curveCoordinate, effortCurveSvg, focusCurveSeries, speedComparison } from '../ui/curves.js';
 import { timeRatio } from '../ui/comparison.js';
 const basis = { source: 'aa-agent', cohort: 'same-task', boundary: 'wall', referenceSeconds: 100 };
 const model = () => ({ recommended: 'medium', configurations: [
@@ -52,4 +52,26 @@ test('one click isolates a metric, a repeat restores all; only solo plots label 
   const d = effortCurveData(model(), timeRatio);
   assert.equal((effortCurveSvg(d, { series: solo }).match(/class="point-label"/g) || []).length, 4);
   assert.doesNotMatch(effortCurveSvg(d), /class="point-label"/);
+});
+const tier = (name, quota, credits, speed) => ({ tier: name, billing: [{ account: 'subscription', billsTo: 'plan-quota', ratio: quota }, { account: 'credits', billsTo: 'credits', ratio: credits }], model: { speed } });
+test('a speed tier changes cost and time in one state shared by readout and both curves; ability never moves', () => {
+  const m = model(), standard = speedComparison(m, timeRatio), fast = speedComparison(m, timeRatio, tier('fast', 2.5, 2, { ratio: null, qualifier: 'unstated' }));
+  assert.deepEqual(standard.rows, effortCurveData(m, timeRatio).rows);
+  assert.equal(standard.mode, 'standard');
+  assert.deepEqual(fast.rows.map(r => r.ability), standard.rows.map(r => r.ability));
+  assert.deepEqual(fast.rows.map(r => r.cost), standard.rows.map(r => r.cost * 2.5), 'plan-quota estimate vs ★ standard');
+  assert.ok(fast.rows.every(r => r.time === null), 'task time is unknown, never scaled by generation speed');
+  assert.equal(fast.baselineIndex, standard.baselineIndex);
+  assert.equal(fast.generation, null, 'unstated speed stays unknown, not ×1');
+  assert.deepEqual([fast.quotaRatio, fast.creditRatio], [2.5, 2]);
+  const mini = effortCurveSvg(fast, { mini: true }), detail = effortCurveSvg(fast);
+  for (const svg of [mini, detail]) {
+    assert.doesNotMatch(svg, /data-series-path="time"/);
+    assert.match(svg, /data-series-path="cost"[^>]+stroke-dasharray/, 'estimated quota is dashed');
+  }
+  assert.notDeepEqual(effortCurveSvg(standard, { mini: true }), mini, 'the mini curve follows the speed mode');
+  const ultra = speedComparison(m, timeRatio, tier('ultrafast', 8, 6, { ratio: 8, qualifier: 'up-to' }));
+  assert.deepEqual(ultra.generation, { ratio: 8, qualifier: 'up-to' });
+  assert.equal(ultra.rows[ultra.baselineIndex].cost, 8);
+  assert.ok(speedComparison(m, timeRatio, { tier: 'fast', billing: [{ billsTo: 'credits', ratio: 2 }], model: {} }).rows.every(r => r.cost === null), 'no plan-quota multiple, no quota estimate');
 });
