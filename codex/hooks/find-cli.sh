@@ -1,7 +1,8 @@
 #!/bin/sh
 # Prints the modelplan CLI the plugin uses. First the copy the plugin fetched for its pinned
-# release (fetch-cli.sh, ~/.cache/modelplan-cli/<version>); else one the user installed: PATH,
-# then where install.sh and Homebrew put it (hosts may run hooks with a short PATH). Only
+# release (fetch-cli.sh, ~/.cache/modelplan-cli/<version>); else one the user installed (PATH,
+# then where install.sh puts it), the plugin's previous copy (~/.cache/modelplan-cli/modelplan,
+# while an update's copy downloads) or Homebrew's (hosts may run hooks with a short PATH). Only
 # executable files count; the first one at least the pinned version wins, else the first one
 # found. The dashboard's findCli (codex/quota.mjs) uses the same order and rules. Shared,
 # identical, by the Claude Code and Codex plugins.
@@ -11,7 +12,7 @@ if [ -n "$min" ] && [ -x "$HOME/.cache/modelplan-cli/$min/modelplan" ]; then pri
 at_least() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
 first=
 old_ifs=$IFS; IFS=:
-set -- $PATH "${MODELPLAN_BIN:-$HOME/.local/bin}" /opt/homebrew/bin /usr/local/bin
+set -- $PATH "${MODELPLAN_BIN:-$HOME/.local/bin}" "$HOME/.cache/modelplan-cli" /opt/homebrew/bin /usr/local/bin
 IFS=$old_ifs
 for d in "$@"; do
   c="$d/modelplan"

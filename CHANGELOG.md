@@ -2,6 +2,12 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.11 (2026-10-16)
+
+- **Configuration advice per model and effort.** A tight window, a surplus before a reset or an announced reset is about the configuration in use, so the hook now remembers it per model and effort instead of per account window: a thread on another model (Astra after Sol) hears its own advice, while threads on the same configuration do not repeat it; a tight window that gets critical (10% or less left) is said once more. Account news (used up, switch back, peak hours, cards, public resets) is still said once. Only threads you send a message in hear anything. From a Codex review.
+- **The task-start brief follows substantial changes:** besides a thread's first prompt and another model, another known effort (an effort first read on a later prompt does not count) and quota turning tight, used up or into a surplus. A thread switching back to a model it was briefed on keeps that brief.
+- Plugins (next pin): the previous fetched CLI bridges a plugin update while the new one downloads; the Codex dashboard and text output explain every way hints can fail (unreadable hints, a CLI without `advise`, a failing run) instead of only the last.
+
 ## Codex plugin 0.15.0 and Claude Code plugin 0.7.0 (2026-10-16)
 
 - **The plugins bring their own CLI.** Each plugin pins one `modelplan` release in `cli-pin.json` (version, release URL and the SHA-256 of each macOS and Linux archive) and fetches it with `hooks/fetch-cli.sh` (shared, identical) into `~/.cache/modelplan-cli/<version>`, using it only if the archive's checksum equals the pinned one; `~/.cache/modelplan-cli/modelplan` links the newest, a stable path for the status line. Installing or updating a plugin is all there is to do: the separate "install the CLI / upgrade the CLI / not now" flow is gone. Nothing else changes (no PATH, profile or sudo); a CLI the user installed is left alone and used only while the plugin's copy is missing. `MODELPLAN_PLUGIN_CLI=off` turns fetching off; Windows has no automatic fetch. Pinned now: v0.5.10.
