@@ -55,7 +55,7 @@ export function makeServer() {
   const s = new McpServer({ name: "modelplans-dashboard", version });
   s.registerResource("model-dashboard", UI_URI, { mimeType: "text/html;profile=mcp-app" }, async () => ({ contents: [{
     uri: UI_URI, mimeType: "text/html;profile=mcp-app", text: await readHtml(),
-    _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } }, "openai/ui": { availableDisplayModes: ["inline", "fullscreen"], preferredDisplayMode: "fullscreen" } },
+    _meta: { ui: { prefersBorder: false, csp: { connectDomains: [], resourceDomains: [] } }, "openai/ui": { availableDisplayModes: ["inline", "fullscreen"], preferredDisplayMode: "inline" } },
   }] }));
   s.registerTool("get_model_dashboard", {
     title: "Read model capability, cost and recommended efforts", inputSchema, annotations,

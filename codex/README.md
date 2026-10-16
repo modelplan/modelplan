@@ -75,11 +75,15 @@ codex plugin marketplace remove modelplan
 
 ## What you see
 
+The dashboard opens inline at about 360–420 px wide and grows with its content; the host owns scrolling and placement. **Expand** asks the host for its larger view, which also opens the curve and lineup sections. The first screen shows the Codex model, effort and speed tier from your latest local thread, how that step compares with ★, and your quota. The comparison console comes next. The effort curves, the full model lineup and public reset notices are folded until you open them.
+
+
 - Published OpenAI recommendations, high-capability pick, best value and cheapest.
 - One model's native effort lever and a compact capability/cost/time curve. Click a metric to isolate it; click again to restore all. Use arrow keys or Home/End on the lever.
 - Gold ★ means recommended effort only. Capability changes are additive points; cost/time are multiples of that model's recommendation. Estimates are marked ≈; missing or incompatible time evidence leaves gaps.
 - **Your quota**: 5-hour and weekly usage, time to reset and a headroom hint (surplus before a reset → stepping up is cheap; tight → stay at ★). Read on this machine from the rate-limit snapshot Codex writes to its session logs, via `modelplan quota` or the bundled Skill reader (Python 3). Nothing is uploaded; credentials are never read.
 - **Hints** (optional, need the `modelplan` CLI 0.4+; without it the dashboard says hints are off): the window resets soon with allowance left → which effort to step up to and its cost multiplier; tight → back to ★ or one step down; after an advised reset → switch back to ★; a public Codex reset in the last day. The plugin's `UserPromptSubmit` hook (`hooks/hooks.json`, enabled once you trust it in Codex) tells Codex each new hint once. It reads local files only and never changes the model, effort or Fast.
+- **Speed tiers** (⚡ Fast, ⚡⚡ Ultrafast): ability does not change. Cost becomes *Quota*, an estimate of plan-quota use: the reference-task cost multiple times the tier's published included-usage multiple, valid within one model and relative to its ★ effort in standard mode. Task time shows as unknown, because tools, network and tests do not speed up with token generation. Generation speed is listed separately as an "up to" ceiling, or as not stated. Credit multiples, plan eligibility and the official source link are shown with each tier. The readout and both curves always show the same mode.
 - Public Codex reset notices with source, scope and stated time precision. They are not your own meter.
 
 The dashboard reads the same verified client publication as [Model Plan](https://modelplan.ai/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.

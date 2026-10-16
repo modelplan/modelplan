@@ -18,7 +18,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,.
 .mp-lever{--slot-x:31px;width:100%;height:146px}.mp-lever .slot,.mp-lever .zone{left:var(--slot-x);width:12px;top:12px;bottom:12px}
 .mp-lever .zone{background:repeating-linear-gradient(135deg,#ff7a4a8c 0 4px,transparent 4px 8px)}
 .mp-lever .det{left:7px;width:15px;background:#6b6058;box-shadow:none}.mp-lever .det.rc{background:#d4b994;box-shadow:none}
-.mp-lever .det small{left:47px;font:400 10px var(--mp-f-mono);letter-spacing:.02em}
+.mp-lever .det small{left:60px;font:400 10px var(--mp-f-mono);letter-spacing:.02em}
 .mp-lever .det.rc small{background:var(--star);color:var(--star-ink);padding:2px 5px;border-radius:99px;box-shadow:none}
 .mp-lever .det button{left:-7px;width:130px;height:24px}
 .mp-lever .knob{left:18px;width:38px;height:24px;border-radius:8px;transition:top .35s var(--ease);background:linear-gradient(180deg,#f3f4f7,#c4cad6 45%,#8f97a8);box-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 #687080,0 4px 8px #000a}
@@ -29,3 +29,38 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,.
 @media(min-width:480px){.lever-well{width:150px}.mp-lever{width:100%}.mp-lever .det button{width:148px}}
 @media(max-width:360px){.sidebar{padding:10px}.mp-plate .screw{display:none}.lever-well{width:112px}.mp-lever{--slot-x:24px;width:100%}.mp-lever .knob{left:11px}.mp-lever .det{left:3px;width:12px}.mp-lever .det small{left:40px;font-size:10px}.mp-lever .det.rc small{padding:2px 4px}.mp-lever .det button{left:-3px;width:110px}.gain-reading{letter-spacing:0;font-size:10px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* Compact inline layout (0.9): content height, one scroll owner (the host), 360–420px target.
+   Expand (host fullscreen) widens it and opens the curve and lineup folds. */
+.sidebar{height:auto;max-width:420px;max-height:none;overflow:visible;gap:9px}
+html[data-display=fullscreen] .sidebar{max-width:640px}
+.console-body{overflow:visible;flex:none;gap:10px;padding:2px}
+.notice{font:11px/1.5 var(--mp-f-body);color:var(--mp-lcd-2);padding:6px 4px}
+.notice.error{color:var(--mp-warn)}
+.notice button{margin-left:8px}
+.now{display:grid;gap:4px}
+.now-model{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;color:var(--mp-lcd-hi);font:13px/1.35 var(--mp-f-body)}
+.now-model b{font-weight:600}
+.now-model small{flex-basis:100%;font:10px/1.4 var(--mp-f-mono);color:var(--mp-lcd-2)}
+.now-model[data-attribution=current-thread] small{color:var(--mp-lcd)}
+.now-step{font:11px/1.45 var(--mp-f-mono);color:var(--mp-lcd)}
+.now-step em{font-style:normal;color:var(--mp-ability)}.now-step i{font-style:normal;color:var(--mp-cost)}
+.model-chips{display:flex;flex-wrap:wrap;gap:5px}
+.model-chips button{border:1px solid var(--mp-bezel);border-radius:99px;background:#1b1714;color:var(--mp-muted);font:500 11px var(--mp-f-body);padding:3px 9px}
+.model-chips button[aria-pressed=true]{color:var(--mp-text);background:var(--act-fill);border-color:var(--act-edge)}
+.model-chips button small{color:var(--mp-lcd);font:10px var(--mp-f-mono);margin-left:4px}
+.basis{margin:0;font:10px/1.5 var(--mp-f-body);color:var(--mp-lcd-2);padding:0 3px}
+.speed p{font-size:10px}
+.speed p a{color:var(--mp-lcd)}
+.speed .gen{color:var(--mp-time)}
+.metric-reading.unknown b{color:var(--mp-dim)}
+.fold{padding:8px 10px}
+.fold>summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font:400 10px/1.5 var(--mp-f-mono);letter-spacing:.08em;color:var(--mp-lcd)}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"▸";color:var(--mp-lcd-2)}
+.fold[open]>summary::before{content:"▾"}
+.fold>summary em{font:10px var(--mp-f-body);letter-spacing:0;color:var(--mp-lcd-2);font-style:normal}
+.fold[open]>summary{margin-bottom:6px}
+#models{max-height:none;overflow:visible}
+.secondary{justify-content:space-between}
+@media(max-width:380px){.lever-well{width:122px}.mp-lever{--slot-x:24px}.mp-lever .knob{left:11px}.mp-lever .det{left:3px;width:12px}.mp-lever .det small{left:53px}.mp-lever .det button{left:-3px;width:116px}.compact-display{padding:7px 8px}}
+

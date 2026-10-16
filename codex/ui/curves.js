@@ -17,6 +17,10 @@ export function effortCurveData(model, ratioForTime) {
     cost: curveFinite(c.cost) && c.cost >= 0 && base?.cost > 0 ? c.cost / base.cost : null,
     time: ratioForTime(c, base), estimated: !!(c.timeEstimated || base?.timeEstimated),
   }));
+  return curveScale(rows, baselineIndex);
+}
+
+function curveScale(rows, baselineIndex) {
   const logs = rows.flatMap(r => [r.cost, r.time].filter(v => curveFinite(v) && v > 0).map(Math.log2));
   const low = Math.min(-.5, Math.floor(Math.min(0, ...logs) * 2) / 2);
   const high = Math.max(.5, Math.ceil(Math.max(0, ...logs) * 2) / 2);
@@ -27,6 +31,23 @@ export function effortCurveData(model, ratioForTime) {
   return { rows, baselineIndex, low, high, pointsPerDoubling };
 }
 
+// The one comparison state behind the readout, the mini curve and the detail curve, always
+// relative to this model's ★ effort in standard mode. A speed tier leaves ability alone. Cost
+// becomes an estimated plan-quota draw: the reference-task cost ratio times the tier's
+// included-usage multiple, meaningful within one model only. Task time becomes unknown, because
+// tools, network and tests do not run faster with token generation. The tier's generation
+// speed-up is carried separately as an upper bound, or null when unstated.
+export function speedComparison(model, ratioForTime, tier = null) {
+  const standard = effortCurveData(model, ratioForTime);
+  if (!tier) return { ...standard, mode: 'standard', costKind: 'reference-task' };
+  const ratio = billsTo => tier.billing?.find(b => b.billsTo === billsTo && curveFinite(b.ratio))?.ratio ?? null;
+  const quota = ratio('plan-quota');
+  const rows = standard.rows.map(r => ({ ...r, cost: curveFinite(r.cost) && quota !== null ? r.cost * quota : null, costEstimated: true, time: null, estimated: false }));
+  const speed = tier.model?.speed;
+  return { ...curveScale(rows, standard.baselineIndex), mode: tier.tier, costKind: 'plan-quota', quotaRatio: quota, creditRatio: ratio('credits'),
+    generation: curveFinite(speed?.ratio) ? { ratio: speed.ratio, qualifier: speed.qualifier } : null };
+}
+
 export function curveCoordinate(data, value, key) {
   if (!curveFinite(value)) return null;
   if (key !== 'ability' && value === 0) return { zero: true, fraction: 1 };
@@ -35,14 +56,14 @@ export function curveCoordinate(data, value, key) {
   return { zero: false, fraction: (data.high - coordinate) / (data.high - data.low) };
 }
 
-export function effortCurveSvg(data, { selected = 0, series = new Set(['ability', 'cost', 'time']), mini = false, language = 'zh' } = {}) {
+export function effortCurveSvg(data, { selected = 0, series = new Set(['ability', 'cost', 'time']), mini = false, language = 'zh', names = {} } = {}) {
   const width = mini ? 260 : 440, height = mini ? 82 : 182;
   const left = mini ? 10 : 38, right = mini ? 10 : 40, top = mini ? 7 : 18, bottom = mini ? 18 : 30;
   const plotH = height - top - bottom, plotW = width - left - right;
   const x = i => left + (data.rows.length > 1 ? i / (data.rows.length - 1) * plotW : plotW / 2);
   const y = fraction => top + fraction * plotH;
   const baseY = y(data.high / (data.high - data.low));
-  const labels = language === 'zh' ? { ability: '能力', cost: '成本', time: '耗时', points: '分' } : { ability: 'Ability', cost: 'Cost', time: 'Time', points: 'pts' };
+  const labels = { ...(language === 'zh' ? { ability: '能力', cost: '成本', time: '耗时', points: '分' } : { ability: 'Ability', cost: 'Cost', time: 'Time', points: 'pts' }), ...names };
   let svg = `<svg class="curve ${mini ? 'mini-curve' : ''}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${language === 'zh' ? '能力成本耗时档位曲线' : 'Effort capability, cost and time curves'}" data-baseline-y="${baseY}">`;
   for (const tick of [...new Set([data.low, 0, data.high])]) {
     const yy = y((data.high - tick) / (data.high - data.low));
@@ -59,7 +80,7 @@ export function effortCurveSvg(data, { selected = 0, series = new Set(['ability'
     data.rows.forEach((row, i) => {
       const p = curveCoordinate(data, row[key], key);
       if (!p) { previous = null; return; }
-      const xx = x(i), yy = p.zero ? height - bottom + 4 : y(p.fraction), estimated = key === 'time' && row.estimated;
+      const xx = x(i), yy = p.zero ? height - bottom + 4 : y(p.fraction), estimated = (key === 'time' && row.estimated) || (key === 'cost' && !!row.costEstimated);
       if (previous && !p.zero) svg += `<path class="series" data-series-path="${key}" stroke="var(--mp-${key})" ${estimated || previous.estimated ? 'stroke-dasharray="4 3"' : ''} d="M${previous.x} ${previous.y} L${xx} ${yy}"/>`;
       svg += `<circle data-series-point="${key}" data-effort-index="${i}" cx="${xx}" cy="${yy}" r="${i === selected ? mini ? 3.3 : 4 : mini ? 1.8 : 2.7}" fill="${estimated || p.zero ? 'none' : `var(--mp-${key})`}" stroke="var(--mp-${key})"><title>${curveEsc(row.label)} · ${labels[key]} ${key === 'ability' ? curveGain(row[key]) + ' ' + labels.points : curveMultiple(row[key])}${estimated ? ' ≈' : ''}</title></circle>`;
       if (!mini && series.size === 1 && !p.zero) svg += `<text class="point-label" x="${xx}" y="${yy + (key === 'ability' ? 13 : -8)}" text-anchor="${i === 0 ? 'start' : i === data.rows.length - 1 ? 'end' : 'middle'}" style="fill:var(--mp-${key})">${key === 'ability' ? curveGain(row[key]) : (estimated ? '≈' : '') + curveMultiple(row[key])}</text>`;
@@ -69,7 +90,7 @@ export function effortCurveSvg(data, { selected = 0, series = new Set(['ability'
   }
   data.rows.forEach((row, i) => {
     if (!mini || [0, data.baselineIndex, selected, data.rows.length - 1].includes(i)) svg += `<text class="${i === data.baselineIndex ? 'rec-label' : i === selected ? 'current-label' : ''}" x="${x(i)}" y="${height - 3}" text-anchor="${i === 0 ? 'start' : i === data.rows.length - 1 ? 'end' : 'middle'}">${i === data.baselineIndex ? '★' : ''}${curveEsc(row.label)}</text>`;
-    svg += `<rect class="hit" x="${x(i) - plotW / Math.max(2, data.rows.length - 1) / 2}" y="${top}" width="${plotW / Math.max(2, data.rows.length - 1)}" height="${plotH}" data-chart-detent="${i}" role="button" tabindex="${mini ? '-1' : '0'}" aria-label="${curveEsc(row.label)}"><title>${curveEsc(row.label)} · ${labels.ability} ${curveGain(row.ability)} ${labels.points} · ${labels.cost} ${curveMultiple(row.cost)} · ${labels.time} ${row.estimated && curveFinite(row.time) ? '≈' : ''}${curveMultiple(row.time)}</title></rect>`;
+    svg += `<rect class="hit" x="${x(i) - plotW / Math.max(2, data.rows.length - 1) / 2}" y="${top}" width="${plotW / Math.max(2, data.rows.length - 1)}" height="${plotH}" data-chart-detent="${i}" role="button" tabindex="${mini ? '-1' : '0'}" aria-label="${curveEsc(row.label)}"><title>${curveEsc(row.label)} · ${labels.ability} ${curveGain(row.ability)} ${labels.points} · ${labels.cost} ${row.costEstimated && curveFinite(row.cost) ? '≈' : ''}${curveMultiple(row.cost)} · ${labels.time} ${row.estimated && curveFinite(row.time) ? '≈' : ''}${curveFinite(row.time) ? curveMultiple(row.time) : labels.timeUnknown ?? '—'}</title></rect>`;
   });
   return svg + '</svg>';
 }
