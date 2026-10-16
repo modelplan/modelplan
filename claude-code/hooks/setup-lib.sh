@@ -1,10 +1,12 @@
 # Shared by the hook and /modelplan:setup (sourced, POSIX sh). State lives in
-# ~/.cache/modelplan-claude-code: hook-ran (heartbeat, the plugin version), asked-<kind> (the model
+# ~/.cache/modelplan-claude-code: hook-ran (every start: the plugin version), hook-result (how the
+# run ended: ok, failed with exit code and error, or why the CLI was not asked), hook-ok (the last
+# run where the CLI computed hints), asked-<kind> (the model
 # was asked to offer the fix once), awaiting-<kind> (that ask awaits the user's next reply),
 # notice-<kind> (last notice), <part>-declined (the user said not now: cli or statusline).
 here=${here:-$(dirname "$0")}
 state="$HOME/.cache/modelplan-claude-code"
-min_cli=0.5.6 # the Claude Code task-start brief and session-aware status-line readings
+min_cli=$(cat "$here/../cli-min.txt" 2>/dev/null) # one file for the hook, /modelplan:setup and the tests
 install_cmd='curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh'
 
 plugin_version() { sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../.claude-plugin/plugin.json" 2>/dev/null | head -1; }
@@ -44,10 +46,10 @@ ModelPlan: the optional modelplan CLI is not installed, so quota hints and the t
       ctx="The ModelPlan plugin's optional modelplan CLI is not installed, so its quota hints and task-start brief are off."
       ask="what the CLI adds (quota hints before resets and after them, a model and effort suggestion at the start of a task), and ask whether to install it. Only if they say yes, run: $install_cmd (latest release, checksum-checked, into ~/.local/bin; nothing else changes), then run ~/.local/bin/modelplan version to confirm and ~/.local/bin/modelplan sync to fetch the published data, and say hints start with their next message." ;;
     outdated)
-      msg="ModelPlan：modelplan CLI $version 低于 $min_cli，Claude Code 的任务开始简报不可用。运行 /modelplan:setup 升级。
-ModelPlan: modelplan CLI $version is older than $min_cli, so the Claude Code task-start brief is off. Run /modelplan:setup to upgrade."
-      ctx="The ModelPlan plugin found modelplan CLI $version, older than $min_cli, so the Claude Code task-start brief is off."
-      ask="that upgrading turns on the task-start brief, and ask whether to upgrade. Only if they say yes, run: $install_cmd (latest release, checksum-checked, into ~/.local/bin), then run ~/.local/bin/modelplan version to confirm; if an older copy elsewhere is still found first (command -v modelplan), say where." ;;
+      msg="ModelPlan：modelplan CLI $version 低于插件需要的 $min_cli，部分提醒（额度提前预警、换模型方案）和简报功能用不上。运行 /modelplan:setup 升级。
+ModelPlan: modelplan CLI $version is older than the $min_cli the plugin needs, so some hints (early warnings, cheaper-model options) and brief features are off. Run /modelplan:setup to upgrade."
+      ctx="The ModelPlan plugin found modelplan CLI $version, older than the $min_cli it needs, so some quota hints and brief features are off."
+      ask="that upgrading turns on the newer hints and brief, and ask whether to upgrade. Only if they say yes, run: $install_cmd (latest release, checksum-checked, into ~/.local/bin), then run ~/.local/bin/modelplan version to confirm; if an older copy elsewhere is still found first (command -v modelplan), say where." ;;
     statusline)
       msg="ModelPlan：还没有记录到 Claude Code 的额度（要靠 Model Plan 状态栏记录），额度提醒暂不可用。运行 /modelplan:statusline 设置。
 ModelPlan: no Claude Code quota recorded yet (the Model Plan status line records it), so quota hints are off. Run /modelplan:statusline to set it up."

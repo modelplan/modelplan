@@ -53,7 +53,7 @@ test('advice comes only from the CLI, keeps Codex events and drops anything malf
 test('text names the reader and why hints are off', () => {
   const off = { status: 'unavailable', reason: 'cli_missing', events: [] };
   const text = renderQuota({ ...pickCodex(expected), reader: 'python' }, 'zh', off);
-  assert.match(text, /主动提醒未启用：需要可选的 modelplan CLI 0\.4\+/);
+  assert.match(text, /主动提醒未启用：需要可选的 modelplan CLI，本机未安装/);
   assert.match(text, /Python 回退读取/);
   assert.match(renderQuota({ status: 'missing', account: null }, 'en', off), /Proactive hints off/);
 });

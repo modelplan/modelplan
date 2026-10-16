@@ -11,7 +11,7 @@ import (
 type adviceText struct {
 	None, Tentative, Cards, Unknown   string
 	Exhausted, Wait, UseCard          string
-	Tight, Down, Stay                 string
+	Tight, Down, Stay, OrModel        string
 	Surplus, Up, UpAny, Stronger, Top string
 	Announced                         string
 	OrFast, FastUnstated, FastUpTo    string
@@ -26,7 +26,7 @@ type adviceText struct {
 var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
-	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s", Stay: "保持当前档，重活留给强模型",
+	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s", Stay: "保持当前档，重活留给强模型", OrModel: "；或换 %s %s%s，能力不低于现在（除非这个任务确实需要当前模型）",
 	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
 	Announced: "Codex 官方预告重置（%s）：如果包含你的账号，%s额度剩下的 %s 届时作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
@@ -37,13 +37,13 @@ var adviceZH = adviceText{
 		"reset_credit_issued": "Codex 官方发放了重置卡", "": "Codex 官方有新的重置消息",
 	},
 	PublicTail: "，你的余量以本机读数为准",
-	Context:    "Model Plan 本机额度提醒（只建议，不要改用户的设置；在回答开头用一句话转告即可）：",
+	Context:    "Model Plan 本机额度提醒（只建议，不要改用户的设置；在回答开头用一句话转告即可。×是公开参考任务的 API 成本倍数：同一模型内大致对应额度消耗，跨模型只能作参考，不等于额度一定省这么多）：",
 }
 
 var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
-	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s", Stay: "stay at this effort and keep the strong model for the hard parts",
+	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s", Stay: "stay at this effort and keep the strong model for the hard parts", OrModel: "; or switch to %s %s%s, which scores at least as high (unless this task needs the current model)",
 	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
 	Announced: "Codex announced a reset (%s): if it covers your account, the %s left in your %s is void then", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
@@ -54,7 +54,7 @@ var adviceEN = adviceText{
 		"reset_credit_issued": "Codex issued reset credits", "": "New Codex reset news",
 	},
 	PublicTail: "; your own balance is the local reading",
-	Context:    "Model Plan local quota notice (advice only; do not change the user's settings; relay it in one sentence at the start of your reply):",
+	Context:    "Model Plan local quota notice (advice only; do not change the user's settings; relay it in one sentence at the start of your reply. × is the published API cost of a reference task: within one model it roughly tracks plan usage; across models it is only a guide, not a promised quota saving):",
 }
 
 func (s Style) at() adviceText {
@@ -144,6 +144,9 @@ func (s Style) AdviceLine(e advise.Event) string {
 		act := t.Stay
 		if st.Action == "step_down" && st.Label != "" {
 			act = fmt.Sprintf(t.Down, label(st), tail)
+		}
+		if alt := e.Alternative; alt != nil && alt.Label != "" {
+			act += fmt.Sprintf(t.OrModel, Short(alt.ModelName), label(alt), s.stepTail(alt))
 		}
 		return fmt.Sprintf(t.Tight, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
 	case advise.ResetSoonSurplus, advise.AnnouncedSurplus:
@@ -318,7 +321,7 @@ func TaskBrief(b *advise.Brief) string {
 		where, thread = "model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "session"
 	}
 	lines := []string{"Model Plan task-start brief (advice only: the user switches " + where + "; never say you changed them)."}
-	now := "Now: model unknown"
+	now := "Now: the plugin could not read the current model; go by the model your own instructions name"
 	if b.Model != "" {
 		now = "Now: " + b.Model + " · " + b.Effort
 		switch {
@@ -356,6 +359,11 @@ func TaskBrief(b *advise.Brief) string {
 		ms = append(ms, x)
 	}
 	lines = append(lines, "Models at their ★ effort (ability, cost per task relative to the cheapest): "+strings.Join(ms, "; ")+".")
+	data := "Costs are the published API cost of a reference task: within one model they roughly track plan usage; across models vendors weight usage their own way, so never promise a quota saving of that size."
+	if b.PublishedAt != "" {
+		data = "Data: Model Plan publication of " + b.PublishedAt[:min(10, len(b.PublishedAt))] + ". " + data
+	}
+	lines = append(lines, data)
 	if df := b.Default; df != nil {
 		why := "the published best value, within 3 pts of the strongest"
 		if b.DefaultReason == "strongest" {

@@ -25,6 +25,11 @@ func TestAdviceLines(t *testing.T) {
 			Suggest: &advise.Step{Action: "step_down", Label: "Med", Recommended: true, AbilityDelta: f(-4.8), CostRatio: f(0.73)}},
 			"Codex 每周额度偏紧（剩 8%，25时后重置）：降到 ★Med（-4.8分 ×0.73）",
 			"Codex week window is tight (8% left, resets in 25h): step down to ★Med (-4.8 pts ×0.73)"},
+		{advise.Event{Type: advise.WindowTight, Source: "codex", Window: "weekly", InMinutes: n(8487), RemainingPercent: f(28),
+			Suggest:     &advise.Step{Action: "step_down", Label: "Low", AbilityDelta: f(-6.4), CostRatio: f(0.59)},
+			Alternative: &advise.Step{Action: "cheaper_model", ModelName: "GPT-6.1 Sol", Label: "High", AbilityDelta: f(2.4), CostRatio: f(0.25)}},
+			"Codex 每周额度偏紧（剩 28%，5天21时后重置）：降到 Low（-6.4分 ×0.59）；或换 GPT-6.1 Sol High（+2.4分 ×0.25），能力不低于现在（除非这个任务确实需要当前模型）",
+			"Codex week window is tight (28% left, resets in 5d21h): step down to Low (-6.4 pts ×0.59); or switch to GPT-6.1 Sol High (+2.4 pts ×0.25), which scores at least as high (unless this task needs the current model)"},
 		{advise.Event{Type: advise.PeakStartsSoon, Source: "user", Plan: "zhipu-cn-legacy", InMinutes: n(30), Rate: &advise.Rate{Model: "GLM-5.3", From: f(1), To: f(3), Status: "TENTATIVE"}},
 			"zhipu-cn-legacy 30分后进入高峰：GLM-5.3 额度消耗 ×1 → ×3（待确认），重活可以提前做",
 			"zhipu-cn-legacy enters peak hours in 30m: GLM-5.3 quota rate ×1 → ×3 (tentative); do heavy work first"},
@@ -46,7 +51,7 @@ func TestAdviceLines(t *testing.T) {
 			t.Errorf("en:\n got %s\nwant %s", got, c.en)
 		}
 	}
-	if h := (Style{T: ZH}).AdviceShort(cases[5].e); h != "↺★Med" {
+	if h := (Style{T: ZH}).AdviceShort(cases[6].e); h != "↺★Med" {
 		t.Errorf("short = %q", h)
 	}
 	if ctx := (Style{T: ZH}).AdviceContext([]advise.Event{cases[0].e}); !strings.HasPrefix(ctx, "Model Plan 本机额度提醒") || !strings.Contains(ctx, "\n- Claude Code 5小时") {
@@ -65,6 +70,12 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+	if !strings.Contains(got, "never promise a quota saving") {
+		t.Errorf("brief does not say what the cost ratios are:\n%s", got)
+	}
+	if got := TaskBrief(&advise.Brief{Headroom: "unknown", Models: b.Models}); !strings.Contains(got, "go by the model your own instructions name") {
+		t.Errorf("unknown model:\n%s", got)
 	}
 	b.Harness = "claude-code"
 	got = TaskBrief(b)

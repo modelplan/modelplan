@@ -168,7 +168,9 @@ func evalWindow(w *Window, now time.Time) {
 		w.ProjectedPercent = round1(used / elapsed)
 	}
 	switch {
-	case used >= 90 || (w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && elapsed >= 0.2):
+	// Early in a window the projection is noisy, so it alone decides only after a fifth of it; a
+	// window already half used that is on pace to run out is tight however early it is.
+	case used >= 90 || (w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && (elapsed >= 0.2 || used >= 50)):
 		w.Pace = "tight"
 	case 100-used >= 30 && (left <= length*0.25 || (w.ProjectedPercent != nil && *w.ProjectedPercent <= 60 && elapsed >= 0.5)):
 		w.Pace = "surplus"

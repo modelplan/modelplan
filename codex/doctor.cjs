@@ -127,11 +127,13 @@ async function host(row) {
       const hl = await as.request('hooks/list', { cwds: [process.cwd()] });
       const mine = [].concat.apply([], (hl.data || []).map(d => d.hooks || [])).filter(h => row && h.pluginId === row.pluginId);
       const untrusted = mine.filter(h => h.trustStatus !== 'trusted');
-      let ran = null; try { ran = fs.statSync(path.join(os.homedir(), '.cache', 'modelplan-codex', 'hook-ran')).mtime; } catch (e) { /* never ran */ }
+      const st = f => { try { return fs.statSync(path.join(os.homedir(), '.cache', 'modelplan-codex', f)).mtime; } catch (e) { return null; } };
+      const ran = st('hook-ran'), okAt = st('hook-ok');
+      let result = null; try { result = fs.readFileSync(path.join(os.homedir(), '.cache', 'modelplan-codex', 'hook-result'), 'utf8').trim().split('\n')[0]; } catch (e) { /* older hook */ }
       add('hooks', !mine.length ? 'warn' : untrusted.length ? 'info' : 'ok', T('提醒钩子（额度提醒与任务开始简报）', 'Hint hook (quota hints and task-start brief)'),
-        mine.length ? mine.map(h => h.eventName + ' · ' + h.trustStatus).join(', ') + ' · ' + (ran ? T('最近运行 ', 'last ran ') + ran.toISOString() : T('从未运行', 'never ran')) : T('Codex 没有加载插件钩子', 'Codex loaded no plugin hooks'),
+        mine.length ? mine.map(h => h.eventName + ' · ' + h.trustStatus).join(', ') + ' · ' + (ran ? T('本机最近运行 ', 'last ran on this machine ') + ran.toISOString() + (result ? ' · ' + result : '') + (result && result.startsWith('failed') ? T(' · 最近成功 ', ' · last success ') + (okAt ? okAt.toISOString() : T('从未', 'never')) : '') : T('从未运行', 'never ran')) : T('Codex 没有加载插件钩子', 'Codex loaded no plugin hooks'),
         !mine.length ? T('更新插件到 0.11+ 后新开任务', 'Update the plugin to 0.11+, then open a new task')
-          : untrusted.length ? T('Codex 只运行已信任的钩子：CLI 中输入 /hooks 审核并信任，桌面端在钩子审核中信任', 'Codex runs only trusted hooks: review and trust them with /hooks in the CLI, or in the desktop app\'s hook review') : null);
+          : untrusted.length ? T('Codex 只运行已允许的钩子：CLI 中输入 /hooks；桌面端点输入框旁带黄点的钩子图标，确认来源 modelplan-codex 后允许', 'Codex runs only allowed hooks: /hooks in the CLI; in the desktop app the hook icon with a yellow dot next to the input, source modelplan-codex') : null);
     } catch (e) { add('hooks', 'info', T('插件钩子', 'Plugin hooks'), T('此版本 Codex 无法列出钩子', 'this Codex cannot list hooks')); }
     try {
       const res = await as.request('mcpServer/resource/read', { server: s.name, uri: UI_URI });

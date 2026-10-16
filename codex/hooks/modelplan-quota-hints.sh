@@ -5,11 +5,18 @@
 # JSON object. Reads and writes only ~/.cache/modelplan-codex. Never installs anything.
 here=$(dirname "$0")
 state="$HOME/.cache/modelplan-codex"
-# Heartbeat with this plugin's version: the dashboard tells "never ran" and "an update's hook has
-# not run yet" (Codex skips a changed hook until it is trusted again) apart from "ran".
+# Records, for the dashboard (all on this machine, from whichever chat ran last):
+#   hook-ran     every start: the plugin version and the hook definition's checksum (Codex asks
+#                to review a changed definition again and skips it until then; a new plugin
+#                version with the same definition needs nothing);
+#   hook-result  how the run ended: ok, failed (exit code, first error line), or why the CLI
+#                was not asked (missing, outdated, declined);
+#   hook-ok      the last run where the CLI computed the hints without an error.
 version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../package.json" 2>/dev/null | head -1)
-mkdir -p "$state" 2>/dev/null && printf '%s' "$version" > "$state/hook-ran" 2>/dev/null
-min=0.5.5
+def=$(cksum < "$here/hooks.json" 2>/dev/null | awk '{print $1}')
+mkdir -p "$state" 2>/dev/null && printf '%s def=%s\n' "$version" "$def" > "$state/hook-ran" 2>/dev/null
+result() { printf '%s\n' "$1" > "$state/hook-result" 2>/dev/null; }
+min=$(cat "$here/../cli-min.txt" 2>/dev/null)
 at_least() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
 input=$(cat)
 # The reply to the setup question asked on the previous prompt: a short "no" is recorded here, so
@@ -28,17 +35,29 @@ if [ -n "$declined" ]; then
   printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' \
     'ModelPlan：已记下“暂不”，90 天内不再提示。随时可以在 Model Plan 看板安装。\nModelPlan: noted, no reminders for 90 days; install from the dashboard any time.' \
     'The user just declined installing the modelplan CLI. The ModelPlan plugin recorded it and will not raise it for 90 days; acknowledge in at most one short sentence if at all, and run nothing for it.'
+  result "skipped: declined"
   exit 0
 fi
-cli=$(sh "$here/find-cli.sh")
+cli=$(sh "$here/find-cli.sh" "$min")
 if [ -z "$cli" ]; then
+  result "skipped: cli missing"
   sh "$here/setup-notice.sh" missing "" "$min"
   exit 0
 fi
 cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 if [ -z "$cliv" ] || ! at_least "$cliv" "$min"; then
   # Older CLIs still give hints; the upgrade notice takes their place when it is due.
-  sh "$here/setup-notice.sh" outdated "${cliv:-unknown}" "$min" && exit 0
+  sh "$here/setup-notice.sh" outdated "${cliv:-unknown}" "$min" && result "skipped: cli ${cliv:-unknown} outdated" && exit 0
 fi
-printf '%s' "$input" | "$cli" advise --hook codex 2>/dev/null
+# The prompt never waits on a failure, but the dashboard hears about it.
+out=$(printf '%s' "$input" | "$cli" advise --hook codex 2>"$state/hook-stderr")
+code=$?
+if [ "$code" -eq 0 ]; then
+  result ok
+  : > "$state/hook-ok" 2>/dev/null
+else
+  result "failed: exit $code: $(head -1 "$state/hook-stderr" 2>/dev/null | cut -c1-160)"
+fi
+rm -f "$state/hook-stderr"
+[ -n "$out" ] && printf '%s\n' "$out"
 exit 0

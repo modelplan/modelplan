@@ -30,7 +30,8 @@ test('one hook, on UserPromptSubmit, pointing at a script that exists', async ()
   const manifest = JSON.parse(await readFile(join(root, '.claude-plugin/plugin.json'), 'utf8'));
   const lib = await readFile(join(root, 'hooks/setup-lib.sh'), 'utf8');
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
-  assert.match(lib, /min_cli=\d+\.\d+\.\d+/);
+  assert.match(lib, /min_cli=\$\(cat "\$here\/\.\.\/cli-min\.txt"/);
+  assert.match((await readFile(join(root, 'cli-min.txt'), 'utf8')).trim(), /^\d+\.\d+\.\d+$/);
 });
 
 test('commands reach the CLI through the plugin, never a bare modelplan on PATH', async () => {
@@ -79,7 +80,7 @@ test('a short "no" right after the ask is recorded by the hook; anything else is
   await assert.rejects(stat(join(state, 'cli-declined')));
   await assert.rejects(stat(join(state, 'awaiting-missing')));
   // The status-line ask: a "no" rides with the CLI's own output.
-  await install('0.5.6');
+  await install('0.5.9');
   say('first');
   say('No thanks');
   assert.ok((await stat(join(state, 'statusline-declined'))).isFile());
@@ -91,7 +92,7 @@ test('a short "no" right after the ask is recorded by the hook; anything else is
 test('an outdated CLI off PATH: the upgrade notice when due, its own hints otherwise', async () => {
   const { home, sh, install } = await setup();
   await install('0.5.5');
-  assert.match(JSON.parse(sh('modelplan-quota-hints.sh')).systemMessage, /0\.5\.5 低于 0\.5\.6/);
+  assert.match(JSON.parse(sh('modelplan-quota-hints.sh')).systemMessage, /0\.5\.5 低于插件需要的 0\.5\.9/);
   assert.deepEqual(JSON.parse(sh('modelplan-quota-hints.sh')), { hints: 1 });
   assert.equal(await readFile(join(home, 'args'), 'utf8'), 'advise\n--hook\nclaude-code\n');
   await rm(home, { recursive: true });
@@ -99,7 +100,7 @@ test('an outdated CLI off PATH: the upgrade notice when due, its own hints other
 
 test('a current CLI: the status-line notice rides with its hints once, then plain hints', async () => {
   const { home, env, sh, install, state } = await setup();
-  await install('0.5.6');
+  await install('0.5.9');
   assert.deepEqual(JSON.parse(sh('modelplan-quota-hints.sh')), { hints: 1 });
   const args = (await readFile(join(home, 'args'), 'utf8')).split('\n');
   assert.deepEqual(args.slice(0, 3), ['advise', '--hook', 'claude-code']);
@@ -124,14 +125,30 @@ test('setup status reports each part on its own line', async () => {
   assert.match(s, /^hook: has not run yet/m);
   assert.match(s, /^hints: off/m);
   await install('0.5.5');
-  assert.match(sh('setup-status.sh', ''), /^cli: outdated 0\.5\.5 .*needs 0\.5\.6/m);
-  await install('0.5.6');
+  assert.match(sh('setup-status.sh', ''), /^cli: outdated 0\.5\.5 .*needs 0\.5\.9/m);
+  await install('0.5.9');
   sh('modelplan-quota-hints.sh');
   s = sh('setup-status.sh', '');
-  assert.match(s, /^cli: ok 0\.5\.6 at .*\.local\/bin\/modelplan$/m);
+  assert.match(s, /^cli: ok 0\.5\.9 at .*\.local\/bin\/modelplan$/m);
   assert.match(s, /^cli-path: not on this shell's PATH/m);
   assert.match(s, /^hook: last ran 0 min ago/m);
-  assert.match(s, /^hints: task-start brief on; quota hints wait for the status line$/m);
+  assert.match(s, /^hints: task-start brief computed; quota hints wait for the status line$/m);
   assert.equal(sh('run-cli.sh', ''), '{"hints":1}\n');
+  await rm(home, { recursive: true });
+});
+
+test('a failing CLI run is recorded with its exit code and never shown as working', async () => {
+  const { home, sh, state } = await setup();
+  await mkdir(join(home, '.local/bin'), { recursive: true });
+  await writeFile(join(home, '.local/bin/modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.9";; *) echo "cache unreadable" >&2; exit 7;; esac\n');
+  await chmod(join(home, '.local/bin/modelplan'), 0o755);
+  await mkdir(join(state), { recursive: true });
+  await writeFile(join(state, 'statusline-declined'), '');
+  assert.equal(sh('modelplan-quota-hints.sh'), '', 'the prompt goes on');
+  assert.equal((await readFile(join(state, 'hook-result'), 'utf8')).trim(), 'failed: exit 7: cache unreadable');
+  const s = sh('setup-status.sh', '');
+  assert.match(s, /^hook: last ran 0 min ago on this machine \(any session\), plugin [\d.]+, result: failed: exit 7: cache unreadable$/m);
+  assert.match(s, /^hook-last-success: never$/m);
+  assert.match(s, /^hints: failing/m);
   await rm(home, { recursive: true });
 });
