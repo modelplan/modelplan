@@ -7,6 +7,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { discover, MIN_MAJOR, SETUP_NEEDED } = require('./launch.cjs');
 
 const argv = process.argv.slice(2), flag = n => argv.includes(n), opt = n => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : null; };
@@ -126,8 +127,9 @@ async function host(row) {
       const hl = await as.request('hooks/list', { cwds: [process.cwd()] });
       const mine = [].concat.apply([], (hl.data || []).map(d => d.hooks || [])).filter(h => row && h.pluginId === row.pluginId);
       const untrusted = mine.filter(h => h.trustStatus !== 'trusted');
-      add('hooks', !mine.length ? 'warn' : untrusted.length ? 'info' : 'ok', T('插件钩子（会话提示与主动提醒）', 'Plugin hooks (session notice and hints)'),
-        mine.length ? mine.map(h => h.eventName + ' · ' + h.trustStatus).join(', ') : T('Codex 没有加载插件钩子', 'Codex loaded no plugin hooks'),
+      let ran = null; try { ran = fs.statSync(path.join(os.homedir(), '.cache', 'modelplan-codex', 'hook-ran')).mtime; } catch (e) { /* never ran */ }
+      add('hooks', !mine.length ? 'warn' : untrusted.length ? 'info' : 'ok', T('提醒钩子（额度提醒与任务开始简报）', 'Hint hook (quota hints and task-start brief)'),
+        mine.length ? mine.map(h => h.eventName + ' · ' + h.trustStatus).join(', ') + ' · ' + (ran ? T('最近运行 ', 'last ran ') + ran.toISOString() : T('从未运行', 'never ran')) : T('Codex 没有加载插件钩子', 'Codex loaded no plugin hooks'),
         !mine.length ? T('更新插件到 0.11+ 后新开任务', 'Update the plugin to 0.11+, then open a new task')
           : untrusted.length ? T('Codex 只运行已信任的钩子：CLI 中输入 /hooks 审核并信任，桌面端在钩子审核中信任', 'Codex runs only trusted hooks: review and trust them with /hooks in the CLI, or in the desktop app\'s hook review') : null);
     } catch (e) { add('hooks', 'info', T('插件钩子', 'Plugin hooks'), T('此版本 Codex 无法列出钩子', 'this Codex cannot list hooks')); }

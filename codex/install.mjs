@@ -4,20 +4,25 @@
 // no PATH edits, no shell profile, no sudo. The tool is app-only, so the model cannot call it.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { findCli } from './quota.mjs';
+import { cliStatus } from './setup.mjs';
 
 const SCRIPT = fileURLToPath(new URL('./install-cli.sh', import.meta.url));
 export const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh';
 export const supported = (platform = process.platform) => platform === 'darwin' || platform === 'linux';
 
-export async function installCli({ run = runScript, find = findCli, platform = process.platform } = {}) {
+// Installs when missing, upgrades when older than MIN_CLI, and reports success only after the
+// CLI that the plugin will actually use answers with a new enough version.
+export async function installCli({ run = runScript, status = cliStatus, platform = process.platform } = {}) {
   if (!supported(platform)) return { status: 'unsupported', command: null, url: 'https://github.com/modelplan/modelplan/releases' };
-  const before = find();
-  if (before) return { status: 'present', path: before };
+  const before = await status();
+  if (before.status === 'ok') return { status: 'present', path: before.path, version: before.version };
   const r = await run(SCRIPT);
-  const path = find();
-  if (r.code === 0 && path) return { status: 'installed', path, output: r.output };
-  return { status: 'failed', output: r.output, command: INSTALL_COMMAND };
+  const after = await status();
+  if (r.code === 0 && after.status === 'ok') return { status: before.status === 'outdated' ? 'upgraded' : 'installed', path: after.path, version: after.version, output: r.output };
+  const why = r.code !== 0 ? r.output
+    : after.status === 'outdated' ? `an older modelplan ${after.version} at ${after.path} is found first; remove it or upgrade it there`
+    : after.error ?? 'the installed CLI did not answer';
+  return { status: 'failed', output: why, command: INSTALL_COMMAND };
 }
 
 function runScript(script) {

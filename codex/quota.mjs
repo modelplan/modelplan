@@ -57,7 +57,7 @@ export async function readAdvice({ exec = run, cli = findCli() } = {}) {
   if (!cli) return { status: 'unavailable', reason: 'cli_missing', events: [] };
   let out;
   try { out = await exec(cli, ['advise', '--json', '--source', 'codex']); }
-  catch (e) { return { status: 'unavailable', reason: missing(e) ? 'cli_missing' : 'cli_without_advise', events: [] }; }
+  catch (e) { return { status: 'unavailable', reason: missing(e) ? 'cli_missing' : /unknown command|usage/i.test(String(e.message) + String(e.stderr ?? '')) ? 'cli_without_advise' : 'cli_failed', events: [] }; }
   try { return pickAdvice(JSON.parse(out)); } catch { return { status: 'unavailable', reason: 'advice_invalid', events: [] }; }
 }
 

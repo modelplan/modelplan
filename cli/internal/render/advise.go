@@ -317,7 +317,10 @@ func TaskBrief(b *advise.Brief) string {
 	now := "Now: model unknown"
 	if b.Model != "" {
 		now = "Now: " + b.Model + " · " + b.Effort
-		if b.AtRec {
+		switch {
+		case !b.EffortKnown:
+			now = "Now: " + b.Model + " (effort not known)"
+		case b.AtRec:
 			now += " (★ recommended)"
 		}
 	}
@@ -363,8 +366,10 @@ func TaskBrief(b *advise.Brief) string {
 		}
 		lines = append(lines, fmt.Sprintf("Default for ordinary tasks: %s ★%s (%s).%s", df.Name, df.Rec, why, at))
 	}
-	if len(b.Ladder) > 0 {
+	if len(b.Ladder) > 0 && b.EffortKnown {
 		lines = append(lines, b.Model+" efforts against the current one: "+steps(b.Ladder, "current")+". A step that adds no ability for more cost is not worth it.")
+	} else if len(b.Ladder) > 0 {
+		lines = append(lines, b.Model+" efforts against its ★: "+steps(b.Ladder, "★")+". A step that adds no ability for more cost is not worth it.")
 	}
 	if len(b.DefaultLadder) > 0 {
 		lines = append(lines, b.Default.Name+" efforts against its ★: "+steps(b.DefaultLadder, "★")+".")

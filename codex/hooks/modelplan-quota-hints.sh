@@ -1,0 +1,25 @@
+#!/bin/sh
+# ModelPlan's only hook (UserPromptSubmit). With the modelplan CLI: new quota hints and, on a
+# thread's first prompt, the task-start brief (`modelplan advise --hook codex`). Without it, or
+# with one too old: a setup notice (setup-notice.sh) instead, when one is due. Prints at most one
+# JSON object. Reads and writes only ~/.cache/modelplan-codex. Never installs anything.
+here=$(dirname "$0")
+state="$HOME/.cache/modelplan-codex"
+# Heartbeat with this plugin's version: the dashboard tells "never ran" and "an update's hook has
+# not run yet" (Codex skips a changed hook until it is trusted again) apart from "ran".
+version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../package.json" 2>/dev/null | head -1)
+mkdir -p "$state" 2>/dev/null && printf '%s' "$version" > "$state/hook-ran" 2>/dev/null
+min=0.5.5
+at_least() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
+cli=$(sh "$here/find-cli.sh")
+if [ -z "$cli" ]; then
+  sh "$here/setup-notice.sh" missing "" "$min"
+  exit 0
+fi
+cliv=$("$cli" version 2>/dev/null | awk '{print $2}')
+if [ -z "$cliv" ] || ! at_least "$cliv" "$min"; then
+  # Older CLIs still give hints; the upgrade notice takes their place when it is due.
+  sh "$here/setup-notice.sh" outdated "${cliv:-unknown}" "$min" && exit 0
+fi
+"$cli" advise --hook codex 2>/dev/null
+exit 0

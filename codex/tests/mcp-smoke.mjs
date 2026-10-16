@@ -27,7 +27,7 @@ const client = new Client({ name: "modelplans-demo-acceptance", version: "0.1.0"
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.deepEqual(tools.tools.map(t => t.name).sort(), ["get_model_dashboard", "install_modelplan_cli", "open_model_board", "open_model_dashboard", "open_model_panel"]);
+  assert.deepEqual(tools.tools.map(t => t.name).sort(), ["dismiss_cli_setup", "get_model_dashboard", "install_modelplan_cli", "open_model_board", "open_model_dashboard", "open_model_panel"]);
   const view = tools.tools.find(t => t.name === "open_model_dashboard");
   assert.equal(view._meta.ui.resourceUri, "ui://modelplans/model-dashboard.html");
   assert.equal(view._meta["openai/ui"], undefined, "the model's card declares no entrypoint");
