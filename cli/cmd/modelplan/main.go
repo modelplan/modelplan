@@ -543,7 +543,14 @@ func refreshAccountLater(st *store.Store) {
 // refreshCodexBarLater runs CodexBar in the background for the enabled providers when the cached
 // reading is due (both hooks, quota and advise), so nothing waits for it.
 func refreshCodexBarLater(st *store.Store, now time.Time) {
-	if quota.CodexBarDue(quotaPaths(st), now) {
+	p := quotaPaths(st)
+	if len(quota.CodexBarEnabled(p.CodexBarFile)) == 0 {
+		return
+	}
+	switch {
+	case quota.CodexBarFetchDue(st.Dir, now):
+		_ = detach.Start("codexbar", "fetch", "--quiet") // refreshes once fetched
+	case quota.CodexBarDue(p, now):
 		_ = detach.Start("codexbar", "refresh", "--quiet")
 	}
 }

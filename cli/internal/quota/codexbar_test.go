@@ -279,3 +279,35 @@ func TestLiveCodexBarContract(t *testing.T) {
 		t.Logf("%s: %s %s", prov, e.Status, e.Error)
 	}
 }
+
+func TestPinnedCodexBarIsFetchedEvenWithAUserCopy(t *testing.T) {
+	if _, ok := codexbarPin[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
+		t.Skip("no pinned build for this platform")
+	}
+	cache := t.TempDir()
+	home := t.TempDir()
+	user := filepath.Join(home, ".local", "bin", "codexbar")
+	_ = os.MkdirAll(filepath.Dir(user), 0o755)
+	_ = os.WriteFile(user, []byte("#!/bin/sh\n"), 0o755)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	if CodexBarBin(cache, home) != user {
+		t.Fatal("a copy the user installed is used meanwhile")
+	}
+	if !CodexBarFetchDue(cache, time.Now()) {
+		t.Fatal("an older user copy does not stop the pinned release from being fetched")
+	}
+	// A failed fetch is retried after half an hour, not on every prompt.
+	if _, err := FetchCodexBar(context.Background(), cache, "http://127.0.0.1:9"); err == nil {
+		t.Fatal("no server: the fetch fails")
+	}
+	if !strings.HasPrefix(CodexBarFetchResult(cache), CodexBarVersion+" failed: download failed") {
+		t.Fatalf("fetch result = %q", CodexBarFetchResult(cache))
+	}
+	if CodexBarFetchDue(cache, time.Now()) || !CodexBarFetchDue(cache, time.Now().Add(31*time.Minute)) {
+		t.Fatal("a failed fetch waits half an hour")
+	}
+	t.Setenv("MODELPLAN_CODEXBAR", user)
+	if CodexBarFetchDue(cache, time.Now().Add(time.Hour)) {
+		t.Fatal("an explicit MODELPLAN_CODEXBAR is the user's choice: nothing to fetch")
+	}
+}

@@ -170,6 +170,38 @@ func CodexBarBin(cache, home string) string {
 	return ""
 }
 
+// CodexBarPinned reports whether the pinned copy is in place.
+func CodexBarPinned(cache string) bool {
+	return executable(filepath.Join(codexbarPinnedDir(cache), "CodexBarCLI"))
+}
+
+func codexbarFetchMark(cache string) string { return filepath.Join(cache, "codexbar", "fetch-result") }
+
+// CodexBarFetchDue: the pinned copy is missing and no fetch was tried in the last 30 minutes.
+// A copy the user installed does not make it unnecessary: its provider code may be months
+// older than the pinned release, and only the pinned release's output is tested.
+func CodexBarFetchDue(cache string, now time.Time) bool {
+	if codexbarOff() || os.Getenv("MODELPLAN_CODEXBAR") != "" || cache == "" || CodexBarPinned(cache) {
+		return false
+	}
+	if _, ok := codexbarPin[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
+		return false
+	}
+	fi, err := os.Stat(codexbarFetchMark(cache))
+	return err != nil || now.Sub(fi.ModTime()) >= codexbarRetryAfter
+}
+
+// CodexBarFetchResult: the last fetch's outcome ("" when none was tried).
+func CodexBarFetchResult(cache string) string {
+	b, _ := os.ReadFile(codexbarFetchMark(cache))
+	return strings.TrimSpace(string(b))
+}
+
+func markFetch(cache, result string) {
+	_ = os.MkdirAll(filepath.Join(cache, "codexbar"), 0o700)
+	_ = writeAtomic(codexbarFetchMark(cache), []byte(CodexBarVersion+" "+result+"\n"))
+}
+
 func executable(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0
@@ -177,7 +209,15 @@ func executable(p string) bool {
 
 // FetchCodexBar downloads the pinned CodexBar CLI for this platform into the cache, checks it
 // against the pinned SHA-256 and unpacks it; older pinned versions are removed. base "" is GitHub.
-func FetchCodexBar(ctx context.Context, cache, base string) (string, error) {
+func FetchCodexBar(ctx context.Context, cache, base string) (bin string, err error) {
+	markFetch(cache, "started")
+	defer func() {
+		if err != nil {
+			markFetch(cache, "failed: "+short(err.Error()))
+		} else {
+			markFetch(cache, "ok")
+		}
+	}()
 	pin, ok := codexbarPin[runtime.GOOS+"/"+runtime.GOARCH]
 	if !ok {
 		return "", fmt.Errorf("no CodexBar CLI build for %s/%s", runtime.GOOS, runtime.GOARCH)
