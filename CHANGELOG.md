@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.2 and Claude Code plugin 0.7.2 (2026-10-16)
+
+- Pinned CLI v0.5.12; the Codex panel changes listed under v0.5.12.
+
 ## v0.5.12 (2026-10-16)
 
 - **Switching back to a model no longer resends the brief.** 0.5.11 compared against the last brief only, so Sol → Astra → Sol sent the Sol brief again, contrary to its own changelog (found by a Codex review). A thread now remembers every model it was briefed on, with the last effort known for each: a model it was briefed on is no reason by itself, a new effort on it still is.
