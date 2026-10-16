@@ -187,3 +187,20 @@ func TestBriefForAGLMSessionNamesThePlanAndItsLineup(t *testing.T) {
 		t.Fatalf("rates = %+v", b.PlanRates)
 	}
 }
+
+func TestUndeclaredListsThePlansThatMeterTheModel(t *testing.T) {
+	d := glmDigest(false)
+	s := glmSession("max", zai)
+	m, plans := Undeclared(&s, quota.Report{Accounts: []quota.Account{s}}, d)
+	if m == nil || m.ID != "glm" || len(plans) != 2 {
+		t.Fatalf("model %v plans %+v", m, plans)
+	}
+	r := quota.Report{Accounts: []quota.Account{s, declared("zhipu-global-pro", "legacy-v2")}}
+	if m, _ := Undeclared(&s, r, d); m != nil {
+		t.Fatal("asked although the plan is declared")
+	}
+	claude := claude("medium", 30, time.Hour, 300)
+	if m, _ := Undeclared(&claude, quota.Report{}, d); m != nil {
+		t.Fatal("Claude on Claude's plan is not another vendor's model")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -673,7 +674,6 @@ func oneOf(v string, allowed ...string) string {
 	return "unknown"
 }
 
-// clip keeps harness-reported identifiers short and printable; they are data, not instructions.
 var endpointRe = regexp.MustCompile(`^https?://[a-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/-]*)?$`)
 
 // clipEndpoint keeps an already reduced base URL (scheme, host, path) and nothing else.
@@ -688,6 +688,7 @@ func clipEndpoint(s string) string {
 // 1M-context variants with a suffix ("glm-5.3[1m]", "claude-opus-4-6[1m]").
 var harnessIdent = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}(\[[a-z0-9]{1,8}\])?$`)
 
+// clip keeps harness-reported identifiers short and printable; they are data, not instructions.
 func clip(s string) string {
 	s = strings.TrimSpace(s)
 	if len(s) > 80 || !harnessIdent.MatchString(s) {
@@ -715,4 +716,73 @@ func writeAtomic(path string, b []byte) error {
 		os.Remove(tmp)
 	}
 	return err
+}
+
+// DeclarePlan records in local.json which plan the user has (and its metering generation), or
+// removes it, keeping everything else in the file as it is. The user asked for it; nothing
+// else writes this file.
+func DeclarePlan(path, planID, generation string, remove bool) error {
+	if !ident.MatchString(planID) || (generation != "" && !ident.MatchString(generation)) {
+		return errors.New("plan and generation are ids like zhipu-global-pro and legacy-v2")
+	}
+	doc := map[string]any{"schemaVersion": 1}
+	b, status := readBounded(path, 128<<10)
+	switch status {
+	case "":
+		d := json.NewDecoder(bytes.NewReader(b))
+		d.UseNumber()
+		if err := d.Decode(&doc); err != nil {
+			return fmt.Errorf("%s is not valid JSON; fix or move it first", path)
+		}
+		if v, _ := doc["schemaVersion"].(json.Number); v.String() != "1" {
+			return fmt.Errorf("%s has an unsupported schemaVersion", path)
+		}
+	case "missing":
+	default:
+		return fmt.Errorf("%s: %s", path, status)
+	}
+	var plans []any
+	if raw, ok := doc["plans"]; ok {
+		if plans, ok = raw.([]any); !ok {
+			return fmt.Errorf("%s: plans is not a list", path)
+		}
+	}
+	var out []any
+	found := false
+	for _, x := range plans {
+		p, ok := x.(map[string]any)
+		if !ok || p["planId"] != planID {
+			out = append(out, x)
+			continue
+		}
+		found = true
+		if remove {
+			continue
+		}
+		if generation != "" {
+			p["generation"] = generation
+		} else {
+			delete(p, "generation")
+		}
+		out = append(out, p)
+	}
+	if !found && !remove {
+		p := map[string]any{"planId": planID}
+		if generation != "" {
+			p["generation"] = generation
+		}
+		out = append(out, p)
+	}
+	if out == nil {
+		out = []any{}
+	}
+	doc["plans"] = out
+	nb, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return writeAtomic(path, append(nb, '\n'))
 }
