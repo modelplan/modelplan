@@ -2,11 +2,12 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## CLI (unreleased)
+## v0.5.1 (2026-10-16)
 
+- Plugins: Codex 0.11.0.
 - `modelplan advise`: **spend ahead of an announced Codex reset.** When OpenAI has announced a reset with a time in the next 24 hours and the longer Codex window still has 20% or more that would otherwise last past it, `announced_reset_with_surplus` suggests the next effort, a stronger model or Fast, worded as applying only if the reset covers the account. The switch-back hint after it waits for a reading taken after the announced time that shows the window restarted, and is kept for up to six hours for that proof. An announcement whose time has passed is no longer shown as news.
 
-## Codex plugin 0.11.0 (unreleased)
+## Codex plugin 0.11.0 (2026-10-16)
 
 - **The hooks now load.** The manifest moved to Codex's native `.codex-plugin/plugin.json`. The old root `plugin.json` carried the Agent Plugins `$schema`, and Codex then skipped the plugin's hooks, so the `UserPromptSubmit` hint hook never ran. `codex app-server` `hooks/list` now shows both hooks; `doctor.cjs` reports whether they are loaded and trusted.
 - **Getting the CLI:** an **Install CLI** button on the dashboard (macOS, Linux; app-only tool `install_modelplan_cli`, the click is the consent) runs the bundled copy of `install.sh`: latest release, checksum-checked, into `~/.local/bin`, nothing else changed. A `setup` onboarding skill checks for the CLI after install and offers it. A `SessionStart` hook shows a short notice with the install command when the CLI is missing, at most once a week.
