@@ -80,7 +80,7 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 		if i > 0 {
 			fmt.Fprintln(w)
 		}
-		head := []string{s.c(bold+";"+hi, q.Source[a.Source])}
+		head := []string{s.c(bold+";"+hi, sourceName(q, a.Source))}
 		if a.Plan != "" {
 			head = append(head, a.Plan)
 		}
@@ -135,6 +135,19 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 		}
 		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), q.Headroom[a.Headroom]))
 	}
+}
+
+// sourceName: the harness, "manual", or a provider read through CodexBar ("Cursor · CodexBar").
+func sourceName(q quotaText, source string) string {
+	if n, ok := q.Source[source]; ok {
+		return n
+	}
+	if p, ok := strings.CutPrefix(source, "codexbar:"); ok {
+		if x, ok := quota.CodexBarProviders[p]; ok {
+			return x.Name + " · CodexBar"
+		}
+	}
+	return source
 }
 
 // QuotaSegment is the status-line part: "5h 39% ↻42m · week 41%" with a headroom arrow,

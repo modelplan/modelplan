@@ -2,6 +2,16 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.13 (2026-10-16)
+
+- **Other plans through CodexBar (opt-in): `modelplan codexbar enable cursor zai`.** Copilot, Cursor, Kiro, OpenCode Go and Z.ai / GLM keep their meters behind the vendor's own sign-in, so this client reads them through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Credentials stay with CodexBar: its config, another CLI's login, the Cursor app or browser cookies, and never a Keychain prompt in the background. This client handles none of them.
+  - The first run fetches CodexBar's pinned release (`internal/quota/codexbar-pin.json`, about 14 MB on macOS and 53 MB on Linux), checked against the pinned SHA-256.
+  - It runs in the background at most every 10 minutes, one provider per call, and caches only windows, reset times and the plan name.
+  - `modelplan codexbar` shows what each provider returned and, when nothing was read, what CodexBar needs.
+  - `quota` and the dashboards show these plans; they give no hints inside Claude Code or Codex.
+  - OpenCode Go's local estimate uses fixed denominators and is not shown as quota.
+  - A weekly workflow proposes newer CodexBar releases after a live check that their JSON still parses.
+
 ## Open data (2026-10-16)
 
 - **`data/` mirrors Model Plan's reviewed data.** Plan tiers, prices, quota metering, plan model access, calendars, model identities and lineages, speed claims and effort policies, copied exactly from [modelplan.ai/open-data.json](https://modelplan.ai/open-data.json) with SHA-256 checks. The hourly `data-sync` workflow turns each change into a pull request that lists the records added, removed and changed. Data is [CC BY 4.0](data/LICENSE); `real-api-pricing/` keeps its MIT license.
