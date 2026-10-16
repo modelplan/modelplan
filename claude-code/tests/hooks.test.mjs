@@ -154,3 +154,11 @@ test('fetch-cli records why it failed and leaves no CLI behind', async () => {
   assert.equal(execFileSync('sh', ['-c', `sh "${join(plug, 'hooks/fetch-cli.sh')}"; echo $?`], { env: { ...env, MODELPLAN_PLUGIN_CLI: 'off' }, encoding: 'utf8' }).trim(), '1');
   await rm(home, { recursive: true });
 });
+
+test('setup lists the other plans read through CodexBar, as the CLI reports them', async () => {
+  const { home, sh, pinned } = await setup();
+  await pinned(cli(pin.version, `[ "$1" = codexbar ] && printf 'CodexBar CLI: /c/CodexBarCLI (pinned 0.76.0)\\n  zai          ok\\n  cursor       unavailable no session\\n               → signed in to cursor.com\\n'`));
+  const out = sh('setup-status.sh', '');
+  assert.match(out, /^codexbar \(other plans, optional\):\n  CodexBar CLI: \/c\/CodexBarCLI \(pinned 0\.76\.0\)\n    zai {10}ok\n    cursor {7}unavailable no session\n/m);
+  await rm(home, { recursive: true });
+});

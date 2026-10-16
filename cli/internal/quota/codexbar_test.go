@@ -89,7 +89,7 @@ func TestCodexBarReadsEnabledProvidersWithoutIdentities(t *testing.T) {
 	if !cur.ObservedAt.Equal(time.Date(2026, 10, 16, 14, 40, 49, 0, time.UTC)) && !cur.ObservedAt.Equal(cbNow) {
 		t.Fatalf("observed = %v", cur.ObservedAt)
 	}
-	if zai.Plan != "GLM Coding Pro" || zai.Windows[0].Kind != "five_hour" || zai.Windows[1].Kind != "weekly" || zai.Windows[0].Limit != "5 hours" {
+	if zai.Plan != "GLM Coding Pro" || zai.Windows[0].Kind != "five_hour" || zai.Windows[1].Kind != "weekly" || zai.Windows[0].Limit != "" {
 		t.Fatalf("zai = %+v", zai)
 	}
 	if zai.Windows[0].Pace == "" || zai.Headroom == "" {

@@ -15,7 +15,17 @@ export function pickCodex(report) {
   if (report?.schemaVersion !== 1 || !Array.isArray(report.accounts)) throw Error('quota_report_invalid');
   const source = report.sources?.find(s => s.source === 'codex') ?? { status: 'missing' };
   const account = thread(report.accounts.find(a => a.source === 'codex') ?? null);
-  return { status: account ? 'ok' : source.status, reason: source.reason ?? null, evaluatedAt: report.evaluatedAt, account, note: report.note };
+  return { status: account ? 'ok' : source.status, reason: source.reason ?? null, evaluatedAt: report.evaluatedAt, account, others: others(report), note: report.note };
+}
+
+// Other plans the user enabled through CodexBar (`modelplan codexbar enable …`), as the CLI cached
+// them. Shown under Codex's own quota; hints and advice stay Codex's.
+export const OTHER_PLANS = { copilot: 'GitHub Copilot', cursor: 'Cursor', zai: 'Z.ai / GLM Coding Plan', kiro: 'Kiro', opencodego: 'OpenCode Go' };
+function others(report) {
+  return report.accounts.filter(a => typeof a?.source === 'string' && a.source.startsWith('codexbar:') && Array.isArray(a.windows)).slice(0, 8).map(a => {
+    const id = a.source.slice('codexbar:'.length);
+    return { id, name: OTHER_PLANS[id] ?? id, plan: a.plan ?? null, stale: a.stale === true, observedAt: a.observedAt ?? null, windows: a.windows.slice(0, 6) };
+  });
 }
 
 // The MCP server is never told which thread called it, so its reading is at best the most
@@ -95,5 +105,5 @@ export async function readQuota({ exec = run, cli = findCli() } = {}) {
     try { return { ...pickCodex(JSON.parse(await exec(cmd, args))), reader }; }
     catch (e) { tried.push(cmd + (missing(e) ? ' missing' : ' failed')); }
   }
-  return { status: 'unavailable', reader: null, reason: 'no local reader: ' + tried.join(', ') + ' (install Python 3 or the modelplan CLI)', account: null };
+  return { status: 'unavailable', reader: null, others: [], reason: 'no local reader: ' + tried.join(', ') + ' (install Python 3 or the modelplan CLI)', account: null };
 }

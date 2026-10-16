@@ -88,3 +88,33 @@ test('a Codex account reading shows its reset credits and names its source', () 
   assert.match(zh, /· Codex 账号读数/);
   assert.match(en, /2 full reset credit\(s\) available, first expires 2026-10-29 19:12Z/);
 });
+
+test('plans read through CodexBar come along, after Codex, with what each still needs', async () => {
+  const report = { ...expected, accounts: [...expected.accounts,
+    { source: 'codexbar:zai', plan: 'Pro', observedAt: expected.evaluatedAt, stale: false, via: 'codexbar', headroom: 'unknown',
+      windows: [{ kind: 'five_hour', usedPercent: 1, resetsInMinutes: 200, pace: 'surplus' }, { kind: 'weekly', usedPercent: 52.4, resetsInMinutes: null, pace: 'unknown' }] }] };
+  const q = pickCodex(report);
+  assert.equal(q.account.source, 'codex', 'Codex stays the account the advice is about');
+  assert.deepEqual(q.others.map(o => [o.id, o.name, o.plan, o.windows.length]), [['zai', 'Z.ai / GLM Coding Plan', 'Pro', 2]]);
+  const setup = { cli: { status: 'ok', version: '9.9.9' }, hook: { lastRun: new Date().toISOString(), current: true, result: 'ok' }, advice: { status: 'ok' }, adviceEvents: 0,
+    codexbar: { enabled: ['cursor', 'zai'], binary: '/c/CodexBarCLI', providers: [{ id: 'zai', name: 'Z.ai / GLM Coding Plan', status: 'ok' }, { id: 'cursor', name: 'Cursor', status: 'unavailable', reason: 'no session', needs: 'signed in to cursor.com' }] } };
+  const text = renderQuota(q, 'en', { status: 'ok', events: [] }, setup);
+  assert.match(text, /Other plans \(read by CodexBar, on this machine\)\n  Z\.ai \/ GLM Coding Plan Pro: 5h 1% used ↻ 3h20m · week 52% used\n/);
+  assert.match(text, /Setup: Cursor was not read through CodexBar \(unavailable: no session\); needs signed in to cursor\.com/);
+  assert.doesNotMatch(text, /Setup: Z\.ai/);
+  assert.doesNotMatch(text, /Setup complete/, 'a provider that needs something is not a complete setup');
+  const off = renderQuota(q, 'zh', { status: 'ok', events: [] }, { ...setup, codexbar: { enabled: ['zai'], binary: null, fetch: '0.76.0 failed: download failed', providers: [] } });
+  assert.match(off, /设置：已开启 CodexBar（zai），CodexBar CLI 还不可用：0\.76\.0 failed: download failed/);
+  assert.equal(pickCodex(expected).others.length, 0);
+});
+
+test('the CodexBar state is the CLI\'s own report; an older or missing CLI gives none', async () => {
+  const { codexbarStatus } = await import('../setup.mjs');
+  const calls = [];
+  const s = await codexbarStatus({ cli: '/x/modelplan', exec: async (cmd, args) => { calls.push([cmd, ...args]); return JSON.stringify({ schemaVersion: 1, enabled: ['zai'], binary: '/c/CodexBarCLI', pinnedVersion: '0.76.0', pinned: true, fetch: '',
+    providers: [{ id: 'zai', name: 'Z.ai / GLM Coding Plan', status: 'ok' }] }); } });
+  assert.deepEqual(calls, [['/x/modelplan', 'codexbar', '--json']]);
+  assert.deepEqual(s, { enabled: ['zai'], binary: '/c/CodexBarCLI', pinnedVersion: '0.76.0', pinned: true, fetch: null, providers: [{ id: 'zai', name: 'Z.ai / GLM Coding Plan', status: 'ok', reason: null, needs: null }] });
+  assert.equal(await codexbarStatus({ cli: null }), null);
+  assert.equal(await codexbarStatus({ cli: '/x/modelplan', exec: async () => { throw Error('usage: modelplan …'); } }), null);
+});

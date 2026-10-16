@@ -5,6 +5,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 ## Unreleased
 
 - **The pinned CodexBar release is fetched even when one is already installed.** 0.5.13 used any `codexbar` it found and fetched only when there was none. On the owner's Mac that meant CodexBar 0.60.3, 16 releases older than the pin, whose provider code (Cursor's changes almost daily) and output were never tested. A copy the user installed is now used only until the pinned one is in place; a failed fetch is retried after 30 minutes. `MODELPLAN_CODEXBAR=<path>` still chooses a copy explicitly. `modelplan codexbar` says which copy runs.
+- **Window titles that only restate the window are dropped.** CodexBar calls Z.ai's windows "5 hours" and "Weekly", which printed as "5h 5 hours". Titles that name something else ("Third Party", "MCP") stay.
+- **Plugins: setup offers CodexBar, and the Codex dashboard shows those plans.** `/modelplan:setup` (Claude Code) and the Codex setup skill now list the enabled providers with what each still needs, and, when none is enabled, ask once which of these plans the user has; enabling runs only after the user agrees, with what CodexBar reads said first. The Codex dashboard and its text summary list the plans read through CodexBar under Codex's own quota (v0.5.13 said they did, but the plugin kept only the Codex account), and a provider that was not read appears as a setup line with its next step.
 - **Claude Code prompts refresh CodexBar too.** In 0.5.13 only `quota`, `advise` and Codex prompts started the background CodexBar refresh, so a Claude Code user's reading went stale. Found by testing the plugin in Claude Code.
 
 ## Codex plugin 0.15.3 and Claude Code plugin 0.7.3 (2026-10-16)
