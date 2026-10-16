@@ -42,28 +42,70 @@ test('findCli looks past a short PATH into ~/.local/bin', async () => {
 test('install runs only when needed and reports a failure with the manual command', async () => {
   let ran = 0;
   assert.equal((await installCli({ platform: 'win32', run: async () => ran++ })).status, 'unsupported');
-  assert.equal((await installCli({ platform: 'linux', find: () => '/x/modelplan', run: async () => ran++ })).status, 'present');
+  assert.equal((await installCli({ platform: 'linux', status: async () => ({ status: 'ok', path: '/x/modelplan', version: '0.5.4' }), run: async () => ran++ })).status, 'present');
   assert.equal(ran, 0);
   let found = null;
-  const ok = await installCli({ platform: 'darwin', find: () => found, run: async () => { found = '/h/.local/bin/modelplan'; return { code: 0, output: 'Installed' }; } });
+  const ok = await installCli({ platform: 'darwin', status: async () => found ? { status: 'ok', path: found, version: '0.5.4' } : { status: 'missing' }, run: async () => { found = '/h/.local/bin/modelplan'; return { code: 0, output: 'Installed' }; } });
   assert.deepEqual([ok.status, ok.path], ['installed', '/h/.local/bin/modelplan']);
-  const bad = await installCli({ platform: 'linux', find: () => null, run: async () => ({ code: 1, output: 'curl: (6)' }) });
+  const bad = await installCli({ platform: 'linux', status: async () => ({ status: 'missing' }), run: async () => ({ code: 1, output: 'curl: (6)' }) });
   assert.equal(bad.status, 'failed');
   assert.match(bad.command, /install\.sh \| sh$/);
 });
 
-test('session hook: a notice at most once a week without the CLI, nothing with it', async () => {
+test('one hook: hints with a current CLI, a setup notice without one, asked once, quiet after "not now"', async () => {
   const home = await mkdtemp(join(tmpdir(), 'modelplan-hook-'));
-  const env = { PATH: '/usr/bin:/bin', HOME: home, PLUGIN_ROOT: root, PLUGIN_DATA: join(home, 'data') };
-  const run = (script, e = env) => execFileSync('sh', [join(root, 'hooks', script)], { env: e, input: '{}', encoding: 'utf8' });
-  const first = JSON.parse(run('cli-hint.sh'));
-  assert.match(first.systemMessage, /modelplan CLI/);
-  assert.equal(first.hookSpecificOutput.hookEventName, 'SessionStart');
-  assert.equal(run('cli-hint.sh'), '', 'shown once a week');
-  assert.equal(run('advise.sh'), '', 'no CLI, no hints, no error');
-  await fakeCli(join(home, '.local/bin'));
-  await rm(join(home, 'data'), { recursive: true });
-  assert.equal(run('cli-hint.sh'), '', 'CLI in ~/.local/bin is found even off PATH');
-  assert.equal(run('advise.sh').trim(), 'fake advise --hook codex');
+  const env = { PATH: '/usr/bin:/bin', HOME: home, PLUGIN_ROOT: root };
+  const run = () => execFileSync('sh', [join(root, 'hooks/modelplan-quota-hints.sh')], { env, input: '{"session_id":"t"}', encoding: 'utf8' });
+  const state = join(home, '.cache/modelplan-codex');
+  const first = JSON.parse(run());
+  assert.match(first.systemMessage, /未检测到可选的 modelplan CLI[\s\S]*not installed/);
+  assert.equal(first.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+  assert.match(first.hookSpecificOutput.additionalContext, /ask whether to install[\s\S]*cli-declined/, 'the first notice asks the model to ask once');
+  assert.ok((await stat(join(state, 'hook-ran'))).isFile(), 'every run leaves a heartbeat for the dashboard');
+  assert.equal(run(), '', 'not again within a week');
+  await rm(join(state, 'notice-missing'));
+  const later = JSON.parse(run());
+  assert.match(later.hookSpecificOutput.additionalContext, /only if the user asks/, 'later notices do not ask again');
+  await rm(join(state, 'notice-missing'));
+  await writeFile(join(state, 'cli-declined'), '');
+  assert.equal(run(), '', 'declined: quiet');
+
+  // An outdated CLI off PATH: the upgrade notice when due, the CLI's own hints otherwise.
+  await rm(join(state, 'cli-declined'));
+  const bin = join(home, '.local/bin');
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.1";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
+  await chmod(join(bin, 'modelplan'), 0o755);
+  const up = JSON.parse(run());
+  assert.match(up.systemMessage, /0\.5\.1 低于 0\.5\.5/);
+  assert.deepEqual(JSON.parse(run()), { hints: 'advise --hook codex' });
+  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.5";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
+  await rm(join(state, 'notice-outdated'));
+  assert.deepEqual(JSON.parse(run()), { hints: 'advise --hook codex' }, 'a current CLI: hints only, never a notice');
+  await rm(home, { recursive: true });
+});
+
+test('setup status keeps each part apart and install verifies the version it ends with', async () => {
+  const { setupStatus, decline, cliStatus, atLeast } = await import('../setup.mjs');
+  const home = await mkdtemp(join(tmpdir(), 'modelplan-setup-'));
+  let s = await setupStatus({ home, find: () => null });
+  assert.deepEqual([s.cli.status, s.hook.lastRun, s.declined], ['missing', null, false]);
+  await mkdir(join(home, '.cache/modelplan-codex'), { recursive: true });
+  await writeFile(join(home, '.cache/modelplan-codex/hook-ran'), '0.12.0');
+  s = await setupStatus({ home, find: () => null, pluginVersion: '0.13.0' });
+  assert.deepEqual([s.hook.version, s.hook.current], ['0.12.0', false], 'an update whose hook has not run yet');
+  assert.equal((await setupStatus({ home, find: () => null, pluginVersion: '0.12.0' })).hook.current, true);
+  await decline({ home });
+  assert.equal((await setupStatus({ home, find: () => null })).declined, true);
+  assert.equal((await cliStatus({ find: () => '/x/modelplan', exec: async () => 'modelplan 0.5.1\n' })).status, 'outdated');
+  assert.equal((await cliStatus({ find: () => '/x/modelplan', exec: async () => { throw Error('exec format error'); } })).status, 'failed');
+  assert.ok(atLeast('0.10.0', '0.5.4') && !atLeast('0.5.3', '0.5.4'));
+  // Install ran, but an older copy is still found first: reported as a failure, with where.
+  const stuck = await installCli({ platform: 'darwin', run: async () => ({ code: 0, output: 'Installed' }), status: async () => ({ status: 'outdated', path: '/usr/local/bin/modelplan', version: '0.5.1' }) });
+  assert.equal(stuck.status, 'failed');
+  assert.match(stuck.output, /older modelplan 0\.5\.1 at \/usr\/local\/bin/);
+  let n = 0;
+  const upgraded = await installCli({ platform: 'linux', run: async () => ({ code: 0, output: '' }), status: async () => (n++ ? { status: 'ok', path: '/h/.local/bin/modelplan', version: '0.5.4' } : { status: 'outdated', version: '0.5.1' }) });
+  assert.deepEqual([upgraded.status, upgraded.version], ['upgraded', '0.5.4']);
   await rm(home, { recursive: true });
 });

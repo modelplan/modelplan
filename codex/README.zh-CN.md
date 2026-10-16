@@ -55,9 +55,11 @@ codex plugin add modelplan-codex@modelplan
 | 支持 `codex plugin` 命令的 Codex | 全部功能 | 无法安装插件 |
 | Node.js 22+（自动查找，见上） | 看板和两个工具 | 工具返回安装诊断 |
 | Python 3 | 未安装 `modelplan` CLI 时读取本机额度 | 额度显示为不可用，并说明原因 |
-| `modelplan` CLI 0.4+（**可选**） | 主动提醒（`modelplan advise`）和提示钩子；也是首选的额度读取器 | 没有提醒；看板会说明提醒未启用及原因 |
+| `modelplan` CLI 0.5.5+（**可选**） | 主动提醒（`modelplan advise`）和提示钩子；也是首选的额度读取器 | 没有提醒；看板会说明提醒未启用及原因 |
 
-**开启主动提醒。** 主动提醒需要 CLI 和插件钩子。安装插件后，Codex 可以运行插件的 `setup` 技能：它检查 CLI，并询问是否安装。没有 CLI 时，看板在“提醒未启用”旁显示 **安装 CLI** 按钮（macOS、Linux）：点击后运行仓库的 `install.sh`，下载最新版本、按发布的校验和核对，然后把 `modelplan` 放到 `~/.local/bin`，不改动其他任何东西。Codex 启动插件和钩子时 PATH 很短，所以插件和钩子也会在 `~/.local/bin` 和 Homebrew 目录里查找。Codex 只运行已信任的插件钩子：CLI 中用 `/hooks`，桌面端在钩子审核中信任。信任后，如果还没有 CLI，新任务开始时会显示一条带安装命令的简短提示，每周最多一次。
+**开启主动提醒。** 除了插件本身，主动提醒还需要两样：可选的 CLI（0.5.5+），以及插件唯一的钩子（Codex 只在你信任后运行）。看板的 NOW 面板会逐项列出缺什么：CLI 未安装（带 **安装 CLI** 和 **暂不安装**）、版本过旧（带 **升级 CLI**）或运行失败；钩子从未运行（还没信任），或插件更新后新版钩子还没运行（钩子有变化时 Codex 会跳过，直到你重新信任；正在进行的对话里没有任何提示，只有 `/hooks` 能看到）。全部正常时只显示一行“设置完整”。安装和升级运行仓库的 `install.sh`（最新版本、核对校验和、放到 `~/.local/bin`，不改动其他东西），只有插件实际会用到的那个 CLI 返回足够新的版本时才算成功。Codex 启动插件和钩子时 PATH 很短，所以插件和钩子也会在 `~/.local/bin` 和 Homebrew 目录里查找。也可以直接让 Codex “检查 ModelPlan 设置”（`setup` 技能）；从桌面端安装后 Codex 可能会自动运行它，在终端用 `codex plugin add` 安装则不会。
+
+**关于这个钩子。** Codex 的钩子审核里它显示为 `UserPromptSubmit · Hook 1`，来源 `Plugin - modelplan-codex@modelplan`，命令 `sh "$PLUGIN_ROOT/hooks/modelplan-quota-hints.sh"`，超时 5 秒；Codex 0.157 不显示别的名称（`statusMessage` 只在运行时显示）。每次提交提示时，它把新的额度提醒交给 Codex，对话的第一条提示还会附上任务开始简报（`modelplan advise --hook codex`）。没有 CLI 或 CLI 过旧时，改为显示设置提示：第一次请 Codex 询问一次是否安装；之后只显示提示，每周最多一次；你选择 **暂不安装** 后 90 天内不再提示。它只读本地文件，只写 `~/.cache/modelplan-codex`，不安装任何东西，也不改任何设置。在 CLI 中用 `/hooks`、或在桌面端的钩子审核里信任它，从下一条提示开始生效，正在进行的对话也一样。
 
 插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。CLI 可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 安装，或从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。
 
@@ -84,7 +86,7 @@ codex plugin marketplace remove modelplan
 - 原生档位滑杆和能力／成本／耗时小曲线。点击指标单独查看，再点恢复全部；滑杆支持方向键、Home、End。
 - 金色 ★ 仅代表推荐档。能力是相对推荐档增减的分数，成本／耗时是倍率。估算标 ≈；缺失或口径不兼容的耗时保持空缺。
 - **你的额度**：5 小时和每周窗口的已用比例、距重置时间，以及节奏提示（重置前用不完 → 升档不浪费；偏紧 → 保持 ★）。通过 `modelplan quota` 或插件自带的 Skill 读取器（需要 Python 3，未安装 CLI 时自动回退），在本机读取 Codex 写在会话日志里的额度快照。装了 CLI（0.5.2+）时，还会在后台向 Codex 本身查询（`codex app-server` 的 `account/rateLimits/read`，最多每 5 分钟一次）账号当前的窗口和完整重置次数及到期时间；请求由 Codex 用它自己的登录发出，缓存里不保存账号或重置次数的 ID。兑换重置次数仍由你在 Codex 中自己操作。设置 `MODELPLAN_CODEX_ACCOUNT=off` 可只读日志。不上传，不读取凭证。
-- **主动提醒**（可选，需要 `modelplan` CLI 0.4+；没有时看板会说明提醒未启用）：重置前额度有富余时提示可以升到哪一档及倍率；偏紧时回到 ★ 或降一档；提醒过的窗口重置后提示切回 ★；最近一天的公开 Codex 重置。插件的 `UserPromptSubmit` 钩子（`hooks/hooks.json`，在 Codex 中信任后生效）把每条新提醒告诉 Codex 一次；`SessionStart` 钩子只在缺少 CLI 时提示，每周最多一次。每个对话的第一条消息，提醒钩子（CLI 0.5.3+）还会交给 Codex 一份**任务开始简报**：Codex 可用模型在 ★ 档的能力与成本倍率和榜单结论、当前模型的档位阶梯、额度余量，以及额度富余时的 Fast 选项。简报会给出**普通任务的默认配置**：发布数据里“最划算”的模型加 ★ 档；如果它比“最强”低 3 分以上，就用“最强”的 ★ 档。默认值跟着发布数据变（今天是 GPT-6.1 Sol ★Med）。Codex 的建议围绕它：小任务降一档，复杂任务用默认模型的 High 或 XHigh，做完回到默认。由 Codex 判断任务难度，只有当前设置明显不合适时才用一句话建议一个配置，否则不提模型和档位。设置 `MODELPLAN_TASK_BRIEF=off` 可关闭简报。只读本地文件，不会切换模型、档位或 Fast。
+- **主动提醒**（可选，需要 `modelplan` CLI 0.5.5+ 和已信任的钩子；没有时看板会说明提醒未启用）：重置前额度有富余时提示可以升到哪一档及倍率；偏紧时回到 ★ 或降一档；提醒过的窗口重置后提示切回 ★；最近一天的公开 Codex 重置。插件的 `UserPromptSubmit` 钩子（`hooks/hooks.json`，在 Codex 中信任后生效）把每条新提醒告诉 Codex 一次；每个对话的第一条消息，它（CLI 0.5.5+）还会交给 Codex 一份**任务开始简报**：Codex 可用模型在 ★ 档的能力与成本倍率和榜单结论、当前模型的档位阶梯、额度余量，以及额度富余时的 Fast 选项。简报会给出**普通任务的默认配置**：发布数据里“最划算”的模型加 ★ 档；如果它比“最强”低 3 分以上，就用“最强”的 ★ 档。默认值跟着发布数据变（今天是 GPT-6.1 Sol ★Med）。Codex 的建议围绕它：小任务降一档，复杂任务用默认模型的 High 或 XHigh，做完回到默认。由 Codex 判断任务难度，只有当前设置明显不合适时才用一句话建议一个配置，否则不提模型和档位。设置 `MODELPLAN_TASK_BRIEF=off` 可关闭简报。只读本地文件，不会切换模型、档位或 Fast。
 - **速度模式**（⚡ Fast、⚡⚡ Ultrafast）：能力不变。成本格改为“额度”，是套餐额度消耗的估算值，等于 API 参考任务成本倍率乘以该模式公布的套餐额度倍率；它只在同一模型内成立，比较基准是本模型 ★ 推荐档的标准模式。任务耗时显示为未知，因为工具、网络和测试时间不会随生成速度缩短。生成速度单独列出，标为“最多快 N 倍”的上限，没有公布时标为未公布。每个速度模式都附上积分倍率、可用套餐和官方说明链接。读数、迷你图和详情图始终处于同一模式。
 - 公开 Codex 重置公告，保留来源、范围和时间精度，它们不是你自己的额度读数。
 

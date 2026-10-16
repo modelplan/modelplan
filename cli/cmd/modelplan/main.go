@@ -406,6 +406,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	// Hook input names the prompting thread; nothing else is decoded from it.
 	var in struct {
 		SessionID string `json:"session_id"`
+		Model     string `json:"model"`
 	}
 	_ = json.Unmarshal(b, &in)
 	now := time.Now()
@@ -436,12 +437,22 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	// The first prompt of a Codex thread also gets the task-start brief: the model judges the
 	// task, the publication supplies the options. Once per thread.
 	if harness == "codex" && in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
+		// Without any Codex reading yet (a first thread, an API-key login) the brief still lists
+		// the options and the default; the quota and current model are then unknown.
+		acct := &quota.Account{Source: "codex", Headroom: "unknown"}
 		for i := range report.Accounts {
-			if a := &report.Accounts[i]; a.Source == "codex" {
-				if brief := advise.TaskStart(a, d, now); brief != nil && state.Once("task_start|"+in.SessionID, now) {
-					parts = append(parts, render.TaskBrief(brief))
-				}
+			if report.Accounts[i].Source == "codex" {
+				acct = &report.Accounts[i]
 			}
+		}
+		// The hook names the thread's model; its effort is known only from that thread's log.
+		if in.Model != "" && (acct.Harness == nil || acct.Harness.Model != in.Model) {
+			x := *acct
+			x.Harness = &quota.Harness{Model: in.Model}
+			acct = &x
+		}
+		if brief := advise.TaskStart(acct, d, now); brief != nil && state.Once("task_start|"+in.SessionID, now) {
+			parts = append(parts, render.TaskBrief(brief))
 		}
 	}
 	if len(parts) > 0 {

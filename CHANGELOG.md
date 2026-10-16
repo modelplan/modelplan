@@ -2,6 +2,18 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.5 (2026-10-16)
+
+- Plugins: Codex 0.13.0.
+- The task-start brief no longer needs a quota reading: without one (a first thread, an API-key login) it still lists the options and the default, with quota "unknown". It takes the thread's model from the hook input; when the thread's effort is not in its log, it says so and shows the ladder against ★ instead of assuming ★.
+
+## Codex plugin 0.13.0 (2026-10-16)
+
+- **One hook, named by its command.** `SessionStart` is gone; `UserPromptSubmit` runs `hooks/modelplan-quota-hints.sh` (status message "ModelPlan: quota hints and task-start brief"). Codex 0.157's review shows plugin hooks as "Hook 1"; `statusMessage` does not change that, so the script name, the README and the `setup` skill explain it.
+- **Setup notice on the prompt, not the session start,** so it also works after an upgrade inside an open chat and after the hook is trusted mid-session (both verified in the Codex TUI). Missing or outdated CLI: the first notice asks the model to offer it once (on a no it records `cli-declined`); later notices at most weekly, without asking; none for 90 days after "not now". Asking about setup is never limited. With a current CLI only hints and the brief.
+- **Setup on the dashboard, part by part:** CLI missing (Install / Not now), outdated (Upgrade), failing (with the error); hook never ran, or an update's hook has not run (Codex skips a changed hook until trusted again; the hook records its plugin version); one "setup complete" line otherwise. The text output says the same. Install and upgrade succeed only when the CLI the plugin will use reports at least 0.5.5; an older copy found first is named.
+- `setup` skill rewritten: report each part from the check, never from a command having run; offer, install, re-check; record "not now"; explain hook trust and re-trust after updates. `doctor.cjs` shows when the hook last ran. App-only tool `dismiss_cli_setup` for "not now".
+
 ## v0.5.4 (2026-10-16)
 
 - Task-start brief names a **default for ordinary tasks**: the published best value at ★, unless it scores more than 3 points below the strongest, then the strongest at ★ (today GPT-6.1 Sol ★Med, both). It lists the default model's ladder when the thread is on another model, and tells the model to suggest a step down for small tasks, High/XHigh of the default for complex ones and the default again afterwards.

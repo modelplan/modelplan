@@ -37,6 +37,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,.
    transparent around it instead of painting the whole iframe. */
 html[data-surface=widget]:not([data-display=fullscreen]) body{background:transparent}
 .install-cli{margin-left:6px;height:20px;font-size:10px;vertical-align:middle}
+.quota-hints li[data-severity=ok]{color:var(--mp-dim)}.quota-hints li[data-severity=ok]::before{content:"✓"}
 .quota-credits{font:10px/1.5 var(--mp-f-body);color:var(--mp-lcd-hi);margin-top:5px}
 .side-hint{margin:0;font:10px/1.5 var(--mp-f-body);color:var(--mp-dim)}
 .host-info{margin:6px 0;font:9px/1.5 var(--mp-f-mono);color:var(--mp-dim);overflow-wrap:anywhere}

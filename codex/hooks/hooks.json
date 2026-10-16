@@ -1,22 +1,12 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"$PLUGIN_ROOT/hooks/cli-hint.sh\"",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"$PLUGIN_ROOT/hooks/advise.sh\"",
+            "command": "sh \"$PLUGIN_ROOT/hooks/modelplan-quota-hints.sh\"",
+            "statusMessage": "ModelPlan: quota hints and task-start brief",
             "timeout": 5
           }
         ]

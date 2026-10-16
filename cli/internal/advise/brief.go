@@ -12,15 +12,17 @@ import (
 // judges the task; the rules only supply the closed set of published options and their
 // arithmetic. Nothing here changes a setting.
 type Brief struct {
-	Model     string       `json:"model,omitempty"` // current model name, when resolved
-	Effort    string       `json:"effort,omitempty"`
-	AtRec     bool         `json:"atRecommended"`
-	Headroom  string       `json:"headroom,omitempty"`
-	Window    string       `json:"window,omitempty"`
-	Remaining *float64     `json:"remainingPercent,omitempty"`
-	ResetsIn  *int         `json:"resetsInMinutes,omitempty"`
-	Models    []BriefModel `json:"models"`
-	Ladder    []BriefStep  `json:"ladder,omitempty"`
+	Model  string `json:"model,omitempty"` // current model name, when resolved
+	Effort string `json:"effort,omitempty"`
+	AtRec  bool   `json:"atRecommended"`
+	// EffortKnown: the thread's effort was read; otherwise the ladder is against ★.
+	EffortKnown bool         `json:"effortKnown"`
+	Headroom    string       `json:"headroom,omitempty"`
+	Window      string       `json:"window,omitempty"`
+	Remaining   *float64     `json:"remainingPercent,omitempty"`
+	ResetsIn    *int         `json:"resetsInMinutes,omitempty"`
+	Models      []BriefModel `json:"models"`
+	Ladder      []BriefStep  `json:"ladder,omitempty"`
 	// Default is the configuration for ordinary tasks: the published best value at ★, unless
 	// it scores more than defaultFloor below the strongest, then the strongest at ★.
 	Default       *BriefModel `json:"default,omitempty"`
@@ -110,9 +112,13 @@ func TaskStart(a *quota.Account, d *digest.Digest, now time.Time) *Brief {
 	}
 	cfg := current(a, d)
 	if cfg.model != nil && cfg.cur != nil {
-		b.Model, b.Effort, b.AtRec = cfg.model.Name, cfg.cur.Label, cfg.cur == cfg.rec
+		b.EffortKnown = a.Harness.Effort != "" && cfg.model.Effort(a.Harness.Effort) != nil
+		b.Model, b.Effort, b.AtRec = cfg.model.Name, cfg.cur.Label, cfg.cur == cfg.rec && b.EffortKnown
+		if !b.EffortKnown {
+			b.Effort = ""
+		}
 		b.Ladder = ladder(cfg.model, cfg.rec, cfg.cur)
-		b.AtDefault = defModel != nil && cfg.model.ID == defModel.ID && cfg.cur == cfg.rec
+		b.AtDefault = defModel != nil && cfg.model.ID == defModel.ID && b.AtRec
 		if a.Headroom == "spend" {
 			b.Speed = quotaSpeed(cfg, d, a.Source)
 		}
