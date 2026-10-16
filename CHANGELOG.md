@@ -4,6 +4,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 ## Unreleased
 
+- **The pinned CodexBar release is fetched even when one is already installed.** 0.5.13 used any `codexbar` it found and fetched only when there was none. On the owner's Mac that meant CodexBar 0.60.3, 16 releases older than the pin, whose provider code (Cursor's changes almost daily) and output were never tested. A copy the user installed is now used only until the pinned one is in place; a failed fetch is retried after 30 minutes. `MODELPLAN_CODEXBAR=<path>` still chooses a copy explicitly. `modelplan codexbar` says which copy runs.
 - **Claude Code prompts refresh CodexBar too.** In 0.5.13 only `quota`, `advise` and Codex prompts started the background CodexBar refresh, so a Claude Code user's reading went stale. Found by testing the plugin in Claude Code.
 
 ## Codex plugin 0.15.3 and Claude Code plugin 0.7.3 (2026-10-16)

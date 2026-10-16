@@ -71,7 +71,7 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 		}
 		say("通过 CodexBar 读取：%s", "Reading through CodexBar: %s", strings.Join(enabled, ", "))
 		if sub == "enable" && !c.offline {
-			if quota.CodexBarBin(st.Dir, home) == "" {
+			if quota.CodexBarFetchDue(st.Dir, time.Now()) {
 				say("正在后台下载 CodexBar CLI %s（macOS 约 14 MB，Linux 约 53 MB），按锁定的 SHA-256 校验后放在 %s/codexbar。",
 					"Fetching CodexBar CLI %s in the background (about 14 MB on macOS, 53 MB on Linux), checked against the pinned SHA-256, into %s/codexbar.",
 					quota.CodexBarVersion, st.Dir)
@@ -90,11 +90,15 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 		bin, err := quota.FetchCodexBar(ctx, st.Dir, os.Getenv("MODELPLAN_CODEXBAR_BASE"))
 		if err != nil {
 			fmt.Fprintln(stderr, "codexbar fetch:", err)
-			return exitErr
+			bin = quota.CodexBarBin(st.Dir, home) // a copy the user installed, meanwhile
+		} else {
+			say("CodexBar CLI %s：%s", "CodexBar CLI %s: %s", quota.CodexBarVersion, bin)
 		}
-		say("CodexBar CLI %s：%s", "CodexBar CLI %s: %s", quota.CodexBarVersion, bin)
-		if len(quota.CodexBarEnabled(p.CodexBarFile)) > 0 {
+		if bin != "" && len(quota.CodexBarEnabled(p.CodexBarFile)) > 0 {
 			_ = quota.RefreshCodexBar(ctx, p, bin, time.Now())
+		}
+		if err != nil {
+			return exitErr
 		}
 		return 0
 
@@ -139,7 +143,7 @@ func codexbarStatus(stdout io.Writer, p quota.Paths, st *store.Store, home strin
 	}
 	if c.json {
 		return printJSON(stdout, map[string]any{"schemaVersion": 1, "enabled": nonNilList(enabled), "binary": bin, "pinnedVersion": quota.CodexBarVersion,
-			"platform": runtime.GOOS + "/" + runtime.GOARCH, "providers": rows})
+			"pinned": quota.CodexBarPinned(st.Dir), "fetch": quota.CodexBarFetchResult(st.Dir), "platform": runtime.GOOS + "/" + runtime.GOARCH, "providers": rows})
 	}
 	en := c.lang == "en"
 	if len(enabled) == 0 {
@@ -150,11 +154,7 @@ func codexbarStatus(stdout io.Writer, p quota.Paths, st *store.Store, home strin
 		}
 		return 0
 	}
-	binText := bin
-	if binText == "" {
-		binText = map[bool]string{true: "not fetched yet", false: "尚未下载"}[en]
-	}
-	fmt.Fprintf(stdout, "CodexBar CLI: %s\n", binText)
+	fmt.Fprintf(stdout, "CodexBar CLI: %s\n", codexbarBinText(bin, st.Dir, en))
 	for _, x := range rows {
 		line := fmt.Sprintf("  %-12s %-11s %s", x.ID, x.Status, x.Reason)
 		fmt.Fprintln(stdout, strings.TrimRight(line, " "))
@@ -163,6 +163,27 @@ func codexbarStatus(stdout io.Writer, p quota.Paths, st *store.Store, home strin
 		}
 	}
 	return 0
+}
+
+// codexbarBinText: which CodexBar CLI runs, and whether it is the pinned release.
+func codexbarBinText(bin, cache string, en bool) string {
+	fetch := quota.CodexBarFetchResult(cache)
+	switch {
+	case bin == "" && strings.Contains(fetch, "failed"):
+		return map[bool]string{true: "not available; fetch ", false: "不可用；下载结果 "}[en] + fetch
+	case bin == "":
+		return map[bool]string{true: "not fetched yet", false: "尚未下载"}[en]
+	case quota.CodexBarPinned(cache) && strings.HasPrefix(bin, cache):
+		return bin + map[bool]string{true: " (pinned ", false: "（锁定版 "}[en] + quota.CodexBarVersion + map[bool]string{true: ")", false: "）"}[en]
+	case os.Getenv("MODELPLAN_CODEXBAR") != "":
+		return bin + " (MODELPLAN_CODEXBAR)"
+	}
+	note := map[bool]string{true: " (installed by you; used until the pinned ", false: "（你自己装的；锁定版 "}[en] + quota.CodexBarVersion +
+		map[bool]string{true: " is fetched", false: " 下载好之前临时用它"}[en]
+	if strings.Contains(fetch, "failed") {
+		note += "; " + fetch
+	}
+	return bin + note + map[bool]string{true: ")", false: "）"}[en]
 }
 
 // codexbarCommand: how the user runs the same CodexBar CLI in a terminal (quoted if needed).
