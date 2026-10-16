@@ -275,3 +275,75 @@ func (s Style) AdviceContext(es []advise.Event) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// TaskBrief is the start-of-task context a hook hands to the model: the closed set of published
+// options and their arithmetic, plus when (not) to speak. English, for the model; it answers in
+// the user's language.
+func TaskBrief(b *advise.Brief) string {
+	if b == nil {
+		return ""
+	}
+	lines := []string{"Model Plan task-start brief (advice only: the user switches model, effort and Fast in Codex; never say you changed them)."}
+	now := "Now: model unknown"
+	if b.Model != "" {
+		now = "Now: " + b.Model + " · " + b.Effort
+		if b.AtRec {
+			now += " (★ recommended)"
+		}
+	}
+	if b.Window != "" && b.Remaining != nil {
+		now += fmt.Sprintf("; %s window %.0f%% left", map[string]string{"five_hour": "5h", "weekly": "weekly"}[b.Window], *b.Remaining)
+		if b.ResetsIn != nil {
+			now += ", resets in " + Style{T: EN}.dur(b.ResetsIn)
+		}
+	}
+	if b.Headroom != "" {
+		now += "; quota " + map[string]string{"spend": "surplus (unused allowance resets away)", "normal": "on track", "conserve": "tight", "exhausted": "used up", "unknown": "unknown"}[b.Headroom]
+	}
+	lines = append(lines, now+".")
+	var ms []string
+	for _, m := range b.Models {
+		x := fmt.Sprintf("%s ★%s %.1f pts ×%.2f", m.Name, m.Rec, m.Ability, m.CostRelative)
+		var tags []string
+		for _, t := range m.Tags {
+			if t == "strongest" || t == "best_value" || t == "cheapest" {
+				tags = append(tags, strings.ReplaceAll(t, "_", " "))
+			}
+		}
+		if m.Skip {
+			tags = append(tags, "skip: a better option costs the same or less")
+		}
+		if len(tags) > 0 {
+			x += " (" + strings.Join(tags, ", ") + ")"
+		}
+		ms = append(ms, x)
+	}
+	lines = append(lines, "Models at their ★ effort (ability, cost per task relative to the cheapest): "+strings.Join(ms, "; ")+".")
+	if len(b.Ladder) > 0 {
+		var ss []string
+		for _, s := range b.Ladder {
+			l := s.Label
+			if s.Recommended {
+				l = "★" + l
+			}
+			switch {
+			case s.Current:
+				ss = append(ss, l+" (current)")
+			case s.AbilityDelta != nil && s.CostRatio != nil:
+				ss = append(ss, fmt.Sprintf("%s %+.1f pts ×%.2f", l, *s.AbilityDelta, *s.CostRatio))
+			default:
+				ss = append(ss, l+" (no comparable data)")
+			}
+		}
+		lines = append(lines, b.Model+" efforts against the current one: "+strings.Join(ss, " · ")+". A step that adds no ability for more cost is not worth it.")
+	}
+	if sp := b.Speed; sp != nil {
+		speed := "speed-up not stated"
+		if sp.SpeedRatio != nil {
+			speed = "up to ×" + g(*sp.SpeedRatio) + " faster"
+		}
+		lines = append(lines, fmt.Sprintf("With the surplus, %s is an option: plan quota ×%s, %s.", sp.Label, g(sp.QuotaRatio), speed))
+	}
+	lines = append(lines, "Judge this task's difficulty from the request. Only if the current setting clearly does not fit (a small, well-bounded change on a high effort or the strongest model; or a complex, cross-module task on a low effort or a weak model), suggest one configuration from the lines above in one sentence, with its multipliers, then carry on with the task. Otherwise say nothing about models or efforts.")
+	return strings.Join(lines, "\n")
+}

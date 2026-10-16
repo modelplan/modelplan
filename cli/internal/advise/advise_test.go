@@ -373,3 +373,26 @@ func TestCodexFullResetCreditsCountForEveryWindow(t *testing.T) {
 		t.Fatalf("events = %+v", es)
 	}
 }
+
+func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
+	b := TaskStart(func() *quota.Account { a := claude("high", 30, 3*time.Hour, 300); return &a }(), fixtureDigest(), now)
+	if b == nil || b.Model != "Claude Opus 5.5" || b.Effort != "High" || b.AtRec || len(b.Models) != 2 || b.Models[0].Name != "Claude Opus 5.5" {
+		t.Fatalf("brief = %+v", b)
+	}
+	var med *BriefStep
+	for i := range b.Ladder {
+		if b.Ladder[i].Label == "Med" {
+			med = &b.Ladder[i]
+		}
+	}
+	if med == nil || !med.Recommended || *med.AbilityDelta != -4.8 || *med.CostRatio != 0.73 {
+		t.Fatalf("ladder = %+v", b.Ladder)
+	}
+	if TaskStart(&quota.Account{Source: "user"}, fixtureDigest(), now) != nil {
+		t.Fatal("no brief for a manual plan")
+	}
+	s := Load(t.TempDir())
+	if !s.Once("task_start|t1", now) || s.Once("task_start|t1", now) {
+		t.Fatal("once per thread")
+	}
+}

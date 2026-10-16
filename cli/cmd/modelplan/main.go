@@ -421,17 +421,33 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		refreshAccountLater(st) // the prompt uses the cached reading; the next one gets a fresher one
 	}
 	var es []advise.Event
-	for _, e := range advise.Derive(advise.Input{Report: quota.Read(paths, now), Digest: d, State: state, Now: now}) {
+	report := quota.Read(paths, now)
+	for _, e := range advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}) {
 		if e.Source == harness || (harness == "claude-code" && e.Source == "user") {
 			es = append(es, e)
 		}
 	}
 	es = state.Unseen(es)
+	var parts []string
 	if len(es) > 0 {
-		out := map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": style.AdviceContext(es)}}
+		parts = append(parts, style.AdviceContext(es))
+		state.MarkSeen(es, now)
+	}
+	// The first prompt of a Codex thread also gets the task-start brief: the model judges the
+	// task, the publication supplies the options. Once per thread.
+	if harness == "codex" && in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
+		for i := range report.Accounts {
+			if a := &report.Accounts[i]; a.Source == "codex" {
+				if brief := advise.TaskStart(a, d, now); brief != nil && state.Once("task_start|"+in.SessionID, now) {
+					parts = append(parts, render.TaskBrief(brief))
+				}
+			}
+		}
+	}
+	if len(parts) > 0 {
+		out := map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": strings.Join(parts, "\n\n")}}
 		b, _ := json.Marshal(out)
 		fmt.Fprintln(stdout, string(b))
-		state.MarkSeen(es, now)
 	}
 	_ = state.Save(st.Dir, now)
 	return 0
