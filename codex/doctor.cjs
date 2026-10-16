@@ -93,10 +93,13 @@ function localRuntime() {
 }
 
 function optional() {
-  const cli = sh('modelplan', ['version'], 5000), py = sh('python3', ['--version'], 5000);
+  // Same lookup as the hooks and the server: PATH, then ~/.local/bin and Homebrew.
+  const found = process.platform === 'win32' ? null : sh('sh', [path.join(__dirname, 'hooks', 'find-cli.sh')], 5000);
+  const bin = found && found.status === 0 ? (found.stdout || '').trim() : 'modelplan';
+  const cli = sh(bin, ['version'], 5000), py = sh('python3', ['--version'], 5000);
   const pyOk = !py.error && py.status === 0, cliOk = !cli.error && cli.status === 0;
   add('cli', cliOk ? 'ok' : 'info', T('可选：modelplan CLI（主动提醒 / advise）', 'Optional: modelplan CLI (proactive hints / advise)'),
-    cliOk ? (cli.stdout || '').trim().split('\n')[0] : T('未安装：额度仍可由 Python 读取，主动提醒不可用', 'not installed: quota still reads via Python; proactive hints are off'),
+    cliOk ? bin + ' · ' + (cli.stdout || '').trim().split('\n')[0] : T('未安装：额度仍可由 Python 读取，主动提醒不可用', 'not installed: quota still reads via Python; proactive hints are off'),
     cliOk ? null : 'curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh');
   add('python', pyOk ? 'ok' : cliOk ? 'info' : 'warn', T('额度读取回退：Python 3', 'Quota fallback: Python 3'),
     pyOk ? (py.stdout || py.stderr).trim() : T('未找到', 'not found'), pyOk || cliOk ? null : T('安装 Python 3 或 modelplan CLI 才能读本机额度', 'Install Python 3 or the modelplan CLI to read local quota'));
@@ -119,6 +122,15 @@ async function host(row) {
       registered ? null : stub ? T('Codex 启动插件用的 PATH 与本终端可能不同：在 ~/.config/modelplan/runtime.json 写入 {"node": "<Node ' + MIN_MAJOR + '+ 路径>"} 后新开任务', 'Codex may start plugins with a different PATH than this shell: write {"node": "<Node ' + MIN_MAJOR + '+ path>"} to ~/.config/modelplan/runtime.json, then open a new task')
         : T('在 Codex 的 MCP 日志中查看启动错误；新开任务后重试', 'Check the MCP startup error in Codex logs; retry in a new task'));
     if (!s || stub) return;
+    try {
+      const hl = await as.request('hooks/list', { cwds: [process.cwd()] });
+      const mine = [].concat.apply([], (hl.data || []).map(d => d.hooks || [])).filter(h => row && h.pluginId === row.pluginId);
+      const untrusted = mine.filter(h => h.trustStatus !== 'trusted');
+      add('hooks', !mine.length ? 'warn' : untrusted.length ? 'info' : 'ok', T('插件钩子（会话提示与主动提醒）', 'Plugin hooks (session notice and hints)'),
+        mine.length ? mine.map(h => h.eventName + ' · ' + h.trustStatus).join(', ') : T('Codex 没有加载插件钩子', 'Codex loaded no plugin hooks'),
+        !mine.length ? T('更新插件到 0.11+ 后新开任务', 'Update the plugin to 0.11+, then open a new task')
+          : untrusted.length ? T('Codex 只运行已信任的钩子：CLI 中输入 /hooks 审核并信任，桌面端在钩子审核中信任', 'Codex runs only trusted hooks: review and trust them with /hooks in the CLI, or in the desktop app\'s hook review') : null);
+    } catch (e) { add('hooks', 'info', T('插件钩子', 'Plugin hooks'), T('此版本 Codex 无法列出钩子', 'this Codex cannot list hooks')); }
     try {
       const res = await as.request('mcpServer/resource/read', { server: s.name, uri: UI_URI });
       const item = res.contents && res.contents[0];

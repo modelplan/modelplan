@@ -6,7 +6,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { createReader, filterDashboard } from "./data.mjs";
 import { renderLineup, renderEffort, renderQuota } from "./render.mjs";
-import { readAdvice, readQuota } from "./quota.mjs";
+import { findCli, readAdvice, readQuota } from "./quota.mjs";
+import { INSTALL_COMMAND, installCli, supported } from "./install.mjs";
 
 const version = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 // One UI resource per surface (OpenAI MCP extensions: at most one entrypoint per tool). The model's
@@ -22,7 +23,7 @@ const reader = createReader();
 const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME); } catch { return null; } })() ??
   { path: process.execPath, version: process.versions.node, source: 'direct' };
 const setup = (quota, advice) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
-  advice: { status: advice.status, reason: advice.reason ?? null } });
+  advice: { status: advice.status, reason: advice.reason ?? null }, cli: { path: findCli(), installable: supported(), command: INSTALL_COMMAND } });
 const readHtml = async (preview = false, surface = "widget") => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
     "ui/dashboard.html", "ui/kit/tokens.css", "ui/kit/components.css", "ui/dashboard.js", "ui/kit/logo.svg", "ui/comparison.js", "ui/lineup.js", "ui/presentation.js", "ui/curves.js", "ui/space.css",
@@ -79,6 +80,19 @@ export function makeServer() {
     title, description, inputSchema, annotations,
     _meta: { ui: { resourceUri: SURFACES[surface].uri, visibility: ["app"] }, "openai/ui": { entrypoints: [{ type }] } },
   }, result);
+  // The dashboard's "Install CLI" button. App-only: the user's click is the consent; the model cannot call it.
+  s.registerTool("install_modelplan_cli", {
+    title: "Install the modelplan CLI", inputSchema: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    description: "Install the optional modelplan CLI (latest release, checksum-checked) into ~/.local/bin so that proactive quota hints work. Only the dashboard's install button calls this.",
+    _meta: { ui: { visibility: ["app"] } },
+  }, async () => {
+    const install = await installCli();
+    const advice = install.status === "installed" || install.status === "present" ? await readAdvice() : null;
+    const ok = install.status === "installed" || install.status === "present";
+    return { isError: !ok, structuredContent: { install, advice },
+      content: [{ type: "text", text: ok ? `modelplan CLI ${install.status}: ${install.path}` : `modelplan CLI not installed (${install.status}). ${install.command ? "Run: " + install.command : install.url ?? ""}\n${install.output ?? ""}`.trim() }] };
+  });
   entry("open_model_panel", "Effort & quota", "Open the ModelPlan effort and quota panel beside this conversation.", "thread", "thread");
   entry("open_model_board", "Model Plan", "Open the ModelPlan board from the sidebar.", "global", "global");
   return s;

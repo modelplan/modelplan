@@ -1,11 +1,22 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$PLUGIN_ROOT/hooks/cli-hint.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "command -v modelplan >/dev/null 2>&1 && modelplan advise --hook codex 2>/dev/null; exit 0",
+            "command": "sh \"$PLUGIN_ROOT/hooks/advise.sh\"",
             "timeout": 5
           }
         ]
