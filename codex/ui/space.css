@@ -55,6 +55,8 @@ html[data-surface=widget]:not([data-display=fullscreen]) body{background:transpa
 .model-chips{display:flex;flex-wrap:wrap;gap:5px}
 .model-chips button{border:1px solid var(--mp-bezel);border-radius:99px;background:#1b1714;color:var(--mp-muted);font:500 11px var(--mp-f-body);padding:3px 9px}
 .model-chips button[aria-pressed=true]{color:var(--mp-text);background:var(--act-fill);border-color:var(--act-edge)}
+.compare-label{margin:0 0 5px;font:500 10.5px var(--mp-f-body);color:var(--mp-muted);letter-spacing:.02em}
+.model-chips .chip-now{font-style:normal;margin-left:5px;padding:0 5px;border:1px solid currentColor;border-radius:99px;color:var(--mp-text);font:600 9px var(--mp-f-body);opacity:.85}
 .model-chips button small{color:var(--mp-lcd);font:10px var(--mp-f-mono);margin-left:4px}
 .basis{margin:0;font:10px/1.5 var(--mp-f-body);color:var(--mp-lcd-2);padding:0 3px}
 .speed p{font-size:10px}
