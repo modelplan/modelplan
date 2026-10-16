@@ -57,7 +57,9 @@ codex plugin add modelplan-codex@modelplan
 | Python 3 | 未安装 `modelplan` CLI 时读取本机额度 | 额度显示为不可用，并说明原因 |
 | `modelplan` CLI 0.4+（**可选**） | 主动提醒（`modelplan advise`）和提示钩子；也是首选的额度读取器 | 没有提醒；看板会说明提醒未启用及原因 |
 
-插件已自带两个 Skill：`model-dashboard`（看板、模型与档位比较）和 `model-plan`（结合任务、公开数据和本机额度给建议），不需要再单独安装同一份 Skill。CLI 可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 安装，或从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。
+**开启主动提醒。** 主动提醒需要 CLI 和插件钩子。安装插件后，Codex 可以运行插件的 `setup` 技能：它检查 CLI，并询问是否安装。没有 CLI 时，看板在“提醒未启用”旁显示 **安装 CLI** 按钮（macOS、Linux）：点击后运行仓库的 `install.sh`，下载最新版本、按发布的校验和核对，然后把 `modelplan` 放到 `~/.local/bin`，不改动其他任何东西。Codex 启动插件和钩子时 PATH 很短，所以插件和钩子也会在 `~/.local/bin` 和 Homebrew 目录里查找。Codex 只运行已信任的插件钩子：CLI 中用 `/hooks`，桌面端在钩子审核中信任。信任后，如果还没有 CLI，新任务开始时会显示一条带安装命令的简短提示，每周最多一次。
+
+插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。CLI 可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 安装，或从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。
 
 ### 更新与卸载
 
@@ -82,7 +84,7 @@ codex plugin marketplace remove modelplan
 - 原生档位滑杆和能力／成本／耗时小曲线。点击指标单独查看，再点恢复全部；滑杆支持方向键、Home、End。
 - 金色 ★ 仅代表推荐档。能力是相对推荐档增减的分数，成本／耗时是倍率。估算标 ≈；缺失或口径不兼容的耗时保持空缺。
 - **你的额度**：5 小时和每周窗口的已用比例、距重置时间，以及节奏提示（重置前用不完 → 升档不浪费；偏紧 → 保持 ★）。通过 `modelplan quota` 或插件自带的 Skill 读取器（需要 Python 3，未安装 CLI 时自动回退），在本机读取 Codex 写在会话日志里的额度快照。不上传，不读取凭证。
-- **主动提醒**（可选，需要 `modelplan` CLI 0.4+；没有时看板会说明提醒未启用）：重置前额度有富余时提示可以升到哪一档及倍率；偏紧时回到 ★ 或降一档；提醒过的窗口重置后提示切回 ★；最近一天的公开 Codex 重置。插件的 `UserPromptSubmit` 钩子（`hooks/hooks.json`，在 Codex 中信任后生效）把每条新提醒告诉 Codex 一次。只读本地文件，不会切换模型、档位或 Fast。
+- **主动提醒**（可选，需要 `modelplan` CLI 0.4+；没有时看板会说明提醒未启用）：重置前额度有富余时提示可以升到哪一档及倍率；偏紧时回到 ★ 或降一档；提醒过的窗口重置后提示切回 ★；最近一天的公开 Codex 重置。插件的 `UserPromptSubmit` 钩子（`hooks/hooks.json`，在 Codex 中信任后生效）把每条新提醒告诉 Codex 一次；`SessionStart` 钩子只在缺少 CLI 时提示，每周最多一次。只读本地文件，不会切换模型、档位或 Fast。
 - **速度模式**（⚡ Fast、⚡⚡ Ultrafast）：能力不变。成本格改为“额度”，是套餐额度消耗的估算值，等于 API 参考任务成本倍率乘以该模式公布的套餐额度倍率；它只在同一模型内成立，比较基准是本模型 ★ 推荐档的标准模式。任务耗时显示为未知，因为工具、网络和测试时间不会随生成速度缩短。生成速度单独列出，标为“最多快 N 倍”的上限，没有公布时标为未公布。每个速度模式都附上积分倍率、可用套餐和官方说明链接。读数、迷你图和详情图始终处于同一模式。
 - 公开 Codex 重置公告，保留来源、范围和时间精度，它们不是你自己的额度读数。
 

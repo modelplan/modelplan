@@ -8,7 +8,7 @@ const expected = JSON.parse(await readFile(new URL('../../cli/internal/quota/tes
 
 test('prefers the CLI, falls back to the Skill reader, and keeps only the Codex account', async () => {
   const calls = [];
-  const q = await readQuota({ exec: async (cmd, args) => { calls.push(cmd); if (cmd === 'modelplan') throw Error('ENOENT'); return JSON.stringify(expected); } });
+  const q = await readQuota({ cli: 'modelplan', exec: async (cmd, args) => { calls.push(cmd); if (cmd === 'modelplan') throw Error('ENOENT'); return JSON.stringify(expected); } });
   assert.deepEqual(calls, ['modelplan', 'python3']);
   assert.equal(q.status, 'ok');
   assert.equal(q.reader, 'python');
@@ -17,7 +17,7 @@ test('prefers the CLI, falls back to the Skill reader, and keeps only the Codex 
 });
 
 test('no reader means unavailable, never an invented quota', async () => {
-  const q = await readQuota({ exec: async () => { throw Object.assign(Error('ENOENT'), { code: 'ENOENT' }); } });
+  const q = await readQuota({ cli: null, exec: async () => { throw Object.assign(Error('ENOENT'), { code: 'ENOENT' }); } });
   assert.equal(q.status, 'unavailable');
   assert.match(q.reason, /modelplan missing, python3 missing, python missing/);
   assert.equal(q.account, null);
@@ -39,12 +39,13 @@ test('advice comes only from the CLI, keeps Codex events and drops anything malf
     { type: 'public_reset_announced', severity: 'info', source: 'codex', text: { zh: 42 } },
   ] };
   const calls = [];
-  const a = await readAdvice({ exec: async (cmd, args) => { calls.push([cmd, ...args].join(' ')); return JSON.stringify(out); } });
+  const a = await readAdvice({ cli: 'modelplan', exec: async (cmd, args) => { calls.push([cmd, ...args].join(' ')); return JSON.stringify(out); } });
   assert.deepEqual(calls, ['modelplan advise --json --source codex']);
   assert.deepEqual(a.events.map(e => e.type), ['reset_soon_with_surplus']);
   const enoent = () => { throw Object.assign(Error('spawn modelplan ENOENT'), { code: 'ENOENT' }); };
-  assert.deepEqual(await readAdvice({ exec: async () => enoent() }), { status: 'unavailable', reason: 'cli_missing', events: [] });
-  assert.equal((await readAdvice({ exec: async () => { throw Error('unknown command advise'); } })).reason, 'cli_without_advise');
+  assert.deepEqual(await readAdvice({ cli: 'modelplan', exec: async () => enoent() }), { status: 'unavailable', reason: 'cli_missing', events: [] });
+  assert.deepEqual(await readAdvice({ cli: null, exec: async () => assert.fail('no CLI, no call') }), { status: 'unavailable', reason: 'cli_missing', events: [] });
+  assert.equal((await readAdvice({ cli: 'modelplan', exec: async () => { throw Error('unknown command advise'); } })).reason, 'cli_without_advise');
   const text = renderQuota(pickCodex(expected), 'en', a);
   assert.match(text, /↑ Codex 5h window has 80% left/);
 });

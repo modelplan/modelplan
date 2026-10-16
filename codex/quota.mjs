@@ -2,6 +2,9 @@
 // is installed, otherwise the Skill's standard-library reader. Both read the latest rate-limit
 // snapshot Codex writes to its session logs; neither opens credentials or calls an account API.
 import { execFile } from 'node:child_process';
+import { statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const READER = fileURLToPath(new URL('./skills/model-plan/scripts/quota.py', import.meta.url));
@@ -38,18 +41,30 @@ export function pickAdvice(out) {
 
 const missing = e => e?.code === 'ENOENT';
 
+// Codex starts plugins and hooks with a short PATH (the desktop app's often lacks ~/.local/bin),
+// so also look where install.sh and Homebrew put the CLI. Null when there is none.
+export function findCli({ env = process.env, home = homedir(), platform = process.platform } = {}) {
+  const exe = platform === 'win32' ? 'modelplan.exe' : 'modelplan';
+  const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+  for (const dir of dirs.filter(Boolean)) {
+    try { if (statSync(join(dir, exe)).isFile()) return join(dir, exe); } catch { /* not here */ }
+  }
+  return null;
+}
+
 // Hints need the optional CLI 0.4+ (`advise`). The reason says which part is absent.
-export async function readAdvice({ exec = run } = {}) {
+export async function readAdvice({ exec = run, cli = findCli() } = {}) {
+  if (!cli) return { status: 'unavailable', reason: 'cli_missing', events: [] };
   let out;
-  try { out = await exec('modelplan', ['advise', '--json', '--source', 'codex']); }
+  try { out = await exec(cli, ['advise', '--json', '--source', 'codex']); }
   catch (e) { return { status: 'unavailable', reason: missing(e) ? 'cli_missing' : 'cli_without_advise', events: [] }; }
   try { return pickAdvice(JSON.parse(out)); } catch { return { status: 'unavailable', reason: 'advice_invalid', events: [] }; }
 }
 
 // The CLI first, then the Skill's standard-library reader. `reader` names the one that answered.
-export async function readQuota({ exec = run } = {}) {
-  const tried = [];
-  for (const [reader, cmd, args] of [['cli', 'modelplan', ['quota', '--json']], ['python', 'python3', [READER]], ['python', 'python', [READER]]]) {
+export async function readQuota({ exec = run, cli = findCli() } = {}) {
+  const tried = cli ? [] : ['modelplan missing'];
+  for (const [reader, cmd, args] of [...(cli ? [['cli', cli, ['quota', '--json']]] : []), ['python', 'python3', [READER]], ['python', 'python', [READER]]]) {
     try { return { ...pickCodex(JSON.parse(await exec(cmd, args))), reader }; }
     catch (e) { tried.push(cmd + (missing(e) ? ' missing' : ' failed')); }
   }
