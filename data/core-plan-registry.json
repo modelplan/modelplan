@@ -1,0 +1,1824 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-10-14.1",
+  "plans": [
+    {
+      "provider": "openai",
+      "name": "ChatGPT Plus / Codex",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "5小时共享额度；可能有周限制，消息区间是估计",
+      "sourceId": "openai-pricing",
+      "sourceUrl": "https://learn.chatgpt.com/docs/pricing",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "普通 OpenAI API 另行计费",
+        "消息数是估计，不是固定限额"
+      ],
+      "quotaTerms": [
+        {
+          "id": "five-hour-allowance",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Five-hour period confirmed; rolling/fixed and anchor unconfirmed. Message ranges are estimates, not fixed quotas.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "id": "possible-weekly-limit",
+          "amount": null,
+          "unit": "unknown",
+          "window": "week",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Official page says weekly limits may also apply; amount and account applicability unknown.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-codex-work-local-cloud-allowance",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait or separately buy usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+              "sourceHash": "a24cb2c8bb026f4dec45f36e9452ecca3be20d30ced987ed61cc95c540654c1e",
+              "observedAt": "2026-10-04T02:28:38.775652+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        }
+      },
+      "id": "openai-plus",
+      "price": {
+        "amount": 20,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "官网基准价，税费/地区另计"
+      }
+    },
+    {
+      "provider": "openai",
+      "name": "ChatGPT Pro 5x",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "相对 Plus 5× 使用量；仍有短窗和周限制",
+      "sourceId": "openai-pro-tiers",
+      "sourceUrl": "https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers",
+      "reviewedAt": "2026-09-26T09:00:00Z",
+      "notes": [
+        "重置卡发放不等于额度已经恢复",
+        "订阅不提供 OpenRouter 余额",
+        "旧倍率版本保留为历史记录，不代表当前 Pro 的统一含量；旧 Pro 200 含量仅按账号资格保留至 2026-10-29。"
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "paused",
+        "upgrade": "paused",
+        "renewal": "available",
+        "returnEligibility": "历史版本；不代表当前Pro套餐，回归资格以账号和现行官方条款为准。",
+        "effectiveFrom": null
+      },
+      "offeringLifecycle": "legacy",
+      "id": "openai-pro-5x",
+      "price": {
+        "amount": 100,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "月付基准价，税费及地区差异另计"
+      }
+    },
+    {
+      "provider": "openai",
+      "name": "ChatGPT Pro 20x",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "相对 Plus 20× 使用量；仍有短窗和周限制",
+      "sourceId": "openai-pro-tiers",
+      "sourceUrl": "https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers",
+      "reviewedAt": "2026-10-09T13:10:39.147646+00:00",
+      "notes": [
+        "重置卡发放不等于额度已经恢复",
+        "订阅不提供 OpenRouter 余额",
+        "暂停新购与普通升级；既有订阅继续续费，并非下架。",
+        "旧倍率版本保留为历史记录，不代表当前 Pro 的统一含量；旧 Pro 200 含量仅按账号资格保留至 2026-10-29。"
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "paused",
+        "upgrade": "paused",
+        "renewal": "available",
+        "returnEligibility": "仅在2026-09-22至2026-09-29太平洋时间10:00期间曾激活Pro 200的同一账号，重新订阅后可在Pro 200保持激活时延续旧含量至2026-10-29；具体结束时刻及本人资格以账号为准。",
+        "effectiveFrom": null
+      },
+      "offeringLifecycle": "legacy",
+      "fieldEvidence": {
+        "eligibility": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://help.openai.com/en/articles/9793128-about-chatgpt-pro-tiers",
+              "sourceHash": "ad4642cc219a8d982eb391052769c5eb99180e27a7b0039961947cf9e403b53e",
+              "observedAt": "2026-10-09T13:10:39.147646+00:00",
+              "quote": "September 22, 2026 through 10 a.m. Pacific Time on September 29, 2026."
+            }
+          ],
+          "qualification": "回归资格已按官方帮助页核对，价格页更新不能替代；本人账号是否满足条件另行确认。"
+        }
+      },
+      "id": "openai-pro-20x",
+      "price": {
+        "amount": 200,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "月付基准价，税费及地区差异另计"
+      }
+    },
+    {
+      "provider": "claude",
+      "name": "Claude Pro",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "Claude Opus 5.5",
+        "Claude Sonnet 5.5",
+        "Claude Haiku 5.5"
+      ],
+      "clients": [
+        "Claude Code",
+        "Claude Desktop",
+        "Claude Web"
+      ],
+      "quota": "5小时会话和共享周额度；周重置时刻由账号指定",
+      "sourceId": "claude-pricing",
+      "sourceUrl": "https://claude.com/pricing",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "API / Console 余额独立",
+        "具体 resetAt 由账号提供"
+      ],
+      "quotaTerms": [
+        {
+          "id": "session",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "claude-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Resets every five hours; exact session start and rolling/fixed mechanism not established.",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        },
+        {
+          "id": "weekly-all-models",
+          "amount": null,
+          "unit": "unknown",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "calendar",
+          "timezone": null,
+          "anchor": "Fixed weekly time assigned to account; exact day/time unknown",
+          "poolId": "claude-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-claude-and-code-allowance",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait, upgrade or opt into separately paid usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-usage-credits"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/8325606-what-is-the-pro-plan",
+              "sourceHash": "4a28c57ca88531bad44b32ca889ad65d1a5bee1c25b67a6858bfb221bc2745ec",
+              "observedAt": "2026-10-04T02:33:09.084032+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            },
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/11049741-what-is-the-max-plan",
+              "sourceHash": "1ecc291bae92d7dae5e69f749cfd32cc359eef07b79e4027aa888e683f6d2797",
+              "observedAt": "2026-10-04T02:33:09.083513+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        }
+      },
+      "id": "claude-pro",
+      "price": {
+        "amount": 20,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "月付；年付 $200，官网约 $17/月"
+      }
+    },
+    {
+      "provider": "claude",
+      "name": "Claude Max 5x",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "Claude Opus 5.5",
+        "Claude Sonnet 5.5",
+        "Claude Haiku 5.5",
+        "Claude Fable 5.1"
+      ],
+      "clients": [
+        "Claude Code",
+        "Claude Desktop",
+        "Claude Web"
+      ],
+      "quota": "5小时会话和共享周额度；周重置时刻由账号指定",
+      "sourceId": "claude-pricing",
+      "sourceUrl": "https://claude.com/pricing",
+      "reviewedAt": "2026-10-09T13:10:11.605222+00:00",
+      "notes": [
+        "未确认当前普遍夜间优惠",
+        "额度不足时 usage credits 是另行付费"
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官网当前购买资格",
+        "effectiveFrom": "2026-09-26"
+      },
+      "quotaTerms": [
+        {
+          "id": "session",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "claude-max-5x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Resets every five hours; exact session start and rolling/fixed mechanism not established.",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        },
+        {
+          "id": "weekly-all-models",
+          "amount": null,
+          "unit": "unknown",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "calendar",
+          "timezone": null,
+          "anchor": "Fixed weekly time assigned to account; exact day/time unknown",
+          "poolId": "claude-max-5x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        },
+        {
+          "id": "weekly-fable-cap",
+          "modelAlias": "Fable",
+          "amount": 50,
+          "unit": "percentage",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "calendar",
+          "timezone": null,
+          "anchor": "Same fixed weekly time as the account's weekly limit",
+          "poolId": "claude-max-5x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Fable 5 and Fable 5.1 may use up to 50% of the weekly limit at no extra cost. They draw from the same weekly limit and use it faster than other models; past the cap, Fable continues only on usage credits.",
+          "evidenceIds": [
+            "claude-fable-plan"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-claude-and-code-allowance",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait, upgrade or opt into separately paid usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-usage-credits"
+          ]
+        },
+        {
+          "kind": "per-session-relative-to-pro",
+          "value": "5x",
+          "qualification": "Session allowance only; weekly multiplier unknown.",
+          "evidenceIds": [
+            "claude-max-limits"
+          ]
+        },
+        {
+          "kind": "monthly-api-credit",
+          "value": "$100 per billing cycle",
+          "qualification": "需符合资格且订阅满7天，绑定一个具备权限的Console组织后领取；独立API余额，不增加Claude/Claude Code交互额度。",
+          "evidenceIds": [
+            "claude-max-api-oct9"
+          ]
+        },
+        {
+          "kind": "api-credit-expiry",
+          "value": "no-rollover",
+          "qualification": "账期末未用完失效；不自动抵扣订阅价。交互Claude Code、额外订阅用量和第三方托管渠道不适用。",
+          "evidenceIds": [
+            "claude-max-api-oct9"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/8325606-what-is-the-pro-plan",
+              "sourceHash": "4a28c57ca88531bad44b32ca889ad65d1a5bee1c25b67a6858bfb221bc2745ec",
+              "observedAt": "2026-10-04T02:33:09.084032+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            },
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/11049741-what-is-the-max-plan",
+              "sourceHash": "1ecc291bae92d7dae5e69f749cfd32cc359eef07b79e4027aa888e683f6d2797",
+              "observedAt": "2026-10-04T02:33:09.083513+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        },
+        "apiCredits": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+              "sourceHash": "ffab415bfe4df752b06dfcd3712f067e9a0bf7f4dbda3bf61d6125c787feeef5",
+              "observedAt": "2026-10-09T13:10:11.605222+00:00",
+              "quote": "Max 5x $100 Max 20x $200"
+            }
+          ],
+          "qualification": "有条件的独立Claude Platform权益，账号是否领取未知；不作为本订阅的可用交互额度或现金返还。"
+        }
+      },
+      "id": "claude-max-5x",
+      "price": {
+        "amount": 100,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "月付基准价，税费及地区差异另计"
+      }
+    },
+    {
+      "provider": "claude",
+      "name": "Claude Max 20x",
+      "region": "global",
+      "generation": "current",
+      "models": [
+        "Claude Opus 5.5",
+        "Claude Sonnet 5.5",
+        "Claude Haiku 5.5",
+        "Claude Fable 5.1"
+      ],
+      "clients": [
+        "Claude Code",
+        "Claude Desktop",
+        "Claude Web"
+      ],
+      "quota": "5小时会话和共享周额度；周重置时刻由账号指定",
+      "sourceId": "claude-pricing",
+      "sourceUrl": "https://claude.com/pricing",
+      "reviewedAt": "2026-10-09T13:10:11.605222+00:00",
+      "notes": [
+        "未确认当前普遍夜间优惠",
+        "额度不足时 usage credits 是另行付费"
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官网当前购买资格",
+        "effectiveFrom": "2026-09-26"
+      },
+      "quotaTerms": [
+        {
+          "id": "session",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "claude-max-20x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Resets every five hours; exact session start and rolling/fixed mechanism not established.",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        },
+        {
+          "id": "weekly-all-models",
+          "amount": null,
+          "unit": "unknown",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "calendar",
+          "timezone": null,
+          "anchor": "Fixed weekly time assigned to account; exact day/time unknown",
+          "poolId": "claude-max-20x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "claude-pro-limits",
+            "claude-max-limits"
+          ]
+        },
+        {
+          "id": "weekly-fable-cap",
+          "modelAlias": "Fable",
+          "amount": 50,
+          "unit": "percentage",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "calendar",
+          "timezone": null,
+          "anchor": "Same fixed weekly time as the account's weekly limit",
+          "poolId": "claude-max-20x",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Fable 5 and Fable 5.1 may use up to 50% of the weekly limit at no extra cost. They draw from the same weekly limit and use it faster than other models; past the cap, Fable continues only on usage credits.",
+          "evidenceIds": [
+            "claude-fable-plan"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-claude-and-code-allowance",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-code-plan"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait, upgrade or opt into separately paid usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "claude-usage-credits"
+          ]
+        },
+        {
+          "kind": "per-session-relative-to-pro",
+          "value": "20x",
+          "qualification": "Session allowance only; weekly multiplier unknown.",
+          "evidenceIds": [
+            "claude-max-limits"
+          ]
+        },
+        {
+          "kind": "monthly-api-credit",
+          "value": "$200 per billing cycle",
+          "qualification": "需符合资格且订阅满7天，绑定一个具备权限的Console组织后领取；独立API余额，不增加Claude/Claude Code交互额度。",
+          "evidenceIds": [
+            "claude-max-api-oct9"
+          ]
+        },
+        {
+          "kind": "api-credit-expiry",
+          "value": "no-rollover",
+          "qualification": "账期末未用完失效；不自动抵扣订阅价。交互Claude Code、额外订阅用量和第三方托管渠道不适用。",
+          "evidenceIds": [
+            "claude-max-api-oct9"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/8325606-what-is-the-pro-plan",
+              "sourceHash": "4a28c57ca88531bad44b32ca889ad65d1a5bee1c25b67a6858bfb221bc2745ec",
+              "observedAt": "2026-10-04T02:33:09.084032+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            },
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/11049741-what-is-the-max-plan",
+              "sourceHash": "1ecc291bae92d7dae5e69f749cfd32cc359eef07b79e4027aa888e683f6d2797",
+              "observedAt": "2026-10-04T02:33:09.083513+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        },
+        "apiCredits": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://support.claude.com/en/articles/17154008-monthly-api-credits-for-max-and-team-plans",
+              "sourceHash": "ffab415bfe4df752b06dfcd3712f067e9a0bf7f4dbda3bf61d6125c787feeef5",
+              "observedAt": "2026-10-09T13:10:11.605222+00:00",
+              "quote": "Max 5x $100 Max 20x $200"
+            }
+          ],
+          "qualification": "有条件的独立Claude Platform权益，账号是否领取未知；不作为本订阅的可用交互额度或现金返还。"
+        }
+      },
+      "id": "claude-max-20x",
+      "price": {
+        "amount": 200,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "月付基准价，税费及地区差异另计"
+      }
+    },
+    {
+      "provider": "zhipu",
+      "name": "智谱 Coding Lite",
+      "region": "cn",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "cn",
+      "channelId": "bigmodel-coding",
+      "productLineId": "bigmodel-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 2000,
+      "weeklyCredits": 10000,
+      "sourceId": "bigmodel-overview",
+      "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 2000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-cn-lite",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 10000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-cn-lite",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait for rolling recovery; no automatic use of other account balances",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview.md",
+              "sourceHash": "b061718a0ba097bd5c0d8256a4e8a50f3d1a93c6f84c7ea1e60c410cc8d66a07",
+              "observedAt": "2026-10-04T02:28:38.776052+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-cn-lite",
+      "price": {
+        "amount": 118,
+        "currency": "CNY",
+        "period": "month",
+        "qualifier": "中国站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zhipu",
+      "name": "智谱 Coding Pro",
+      "region": "cn",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "cn",
+      "channelId": "bigmodel-coding",
+      "productLineId": "bigmodel-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 12000,
+      "weeklyCredits": 60000,
+      "sourceId": "bigmodel-overview",
+      "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 12000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-cn-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 60000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-cn-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait for rolling recovery; no automatic use of other account balances",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview.md",
+              "sourceHash": "b061718a0ba097bd5c0d8256a4e8a50f3d1a93c6f84c7ea1e60c410cc8d66a07",
+              "observedAt": "2026-10-04T02:28:38.776052+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-cn-pro",
+      "price": {
+        "amount": 538,
+        "currency": "CNY",
+        "period": "month",
+        "qualifier": "中国站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zhipu",
+      "name": "智谱 Coding Max",
+      "region": "cn",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "cn",
+      "channelId": "bigmodel-coding",
+      "productLineId": "bigmodel-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 28000,
+      "weeklyCredits": 140000,
+      "sourceId": "bigmodel-overview",
+      "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 28000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-cn-max",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 140000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-cn-max",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait for rolling recovery; no automatic use of other account balances",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "bigmodel-overview"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/overview.md",
+              "sourceHash": "b061718a0ba097bd5c0d8256a4e8a50f3d1a93c6f84c7ea1e60c410cc8d66a07",
+              "observedAt": "2026-10-04T02:28:38.776052+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-cn-max",
+      "price": {
+        "amount": 1078,
+        "currency": "CNY",
+        "period": "month",
+        "qualifier": "中国站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zai",
+      "name": "Z.ai Coding Lite",
+      "region": "global",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "international",
+      "channelId": "zai-coding",
+      "productLineId": "zai-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 2000,
+      "weeklyCredits": 10000,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 2000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-global-lite",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 10000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-global-lite",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Quota recovery required; separate API billing remains independent",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "account-sharing",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "cancellation",
+          "value": "At least three days before billing",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "refund",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.z.ai/devpack/overview.md",
+              "sourceHash": "594793a77de76dcdd30662a200f1f48599cbf353f08c00e2df8eb9d00e3c0851",
+              "observedAt": "2026-10-04T02:28:38.776094+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-global-lite",
+      "price": {
+        "amount": 18,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "国际站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zai",
+      "name": "Z.ai Coding Pro",
+      "region": "global",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "international",
+      "channelId": "zai-coding",
+      "productLineId": "zai-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 12000,
+      "weeklyCredits": 60000,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 12000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-global-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 60000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-global-pro",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Quota recovery required; separate API billing remains independent",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "account-sharing",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "cancellation",
+          "value": "At least three days before billing",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "refund",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.z.ai/devpack/overview.md",
+              "sourceHash": "594793a77de76dcdd30662a200f1f48599cbf353f08c00e2df8eb9d00e3c0851",
+              "observedAt": "2026-10-04T02:28:38.776094+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-global-pro",
+      "price": {
+        "amount": 80,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "国际站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zai",
+      "name": "Z.ai Coding Max",
+      "region": "global",
+      "generation": "credits-2026",
+      "regionalProductGroupId": "glm-coding-credits-2026",
+      "editionMarket": "international",
+      "channelId": "zai-coding",
+      "productLineId": "zai-coding-credits",
+      "developerIds": [
+        "zhipuai"
+      ],
+      "regionRelationshipEvidenceId": "https://zcode.z.ai/en/docs/configuration",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "5 小时动态刷新，周额度从订阅激活起每 7 天刷新",
+      "fiveHourCredits": 28000,
+      "weeklyCredits": 140000,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "notes": [
+        "模型扣减按 token 类型计量；MCP 调用另算",
+        "峰谷倍率不与旧版套餐混用"
+      ],
+      "quotaTerms": [
+        {
+          "id": "credits-five-hour",
+          "amount": 28000,
+          "unit": "credits",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": "Each consumed credit returns five hours after consumption",
+          "poolId": "zhipu-global-max",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "id": "credits-weekly",
+          "amount": 140000,
+          "unit": "credits",
+          "window": "week",
+          "windowHours": 168,
+          "resetKind": "subscription-anniversary",
+          "timezone": null,
+          "anchor": "Purchase/subscription activation; exact account start unknown",
+          "poolId": "zhipu-global-max",
+          "aggregation": "simultaneous-gates",
+          "qualification": "",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "shared-supported-model-and-mcp-pool",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "supported-tools-only",
+          "value": true,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Quota recovery required; separate API billing remains independent",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-overview"
+          ]
+        },
+        {
+          "kind": "account-sharing",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "cancellation",
+          "value": "At least three days before billing",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        },
+        {
+          "kind": "refund",
+          "value": false,
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "zai-usage-policy"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://docs.z.ai/devpack/overview.md",
+              "sourceHash": "594793a77de76dcdd30662a200f1f48599cbf353f08c00e2df8eb9d00e3c0851",
+              "observedAt": "2026-10-04T02:28:38.776094+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": ""
+        }
+      },
+      "id": "zhipu-global-max",
+      "price": {
+        "amount": 168,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "国际站官网连续包月；包季、包年报价另列"
+      }
+    },
+    {
+      "provider": "zhipu",
+      "name": "智谱 Legacy V2",
+      "region": "cn",
+      "generation": "legacy-v2",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "旧版单位；GLM-5.3 峰3×/闲1×，Flash 峰1.2×/闲0.4×",
+      "sourceId": "bigmodel-legacy",
+      "sourceUrl": "https://docs.bigmodel.cn/cn/coding-plan/notice/usage-revision",
+      "reviewedAt": "2026-10-15T08:30:00Z",
+      "notes": [
+        "保留旧套餐代际，不自动升级为新积分模型",
+        "倍率依据智谱《老用户权益说明》的 V2 用量说明；高峰为工作日 14:00–18:00（UTC+8），周末全天按非高峰"
+      ],
+      "id": "zhipu-cn-legacy",
+      "price": {
+        "amount": null,
+        "currency": "CNY",
+        "period": "month",
+        "qualifier": "存量旧套餐，以本人合同为准"
+      }
+    },
+    {
+      "provider": "zai",
+      "name": "Z.ai Legacy V2",
+      "region": "global",
+      "generation": "legacy-v2",
+      "models": [
+        "GLM-5.3",
+        "GLM-5.3-Flash"
+      ],
+      "clients": [
+        "ZCode",
+        "AutoClaw",
+        "Claude Code",
+        "Cline",
+        "OpenCode"
+      ],
+      "quota": "旧版单位；GLM-5.3 峰3×/闲1×，Flash 峰1.2×/闲0.4×",
+      "sourceId": "glm-legacy",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/usage-revision",
+      "reviewedAt": "2026-09-26T09:00:00Z",
+      "notes": [
+        "保留旧套餐代际，不自动升级为新积分模型"
+      ],
+      "id": "zhipu-global-legacy",
+      "price": {
+        "amount": null,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "存量旧套餐，以本人合同为准"
+      }
+    },
+    {
+      "provider": "openai",
+      "name": "ChatGPT Pro 100",
+      "region": "global",
+      "generation": "current",
+      "offeringLifecycle": "current",
+      "offeringVersion": "2026-10-09.2",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "现行Pro无5小时限制；其他适用限额以账号为准",
+      "sourceId": "openai-pricing",
+      "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "effectiveFrom": null,
+        "returnEligibility": "按当前官网购买资格"
+      },
+      "notes": [
+        "API 余额与订阅额度分开",
+        "当前 $200 方案不无条件标为旧 20×"
+      ],
+      "quotaTerms": [
+        {
+          "id": "account-allowance",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-pro-100",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Current Pro has no five-hour limit. Other applicable limits and reset dates must come from the account dashboard.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "five-hour-limit",
+          "value": false,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "shared-codex-work-local-cloud-allowance",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait or separately buy usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+              "sourceHash": "a24cb2c8bb026f4dec45f36e9452ecca3be20d30ced987ed61cc95c540654c1e",
+              "observedAt": "2026-10-04T02:28:38.775652+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        }
+      },
+      "id": "openai-pro-100",
+      "price": {
+        "amount": 100,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "官网网页月付；税费与地区另计"
+      }
+    },
+    {
+      "provider": "openai",
+      "name": "ChatGPT Pro 200",
+      "region": "global",
+      "generation": "current",
+      "offeringLifecycle": "current",
+      "offeringVersion": "2026-10-09.2",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "现行Pro无5小时限制；其他适用限额以账号为准",
+      "sourceId": "openai-pricing",
+      "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "effectiveFrom": null,
+        "returnEligibility": "旧 Pro 200 额度按官方祖父条款保留至 2026-10-29，具体截止资格以账号通知为准。"
+      },
+      "notes": [
+        "API 余额与订阅额度分开",
+        "当前 $200 方案不无条件标为旧 20×"
+      ],
+      "quotaTerms": [
+        {
+          "id": "account-allowance",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-pro-200",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Current Pro has no five-hour limit. Other applicable limits and reset dates must come from the account dashboard.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "five-hour-limit",
+          "value": false,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "shared-codex-work-local-cloud-allowance",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait or separately buy usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+              "sourceHash": "a24cb2c8bb026f4dec45f36e9452ecca3be20d30ced987ed61cc95c540654c1e",
+              "observedAt": "2026-10-04T02:28:38.775652+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        }
+      },
+      "id": "openai-pro-200",
+      "price": {
+        "amount": 200,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "官网网页月付；税费与地区另计"
+      }
+    },
+    {
+      "provider": "openai",
+      "name": "ChatGPT Pro 500",
+      "region": "global",
+      "generation": "current",
+      "offeringLifecycle": "current",
+      "offeringVersion": "2026-10-09.2",
+      "models": [
+        "GPT-6 Astra",
+        "GPT-6.1 Sol",
+        "GPT-6 Sol",
+        "GPT-6 Luna"
+      ],
+      "clients": [
+        "Codex",
+        "ChatGPT Work"
+      ],
+      "quota": "现行Pro无5小时限制；其他适用限额以账号为准",
+      "sourceId": "openai-pricing",
+      "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+      "reviewedAt": "2026-10-04T02:40:16Z",
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "effectiveFrom": null,
+        "returnEligibility": "按当前官网购买资格"
+      },
+      "notes": [
+        "API 余额与订阅额度分开",
+        "当前 $200 方案不无条件标为旧 20×",
+        "Ultrafast 是调用速度权益，不作为独立底层型号画重复点。"
+      ],
+      "quotaTerms": [
+        {
+          "id": "account-allowance",
+          "amount": null,
+          "unit": "unknown",
+          "window": "unknown",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-pro-500",
+          "aggregation": "simultaneous-gates",
+          "qualification": "Current Pro has no five-hour limit. Other applicable limits and reset dates must come from the account dashboard.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "five-hour-limit",
+          "value": false,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "shared-codex-work-local-cloud-allowance",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "separate-api-billing",
+          "value": true,
+          "qualification": "Public plan rule; not personal account verification.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        },
+        {
+          "kind": "after-limit",
+          "value": "Wait or separately buy usage credits",
+          "qualification": "Public rule; account eligibility and exact balance remain unverified.",
+          "evidenceIds": [
+            "openai-pricing"
+          ]
+        }
+      ],
+      "fieldEvidence": {
+        "quota": {
+          "status": "confirmed",
+          "sources": [
+            {
+              "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+              "sourceHash": "a24cb2c8bb026f4dec45f36e9452ecca3be20d30ced987ed61cc95c540654c1e",
+              "observedAt": "2026-10-04T02:28:38.775652+00:00",
+              "quote": "Reviewed official public documentation; scope and qualifications recorded per field."
+            }
+          ],
+          "qualification": "Numeric amount and personal reset timestamp remain unknown unless explicitly listed."
+        }
+      },
+      "id": "openai-pro-500",
+      "price": {
+        "amount": 500,
+        "currency": "USD",
+        "period": "month",
+        "qualifier": "官网网页月付；税费与地区另计"
+      }
+    }
+  ]
+}

@@ -1,0 +1,139 @@
+{
+  "version": "official-guidance-2026-09-27.2",
+  "status": "reference-only-not-training",
+  "astraApiDefault": null,
+  "claims": [
+    {
+      "id": "opus55-claude-code-default",
+      "model": "opus",
+      "effort": "medium",
+      "surface": "claude-code",
+      "kind": "product-default",
+      "sourceUrl": "https://claude.dev/blog/what-a-task-costs-on-opus-5-5/",
+      "context": "Default and suggested start for well-scoped daily work; raise after checks or demonstrated need.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "opus55-verification",
+      "model": "opus",
+      "effort": "high",
+      "surface": "claude-code",
+      "kind": "task-guidance",
+      "sourceUrl": "https://claude.dev/blog/spending-your-effort/",
+      "context": "Verification and edge cases; author guidance, not an AA preference or measured universal optimum.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "sol-api-default",
+      "model": "sol",
+      "effort": "medium",
+      "surface": "api",
+      "kind": "api-default",
+      "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning",
+      "context": "Omitted reasoning effort in the API; not a workload optimum.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "luna-api-default",
+      "model": "luna",
+      "effort": "medium",
+      "surface": "api",
+      "kind": "api-default",
+      "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning",
+      "context": "Omitted reasoning effort in the API; not a workload optimum.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "sol-codex-start",
+      "model": "sol",
+      "effort": "medium",
+      "surface": "codex",
+      "kind": "vendor-starting-point",
+      "sourceUrl": "https://learn.chatgpt.com/guides/best-practices",
+      "context": "Codex starting point to evaluate; not the default for every account/client or API.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "luna-codex-start",
+      "model": "luna",
+      "effort": "high",
+      "surface": "codex",
+      "kind": "vendor-starting-point",
+      "sourceUrl": "https://learn.chatgpt.com/guides/best-practices",
+      "context": "Codex starting point to evaluate; not the default for every account/client or API.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "astra-codex-start",
+      "model": "astra",
+      "effort": "low",
+      "surface": "codex",
+      "kind": "vendor-starting-point",
+      "sourceUrl": "https://learn.chatgpt.com/guides/best-practices",
+      "context": "Codex starting point to evaluate; not the default for every account/client or API.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "sol-daily-coding",
+      "model": "sol",
+      "effort": "medium",
+      "surface": "model-selection",
+      "kind": "task-guidance",
+      "sourceUrl": "https://developers.openai.com/api/docs/guides/model-selection",
+      "context": "Everyday coding and work requiring judgment and completeness.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "sol-verification",
+      "model": "sol",
+      "effort": "xhigh",
+      "surface": "model-selection",
+      "kind": "task-guidance",
+      "sourceUrl": "https://developers.openai.com/api/docs/guides/model-selection",
+      "context": "Thorough verification and review; distinct from daily coding.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "glm53-api-default",
+      "model": "glm",
+      "effort": "max",
+      "surface": "api",
+      "kind": "api-default",
+      "sourceUrl": "https://docs.z.ai/guides/llm/glm-5.3",
+      "context": "Native low/high/max, reasoning always enabled; default max.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    },
+    {
+      "id": "glm53-coding-start",
+      "model": "glm",
+      "effort": "max",
+      "surface": "zai-model-guidance",
+      "kind": "task-guidance",
+      "sourceUrl": "https://docs.z.ai/guides/llm/glm-5.3",
+      "context": "Vendor recommends max for complex tasks such as coding; not an independent effectiveness label.",
+      "observedAt": "2026-09-27",
+      "evidenceKind": "official-guidance",
+      "quantitativeCalibrationEligible": false
+    }
+  ]
+}

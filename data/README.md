@@ -8,6 +8,47 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 - **License.** [CC BY 4.0](LICENSE): use, adapt and share it, including commercially, crediting "Model Plan (https://modelplan.ai)". `real-api-pricing/` is third-party material under its own MIT license. Benchmark figures derived from Artificial Analysis are not in this directory; through the API they keep Artificial Analysis's terms.
 
 <!-- files:start -->
+| File | What it holds | License |
+| --- | --- | --- |
+| [`calendar-rule-registry.json`](calendar-rule-registry.json) | Reviewed calendar rules: peaks, off-peak hours, promotions and quota resets | CC-BY-4.0 |
+| [`calibration/balanced-coding-v2.json`](calibration/balanced-coding-v2.json) | Recommended-effort policy, v2 | CC-BY-4.0 |
+| [`calibration/balanced-coding-v3.1.json`](calibration/balanced-coding-v3.1.json) | Recommended-effort policy, v3.1 | CC-BY-4.0 |
+| [`calibration/balanced-coding-v3.json`](calibration/balanced-coding-v3.json) | Recommended-effort policy, v3 | CC-BY-4.0 |
+| [`calibration/balanced-coding-v4.json`](calibration/balanced-coding-v4.json) | Recommended-effort policy, v4 | CC-BY-4.0 |
+| [`calibration/generic-policy.json`](calibration/generic-policy.json) | Generic quality, cost and time policy | CC-BY-4.0 |
+| [`calibration/official-guidance.json`](calibration/official-guidance.json) | Vendors' own effort guidance and product defaults | CC-BY-4.0 |
+| [`client-harness-aliases.json`](client-harness-aliases.json) | Model names as Claude Code, Codex and other clients report them | CC-BY-4.0 |
+| [`coding-tool-models.json`](coding-tool-models.json) | Models advertised by coding tools | CC-BY-4.0 |
+| [`core-plan-evidence.json`](core-plan-evidence.json) | Evidence behind the core subscription plans | CC-BY-4.0 |
+| [`core-plan-registry.json`](core-plan-registry.json) | Core subscription plans (generated from plan-tier-registry.json) | CC-BY-4.0 |
+| [`current-model-products.json`](current-model-products.json) | Current model products | CC-BY-4.0 |
+| [`current-openai-pro-offerings.json`](current-openai-pro-offerings.json) | Current ChatGPT Pro offerings | CC-BY-4.0 |
+| [`current-public-plan-registry.json`](current-public-plan-registry.json) | Current public subscription plans (generated) | CC-BY-4.0 |
+| [`current-token-plan-registry.json`](current-token-plan-registry.json) | Current token and credit plans (generated) | CC-BY-4.0 |
+| [`current-tool-plan-registry.json`](current-tool-plan-registry.json) | Current coding tool plans (generated) | CC-BY-4.0 |
+| [`default-lineages.json`](default-lineages.json) | Default model lineages per developer | CC-BY-4.0 |
+| [`model-developers.json`](model-developers.json) | Model developers | CC-BY-4.0 |
+| [`model-identities.json`](model-identities.json) | Reviewed model identities and names | CC-BY-4.0 |
+| [`official-model-lineages.json`](official-model-lineages.json) | Official model lineages | CC-BY-4.0 |
+| [`plan-display-en.json`](plan-display-en.json) | English display text for plan notes | CC-BY-4.0 |
+| [`plan-edition-groups.json`](plan-edition-groups.json) | Plan edition groups (China and international editions) | CC-BY-4.0 |
+| [`plan-index-aliases.json`](plan-index-aliases.json) | Plan model names mapped to index models | CC-BY-4.0 |
+| [`plan-metering.json`](plan-metering.json) | How each plan meters usage: windows, limits, multipliers | CC-BY-4.0 |
+| [`plan-model-access.json`](plan-model-access.json) | Which models each plan includes | CC-BY-4.0 |
+| [`plan-price-observations.json`](plan-price-observations.json) | Observed plan prices | CC-BY-4.0 |
+| [`plan-product-lines.json`](plan-product-lines.json) | Plan product lines | CC-BY-4.0 |
+| [`plan-providers.json`](plan-providers.json) | Plan providers | CC-BY-4.0 |
+| [`plan-tier-registry.json`](plan-tier-registry.json) | Subscription tiers: the source the plan registries are generated from | CC-BY-4.0 |
+| [`real-api-pricing/LICENSE`](real-api-pricing/LICENSE) | Real API Pricing license | MIT |
+| [`real-api-pricing/README.md`](real-api-pricing/README.md) | Real API Pricing seed (third party, MIT) | MIT |
+| [`real-api-pricing/mapping.json`](real-api-pricing/mapping.json) | Real API Pricing display grouping | MIT |
+| [`real-api-pricing/seed.json`](real-api-pricing/seed.json) | Real API Pricing observations (third party) | MIT |
+| [`reviewed-plan-registry.json`](reviewed-plan-registry.json) | Reviewed plans (generated) | CC-BY-4.0 |
+| [`reviewed-speed-claims.json`](reviewed-speed-claims.json) | Reviewed vendor speed claims | CC-BY-4.0 |
+| [`reviewed-speed-tiers.json`](reviewed-speed-tiers.json) | Reviewed speed tiers (fast modes) | CC-BY-4.0 |
+| [`schemas/ranker-input.schema.json`](schemas/ranker-input.schema.json) | Ranker input schema | CC-BY-4.0 |
+| [`schemas/ranker-output.schema.json`](schemas/ranker-output.schema.json) | Ranker output schema | CC-BY-4.0 |
+| [`tool-plan-facts-history.json`](tool-plan-facts-history.json) | Frozen usage facts of coding tool plans | CC-BY-4.0 |
 <!-- files:end -->
 
 ## 中文

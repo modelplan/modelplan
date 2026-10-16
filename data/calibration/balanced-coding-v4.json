@@ -1,0 +1,19 @@
+{
+  "id": "balanced-coding-absolute-v4",
+  "version": "2026-09-28.2",
+  "status": "experimental-scenario-policy-not-independent-validation",
+  "retainedScoreFraction": 0.8,
+  "minimumHeadroomFraction": 0.1,
+  "boundaryProbePoints": 1,
+  "parameterProvenance": {
+    "priceWeights": "Joint nonnegative absolute-cost and log-cost region constrained by the owner's recorded Sol comparisons; no family overrides or hand-picked midpoint.",
+    "retainedScoreFraction": "Existing provisional benchmark-score floor at 80% of the same-model maximum, not retained real-world task success.",
+    "minimumHeadroomFraction": "Existing common protection: preserve at least 10% of observed within-model score improvement across priced native efforts.",
+    "timePolicy": "No time field enters default candidate admission, regret, Pareto, tie-break or explanation. AA generation estimate is a display metric; TB/AA Agent wall time remains independent detail evidence."
+  },
+  "sensitivity": {
+    "headroomFractions": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
+    "retainedScoreFractions": [0.75, 0.8, 0.82, 0.84, 0.85]
+  },
+  "automaticRoutingEligible": false
+}

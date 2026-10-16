@@ -1,0 +1,16 @@
+{
+  "revision": "2026-09-28.1",
+  "groups": [
+    {
+      "id": "glm-coding-credits-2026",
+      "developerIds": ["zhipuai"],
+      "sourceUrl": "https://zcode.z.ai/en/docs/configuration",
+      "reviewedAt": "2026-09-28",
+      "reason": "ZCode names Z.ai and BigModel as separate account, endpoint and currency routes for the GLM Coding Plan; group membership is presentation only, not shared benefits.",
+      "editions": {
+        "cn": ["zhipu-cn-lite", "zhipu-cn-pro", "zhipu-cn-max"],
+        "international": ["zhipu-global-lite", "zhipu-global-pro", "zhipu-global-max"]
+      }
+    }
+  ]
+}
