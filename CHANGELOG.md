@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.1 and Claude Code plugin 0.7.1 (2026-10-16)
+
+- Pinned CLI v0.5.11 (advice per model and effort, brief on substantial changes). Updating the plugin brings it; the previous copy is used while it downloads.
+
 ## v0.5.11 (2026-10-16)
 
 - **Configuration advice per model and effort.** A tight window, a surplus before a reset or an announced reset is about the configuration in use, so the hook now remembers it per model and effort instead of per account window: a thread on another model (Astra after Sol) hears its own advice, while threads on the same configuration do not repeat it; a tight window that gets critical (10% or less left) is said once more. Account news (used up, switch back, peak hours, cards, public resets) is still said once. Only threads you send a message in hear anything. From a Codex review.
