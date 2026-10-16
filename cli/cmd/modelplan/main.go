@@ -53,6 +53,10 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook, each hint once, plus
                                        a task-start brief per thread and model)
+  modelplan declare <planId> [generation]
+                                       record which plan pays for another vendor's model (GLM through
+                                       Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
+                                       advice follows how it counts usage (--remove takes it out)
   modelplan statusline                 one line for Claude Code / other status bars (cache only;
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
@@ -112,6 +116,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	addSystem := fs.String("add-system", "", "advise --hook: a message for the user to show with the hints (a plugin's setup notice)")
 	addContext := fs.String("add-context", "", "advise --hook: context for the model to hand over with the hints")
 	refreshAccount := fs.Bool("refresh-account", false, "quota: ask Codex for the account's windows and reset credits now")
+	remove := fs.Bool("remove", false, "declare: take the plan out of local.json")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
@@ -218,6 +223,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "codexbar":
 		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
+
+	case "declare":
+		return declareCmd(fs.Args(), stdout, stderr, st, c, *remove)
 
 	case "doctor":
 		s, _ := st.State()
@@ -479,6 +487,19 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	var parts []string
 	if notice != "" {
 		parts = append(parts, notice)
+	}
+	// A session on another vendor's model with no declared plan: ask the user once per model.
+	if harness == "claude-code" && d != nil {
+		for i := range report.Accounts {
+			a := &report.Accounts[i]
+			if a.Source != harness || a.Harness == nil || a.Harness.Attribution == "recent-thread" {
+				continue
+			}
+			if m, plans := advise.Undeclared(a, report, d); m != nil && state.Once("declare|"+m.ID, now) {
+				self, _ := os.Executable()
+				parts = append(parts, declareAsk(m, plans, a.Harness.Endpoint, codexbarCommand(self)))
+			}
+		}
 	}
 	if len(es) > 0 {
 		parts = append(parts, style.AdviceContext(es))

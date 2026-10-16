@@ -277,3 +277,38 @@ func TestDeclaredGenerationAndRecordedEndpoint(t *testing.T) {
 		t.Fatalf("an unreduced URL was kept: %q", a.Harness.Endpoint)
 	}
 }
+
+func TestDeclarePlanKeepsTheRestOfLocalJSON(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "cfg", "local.json")
+	if err := DeclarePlan(local, "zhipu-global-pro", "legacy-v2", false); err != nil {
+		t.Fatal(err)
+	}
+	as, st := readLocal(local, now)
+	if st.Status != "ok" || len(as) != 1 || as[0].Generation != "legacy-v2" {
+		t.Fatalf("%s %+v", st.Status, as)
+	}
+	os.WriteFile(local, []byte(`{"schemaVersion":1,"plans":[{"planId":"zhipu-global-pro","generation":"legacy-v2","harnesses":["claude-code"]}],"resetCards":[{"planId":"kiro-pro","kind":"weekly","count":2}],"note":12.50}`), 0o600)
+	if err := DeclarePlan(local, "zhipu-global-pro", "credits-2026", false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(local)
+	for _, want := range []string{`"generation": "credits-2026"`, `"harnesses": [`, `"resetCards": [`, `"note": 12.50`} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("missing %s in %s", want, b)
+		}
+	}
+	if err := DeclarePlan(local, "zhipu-global-pro", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(local); strings.Contains(string(b), "zhipu-global-pro") || !strings.Contains(string(b), "kiro-pro") {
+		t.Fatalf("after remove: %s", b)
+	}
+	os.WriteFile(local, []byte(`{not json`), 0o600)
+	if err := DeclarePlan(local, "zhipu-global-pro", "", false); err == nil {
+		t.Fatal("overwrote a file it could not read")
+	}
+	if err := DeclarePlan(local, "../etc", "", false); err == nil {
+		t.Fatal("accepted a bad plan id")
+	}
+}

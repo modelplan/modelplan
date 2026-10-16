@@ -225,3 +225,26 @@ func linkedPlans(r quota.Report, d *digest.Digest) map[string]bool {
 	}
 	return out
 }
+
+// Undeclared: a harness session on a model reached through another vendor's endpoint, with no
+// declared plan it can be linked to. Returns the model and the published plans that meter it
+// (with their generations), so the user can be asked which one they have; nil otherwise.
+func Undeclared(a *quota.Account, r quota.Report, d *digest.Digest) (*digest.Model, []digest.MeteredPlan) {
+	cfg := current(a, d)
+	if cfg.model == nil || !cfg.model.ViaEndpoint(harnessOf(a.Source)) || d.PlanMetering == nil {
+		return nil, nil
+	}
+	if _, p := Link(a, r, d); p != nil {
+		return nil, nil
+	}
+	var out []digest.MeteredPlan
+	for _, p := range d.PlanMetering.Plans {
+		if p.Row(cfg.model.ID) != nil {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return cfg.model, out
+}
