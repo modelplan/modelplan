@@ -254,3 +254,26 @@ func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
 		}
 	}
 }
+
+func TestDeclaredGenerationAndRecordedEndpoint(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "local.json")
+	os.WriteFile(local, []byte(`{"schemaVersion":1,"plans":[{"planId":"zhipu-global-pro","generation":"legacy-v2"},{"planId":"kiro-pro"}]}`), 0o600)
+	as, st := readLocal(local, now)
+	if st.Status != "ok" || len(as) != 2 || as[0].Generation != "legacy-v2" || as[1].Generation != "" {
+		t.Fatalf("%s %+v", st.Status, as)
+	}
+	os.WriteFile(local, []byte(`{"schemaVersion":1,"plans":[{"planId":"zhipu-global-pro","generation":"legacy v2!"}]}`), 0o600)
+	if _, st := readLocal(local, now); st.Status != "invalid" {
+		t.Fatalf("bad generation: %s", st.Status)
+	}
+	in := StatuslineInput{Endpoint: "https://api.z.ai/api/anthropic"}
+	in.Model.ID = "glm-5.3[1m]"
+	if a := in.Account(now); a.Harness.Endpoint != "https://api.z.ai/api/anthropic" || a.Harness.Model != "glm-5.3[1m]" {
+		t.Fatalf("endpoint = %q", a.Harness.Endpoint)
+	}
+	in.Endpoint = "https://api.z.ai/x?token=secret"
+	if a := in.Account(now); a.Harness.Endpoint != "" {
+		t.Fatalf("an unreduced URL was kept: %q", a.Harness.Endpoint)
+	}
+}

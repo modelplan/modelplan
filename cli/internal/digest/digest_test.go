@@ -2,6 +2,7 @@ package digest
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,50 @@ func TestSpeedTiersClientV12(t *testing.T) {
 	}
 	if len(d.SpeedTiers("astra", "claude-code")) != 0 || len(d.SpeedTiers("sol", "")) != 0 {
 		t.Fatal("tier leaked to another harness or model")
+	}
+}
+
+func TestEndpointMatchAndPlanMeteringV13(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://api.z.ai/api/anthropic/":          "https://api.z.ai/api/anthropic",
+		"https://user:pw@API.Z.AI/api/anthropic?x": "https://api.z.ai/api/anthropic",
+		"api.z.ai/api/anthropic":                   "",
+		"file:///etc/passwd":                       "",
+	} {
+		if got := Endpoint(raw); got != want {
+			t.Errorf("Endpoint(%q) = %q, want %q", raw, got, want)
+		}
+	}
+	b := []byte(`{"schemaVersion":1,"kind":"client","data":{"projectionVersion":"client-v1.3","multipliers":[],"multiplierHorizon":{"from":"2026-10-16T00:00:00Z","to":"2026-10-18T00:00:00Z","selection":"highest-priority-no-stacking"},"speedTiers":[],
+		"planMetering":{"revision":"r1","tokenMix":{"input":0.025},"plans":[
+		  {"planId":"zhipu-global-pro","generation":"credits-2026","basis":"token-tariff","basisAssumed":false,"unit":"credits","timeRules":["glm-credits-base"],"pool":null,"rows":[{"modelId":"glm","unitsPerUsd":627.911}]},
+		  {"planId":"zhipu-global-pro","generation":"legacy-v2","basis":"per-request","basisAssumed":false,"unit":"requests","timeRules":[],"pool":null,"rows":[{"modelId":"glm","multiplier":1}]},
+		  {"planId":"claude-pro","generation":null,"basis":"api-proportional","basisAssumed":true,"unit":null,"timeRules":[],"pool":null,"rows":[],"futureField":1}]},
+		"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},
+		"models":[{"id":"glm","name":"GLM-5.3","developerId":"zhipuai","recommended":"max","harnessIds":{"api":["glm-5.3"],"claude-code":["glm-5.3[1m]"],"codex":[]},"harnessEvidence":{"requiredEndpoints":{"claude-code":"https://api.z.ai/api/anthropic"}},"efforts":[{"effort":"max","label":"Max","ability":49.4,"cost":4.2,"time":null}]}],
+		"lineups":[],"resets":[],"windows":[]}}`)
+	d, err := Parse("client", b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Match("claude-code", "glm-5.3[1m]") != nil || d.MatchAt("claude-code", "https://proxy.example", "glm-5.3[1m]") != nil {
+		t.Fatal("GLM matched without its endpoint")
+	}
+	if m := d.MatchAt("claude-code", "https://api.z.ai/api/anthropic/", "glm-5.3[1m]"); m == nil || !m.ViaEndpoint("claude-code") {
+		t.Fatal("GLM through Z.ai not matched")
+	}
+	if d.Metering("zhipu-global-pro", "") != nil {
+		t.Fatal("two generations and none declared: must not pick one")
+	}
+	if p := d.Metering("zhipu-global-pro", "legacy-v2"); p == nil || p.Basis != BasisRequest || *p.Row("glm").Multiplier != 1 {
+		t.Fatalf("legacy-v2 = %+v", p)
+	}
+	if p := d.Metering("claude-pro", ""); p == nil || !p.BasisAssumed || p.Generation != "" || p.Row("opus") != nil {
+		t.Fatalf("claude-pro = %+v", p)
+	}
+	// A malformed planMetering is dropped, not the publication.
+	bad := []byte(strings.Replace(string(b), `"planId":"claude-pro"`, `"planId":""`, 1))
+	if d, err := Parse("client", bad); err != nil || d.PlanMetering != nil {
+		t.Fatalf("bad metering: %v %+v", err, d.PlanMetering)
 	}
 }

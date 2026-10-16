@@ -88,3 +88,26 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 		t.Error("nil brief")
 	}
 }
+
+func TestPlanAwareWording(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	n := func(v int) *int { return &v }
+	e := advise.Event{Type: advise.WindowTight, Source: "claude-code", Plan: "zhipu-global-pro", Basis: "per-request", Window: "five_hour", InMinutes: n(120), RemainingPercent: f(12),
+		Suggest: &advise.Step{Action: "wait_offpeak", InMinutes: n(60), RateFrom: f(3), RateTo: f(1)}}
+	if got := (Style{T: ZH}).AdviceLine(e); got != "zhipu-global-pro 5小时额度偏紧（剩 12%，2时后重置）：这个套餐按请求次数计，降档不省额度；1时后进入低倍率时段（×3 → ×1），不急的活可以等" {
+		t.Errorf("zh: %s", got)
+	}
+	e.Suggest = &advise.Step{Action: "effort_free"}
+	if got := (Style{T: EN}).AdviceLine(e); !strings.Contains(got, "zhipu-global-pro 5h window is tight") || !strings.Contains(got, "a lower effort saves no quota") {
+		t.Errorf("en: %s", got)
+	}
+	p := &advise.Plan{ID: "zhipu-global-pro", Generation: "legacy-v2", Basis: "per-request", Unit: "requests"}
+	line := planLine(p, []advise.PlanRate{{Model: "GLM-5.3", Multiplier: f(1), Now: f(3)}})
+	if line != "Plan paying for this session: zhipu-global-pro (legacy-v2), declared by the user; it counts requests: a prompt costs the same at any effort, so a lower effort saves no quota and the cost column below does not apply (GLM-5.3 ×1 per request, ×3 now)." {
+		t.Errorf("plan line: %s", line)
+	}
+	p.Basis, p.Unit, p.Generation = "token-tariff", "credits", "credits-2026"
+	if line := planLine(p, []advise.PlanRate{{Model: "GLM-5.3", UnitsPerUSD: f(627.911), Now: f(0.5)}}); !strings.Contains(line, "counts credits per API dollar, per model (GLM-5.3 627.91 credits per API USD, ×0.5 now)") {
+		t.Errorf("tariff line: %s", line)
+	}
+}

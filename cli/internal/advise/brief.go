@@ -34,6 +34,10 @@ type Brief struct {
 	AtDefault     bool        `json:"atDefault,omitempty"`
 	DefaultLadder []BriefStep `json:"defaultLadder,omitempty"` // when the thread is on another model
 	Speed         *Speed      `json:"speed,omitempty"`
+	// Plan: the declared plan paying for a model on another vendor's endpoint, and what it
+	// charges for each model it meters now.
+	Plan      *Plan      `json:"plan,omitempty"`
+	PlanRates []PlanRate `json:"planRates,omitempty"`
 }
 
 type BriefModel struct {
@@ -56,18 +60,29 @@ type BriefStep struct {
 	CostRatio    *float64 `json:"costRatio"`
 }
 
-// TaskStart builds the brief for a harness account; nil without publication data for it.
-func TaskStart(a *quota.Account, d *digest.Digest, now time.Time) *Brief {
+// TaskStart builds the brief for a harness account; nil without publication data for it. The
+// report supplies the declared plan when the session runs another vendor's model (Link).
+func TaskStart(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time) *Brief {
 	hn := harnessOf(a.Source)
 	if d == nil || hn == "" {
 		return nil
 	}
-	b := &Brief{Harness: hn, Headroom: a.Headroom, Publication: d.PublicationID, PublishedAt: d.PublishedAt}
+	eff, plan := Link(a, r, d)
+	a = &eff
+	b := &Brief{Harness: hn, Headroom: a.Headroom, Publication: d.PublicationID, PublishedAt: d.PublishedAt, Plan: plan}
+	if plan != nil {
+		b.PlanRates = plan.Rates(hn, now)
+	}
+	cfg := current(a, d)
+	cfg.plan, cfg.now = plan, now
 	if w := deciding(a); w != nil {
 		b.Window, b.Remaining, b.ResetsIn = w.Kind, w.RemainingPercent, w.ResetsInMinutes
 	}
 	dev := "openai"
-	if hn == "claude-code" {
+	switch {
+	case cfg.model != nil && cfg.model.ViaEndpoint(hn):
+		dev = cfg.model.DeveloperID // e.g. GLM through Z.ai: its own lineup, not Claude's
+	case hn == "claude-code":
 		dev = "anthropic"
 	}
 	var models []*digest.Model
@@ -114,32 +129,38 @@ func TaskStart(a *quota.Account, d *digest.Digest, now time.Time) *Brief {
 	} else {
 		b.DefaultReason = ""
 	}
-	cfg := current(a, d)
 	if cfg.model != nil && cfg.cur != nil {
 		b.EffortKnown = a.Harness.Effort != "" && cfg.model.Effort(a.Harness.Effort) != nil
 		b.Model, b.Effort, b.AtRec = cfg.model.Name, cfg.cur.Label, cfg.cur == cfg.rec && b.EffortKnown
 		if !b.EffortKnown {
 			b.Effort = ""
 		}
-		b.Ladder = ladder(cfg.model, cfg.rec, cfg.cur)
+		b.Ladder = ladder(cfg.model, cfg.rec, cfg.cur, plan)
 		b.AtDefault = defModel != nil && cfg.model.ID == defModel.ID && b.AtRec
 		if a.Headroom == "spend" {
 			b.Speed = quotaSpeed(cfg, d, a.Source)
 		}
 	}
 	if defModel != nil && (cfg.model == nil || cfg.model.ID != defModel.ID) {
-		b.DefaultLadder = ladder(defModel, defModel.Rec(), defModel.Rec())
+		b.DefaultLadder = ladder(defModel, defModel.Rec(), defModel.Rec(), plan)
 	}
 	return b
 }
 
-// ladder: every effort of m against base.
-func ladder(m *digest.Model, rec, base *digest.Effort) []BriefStep {
+// ladder: every effort of m against base. Within one model a plan charges in step with the API
+// price, except per request (every effort costs the same) and unpublished rates (unknown).
+func ladder(m *digest.Model, rec, base *digest.Effort, plan *Plan) []BriefStep {
 	var out []BriefStep
 	for i := range m.Efforts {
 		e := &m.Efforts[i]
 		s := BriefStep{Label: e.Label, Recommended: e == rec, Current: e == base}
 		s.AbilityDelta, s.CostRatio = ratio(e, base)
+		if plan != nil && plan.Basis == digest.BasisRequest && s.AbilityDelta != nil {
+			one := 1.0
+			s.CostRatio = &one
+		} else if plan != nil && plan.Basis != digest.BasisAPI && plan.Basis != digest.BasisTariff && plan.Basis != digest.BasisRelative && plan.Basis != digest.BasisPool {
+			s.CostRatio = nil
+		}
 		out = append(out, s)
 	}
 	return out

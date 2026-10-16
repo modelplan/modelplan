@@ -2,6 +2,16 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Unreleased
+
+- **Advice follows the plan that pays (client-v1.3 `planMetering`, #37).** Claude Code on GLM through Z.ai runs on the user's Zhipu plan, not on Claude's. With the plan declared in `local.json` (`planId`, and `generation` where the plan meters more than one way), the session is advised by that plan's rules and its windows (the plan's own, or CodexBar's Z.ai reading):
+  - per-request plans (Zhipu legacy V2) never get "step down", since every effort costs one request; a tight window says when off-peak starts instead, and a surplus says a higher effort costs no extra quota;
+  - credit plans compare models by credits per API dollar at the current time-of-day rate; plans with a pool per model or unpublished rates get no cross-model cost;
+  - the task-start brief lists GLM's lineup instead of Claude's and names the plan and how it counts.
+  Nothing is guessed: without a declared plan, with two plans that meter the model, or with a generation missing where it matters, advice stays as before. Time rules are matched by the plan's `timeRules`, so a declared plan's peak and off-peak hints now also work for Zhipu Pro/Lite/Max on legacy V2.
+- The status line records Claude Code's `ANTHROPIC_BASE_URL` (scheme, host and path only), so GLM through Z.ai is recognised; it also shows GLM instead of an unknown model.
+- Model ids with Claude Code's 1M-context suffix (`glm-5.3[1m]`, `claude-opus-4-6[1m]`) were dropped from the status-line snapshot; they are kept now.
+
 ## Codex plugin 0.15.4 and Claude Code plugin 0.7.4 (2026-10-16)
 
 - Pinned CLI v0.5.14 and the plugin changes listed under it: setup offers CodexBar, the Codex dashboard shows those plans.

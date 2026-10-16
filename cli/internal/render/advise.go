@@ -12,6 +12,7 @@ type adviceText struct {
 	None, Tentative, Cards, Unknown   string
 	Exhausted, Wait, UseCard          string
 	Tight, Down, Stay, OrModel        string
+	EffortFree, WaitOffpeak           string
 	Surplus, Up, UpAny, Stronger, Top string
 	Announced                         string
 	OrFast, FastUnstated, FastUpTo    string
@@ -26,7 +27,8 @@ type adviceText struct {
 var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
-	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s", Stay: "保持当前档，重活留给强模型", OrModel: "；或换 %s %s%s，能力不低于现在（除非这个任务确实需要当前模型）",
+	Tight: "%s额度偏紧（剩 %s，%s后重置）", Down: "降到 %s%s",
+	EffortFree: "这个套餐按请求次数计，降档不省额度；重活可以留到重置后", WaitOffpeak: "这个套餐按请求次数计，降档不省额度；%s后进入低倍率时段（%s → %s），不急的活可以等", Stay: "保持当前档，重活留给强模型", OrModel: "；或换 %s %s%s，能力不低于现在（除非这个任务确实需要当前模型）",
 	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
 	Announced: "Codex 官方预告重置（%s）：如果包含你的账号，%s额度剩下的 %s 届时作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
@@ -43,7 +45,8 @@ var adviceZH = adviceText{
 var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
-	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s", Stay: "stay at this effort and keep the strong model for the hard parts", OrModel: "; or switch to %s %s%s, which scores at least as high (unless this task needs the current model)",
+	Tight: "%s is tight (%s left, resets in %s)", Down: "step down to %s%s",
+	EffortFree: "this plan counts requests, so a lower effort saves no quota; save heavy work for after the reset", WaitOffpeak: "this plan counts requests, so a lower effort saves no quota; the rate drops in %s (%s → %s), so work that can wait is cheaper then", Stay: "stay at this effort and keep the strong model for the hard parts", OrModel: "; or switch to %s %s%s, which scores at least as high (unless this task needs the current model)",
 	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
 	Announced: "Codex announced a reset (%s): if it covers your account, the %s left in your %s is void then", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
@@ -67,8 +70,8 @@ func (s Style) at() adviceText {
 func (s Style) who(e advise.Event) string {
 	q := s.qt()
 	src := q.Source[e.Source]
-	if e.Source == "user" && e.Plan != "" {
-		src = e.Plan
+	if (e.Source == "user" || e.Basis != "") && e.Plan != "" {
+		src = e.Plan // a session linked to a declared plan draws on that plan
 	}
 	kind := q.Kinds[e.Window]
 	if kind == "" {
@@ -142,8 +145,13 @@ func (s Style) AdviceLine(e advise.Event) string {
 		return fmt.Sprintf(t.Exhausted, s.who(e), s.dur(e.InMinutes)) + sep + act
 	case advise.WindowTight:
 		act := t.Stay
-		if st.Action == "step_down" && st.Label != "" {
+		switch {
+		case st.Action == "step_down" && st.Label != "":
 			act = fmt.Sprintf(t.Down, label(st), tail)
+		case st.Action == "effort_free":
+			act = t.EffortFree
+		case st.Action == "wait_offpeak":
+			act = fmt.Sprintf(t.WaitOffpeak, s.dur(st.InMinutes), rateX(st.RateFrom, t.Unknown), rateX(st.RateTo, t.Unknown))
 		}
 		if alt := e.Alternative; alt != nil && alt.Label != "" {
 			act += fmt.Sprintf(t.OrModel, Short(alt.ModelName), label(alt), s.stepTail(alt))
@@ -232,6 +240,8 @@ func (s Style) AdviceShort(e advise.Event) string {
 		return s.c(okc, "↑"+Short(st.ModelName)) + s.c(dim, ratio)
 	case e.Type == advise.WindowTight && st.Action == "step_down" && st.Label != "":
 		return s.c(warn, "↓"+label(st)) + s.c(dim, ratio)
+	case e.Type == advise.WindowTight && st.Action == "wait_offpeak":
+		return s.c(amber, "◷"+s.dur(st.InMinutes))
 	case e.Type == advise.SwitchBack && st.Action == "switch_back":
 		return s.c(gold, "↺★"+st.Label)
 	case e.Type == advise.SwitchBack:
@@ -309,6 +319,52 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
+// planLine: which declared plan pays for the session and how it counts use, in one line.
+func planLine(p *advise.Plan, rates []advise.PlanRate) string {
+	id := p.ID
+	if p.Generation != "" {
+		id += " (" + p.Generation + ")"
+	}
+	now := func(r advise.PlanRate) string {
+		if r.Now == nil {
+			return ", time-of-day rate now not published"
+		}
+		if *r.Now == 1 {
+			return ""
+		}
+		return ", " + rateX(r.Now, "") + " now"
+	}
+	var rs []string
+	for _, r := range rates {
+		switch {
+		case p.Basis == "per-request" && r.Multiplier != nil:
+			rs = append(rs, r.Model+" ×"+g(*r.Multiplier)+" per request"+now(r))
+		case p.Basis == "token-tariff" && r.UnitsPerUSD != nil:
+			rs = append(rs, fmt.Sprintf("%s %s %s per API USD%s", r.Model, g(*r.UnitsPerUSD), p.Unit, now(r)))
+		case p.Basis == "relative-multiplier" && r.Multiplier != nil:
+			rs = append(rs, r.Model+" ×"+g(*r.Multiplier)+now(r))
+		case p.Basis == "per-model-pool" && r.Amount != nil:
+			rs = append(rs, fmt.Sprintf("%s its own %s %s pool%s", r.Model, g(*r.Amount), p.Unit, now(r)))
+		}
+	}
+	how := map[string]string{
+		"api-proportional":    "counts usage in step with the API price",
+		"token-tariff":        "counts " + p.Unit + " per API dollar, per model",
+		"relative-multiplier": "multiplies each model's API price",
+		"per-request":         "counts requests: a prompt costs the same at any effort, so a lower effort saves no quota and the cost column below does not apply",
+		"per-model-pool":      "gives each model its own allowance: another model draws on its own pool, not this one",
+		"opaque":              "does not publish per-model rates, so the costs below are API prices only, not quota",
+	}[p.Basis]
+	if how == "" {
+		how = "counts usage in a way the data does not describe"
+	}
+	line := "Plan paying for this session: " + id + ", declared by the user; it " + how
+	if len(rs) > 0 {
+		line += " (" + strings.Join(rs, "; ") + ")"
+	}
+	return line + "."
+}
+
 // TaskBrief is the start-of-task context a hook hands to the model: the closed set of published
 // options and their arithmetic, plus when (not) to speak. English, for the model; it answers in
 // the user's language.
@@ -341,6 +397,9 @@ func TaskBrief(b *advise.Brief) string {
 		now += "; quota " + map[string]string{"spend": "surplus (unused allowance resets away)", "normal": "on track", "conserve": "tight", "exhausted": "used up", "unknown": "unknown"}[b.Headroom]
 	}
 	lines = append(lines, now+".")
+	if p := b.Plan; p != nil {
+		lines = append(lines, planLine(p, b.PlanRates))
+	}
 	var ms []string
 	for _, m := range b.Models {
 		x := fmt.Sprintf("%s ★%s %.1f pts ×%.2f", m.Name, m.Rec, m.Ability, m.CostRelative)
