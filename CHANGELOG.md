@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.12 (2026-10-16)
+
+- **Switching back to a model no longer resends the brief.** 0.5.11 compared against the last brief only, so Sol → Astra → Sol sent the Sol brief again, contrary to its own changelog (found by a Codex review). A thread now remembers every model it was briefed on, with the last effort known for each: a model it was briefed on is no reason by itself, a new effort on it still is.
+- Codex plugin (next pin): in a narrow right-hand panel the curve and lineup folds stay closed (they opened in any "fullscreen" view, and the sidebar board opens fullscreen in the right panel); thread and sidebar panels ask the host for 460 px where it leaves the width to the app; the comparison says whether it shows the current (or latest local) session's model, and that model's chip is marked; the footer names the plugin version and when the panel read its data; a panel still served by an older plugin version than the one installed says so (restart Codex or open a new task).
+
 ## Codex plugin 0.15.1 and Claude Code plugin 0.7.1 (2026-10-16)
 
 - Pinned CLI v0.5.11 (advice per model and effort, brief on substantial changes). Updating the plugin brings it; the previous copy is used while it downloads.

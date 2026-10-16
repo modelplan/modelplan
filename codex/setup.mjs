@@ -4,10 +4,10 @@
 // is trusted). Hooks write ~/.cache/modelplan-codex and fetch-cli.sh ~/.cache/modelplan-cli; this
 // only reads them.
 import { execFile } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { atLeast, findCli, MIN_CLI, pinnedCli } from './quota.mjs';
 
 export { atLeast, MIN_CLI };
@@ -63,4 +63,15 @@ export async function hookStatus({ home = homedir(), definition = hookDefinition
 export async function setupStatus({ home = homedir(), definition, ...opts } = {}) {
   const [cli, hook] = await Promise.all([cliStatus({ home, ...opts }), hookStatus({ home, definition })]);
   return { cli, hook };
+}
+
+// Codex keeps each plugin version in its own directory (…/modelplan-codex/<version>) and an open
+// task keeps the server it started with, so after an update a panel can show an old version's
+// state. When a newer version sits next to this one, say which is installed and which is running.
+export async function pluginUpdate({ version, root = fileURLToPath(new URL('.', import.meta.url)) } = {}) {
+  const here = root.replace(/\/+$/, '');
+  if (!version || basename(here) !== version) return null;
+  const names = await readdir(dirname(here)).catch(() => []);
+  const newest = names.filter(n => /^\d+\.\d+\.\d+$/.test(n)).reduce((a, b) => (atLeast(b, a) ? b : a), version);
+  return newest !== version ? { running: version, installed: newest } : null;
 }

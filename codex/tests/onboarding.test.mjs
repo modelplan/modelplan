@@ -192,3 +192,17 @@ test('every way hints can fail is explained, and the previous plugin copy bridge
   assert.ok(prev);
   await rm(h, { recursive: true });
 });
+
+test('a panel from an older plugin version says the plugin was updated', async () => {
+  const { pluginUpdate } = await import('../setup.mjs');
+  const h = await home();
+  const cache = join(h, 'plugins/cache/modelplan/modelplan-codex');
+  for (const v of ['0.13.0', '0.14.0', '0.15.1']) await mkdir(join(cache, v), { recursive: true });
+  assert.deepEqual(await pluginUpdate({ version: '0.14.0', root: join(cache, '0.14.0') }), { running: '0.14.0', installed: '0.15.1' });
+  assert.equal(await pluginUpdate({ version: '0.15.1', root: join(cache, '0.15.1') }), null, 'the newest');
+  assert.equal(await pluginUpdate({ version: '0.15.1', root: join(h, 'checkout/codex') }), null, 'not a versioned install');
+  const { renderQuota } = await import('../render.mjs');
+  assert.match(renderQuota({ status: 'unavailable' }, 'zh', null, { cli: { status: 'ok' }, hook: { lastRun: new Date().toISOString(), current: true, result: 'ok' }, advice: { status: 'ok' }, pluginUpdate: { running: '0.14.0', installed: '0.15.1' } }),
+    /插件已更新到 0\.15\.1，正在运行的还是 0\.14\.0/);
+  await rm(h, { recursive: true });
+});

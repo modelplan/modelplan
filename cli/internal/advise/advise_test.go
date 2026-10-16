@@ -510,6 +510,9 @@ func TestBriefIsResentOnlyOnSubstantialChange(t *testing.T) {
 		{"astra", "", "normal", true},      // another model
 		{"astra", "medium", "spend", true}, // a surplus
 		{"", "", "spend", false},           // model unreadable this time: not a change
+		{"sol", "", "spend", false},        // back to a model this thread was briefed on (Codex review)
+		{"astra", "", "spend", false},      // and back again
+		{"sol", "xhigh", "spend", true},    // but a new effort on it is a change
 	}
 	for i, st := range steps {
 		if got := s.BriefDue("thread-1", st.model, st.effort, st.headroom, now.Add(time.Duration(i)*time.Minute)); got != st.due {

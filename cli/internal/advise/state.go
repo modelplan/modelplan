@@ -23,12 +23,13 @@ type State struct {
 	changed bool
 }
 
-// BriefMark is the configuration and headroom a thread's last brief described.
+// BriefMark is what a thread's briefs described: every model it was briefed on, with the last
+// effort known for each, the model in use and the headroom.
 type BriefMark struct {
-	Model    string    `json:"model,omitempty"`
-	Effort   string    `json:"effort,omitempty"`
-	Headroom string    `json:"headroom,omitempty"`
-	At       time.Time `json:"at"`
+	Efforts  map[string]string `json:"efforts,omitempty"` // model → last known effort ("" unknown)
+	Model    string            `json:"model,omitempty"`
+	Headroom string            `json:"headroom,omitempty"`
+	At       time.Time         `json:"at"`
 }
 
 // Armed is an advised window waiting for its reset.
@@ -161,7 +162,8 @@ func ConfigKey(e Event) string {
 // BriefDue says whether a thread needs a (new) task-start brief and records the one it gets:
 // its first prompt; another model; another effort when both are known (an effort first read
 // on a later prompt is not a change); and quota turning tight, used up or into a surplus. A
-// thread switching back to a model it was briefed on earlier already has that brief in context.
+// thread switching back to a model it was briefed on earlier already has that brief in context,
+// so that is no reason by itself (an effort or quota change still is).
 func (s *State) BriefDue(thread, model, effort, headroom string, now time.Time) bool {
 	if thread == "" {
 		return false
@@ -170,26 +172,26 @@ func (s *State) BriefDue(thread, model, effort, headroom string, now time.Time) 
 		s.Briefs = map[string]BriefMark{}
 	}
 	last, seen := s.Briefs[thread]
-	due := !seen
-	if seen {
-		switch {
-		case model != "" && model != last.Model:
-			due = true
-		case effort != "" && last.Effort != "" && effort != last.Effort:
-			due = true
-		case headroom != last.Headroom && (headroom == "conserve" || headroom == "exhausted" || headroom == "spend"):
-			due = true
+	if model == "" {
+		model = last.Model
+	}
+	known, briefedOn := last.Efforts[model]
+	due := !seen ||
+		(model != "" && !briefedOn) ||
+		(effort != "" && known != "" && effort != known) ||
+		(headroom != last.Headroom && (headroom == "conserve" || headroom == "exhausted" || headroom == "spend"))
+	next := BriefMark{Efforts: map[string]string{}, Model: model, Headroom: headroom, At: now.UTC()}
+	for k, v := range last.Efforts {
+		next.Efforts[k] = v
+	}
+	if model != "" && (effort != "" || !briefedOn) {
+		next.Efforts[model] = effort
+		if effort == "" {
+			next.Efforts[model] = known
 		}
 	}
-	// Remember the last known model and effort; an unknown reading keeps what was known.
-	next := BriefMark{Model: model, Effort: effort, Headroom: headroom, At: now.UTC()}
-	if next.Model == "" {
-		next.Model = last.Model
-	}
-	if next.Effort == "" && next.Model == last.Model {
-		next.Effort = last.Effort
-	}
-	if due || next.Model != last.Model || next.Effort != last.Effort || next.Headroom != last.Headroom || now.Sub(last.At) > 24*time.Hour {
+	changed := due || next.Model != last.Model || next.Headroom != last.Headroom || len(next.Efforts) != len(last.Efforts) || next.Efforts[model] != known || now.Sub(last.At) > 24*time.Hour
+	if changed {
 		s.Briefs[thread] = next
 		s.changed = true
 	}
