@@ -396,3 +396,23 @@ func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
 		t.Fatal("once per thread")
 	}
 }
+
+func TestDefaultIsBestValueUnlessItIsMuchWeaker(t *testing.T) {
+	d := fixtureDigest()
+	sonnet := func() *quota.Account {
+		a := claude("high", 30, 3*time.Hour, 300)
+		a.Harness.Model = "claude-sonnet-5-5"
+		return &a
+	}
+	// Sonnet (best value) scores 8 below Opus (strongest): the default is Opus ★Med.
+	b := TaskStart(sonnet(), d, now)
+	if b.Default == nil || b.Default.Name != "Claude Opus 5.5" || b.DefaultReason != "strongest" || b.AtDefault || len(b.DefaultLadder) != 5 {
+		t.Fatalf("default = %+v / %s", b.Default, b.DefaultReason)
+	}
+	// Within 3 points, the best value wins.
+	d.Lineups[0].Members[1].Ability = 68
+	b = TaskStart(sonnet(), d, now)
+	if b.Default.Name != "Claude Sonnet 5.5" || b.DefaultReason != "best_value" || !b.AtDefault || b.DefaultLadder != nil {
+		t.Fatalf("default = %+v / %s at=%v", b.Default, b.DefaultReason, b.AtDefault)
+	}
+}

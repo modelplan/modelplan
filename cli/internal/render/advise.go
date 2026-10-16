@@ -276,6 +276,36 @@ func (s Style) AdviceContext(es []advise.Event) string {
 	return strings.Join(lines, "\n")
 }
 
+func steps(ss []advise.BriefStep, base string) string {
+	var out []string
+	for _, s := range ss {
+		l := s.Label
+		if s.Recommended {
+			l = "★" + l
+		}
+		switch {
+		case s.Current && base == "★":
+			out = append(out, l)
+		case s.Current:
+			out = append(out, l+" (current)")
+		case s.AbilityDelta != nil && s.CostRatio != nil:
+			out = append(out, fmt.Sprintf("%s %+.1f pts ×%.2f", l, *s.AbilityDelta, *s.CostRatio))
+		default:
+			out = append(out, l+" (no comparable data)")
+		}
+	}
+	return strings.Join(out, " · ")
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
 // TaskBrief is the start-of-task context a hook hands to the model: the closed set of published
 // options and their arithmetic, plus when (not) to speak. English, for the model; it answers in
 // the user's language.
@@ -319,23 +349,25 @@ func TaskBrief(b *advise.Brief) string {
 		ms = append(ms, x)
 	}
 	lines = append(lines, "Models at their ★ effort (ability, cost per task relative to the cheapest): "+strings.Join(ms, "; ")+".")
-	if len(b.Ladder) > 0 {
-		var ss []string
-		for _, s := range b.Ladder {
-			l := s.Label
-			if s.Recommended {
-				l = "★" + l
-			}
-			switch {
-			case s.Current:
-				ss = append(ss, l+" (current)")
-			case s.AbilityDelta != nil && s.CostRatio != nil:
-				ss = append(ss, fmt.Sprintf("%s %+.1f pts ×%.2f", l, *s.AbilityDelta, *s.CostRatio))
-			default:
-				ss = append(ss, l+" (no comparable data)")
-			}
+	if df := b.Default; df != nil {
+		why := "the published best value, within 3 pts of the strongest"
+		if b.DefaultReason == "strongest" {
+			why = "the strongest; the best value scores more than 3 pts lower"
 		}
-		lines = append(lines, b.Model+" efforts against the current one: "+strings.Join(ss, " · ")+". A step that adds no ability for more cost is not worth it.")
+		if contains(df.Tags, "strongest") && contains(df.Tags, "best_value") {
+			why = "both the strongest and the best value"
+		}
+		at := ""
+		if b.AtDefault {
+			at = " The thread is on it."
+		}
+		lines = append(lines, fmt.Sprintf("Default for ordinary tasks: %s ★%s (%s).%s", df.Name, df.Rec, why, at))
+	}
+	if len(b.Ladder) > 0 {
+		lines = append(lines, b.Model+" efforts against the current one: "+steps(b.Ladder, "current")+". A step that adds no ability for more cost is not worth it.")
+	}
+	if len(b.DefaultLadder) > 0 {
+		lines = append(lines, b.Default.Name+" efforts against its ★: "+steps(b.DefaultLadder, "★")+".")
 	}
 	if sp := b.Speed; sp != nil {
 		speed := "speed-up not stated"
@@ -344,6 +376,6 @@ func TaskBrief(b *advise.Brief) string {
 		}
 		lines = append(lines, fmt.Sprintf("With the surplus, %s is an option: plan quota ×%s, %s.", sp.Label, g(sp.QuotaRatio), speed))
 	}
-	lines = append(lines, "Judge this task's difficulty from the request. Only if the current setting clearly does not fit (a small, well-bounded change on a high effort or the strongest model; or a complex, cross-module task on a low effort or a weak model), suggest one configuration from the lines above in one sentence, with its multipliers, then carry on with the task. Otherwise say nothing about models or efforts.")
+	lines = append(lines, "Judge this task's difficulty from the request. The default fits most tasks. Only when the current setting clearly does not fit, suggest one configuration from the lines above in one sentence with its multipliers, then carry on: one step below the default for a small, well-bounded change; High or XHigh of the default model for a complex, cross-module task, and back to the default once it is done; the default itself when the thread is elsewhere and the task is ordinary. Otherwise say nothing about models or efforts.")
 	return strings.Join(lines, "\n")
 }
