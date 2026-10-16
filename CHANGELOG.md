@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Unreleased
+
+- **The status line follows the declared plan for GLM through Z.ai.** It shows that plan's windows (CodexBar's Z.ai reading) and its hint: `◷45m` when off-peak starts before the reset, `!` when tight on a per-request plan (never `↓`, which saves nothing there).
+- README: other plans through CodexBar (macOS and Linux) and `modelplan declare`.
+
 ## Codex plugin 0.15.5 and Claude Code plugin 0.7.5 (2026-10-16)
 
 - Pinned CLI v0.5.15: advice follows the plan that pays for GLM through Z.ai in Claude Code, and the hook asks once which plan that is.

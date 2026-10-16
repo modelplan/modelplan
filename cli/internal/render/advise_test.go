@@ -111,3 +111,14 @@ func TestPlanAwareWording(t *testing.T) {
 		t.Errorf("tariff line: %s", line)
 	}
 }
+
+func TestStatuslineHintNeverSaysStepDownOnAPerRequestPlan(t *testing.T) {
+	n := func(v int) *int { return &v }
+	s := Style{T: EN}
+	if got := s.AdviceShort(advise.Event{Type: advise.WindowTight, Suggest: &advise.Step{Action: "effort_free"}}); got != "!" {
+		t.Errorf("effort_free = %q", got)
+	}
+	if got := s.AdviceShort(advise.Event{Type: advise.WindowTight, Suggest: &advise.Step{Action: "wait_offpeak", InMinutes: n(45)}}); got != "◷45m" {
+		t.Errorf("wait_offpeak = %q", got)
+	}
+}
