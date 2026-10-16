@@ -230,7 +230,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 		e := base(WindowExhausted, "warn")
 		e.Suggest = &Step{Action: "wait"}
 		for _, c := range a.Cards {
-			if c.Kind == w.Kind && c.Count != nil && *c.Count > 0 && (c.ExpiresAt == nil || c.ExpiresAt.After(now)) {
+			if (c.Kind == w.Kind || c.Kind == "full") && c.Count != nil && *c.Count > 0 && (c.ExpiresAt == nil || c.ExpiresAt.After(now)) {
 				e.Suggest = &Step{Action: "use_card"}
 			}
 		}

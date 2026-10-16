@@ -78,3 +78,13 @@ test('an old window reading shows its age instead of a countdown', () => {
     windows: [{ kind: 'five_hour', usedPercent: 45, resetsInMinutes: 300, ageMinutes: 9, pace: 'on_track' }, { kind: 'weekly', usedPercent: 20, resetsInMinutes: 7000, ageMinutes: 180, pace: 'on_track' }] }] };
   assert.match(renderQuota(pickCodex(r), 'en'), /week 20% used · resets in 4d20h · on track · seen 3h ago/);
 });
+
+test('a Codex account reading shows its reset credits and names its source', () => {
+  const quota = { status: 'ok', reader: 'cli', evaluatedAt: '2026-10-16T08:00:00Z', account: { source: 'codex', plan: 'pro', via: 'codex-account', headroom: 'normal',
+    windows: [{ kind: 'weekly', usedPercent: 48, resetsInMinutes: 9000, pace: 'on_track' }],
+    cards: [{ kind: 'full', count: 1, expiresAt: '2026-10-29T19:12:57Z' }, { kind: 'full', count: 1, expiresAt: '2026-11-06T23:57:42Z' }] } };
+  const zh = renderQuota(quota, 'zh'), en = renderQuota(quota, 'en');
+  assert.match(zh, /◆ 2 次完整重置可用，最早 2026-10-29 19:12Z 到期 · 需在 Codex 中自己兑换/);
+  assert.match(zh, /· Codex 账号读数/);
+  assert.match(en, /2 full reset credit\(s\) available, first expires 2026-10-29 19:12Z/);
+});

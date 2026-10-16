@@ -2,6 +2,14 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI (unreleased)
+
+- **Codex account reading.** `modelplan quota`, `advise` and the Codex hook ask Codex itself for the account's windows and reset credits: `codex app-server` → `account/rateLimits/read`, in the background at most every 5 minutes (30 after a failure such as no login), with Codex's own login; `quota --refresh-account` asks now. The answer is cached in `observed/codex-account.json` without account or credit ids and merged with the session-log windows, newest observation per window, so a 5-hour window missing from recent logs is filled in. Available credits become `cards` of kind `full` with their expiry, which feed `cards_expiring` and `use_card`. The reading is marked `via: "codex-account"`. Nothing is redeemed. `MODELPLAN_CODEX_ACCOUNT=off` disables it.
+
+## Codex plugin 0.12.0 (unreleased)
+
+- The dashboard and the text output show full-reset credits (count, first expiry, redeem in Codex yourself) and name a Codex account reading as the source.
+
 ## v0.5.1 (2026-10-16)
 
 - Plugins: Codex 0.11.0.

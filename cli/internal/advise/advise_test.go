@@ -361,3 +361,15 @@ func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
 		t.Fatalf("claude = %v", types(es))
 	}
 }
+
+func TestCodexFullResetCreditsCountForEveryWindow(t *testing.T) {
+	one, exp := 1, now.Add(30*time.Hour)
+	codex := quota.Account{Source: "codex", Plan: "pro", ObservedAt: now.Add(-time.Minute),
+		Windows: []quota.Window{{Kind: "weekly", UsedPercent: f(100), ResetsAt: at(50 * time.Hour), WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: now}},
+		Cards:   []quota.Card{{Kind: "full", Count: &one, ExpiresAt: &exp}}}
+	quota.Evaluate(&codex, now)
+	es := derive(t, nil, &digest.Digest{}, codex)
+	if len(es) != 2 || es[0].Type != WindowExhausted || es[0].Suggest.Action != "use_card" || es[1].Type != CardsExpiring || es[1].Window != "full" {
+		t.Fatalf("events = %+v", es)
+	}
+}

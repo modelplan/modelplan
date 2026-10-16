@@ -61,7 +61,8 @@ type Account struct {
 	Harness    *Harness  `json:"harness,omitempty"`
 	Windows    []Window  `json:"windows"`
 	Cards      []Card    `json:"cards,omitempty"`
-	Headroom   string    `json:"headroom"` // spend | normal | conserve | exhausted | unknown
+	Via        string    `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs
+	Headroom   string    `json:"headroom"`      // spend | normal | conserve | exhausted | unknown
 	Deciding   string    `json:"deciding,omitempty"`
 }
 
@@ -102,6 +103,9 @@ func Read(p Paths, now time.Time) Report {
 	add(readClaudeCode(p.Cache))
 	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
+	if p.CodexHome != "" {
+		applyAccount(&r, p.Cache, now)
+	}
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}
