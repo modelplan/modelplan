@@ -139,7 +139,8 @@
       "format": "html",
       "requiredText": [
         "Token Plan",
-        "Credits"
+        "Credits",
+        "每晚 22:00 - 次日 08:00"
       ],
       "planIds": [
         "alibaba-token-plan-cn-personal-lite-monthly",
@@ -155,7 +156,8 @@
       "format": "html",
       "requiredText": [
         "Token Plan",
-        "Credits"
+        "Credits",
+        "between 22:00 and 08:00 (UTC+8)"
       ],
       "planIds": [
         "alibaba-token-plan-international-personal-lite-monthly",
@@ -171,7 +173,8 @@
       "format": "html",
       "requiredText": [
         "Token Plan",
-        "Credits"
+        "Credits",
+        "每晚 22:00 - 次日 08:00"
       ],
       "planIds": [
         "alibaba-token-plan-cn-team-standard-monthly",
@@ -186,7 +189,8 @@
       "format": "html",
       "requiredText": [
         "Token Plan",
-        "Credits"
+        "Credits",
+        "between 22:00 and 08:00 (UTC+8)"
       ],
       "planIds": [
         "alibaba-token-plan-international-team-standard-monthly",

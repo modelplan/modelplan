@@ -382,7 +382,8 @@
       "requiredText": [
         "Go Plus",
         "month",
-        "usage"
+        "usage",
+        "Peak hours are 01:00-04:00 and 06:00-10:00 UTC"
       ],
       "format": "html",
       "provider": "opencode",
@@ -772,7 +773,8 @@
       "requiredText": [
         "deepseek-flash",
         "1M INPUT TOKENS",
-        "Off-peak rates"
+        "Off-peak rates",
+        "01:00 - 04:00 and 06:00 - 10:00 UTC"
       ],
       "format": "html",
       "section": {

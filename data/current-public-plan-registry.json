@@ -328,7 +328,8 @@
       "url": "https://mimo.mi.com/static/docs/tokenplan/Token%20Plan/subscription.md",
       "format": "markdown",
       "requiredText": [
-        "# Individual Subscription"
+        "# Individual Subscription",
+        "00:00–08:00 Beijing Time"
       ],
       "planIds": [
         "mimo-token-plan-cn-personal-lite-monthly",

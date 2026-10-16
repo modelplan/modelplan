@@ -386,7 +386,8 @@
           "requiredText": [
             "Go Plus",
             "month",
-            "usage"
+            "usage",
+            "Peak hours are 01:00-04:00 and 06:00-10:00 UTC"
           ],
           "format": "html",
           "provider": "opencode",
@@ -776,7 +777,8 @@
           "requiredText": [
             "deepseek-flash",
             "1M INPUT TOKENS",
-            "Off-peak rates"
+            "Off-peak rates",
+            "01:00 - 04:00 and 06:00 - 10:00 UTC"
           ],
           "format": "html",
           "section": {
@@ -1139,7 +1141,8 @@
           "url": "https://mimo.mi.com/static/docs/tokenplan/Token%20Plan/subscription.md",
           "format": "markdown",
           "requiredText": [
-            "# Individual Subscription"
+            "# Individual Subscription",
+            "00:00–08:00 Beijing Time"
           ],
           "planIds": [
             "mimo-token-plan-cn-personal-lite-monthly",
@@ -1569,7 +1572,8 @@
           "format": "html",
           "requiredText": [
             "Token Plan",
-            "Credits"
+            "Credits",
+            "每晚 22:00 - 次日 08:00"
           ],
           "planIds": [
             "alibaba-token-plan-cn-personal-lite-monthly",
@@ -1585,7 +1589,8 @@
           "format": "html",
           "requiredText": [
             "Token Plan",
-            "Credits"
+            "Credits",
+            "between 22:00 and 08:00 (UTC+8)"
           ],
           "planIds": [
             "alibaba-token-plan-international-personal-lite-monthly",
@@ -1601,7 +1606,8 @@
           "format": "html",
           "requiredText": [
             "Token Plan",
-            "Credits"
+            "Credits",
+            "每晚 22:00 - 次日 08:00"
           ],
           "planIds": [
             "alibaba-token-plan-cn-team-standard-monthly",
@@ -1616,7 +1622,8 @@
           "format": "html",
           "requiredText": [
             "Token Plan",
-            "Credits"
+            "Credits",
+            "between 22:00 and 08:00 (UTC+8)"
           ],
           "planIds": [
             "alibaba-token-plan-international-team-standard-monthly",
