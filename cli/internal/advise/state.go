@@ -18,7 +18,17 @@ type State struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Seen          map[string]time.Time `json:"seen"`
 	Armed         []Armed              `json:"armed"`
-	changed       bool
+	// Briefs: per thread, what the last task-start brief was judged against.
+	Briefs  map[string]BriefMark `json:"briefs,omitempty"`
+	changed bool
+}
+
+// BriefMark is the configuration and headroom a thread's last brief described.
+type BriefMark struct {
+	Model    string    `json:"model,omitempty"`
+	Effort   string    `json:"effort,omitempty"`
+	Headroom string    `json:"headroom,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 // Armed is an advised window waiting for its reset.
@@ -50,6 +60,7 @@ func Load(cache string) *State {
 		if on.Seen != nil {
 			s.Seen = on.Seen
 		}
+		s.Briefs = on.Briefs
 		s.Armed = on.Armed
 	}
 	return s
@@ -65,6 +76,14 @@ func (s *State) Save(cache string, now time.Time) error {
 	for k, t := range disk.Seen {
 		if _, ok := s.Seen[k]; !ok {
 			s.Seen[k] = t
+		}
+	}
+	for k, b := range disk.Briefs {
+		if _, ok := s.Briefs[k]; !ok {
+			if s.Briefs == nil {
+				s.Briefs = map[string]BriefMark{}
+			}
+			s.Briefs[k] = b
 		}
 	}
 	keys := map[string]bool{}
@@ -105,6 +124,11 @@ func (s *State) prune(now time.Time) {
 			delete(s.Seen, k)
 		}
 	}
+	for k, b := range s.Briefs {
+		if now.Sub(b.At) > seenFor {
+			delete(s.Briefs, k)
+		}
+	}
 	kept := s.Armed[:0]
 	for _, a := range s.Armed {
 		if now.Sub(a.ResetAt) <= a.lasts() {
@@ -112,6 +136,64 @@ func (s *State) prune(now time.Time) {
 		}
 	}
 	s.Armed = kept
+}
+
+// ConfigKey is the key a prompt hook remembers an event under. Advice about the configuration
+// (tight, surplus before a reset, an announced reset) is about the model and effort in use: it is
+// said once per model and effort, whichever thread that is in, so a thread on another
+// configuration hears its own advice while ten threads on the same one do not repeat it; and once
+// more when a tight window gets critical (10% or less left). Everything else (exhausted, switch
+// back, peak hours, cards, public resets) is about the account or the world and is said once.
+// Each thread still learns the quota state from its own task-start brief (BriefDue).
+func ConfigKey(e Event) string {
+	switch e.Type {
+	case WindowTight, ResetSoonSurplus, AnnouncedSurplus:
+	default:
+		return e.Key
+	}
+	risk := ""
+	if e.Type == WindowTight && e.RemainingPercent != nil && *e.RemainingPercent <= 10 {
+		risk = "critical"
+	}
+	return strings.Join([]string{e.Key, e.Model, e.Effort, risk}, "|")
+}
+
+// BriefDue says whether a thread needs a (new) task-start brief and records the one it gets:
+// its first prompt; another model; another effort when both are known (an effort first read
+// on a later prompt is not a change); and quota turning tight, used up or into a surplus. A
+// thread switching back to a model it was briefed on earlier already has that brief in context.
+func (s *State) BriefDue(thread, model, effort, headroom string, now time.Time) bool {
+	if thread == "" {
+		return false
+	}
+	if s.Briefs == nil {
+		s.Briefs = map[string]BriefMark{}
+	}
+	last, seen := s.Briefs[thread]
+	due := !seen
+	if seen {
+		switch {
+		case model != "" && model != last.Model:
+			due = true
+		case effort != "" && last.Effort != "" && effort != last.Effort:
+			due = true
+		case headroom != last.Headroom && (headroom == "conserve" || headroom == "exhausted" || headroom == "spend"):
+			due = true
+		}
+	}
+	// Remember the last known model and effort; an unknown reading keeps what was known.
+	next := BriefMark{Model: model, Effort: effort, Headroom: headroom, At: now.UTC()}
+	if next.Model == "" {
+		next.Model = last.Model
+	}
+	if next.Effort == "" && next.Model == last.Model {
+		next.Effort = last.Effort
+	}
+	if due || next.Model != last.Model || next.Effort != last.Effort || next.Headroom != last.Headroom || now.Sub(last.At) > 24*time.Hour {
+		s.Briefs[thread] = next
+		s.changed = true
+	}
+	return due
 }
 
 // Unseen keeps the events not yet shown.

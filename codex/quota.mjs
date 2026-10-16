@@ -62,7 +62,7 @@ const versionOfCli = path => (String(execFileSync(path, ['version'], { timeout: 
 export function findCli({ env = process.env, home = homedir(), platform = process.platform, min = MIN_CLI, versionOf = versionOfCli } = {}) {
   if (platform !== 'win32' && min === MIN_CLI) { try { accessSync(pinnedCli(home), constants.X_OK); return pinnedCli(home); } catch { /* not fetched */ } }
   const exe = platform === 'win32' ? 'modelplan.exe' : 'modelplan';
-  const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+  const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), join(home, '.cache', 'modelplan-cli'), '/opt/homebrew/bin', '/usr/local/bin'];
   let first = null;
   for (const dir of dirs.filter(Boolean)) {
     const p = join(dir, exe);

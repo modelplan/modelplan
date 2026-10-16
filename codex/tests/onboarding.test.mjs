@@ -174,3 +174,21 @@ test('text output names each CLI state without asking to install anything', asyn
   assert.match(line({ status: 'missing' }), /已关闭自动下载/);
   for (const s of ['fetching', 'missing', 'unsupported']) assert.doesNotMatch(line({ status: s }), /安装 CLI|暂不安装|curl/);
 });
+
+test('every way hints can fail is explained, and the previous plugin copy bridges an update', async () => {
+  const { renderQuota } = await import('../render.mjs');
+  const setup = advice => ({ cli: { status: 'ok', version: pin.version, min: pin.version, path: '/p' }, hook: { lastRun: new Date().toISOString(), current: true, result: 'ok' }, advice });
+  const text = advice => renderQuota({ status: 'unavailable' }, 'zh', advice, setup(advice));
+  assert.match(text({ status: 'unavailable', reason: 'advice_invalid', events: [] }), /读取提醒失败（CLI 返回的提醒无法解析）/);
+  assert.match(text({ status: 'unavailable', reason: 'cli_failed', error: 'boom (exit 3)', events: [] }), /读取提醒失败（modelplan CLI 运行失败: boom \(exit 3\)）/);
+  assert.doesNotMatch(text({ status: 'unavailable', reason: 'advice_invalid', events: [] }), /设置完整/);
+  // While an update's pinned copy downloads, the previous one (the stable link) is used.
+  const h = await home();
+  const prev = await put(join(h, '.cache/modelplan-cli/0.5.9'), script('0.5.9'));
+  execFileSync('ln', ['-s', '0.5.9/modelplan', join(h, '.cache/modelplan-cli/modelplan')]);
+  const link = join(h, '.cache/modelplan-cli/modelplan');
+  assert.equal(findCli({ env: { PATH: '/usr/bin:/bin' }, home: h, platform: 'linux' }), link);
+  assert.equal(execFileSync('sh', [join(root, 'hooks/find-cli.sh')], { env: { PATH: '/usr/bin:/bin', HOME: h }, encoding: 'utf8' }).trim(), link);
+  assert.ok(prev);
+  await rm(h, { recursive: true });
+});

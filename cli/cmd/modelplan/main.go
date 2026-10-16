@@ -460,6 +460,10 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			es = append(es, e)
 		}
 	}
+	// Configuration advice once per model and effort, in whichever thread; account news once.
+	for i := range es {
+		es[i].Key = advise.ConfigKey(es[i])
+	}
 	es = state.Unseen(es)
 	var parts []string
 	if notice != "" {
@@ -492,19 +496,13 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			x.Harness = nil
 			acct = &x
 		}
-		// Once per thread, and again when the thread moves to another model (or its model
-		// becomes known): the options are judged against the model now in use.
-		key, model := "task_start|"+in.SessionID, ""
+		// Once per thread, and again when what it is judged against changes in substance:
+		// another model, another (known) effort, quota turning tight, used up or into a surplus.
+		model, effort := "", ""
 		if acct.Harness != nil {
-			model = acct.Harness.Model
+			model, effort = acct.Harness.Model, acct.Harness.Effort
 		}
-		_, briefed := state.Seen[key]
-		_, onModel := state.Seen[key+"|"+model]
-		if brief := advise.TaskStart(acct, d, now); brief != nil && (!briefed || (model != "" && !onModel)) {
-			state.Once(key, now)
-			if model != "" {
-				state.Once(key+"|"+model, now)
-			}
+		if brief := advise.TaskStart(acct, d, now); brief != nil && state.BriefDue(in.SessionID, model, effort, acct.Headroom, now) {
 			parts = append(parts, render.TaskBrief(brief))
 		}
 	}

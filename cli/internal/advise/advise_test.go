@@ -460,3 +460,63 @@ func TestEarlyHeavyUseIsTightAndOffersACheaperModelThatKeepsAbility(t *testing.T
 		t.Fatal("30% used early should not be tight yet")
 	}
 }
+
+// Codex review: a tight hint given to a Sol thread kept an Astra thread from hearing its own
+// advice. Configuration advice is now remembered per model and effort (not per thread, so ten
+// threads on one configuration do not repeat it), and once more when it gets critical.
+func TestConfigAdviceIsRememberedPerModelAndEffort(t *testing.T) {
+	tight := func(model, effort string, left float64) Event {
+		return Event{Type: WindowTight, Key: "window_tight|codex||weekly||x", Model: model, Effort: effort, RemainingPercent: &left}
+	}
+	s := Load(t.TempDir())
+	first := []Event{tight("gpt-6.1-sol", "medium", 28)}
+	for i := range first {
+		first[i].Key = ConfigKey(first[i])
+	}
+	s.MarkSeen(first, now)
+	for _, c := range []struct {
+		e    Event
+		seen bool
+	}{
+		{tight("gpt-6.1-sol", "medium", 25), true},  // same configuration, any thread
+		{tight("gpt-6-astra", "medium", 25), false}, // another model hears its own
+		{tight("gpt-6.1-sol", "high", 25), false},   // another effort too
+		{tight("gpt-6.1-sol", "medium", 8), false},  // critical: once more
+	} {
+		c.e.Key = ConfigKey(c.e)
+		if got := len(s.Unseen([]Event{c.e})) == 0; got != c.seen {
+			t.Errorf("%s %s %.0f%%: seen %v, want %v", c.e.Model, c.e.Effort, *c.e.RemainingPercent, got, c.seen)
+		}
+	}
+	pub := Event{Type: PublicReset, Key: "public_reset|x", Model: "a"}
+	if ConfigKey(pub) != pub.Key {
+		t.Error("public news is not per configuration")
+	}
+}
+
+func TestBriefIsResentOnlyOnSubstantialChange(t *testing.T) {
+	s := Load(t.TempDir())
+	steps := []struct {
+		model, effort, headroom string
+		due                     bool
+	}{
+		{"sol", "", "normal", true},        // first prompt
+		{"sol", "medium", "normal", false}, // effort read later: not a change
+		{"sol", "medium", "normal", false},
+		{"sol", "high", "normal", true},    // effort changed
+		{"sol", "high", "conserve", true},  // quota turned tight
+		{"sol", "high", "conserve", false}, // still tight
+		{"sol", "high", "normal", false},   // better again: nothing to warn about
+		{"astra", "", "normal", true},      // another model
+		{"astra", "medium", "spend", true}, // a surplus
+		{"", "", "spend", false},           // model unreadable this time: not a change
+	}
+	for i, st := range steps {
+		if got := s.BriefDue("thread-1", st.model, st.effort, st.headroom, now.Add(time.Duration(i)*time.Minute)); got != st.due {
+			t.Errorf("step %d %+v: due %v", i, st, got)
+		}
+	}
+	if !s.BriefDue("thread-2", "sol", "high", "normal", now) {
+		t.Error("each thread gets its own first brief")
+	}
+}
