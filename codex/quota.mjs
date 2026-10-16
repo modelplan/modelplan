@@ -1,8 +1,8 @@
 // The user's own Codex quota, read on this machine only: `modelplan quota --json` when the CLI
 // is installed, otherwise the Skill's standard-library reader. Both read the latest rate-limit
 // snapshot Codex writes to its session logs; neither opens credentials or calls an account API.
-import { execFile } from 'node:child_process';
-import { statSync } from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
+import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,23 +41,46 @@ export function pickAdvice(out) {
 
 const missing = e => e?.code === 'ENOENT';
 
-// Codex starts plugins and hooks with a short PATH (the desktop app's often lacks ~/.local/bin),
-// so also look where install.sh and Homebrew put the CLI. Null when there is none.
-export function findCli({ env = process.env, home = homedir(), platform = process.platform } = {}) {
-  const exe = platform === 'win32' ? 'modelplan.exe' : 'modelplan';
-  const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
-  for (const dir of dirs.filter(Boolean)) {
-    try { if (statSync(join(dir, exe)).isFile()) return join(dir, exe); } catch { /* not here */ }
-  }
-  return null;
+// The CLI version the plugin needs, from the one file the hook, the dashboard and the docs share.
+export const MIN_CLI = readFileSync(fileURLToPath(new URL('./cli-min.txt', import.meta.url)), 'utf8').trim();
+
+export function atLeast(version, min) {
+  const a = String(version).split('.').map(Number), b = min.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0); }
+  return true;
 }
 
-// Hints need the optional CLI 0.4+ (`advise`). The reason says which part is absent.
+const versionOfCli = path => (String(execFileSync(path, ['version'], { timeout: 3000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })).match(/\d+\.\d+\.\d+/) || [])[0] ?? null;
+
+// Same order and rules as hooks/find-cli.sh: PATH, then where install.sh and Homebrew put it
+// (Codex starts plugins and hooks with a short PATH; the desktop app's often lacks ~/.local/bin).
+// Only executable files count; the first one at least `min` wins, else the first one found, so an
+// older copy earlier on PATH does not hide a current one. Null when there is none.
+export function findCli({ env = process.env, home = homedir(), platform = process.platform, min = MIN_CLI, versionOf = versionOfCli } = {}) {
+  const exe = platform === 'win32' ? 'modelplan.exe' : 'modelplan';
+  const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+  let first = null;
+  for (const dir of dirs.filter(Boolean)) {
+    const p = join(dir, exe);
+    try { if (!statSync(p).isFile()) continue; if (platform !== 'win32') accessSync(p, constants.X_OK); } catch { continue; }
+    first ??= p;
+    if (!min) break;
+    try { const v = versionOf(p); if (v && atLeast(v, min)) return p; } catch { /* does not answer: keep looking */ }
+  }
+  return first;
+}
+
+// Hints need the optional CLI (`advise`; the plugin asks for MIN_CLI). The reason says which part is
+// absent; a failure keeps its first error line so the dashboard can say why.
 export async function readAdvice({ exec = run, cli = findCli() } = {}) {
   if (!cli) return { status: 'unavailable', reason: 'cli_missing', events: [] };
   let out;
   try { out = await exec(cli, ['advise', '--json', '--source', 'codex']); }
-  catch (e) { return { status: 'unavailable', reason: missing(e) ? 'cli_missing' : /unknown command|usage/i.test(String(e.message) + String(e.stderr ?? '')) ? 'cli_without_advise' : 'cli_failed', events: [] }; }
+  catch (e) {
+    const reason = missing(e) ? 'cli_missing' : /unknown command|usage/i.test(String(e.message) + String(e.stderr ?? '')) ? 'cli_without_advise' : 'cli_failed';
+    if (reason !== 'cli_failed') return { status: 'unavailable', reason, events: [] };
+    return { status: 'unavailable', reason, error: String(e.stderr || e.message).trim().split('\n')[0].slice(0, 160) + (Number.isInteger(e.code) ? ` (exit ${e.code})` : ''), events: [] };
+  }
   try { return pickAdvice(JSON.parse(out)); } catch { return { status: 'unavailable', reason: 'advice_invalid', events: [] }; }
 }
 

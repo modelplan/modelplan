@@ -12,10 +12,13 @@ import (
 // judges the task; the rules only supply the closed set of published options and their
 // arithmetic. Nothing here changes a setting.
 type Brief struct {
-	Harness string `json:"harness"`         // claude-code | codex
-	Model   string `json:"model,omitempty"` // current model name, when resolved
-	Effort  string `json:"effort,omitempty"`
-	AtRec   bool   `json:"atRecommended"`
+	Harness string `json:"harness"` // claude-code | codex
+	// The publication the options come from, so the model can say how current they are.
+	Publication string `json:"publication,omitempty"`
+	PublishedAt string `json:"publishedAt,omitempty"`
+	Model       string `json:"model,omitempty"` // current model name, when resolved
+	Effort      string `json:"effort,omitempty"`
+	AtRec       bool   `json:"atRecommended"`
 	// EffortKnown: the thread's effort was read; otherwise the ladder is against ★.
 	EffortKnown bool         `json:"effortKnown"`
 	Headroom    string       `json:"headroom,omitempty"`
@@ -59,7 +62,7 @@ func TaskStart(a *quota.Account, d *digest.Digest, now time.Time) *Brief {
 	if d == nil || hn == "" {
 		return nil
 	}
-	b := &Brief{Harness: hn, Headroom: a.Headroom}
+	b := &Brief{Harness: hn, Headroom: a.Headroom, Publication: d.PublicationID, PublishedAt: d.PublishedAt}
 	if w := deciding(a); w != nil {
 		b.Window, b.Remaining, b.ResetsIn = w.Kind, w.RemainingPercent, w.ResetsInMinutes
 	}

@@ -8,7 +8,7 @@ ago() { # minutes since a file changed
   echo $(( ($(date +%s) - t) / 60 ))
 }
 echo "plugin: modelplan $(plugin_version) (answering: this check ran)"
-cli=$(sh "$here/find-cli.sh")
+cli=$(sh "$here/find-cli.sh" "$min_cli")
 if [ -z "$cli" ]; then
   echo "cli: missing (none on PATH, in ~/.local/bin or Homebrew)"
 else
@@ -27,12 +27,21 @@ elif grep -q 'modelplan statusline' "$(settings_file)" 2>/dev/null; then
 else
   echo "statusline: not set up (quota hints need it; /modelplan:statusline)"
 fi
-if m=$(ago "$state/hook-ran"); then echo "hook: last ran ${m} min ago, plugin $(cat "$state/hook-ran" 2>/dev/null)"
+# These records are this machine's, from whichever session ran last.
+if m=$(ago "$state/hook-ran"); then
+  r=$(head -1 "$state/hook-result" 2>/dev/null)
+  echo "hook: last ran ${m} min ago on this machine (any session), plugin $(cat "$state/hook-ran" 2>/dev/null)${r:+, result: $r}"
+  case $r in failed*) if s=$(ago "$state/hook-ok"); then echo "hook-last-success: ${s} min ago"; else echo "hook-last-success: never"; fi ;; esac
 else echo "hook: has not run yet (it runs when you send a message; disabled hooks or a managed policy stop it)"; fi
 recent cli-declined 90 && echo "declined: cli (the hook stays quiet about it for 90 days)"
 recent statusline-declined 90 && echo "declined: statusline"
+r=$(head -1 "$state/hook-result" 2>/dev/null)
 if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" "$min_cli" && [ -f "$state/hook-ran" ]; then
-  if [ -f "$snap" ]; then echo "hints: on (quota hints and the task-start brief)"; else echo "hints: task-start brief on; quota hints wait for the status line"; fi
+  case $r in
+    failed*) echo "hints: failing (the last run could not compute them; the next message retries)" ;;
+    ok) if [ -f "$snap" ]; then echo "hints: computed on the last run (quota hints and the task-start brief)"; else echo "hints: task-start brief computed; quota hints wait for the status line"; fi ;;
+    *) echo "hints: not verified yet (send a message, then check again)" ;;
+  esac
 else
   echo "hints: off until the CLI is ok and the hook has run"
 fi

@@ -13,7 +13,7 @@ export const supported = (platform = process.platform) => platform === 'darwin' 
 // Installs when missing, upgrades when older than MIN_CLI, and reports success only after the
 // CLI that the plugin will actually use answers with a new enough version.
 export async function installCli({ run = runScript, status = cliStatus, platform = process.platform } = {}) {
-  if (!supported(platform)) return { status: 'unsupported', command: null, url: 'https://github.com/modelplan/modelplan/releases' };
+  if (!supported(platform)) return { status: 'unsupported', reason: 'unsupported', command: null, url: 'https://github.com/modelplan/modelplan/releases' };
   const before = await status();
   if (before.status === 'ok') return { status: 'present', path: before.path, version: before.version };
   const r = await run(SCRIPT);
@@ -22,7 +22,18 @@ export async function installCli({ run = runScript, status = cliStatus, platform
   const why = r.code !== 0 ? r.output
     : after.status === 'outdated' ? `an older modelplan ${after.version} at ${after.path} is found first; remove it or upgrade it there`
     : after.error ?? 'the installed CLI did not answer';
-  return { status: 'failed', output: why, command: INSTALL_COMMAND };
+  const reason = r.code !== 0 ? failureKind(r.output) : after.status === 'outdated' ? 'shadowed' : 'failed';
+  return { status: 'failed', reason, output: why, command: INSTALL_COMMAND,
+    path: reason === 'shadowed' ? after.path : reason === 'permission' ? (r.output.match(/cannot write (\S+)/)?.[1] ?? null) : null, version: reason === 'shadowed' ? after.version : null };
+}
+
+// install.sh names each failure on stderr; the dashboard turns the kind into what to do.
+export function failureKind(output = '') {
+  if (/^download failed|curl: \(\d+\)/m.test(output)) return 'download';
+  if (/checksum mismatch/.test(output)) return 'checksum';
+  if (/permission denied|cannot write/i.test(output)) return 'permission';
+  if (/^Unsupported (OS|CPU)/m.test(output)) return 'unsupported';
+  return 'failed';
 }
 
 function runScript(script) {

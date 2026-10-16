@@ -77,9 +77,9 @@ test('one hook: hints with a current CLI, a setup notice without one, asked once
   await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.1";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
   await chmod(join(bin, 'modelplan'), 0o755);
   const up = JSON.parse(run());
-  assert.match(up.systemMessage, /0\.5\.1 低于 0\.5\.5/);
+  assert.match(up.systemMessage, /0\.5\.1 低于插件需要的 0\.5\.9/);
   assert.deepEqual(JSON.parse(run()), { hints: 'advise --hook codex' });
-  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.5";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
+  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.9";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
   await rm(join(state, 'notice-outdated'));
   assert.deepEqual(JSON.parse(run()), { hints: 'advise --hook codex' }, 'a current CLI: hints only, never a notice');
   await rm(home, { recursive: true });
@@ -109,10 +109,12 @@ test('setup status keeps each part apart and install verifies the version it end
   let s = await setupStatus({ home, find: () => null });
   assert.deepEqual([s.cli.status, s.hook.lastRun, s.declined], ['missing', null, false]);
   await mkdir(join(home, '.cache/modelplan-codex'), { recursive: true });
+  await writeFile(join(home, '.cache/modelplan-codex/hook-ran'), '0.13.0 def=111\n');
+  s = await setupStatus({ home, find: () => null, definition: async () => '222' });
+  assert.deepEqual([s.hook.version, s.hook.current, s.hook.trust, s.hook.scope], ['0.13.0', false, 'unknown', 'machine'], 'a changed definition has not run yet');
+  assert.equal((await setupStatus({ home, find: () => null, definition: async () => '111' })).hook.current, true, 'same definition, any plugin version');
   await writeFile(join(home, '.cache/modelplan-codex/hook-ran'), '0.12.0');
-  s = await setupStatus({ home, find: () => null, pluginVersion: '0.13.0' });
-  assert.deepEqual([s.hook.version, s.hook.current], ['0.12.0', false], 'an update whose hook has not run yet');
-  assert.equal((await setupStatus({ home, find: () => null, pluginVersion: '0.12.0' })).hook.current, true);
+  assert.equal((await setupStatus({ home, find: () => null, definition: async () => '111' })).hook.current, null, 'an older heartbeat without a definition: unknown, not stale');
   await decline({ home });
   assert.equal((await setupStatus({ home, find: () => null })).declined, true);
   assert.equal((await cliStatus({ find: () => '/x/modelplan', exec: async () => 'modelplan 0.5.1\n' })).status, 'outdated');
@@ -126,4 +128,88 @@ test('setup status keeps each part apart and install verifies the version it end
   const upgraded = await installCli({ platform: 'linux', run: async () => ({ code: 0, output: '' }), status: async () => (n++ ? { status: 'ok', path: '/h/.local/bin/modelplan', version: '0.5.4' } : { status: 'outdated', version: '0.5.1' }) });
   assert.deepEqual([upgraded.status, upgraded.version], ['upgraded', '0.5.4']);
   await rm(home, { recursive: true });
+});
+
+// Codex review, isolated repro 1: advise exited 7, the hook still exited 0 (it must not block the
+// prompt) and only a heartbeat was left, so the dashboard showed "ran". Start and result are now
+// separate, with the exit code and the first error line.
+test('a failing CLI run is recorded as a failure, never as a working hook', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'modelplan-fail-'));
+  const env = { PATH: '/usr/bin:/bin', HOME: home, PLUGIN_ROOT: root };
+  const bin = join(home, '.local/bin');
+  await mkdir(bin, { recursive: true });
+  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.9";; *) echo "publication cache unreadable" >&2; exit 7;; esac\n');
+  await chmod(join(bin, 'modelplan'), 0o755);
+  const run = () => execFileSync('sh', [join(root, 'hooks/modelplan-quota-hints.sh')], { env, input: '{"session_id":"t"}', encoding: 'utf8' });
+  assert.equal(run(), '', 'the prompt goes on');
+  const state = join(home, '.cache/modelplan-codex');
+  assert.equal((await readFile(join(state, 'hook-result'), 'utf8')).trim(), 'failed: exit 7: publication cache unreadable');
+  await assert.rejects(stat(join(state, 'hook-ok')), 'no success recorded');
+  const { setupStatus } = await import('../setup.mjs');
+  const s = await setupStatus({ home, find: () => join(bin, 'modelplan') });
+  assert.match(s.hook.result, /^failed: exit 7/);
+  assert.equal(s.hook.lastSuccess, null);
+  assert.match(s.hook.definition, /^\d+$/, 'the heartbeat names the hook definition');
+  assert.equal(s.hook.current, true);
+  const { renderQuota } = await import('../render.mjs');
+  const text = renderQuota({ status: 'unavailable' }, 'zh', { status: 'ok', events: [] }, { cli: s.cli, hook: s.hook, advice: { status: 'ok' }, adviceEvents: 0 });
+  assert.match(text, /提醒计算失败（exit 7: publication cache unreadable），最近一次成功：从未/);
+  assert.doesNotMatch(text, /设置完整/);
+  // Fixed: ok, a success time, and "nothing to flag" told apart from a failure.
+  await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.9";; *) exit 0;; esac\n');
+  run();
+  const ok = await setupStatus({ home, find: () => join(bin, 'modelplan') });
+  assert.equal(ok.hook.result, 'ok');
+  assert.ok(ok.hook.lastSuccess);
+  assert.match(renderQuota({ status: 'unavailable' }, 'zh', { status: 'ok', events: [] }, { cli: ok.cli, hook: ok.hook, advice: { status: 'ok' }, adviceEvents: 0 }),
+    /设置完整：CLI 0\.5\.9 · 钩子 0分前在本机运行（任一对话）· 提醒计算正常，当前没有需要提醒的事/);
+  await rm(home, { recursive: true });
+});
+
+// Codex review, isolated repro 2: the dashboard picked a non-executable modelplan on PATH while
+// the hook's shell found the working one. Both now skip it, and both prefer a current copy over
+// an older one earlier on PATH.
+test('the dashboard and the hook pick the same CLI', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'modelplan-pick-'));
+  const [broken, old, cur] = ['broken', 'old', join(home, '.local/bin')].map(d => d.startsWith('/') ? d : join(home, d));
+  for (const d of [broken, old, cur]) await mkdir(d, { recursive: true });
+  await writeFile(join(broken, 'modelplan'), 'not a program');
+  await writeFile(join(old, 'modelplan'), '#!/bin/sh\necho "modelplan 0.5.1"\n');
+  await writeFile(join(cur, 'modelplan'), '#!/bin/sh\necho "modelplan 0.5.9"\n');
+  await chmod(join(old, 'modelplan'), 0o755);
+  await chmod(join(cur, 'modelplan'), 0o755);
+  const PATH = `${broken}:${old}:/usr/bin:/bin`;
+  const shell = () => execFileSync('sh', [join(root, 'hooks/find-cli.sh')], { env: { PATH, HOME: home }, encoding: 'utf8' }).trim();
+  assert.equal(findCli({ env: { PATH }, home, platform: 'linux' }), join(cur, 'modelplan'));
+  assert.equal(shell(), join(cur, 'modelplan'));
+  await rm(join(cur, 'modelplan'));
+  assert.equal(findCli({ env: { PATH }, home, platform: 'linux' }), join(old, 'modelplan'), 'no current copy: the first executable one');
+  assert.equal(shell(), join(old, 'modelplan'));
+  assert.equal(await readFile(join(root, 'hooks/find-cli.sh'), 'utf8'), await readFile(join(root, '../claude-code/hooks/find-cli.sh'), 'utf8'), 'one finder for both plugins');
+  await rm(home, { recursive: true });
+});
+
+test('one minimum CLI version for the hook, the dashboard and the docs', async () => {
+  const { MIN_CLI } = await import('../setup.mjs');
+  const min = (await readFile(join(root, 'cli-min.txt'), 'utf8')).trim();
+  assert.equal(MIN_CLI, min);
+  assert.match(await readFile(join(root, 'hooks/modelplan-quota-hints.sh'), 'utf8'), /cli-min\.txt/);
+  for (const f of ['README.md', 'README.zh-CN.md', 'skills/setup/SKILL.md']) {
+    const text = await readFile(join(root, f), 'utf8');
+    for (const [, v] of text.matchAll(/(?:CLI|modelplan) v?(\d+\.\d+\.\d+)/g)) assert.equal(v, min, `${f} names CLI ${v}`);
+    assert.doesNotMatch(text, /0\.4\+/, f);
+  }
+});
+
+test('install failures say what kind they are', async () => {
+  const { failureKind } = await import('../install.mjs');
+  assert.equal(failureKind('download failed: https://github.com/x (network, proxy or GitHub unreachable)'), 'download');
+  assert.equal(failureKind('curl: (6) Could not resolve host'), 'download');
+  assert.equal(failureKind('checksum mismatch for modelplan_linux_amd64.tar.gz: not installed'), 'checksum');
+  assert.equal(failureKind('permission denied: cannot write /opt/x/modelplan (set MODELPLAN_BIN …)'), 'permission');
+  assert.equal(failureKind('Unsupported CPU: riscv64'), 'unsupported');
+  const r = await installCli({ platform: 'linux', status: async () => ({ status: 'missing' }), run: async () => ({ code: 1, output: 'permission denied: cannot write /opt/x/modelplan (set MODELPLAN_BIN to a writable directory)' }) });
+  assert.deepEqual([r.status, r.reason, r.path], ['failed', 'permission', '/opt/x/modelplan']);
+  const shadow = await installCli({ platform: 'darwin', run: async () => ({ code: 0, output: '' }), status: async () => ({ status: 'outdated', path: '/usr/local/bin/modelplan', version: '0.5.1' }) });
+  assert.deepEqual([shadow.reason, shadow.path, shadow.version], ['shadowed', '/usr/local/bin/modelplan', '0.5.1']);
 });

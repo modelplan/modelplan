@@ -328,10 +328,11 @@ func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
 		t.Fatalf("armed = %+v", s.Armed)
 	}
 
-	// After the announced time the week still shows its old reset: not proof, say nothing.
+	// After the announced time the week still shows its old reset: not proof, so no switch back.
+	// Having spent ahead, 70% used with most of the week to go is now tight, and says so.
 	later := now.Add(7 * time.Hour)
 	same := Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", later, 70, weekReset)}}, Digest: d, State: s, Now: later})
-	if len(same) != 0 {
+	if len(same) != 1 || same[0].Type != WindowTight {
 		t.Fatalf("unproven reset = %v", types(same))
 	}
 	// A reading after it with a restarted week: the reset reached this account, back to ★.
@@ -414,5 +415,48 @@ func TestDefaultIsBestValueUnlessItIsMuchWeaker(t *testing.T) {
 	b = TaskStart(sonnet(), d, now)
 	if b.Default.Name != "Claude Sonnet 5.5" || b.DefaultReason != "best_value" || !b.AtDefault || b.DefaultLadder != nil {
 		t.Fatalf("default = %+v / %s at=%v", b.Default, b.DefaultReason, b.AtDefault)
+	}
+}
+
+// Codex's report: Astra Med, weekly 72% used with 15.8% of the week gone (about six days to
+// go). That is tight, not on track, and besides stepping Astra down it names the cheaper model
+// that scores at least as high, leaving the choice to the user.
+func TestEarlyHeavyUseIsTightAndOffersACheaperModelThatKeepsAbility(t *testing.T) {
+	d := fixtureDigest()
+	d.Models = append(d.Models,
+		digest.Model{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium", HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+			Efforts: []digest.Effort{eff("low", "Low", 45, 12), eff("medium", "Med", 51.4, 20.3), eff("high", "High", 53, 26)}},
+		digest.Model{ID: "sol", Name: "GPT-6.1 Sol", DeveloperID: "openai", Recommended: "medium", HarnessIDs: map[string][]string{"codex": {"gpt-6.1-sol"}},
+			Efforts: []digest.Effort{eff("low", "Low", 42.4, 2.5), eff("medium", "Med", 51.2, 3.65), eff("high", "High", 53.8, 5.07), eff("xhigh", "XHigh", 56.1, 6)}},
+		digest.Model{ID: "api-only", Name: "API Only", DeveloperID: "openai", Efforts: []digest.Effort{eff("medium", "Med", 60, 1)}})
+	d.Lineups = append(d.Lineups, digest.PublishedLineup{DeveloperID: "openai", Lineup: lineup.Lineup{Members: []*lineup.Row{
+		{ID: "astra", Ability: 51.4}, {ID: "sol", Ability: 51.2, Tags: []string{"strongest", "best_value"}}, {ID: "api-only", Ability: 60}}}})
+	weekReset := now.Add(8487 * time.Minute) // 15.8% of the week gone
+	a := quota.Account{Source: "codex", ObservedAt: now, Harness: &quota.Harness{Model: "gpt-6-astra", Effort: "medium"},
+		Windows: []quota.Window{{Kind: "weekly", UsedPercent: f(72), ResetsAt: &weekReset, WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: now}}}
+	quota.Evaluate(&a, now)
+	if a.Headroom != "conserve" || a.Windows[0].Pace != "tight" {
+		t.Fatalf("headroom %s, pace %s", a.Headroom, a.Windows[0].Pace)
+	}
+	d.Resets = nil
+	es := derive(t, Load(t.TempDir()), d, a)
+	if len(es) != 1 || es[0].Type != WindowTight || es[0].Suggest.Label != "Low" {
+		t.Fatalf("events = %v", types(es))
+	}
+	alt := es[0].Alternative
+	if alt == nil || alt.Action != "cheaper_model" || alt.Model != "sol" || alt.Label != "Med" && alt.Label != "High" {
+		t.Fatalf("alternative = %+v", alt)
+	}
+	// Sol High is the cheapest Sol effort at or above Astra Med's 51.4: not Med (51.2), not the
+	// API-only model (no Codex id).
+	if alt.Label != "High" || *alt.AbilityDelta != 2.4 || *alt.CostRatio != 0.25 {
+		t.Fatalf("alternative = %s %+v ×%v", alt.Label, *alt.AbilityDelta, *alt.CostRatio)
+	}
+	// Early and still light: the projection alone does not decide before a fifth of the window.
+	b := a
+	b.Windows = []quota.Window{{Kind: "weekly", UsedPercent: f(30), ResetsAt: &weekReset, WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: now}}
+	quota.Evaluate(&b, now)
+	if b.Headroom == "conserve" {
+		t.Fatal("30% used early should not be tight yet")
 	}
 }

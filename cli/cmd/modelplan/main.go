@@ -490,7 +490,19 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			x.Harness = nil
 			acct = &x
 		}
-		if brief := advise.TaskStart(acct, d, now); brief != nil && state.Once("task_start|"+in.SessionID, now) {
+		// Once per thread, and again when the thread moves to another model (or its model
+		// becomes known): the options are judged against the model now in use.
+		key, model := "task_start|"+in.SessionID, ""
+		if acct.Harness != nil {
+			model = acct.Harness.Model
+		}
+		_, briefed := state.Seen[key]
+		_, onModel := state.Seen[key+"|"+model]
+		if brief := advise.TaskStart(acct, d, now); brief != nil && (!briefed || (model != "" && !onModel)) {
+			state.Once(key, now)
+			if model != "" {
+				state.Once(key+"|"+model, now)
+			}
 			parts = append(parts, render.TaskBrief(brief))
 		}
 	}

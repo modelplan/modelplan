@@ -9,8 +9,18 @@ here=$(dirname "$0")
 . "$here/setup-lib.sh"
 input=$(cat)
 mkdir -p "$state" 2>/dev/null && plugin_version > "$state/hook-ran" 2>/dev/null
+result() { printf '%s\n' "$1" > "$state/hook-result" 2>/dev/null; }
 out() { printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$(esc "$1")" "$(esc "$2")"; }
-hints() { printf '%s' "$input" | "$cli" advise --hook claude-code "$@" 2>/dev/null; }
+# The CLI's run: the prompt never waits on a failure, but /modelplan:setup hears about it.
+hints() {
+  o=$(printf '%s' "$input" | "$cli" advise --hook claude-code "$@" 2>"$state/hook-stderr")
+  c=$?
+  if [ "$c" -eq 0 ]; then result ok; : > "$state/hook-ok" 2>/dev/null
+  else result "failed: exit $c: $(head -1 "$state/hook-stderr" 2>/dev/null | cut -c1-160)"; fi
+  rm -f "$state/hook-stderr"
+  [ -n "$o" ] && printf '%s\n' "$o"
+  return 0
+}
 # The reply to a setup question asked on the previous prompt: a short "no" is recorded here.
 reply "$(prompt_of "$input")"
 if [ -n "$declined" ]; then
@@ -20,8 +30,9 @@ if [ -n "$declined" ]; then
 ModelPlan: noted, no reminders for 90 days; /modelplan:setup any time."
   ack="The user just declined $what. The ModelPlan plugin recorded it and will not raise it for 90 days; acknowledge in at most one short sentence if at all, and run nothing for it."
 fi
-cli=$(sh "$here/find-cli.sh")
+cli=$(sh "$here/find-cli.sh" "$min_cli")
 if [ -z "$cli" ]; then
+  result "skipped: cli missing"
   if [ -n "$declined" ]; then out "$sys" "$ack"
   elif notice missing ""; then out "$msg" "$ctx"; fi
   exit 0
@@ -29,8 +40,8 @@ fi
 cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 if [ -z "$cliv" ] || ! at_least "$cliv" "$min_cli"; then
   # Older CLIs still give hints; the upgrade notice (or a recorded "no") takes their place.
-  [ -n "$declined" ] && out "$sys" "$ack" && exit 0
-  notice outdated "${cliv:-unknown}" && out "$msg" "$ctx" && exit 0
+  [ -n "$declined" ] && result "skipped: declined" && out "$sys" "$ack" && exit 0
+  notice outdated "${cliv:-unknown}" && result "skipped: cli ${cliv:-unknown} outdated" && out "$msg" "$ctx" && exit 0
   hints
   exit 0
 fi

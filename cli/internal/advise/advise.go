@@ -57,7 +57,7 @@ const (
 
 // Step is a concrete suggestion against what the harness reports now.
 type Step struct {
-	Action       string   `json:"action"` // step_up | stronger_model | step_down | switch_back | wait | use_card | none
+	Action       string   `json:"action"` // step_up | stronger_model | step_down | cheaper_model | switch_back | wait | use_card | none
 	Model        string   `json:"model,omitempty"`
 	ModelName    string   `json:"modelName,omitempty"`
 	Effort       string   `json:"effort,omitempty"` // native key
@@ -94,24 +94,27 @@ type Public struct {
 }
 
 type Event struct {
-	Type             string            `json:"type"`
-	Key              string            `json:"key"`
-	Severity         string            `json:"severity"` // warn | info
-	Source           string            `json:"source"`   // claude-code | codex | user | public
-	Plan             string            `json:"plan,omitempty"`
-	Window           string            `json:"window,omitempty"`
-	At               *time.Time        `json:"at,omitempty"` // reset, rate boundary or card expiry
-	InMinutes        *int              `json:"inMinutes,omitempty"`
-	RemainingPercent *float64          `json:"remainingPercent,omitempty"`
-	Model            string            `json:"model,omitempty"`  // harness model id as reported
-	Effort           string            `json:"effort,omitempty"` // harness effort as reported
-	Count            *int              `json:"count,omitempty"`  // reset cards
-	Suggest          *Step             `json:"suggest,omitempty"`
-	Speed            *Speed            `json:"speed,omitempty"`
-	Rate             *Rate             `json:"rate,omitempty"`
-	Public           *Public           `json:"public,omitempty"`
-	Stale            bool              `json:"stale,omitempty"`
-	Text             map[string]string `json:"text,omitempty"` // rendered by the CLI for plugins: zh, en
+	Type             string     `json:"type"`
+	Key              string     `json:"key"`
+	Severity         string     `json:"severity"` // warn | info
+	Source           string     `json:"source"`   // claude-code | codex | user | public
+	Plan             string     `json:"plan,omitempty"`
+	Window           string     `json:"window,omitempty"`
+	At               *time.Time `json:"at,omitempty"` // reset, rate boundary or card expiry
+	InMinutes        *int       `json:"inMinutes,omitempty"`
+	RemainingPercent *float64   `json:"remainingPercent,omitempty"`
+	Model            string     `json:"model,omitempty"`  // harness model id as reported
+	Effort           string     `json:"effort,omitempty"` // harness effort as reported
+	Count            *int       `json:"count,omitempty"`  // reset cards
+	Suggest          *Step      `json:"suggest,omitempty"`
+	// Alternative: when a window is tight, a cheaper configuration of another published model
+	// that scores at least as high as the current one (action cheaper_model).
+	Alternative *Step             `json:"alternative,omitempty"`
+	Speed       *Speed            `json:"speed,omitempty"`
+	Rate        *Rate             `json:"rate,omitempty"`
+	Public      *Public           `json:"public,omitempty"`
+	Stale       bool              `json:"stale,omitempty"`
+	Text        map[string]string `json:"text,omitempty"` // rendered by the CLI for plugins: zh, en
 
 	windowReset *time.Time // AnnouncedSurplus: the window's own reset when advised
 }
@@ -238,6 +241,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 	case "conserve":
 		e := base(WindowTight, "warn")
 		e.Suggest = cfg.down()
+		e.Alternative = cfg.cheaper(d, harnessOf(a.Source))
 		return []Event{e}
 	case "spend":
 		e := base(ResetSoonSurplus, "info")
@@ -330,6 +334,42 @@ func (c config) up(d *digest.Digest) *Step {
 		}
 	}
 	return &Step{Action: "none"}
+}
+
+// cheaper: the lowest-cost effort of another model in the developer's published lineup, usable
+// in this harness, that scores at least as high as the current configuration on the same cost
+// basis. Lowering the effort trades ability for quota; this keeps it. Nil when none qualifies.
+func (c config) cheaper(d *digest.Digest, harness string) *Step {
+	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
+		return nil
+	}
+	l := d.Lineup(c.model.DeveloperID)
+	if l == nil {
+		return nil
+	}
+	var best *digest.Effort
+	var bestModel *digest.Model
+	for _, r := range l.Members {
+		m := d.Model(r.ID)
+		if m == nil || r.Status != "" || m.ID == c.model.ID || len(m.HarnessIDs[harness]) == 0 {
+			continue
+		}
+		for i := range m.Efforts {
+			e := &m.Efforts[i]
+			if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability || *e.Cost >= *c.cur.Cost {
+				continue
+			}
+			if best == nil || *e.Cost < *best.Cost || (*e.Cost == *best.Cost && *e.Ability > *best.Ability) {
+				best, bestModel = e, m
+			}
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec()}
+	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
+	return s
 }
 
 // quotaSpeed: the harness's Fast tier for this model when it draws plan quota (Codex), so

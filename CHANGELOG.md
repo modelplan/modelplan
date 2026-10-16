@@ -2,6 +2,23 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.9 (2026-10-16)
+
+- Plugins: Codex 0.14.0, Claude Code 0.6.0 (both need CLI 0.5.9).
+- **Earlier warning.** A window already half used and on pace to run out is `tight` however early it is; before, the projection counted only after a fifth of the window, so 72% of a week used with six days to go showed as on track (from a Codex review). Lighter early use still waits for the fifth.
+- **A cheaper model, not only a lower effort.** When a window is tight, the hint also names the cheapest configuration of another published model, usable in this harness, that scores at least as high as the current one (`alternative`, action `cheaper_model`), with its multipliers, and leaves the choice to the user ("unless this task needs the current model"). Today: GPT-6 Astra Med → GPT-6.1 Sol High, +2.4 pts at ×0.25 the reference cost.
+- **The brief follows the model.** A thread that moves to another model (or whose model becomes known) gets the brief again for it; otherwise still once per thread. Without a readable model the brief tells the model to go by the model its own instructions name.
+- **Cost wording.** Hints and the brief say that × is the published API cost of a reference task: within one model it roughly tracks plan usage, across models it is only a guide, never a promised quota saving. The brief names the publication date.
+
+## Codex plugin 0.14.0 and Claude Code plugin 0.6.0 (2026-10-16)
+
+- **The hook's outcome, not just its start.** The hook still never blocks a prompt, but it now records how each run ended: `ok`, `failed: exit N: <first error line>`, or why the CLI was not asked; and the last success. The dashboard, text output, doctor and `/modelplan:setup` show "hints computed (nothing to flag)", "hints failed (why, last success)" and "not verified yet" apart. These records are labelled as this machine's, from any chat.
+- **Codex: hook definition, not plugin version.** The heartbeat records a checksum of `hooks.json`; "review due" shows only when the definition changed, not on every plugin update. Trust is reported as unknown (plugins cannot see it; `doctor.cjs` reads it from Codex in a project). Setup text names the desktop entry: the hook icon with a yellow dot next to the input, source `modelplan-codex`; `/hooks` in the CLI.
+- **One CLI finder.** `hooks/find-cli.sh` (shared by both plugins) and the dashboard's `findCli` use the same order and rules: executable files only, and the first copy at least the required version wins over an older one earlier on PATH (a non-executable `modelplan` on PATH made the dashboard and the hook disagree).
+- **One minimum version**, in each plugin's `cli-min.txt`, read by the hook, the dashboard and checked against the docs by a test; no more "0.4+" next to "0.5.5".
+- **Install failures by kind.** `install.sh` names download, checksum and permission failures; the dashboard says what to do for each, and for an older copy found first or an unsupported system. After a successful install it says the next step (send a message to verify the hook; allow it if Codex asks).
+- Hints arrive with a prompt only; the docs say so instead of implying continuous monitoring.
+
 ## v0.5.8 (2026-10-16)
 
 - Plugins: Claude Code 0.5.1, Codex 0.13.1.

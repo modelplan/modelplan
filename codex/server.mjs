@@ -24,7 +24,7 @@ const reader = createReader();
 const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME); } catch { return null; } })() ??
   { path: process.execPath, version: process.versions.node, source: 'direct' };
 const setup = (quota, advice, state) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
-  advice: { status: advice.status, reason: advice.reason ?? null },
+  advice: { status: advice.status, reason: advice.reason ?? null, error: advice.error ?? null }, adviceEvents: advice.status === "ok" ? advice.events.length : null,
   cli: { ...state.cli, installable: supported(), command: INSTALL_COMMAND }, hook: state.hook, declined: state.declined });
 const readHtml = async (preview = false, surface = "widget") => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
@@ -44,7 +44,7 @@ const inputSchema = { modelIds: z.array(z.string().max(180)).max(32).optional(),
   lang: z.enum(["zh", "en"]).optional(), view: z.enum(["lineup", "effort"]).optional(), modelId: z.string().max(180).optional() };
 async function result(args) {
   try {
-    const [published, quota, advice, state] = await Promise.all([reader({ refresh: args.refresh }), readQuota(), readAdvice(), setupStatus({ pluginVersion: version })]);
+    const [published, quota, advice, state] = await Promise.all([reader({ refresh: args.refresh }), readQuota(), readAdvice(), setupStatus()]);
     const data = filterDashboard(published, args.modelIds);
     const model = args.modelId ? data.models.find(m => m.id === args.modelId) : null;
     if (args.modelId && !model) throw Error("unknown_model_id");
@@ -126,7 +126,7 @@ if (!process.argv.includes("--http")) {
       }
       if (req.method !== "GET") { res.writeHead(405); return res.end(); }
       if (url.pathname === "/api/dashboard") {
-        const [data, quota, advice, state] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice(), setupStatus({ pluginVersion: version })]);
+        const [data, quota, advice, state] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice(), setupStatus()]);
         res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice, setup: setup(quota, advice, state) }));
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }

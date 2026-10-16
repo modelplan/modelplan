@@ -19,8 +19,8 @@ first=yes
 [ "$first" = yes ] && : > "$state/awaiting-$kind" 2>/dev/null # the hook reads the user's reply
 install='curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh'
 if [ "$kind" = outdated ]; then
-  msg="ModelPlan：modelplan CLI $version 低于 $min，任务开始简报和 Codex 账号额度读数不可用。在 Model Plan 看板点“升级 CLI”，或运行 $install。\nModelPlan: modelplan CLI $version is older than $min; upgrade from the dashboard or with the command above."
-  ctx="The ModelPlan plugin found modelplan CLI $version, older than $min, so the task-start brief and the Codex account reading are off."
+  msg="ModelPlan：modelplan CLI $version 低于插件需要的 $min，部分提醒（额度提前预警、换模型方案）和简报功能用不上。在 Model Plan 看板点“升级 CLI”，或运行 $install。\nModelPlan: modelplan CLI $version is older than the $min the plugin needs; upgrade from the dashboard or with the command above."
+  ctx="The ModelPlan plugin found modelplan CLI $version, older than the $min it needs, so some quota hints (early warnings, cheaper-model options) and brief features are off."
 else
   msg="ModelPlan：未检测到可选的 modelplan CLI，额度提醒（重置前升档或开 Fast、重置后切回 ★）和任务开始简报未启用。在 Model Plan 看板点“安装 CLI”，或运行 $install。\nModelPlan: the optional modelplan CLI is not installed, so quota hints and the task-start brief are off. Install it from the dashboard or with the command above."
   ctx="The ModelPlan plugin's optional modelplan CLI is not installed, so its quota hints and task-start brief are off."
