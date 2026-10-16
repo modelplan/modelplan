@@ -2,7 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## Unreleased
+## Codex plugin 0.15.4 and Claude Code plugin 0.7.4 (2026-10-16)
+
+- Pinned CLI v0.5.14 and the plugin changes listed under it: setup offers CodexBar, the Codex dashboard shows those plans.
+
+## v0.5.14 (2026-10-16)
 
 - **The pinned CodexBar release is fetched even when one is already installed.** 0.5.13 used any `codexbar` it found and fetched only when there was none. On the owner's Mac that meant CodexBar 0.60.3, 16 releases older than the pin, whose provider code (Cursor's changes almost daily) and output were never tested. A copy the user installed is now used only until the pinned one is in place; a failed fetch is retried after 30 minutes. `MODELPLAN_CODEXBAR=<path>` still chooses a copy explicitly. `modelplan codexbar` says which copy runs.
 - **Window titles that only restate the window are dropped.** CodexBar calls Z.ai's windows "5 hours" and "Weekly", which printed as "5h 5 hours". Titles that name something else ("Third Party", "MCP") stay.
