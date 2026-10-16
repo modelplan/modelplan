@@ -56,11 +56,12 @@ func TestAdviceLines(t *testing.T) {
 
 func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 	d, r := 4.8, 1.37
-	b := &advise.Brief{Model: "GPT-6.1 Sol", Effort: "Med", AtRec: true, Headroom: "normal",
+	b := &advise.Brief{Model: "GPT-6.1 Sol", Effort: "Med", AtRec: true, Headroom: "normal", AtDefault: true, DefaultReason: "best_value",
+		Default: &advise.BriefModel{Name: "GPT-6.1 Sol", Rec: "Med", Tags: []string{"strongest", "best_value"}},
 		Models: []advise.BriefModel{{Name: "GPT-6.1 Sol", Rec: "Med", Ability: 51.2, CostRelative: 1.4, Tags: []string{"strongest"}}, {Name: "GPT-6 Astra", Rec: "Med", Ability: 44, CostRelative: 1.6, Skip: true}},
 		Ladder: []advise.BriefStep{{Label: "Med", Recommended: true, Current: true}, {Label: "High", AbilityDelta: &d, CostRatio: &r}}}
 	got := TaskBrief(b)
-	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "GPT-6 Astra ★Med 44.0 pts ×1.60 (skip", "★Med (current) · High +4.8 pts ×1.37", "Otherwise say nothing about models or efforts.", "never say you changed them"} {
+	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "GPT-6 Astra ★Med 44.0 pts ×1.60 (skip", "★Med (current) · High +4.8 pts ×1.37", "Otherwise say nothing about models or efforts.", "Default for ordinary tasks: GPT-6.1 Sol ★Med (both the strongest and the best value). The thread is on it.", "back to the default once it is done", "never say you changed them"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
