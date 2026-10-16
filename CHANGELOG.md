@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.3 and Claude Code plugin 0.7.3 (2026-10-16)
+
+- Pinned CLI v0.5.13: `~/.cache/modelplan-cli/modelplan codexbar enable cursor zai` reads other plans through CodexBar (opt-in). The setup command and the dashboard do not offer it yet.
+
 ## v0.5.13 (2026-10-16)
 
 - **Other plans through CodexBar (opt-in): `modelplan codexbar enable cursor zai`.** Copilot, Cursor, Kiro, OpenCode Go and Z.ai / GLM keep their meters behind the vendor's own sign-in, so this client reads them through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Credentials stay with CodexBar: its config, another CLI's login, the Cursor app or browser cookies, and never a Keychain prompt in the background. This client handles none of them.
