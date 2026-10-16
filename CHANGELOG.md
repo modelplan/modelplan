@@ -2,6 +2,13 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.0 and Claude Code plugin 0.7.0 (2026-10-16)
+
+- **The plugins bring their own CLI.** Each plugin pins one `modelplan` release in `cli-pin.json` (version, release URL and the SHA-256 of each macOS and Linux archive) and fetches it with `hooks/fetch-cli.sh` (shared, identical) into `~/.cache/modelplan-cli/<version>`, using it only if the archive's checksum equals the pinned one; `~/.cache/modelplan-cli/modelplan` links the newest, a stable path for the status line. Installing or updating a plugin is all there is to do: the separate "install the CLI / upgrade the CLI / not now" flow is gone. Nothing else changes (no PATH, profile or sudo); a CLI the user installed is left alone and used only while the plugin's copy is missing. `MODELPLAN_PLUGIN_CLI=off` turns fetching off; Windows has no automatic fetch. Pinned now: v0.5.10.
+- **Who fetches.** Codex: the plugin's MCP server, in the background when it starts; its hook still downloads nothing. Claude Code (no separate hook review): the hook, in the background. A failed fetch is retried after 10 minutes; Codex's dashboard has **Retry**, Claude Code's `/modelplan:setup` gives the command. Commands (`/modelplan:plan` and others) fetch on demand.
+- **What you see.** The CLI's first arrival is announced once; a failed fetch says why (download, checksum mismatch, unsupported system), at most weekly; nothing is asked. The dashboard, text output, doctor and `/modelplan:setup` show the plugin's copy, a user's copy, "downloading", "failed (why)" or "off". Claude Code keeps one question, the status line, with a short "no" recorded by the hook.
+- Release flow: tag the CLI, then `node scripts/pin-cli.mjs vX.Y.Z`; CI checks the pins against the published release (`--check`).
+
 ## Codex plugin 0.14.2 and Claude Code plugin 0.6.2 (2026-10-16)
 
 - The Skill stays usable without the CLI and now says what only the CLI adds (`advise` hints with memory and the cheaper-model option, Codex's account reading, Claude Code's quota, a verified local publication), so those stay "unknown" instead of improvised. When the user asks about their own quota or resets without the CLI, it mentions the install command once; never for model or effort questions, and it never installs anything itself.

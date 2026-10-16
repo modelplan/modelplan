@@ -94,14 +94,15 @@ function localRuntime() {
 }
 
 function optional() {
-  // Same lookup as the hooks and the server: PATH, then ~/.local/bin and Homebrew.
+  // Same lookup as the hooks and the server: the plugin's pinned copy, then PATH, ~/.local/bin, Homebrew.
   const found = process.platform === 'win32' ? null : sh('sh', [path.join(__dirname, 'hooks', 'find-cli.sh')], 5000);
   const bin = found && found.status === 0 ? (found.stdout || '').trim() : 'modelplan';
   const cli = sh(bin, ['version'], 5000), py = sh('python3', ['--version'], 5000);
   const pyOk = !py.error && py.status === 0, cliOk = !cli.error && cli.status === 0;
-  add('cli', cliOk ? 'ok' : 'info', T('可选：modelplan CLI（主动提醒 / advise）', 'Optional: modelplan CLI (proactive hints / advise)'),
-    cliOk ? bin + ' · ' + (cli.stdout || '').trim().split('\n')[0] : T('未安装：额度仍可由 Python 读取，主动提醒不可用', 'not installed: quota still reads via Python; proactive hints are off'),
-    cliOk ? null : 'curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh');
+  let fetched = ''; try { fetched = fs.readFileSync(path.join(os.homedir(), '.cache', 'modelplan-cli', 'fetch-result'), 'utf8').trim().split('\n')[0]; } catch (e) { /* not tried yet */ }
+  add('cli', cliOk ? 'ok' : 'info', T('插件配套的 modelplan CLI（主动提醒 / advise）', 'The plugin\'s modelplan CLI (proactive hints / advise)'),
+    cliOk ? bin + ' · ' + (cli.stdout || '').trim().split('\n')[0] : T('尚未就绪：额度仍可由 Python 读取，主动提醒不可用', 'not ready: quota still reads via Python; proactive hints are off') + (fetched ? ' · ' + fetched : ''),
+    cliOk ? null : 'sh "' + path.join(__dirname, 'hooks', 'fetch-cli.sh') + '"');
   add('python', pyOk ? 'ok' : cliOk ? 'info' : 'warn', T('额度读取回退：Python 3', 'Quota fallback: Python 3'),
     pyOk ? (py.stdout || py.stderr).trim() : T('未找到', 'not found'), pyOk || cliOk ? null : T('安装 Python 3 或 modelplan CLI 才能读本机额度', 'Install Python 3 or the modelplan CLI to read local quota'));
 }

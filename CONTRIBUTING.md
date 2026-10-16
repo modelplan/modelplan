@@ -30,6 +30,13 @@ Ground rules:
 - Keep English and Chinese text in step (READMEs, Skill answers, CLI strings).
 - Small, focused PRs with a clear description. CI must be green.
 
+### Releasing
+
+The plugins bring their own CLI: each pins one release in `cli-pin.json` (version and per-platform SHA-256) and fetches it with `hooks/fetch-cli.sh`. So a CLI change ships in two steps:
+
+1. Merge the CLI change and push the tag `vX.Y.Z` on the merge commit; the release workflow builds the archives and `checksums.txt`.
+2. Run `node scripts/pin-cli.mjs vX.Y.Z` (writes both plugins' `cli-pin.json`), bump both plugin versions, open a PR. CI runs `node scripts/pin-cli.mjs --check` against the published release.
+
 By contributing you agree that your contribution is licensed under the [MIT License](LICENSE).
 
 ---
@@ -39,5 +46,7 @@ By contributing you agree that your contribution is licensed under the [MIT Lice
 **数据问题**：价格、额度、档位、套餐规则和新闻都来自 Model Plan 的公开发布，不在本仓库里。发现错误请[报告数据问题](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml)，写明页面或命令、看到的内容、应该是什么，并附来源（官方页面最好）。modelplan.ai 上的「报错」链接会自动填好页面和条目。
 
 **Bug 与想法**：bug 请注明客户端（Skill、命令行、Claude Code 插件、Codex 插件）、版本和复现步骤；想法请说明你当时想做什么决定：用哪个模型、开哪一档、买哪个套餐。
+
+**发版**：插件自带 CLI，各自在 `cli-pin.json` 里锁定一个版本和各平台的 SHA-256。所以 CLI 的改动分两步发：先合并并在合并提交上打 `vX.Y.Z` 标签，等发版流程生成程序包和 `checksums.txt`；再运行 `node scripts/pin-cli.mjs vX.Y.Z` 写入两个插件的 `cli-pin.json`，升两个插件的版本号并开 PR，CI 会用 `node scripts/pin-cli.mjs --check` 对照已发布的版本核验。
 
 **Pull request**：按上表在本地跑对应检查。客户端不自己排名、只读匿名不上传、从不替用户切换模型或档位、中英文同步更新。提交即表示你同意以 [MIT 许可](LICENSE)发布你的贡献。

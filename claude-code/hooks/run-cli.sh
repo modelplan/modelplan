@@ -1,4 +1,5 @@
 #!/bin/sh
-# Runs the modelplan CLI wherever it is installed, for the plugin's commands.
-cli=$(sh "$(dirname "$0")/find-cli.sh" "$(cat "$(dirname "$0")/../cli-min.txt" 2>/dev/null)") || { echo "modelplan CLI not found. Run /modelplan:setup to install it."; exit 0; }
+# Runs the plugin's modelplan CLI (its pinned copy, fetched now if missing), else one you installed.
+here=$(dirname "$0")
+cli=$(sh "$here/find-cli.sh") || { sh "$here/fetch-cli.sh" >/dev/null 2>&1; cli=$(sh "$here/find-cli.sh"); } || { echo "modelplan CLI not available. Run /modelplan:setup to see why."; exit 0; }
 exec "$cli" "$@"

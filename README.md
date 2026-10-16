@@ -43,7 +43,7 @@ Then ask your agent: *"Which model and effort should I use for this refactor?"* 
 /plugin install modelplan@modelplan
 ```
 
-Then `/modelplan:setup` checks the CLI, the status line and the hook part by part and finishes what is missing, with your consent. Commands: `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup`, and `/modelplan:statusline` to add the status line (asks before changing your settings). [More](claude-code/)
+The plugin fetches its own `modelplan` CLI (a pinned release, checksum-checked) in the background, so there is nothing else to install or upgrade; `/modelplan:setup` checks each part. Commands: `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup`, and `/modelplan:statusline` to add the status line (asks before changing your settings). [More](claude-code/)
 
 </details>
 

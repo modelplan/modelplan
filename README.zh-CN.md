@@ -43,7 +43,7 @@ npx skills add modelplan/modelplan
 /plugin install modelplan@modelplan
 ```
 
-装好后运行 `/modelplan:setup`：逐项检查 CLI、状态栏和钩子，缺什么在你同意后补上。命令：`/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及 `/modelplan:statusline`（添加状态栏，改设置前会先问你）。[详情](claude-code/)
+插件会在后台自动下载配套的 `modelplan` CLI（锁定版本、核对校验值），不需要另外安装或升级；`/modelplan:setup` 可逐项检查。命令：`/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及 `/modelplan:statusline`（添加状态栏，改设置前会先问你）。[详情](claude-code/)
 
 </details>
 

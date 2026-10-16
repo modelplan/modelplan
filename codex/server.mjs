@@ -7,8 +7,8 @@ import { z } from "zod";
 import { createReader, filterDashboard } from "./data.mjs";
 import { renderLineup, renderEffort, renderQuota } from "./render.mjs";
 import { readAdvice, readQuota } from "./quota.mjs";
-import { INSTALL_COMMAND, installCli, supported } from "./install.mjs";
-import { decline, setupStatus } from "./setup.mjs";
+import { fetchCli, fetchInBackground, supported } from "./install.mjs";
+import { setupStatus } from "./setup.mjs";
 
 const version = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 // One UI resource per surface (OpenAI MCP extensions: at most one entrypoint per tool). The model's
@@ -25,7 +25,7 @@ const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME);
   { path: process.execPath, version: process.versions.node, source: 'direct' };
 const setup = (quota, advice, state) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
   advice: { status: advice.status, reason: advice.reason ?? null, error: advice.error ?? null }, adviceEvents: advice.status === "ok" ? advice.events.length : null,
-  cli: { ...state.cli, installable: supported(), command: INSTALL_COMMAND }, hook: state.hook, declined: state.declined });
+  cli: { ...state.cli, retryable: supported() }, hook: state.hook });
 const readHtml = async (preview = false, surface = "widget") => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
     "ui/dashboard.html", "ui/kit/tokens.css", "ui/kit/components.css", "ui/dashboard.js", "ui/kit/logo.svg", "ui/comparison.js", "ui/lineup.js", "ui/presentation.js", "ui/curves.js", "ui/space.css",
@@ -82,30 +82,28 @@ export function makeServer() {
     title, description, inputSchema, annotations,
     _meta: { ui: { resourceUri: SURFACES[surface].uri, visibility: ["app"] }, "openai/ui": { entrypoints: [{ type }] } },
   }, result);
-  // The dashboard's "Install CLI" button. App-only: the user's click is the consent; the model cannot call it.
+  // The dashboard's Retry button for the plugin's own CLI (the pinned release, checked against the
+  // pinned SHA-256). App-only; the server already fetches it in the background when it starts.
   s.registerTool("install_modelplan_cli", {
-    title: "Install the modelplan CLI", inputSchema: {},
+    title: "Fetch the plugin's modelplan CLI", inputSchema: {},
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    description: "Install the optional modelplan CLI (latest release, checksum-checked) into ~/.local/bin so that proactive quota hints work. Only the dashboard's install button calls this.",
+    description: "Fetch the modelplan CLI release this plugin is pinned to (checked against the SHA-256 pinned in the plugin) into ~/.cache/modelplan-cli. Only the dashboard's Retry button calls this.",
     _meta: { ui: { visibility: ["app"] } },
   }, async () => {
-    const install = await installCli();
-    const advice = ["installed", "upgraded", "present"].includes(install.status) ? await readAdvice() : null;
-    const ok = ["installed", "upgraded", "present"].includes(install.status);
-    return { isError: !ok, structuredContent: { install, advice },
-      content: [{ type: "text", text: ok ? `modelplan CLI ${install.status}: ${install.path}` : `modelplan CLI not installed (${install.status}). ${install.command ? "Run: " + install.command : install.url ?? ""}\n${install.output ?? ""}`.trim() }] };
+    const install = await fetchCli();
+    const ok = install.status === "ready";
+    return { isError: !ok, structuredContent: { install, advice: ok ? await readAdvice() : null },
+      content: [{ type: "text", text: ok ? `modelplan CLI ${install.version} ready: ${install.path}` : `modelplan CLI not fetched (${install.status}${install.reason ? ": " + install.reason : ""}).` }] };
   });
-  s.registerTool("dismiss_cli_setup", {
-    title: "Not now: stop the CLI setup notice", inputSchema: {}, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: "Record that the user does not want the optional modelplan CLI for now; the hook's setup notice stays quiet for 90 days. Only the dashboard's button calls this.",
-    _meta: { ui: { visibility: ["app"] } },
-  }, async () => ({ structuredContent: await decline(), content: [{ type: "text", text: "CLI setup notice off for 90 days." }] }));
   entry("open_model_panel", "Effort & quota", "Open the ModelPlan effort and quota panel beside this conversation.", "thread", "thread");
   entry("open_model_board", "Model Plan", "Open the ModelPlan board from the sidebar.", "global", "global");
   return s;
 }
 
 if (!process.argv.includes("--http")) {
+  // Codex starts this server with each session: fetch the plugin's pinned CLI in the background
+  // when it is missing (after an install or a plugin update), so hints need no separate install.
+  fetchInBackground();
   await makeServer().connect(new StdioServerTransport());
 } else {
   const port = Number(process.env.MODELPLANS_DEMO_PORT ?? 4318);
