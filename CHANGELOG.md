@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI (unreleased)
+
+- **Task-start brief for Codex.** On the first prompt of a Codex thread, `advise --hook codex` also hands the model a short brief: the Codex models at ★ with ability, cost relative to the cheapest and lineup verdicts (dominated ones marked skip), the current model's effort ladder against the current effort, the quota headroom and, with a surplus, Fast when it draws plan quota. The model judges the task and suggests one configuration only when the current one clearly does not fit; the brief says it never changes settings. Once per thread (by the hook's `session_id`); `MODELPLAN_TASK_BRIEF=off` disables it.
+
 ## v0.5.2 (2026-10-16)
 
 - Plugins: Codex 0.12.0.
