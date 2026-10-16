@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Open data (2026-10-16)
+
+- **`data/` mirrors Model Plan's reviewed data.** Plan tiers, prices, quota metering, plan model access, calendars, model identities and lineages, speed claims and effort policies, copied exactly from [modelplan.ai/open-data.json](https://modelplan.ai/open-data.json) with SHA-256 checks. The hourly `data-sync` workflow turns each change into a pull request that lists the records added, removed and changed. Data is [CC BY 4.0](data/LICENSE); `real-api-pricing/` keeps its MIT license.
+
 ## Codex plugin 0.15.2 and Claude Code plugin 0.7.2 (2026-10-16)
 
 - Pinned CLI v0.5.12; the Codex panel changes listed under v0.5.12.

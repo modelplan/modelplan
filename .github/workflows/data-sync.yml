@@ -1,0 +1,43 @@
+name: data-sync
+# Hourly: mirror Model Plan's open data (https://modelplan.ai/open-data.json) into data/.
+# Each change becomes a pull request listing what changed, merged once the export checks out.
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: data-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Fetch and verify the open data
+        run: node scripts/data-sync.mjs --summary "$RUNNER_TEMP/body.md"
+      - name: The mirror checks out
+        run: node --test scripts/data-sync.test.mjs && node scripts/data-sync.mjs --check
+      - name: Open and merge a pull request for the change
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          if [ -z "$(git status --porcelain -- data)" ]; then echo "data/ is current"; exit 0; fi
+          version=$(node -p 'require("./data/manifest.json").version')
+          branch="data/sync-$version-$GITHUB_RUN_ID"
+          git config user.name "modelplan-data-sync"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A data
+          git commit -q -m "Data: Model Plan $version"
+          git push -q origin "$branch"
+          url=$(gh pr create --base main --head "$branch" --title "Data: Model Plan $version" --body-file "$RUNNER_TEMP/body.md" --label data)
+          gh pr merge "$url" --squash --delete-branch
+          echo "merged $url" >> "$GITHUB_STEP_SUMMARY"

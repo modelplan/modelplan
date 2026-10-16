@@ -4,7 +4,7 @@ Thanks for helping. [简体中文](#参与贡献)
 
 ## Report a data problem
 
-Prices, quotas, efforts, plan rules and news come from Model Plan's publication, not from this repository. If something is wrong, [open a data problem](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml) with the page or command, what you saw, what it should be, and a source (an official page is best). The **Report** links on [modelplan.ai](https://modelplan.ai) fill in the page and the item for you.
+Prices, quotas, efforts, plan rules and news come from Model Plan's publication. Its reviewed data is mirrored in [`data/`](data/) (one pull request per change, so the history shows what changed and when), but it is edited upstream: a pull request that edits `data/` cannot be merged, and the next sync would overwrite it. If something is wrong, [open a data problem](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml) with the page or command, what you saw, what it should be, and a source (an official page is best). The **Report** links on [modelplan.ai](https://modelplan.ai) fill in the page and the item for you.
 
 ## Bugs and ideas
 
@@ -43,7 +43,7 @@ By contributing you agree that your contribution is licensed under the [MIT Lice
 
 ## 参与贡献
 
-**数据问题**：价格、额度、档位、套餐规则和新闻都来自 Model Plan 的公开发布，不在本仓库里。发现错误请[报告数据问题](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml)，写明页面或命令、看到的内容、应该是什么，并附来源（官方页面最好）。modelplan.ai 上的「报错」链接会自动填好页面和条目。
+**数据问题**：价格、额度、档位、套餐规则和新闻都来自 Model Plan 的公开发布。审核过的数据镜像在 [`data/`](data/)（每次变化一个 PR，历史里能看到改了什么、何时改的），但编辑在上游进行：直接修改 `data/` 的 PR 无法合并，下次同步也会覆盖。发现错误请[报告数据问题](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml)，写明页面或命令、看到的内容、应该是什么，并附来源（官方页面最好）。modelplan.ai 上的「报错」链接会自动填好页面和条目。
 
 **Bug 与想法**：bug 请注明客户端（Skill、命令行、Claude Code 插件、Codex 插件）、版本和复现步骤；想法请说明你当时想做什么决定：用哪个模型、开哪一档、买哪个套餐。
 
