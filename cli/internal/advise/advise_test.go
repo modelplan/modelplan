@@ -188,7 +188,9 @@ func TestConflictingTopPriorityRateIsUnknown(t *testing.T) {
 	extra := d.Multipliers[1]
 	extra.Multiplier = f(2)
 	d.Multipliers = append(d.Multipliers, extra)
-	r, status := rateAt(d.Multipliers, "zhipu-cn-legacy", "GLM-5.3", now.Add(time.Hour))
+	r, status := rateAt(d.Multipliers, func(w *digest.MultiplierWindow) bool {
+		return contains(w.PlanIDs, "zhipu-cn-legacy") && contains(w.Models, "GLM-5.3")
+	}, now.Add(time.Hour))
 	if r != nil || status != "unknown" {
 		t.Fatalf("rate = %v %s", r, status)
 	}
@@ -376,7 +378,7 @@ func TestCodexFullResetCreditsCountForEveryWindow(t *testing.T) {
 }
 
 func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
-	b := TaskStart(func() *quota.Account { a := claude("high", 30, 3*time.Hour, 300); return &a }(), fixtureDigest(), now)
+	b := TaskStart(func() *quota.Account { a := claude("high", 30, 3*time.Hour, 300); return &a }(), quota.Report{}, fixtureDigest(), now)
 	if b == nil || b.Model != "Claude Opus 5.5" || b.Effort != "High" || b.AtRec || len(b.Models) != 2 || b.Models[0].Name != "Claude Opus 5.5" {
 		t.Fatalf("brief = %+v", b)
 	}
@@ -389,7 +391,7 @@ func TestTaskStartBriefListsOptionsAndTheCurrentLadder(t *testing.T) {
 	if med == nil || !med.Recommended || *med.AbilityDelta != -4.8 || *med.CostRatio != 0.73 {
 		t.Fatalf("ladder = %+v", b.Ladder)
 	}
-	if TaskStart(&quota.Account{Source: "user"}, fixtureDigest(), now) != nil {
+	if TaskStart(&quota.Account{Source: "user"}, quota.Report{}, fixtureDigest(), now) != nil {
 		t.Fatal("no brief for a manual plan")
 	}
 	s := Load(t.TempDir())
@@ -406,13 +408,13 @@ func TestDefaultIsBestValueUnlessItIsMuchWeaker(t *testing.T) {
 		return &a
 	}
 	// Sonnet (best value) scores 8 below Opus (strongest): the default is Opus ★Med.
-	b := TaskStart(sonnet(), d, now)
+	b := TaskStart(sonnet(), quota.Report{}, d, now)
 	if b.Default == nil || b.Default.Name != "Claude Opus 5.5" || b.DefaultReason != "strongest" || b.AtDefault || len(b.DefaultLadder) != 5 {
 		t.Fatalf("default = %+v / %s", b.Default, b.DefaultReason)
 	}
 	// Within 3 points, the best value wins.
 	d.Lineups[0].Members[1].Ability = 68
-	b = TaskStart(sonnet(), d, now)
+	b = TaskStart(sonnet(), quota.Report{}, d, now)
 	if b.Default.Name != "Claude Sonnet 5.5" || b.DefaultReason != "best_value" || !b.AtDefault || b.DefaultLadder != nil {
 		t.Fatalf("default = %+v / %s at=%v", b.Default, b.DefaultReason, b.AtDefault)
 	}

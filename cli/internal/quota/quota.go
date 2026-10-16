@@ -45,6 +45,7 @@ type Harness struct {
 	ObservedAt  *time.Time `json:"observedAt,omitempty"`
 	Attribution string     `json:"attribution,omitempty"` // current-thread | recent-thread
 	Origin      string     `json:"origin,omitempty"`      // cli, vscode, exec, …
+	Endpoint    string     `json:"endpoint,omitempty"`    // Claude Code: ANTHROPIC_BASE_URL (scheme, host, path) when set
 }
 
 type Card struct {
@@ -57,6 +58,7 @@ type Card struct {
 type Account struct {
 	Source     string    `json:"source"` // claude-code | codex | user | codexbar:<provider>
 	Plan       string    `json:"plan,omitempty"`
+	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time `json:"observedAt"`
 	Stale      bool      `json:"stale"`
 	Harness    *Harness  `json:"harness,omitempty"`

@@ -360,6 +360,8 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	now := time.Now()
 	var acct *quota.Account
 	if harness == "claude-code" {
+		// A custom endpoint (GLM through Z.ai) decides which model an id means and which plan pays.
+		in.Endpoint = digest.Endpoint(os.Getenv("ANTHROPIC_BASE_URL"))
 		if !preview {
 			_ = quota.RecordClaudeCode(st.Dir, in, now)
 		}
@@ -387,7 +389,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "")+" · "+style.T.Syncing+tail)
 		return 0
 	}
-	m := d.Match(harness, modelID, in.Model.DisplayName)
+	m := d.MatchAt(harness, in.Endpoint, modelID, in.Model.DisplayName)
 	raw := in.Model.DisplayName
 	if raw == "" {
 		raw = modelID
@@ -511,7 +513,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		if acct.Harness != nil {
 			model, effort = acct.Harness.Model, acct.Harness.Effort
 		}
-		if brief := advise.TaskStart(acct, d, now); brief != nil && state.BriefDue(in.SessionID, model, effort, acct.Headroom, now) {
+		if brief := advise.TaskStart(acct, report, d, now); brief != nil && state.BriefDue(in.SessionID, model, effort, acct.Headroom, now) {
 			parts = append(parts, render.TaskBrief(brief))
 		}
 	}

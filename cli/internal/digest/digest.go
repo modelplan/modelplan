@@ -114,6 +114,7 @@ type Digest struct {
 	Models            []Model            `json:"models"`
 	Lineups           []PublishedLineup  `json:"lineups"`
 	Speed             []SpeedTier        `json:"speedTiers,omitempty"`
+	PlanMetering      *PlanMetering      `json:"planMetering,omitempty"` // client-v1.3
 	Resets            []json.RawMessage  `json:"resets"`
 	Windows           []json.RawMessage  `json:"windows"`
 }
@@ -238,6 +239,9 @@ func Parse(component string, b []byte) (*Digest, error) {
 		if !strings.HasPrefix(d.ProjectionVersion, "client-v1.") || d.Multipliers == nil || d.MultiplierHorizon == nil || d.MultiplierHorizon.Selection != "highest-priority-no-stacking" {
 			return nil, errors.New("client: incomplete multiplier contract")
 		}
+	}
+	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
+		d.PlanMetering = nil
 	}
 	d.Source = ComponentClient
 	return d, nil

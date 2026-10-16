@@ -57,14 +57,19 @@ const (
 
 // Step is a concrete suggestion against what the harness reports now.
 type Step struct {
-	Action       string   `json:"action"` // step_up | stronger_model | step_down | cheaper_model | switch_back | wait | use_card | none
+	Action       string   `json:"action"` // step_up | stronger_model | step_down | cheaper_model | switch_back | wait | use_card | effort_free | wait_offpeak | none
 	Model        string   `json:"model,omitempty"`
 	ModelName    string   `json:"modelName,omitempty"`
 	Effort       string   `json:"effort,omitempty"` // native key
 	Label        string   `json:"label,omitempty"`  // display label
 	Recommended  bool     `json:"recommended,omitempty"`
 	AbilityDelta *float64 `json:"abilityDelta,omitempty"` // vs the current configuration
-	CostRatio    *float64 `json:"costRatio,omitempty"`    // vs the current configuration
+	CostRatio    *float64 `json:"costRatio,omitempty"`    // vs the current configuration, in the plan's units when known
+	// wait_offpeak: when the model's time-of-day rate drops, and from what to what.
+	At        *time.Time `json:"at,omitempty"`
+	InMinutes *int       `json:"inMinutes,omitempty"`
+	RateFrom  *float64   `json:"rateFrom,omitempty"`
+	RateTo    *float64   `json:"rateTo,omitempty"`
 }
 
 type Rate struct {
@@ -99,6 +104,7 @@ type Event struct {
 	Severity         string     `json:"severity"` // warn | info
 	Source           string     `json:"source"`   // claude-code | codex | user | public
 	Plan             string     `json:"plan,omitempty"`
+	Basis            string     `json:"basis,omitempty"` // the declared plan's billing basis, for a session linked to it
 	Window           string     `json:"window,omitempty"`
 	At               *time.Time `json:"at,omitempty"` // reset, rate boundary or card expiry
 	InMinutes        *int       `json:"inMinutes,omitempty"`
@@ -141,6 +147,10 @@ func Derive(in Input) []Event {
 	now := in.Now.UTC()
 	var out []Event
 	sources := map[string]bool{}
+	var linked map[string]bool
+	if in.Digest != nil {
+		linked = linkedPlans(in.Report, in.Digest)
+	}
 	for i := range in.Report.Accounts {
 		a := &in.Report.Accounts[i]
 		sources[a.Source] = true
@@ -152,14 +162,24 @@ func Derive(in Input) []Event {
 		if strings.HasPrefix(a.Source, "codexbar:") {
 			continue
 		}
-		es := append(accountEvents(a, in.Digest, now), announcedEvents(a, in.Digest, now)...)
+		var plan *Plan
+		if harnessOf(a.Source) != "" && in.Digest != nil {
+			if eff, p := Link(a, in.Report, in.Digest); p != nil {
+				a, plan = &eff, p
+			}
+		}
+		var es []Event
+		// A declared plan a session is linked to is advised through that session.
+		if !(a.Source == "user" && linked[strings.ToLower(a.Plan)]) {
+			es = append(accountEvents(a, in.Digest, now, plan), announcedEvents(a, in.Digest, now)...)
+		}
 		if in.State != nil {
 			in.State.arm(es)
 		}
 		out = append(out, es...)
 		out = append(out, cardEvents(a, now)...)
 		if a.Source == "user" && a.Plan != "" && in.Digest != nil {
-			out = append(out, rateEvents(a.Plan, in.Digest, now)...)
+			out = append(out, rateEvents(a, in.Digest, now)...)
 		}
 	}
 	if in.State != nil {
@@ -205,7 +225,7 @@ func windowKey(prefix string, a *quota.Account, w *quota.Window) string {
 	return strings.Join([]string{prefix, a.Source, a.Plan, w.Kind, w.Limit, at}, "|")
 }
 
-func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
+func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan) []Event {
 	w := deciding(a)
 	if a.Headroom == "spend" {
 		// Spending is allowed by every window; the hint is about whichever surplus resets first.
@@ -223,6 +243,9 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 	}
 	base := func(typ, sev string) Event {
 		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, RemainingPercent: w.RemainingPercent, Stale: a.Stale}
+		if plan != nil {
+			e.Basis = plan.Basis
+		}
 		if w.ResetsAt != nil {
 			t := w.ResetsAt.UTC()
 			e.At, e.InMinutes = &t, minutesUntil(t, now)
@@ -233,6 +256,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 		return e
 	}
 	cfg := current(a, d)
+	cfg.plan, cfg.now = plan, now
 	switch a.Headroom {
 	case "exhausted":
 		e := base(WindowExhausted, "warn")
@@ -246,6 +270,18 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 	case "conserve":
 		e := base(WindowTight, "warn")
 		e.Suggest = cfg.down()
+		if plan != nil && plan.Basis == digest.BasisRequest && cfg.model != nil {
+			// Counted per request: a lower effort saves nothing. An off-peak start before the
+			// reset (and soon) does.
+			e.Suggest = &Step{Action: "effort_free"}
+			until := now.Add(offpeakWait)
+			if w.ResetsAt != nil && w.ResetsAt.Before(until) {
+				until = *w.ResetsAt
+			}
+			if t, from, to := plan.cheaperLater(cfg.model, now, until); t != nil {
+				e.Suggest = &Step{Action: "wait_offpeak", At: t, InMinutes: minutesUntil(*t, now), RateFrom: from, RateTo: to}
+			}
+		}
 		e.Alternative = cfg.cheaper(d, harnessOf(a.Source))
 		return []Event{e}
 	case "spend":
@@ -262,6 +298,8 @@ type config struct {
 	model *digest.Model
 	cur   *digest.Effort // what the harness reports, else ★
 	rec   *digest.Effort
+	plan  *Plan // the declared plan paying for a model on another vendor's endpoint
+	now   time.Time
 }
 
 func current(a *quota.Account, d *digest.Digest) config {
@@ -272,7 +310,7 @@ func current(a *quota.Account, d *digest.Digest) config {
 	}
 	c.model = d.Model(h.Model)
 	if c.model == nil {
-		c.model = d.Match(hn, h.Model)
+		c.model = d.MatchAt(hn, h.Endpoint, h.Model)
 	}
 	if c.model == nil {
 		return c
@@ -305,9 +343,28 @@ func ratio(hi, lo *digest.Effort) (*float64, *float64) {
 	return &a, &r
 }
 
+// ratioTo: ability and cost of (m, e) against the current configuration; the cost in the
+// declared plan's units when the session is linked to one (nil where the plan gives no number).
+func (c config) ratioTo(m *digest.Model, e *digest.Effort) (*float64, *float64) {
+	if c.plan == nil {
+		return ratio(e, c.cur)
+	}
+	var a *float64
+	if e.Ability != nil && c.cur.Ability != nil {
+		x := math.Round((*e.Ability-*c.cur.Ability)*10) / 10
+		a = &x
+	}
+	hi, lo := c.plan.cost(m, e, c.now, m.ID != c.model.ID), c.plan.cost(c.model, c.cur, c.now, false)
+	if hi == nil || lo == nil || *lo <= 0 {
+		return a, nil
+	}
+	r := math.Round(*hi / *lo * 100) / 100
+	return a, &r
+}
+
 func (c config) step(action string, e *digest.Effort) *Step {
 	s := &Step{Action: action, Model: c.model.ID, ModelName: c.model.Name, Effort: e.Effort, Label: e.Label, Recommended: e == c.rec}
-	s.AbilityDelta, s.CostRatio = ratio(e, c.cur)
+	s.AbilityDelta, s.CostRatio = c.ratioTo(c.model, e)
 	return s
 }
 
@@ -330,10 +387,10 @@ func (c config) up(d *digest.Digest) *Step {
 				best = r.ID
 			}
 		}
-		if m := d.Model(best); m != nil && best != c.model.ID {
+		if m := d.Model(best); m != nil && best != c.model.ID && (c.plan == nil || c.plan.m.Row(m.ID) != nil) {
 			if rec := m.Rec(); rec != nil && rec.Ability != nil && c.cur.Ability != nil && *rec.Ability > *c.cur.Ability {
 				s := &Step{Action: "stronger_model", Model: m.ID, ModelName: m.Name, Effort: rec.Effort, Label: rec.Label, Recommended: true}
-				s.AbilityDelta, s.CostRatio = ratio(rec, c.cur)
+				s.AbilityDelta, s.CostRatio = c.ratioTo(m, rec)
 				return s
 			}
 		}
@@ -345,6 +402,9 @@ func (c config) up(d *digest.Digest) *Step {
 // in this harness, that scores at least as high as the current configuration on the same cost
 // basis. Lowering the effort trades ability for quota; this keeps it. Nil when none qualifies.
 func (c config) cheaper(d *digest.Digest, harness string) *Step {
+	if c.plan != nil {
+		return c.cheaperInPlan(d, harness)
+	}
 	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
 		return nil
 	}
@@ -374,6 +434,44 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 	}
 	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec()}
 	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
+	return s
+}
+
+// cheaperInPlan: as cheaper, among the models the declared plan meters, by what the plan charges
+// now. A plan where each model has its own pool, or with unpublished rates, has no cross-model
+// cost: nil.
+func (c config) cheaperInPlan(d *digest.Digest, harness string) *Step {
+	if c.model == nil || c.cur == nil || c.cur.Ability == nil || harness == "" {
+		return nil
+	}
+	lo := c.plan.cost(c.model, c.cur, c.now, false)
+	if lo == nil {
+		return nil
+	}
+	var best *digest.Effort
+	var bestModel *digest.Model
+	var bestCost float64
+	for _, r := range c.plan.m.Rows {
+		m := d.Model(r.ModelID)
+		if m == nil || m.ID == c.model.ID || len(m.HarnessIDs[harness]) == 0 {
+			continue
+		}
+		for i := range m.Efforts {
+			e := &m.Efforts[i]
+			v := c.plan.cost(m, e, c.now, true)
+			if e.Ability == nil || v == nil || *e.Ability < *c.cur.Ability || *v >= *lo {
+				continue
+			}
+			if best == nil || *v < bestCost || (*v == bestCost && *e.Ability > *best.Ability) {
+				best, bestModel, bestCost = e, m, *v
+			}
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec()}
+	s.AbilityDelta, s.CostRatio = c.ratioTo(bestModel, best)
 	return s
 }
 
@@ -501,8 +599,14 @@ func publicEvents(d *digest.Digest, sources map[string]bool, now time.Time) []Ev
 	return out
 }
 
-// rateEvents: a published quota-rate boundary for this plan within the next hour.
-func rateEvents(plan string, d *digest.Digest, now time.Time) []Event {
+// rateEvents: a published quota-rate boundary for this declared plan within the next hour. A
+// plan with published metering takes its windows by its time rules, else by the windows' planIds.
+func rateEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
+	plan := a.Plan
+	p := planOf(a, d)
+	if p == nil {
+		p = &Plan{ID: plan, Generation: a.Generation, d: d, rules: map[string]bool{}}
+	}
 	if d.MultiplierHorizon == nil {
 		return nil
 	}
@@ -513,8 +617,9 @@ func rateEvents(plan string, d *digest.Digest, now time.Time) []Event {
 	var models []string
 	seen := map[string]bool{}
 	var bounds []time.Time
-	for _, m := range d.Multipliers {
-		if !contains(m.PlanIDs, plan) {
+	for i := range d.Multipliers {
+		m := &d.Multipliers[i]
+		if !p.appliesTo(m) {
 			continue
 		}
 		for _, id := range m.Models {
@@ -536,8 +641,11 @@ func rateEvents(plan string, d *digest.Digest, now time.Time) []Event {
 	b := bounds[0]
 	// One event per plan: the first listed model whose rate changes at the boundary.
 	for _, model := range models {
-		from, fs := rateAt(d.Multipliers, plan, model, now)
-		next, ns := rateAt(d.Multipliers, plan, model, b)
+		match := func(w *digest.MultiplierWindow) bool {
+			return p.appliesTo(w) && (len(w.Models) == 0 || contains(w.Models, model))
+		}
+		from, fs := rateAt(d.Multipliers, match, now)
+		next, ns := rateAt(d.Multipliers, match, b)
 		if next == nil || (from != nil && *from == *next) {
 			continue
 		}
@@ -556,14 +664,16 @@ func rateEvents(plan string, d *digest.Digest, now time.Time) []Event {
 	return nil
 }
 
-// rateAt applies the published selection (highest priority, no stacking) for one plan and
-// model; conflicting top-priority coefficients or a null one give an unknown rate.
-func rateAt(ws []digest.MultiplierWindow, plan, model string, at time.Time) (*float64, string) {
+// rateAt applies the published selection (highest priority, no stacking) over the windows
+// that match one plan and model; conflicting top-priority coefficients or a null one give an
+// unknown rate.
+func rateAt(ws []digest.MultiplierWindow, match func(*digest.MultiplierWindow) bool, at time.Time) (*float64, string) {
 	best, status := -1<<31, ""
 	var rate *float64
 	conflict := false
-	for _, m := range ws {
-		if !contains(m.PlanIDs, plan) || (len(m.Models) > 0 && !contains(m.Models, model)) {
+	for i := range ws {
+		m := &ws[i]
+		if !match(m) {
 			continue
 		}
 		s, err1 := time.Parse(time.RFC3339, m.StartsAt)

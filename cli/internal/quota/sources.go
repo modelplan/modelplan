@@ -31,7 +31,10 @@ type StatuslineInput struct {
 	Effort  *struct {
 		Level string `json:"level"`
 	} `json:"effort"`
-	FastMode   *bool `json:"fast_mode"`
+	FastMode *bool `json:"fast_mode"`
+	// Endpoint is not part of the status-line JSON: the caller sets it from ANTHROPIC_BASE_URL,
+	// reduced to scheme, host and path.
+	Endpoint   string `json:"-"`
 	RateLimits *struct {
 		FiveHour   *ccWindow `json:"five_hour"`
 		SevenDay   *ccWindow `json:"seven_day"`
@@ -72,7 +75,7 @@ func snapshotPath(cache string) string { return filepath.Join(cache, "observed",
 // Account turns status-line input into an unevaluated Claude Code account.
 func (in StatuslineInput) Account(now time.Time) Account {
 	a := Account{Source: "claude-code", ObservedAt: now.UTC(), Windows: []Window{}}
-	h := Harness{Model: clip(in.Model.ID), Version: clip(in.Version), FastMode: in.FastMode}
+	h := Harness{Model: clip(in.Model.ID), Version: clip(in.Version), FastMode: in.FastMode, Endpoint: clipEndpoint(in.Endpoint)}
 	if in.Effort != nil {
 		h.Effort = clip(in.Effort.Level)
 	}
@@ -540,7 +543,8 @@ func readLocal(path string, now time.Time) ([]Account, SourceStatus) {
 	var raw struct {
 		SchemaVersion int `json:"schemaVersion"`
 		Plans         []struct {
-			PlanID string `json:"planId"`
+			PlanID     string `json:"planId"`
+			Generation string `json:"generation"`
 		} `json:"plans"`
 		ResetCards []struct {
 			PlanID    string `json:"planId"`
@@ -579,11 +583,11 @@ func readLocal(path string, now time.Time) ([]Account, SourceStatus) {
 		return by[id]
 	}
 	for _, p := range raw.Plans {
-		if !ident.MatchString(p.PlanID) {
+		if !ident.MatchString(p.PlanID) || (p.Generation != "" && !ident.MatchString(p.Generation)) {
 			st.Status = "invalid"
 			return nil, st
 		}
-		acct(p.PlanID)
+		acct(p.PlanID).Generation = p.Generation
 	}
 	for _, c := range raw.ResetCards {
 		if !ident.MatchString(c.PlanID) {
@@ -670,9 +674,23 @@ func oneOf(v string, allowed ...string) string {
 }
 
 // clip keeps harness-reported identifiers short and printable; they are data, not instructions.
+var endpointRe = regexp.MustCompile(`^https?://[a-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/-]*)?$`)
+
+// clipEndpoint keeps an already reduced base URL (scheme, host, path) and nothing else.
+func clipEndpoint(s string) string {
+	if len(s) > 200 || !endpointRe.MatchString(s) {
+		return ""
+	}
+	return s
+}
+
+// harnessIdent: a model id, effort or version as a harness reports it; Claude Code marks the
+// 1M-context variants with a suffix ("glm-5.3[1m]", "claude-opus-4-6[1m]").
+var harnessIdent = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}(\[[a-z0-9]{1,8}\])?$`)
+
 func clip(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) > 80 || !ident.MatchString(s) {
+	if len(s) > 80 || !harnessIdent.MatchString(s) {
 		return ""
 	}
 	return s
