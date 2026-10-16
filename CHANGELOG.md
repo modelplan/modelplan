@@ -2,7 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## Unreleased
+## Codex plugin 0.15.5 and Claude Code plugin 0.7.5 (2026-10-16)
+
+- Pinned CLI v0.5.15: advice follows the plan that pays for GLM through Z.ai in Claude Code, and the hook asks once which plan that is.
+
+## v0.5.15 (2026-10-16)
 
 - **Advice follows the plan that pays (client-v1.3 `planMetering`, #37).** Claude Code on GLM through Z.ai runs on the user's Zhipu plan, not on Claude's. With the plan declared in `local.json` (`planId`, and `generation` where the plan meters more than one way), the session is advised by that plan's rules and its windows (the plan's own, or CodexBar's Z.ai reading):
   - per-request plans (Zhipu legacy V2) never get "step down", since every effort costs one request; a tight window says when off-peak starts instead, and a surplus says a higher effort costs no extra quota;
