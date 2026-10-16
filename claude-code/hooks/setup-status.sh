@@ -1,6 +1,7 @@
 #!/bin/sh
 # /modelplan:setup's check: each part on its own line, from what is on disk now. Reads only; the
-# CLI is asked for its version and nothing else.
+# CLI is asked for its version and nothing else. The status line needs a CLI path that does not
+# change with plugin updates, so it is not reported here (see /modelplan:statusline).
 here=$(dirname "$0")
 . "$here/setup-lib.sh"
 ago() { # minutes since a file changed
@@ -9,14 +10,17 @@ ago() { # minutes since a file changed
 }
 echo "plugin: modelplan $(plugin_version) (answering: this check ran)"
 cli=$(sh "$here/find-cli.sh" "$min_cli")
+why=$(fetch_error)
 if [ -z "$cli" ]; then
-  echo "cli: missing (none on PATH, in ~/.local/bin or Homebrew)"
+  if [ "${MODELPLAN_PLUGIN_CLI:-}" = off ]; then echo "cli: missing; fetching is off (MODELPLAN_PLUGIN_CLI=off) and none is installed"
+  elif [ -n "$why" ]; then echo "cli: fetch of the plugin's CLI $min_cli failed: $why"
+  else echo "cli: the plugin's CLI $min_cli is not fetched yet (it downloads in the background after a message)"; fi
 else
   out=$("$cli" version </dev/null 2>&1); cliv=$(printf '%s' "$out" | awk 'NR == 1 {print $2}')
   if [ -z "$cliv" ]; then echo "cli: failed at $cli: $(printf '%s' "$out" | head -1 | cut -c1-160)"
-  elif at_least "$cliv" "$min_cli"; then echo "cli: ok $cliv at $cli"
-  else echo "cli: outdated $cliv at $cli (needs $min_cli or later)"; fi
-  [ "$(command -v modelplan 2>/dev/null)" = "$cli" ] || echo "cli-path: not on this shell's PATH; the plugin finds it anyway, a status line needs the full path $cli"
+  elif [ "$cli" = "$pinned_cli" ]; then echo "cli: ok $cliv, the plugin's own copy (pinned release, checksum-checked) at $cli"
+  elif at_least "$cliv" "$min_cli"; then echo "cli: ok $cliv, installed by you at $cli"
+  else echo "cli: $cliv at $cli is older than the plugin's $min_cli${why:+; fetching $min_cli failed: $why}"; fi
 fi
 snap=$(snapshot)
 if m=$(ago "$snap"); then
@@ -33,7 +37,6 @@ if m=$(ago "$state/hook-ran"); then
   echo "hook: last ran ${m} min ago on this machine (any session), plugin $(cat "$state/hook-ran" 2>/dev/null)${r:+, result: $r}"
   case $r in failed*) if s=$(ago "$state/hook-ok"); then echo "hook-last-success: ${s} min ago"; else echo "hook-last-success: never"; fi ;; esac
 else echo "hook: has not run yet (it runs when you send a message; disabled hooks or a managed policy stop it)"; fi
-recent cli-declined 90 && echo "declined: cli (the hook stays quiet about it for 90 days)"
 recent statusline-declined 90 && echo "declined: statusline"
 r=$(head -1 "$state/hook-result" 2>/dev/null)
 if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" "$min_cli" && [ -f "$state/hook-ran" ]; then

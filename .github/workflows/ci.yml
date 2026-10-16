@@ -39,6 +39,9 @@ jobs:
         with:
           node-version: "24"
       - run: node --test claude-code/tests/*.test.mjs
+      - name: The plugins pin a published CLI release, checksums matching
+        if: matrix.os == 'ubuntu-latest'
+        run: node scripts/pin-cli.mjs --check
   skill:
     runs-on: ubuntu-latest
     steps:

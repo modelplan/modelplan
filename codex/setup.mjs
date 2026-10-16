@@ -1,31 +1,43 @@
-// Setup state, each part on its own: the plugin answered (this server runs), the optional CLI
-// (missing, outdated, failing or ready), the hook (when it last ran on this machine and how that
-// ended; plugins cannot see whether it is trusted), and
-// whether the user declined the CLI. Hooks write ~/.cache/modelplan-codex; this only reads it,
-// except `decline`, which the dashboard's "not now" button calls.
+// Setup state, each part on its own: the plugin answered (this server runs), its CLI (the pinned
+// copy the plugin fetches, or one the user installed: ready, fetching, failed and why, off), and
+// the hook (when it last ran on this machine and how that ended; plugins cannot see whether it
+// is trusted). Hooks write ~/.cache/modelplan-codex and fetch-cli.sh ~/.cache/modelplan-cli; this
+// only reads them.
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { atLeast, findCli, MIN_CLI } from './quota.mjs';
+import { atLeast, findCli, MIN_CLI, pinnedCli } from './quota.mjs';
 
 export { atLeast, MIN_CLI };
-const DECLINE_DAYS = 90;
 const stateDir = home => join(home, '.cache', 'modelplan-codex');
 const run = (cmd, args) => new Promise((resolve, reject) =>
   execFile(cmd, args, { timeout: 5000, windowsHide: true }, (error, stdout) => error ? reject(error) : resolve(stdout)));
 
 async function mtime(p) { try { return (await stat(p)).mtime; } catch { return null; } }
 
-export async function cliStatus({ exec = run, find = findCli } = {}) {
+// status: ok (source "plugin" for the pinned copy, "user" for one the user installed at least as
+// new), outdated (a user's older copy; the pinned one is not there yet), fetching (nothing usable
+// yet, no failure recorded), failed (with why: a failed fetch, or a CLI that does not answer),
+// missing (fetching off and nothing installed), unsupported (no fetch on this system).
+export async function cliStatus({ exec = run, find = findCli, home = homedir(), env = process.env, platform = process.platform, fetchError } = {}) {
   const path = find();
-  if (!path) return { status: 'missing', path: null, version: null, min: MIN_CLI };
+  const why = await (fetchError ?? (async () => {
+    const r = await readFile(join(home, '.cache', 'modelplan-cli', 'fetch-result'), 'utf8').catch(() => '');
+    return r.match(new RegExp(`^${MIN_CLI.replace(/\./g, '\\.')} failed: (.*)$`, 'm'))?.[1]?.slice(0, 200) ?? null;
+  }))();
+  const base = { min: MIN_CLI, fetchError: why, fetchOff: env.MODELPLAN_PLUGIN_CLI === 'off' };
+  if (!path) {
+    const status = platform !== 'darwin' && platform !== 'linux' ? 'unsupported' : base.fetchOff ? 'missing' : why ? 'failed' : 'fetching';
+    return { status, path: null, version: null, ...base, error: status === 'failed' ? why : null };
+  }
   try {
     const version = (String(await exec(path, ['version'])).match(/\d+\.\d+\.\d+/) || [])[0] ?? null;
-    if (!version) return { status: 'failed', path, version: null, min: MIN_CLI, error: 'no version reported' };
-    return { status: atLeast(version, MIN_CLI) ? 'ok' : 'outdated', path, version, min: MIN_CLI };
-  } catch (e) { return { status: 'failed', path, version: null, min: MIN_CLI, error: String(e.message).split('\n')[0].slice(0, 160) }; }
+    if (!version) return { status: 'failed', path, version: null, ...base, error: 'no version reported' };
+    const source = path === pinnedCli(home) ? 'plugin' : 'user';
+    return { status: atLeast(version, MIN_CLI) ? 'ok' : 'outdated', source, path, version, ...base };
+  } catch (e) { return { status: 'failed', path, version: null, ...base, error: String(e.message).split('\n')[0].slice(0, 160) }; }
 }
 
 // The hook as the hook files record it, on this machine and from whichever chat ran last:
@@ -48,14 +60,7 @@ export async function hookStatus({ home = homedir(), definition = hookDefinition
     result: result?.split('\n')[0].slice(0, 200) ?? null, lastSuccess: ok ? ok.toISOString() : null };
 }
 
-export async function setupStatus({ home = homedir(), now = new Date(), definition, ...opts } = {}) {
-  const dir = stateDir(home);
-  const [cli, hook, declined] = await Promise.all([cliStatus(opts), hookStatus({ home, definition }), mtime(join(dir, 'cli-declined'))]);
-  return { cli, hook, declined: !!declined && now - declined < DECLINE_DAYS * 86400000 };
-}
-
-export async function decline({ home = homedir() } = {}) {
-  await mkdir(stateDir(home), { recursive: true });
-  await writeFile(join(stateDir(home), 'cli-declined'), '');
-  return { declined: true };
+export async function setupStatus({ home = homedir(), definition, ...opts } = {}) {
+  const [cli, hook] = await Promise.all([cliStatus({ home, ...opts }), hookStatus({ home, definition })]);
+  return { cli, hook };
 }

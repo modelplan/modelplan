@@ -1,0 +1,10 @@
+{
+  "version": "0.5.10",
+  "release": "https://github.com/modelplan/modelplan/releases/download/v0.5.10",
+  "sha256": {
+    "darwin_arm64": "5a0b3f3ebf8fbd83a34d0f6b82bfce8ee04882bbd10527ea4d39d165e981326b",
+    "darwin_amd64": "dcca69af1df58ded1e8801136c3ca2beafc50bb5dbf5a174dcf8a7652ca482a5",
+    "linux_arm64": "3b83c6f8aa12e83f1b4ea70302dfc52e1e1f5d638079b74148e42ed369438d36",
+    "linux_amd64": "3bbdeff60252007727d2270802042aa95f2f578dbec2aabc99a3296aee4faf26"
+  }
+}

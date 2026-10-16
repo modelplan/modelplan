@@ -41,8 +41,11 @@ export function pickAdvice(out) {
 
 const missing = e => e?.code === 'ENOENT';
 
-// The CLI version the plugin needs, from the one file the hook, the dashboard and the docs share.
-export const MIN_CLI = readFileSync(fileURLToPath(new URL('./cli-min.txt', import.meta.url)), 'utf8').trim();
+// The CLI release this plugin is pinned to (cli-pin.json: version and per-platform SHA-256), which
+// hooks/fetch-cli.sh downloads into ~/.cache/modelplan-cli/<version>. Hook, dashboard and docs read it.
+export const CLI_PIN = JSON.parse(readFileSync(fileURLToPath(new URL('./cli-pin.json', import.meta.url)), 'utf8'));
+export const MIN_CLI = CLI_PIN.version;
+export const pinnedCli = (home = homedir()) => join(home, '.cache', 'modelplan-cli', MIN_CLI, 'modelplan');
 
 export function atLeast(version, min) {
   const a = String(version).split('.').map(Number), b = min.split('.').map(Number);
@@ -52,11 +55,12 @@ export function atLeast(version, min) {
 
 const versionOfCli = path => (String(execFileSync(path, ['version'], { timeout: 3000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })).match(/\d+\.\d+\.\d+/) || [])[0] ?? null;
 
-// Same order and rules as hooks/find-cli.sh: PATH, then where install.sh and Homebrew put it
-// (Codex starts plugins and hooks with a short PATH; the desktop app's often lacks ~/.local/bin).
-// Only executable files count; the first one at least `min` wins, else the first one found, so an
-// older copy earlier on PATH does not hide a current one. Null when there is none.
+// Same order and rules as hooks/find-cli.sh: the plugin's own pinned copy first; else one the user
+// installed: PATH, then where install.sh and Homebrew put it (Codex starts plugins and hooks with
+// a short PATH). Only executable files count; the first one at least `min` wins, else the first
+// one found, so an older copy earlier on PATH does not hide a current one. Null when there is none.
 export function findCli({ env = process.env, home = homedir(), platform = process.platform, min = MIN_CLI, versionOf = versionOfCli } = {}) {
+  if (platform !== 'win32' && min === MIN_CLI) { try { accessSync(pinnedCli(home), constants.X_OK); return pinnedCli(home); } catch { /* not fetched */ } }
   const exe = platform === 'win32' ? 'modelplan.exe' : 'modelplan';
   const dirs = [...(env.PATH || env.Path || '').split(delimiter), env.MODELPLAN_BIN || join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
   let first = null;

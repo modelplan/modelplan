@@ -9,7 +9,7 @@ The CLI on this machine:
 
 !`sh "${CLAUDE_PLUGIN_ROOT}/hooks/setup-status.sh" | grep -E '^(cli|statusline)'`
 
-1. Unless the CLI line says `ok`, suggest `/modelplan:setup` (it installs or upgrades the CLI with consent) and stop. Otherwise call its path `<cli>` below, written out in full: Claude Code may run the status line with a shorter PATH than this shell's.
+1. Unless the CLI line says `ok`, suggest `/modelplan:setup` (it shows why) and stop. Call the CLI `<cli>` below, written out in full because Claude Code may run the status line with a shorter PATH than this shell's: for the plugin's own copy use `~/.cache/modelplan-cli/modelplan` expanded to an absolute path (it always links the newest copy the plugin fetched, so plugin updates do not break the status line); for a CLI the user installed, its path as shown.
 2. Preview it:
 
    ```sh

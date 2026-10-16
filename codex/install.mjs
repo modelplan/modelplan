@@ -1,44 +1,34 @@
-// Installs the optional modelplan CLI when the user clicks "Install" on the dashboard. It runs
-// the repository's install.sh (bundled as install-cli.sh): the latest release for this OS and CPU,
-// checked against the release's checksums, into ~/.local/bin. Nothing else on the system changes:
-// no PATH edits, no shell profile, no sudo. The tool is app-only, so the model cannot call it.
+// The plugin's own modelplan CLI: the release pinned in cli-pin.json, fetched by hooks/fetch-cli.sh
+// (shared with the Claude Code plugin) into ~/.cache/modelplan-cli/<version>, used only if its
+// SHA-256 equals the pinned one. The server starts it in the background when it starts; the
+// dashboard's Retry button runs it in the foreground. Nothing else on the system changes.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { cliStatus } from './setup.mjs';
 
-const SCRIPT = fileURLToPath(new URL('./install-cli.sh', import.meta.url));
-export const INSTALL_COMMAND = 'curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh';
+const SCRIPT = fileURLToPath(new URL('./hooks/fetch-cli.sh', import.meta.url));
 export const supported = (platform = process.platform) => platform === 'darwin' || platform === 'linux';
+const off = (env = process.env) => env.MODELPLAN_PLUGIN_CLI === 'off';
 
-// Installs when missing, upgrades when older than MIN_CLI, and reports success only after the
-// CLI that the plugin will actually use answers with a new enough version.
-export async function installCli({ run = runScript, status = cliStatus, platform = process.platform } = {}) {
-  if (!supported(platform)) return { status: 'unsupported', reason: 'unsupported', command: null, url: 'https://github.com/modelplan/modelplan/releases' };
-  const before = await status();
-  if (before.status === 'ok') return { status: 'present', path: before.path, version: before.version };
-  const r = await run(SCRIPT);
-  const after = await status();
-  if (r.code === 0 && after.status === 'ok') return { status: before.status === 'outdated' ? 'upgraded' : 'installed', path: after.path, version: after.version, output: r.output };
-  const why = r.code !== 0 ? r.output
-    : after.status === 'outdated' ? `an older modelplan ${after.version} at ${after.path} is found first; remove it or upgrade it there`
-    : after.error ?? 'the installed CLI did not answer';
-  const reason = r.code !== 0 ? failureKind(r.output) : after.status === 'outdated' ? 'shadowed' : 'failed';
-  return { status: 'failed', reason, output: why, command: INSTALL_COMMAND,
-    path: reason === 'shadowed' ? after.path : reason === 'permission' ? (r.output.match(/cannot write (\S+)/)?.[1] ?? null) : null, version: reason === 'shadowed' ? after.version : null };
+// Background fetch at server start: returns at once; a recent failure is not retried for 10 minutes.
+export function fetchInBackground({ platform = process.platform, env = process.env, run = spawn } = {}) {
+  if (!supported(platform) || off(env)) return false;
+  try { run('sh', [SCRIPT, '--background'], { stdio: 'ignore', detached: true, windowsHide: true }).unref(); return true; } catch { return false; }
 }
 
-// install.sh names each failure on stderr; the dashboard turns the kind into what to do.
-export function failureKind(output = '') {
-  if (/^download failed|curl: \(\d+\)/m.test(output)) return 'download';
-  if (/checksum mismatch/.test(output)) return 'checksum';
-  if (/permission denied|cannot write/i.test(output)) return 'permission';
-  if (/^Unsupported (OS|CPU)/m.test(output)) return 'unsupported';
-  return 'failed';
+// The Retry button: fetch now and report what the plugin will actually use afterwards.
+export async function fetchCli({ run = runScript, status = cliStatus, platform = process.platform, env = process.env } = {}) {
+  if (!supported(platform)) return { status: 'unsupported', url: 'https://github.com/modelplan/modelplan/releases' };
+  if (off(env)) return { status: 'off' };
+  const r = await run(SCRIPT);
+  const after = await status();
+  if (after.status === 'ok') return { status: 'ready', path: after.path, version: after.version, source: after.source };
+  return { status: 'failed', reason: r.output.split('\n').filter(Boolean).pop()?.replace(/^modelplan CLI [\d.]+: /, '') || after.error || 'the fetched CLI did not answer' };
 }
 
 function runScript(script) {
   return new Promise(resolve => {
-    const child = spawn('sh', [script], { env: process.env, windowsHide: true, timeout: 120000 });
+    const child = spawn('sh', [script], { env: process.env, windowsHide: true, timeout: 150000 });
     let output = '';
     const keep = d => { output = (output + d).slice(-2000); };
     child.stdout.on('data', keep); child.stderr.on('data', keep);
