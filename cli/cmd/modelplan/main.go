@@ -34,6 +34,7 @@ const (
 	staleAfter      = 6 * time.Hour  // status line starts a background sync
 	alarmAfter      = 48 * time.Hour // 数据过期 annunciator
 	backgroundEvery = 10 * time.Minute
+	firstSyncWait   = 3 * time.Second // hook timeouts are 5 s
 )
 
 const usage = `modelplan — Model Plan thin client (read-only, anonymous)
@@ -183,7 +184,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "advise":
 		if *hook != "" {
-			return adviseHook(stdin, stdout, style, st, c, *hook, *addSystem, *addContext)
+			return adviseHook(stdin, stdout, style, st, client, c, *hook, *addSystem, *addContext)
 		}
 		if !c.offline {
 			refreshAccountLater(st)
@@ -408,7 +409,7 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, acct 
 // prompt of a thread also gets the task-start brief. A plugin may pass its own setup notice
 // (system, context) so the hook prints one object. It never fails the prompt and never waits
 // on the network.
-func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, system, notice string) int {
+func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string) int {
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
@@ -420,11 +421,20 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	_ = json.Unmarshal(b, &in)
 	now := time.Now()
-	// Without the status line nothing else keeps the publication fresh for Claude Code.
-	if s, _ := st.State(); !c.offline && time.Since(s.CheckedAt) > staleAfter && time.Since(s.LastAttemptAt) > backgroundEvery {
-		_ = detach.Start("sync", "--quiet", "--base", c.base)
-	}
+	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
+	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
+	// brief; otherwise a stale one is refreshed in the background.
 	d, _, _ := publication.Load(st)
+	if s, _ := st.State(); !c.offline && time.Since(s.LastAttemptAt) > backgroundEvery {
+		if d == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), firstSyncWait)
+			_, _ = client.Sync(ctx, false)
+			cancel()
+			d, _, _ = publication.Load(st)
+		} else if time.Since(s.CheckedAt) > staleAfter {
+			_ = detach.Start("sync", "--quiet", "--base", c.base)
+		}
+	}
 	state := advise.Load(st.Dir)
 	paths := quotaPaths(st)
 	if harness == "claude-code" {
