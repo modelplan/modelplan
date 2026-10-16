@@ -49,7 +49,7 @@ test('no CLI: a notice that asks once, then weekly without asking, quiet after "
   const first = JSON.parse(sh('modelplan-quota-hints.sh'));
   assert.match(first.systemMessage, /未检测到可选的 modelplan CLI[\s\S]*\/modelplan:setup/);
   assert.equal(first.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-  assert.match(first.hookSpecificOutput.additionalContext, /ask whether to install[\s\S]*cli-declined/);
+  assert.match(first.hookSpecificOutput.additionalContext, /ask whether to install[\s\S]*run nothing for it/);
   const manifest = JSON.parse(await readFile(join(root, '.claude-plugin/plugin.json'), 'utf8'));
   assert.equal((await readFile(join(state, 'hook-ran'), 'utf8')).trim(), manifest.version, 'heartbeat names the plugin version');
   assert.equal(sh('modelplan-quota-hints.sh'), '', 'not again within a week');
@@ -58,6 +58,33 @@ test('no CLI: a notice that asks once, then weekly without asking, quiet after "
   await rm(join(state, 'notice-missing'));
   await writeFile(join(state, 'cli-declined'), '');
   assert.equal(sh('modelplan-quota-hints.sh'), '', 'declined: quiet');
+  await rm(home, { recursive: true });
+});
+
+test('a short "no" right after the ask is recorded by the hook; anything else is not', async () => {
+  const { home, sh, install, state } = await setup();
+  const say = (prompt) => sh('modelplan-quota-hints.sh', JSON.stringify({ session_id: 's', prompt }));
+  say('2+2?');
+  const ack = JSON.parse(say('不用了，谢谢'));
+  assert.match(ack.systemMessage, /已记下/);
+  assert.match(ack.hookSpecificOutput.additionalContext, /declined installing the modelplan CLI[\s\S]*run nothing/);
+  assert.ok((await stat(join(state, 'cli-declined'))).isFile());
+  assert.equal(say('不用了'), '', 'only the reply right after the ask counts');
+  // A real request after the ask is not a "no"; the ask is consumed either way.
+  await rm(join(state, 'cli-declined'));
+  await rm(join(state, 'notice-missing'));
+  await rm(join(state, 'asked-missing'));
+  say('hello');
+  say('now refactor the parser');
+  await assert.rejects(stat(join(state, 'cli-declined')));
+  await assert.rejects(stat(join(state, 'awaiting-missing')));
+  // The status-line ask: a "no" rides with the CLI's own output.
+  await install('0.5.6');
+  say('first');
+  say('No thanks');
+  assert.ok((await stat(join(state, 'statusline-declined'))).isFile());
+  assert.match(await readFile(join(home, 'args'), 'utf8'), /--add-system\n[\s\S]*已记下[\s\S]*declined setting up the Model Plan status line/);
+  assert.equal(execFileSync('sh', [join(root, 'hooks/decline.sh'), 'cli'], { env: { PATH: '/usr/bin:/bin', HOME: home }, encoding: 'utf8' }), 'recorded: cli declined for 90 days\n');
   await rm(home, { recursive: true });
 });
 
@@ -77,7 +104,7 @@ test('a current CLI: the status-line notice rides with its hints once, then plai
   const args = (await readFile(join(home, 'args'), 'utf8')).split('\n');
   assert.deepEqual(args.slice(0, 3), ['advise', '--hook', 'claude-code']);
   assert.equal(args[3], '--add-system');
-  assert.match(args.slice(4).join('\n'), /\/modelplan:statusline[\s\S]*--add-context[\s\S]*statusline-declined/);
+  assert.match(args.slice(4).join('\n'), /\/modelplan:statusline[\s\S]*--add-context[\s\S]*run nothing for it/);
   sh('modelplan-quota-hints.sh');
   assert.equal(await readFile(join(home, 'args'), 'utf8'), 'advise\n--hook\nclaude-code\n', 'not again within a week');
   // Once the status line records, no notice even when one would be due.

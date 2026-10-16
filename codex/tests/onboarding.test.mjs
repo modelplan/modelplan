@@ -60,7 +60,7 @@ test('one hook: hints with a current CLI, a setup notice without one, asked once
   const first = JSON.parse(run());
   assert.match(first.systemMessage, /未检测到可选的 modelplan CLI[\s\S]*not installed/);
   assert.equal(first.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
-  assert.match(first.hookSpecificOutput.additionalContext, /ask whether to install[\s\S]*cli-declined/, 'the first notice asks the model to ask once');
+  assert.match(first.hookSpecificOutput.additionalContext, /ask whether to install[\s\S]*run nothing for it/, 'the first notice asks the model to ask once');
   assert.ok((await stat(join(state, 'hook-ran'))).isFile(), 'every run leaves a heartbeat for the dashboard');
   assert.equal(run(), '', 'not again within a week');
   await rm(join(state, 'notice-missing'));
@@ -82,6 +82,24 @@ test('one hook: hints with a current CLI, a setup notice without one, asked once
   await writeFile(join(bin, 'modelplan'), '#!/bin/sh\ncase "$1" in version) echo "modelplan 0.5.5";; *) echo "{\\"hints\\":\\"$*\\"}";; esac\n');
   await rm(join(state, 'notice-outdated'));
   assert.deepEqual(JSON.parse(run()), { hints: 'advise --hook codex' }, 'a current CLI: hints only, never a notice');
+  await rm(home, { recursive: true });
+});
+
+test('a short "no" right after the ask is recorded by the hook, nothing else', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'modelplan-reply-'));
+  const env = { PATH: '/usr/bin:/bin', HOME: home, PLUGIN_ROOT: root };
+  const say = prompt => execFileSync('sh', [join(root, 'hooks/modelplan-quota-hints.sh')], { env, input: JSON.stringify({ session_id: 't', prompt }), encoding: 'utf8' });
+  const state = join(home, '.cache/modelplan-codex');
+  say('hi');
+  assert.equal(say('now fix the build'), '', 'a request is not a "no"');
+  await assert.rejects(stat(join(state, 'cli-declined')));
+  await rm(join(state, 'asked-missing'));
+  await rm(join(state, 'notice-missing'));
+  say('hi');
+  const ack = JSON.parse(say('暂时不用'));
+  assert.match(ack.systemMessage, /已记下/);
+  assert.match(ack.hookSpecificOutput.additionalContext, /declined[\s\S]*run nothing/);
+  assert.ok((await stat(join(state, 'cli-declined'))).isFile());
   await rm(home, { recursive: true });
 });
 

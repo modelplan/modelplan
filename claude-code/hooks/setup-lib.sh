@@ -1,7 +1,7 @@
 # Shared by the hook and /modelplan:setup (sourced, POSIX sh). State lives in
 # ~/.cache/modelplan-claude-code: hook-ran (heartbeat, the plugin version), asked-<kind> (the model
-# was asked to offer the fix once), notice-<kind> (last notice), <part>-declined (the user said
-# not now: cli or statusline).
+# was asked to offer the fix once), awaiting-<kind> (that ask awaits the user's next reply),
+# notice-<kind> (last notice), <part>-declined (the user said not now: cli or statusline).
 here=${here:-$(dirname "$0")}
 state="$HOME/.cache/modelplan-claude-code"
 min_cli=0.5.6 # the Claude Code task-start brief and session-aware status-line readings
@@ -36,7 +36,7 @@ notice() {
   [ -f "$state/asked-$kind" ] && first=no
   : > "$state/notice-$kind" 2>/dev/null
   : > "$state/asked-$kind" 2>/dev/null
-  decline="mkdir -p ~/.cache/modelplan-claude-code && touch ~/.cache/modelplan-claude-code/$part-declined"
+  [ "$first" = yes ] && : > "$state/awaiting-$kind" 2>/dev/null
   case $kind in
     missing)
       msg="ModelPlan：未检测到可选的 modelplan CLI，额度提醒（重置前升档、重置后切回 ★）和任务开始简报未启用。运行 /modelplan:setup 安装。
@@ -55,11 +55,34 @@ ModelPlan: no Claude Code quota recorded yet (the Model Plan status line records
       ask="that the status line records the usage windows Claude Code passes to it (Pro/Max plans; nothing leaves the machine), and suggest the user run /modelplan:statusline, which asks before changing settings and can keep an existing status line. Do not edit settings yourself in this turn." ;;
   esac
   if [ "$first" = yes ]; then
-    ctx="$ctx After answering the user's request, add one or two sentences: $ask If they decline, run: $decline, and do not raise it again. Never change the model, effort or fast mode."
+    ctx="$ctx After answering the user's request, add one or two sentences: $ask If they decline, acknowledge it in one sentence and do not raise it again; the plugin reads their answer from the next message itself, so run nothing for it. Never change the model, effort or fast mode."
   else
     ctx="$ctx Mention it only if the user asks about ModelPlan, quota hints or setup."
   fi
   return 0
 }
+
+# A short "no" right after the ask: the hook records it, so declining needs no command (and no
+# permission prompt). Anything else leaves the weekly notice as it is.
+is_decline() {
+  [ "${#1}" -le 60 ] && printf '%s\n' "$1" | grep -iqE '^[[:space:]]*(不用|不要|不装|不需要|不必|不了|暂不|暂时不|先不|算了|以后再说|下次再说|no([^a-z]|$)|nope|nah|not now|skip|later|don.?t)'
+}
+
+# reply <prompt>: consumes a pending ask; on a decline records it and sets $declined (the part).
+reply() {
+  declined=
+  for k in missing outdated statusline; do
+    [ -f "$state/awaiting-$k" ] || continue
+    fresh=$(find "$state/awaiting-$k" -mmin -1440 2>/dev/null)
+    rm -f "$state/awaiting-$k"
+    [ -n "$fresh" ] && is_decline "$1" || continue
+    p=cli
+    [ "$k" = statusline ] && p=statusline
+    : > "$state/$p-declined" 2>/dev/null && declined=$p
+  done
+}
+
+# The prompt from hook input on stdin, when it is a plain JSON string (enough for a short reply).
+prompt_of() { printf '%s' "$1" | tr '\n' ' ' | sed -n 's/.*"prompt" *: *"\([^"\\]*\)".*/\1/p' | head -1; }
 
 esc() { printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); if (NR > 1) print "\\n"; print }'; }

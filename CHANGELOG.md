@@ -2,6 +2,15 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.8 (2026-10-16)
+
+- Plugins: Claude Code 0.5.1, Codex 0.13.1.
+- `advise --hook`: a first sync that does not finish within 3.5 seconds goes on in the background, so the next prompt has the data. Before, a slow first download failed and was not retried for 10 minutes (seen in a logged-in Claude Code run).
+
+## Claude Code plugin 0.5.1 and Codex plugin 0.13.1 (2026-10-16)
+
+- **"Not now" without a command.** After the one-time setup question, the hook reads the user's next message itself: a short "no" (不用, 暂不, 算了, no, not now, skip, …) is recorded and Claude or Codex is told to acknowledge it and run nothing. Before, the model had to run `touch` in `~/.cache`, which needs approval outside the project (Claude Code blocked it even with an allow rule), so a "no" came with a permission prompt or was not recorded. Any other message consumes the question without recording anything. Claude Code's `/modelplan:setup` records "not now" with `hooks/decline.sh`.
+
 ## v0.5.7 (2026-10-16)
 
 - `advise --hook`: with no publication on the machine yet (the CLI was just installed), the hook waits up to 3 seconds for a first sync, so the first prompt already gets the task-start brief; before, it only started a background sync and the brief came with the next prompt. A failed attempt is not retried for 10 minutes, so an offline machine is not slowed down. A stale publication is still refreshed in the background.
