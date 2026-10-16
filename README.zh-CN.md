@@ -51,11 +51,11 @@ npx skills add modelplan/modelplan
 <summary><b>Codex 插件</b>：Skill 加 GPT 档位面板</summary>
 
 ```sh
-codex plugin marketplace add modelplan/modelplan
+codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
 codex plugin add modelplan-codex@modelplan
 ```
 
-对 Codex 说「打开 Model Plan 面板」。需要 Node.js 24+。[详情](codex/README.zh-CN.md)
+对 Codex 说「打开 Model Plan 看板」。需要 Node.js 22+，Codex 自带时会自动使用。安装检查、可选 CLI 与卸载：[详情](codex/README.zh-CN.md)
 
 </details>
 

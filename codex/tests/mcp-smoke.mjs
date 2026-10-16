@@ -14,14 +14,14 @@ const fresh = process.argv.includes("--fresh");
 let root = fileURLToPath(new URL("../", import.meta.url)), temporary;
 if (fresh) {
   temporary = await mkdtemp(join(tmpdir(), "modelplan-fresh-plugin-"));
-  for (const name of ["server.bundle.mjs", "package.json", "mcp.json", "ui"])
+  for (const name of ["launch.cjs", "server.bundle.mjs", "package.json", "mcp.json", "ui"])
     await cp(join(root, name), join(temporary, name), { recursive: true });
   root = temporary;
 }
 const config = Object.values(JSON.parse(await readFile(join(root, "mcp.json"), "utf8")).mcpServers)[0];
 assert.equal(config.type, "stdio");
 const transport = http ? new StreamableHTTPClientTransport(new URL("http://127.0.0.1:4318/mcp")) :
-  new StdioClientTransport({ command: process.execPath, args: config.args, cwd: root,
+  new StdioClientTransport({ command: process.env.MODELPLAN_SMOKE_NODE || process.execPath, args: config.args, cwd: root,
     env: { ...process.env, MODELPLAN_CACHE: process.env.MODELPLAN_CACHE || join(tmpdir(), "modelplan-mcp-acceptance-cache") } });
 const client = new Client({ name: "modelplans-demo-acceptance", version: "0.1.0" });
 try {
@@ -41,6 +41,7 @@ try {
   assert.ok(result.structuredContent.models.length > 0);
   assert.ok(result.structuredContent.models.every(m => m.developerId === "openai"));
   assert.equal(result.structuredContent.clientScope, "codex-openai");
+  assert.ok(result.structuredContent.setup.runtime.version, "launcher reports the runtime it chose");
   assert.equal(result.structuredContent.resetFeed.status, "published");
   assert.equal(result.structuredContent.resetFeed.publicationId, result.structuredContent.publicationId);
   const model = result.structuredContent.models[0];
@@ -48,7 +49,7 @@ try {
   for (const name of ["get_model_dashboard", "open_model_dashboard"]) {
     const ladder = await client.callTool({ name, arguments: { view: "effort", modelId: model.id, lang: "en" } });
     assert.equal(ladder.isError, undefined);
-    assert.equal(ladder.content[0].text, renderEffort(model, "en"));
+    assert.equal(ladder.content[0].text, renderEffort(model, "en", result.structuredContent.speedTiers));
   }
   const exact = await client.callTool({ name: "get_model_dashboard", arguments: { modelIds: [model.id] } });
   assert.equal(exact.structuredContent.models.length, 1);

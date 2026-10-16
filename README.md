@@ -51,11 +51,11 @@ Commands: `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup`, and `/mod
 <summary><b>Codex plugin</b>: the Skill plus a GPT effort dashboard</summary>
 
 ```sh
-codex plugin marketplace add modelplan/modelplan
+codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
 codex plugin add modelplan-codex@modelplan
 ```
 
-Ask Codex to *"Open the Model Plan dashboard"*. Requires Node.js 24+. [More](codex/)
+Ask Codex to *"Open the Model Plan dashboard"*. Needs Node.js 22+, found automatically when Codex has one. Setup check, optional CLI and uninstall: [more](codex/)
 
 </details>
 

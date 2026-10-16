@@ -18,7 +18,7 @@ The clients live here:
 | Directory | Stack | Check locally |
 | --- | --- | --- |
 | `cli/` | Go 1.24 | `cd cli && go vet ./... && go test ./...` |
-| `codex/` | Node.js 24 | `cd codex && npm ci --ignore-scripts && npm test && npm run build` (commit the rebuilt `server.bundle.mjs`) |
+| `codex/` | Node.js 22+ (CI runs 22 and 24) | `cd codex && npm ci --ignore-scripts && npm test && npm run build` (commit the rebuilt `server.bundle.mjs`) |
 | `skills/model-plan/` | Markdown, Python 3.12 evals | `python -m unittest discover -s skills/model-plan/evals -p 'test_*.py'`; then `node scripts/package-skill.mjs` copies the Skill into both plugins (`--check` in CI) |
 | `claude-code/` | plugin manifest, commands, hooks | edit the Skill in `skills/model-plan/`, not the plugin copy |
 

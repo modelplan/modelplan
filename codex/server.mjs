@@ -11,6 +11,11 @@ import { readAdvice, readQuota } from "./quota.mjs";
 const version = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8")).version;
 const UI_URI = "ui://modelplans/model-dashboard.html";
 const reader = createReader();
+// Which Node runs this server and how launch.cjs chose it; set by the launcher, absent when run directly.
+const runtime = (() => { try { return JSON.parse(process.env.MODELPLAN_RUNTIME); } catch { return null; } })() ??
+  { path: process.execPath, version: process.versions.node, source: 'direct' };
+const setup = (quota, advice) => ({ pluginVersion: version, runtime, quotaReader: quota.reader ?? null, quotaStatus: quota.status,
+  advice: { status: advice.status, reason: advice.reason ?? null } });
 const readHtml = async (preview = false) => {
   const [html, tokens, components, script, logo, comparison, lineup, presentation, curves, space] = await Promise.all([
     "ui/dashboard.html", "ui/kit/tokens.css", "ui/kit/components.css", "ui/dashboard.js", "ui/kit/logo.svg", "ui/comparison.js", "ui/lineup.js", "ui/presentation.js", "ui/curves.js", "ui/space.css",
@@ -35,7 +40,7 @@ async function result(args) {
     if (args.modelId && !model) throw Error("unknown_model_id");
     if (args.view === "effort" && !model) throw Error("effort_view_requires_modelId");
     return {
-      structuredContent: { ...data, quota, advice, focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
+      structuredContent: { ...data, quota, advice, setup: setup(quota, advice), focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
       content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang, data.speedTiers) : renderLineup(data, args.lang) },
         { type: "text", text: renderQuota(quota, args.lang, advice) },
         { type: "text", text: `Publication ${data.publicationId}${data.stale ? " (last-good: " + data.error + ")" : ""}.\n` +
@@ -86,7 +91,7 @@ if (!process.argv.includes("--http")) {
       if (req.method !== "GET") { res.writeHead(405); return res.end(); }
       if (url.pathname === "/api/dashboard") {
         const [data, quota, advice] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice()]);
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice }));
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice, setup: setup(quota, advice) }));
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }
       if (["/", "/dashboard"].includes(url.pathname)) {

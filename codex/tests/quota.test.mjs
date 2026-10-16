@@ -11,13 +11,15 @@ test('prefers the CLI, falls back to the Skill reader, and keeps only the Codex 
   const q = await readQuota({ exec: async (cmd, args) => { calls.push(cmd); if (cmd === 'modelplan') throw Error('ENOENT'); return JSON.stringify(expected); } });
   assert.deepEqual(calls, ['modelplan', 'python3']);
   assert.equal(q.status, 'ok');
+  assert.equal(q.reader, 'python');
   assert.equal(q.account.source, 'codex');
   assert.equal(q.account.headroom, 'conserve');
 });
 
 test('no reader means unavailable, never an invented quota', async () => {
-  const q = await readQuota({ exec: async () => { throw Error('ENOENT'); } });
+  const q = await readQuota({ exec: async () => { throw Object.assign(Error('ENOENT'), { code: 'ENOENT' }); } });
   assert.equal(q.status, 'unavailable');
+  assert.match(q.reason, /modelplan missing, python3 missing, python missing/);
   assert.equal(q.account, null);
   assert.equal(pickCodex({ schemaVersion: 1, accounts: [], sources: [{ source: 'codex', status: 'empty', reason: 'api key' }] }).status, 'empty');
 });
@@ -40,7 +42,17 @@ test('advice comes only from the CLI, keeps Codex events and drops anything malf
   const a = await readAdvice({ exec: async (cmd, args) => { calls.push([cmd, ...args].join(' ')); return JSON.stringify(out); } });
   assert.deepEqual(calls, ['modelplan advise --json --source codex']);
   assert.deepEqual(a.events.map(e => e.type), ['reset_soon_with_surplus']);
-  assert.deepEqual(await readAdvice({ exec: async () => { throw Error('ENOENT'); } }), { status: 'unavailable', events: [] });
+  const enoent = () => { throw Object.assign(Error('spawn modelplan ENOENT'), { code: 'ENOENT' }); };
+  assert.deepEqual(await readAdvice({ exec: async () => enoent() }), { status: 'unavailable', reason: 'cli_missing', events: [] });
+  assert.equal((await readAdvice({ exec: async () => { throw Error('unknown command advise'); } })).reason, 'cli_without_advise');
   const text = renderQuota(pickCodex(expected), 'en', a);
   assert.match(text, /↑ Codex 5h window has 80% left/);
+});
+
+test('text names the reader and why hints are off', () => {
+  const off = { status: 'unavailable', reason: 'cli_missing', events: [] };
+  const text = renderQuota({ ...pickCodex(expected), reader: 'python' }, 'zh', off);
+  assert.match(text, /主动提醒未启用：需要可选的 modelplan CLI 0\.4\+/);
+  assert.match(text, /Python 回退读取/);
+  assert.match(renderQuota({ status: 'missing', account: null }, 'en', off), /Proactive hints off/);
 });
