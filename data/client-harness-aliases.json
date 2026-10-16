@@ -1,0 +1,180 @@
+{
+  "revision": "2026-10-11.2",
+  "checkedAt": "2026-10-11",
+  "records": [
+    {
+      "modelId": "opus",
+      "sourceModelId": "anthropic/claude-opus-5-5",
+      "harnessIds": {
+        "api": [
+          "claude-opus-5-5"
+        ],
+        "claude-code": [
+          "claude-opus-5-5"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/overview",
+        "https://code.claude.com/docs/en/model-config"
+      ],
+      "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "sonnet-5.5",
+      "sourceModelId": "anthropic/claude-sonnet-5-5",
+      "harnessIds": {
+        "api": [
+          "claude-sonnet-5-5"
+        ],
+        "claude-code": [
+          "claude-sonnet-5-5"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/overview",
+        "https://code.claude.com/docs/en/model-config"
+      ],
+      "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:anthropic:ccb37fec2677f068",
+      "sourceModelId": "anthropic/claude-haiku-5-5",
+      "harnessIds": {
+        "api": [
+          "claude-haiku-5-5"
+        ],
+        "claude-code": [
+          "claude-haiku-5-5"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/overview",
+        "https://code.claude.com/docs/en/model-config"
+      ],
+      "qualification": "Anthropic provider; compatible client and managed allowlists still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "astra",
+      "sourceModelId": "openai/gpt-6-astra",
+      "harnessIds": {
+        "api": [
+          "gpt-6-astra"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6-astra"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models/gpt-6-astra",
+        "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "sol-6.1",
+      "sourceModelId": "openai/gpt-6.1-sol",
+      "harnessIds": {
+        "api": [
+          "gpt-6.1-sol"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6.1-sol"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models",
+        "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "luna",
+      "sourceModelId": "openai/gpt-6-luna",
+      "harnessIds": {
+        "api": [
+          "gpt-6-luna"
+        ],
+        "claude-code": [],
+        "codex": [
+          "gpt-6-luna"
+        ]
+      },
+      "sourceUrls": [
+        "https://developers.openai.com/api/docs/models",
+        "https://learn.chatgpt.com/docs/models"
+      ],
+      "qualification": "Codex sign-in, rollout, client and workspace restrictions still apply.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "glm",
+      "sourceModelId": "zhipuai/glm-5.3",
+      "harnessIds": {
+        "api": [
+          "glm-5.3"
+        ],
+        "claude-code": [
+          "glm-5.3[1m]"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://docs.z.ai/guides/llm/glm-5.3",
+        "https://docs.z.ai/devpack/tool/claude"
+      ],
+      "qualification": "Claude Code identifier requires custom Z.ai endpoint https://api.z.ai/api/anthropic and explicit family-model configuration; never resolve global opus/sonnet aliases to GLM.",
+      "requiredEndpoints": {
+        "claude-code": "https://api.z.ai/api/anthropic"
+      }
+    },
+    {
+      "modelId": "fable",
+      "sourceModelId": "anthropic/claude-fable-5-1",
+      "harnessIds": {
+        "api": [
+          "claude-fable-5-1"
+        ],
+        "claude-code": [
+          "claude-fable-5-1"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/fable-5-1/overview",
+        "https://code.claude.com/docs/en/model-config#available-models",
+        "https://code.claude.com/docs/en/model-config#work-with-fable"
+      ],
+      "qualification": "Anthropic provider; Claude Code v2.1.257+; managed and account restrictions still apply. No account entitlement or inference verified.",
+      "requiredEndpoints": {}
+    },
+    {
+      "modelId": "auto:anthropic:2a365f1cb3bef456",
+      "sourceModelId": "anthropic/claude-opus-5",
+      "harnessIds": {
+        "api": [
+          "claude-opus-5"
+        ],
+        "claude-code": [
+          "claude-opus-5"
+        ],
+        "codex": []
+      },
+      "sourceUrls": [
+        "https://platform.claude.com/docs/en/models/opus-5/overview",
+        "https://code.claude.com/docs/en/model-config#available-models"
+      ],
+      "qualification": "Anthropic provider; active legacy Opus 5, distinct from Opus 5.5; compatible client, managed and account restrictions still apply. No account entitlement or inference verified.",
+      "requiredEndpoints": {}
+    }
+  ]
+}

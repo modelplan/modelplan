@@ -1,0 +1,24 @@
+{
+  "id": "balanced-coding-absolute-v3",
+  "version": "2026-09-27.2",
+  "status": "experimental-scenario-policy-not-independent-validation",
+  "retainedScoreFraction": 0.8,
+  "minimumHeadroomFraction": 0.1,
+  "boundaryProbePoints": 1,
+  "timeReferenceSeconds": 1800,
+  "maximumTimeScorePenalty": 1,
+  "parameterProvenance": {
+    "priceWeights": "Entire nonnegative absolute-plus-ratio region constrained by confirmed owner choices; no model overrides or selected midpoint.",
+    "retainedScoreFraction": "Existing provisional product policy: a floor at 80% of the same-model benchmark score, not retained real-world task ability.",
+    "minimumHeadroomFraction": "Provisional balanced-profile protection: retain at least 10% of the observed within-model score improvement between the lowest- and highest-scoring priced native efforts. One common parameter, no family exceptions; not a task-success rate or statistical confidence bound.",
+    "boundaryProbePoints": "Engineering stress probe, not a measurement confidence interval.",
+    "timePolicy": "Declared auxiliary policy: time may change utility by at most one score point; 30-minute reference is a provisional scenario, not a fitted preference. Unknown timings remain unknown."
+  },
+  "sensitivity": {
+    "headroomFractions": [0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
+    "retainedScoreFractions": [0.75, 0.8, 0.82, 0.84, 0.85],
+    "timeReferencesSeconds": [900, 1800, 3600],
+    "timeScorePenaltyCaps": [0, 0.5, 1, 2]
+  },
+  "automaticRoutingEligible": false
+}

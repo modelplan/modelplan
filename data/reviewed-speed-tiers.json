@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "tiers": [
+    {
+      "id": "codex-fast",
+      "harness": "codex",
+      "tier": "fast",
+      "label": "Fast",
+      "toggle": "/fast; config.toml: service_tier = \"fast\" with [features].fast_mode = true",
+      "eligibility": {
+        "plans": ["chatgpt-sign-in"],
+        "note": "ChatGPT desktop app, Codex CLI and IDE extension when signed in with ChatGPT, for supported models where available. With an API key Codex uses API token pricing and these multipliers do not apply."
+      },
+      "models": [
+        { "vendorModelId": "gpt-6.1-sol", "speed": { "ratio": null, "qualifier": "unstated" } },
+        { "vendorModelId": "gpt-6-astra", "speed": { "ratio": null, "qualifier": "unstated" } },
+        { "vendorModelId": "gpt-6-sol", "speed": { "ratio": null, "qualifier": "unstated" } },
+        { "vendorModelId": "gpt-6-luna", "speed": { "ratio": null, "qualifier": "unstated" } }
+      ],
+      "billing": [
+        { "account": "subscription", "billsTo": "plan-quota", "basis": "included-usage", "ratio": 2.5 },
+        { "account": "credits", "billsTo": "credits", "basis": "credit-rate", "ratio": 2 }
+      ],
+      "caveats": ["speed-stated-for-older-model-only"],
+      "sources": ["https://learn.chatgpt.com/docs/agent-configuration/speed"],
+      "reviewedAt": "2026-10-15T06:30:00Z",
+      "reviewNote": "Official page: supported models \"including\" the four listed; 2.5x included subscription limits; 2x purchased credits and Enterprise pay-as-you-go. The only speed figure (1.5x) is stated for GPT-5.6, which is not in the list, so every listed model keeps an unstated speed."
+    },
+    {
+      "id": "codex-ultrafast",
+      "harness": "codex",
+      "tier": "ultrafast",
+      "label": "Ultrafast",
+      "toggle": "Codex speed selector",
+      "eligibility": {
+        "plans": ["chatgpt-pro-500", "enterprise-eligible", "edu-eligible"],
+        "note": "Pro $500 and eligible Enterprise (credit or USD usage-based agreements; off by default, enabled by workspace owners) and Edu (credits) plans. Other self-serve plans have no access, even with purchased credits. On Pro $500 it uses included usage first, then credits."
+      },
+      "models": [
+        { "vendorModelId": "gpt-6-astra", "speed": { "ratio": 8, "qualifier": "up-to" } },
+        { "vendorModelId": "gpt-6.1-sol", "speed": { "ratio": null, "qualifier": "unstated" } }
+      ],
+      "billing": [
+        { "account": "subscription", "billsTo": "plan-quota", "basis": "included-usage", "ratio": 8 },
+        { "account": "credits", "billsTo": "credits", "basis": "credit-rate", "ratio": 6 }
+      ],
+      "caveats": ["restricted-plans", "enterprise-off-by-default"],
+      "sources": ["https://learn.chatgpt.com/docs/agent-configuration/speed"],
+      "reviewedAt": "2026-10-15T06:30:00Z",
+      "reviewNote": "Official page: GPT-6 Astra Ultrafast generates tokens up to 8x faster than Astra Standard in Codex (token generation, not task time); no figure for GPT-6.1 Sol. 8x included subscription limits; 6x purchased credits and Enterprise pay-as-you-go. Related ceiling claim: reviewed-speed-claims openai-astra-ultrafast-ceiling-2026-09-29."
+    },
+    {
+      "id": "claude-code-fast",
+      "harness": "claude-code",
+      "tier": "fast",
+      "label": "Fast mode",
+      "toggle": "/fast; settings: \"fastMode\": true",
+      "eligibility": {
+        "plans": ["claude-subscription-usage-credits", "claude-console"],
+        "note": "Pro, Max, Team and Enterprise through usage credits only (usage credits must be on; Team and Enterprise need an Owner to enable fast mode), and provisioned Claude Console organizations. Not on Amazon Bedrock, Google Cloud, Microsoft Foundry or Claude Platform on AWS. Research preview."
+      },
+      "models": [
+        { "vendorModelId": "claude-opus-5-5", "speed": { "ratio": 2.5, "qualifier": "up-to" } },
+        { "vendorModelId": "claude-opus-5", "speed": { "ratio": 2.5, "qualifier": "up-to" } },
+        { "vendorModelId": "claude-opus-4-8", "speed": { "ratio": 2.5, "qualifier": "up-to" } }
+      ],
+      "billing": [
+        { "account": "subscription", "billsTo": "usage-credits", "basis": "token-price", "ratio": 2 },
+        { "account": "api", "billsTo": "api", "basis": "token-price", "ratio": 2 }
+      ],
+      "caveats": ["not-plan-quota", "rebills-context-on-enable", "research-preview", "separate-rate-limit"],
+      "sources": [
+        "https://code.claude.com/docs/en/fast-mode",
+        "https://platform.claude.com/docs/en/about-claude/pricing"
+      ],
+      "reviewedAt": "2026-10-15T06:30:00Z",
+      "reviewNote": "Fast mode $8/$40 per MTok on Opus 5.5 against standard $4/$20, and $10/$50 on Opus 5 and Opus 4.8 against $5/$25: 2x in every case. Up to 2.5x faster, same model. Subscriptions pay from usage credits even with plan allowance left. The first enable in a conversation bills the whole context at the uncached fast input price once."
+    }
+  ]
+}

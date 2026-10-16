@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "revision": "calendar-rules-2026-10-01",
+  "seedStatus": "preserved-existing-rules",
+  "rules": [
+    {
+      "id": "glm-credits-base",
+      "revision": 1,
+      "name": "非高峰 · 50% 扣减",
+      "provider": "zhipu",
+      "generations": [
+        "credits-2026"
+      ],
+      "models": [],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "startHour": 0,
+      "endHour": 24,
+      "multiplier": 0.5,
+      "priority": 0,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "kind": "base",
+      "conditions": []
+    },
+    {
+      "id": "glm-credits-peak",
+      "revision": 1,
+      "name": "工作日高峰 · 标准扣减",
+      "provider": "zhipu",
+      "generations": [
+        "credits-2026"
+      ],
+      "models": [],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "weekdays": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "startHour": 14,
+      "endHour": 18,
+      "multiplier": 1,
+      "priority": 10,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "kind": "peak",
+      "conditions": []
+    },
+    {
+      "id": "glm-legacy-base-0",
+      "revision": 1,
+      "name": "旧版非高峰",
+      "provider": "zhipu",
+      "generations": [
+        "legacy-v2"
+      ],
+      "models": [
+        "GLM-5.3"
+      ],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "startHour": 0,
+      "endHour": 24,
+      "multiplier": 1,
+      "priority": 0,
+      "sourceId": "glm-legacy",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/usage-revision",
+      "kind": "base",
+      "conditions": []
+    },
+    {
+      "id": "glm-legacy-peak-0",
+      "revision": 1,
+      "name": "旧版工作日高峰",
+      "provider": "zhipu",
+      "generations": [
+        "legacy-v2"
+      ],
+      "models": [
+        "GLM-5.3"
+      ],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "weekdays": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "startHour": 14,
+      "endHour": 18,
+      "multiplier": 3,
+      "priority": 10,
+      "sourceId": "glm-legacy",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/usage-revision",
+      "kind": "peak",
+      "conditions": []
+    },
+    {
+      "id": "glm-legacy-base-1",
+      "revision": 1,
+      "name": "旧版非高峰",
+      "provider": "zhipu",
+      "generations": [
+        "legacy-v2"
+      ],
+      "models": [
+        "GLM-5.3-Flash"
+      ],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "startHour": 0,
+      "endHour": 24,
+      "multiplier": 0.4,
+      "priority": 0,
+      "sourceId": "glm-legacy",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/usage-revision",
+      "kind": "base",
+      "conditions": []
+    },
+    {
+      "id": "glm-legacy-peak-1",
+      "revision": 1,
+      "name": "旧版工作日高峰",
+      "provider": "zhipu",
+      "generations": [
+        "legacy-v2"
+      ],
+      "models": [
+        "GLM-5.3-Flash"
+      ],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "weekdays": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "startHour": 14,
+      "endHour": 18,
+      "multiplier": 1.2,
+      "priority": 10,
+      "sourceId": "glm-legacy",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/usage-revision",
+      "kind": "peak",
+      "conditions": []
+    },
+    {
+      "id": "glm-holiday-2026",
+      "revision": 1,
+      "name": "双节 · 全天非高峰",
+      "provider": "zhipu",
+      "generations": [],
+      "models": [],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "startDate": "2026-09-25",
+      "endDateExclusive": "2026-10-08",
+      "startHour": 0,
+      "endHour": 24,
+      "multiplier": 0.5,
+      "priority": 20,
+      "sourceId": "glm-overview",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "kind": "holiday",
+      "conditions": [
+        "日期边界按当地自然日解释"
+      ]
+    },
+    {
+      "id": "glm-flash-night-2026",
+      "directMultiplierClients": [
+        "ZCode",
+        "AutoClaw"
+      ],
+      "otherClientFactor": 0.5,
+      "minClientVersions": {
+        "ZCode": "3.10"
+      },
+      "requiresQuotaAvailable": true,
+      "revision": 1,
+      "name": "Flash 夜间优惠",
+      "provider": "zhipu",
+      "generations": [],
+      "models": [
+        "GLM-5.3-Flash"
+      ],
+      "clients": [],
+      "timezone": "Asia/Shanghai",
+      "startDate": "2026-09-03",
+      "endDateExclusive": "2026-10-07",
+      "startHour": 23,
+      "endHour": 9,
+      "multiplier": 0,
+      "priority": 30,
+      "sourceId": "glm-campaign",
+      "sourceUrl": "https://docs.z.ai/devpack/notice/event-glm-5.3-flash",
+      "kind": "night",
+      "conditions": [
+        "仅付费 Coding Plan",
+        "10月7日最后一晚延伸边界待确认，未强行纳入"
+      ]
+    }
+  ]
+}
