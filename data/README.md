@@ -30,6 +30,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`model-developers.json`](model-developers.json) | Model developers | CC-BY-4.0 |
 | [`model-identities.json`](model-identities.json) | Reviewed model identities and names | CC-BY-4.0 |
 | [`official-model-lineages.json`](official-model-lineages.json) | Official model lineages | CC-BY-4.0 |
+| [`plan-change-log.json`](plan-change-log.json) | Reviewed vendor changes to plans, as shown in Mission Briefing | CC-BY-4.0 |
 | [`plan-display-en.json`](plan-display-en.json) | English display text for plan notes | CC-BY-4.0 |
 | [`plan-edition-groups.json`](plan-edition-groups.json) | Plan edition groups (China and international editions) | CC-BY-4.0 |
 | [`plan-index-aliases.json`](plan-index-aliases.json) | Plan model names mapped to index models | CC-BY-4.0 |

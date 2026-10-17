@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 1,
+  "note": "Reviewed catalogue changes shown in Mission Briefing as 'In catalogue'. One entry per vendor change that has already landed in the plan data. recordedAt is when Model Plan recorded it, not when the vendor changed it. Entries name a product line (and optionally a subset of its plans); text states only what the reviewed change says.",
+  "entries": [
+    {
+      "id": "2026-10-09-zai-coding-plan-tools",
+      "recordedAt": "2026-10-09T20:46:39Z",
+      "productLine": "zai:coding-plan",
+      "kind": "clients",
+      "sourceUrl": "https://docs.z.ai/devpack/overview",
+      "zh": {
+        "title": "Z.ai Coding Plan 适用工具新增 Codex 和 OpenClaw",
+        "summary": "据 docs.z.ai 开发套件说明，套餐适用于 ZCode、Claude Code、Codex、OpenCode、AutoClaw 和 OpenClaw，其中 Codex 与 OpenClaw 为新增。"
+      },
+      "en": {
+        "title": "Z.ai Coding Plan adds Codex and OpenClaw",
+        "summary": "Per the docs.z.ai dev pack overview, the plan applies to ZCode, Claude Code, Codex, OpenCode, AutoClaw and OpenClaw; Codex and OpenClaw are new."
+      }
+    },
+    {
+      "id": "2026-10-11-alibaba-coding-plan-tools",
+      "recordedAt": "2026-10-11T01:20:52Z",
+      "productLine": "alibaba:coding-plan",
+      "kind": "clients",
+      "zh": {
+        "title": "阿里云 Coding Plan 兼容工具扩充",
+        "summary": "国内站工具列表新增 QwenPaw、Cherry Studio、Chatbox 和 WorkBuddy；国际站列出 OpenClaw、Hermes Agent、Claude Code、OpenCode、Cursor、Codex、Qwen Code、QwenPaw、Cherry Studio、Chatbox、Cline、Qoder、Lingma、Kilo CLI 和 WorkBuddy。"
+      },
+      "en": {
+        "title": "Alibaba Cloud Coding Plan lists more tools",
+        "summary": "The China page adds QwenPaw, Cherry Studio, Chatbox and WorkBuddy. The international page lists OpenClaw, Hermes Agent, Claude Code, OpenCode, Cursor, Codex, Qwen Code, QwenPaw, Cherry Studio, Chatbox, Cline, Qoder, Lingma, Kilo CLI and WorkBuddy."
+      }
+    },
+    {
+      "id": "2026-10-12-minimax-m-plan-pi",
+      "recordedAt": "2026-10-12T18:46:19Z",
+      "productLine": "minimax:m-plan",
+      "kind": "clients",
+      "zh": {
+        "title": "MiniMax M Plan 支持 Pi",
+        "summary": "M Plan 介绍页的工具列表新增 Pi，与 Claude Code、Codex、Cursor、OpenCode、Hermes Agent 和 OpenClaw 并列。"
+      },
+      "en": {
+        "title": "MiniMax M Plan supports Pi",
+        "summary": "The M Plan intro now lists Pi alongside Claude Code, Codex, Cursor, OpenCode, Hermes Agent and OpenClaw."
+      }
+    },
+    {
+      "id": "2026-10-14-gemini-4-argon-tools",
+      "recordedAt": "2026-10-14T01:31:30Z",
+      "productLine": "github:copilot",
+      "alsoProductLines": ["cursor:subscription", "devin:subscription"],
+      "provider": "google",
+      "kind": "models",
+      "zh": {
+        "title": "Gemini 4 Argon 上线 GitHub Copilot、Cursor 和 Devin",
+        "summary": "GitHub Copilot 的模型与套餐对照表、Cursor 个人套餐模型列表和 Devin 当前模型列表都已列出 Gemini 4 Argon；Cursor 同时列出 Gemini 3.5 Flash Lite。"
+      },
+      "en": {
+        "title": "Gemini 4 Argon reaches GitHub Copilot, Cursor and Devin",
+        "summary": "GitHub Copilot's model and plan matrix, Cursor's model list for individual plans and Devin's current model list all name Gemini 4 Argon; Cursor also lists Gemini 3.5 Flash Lite."
+      }
+    },
+    {
+      "id": "2026-10-14-volcengine-enterprise-tools",
+      "recordedAt": "2026-10-14T03:46:52Z",
+      "productLine": "volcengine:coding-plan",
+      "planIds": ["volcengine-enterprise-lite", "volcengine-enterprise-pro"],
+      "kind": "clients",
+      "zh": {
+        "title": "火山方舟 Coding Plan 企业版不再列出 Codex",
+        "summary": "企业版页面的工具列表列出 OpenClaw、TraeCode 和 Roo Code，不再列出 Codex。"
+      },
+      "en": {
+        "title": "Volcengine Ark Coding Plan Enterprise no longer lists Codex",
+        "summary": "The enterprise page's tool list names OpenClaw, TraeCode and Roo Code and no longer names Codex."
+      }
+    },
+    {
+      "id": "2026-10-14-volcengine-personal-tools",
+      "recordedAt": "2026-10-14T09:01:30Z",
+      "productLine": "volcengine:coding-plan",
+      "planIds": ["volcengine-personal-lite", "volcengine-personal-pro"],
+      "kind": "clients",
+      "zh": {
+        "title": "火山方舟 Coding Plan 个人版新增 Codex CLI 和 Hermes Agent",
+        "summary": "个人版页面的工具卡片包含 Codex CLI 和 Hermes Agent，概览另列出 OpenClaw、TraeCode 和 Roo Code。"
+      },
+      "en": {
+        "title": "Volcengine Ark Coding Plan Personal adds Codex CLI and Hermes Agent",
+        "summary": "The personal page's tool cards include Codex CLI and Hermes Agent, and its overview lists OpenClaw, TraeCode and Roo Code."
+      }
+    },
+    {
+      "id": "2026-10-14-x-subscription",
+      "recordedAt": "2026-10-14T18:14:24Z",
+      "productLine": "xai:x-subscription",
+      "kind": "listing",
+      "zh": {
+        "title": "新增 The X Subscription",
+        "summary": "xAI 的统一订阅 The X Subscription 收录为一个产品线，个人档 Plus $8、Premium $30、Super $100、Ultra $200（月付），另有免费档和团队档。新的自助购买用户购买该订阅；现有 Cursor 和 SuperGrok 套餐对当前订阅者继续有效（docs.x.ai 定价页，2026-10-11）。"
+      },
+      "en": {
+        "title": "The X Subscription added",
+        "summary": "xAI's unified X Subscription is listed as one product line: personal tiers Plus $8, Premium $30, Super $100 and Ultra $200 a month, plus a free tier and team tiers. New self-serve customers buy it; existing Cursor and SuperGrok plans continue for current subscribers (docs.x.ai pricing, 2026-10-11)."
+      }
+    },
+    {
+      "id": "2026-10-15-meta-muse-code",
+      "recordedAt": "2026-10-15T03:20:04Z",
+      "productLine": "meta:muse-code",
+      "kind": "listing",
+      "zh": {
+        "title": "新增 Meta Muse Code 订阅",
+        "summary": "Meta 的 Muse Code 订阅收录为一个模型产品线：Everyday、High、Power、Maximum 四个月付档位，价格取自 dev.meta.ai 官方页面，规则取自 Muse Code 订阅与模型文档。"
+      },
+      "en": {
+        "title": "Meta Muse Code subscriptions added",
+        "summary": "Meta's Muse Code subscriptions are listed as one model product line with four monthly tiers (Everyday, High, Power, Maximum), with official prices from dev.meta.ai and rules from the Muse Code subscription and model docs."
+      }
+    },
+    {
+      "id": "2026-10-15-kimi-k3-256k",
+      "recordedAt": "2026-10-15T09:31:24Z",
+      "productLine": "kimi:membership",
+      "kind": "models",
+      "zh": {
+        "title": "Kimi Code 新增 k3-256k 模型",
+        "summary": "Kimi Code 模型页显示 k3-256k（K3，固定 256K 上下文）对 Plus 及以上开放；旧版套餐 Moderato 及以上可用，Allegretto 起 K3 支持 1M 上下文。"
+      },
+      "en": {
+        "title": "Kimi Code adds the k3-256k model",
+        "summary": "The Kimi Code model page lists k3-256k (K3 with a fixed 256K context) on Plus and above; on legacy plans it is on Moderato and above, and K3 gets a 1M context from Allegretto."
+      }
+    },
+    {
+      "id": "2026-10-15-opencode-models",
+      "recordedAt": "2026-10-15T10:26:46Z",
+      "productLine": "opencode:go",
+      "alsoProductLines": ["opencode:zen"],
+      "kind": "models",
+      "zh": {
+        "title": "OpenCode Go / Go+ / Zen 模型列表更新",
+        "summary": "新增 Gemini 4 Argon 和 Cat Jam Free；DeepSeek V4 Flash 及其 Vision Exp 不再列出。"
+      },
+      "en": {
+        "title": "OpenCode Go, Go+ and Zen update their model lists",
+        "summary": "Gemini 4 Argon and Cat Jam Free are added; DeepSeek V4 Flash and its Vision Exp are no longer listed."
+      }
+    },
+    {
+      "id": "2026-10-15-minimax-launch-offer-ended",
+      "recordedAt": "2026-10-15T10:26:46Z",
+      "productLine": "minimax:m-plan",
+      "kind": "promotion",
+      "zh": {
+        "title": "MiniMax M Plan 首月 5 折活动已结束",
+        "summary": "官网标注月付首月 5 折活动截至 10 月 14 日，10 月 15 日核对时已结束。"
+      },
+      "en": {
+        "title": "MiniMax M Plan's half-price first month has ended",
+        "summary": "The official site marked the 50%-off first month on monthly plans as running until October 14; it had ended when checked on October 15."
+      }
+    },
+    {
+      "id": "2026-10-15-alibaba-international-slots",
+      "recordedAt": "2026-10-15T10:26:46Z",
+      "productLine": "alibaba:coding-plan",
+      "planIds": ["alibaba-int-coding"],
+      "kind": "terms",
+      "zh": {
+        "title": "阿里云国际站 Coding Plan 名额有限",
+        "summary": "国际版名额有限、先到先得，每日 00:00（UTC+8）补充名额。"
+      },
+      "en": {
+        "title": "Alibaba Cloud's international Coding Plan has limited slots",
+        "summary": "International slots are limited and first come, first served; they are restocked daily at 00:00 (UTC+8)."
+      }
+    },
+    {
+      "id": "2026-10-15-volcengine-personal-models",
+      "recordedAt": "2026-10-15T10:48:17Z",
+      "productLine": "volcengine:coding-plan",
+      "planIds": ["volcengine-personal-lite", "volcengine-personal-pro"],
+      "kind": "models",
+      "zh": {
+        "title": "火山方舟 Coding Plan 个人版模型列表更新",
+        "summary": "官方页面新增 Auto；doubao-seed-2.1-turbo 和 doubao-seed-2.0-lite 不再列出。"
+      },
+      "en": {
+        "title": "Volcengine Ark Coding Plan Personal updates its model list",
+        "summary": "The official page adds Auto; doubao-seed-2.1-turbo and doubao-seed-2.0-lite are no longer listed."
+      }
+    },
+    {
+      "id": "2026-10-16-antigravity-models",
+      "recordedAt": "2026-10-16T04:30:35Z",
+      "productLine": "google:antigravity",
+      "kind": "models",
+      "zh": {
+        "title": "Antigravity 模型表更新：Gemini 4 Argon 加入 Pro 和 Ultra",
+        "summary": "Gemini 4 Argon 向非试用的 Google AI Pro 和 Ultra 开放（Antigravity IDE 中暂不可用）；Gemini 3.7 Flash、3.6 Flash 和 3.1 Pro 改为仅限企业版。"
+      },
+      "en": {
+        "title": "Antigravity models: Gemini 4 Argon joins Pro and Ultra",
+        "summary": "Gemini 4 Argon is added for non-trial Google AI Pro and for Ultra (not in the Antigravity IDE); Gemini 3.7 Flash, 3.6 Flash and 3.1 Pro are now Enterprise-only."
+      }
+    },
+    {
+      "id": "2026-10-16-deepseek-api",
+      "recordedAt": "2026-10-16T08:32:57Z",
+      "productLine": "deepseek:api",
+      "kind": "listing",
+      "zh": {
+        "title": "新增 DeepSeek API",
+        "summary": "DeepSeek 没有编程订阅；其官方按量付费 API 作为 DeepSeek API 产品线收录，含按 token 计的高峰价格和非高峰时段价格。"
+      },
+      "en": {
+        "title": "DeepSeek API added",
+        "summary": "DeepSeek sells no coding subscription; its official pay-as-you-go API is listed as the DeepSeek API line, with per-token peak prices and off-peak bands."
+      }
+    },
+    {
+      "id": "2026-10-16-ollama-cloud",
+      "recordedAt": "2026-10-16T10:34:59Z",
+      "productLine": "ollama:cloud",
+      "kind": "listing",
+      "zh": {
+        "title": "新增 Ollama Cloud：Pro $20/月，Max $100/月",
+        "summary": "Ollama Cloud 收录为国际平台套餐（多家厂商的开源模型，可在编程工具中使用）：Pro $20/月或 $200/年，每月含 $60 用量额度；Max $100/月，含 $300。"
+      },
+      "en": {
+        "title": "Ollama Cloud added: Pro $20, Max $100 a month",
+        "summary": "Ollama Cloud is listed as an international platform plan (open models from several makers, usable from coding tools): Pro $20/month or $200/year with $60 of monthly usage credits, Max $100/month with $300."
+      }
+    },
+    {
+      "id": "2026-10-17-alibaba-token-plan-devices",
+      "recordedAt": "2026-10-17T00:32:35Z",
+      "productLine": "alibaba:token-plan",
+      "planIds": [
+        "alibaba-token-plan-cn-personal-lite-monthly",
+        "alibaba-token-plan-cn-personal-essential-monthly",
+        "alibaba-token-plan-cn-personal-standard-monthly",
+        "alibaba-token-plan-cn-personal-pro-monthly",
+        "alibaba-token-plan-international-personal-lite-monthly",
+        "alibaba-token-plan-international-personal-essential-monthly",
+        "alibaba-token-plan-international-personal-standard-monthly",
+        "alibaba-token-plan-international-personal-pro-monthly"
+      ],
+      "kind": "terms",
+      "zh": {
+        "title": "阿里云 Token Plan 个人版：一个 API Key 可在多台设备使用",
+        "summary": "国内站与国际站的 Token Plan 个人版页面现允许一个 API Key 在订阅者自己的多台设备上使用（此前为一台）；订阅过期后 Key 停用，重新购买即可恢复。"
+      },
+      "en": {
+        "title": "Alibaba Cloud Token Plan Personal: one API Key on several devices",
+        "summary": "The China and international personal Token Plan pages now allow one API Key on several of the subscriber's own devices (was one device); an expired subscription disables the key and repurchasing restores it."
+      }
+    },
+    {
+      "id": "2026-10-17-chatgpt-plus-ranges",
+      "recordedAt": "2026-10-17T01:52:08Z",
+      "productLine": "openai:chatgpt-codex",
+      "planIds": ["openai-plus"],
+      "kind": "quota",
+      "zh": {
+        "title": "ChatGPT Plus 每 5 小时消息估算",
+        "summary": "按 learn.chatgpt.com 定价页，Plus 每 5 小时的消息估算为：GPT-6 Astra 5–45、GPT-6.1 Sol 15–160、GPT-6 Sol 15–150、GPT-6 Luna 350–3,000。这些是估算，不是固定上限。"
+      },
+      "en": {
+        "title": "ChatGPT Plus five-hour message estimates",
+        "summary": "Per learn.chatgpt.com pricing, Plus estimates per five hours are GPT-6 Astra 5–45, GPT-6.1 Sol 15–160, GPT-6 Sol 15–150 and GPT-6 Luna 350–3,000. These are estimates, not fixed limits."
+      }
+    },
+    {
+      "id": "2026-10-17-kimi-prices",
+      "recordedAt": "2026-10-17T02:38:39Z",
+      "productLine": "kimi:membership",
+      "kind": "price",
+      "sourceUrl": "https://www.kimi.com/membership/pricing",
+      "zh": {
+        "title": "Kimi 会员价格更新，新增 Max 与 Ultra 档",
+        "summary": "据 kimi.com 会员定价（国际版，美元）：Plus $19/月（$180/年），Pro $39/月（$372/年），新增 Max $99/月（$948/年）和 Ultra $199/月（$1,908/年）。Go 不在该列表中，价格仍未知。"
+      },
+      "en": {
+        "title": "Kimi membership prices, with new Max and Ultra tiers",
+        "summary": "Per kimi.com membership pricing (international, USD): Plus $19/month ($180/year), Pro $39/month ($372/year), and the added Max $99/month ($948/year) and Ultra $199/month ($1,908/year). Go is not in that list and its price stays unknown."
+      }
+    },
+    {
+      "id": "2026-10-17-alibaba-token-plan-tools",
+      "recordedAt": "2026-10-17T03:06:49Z",
+      "productLine": "alibaba:token-plan",
+      "kind": "clients",
+      "zh": {
+        "title": "阿里云 Token Plan 不再列出 Codex",
+        "summary": "国内站和国际站的 Token Plan 页面不再将 Codex 列为兼容工具，团队版也不再列出 Cursor。个人版列出 Claude Code、Cursor、Qwen Code、Qoder、Qoder CN 和 OpenClaw；团队版列出 Qwen Code、Claude Code、Qoder、Qoder CN 和 OpenClaw。"
+      },
+      "en": {
+        "title": "Alibaba Cloud Token Plan no longer lists Codex",
+        "summary": "The China and international Token Plan pages no longer name Codex as a compatible tool, and the team pages no longer name Cursor. Personal tiers list Claude Code, Cursor, Qwen Code, Qoder, Qoder CN and OpenClaw; team tiers Qwen Code, Claude Code, Qoder, Qoder CN and OpenClaw."
+      }
+    }
+  ]
+}
