@@ -22,7 +22,7 @@ Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Cl
 
 - **★ 推荐档：** 给每个模型算出最值的档位，并且明确告诉你再升一档能多拿几分（`+4.8`）、要多花几倍（`×1.37`）。
 - **推荐档下的榜单：** 每个模型都按自己的 ★ 推荐档上榜，也就是你实际会用的配置；能力旁边同时列出单个参考编程任务的成本和耗时，被超越的模型（更贵又不更强）会直接标出来。
-- **结合你的额度：** Skill 和命令行读取本机 Claude Code、Codex 的 5 小时和每周额度（只在本机读，不上传）。快重置还剩很多？升一档，或开 Codex Fast。额度紧？守住 ★ 或降一档。重置之后，还会提醒你换回 ★。
+- **结合你的额度：** Skill 和命令行读取本机 Claude Code、Codex 的 5 小时和每周额度（只在本机读，不上传）。快重置还剩很多？升一档，或开 Codex Fast。额度紧？守住 ★ 或降一档。重置之后，提醒你一次换回之前用的模型和档位（Codex 开了 Fast 也会提醒关掉）。
 - **其他套餐（可选）：** `modelplan codexbar enable cursor zai` 通过开源的 [CodexBar](https://github.com/steipete/CodexBar) 命令行读取 Copilot、Cursor、Z.ai / GLM、Kiro、OpenCode Go 的用量，按锁定版本下载并校验（仅 macOS 和 Linux）。登录和 key 由 CodexBar 保管，本客户端只留百分比和重置时间。用 `modelplan declare zhipu-global-pro legacy-v2` 说明是哪个套餐在付费，建议就按它的计量方式给：按次计的套餐不会建议降档，而是提示下一个低倍率时段。
 - **套餐与时段：** 按厂商、模型、价位比较 Coding 套餐的价格和额度；优惠时段、高峰时段和官方额度重置放在周历上。
 - **在你的工具里：** 一个开源 Skill 适配各种 Agent，另有 Claude Code 和 Codex 插件、单文件命令行，和网站读同一份已核验的公开数据。

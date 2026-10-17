@@ -432,7 +432,8 @@ func linkedReport(st *store.Store, d *digest.Digest, acct quota.Account, now tim
 }
 
 // statuslineHint: the most urgent Claude Code advice as a few characters ("↑High ×1.37",
-// "↺★Med"). It remembers advised windows so the switch-back hint appears after the reset.
+// "↺★Med"). It remembers advised windows so the switch-back hint appears after the reset, for
+// 90 minutes from when it first shows.
 func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, now time.Time, save bool) string {
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
@@ -440,7 +441,7 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 		_ = state.Save(st.Dir, now)
 	}
 	for _, e := range es {
-		if e.Source == "claude-code" {
+		if e.Source == "claude-code" && e.InStatusLine(now) {
 			if h := style.AdviceShort(e); h != "" {
 				return h
 			}

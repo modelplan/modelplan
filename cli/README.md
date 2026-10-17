@@ -21,7 +21,7 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
 
-`advise` events: a window used up, tight (also early: half used and on pace to run out), reset soon with allowance left, an announced Codex reset, switch back after a reset, peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
+`advise` events: a window used up, tight (also early: half used and on pace to run out), reset soon with allowance left, an announced Codex reset, switch back after a reset (to the configuration in use before the hint, and Codex Fast off if it was turned on since), peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
 
 ### Other plans through CodexBar
 
