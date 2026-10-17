@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -232,6 +233,10 @@ func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
 			Name, Kind, ResetMode, Pace string
 			Used                        float64
 			ResetsInMinutes             *int
+			ObservedMinutesAgo          int
+			Recent                      [][]float64
+			Rate                        *float64
+			RunsOut                     *int
 		}
 	}
 	if err := json.Unmarshal(b, &f); err != nil || len(f.Cases) == 0 {
@@ -243,14 +248,29 @@ func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
 			mode = "fixed"
 		}
 		used := c.Used
-		w := Window{Kind: c.Kind, UsedPercent: &used, ResetMode: mode, ObservedAt: now}
+		obs := now.Add(-time.Duration(c.ObservedMinutesAgo) * time.Minute)
+		w := Window{Kind: c.Kind, UsedPercent: &used, ResetMode: mode, ObservedAt: obs}
 		if c.ResetsInMinutes != nil {
 			r := now.Add(time.Duration(*c.ResetsInMinutes) * time.Minute)
 			w.ResetsAt = &r
 		}
+		for _, x := range c.Recent {
+			s := Sample{At: obs.Add(-time.Duration(x[0]) * time.Minute), Used: x[1]}
+			if w.ResetsAt != nil {
+				r := *w.ResetsAt
+				if len(x) > 2 {
+					r = r.Add(time.Duration(x[2]) * time.Minute)
+				}
+				s.ResetsAt = &r
+			}
+			w.addSample(s)
+		}
 		evalWindow(&w, now)
 		if w.Pace != c.Pace {
 			t.Errorf("%s: pace %s, want %s", c.Name, w.Pace, c.Pace)
+		}
+		if c.Recent != nil && (fmt.Sprint(deref(w.RecentPercentPerHour)) != fmt.Sprint(deref(c.Rate)) || fmt.Sprint(deref(w.RunsOutInMinutes)) != fmt.Sprint(deref(c.RunsOut))) {
+			t.Errorf("%s: rate %v runs out %v, want %v %v", c.Name, deref(w.RecentPercentPerHour), deref(w.RunsOutInMinutes), deref(c.Rate), deref(c.RunsOut))
 		}
 	}
 }
@@ -310,5 +330,48 @@ func TestDeclarePlanKeepsTheRestOfLocalJSON(t *testing.T) {
 	}
 	if err := DeclarePlan(local, "../etc", "", false); err == nil {
 		t.Fatal("accepted a bad plan id")
+	}
+}
+
+func deref[T any](p *T) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+// The status line keeps the last hour of readings in the snapshot, so a burst shows as a recent
+// rate and a run-out time; a new cycle starts the history again.
+func TestClaudeCodeSnapshotKeepsTheRecentRate(t *testing.T) {
+	cache := t.TempDir()
+	reset := now.Add(200 * time.Minute).Unix()
+	rec := func(used float64, at time.Time, resetAt int64) {
+		var in StatuslineInput
+		in.Model.ID = "claude-opus-5-5"
+		json.Unmarshal([]byte(`{"rate_limits":{"five_hour":{"used_percentage":`+fmt.Sprint(used)+`,"resets_at":`+fmt.Sprint(resetAt)+`}}}`), &in)
+		if err := RecordClaudeCode(cache, in, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func(at time.Time) Window {
+		as, _ := readClaudeCode(cache, "")
+		Evaluate(&as[0], at)
+		return as[0].Windows[0]
+	}
+	for i, used := range []float64{20, 21, 23, 24, 26, 27, 29, 30} {
+		rec(used, now.Add(time.Duration(i*3-21)*time.Minute), reset) // every 3 minutes, up to now
+	}
+	w := read(now)
+	if w.RecentPercentPerHour == nil || *w.RecentPercentPerHour != 28.6 || w.RunsOutInMinutes == nil || *w.RunsOutInMinutes != 147 || w.Pace != "tight" {
+		t.Fatalf("burst = rate %v, out %v, pace %s", deref(w.RecentPercentPerHour), deref(w.RunsOutInMinutes), w.Pace)
+	}
+	// The window restarted: earlier readings belong to the previous cycle.
+	rec(2, now.Add(time.Minute), now.Add(300*time.Minute).Unix())
+	if w := read(now.Add(time.Minute)); w.RecentPercentPerHour != nil {
+		t.Fatalf("after a reset = %v", deref(w.RecentPercentPerHour))
+	}
+	snap, _ := os.ReadFile(snapshotPath(cache))
+	if strings.Contains(string(snap), `"used": 20`) {
+		t.Fatalf("previous cycle kept:\n%s", snap)
 	}
 }

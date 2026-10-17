@@ -155,8 +155,9 @@ func (s *State) prune(now time.Time) {
 // ConfigKey is the key a prompt hook remembers an event under. Advice about the configuration
 // (tight, surplus before a reset, an announced reset) is about the model and effort in use: it is
 // shown once per model and effort, whichever thread that is in, so ten threads on the same one
-// do not repeat it; and once more when a tight window gets critical (10% or less left). Everything else (exhausted, switch
-// back, peak hours, cards, public resets) is about the account or the world and is said once.
+// do not repeat it; and once more when a tight window gets critical (10% or less left, or used up
+// within half an hour at the recent rate). Everything else (exhausted, switch back, peak hours,
+// cards, public resets) is about the account or the world and is said once.
 func ConfigKey(e Event) string {
 	switch e.Type {
 	case WindowTight, ResetSoonSurplus, AnnouncedSurplus:
@@ -164,7 +165,7 @@ func ConfigKey(e Event) string {
 		return e.Key
 	}
 	risk := ""
-	if e.Type == WindowTight && e.RemainingPercent != nil && *e.RemainingPercent <= 10 {
+	if e.Type == WindowTight && (e.RemainingPercent != nil && *e.RemainingPercent <= 10 || e.RunsOutInMinutes != nil && *e.RunsOutInMinutes <= 30) {
 		risk = "critical"
 	}
 	return strings.Join([]string{e.Key, e.Model, e.Effort, risk}, "|")

@@ -112,10 +112,12 @@ type Event struct {
 	At               *time.Time `json:"at,omitempty"` // reset, rate boundary or card expiry
 	InMinutes        *int       `json:"inMinutes,omitempty"`
 	RemainingPercent *float64   `json:"remainingPercent,omitempty"`
-	Model            string     `json:"model,omitempty"`  // harness model id as reported
-	Effort           string     `json:"effort,omitempty"` // harness effort as reported
-	Count            *int       `json:"count,omitempty"`  // reset cards
-	Suggest          *Step      `json:"suggest,omitempty"`
+	// RunsOutInMinutes: at the recent rate of use the window is used up this soon, before its reset.
+	RunsOutInMinutes *int   `json:"runsOutInMinutes,omitempty"`
+	Model            string `json:"model,omitempty"`  // harness model id as reported
+	Effort           string `json:"effort,omitempty"` // harness effort as reported
+	Count            *int   `json:"count,omitempty"`  // reset cards
+	Suggest          *Step  `json:"suggest,omitempty"`
 	// Alternative: when a window is tight, a cheaper configuration of another published model
 	// that scores at least as high as the current one (action cheaper_model).
 	Alternative *Step  `json:"alternative,omitempty"`
@@ -250,7 +252,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		return nil
 	}
 	base := func(typ, sev string) Event {
-		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, RemainingPercent: w.RemainingPercent, Stale: a.Stale}
+		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, RemainingPercent: w.RemainingPercent, RunsOutInMinutes: w.RunsOutInMinutes, Stale: a.Stale}
 		if plan != nil {
 			e.Basis = plan.Basis
 		}

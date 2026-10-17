@@ -144,3 +144,20 @@ func TestArmedConfigurationSurvivesSaveAndLoad(t *testing.T) {
 		t.Fatalf("armed on disk = %+v", a)
 	}
 }
+
+func TestRecentBurstIsTightOnceAndCriticalWhenSoon(t *testing.T) {
+	d := fixtureDigest()
+	a := claude("high", 30, 200*time.Minute, 300)
+	a.Windows[0].RunsOutInMinutes = n(140)
+	a.Windows[0].Pace = "tight"
+	a.Headroom, a.Deciding = "conserve", "five_hour"
+	es := derive(t, nil, d, a)
+	if len(es) != 1 || es[0].Type != WindowTight || es[0].RunsOutInMinutes == nil || *es[0].RunsOutInMinutes != 140 {
+		t.Fatalf("burst = %+v", es)
+	}
+	soon := es[0]
+	soon.RunsOutInMinutes = n(25)
+	if ConfigKey(es[0]) == ConfigKey(soon) {
+		t.Fatal("running out within half an hour is worth saying once more")
+	}
+}

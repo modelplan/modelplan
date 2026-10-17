@@ -25,6 +25,8 @@
           "elapsedPercent": 86,
           "projectedPercent": 45.3,
           "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
           "pace": "surplus"
         },
         {
@@ -39,6 +41,8 @@
           "elapsedPercent": 54.8,
           "projectedPercent": 74.9,
           "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
           "pace": "on_track"
         }
       ],
@@ -69,6 +73,8 @@
           "elapsedPercent": 33.3,
           "projectedPercent": 216,
           "ageMinutes": 5,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
           "pace": "tight"
         },
         {
@@ -83,6 +89,8 @@
           "elapsedPercent": 28.6,
           "projectedPercent": 105,
           "ageMinutes": 5,
+          "recentPercentPerHour": 20,
+          "runsOutInMinutes": 205,
           "pace": "tight"
         }
       ],
@@ -107,6 +115,8 @@
           "elapsedPercent": 71.4,
           "projectedPercent": 84,
           "ageMinutes": 60,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
           "pace": "on_track"
         }
       ],
@@ -138,6 +148,8 @@
           "elapsedPercent": null,
           "projectedPercent": null,
           "ageMinutes": 2940,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
           "pace": "reset_passed"
         }
       ],

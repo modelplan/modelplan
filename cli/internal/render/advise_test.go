@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
 func TestAdviceLines(t *testing.T) {
@@ -84,6 +85,9 @@ func TestSwitchBackAndFastLines(t *testing.T) {
 		{advise.Event{Type: advise.WindowTight, Source: "codex", Window: "five_hour", InMinutes: n(90), RemainingPercent: f(7), Fast: fast, Suggest: &advise.Step{Action: "step_down", Label: "Med", Recommended: true, AbilityDelta: f(-3), CostRatio: f(0.83)}},
 			"Codex 5小时额度偏紧（剩 7%，1时30分后重置）：先关掉 Fast（额度消耗 ×2.5）；还不够再降到 ★Med（-3.0分 ×0.83）",
 			"Codex 5h window is tight (7% left, resets in 1h30m): turn Fast off first (it draws quota ×2.5); if that is not enough, step down to ★Med (-3.0 pts ×0.83)", ""},
+		{advise.Event{Type: advise.WindowTight, Source: "claude-code", Window: "five_hour", InMinutes: n(200), RemainingPercent: f(70), RunsOutInMinutes: n(140), Suggest: &advise.Step{Action: "step_down", Label: "Med", Recommended: true, AbilityDelta: f(-4.8), CostRatio: f(0.73)}},
+			"Claude Code 5小时额度偏紧（剩 70%，按最近的用量约 2时20分后用完，3时20分后才重置）：降到 ★Med（-4.8分 ×0.73）",
+			"Claude Code 5h window is tight (70% left; at the recent rate it runs out in 2h20m, before the reset in 3h20m): step down to ★Med (-4.8 pts ×0.73)", "↓★Med ×0.73"},
 	}
 	for _, c := range cases {
 		if got := (Style{T: ZH}).AdviceLine(c.e); got != c.zh {
@@ -165,5 +169,21 @@ func TestStatuslineHintNeverSaysStepDownOnAPerRequestPlan(t *testing.T) {
 	}
 	if got := s.AdviceShort(advise.Event{Type: advise.WindowTight, Suggest: &advise.Step{Action: "wait_offpeak", InMinutes: n(45)}}); got != "◷45m" {
 		t.Errorf("wait_offpeak = %q", got)
+	}
+}
+
+func TestQuotaSegmentShowsASoonRunOut(t *testing.T) {
+	used, in, out := 30.0, 200, 140
+	a := &quota.Account{Windows: []quota.Window{{Kind: "five_hour", UsedPercent: &used, ResetsInMinutes: &in, RunsOutInMinutes: &out, Pace: "tight"}}, Headroom: "conserve"}
+	if got := (Style{T: ZH}).QuotaSegment(a, ""); got != "5小时 30% ↻3时20分 ≈2时20分用完 ↓" {
+		t.Errorf("zh = %q", got)
+	}
+	if got := (Style{T: EN}).QuotaSegment(a, ""); got != "5h 30% ↻3h20m out ~2h20m ↓" {
+		t.Errorf("en = %q", got)
+	}
+	far := 200
+	a.Windows[0].RunsOutInMinutes = &far // later than three hours: the segment leaves it out
+	if got := (Style{T: EN}).QuotaSegment(a, ""); strings.Contains(got, "out ~") {
+		t.Errorf("far run-out shown: %q", got)
 	}
 }

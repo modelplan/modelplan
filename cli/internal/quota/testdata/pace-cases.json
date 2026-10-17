@@ -1,5 +1,5 @@
 {
-  "note": "Shared by cli/internal/quota (Go) and skills/model-plan/scripts/quota.py (Python): both must give these paces. The Codex review case is 72% of a week used with 15.8% of it gone.",
+  "note": "Shared by cli/internal/quota (Go) and skills/model-plan/scripts/quota.py (Python): both must give these paces (and recent rates: recent is [minutes before the reading, used, reset shift in minutes]). The Codex review case is 72% of a week used with 15.8% of it gone.",
   "cases": [
     {"name": "early and half used: tight", "kind": "weekly", "used": 72, "resetsInMinutes": 8487, "pace": "tight"},
     {"name": "early and light: waits for a fifth", "kind": "weekly", "used": 30, "resetsInMinutes": 8487, "pace": "on_track"},
@@ -11,6 +11,15 @@
     {"name": "past half and well under pace", "kind": "weekly", "used": 30, "resetsInMinutes": 4032, "pace": "surplus"},
     {"name": "on pace", "kind": "weekly", "used": 50, "resetsInMinutes": 4032, "pace": "on_track"},
     {"name": "rolling, high", "kind": "weekly", "used": 92, "resetMode": "rolling", "pace": "tight"},
-    {"name": "rolling, moderate", "kind": "weekly", "used": 50, "resetMode": "rolling", "pace": "unknown"}
+    {"name": "rolling, moderate", "kind": "weekly", "used": 50, "resetMode": "rolling", "pace": "unknown"},
+    {"name": "average fine, a recent burst runs it out before the reset", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[20, 20]], "pace": "tight", "rate": 30, "runsOut": 140},
+    {"name": "a slower recent rate lasts past the reset", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[40, 25]], "pace": "on_track", "rate": 7.5, "runsOut": null},
+    {"name": "idle: the last reading is 15 minutes old", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "observedMinutesAgo": 15, "recent": [[20, 20]], "pace": "on_track", "rate": null, "runsOut": null},
+    {"name": "a reading from the previous cycle does not count", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[20, 20, -300]], "pace": "on_track", "rate": null, "runsOut": null},
+    {"name": "too short a span", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[5, 25]], "pace": "on_track", "rate": null, "runsOut": null},
+    {"name": "a one-point rise gives a rate, not a run-out", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[30, 29]], "pace": "on_track", "rate": 2, "runsOut": null},
+    {"name": "weekly burst, out in a bit over three hours: not yet tight", "kind": "weekly", "used": 50, "resetsInMinutes": 4032, "recent": [[40, 40]], "pace": "on_track", "rate": 15, "runsOut": 200},
+    {"name": "weekly burst, out within three hours: tight", "kind": "weekly", "used": 50, "resetsInMinutes": 4032, "recent": [[40, 38]], "pace": "tight", "rate": 18, "runsOut": 167},
+    {"name": "the oldest reading within 45 minutes is the base", "kind": "five_hour", "used": 30, "resetsInMinutes": 200, "recent": [[60, 0], [30, 15], [10, 25]], "pace": "tight", "rate": 30, "runsOut": 140}
   ]
 }
