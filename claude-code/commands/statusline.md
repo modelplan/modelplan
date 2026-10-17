@@ -16,7 +16,7 @@ The CLI on this machine:
    echo '{"model":{"id":"claude-opus-5-5"},"effort":{"level":"high"},"rate_limits":{"five_hour":{"used_percentage":39,"resets_at":'$(( $(date +%s) + 2520 ))'},"seven_day":{"used_percentage":41,"resets_at":'$(( $(date +%s) + 273600 ))'}}}' | <cli> statusline --preview --no-color
    ```
 
-   Show the user the line and explain it: model and effort (★ marks Model Plan's recommended effort), ability, quota used per window with the time to reset, and an arrow: ↑ quota will reset unused (a step up is cheap), ↓ quota is tight.
+   Show the user the line and explain it: model and effort (★ marks Model Plan's recommended effort; off ★, the effort is warm above it and cool below it, with ★ in brackets), ability, the quota **left** per window as a bar (green 30% or more, amber from 10% or when the pace is tight, red below 10%) with the time to reset, `≈… 用完` / `out ~…` when the recent rate runs the window out within three hours, and the hint or an arrow: ↑ quota will reset unused (a step up is cheap), ↓ quota is tight. Under 100 columns the line is shorter: no ability, and the week as a percentage only.
 3. Read `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`). If it already has a `statusLine`, show it and ask whether to replace it, or to keep it and only record quota by adding this at the top of their script: `input=$(cat); printf %s "$input" | <cli> statusline --record-only` (then use `$input` instead of stdin). Never overwrite silently.
 4. After the user agrees, set:
 

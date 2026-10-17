@@ -34,15 +34,33 @@ func TestStatuslineReviewedIdentityAndLocalizedUnknown(t *testing.T) {
 					if raw == "" {
 						raw = tc.id
 					}
-					got := s.Statusline(d, d.Match(tc.harness, tc.id, tc.display), "", false, raw)
+					got := s.Statusline(d, d.Match(tc.harness, tc.id, tc.display), "", false, raw, false)
 					if !strings.Contains(got, tc.want) || strings.Contains(got, "未收录") || strings.Contains(got, "not listed") {
 						t.Fatalf("got %q; want %q", got, tc.want)
 					}
 				})
 			}
-			if got := s.Statusline(nil, nil, "", false, ""); got != "▲ Model Plan" {
+			if got := s.Statusline(nil, nil, "", false, "", false); got != "▲ Model Plan" {
 				t.Fatalf("missing model id should not claim an unreviewed id: %q", got)
 			}
 		})
+	}
+}
+
+func TestStatuslineMarksEffortsAboveAndBelowStar(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	m := &digest.Model{ID: "claude-opus-5-5", Name: "Claude Opus 5.5", Recommended: "medium",
+		Efforts: []digest.Effort{{Effort: "low", Label: "Low", Ability: f(60)}, {Effort: "medium", Label: "Med", Ability: f(70)}, {Effort: "high", Label: "High", Ability: f(74.8)}}}
+	d := &digest.Digest{Models: []digest.Model{*m}}
+	m = &d.Models[0]
+	s := Style{Color: true, T: ZH}
+	if got := s.Statusline(d, m, "high", false, "", true); !strings.Contains(got, "\x1b[38;5;221mHigh\x1b[0m\x1b[38;5;244m (★Med)") || !strings.Contains(got, "74.8") {
+		t.Errorf("above = %q", got)
+	}
+	if got := s.Statusline(d, m, "low", false, "", true); !strings.Contains(got, "\x1b[38;5;117mLow\x1b[0m") {
+		t.Errorf("below = %q", got)
+	}
+	if got := (Style{T: ZH, Narrow: true}).Statusline(d, m, "high", false, "", true); got != "▲ Opus 5.5 High (★Med)" {
+		t.Errorf("narrow drops the ability: %q", got)
 	}
 }

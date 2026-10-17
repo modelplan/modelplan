@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -370,6 +371,10 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 // For Claude Code it also records the usage windows the harness passes on stdin, so the
 // Skill and `modelplan quota` can read them later.
 func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, c common, harness, modelID, effort string, preview bool) int {
+	// Claude Code passes the terminal width; without it the full form is used.
+	if cols, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && cols > 0 && cols < render.StatuslineWide {
+		style.Narrow = true
+	}
 	var in quota.StatuslineInput
 	if f, ok := stdin.(*os.File); !ok || !isTTY(f) {
 		b, _ := io.ReadAll(io.LimitReader(stdin, 1<<16))
@@ -412,11 +417,12 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		report, acct = linkedReport(st, d, *acct, now)
 		hint = statuslineHint(style, st, d, report, now, !preview)
 	}
-	if q := style.QuotaSegment(acct, hint); q != "" {
+	q := style.QuotaSegment(acct, hint)
+	if q != "" {
 		tail += " │ " + q
 	}
 	if err != nil {
-		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "")+" · "+style.T.Syncing+tail)
+		fmt.Fprintln(stdout, style.Statusline(nil, nil, "", false, "", q != "")+" · "+style.T.Syncing+tail)
 		return 0
 	}
 	m := d.MatchAt(harness, in.Endpoint, modelID, in.Model.DisplayName)
@@ -424,7 +430,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if raw == "" {
 		raw = modelID
 	}
-	fmt.Fprintln(stdout, style.Statusline(d, m, effort, time.Since(s.CheckedAt) > alarmAfter, raw)+tail)
+	fmt.Fprintln(stdout, style.Statusline(d, m, effort, time.Since(s.CheckedAt) > alarmAfter, raw, q != "")+tail)
 	return 0
 }
 
