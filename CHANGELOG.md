@@ -2,6 +2,15 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.10 and Claude Code plugin 0.7.10 (2026-10-17)
+
+- Pinned CLI v0.5.20: the plugins' status line and hooks start the local quota history.
+
+## v0.5.20 (2026-10-17)
+
+- **Local quota history.** For each Claude Code and Codex window cycle, the CLI records on this machine how much was used and how many points each model, effort and Fast setting spent (`observed/cycles.json`, never uploaded). It records when the status line, a plugin hook or `advise` runs, and keeps five-hour cycles for 28 days and weekly ones for 12 weeks. `MODELPLAN_HISTORY=off` stops recording; deleting the file clears it.
+- **`modelplan history`** (`--json`) shows it: weekly cycles one per line with where their points went, five-hour cycles as a summary. A later release will use it to suggest a default effort from your own finished weeks.
+
 ## Codex plugin 0.15.9 and Claude Code plugin 0.7.9 (2026-10-17)
 
 - Pinned CLI v0.5.19: tight hints say when the window runs out at the recent rate.
