@@ -2,6 +2,16 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.11 and Claude Code plugin 0.7.11 (2026-10-17)
+
+- Pinned CLI v0.5.21: the new Claude Code status line.
+
+## v0.5.21 (2026-10-17)
+
+- **Status line bars.** Each window shows what is left as a bar: green from 30%, amber from 10% or when the pace is tight, red below 10%. The reset countdown, the run-out time and the hint follow.
+- **Off ★ at a glance:** an effort above the recommendation is amber and one below it blue, with ★ in brackets. The cost and lineup tags show only when there is no quota to draw.
+- **Narrow terminals** (`COLUMNS` under 100) get a short form: `▲ Opus 5.5 ★Med │ ▓▓▓▓░░ 65%↻40分 周70% ↑High ×1.37`.
+
 ## Codex plugin 0.15.10 and Claude Code plugin 0.7.10 (2026-10-17)
 
 - Pinned CLI v0.5.20: the plugins' status line and hooks start the local quota history.
