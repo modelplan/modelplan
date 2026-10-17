@@ -13,6 +13,7 @@ type quotaText struct {
 	Title, Observed, Stale, Reset, Remaining, Projected, None string
 	Kinds, Source, Headroom, Pace                             map[string]string
 	Day, Hour, Min                                            string
+	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
 }
 
 var quotaZH = quotaText{
@@ -23,6 +24,7 @@ var quotaZH = quotaText{
 	Headroom: map[string]string{"spend": "额度富余：重置前用不完，可以升档", "normal": "额度正常：按 ★ 推荐档用", "conserve": "额度偏紧：保持 ★ 或降一档", "exhausted": "额度已用完：等重置或换用其他套餐", "unknown": "额度未知"},
 	Pace:     map[string]string{"surplus": "富余", "on_track": "正常", "tight": "偏紧", "exhausted": "用完", "reset_passed": "已过重置", "unknown": "—"},
 	Day:      "天", Hour: "时", Min: "分",
+	RunsOut: "按最近的用量约 %s后用完", RunsOutShort: "≈%s用完",
 }
 
 var quotaEN = quotaText{
@@ -33,6 +35,7 @@ var quotaEN = quotaText{
 	Headroom: map[string]string{"spend": "Surplus: it resets unused, worth stepping up", "normal": "On track: use the ★ effort", "conserve": "Tight: stay at ★ or step down", "exhausted": "Exhausted: wait for the reset or use another plan", "unknown": "Quota unknown"},
 	Pace:     map[string]string{"surplus": "surplus", "on_track": "on track", "tight": "tight", "exhausted": "exhausted", "reset_passed": "reset since", "unknown": "—"},
 	Day:      "d", Hour: "h", Min: "m",
+	RunsOut: "at the recent rate, used up in %s", RunsOutShort: "out ~%s",
 }
 
 func (s Style) qt() quotaText {
@@ -124,6 +127,9 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			if x.ProjectedPercent != nil && x.Pace != "surplus" {
 				line += s.c(dim, fmt.Sprintf(" · %s %.0f%%", q.Projected, *x.ProjectedPercent))
 			}
+			if x.RunsOutInMinutes != nil {
+				line += s.c(warn, " · "+fmt.Sprintf(q.RunsOut, q.Dur(*x.RunsOutInMinutes)))
+			}
 			fmt.Fprintln(w, line)
 		}
 		for _, c := range a.Cards {
@@ -165,6 +171,10 @@ func (s Style) QuotaSegment(a *quota.Account, hint string) string {
 		p := q.Kinds[x.Kind] + " " + s.c(s.paceColour(x.Pace), fmt.Sprintf("%.0f%%", *x.UsedPercent))
 		if x.ResetsInMinutes != nil && (x.Kind == "five_hour" || *x.ResetsInMinutes < 24*60) {
 			p += s.c(dim, " ↻"+q.Dur(*x.ResetsInMinutes))
+		}
+		// Only a run-out soon enough to make the window tight; a long one over a week overstates a burst.
+		if x.RunsOutInMinutes != nil && *x.RunsOutInMinutes <= quota.RunsOutTight {
+			p += " " + s.c(warn, fmt.Sprintf(q.RunsOutShort, q.Dur(*x.RunsOutInMinutes)))
 		}
 		parts = append(parts, p)
 	}

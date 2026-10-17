@@ -27,7 +27,8 @@ test('no reader means unavailable, never an invented quota', async () => {
 test('text summary shows windows, countdown and the headroom advice', () => {
   const text = renderQuota(pickCodex(expected), 'en');
   assert.match(text, /5h 72% used · resets in 3h20m · tight/);
-  assert.match(text, /week 30% used · resets in 5d · tight/);
+  assert.match(text, /week 30% used · resets in 5d · tight · at the recent rate, used up in 3h25m/);
+  assert.match(renderQuota(pickCodex(expected), 'zh'), /按最近的用量约 3时25分后用完/);
   assert.match(text, /Tight: stay at ★ or step down/);
   assert.match(renderQuota({ status: 'missing', account: null }, 'zh'), /本机没有可读的 Codex 额度/);
 });

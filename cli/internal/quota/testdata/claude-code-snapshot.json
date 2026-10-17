@@ -20,6 +20,8 @@
       "elapsedPercent": null,
       "projectedPercent": null,
       "ageMinutes": null,
+      "recentPercentPerHour": null,
+      "runsOutInMinutes": null,
       "pace": ""
     },
     {
@@ -33,6 +35,8 @@
       "elapsedPercent": null,
       "projectedPercent": null,
       "ageMinutes": null,
+      "recentPercentPerHour": null,
+      "runsOutInMinutes": null,
       "pace": ""
     }
   ],

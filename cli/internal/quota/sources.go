@@ -60,6 +60,8 @@ type ccSnapshot struct {
 	// SessionKey tells this session's model and effort from another's (the usage windows are
 	// the account's either way); a hash, so the snapshot holds no session id.
 	SessionKey string `json:"sessionKey,omitempty"`
+	// Recent: earlier readings per window kind from the last hour, for the recent rate of use.
+	Recent map[string][]Sample `json:"recent,omitempty"`
 }
 
 // SessionKey is the one-way key for a Claude Code session id ("" for none).
@@ -102,7 +104,8 @@ func (in StatuslineInput) Account(now time.Time) Account {
 }
 
 // RecordClaudeCode saves the sanitised snapshot. The status line renders often, so an
-// unchanged snapshot is rewritten at most once a minute.
+// unchanged snapshot is rewritten at most once a minute. The previous readings of the last hour
+// are kept with it, for the recent rate of use.
 func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	a := in.Account(now)
 	if a.Harness.Model == "" && len(a.Windows) == 0 {
@@ -112,8 +115,11 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	p := snapshotPath(cache)
 	if old, err := os.ReadFile(p); err == nil {
 		var prev ccSnapshot
-		if json.Unmarshal(old, &prev) == nil && now.Sub(prev.ObservedAt) < time.Minute && bytes.Equal(content(prev), content(snap)) {
-			return nil
+		if json.Unmarshal(old, &prev) == nil && prev.SchemaVersion == 1 {
+			if now.Sub(prev.ObservedAt) < time.Minute && bytes.Equal(content(prev), content(snap)) {
+				return nil
+			}
+			snap.Recent = keepRecent(prev, snap.Windows)
 		}
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -122,9 +128,46 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	return writeAtomic(p, marshal(snap))
 }
 
-// content is the snapshot without its observation times.
+// AttachRecent gives a Claude Code account read from status-line input the earlier readings the
+// snapshot keeps, so the status line sees the same recent rate as the hook and `quota`.
+func AttachRecent(cache string, a *Account) {
+	b, status := readBounded(snapshotPath(cache), 64<<10)
+	var s ccSnapshot
+	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
+		return
+	}
+	for i := range a.Windows {
+		for _, x := range s.Recent[a.Windows[i].Kind] {
+			if x.At.Before(a.Windows[i].ObservedAt) {
+				a.Windows[i].addSample(x)
+			}
+		}
+	}
+}
+
+// keepRecent: the previous snapshot's samples and readings that belong to the new readings' cycles.
+func keepRecent(prev ccSnapshot, ws []Window) map[string][]Sample {
+	out := map[string][]Sample{}
+	for _, w := range ws {
+		older := Window{recent: prev.Recent[w.Kind]}
+		for _, x := range prev.Windows {
+			if x.Kind == w.Kind {
+				older.UsedPercent, older.ObservedAt, older.ResetsAt = x.UsedPercent, x.ObservedAt, x.ResetsAt
+			}
+		}
+		if rec := withHistory(w, older).recent; len(rec) > 0 {
+			out[w.Kind] = rec
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// content is the snapshot without its observation times and history.
 func content(s ccSnapshot) []byte {
-	s.ObservedAt = time.Time{}
+	s.ObservedAt, s.Recent = time.Time{}, nil
 	s.Windows = append([]Window(nil), s.Windows...)
 	for i := range s.Windows {
 		s.Windows[i].ObservedAt = time.Time{}
@@ -150,6 +193,11 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 		return nil, st
 	}
 	a := Account{Source: "claude-code", ObservedAt: s.ObservedAt, Harness: &s.Harness, Windows: s.Windows}
+	for i := range a.Windows {
+		for _, x := range s.Recent[a.Windows[i].Kind] {
+			a.Windows[i].addSample(x)
+		}
+	}
 	if session != "" && s.SessionKey != "" {
 		a.Harness.Attribution = "recent-thread"
 		if SessionKey(session) == s.SessionKey {
@@ -288,7 +336,9 @@ func mergeCodex(rs []*rollout) *Account {
 			w := r.windows[k]
 			if i, ok := pos[k]; ok {
 				if w.ObservedAt.After(a.Windows[i].ObservedAt) {
-					a.Windows[i] = w
+					a.Windows[i] = withHistory(w, a.Windows[i])
+				} else if r != newest {
+					a.Windows[i] = withHistory(a.Windows[i], w) // another thread's readings of the same meter
 				}
 				continue
 			}
@@ -505,8 +555,10 @@ func scanRollout(path string) *rollout {
 					w.ResetsAt = &t
 				}
 				key := w.Limit + "/" + w.Kind + "/" + itoa(w.WindowMinutes)
-				if _, seen := r.windows[key]; !seen {
+				if prev, seen := r.windows[key]; !seen {
 					r.order = append(r.order, key)
+				} else {
+					w = withHistory(w, prev)
 				}
 				r.windows[key] = w
 			}

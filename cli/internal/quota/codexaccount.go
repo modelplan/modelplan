@@ -340,7 +340,9 @@ func applyAccount(r *Report, cache string, now time.Time) {
 			if x.Kind == w.Kind && x.WindowMinutes == w.WindowMinutes && (x.Limit == w.Limit || x.Limit == "" || w.Limit == "") {
 				found = true
 				if w.ObservedAt.After(x.ObservedAt) {
-					*x = w
+					*x = withHistory(w, *x)
+				} else {
+					*x = withHistory(*x, w)
 				}
 			}
 		}

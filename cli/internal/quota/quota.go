@@ -29,8 +29,36 @@ type Window struct {
 	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
 	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
 	AgeMinutes       *int     `json:"ageMinutes"`
-	Pace             string   `json:"pace"` // exhausted | tight | on_track | surplus | reset_passed | unknown
+	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
+	// at least 10), in percentage points per hour; nil without enough fresh readings.
+	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
+	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset.
+	RunsOutInMinutes *int   `json:"runsOutInMinutes"`
+	Pace             string `json:"pace"` // exhausted | tight | on_track | surplus | reset_passed | unknown
+
+	recent []Sample // earlier readings of this window in its current cycle, oldest first
 }
+
+// Sample is one earlier reading of a window, kept to measure the recent rate of use.
+type Sample struct {
+	At       time.Time  `json:"at"`
+	Used     float64    `json:"used"`
+	ResetsAt *time.Time `json:"resetsAt,omitempty"`
+}
+
+// The recent rate looks back up to recentLook over at least recentMinSpan, from a reading no older
+// than recentFresh (an idle harness has no recent rate), and projects a run-out only from a rise of
+// recentMinRise points or more (meters move in whole points).
+const (
+	recentLook    = 45 * time.Minute
+	recentMinSpan = 10 * time.Minute
+	recentFresh   = 10 * time.Minute
+	recentMinRise = 2.0
+)
+
+// RunsOutTight: a run-out at the recent rate within this many minutes, before the reset, makes a
+// window tight.
+const RunsOutTight = 180
 
 // Harness is what the harness itself reported about the session, when it did.
 // For Codex the reading comes from one thread's log: attribution says which (current-thread when
@@ -131,6 +159,7 @@ func round1(v float64) *float64 { x := math.Round(v*10) / 10; return &x }
 
 func evalWindow(w *Window, now time.Time) {
 	w.RemainingPercent, w.ResetsInMinutes, w.ElapsedPercent, w.ProjectedPercent, w.AgeMinutes = nil, nil, nil, nil, nil
+	w.RecentPercentPerHour, w.RunsOutInMinutes = nil, nil
 	if !w.ObservedAt.IsZero() {
 		age := int(math.Max(0, now.Sub(w.ObservedAt).Minutes()))
 		w.AgeMinutes = &age
@@ -172,16 +201,106 @@ func evalWindow(w *Window, now time.Time) {
 	if elapsed >= 0.1 {
 		w.ProjectedPercent = round1(used / elapsed)
 	}
+	recentRate(w, now)
 	switch {
 	// Early in a window the projection is noisy, so it alone decides only after a fifth of it; a
-	// window already half used that is on pace to run out is tight however early it is.
-	case used >= 90 || (w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && (elapsed >= 0.2 || used >= 50)):
+	// window already half used that is on pace to run out is tight however early it is. A recent
+	// burst that runs it out within three hours, before the reset, is tight whatever the average.
+	case used >= 90 || (w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && (elapsed >= 0.2 || used >= 50)) ||
+		(w.RunsOutInMinutes != nil && *w.RunsOutInMinutes <= RunsOutTight):
 		w.Pace = "tight"
 	case 100-used >= 30 && (left <= length*0.25 || (w.ProjectedPercent != nil && *w.ProjectedPercent <= 60 && elapsed >= 0.5)):
 		w.Pace = "surplus"
 	default:
 		w.Pace = "on_track"
 	}
+}
+
+// recentRate: the rate between the oldest reading within recentLook of the latest one and the
+// latest, for readings of the same cycle (a reset in between starts the count again).
+func recentRate(w *Window, now time.Time) {
+	if w.UsedPercent == nil || w.ResetsAt == nil || w.ObservedAt.IsZero() || now.Sub(w.ObservedAt) > recentFresh {
+		return
+	}
+	base := Sample{At: w.ObservedAt, Used: *w.UsedPercent}
+	for _, s := range w.recent {
+		if sameCycle(s.ResetsAt, w.ResetsAt) && !s.At.After(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentLook && s.At.Before(base.At) {
+			base = s
+		}
+	}
+	span := w.ObservedAt.Sub(base.At)
+	rise := *w.UsedPercent - base.Used
+	if span < recentMinSpan || rise < 0 {
+		return
+	}
+	rate := rise / span.Hours()
+	w.RecentPercentPerHour = round1(rate)
+	if rise < recentMinRise || *w.UsedPercent >= 100 || w.ResetsInMinutes == nil {
+		return
+	}
+	// Counted from the latest reading, which may be a few minutes old.
+	out := int(math.Ceil((100-*w.UsedPercent)/rate*60 - now.Sub(w.ObservedAt).Minutes()))
+	if out < 1 {
+		out = 1
+	}
+	if out < *w.ResetsInMinutes {
+		w.RunsOutInMinutes = &out
+	}
+}
+
+// sameCycle: two readings name the same reset, within the jitter of a computed reset time.
+func sameCycle(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	d := a.Sub(*b)
+	return d < 2*time.Minute && d > -2*time.Minute
+}
+
+// History is kept for recentKeep, one sample per sampleEvery at most.
+const (
+	recentKeep  = time.Hour
+	sampleEvery = 2 * time.Minute
+)
+
+// withHistory is w, which replaces older, keeping older's readings (and older itself) as samples.
+func withHistory(w, older Window) Window {
+	rec := append(append([]Sample(nil), older.recent...), w.recent...)
+	if s, ok := older.sampleOf(); ok {
+		rec = append(rec, s)
+	}
+	w.recent = thin(rec, w)
+	return w
+}
+
+// thin: the samples of w's cycle within recentKeep before its reading, oldest first, at most one
+// per sampleEvery.
+func thin(ss []Sample, w Window) []Sample {
+	var in []Sample
+	for _, s := range ss {
+		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentKeep {
+			in = append(in, s)
+		}
+	}
+	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
+	var out []Sample
+	for _, s := range in {
+		if len(out) == 0 || s.At.Sub(out[len(out)-1].At) >= sampleEvery {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// addSample appends a reading to a window's history: the readers attach what they kept.
+func (w *Window) addSample(s Sample) { w.recent = append(w.recent, s) }
+
+// sampleOf is the window's own reading as a sample.
+func (w Window) sampleOf() (Sample, bool) {
+	if w.UsedPercent == nil || w.ObservedAt.IsZero() {
+		return Sample{}, false
+	}
+	return Sample{At: w.ObservedAt, Used: *w.UsedPercent, ResetsAt: w.ResetsAt}, true
 }
 
 // headroom: an exhausted or tight window decides (longest window first). Spending more is

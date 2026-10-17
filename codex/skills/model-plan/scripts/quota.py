@@ -30,6 +30,11 @@ DEFAULT_MINUTES = {"five_hour": 300, "weekly": 10080, "monthly": 43200}
 IDENT = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,95}")
 ROLLOUT = re.compile(r"rollout-.*\.jsonl")
 CODEX_FILES, CODEX_TAIL, CODEX_HEAD = 8, 4 << 20, 1 << 20
+# Recent rate of use (as in the Go client): look back up to 45 minutes over at least 10, from a
+# reading at most 10 minutes old; project a run-out only from a rise of 2 points or more; running
+# out within 180 minutes, before the reset, is tight. History: the last hour, one sample per 2 minutes.
+RECENT_LOOK, RECENT_MIN_SPAN, RECENT_FRESH, RECENT_MIN_RISE, RUNS_OUT_TIGHT = 45 * 60, 10 * 60, 10 * 60, 2.0, 180
+RECENT_KEEP, SAMPLE_EVERY = 3600, 120
 
 
 def iso(t):
@@ -99,6 +104,60 @@ def window(kind, used, resets_at, observed, minutes=0, mode="fixed", limit=""):
     return w
 
 
+# ---- recent readings of a window ("_recent", never printed: eval_window pops it)
+
+def same_cycle(a, b):
+    return a is not None and b is not None and abs((a - b).total_seconds()) < 120
+
+
+def sample_of(w):
+    if w.get("usedPercent") is None or not w.get("observedAt"):
+        return None
+    return {"at": w["observedAt"], "used": w["usedPercent"], "resetsAt": w.get("resetsAt")}
+
+
+def thin(ss, w):
+    obs = w.get("observedAt")
+    keep = sorted((x for x in ss if obs and same_cycle(x["resetsAt"], w.get("resetsAt")) and x["at"] < obs
+                   and (obs - x["at"]).total_seconds() <= RECENT_KEEP), key=lambda x: x["at"])
+    out = []
+    for x in keep:
+        if not out or (x["at"] - out[-1]["at"]).total_seconds() >= SAMPLE_EVERY:
+            out.append(x)
+    return out
+
+
+def with_history(w, older):
+    """w, which replaces older, keeping older's readings (and older itself) as samples."""
+    rec = list(older.get("_recent", [])) + list(w.get("_recent", []))
+    s = sample_of(older)
+    if s:
+        rec.append(s)
+    w = dict(w)
+    w["_recent"] = thin(rec, w)
+    return w
+
+
+def recent_rate(w, recent, now, used, left):
+    obs, resets = w.get("observedAt"), w.get("resetsAt")
+    if not obs or not resets or (now - obs).total_seconds() > RECENT_FRESH:
+        return
+    base_at, base_used = obs, used
+    for x in recent:
+        if same_cycle(x["resetsAt"], resets) and x["at"] <= obs and (obs - x["at"]).total_seconds() <= RECENT_LOOK and x["at"] < base_at:
+            base_at, base_used = x["at"], x["used"]
+    span, rise = (obs - base_at).total_seconds(), used - base_used
+    if span < RECENT_MIN_SPAN or rise < 0:
+        return
+    rate = rise / (span / 3600)
+    w["recentPercentPerHour"] = round1(rate)
+    if rise < RECENT_MIN_RISE or used >= 100 or left is None:
+        return
+    out = max(1, math.ceil((100 - used) / rate * 60 - (now - obs).total_seconds() / 60))
+    if out < left:
+        w["runsOutInMinutes"] = out
+
+
 # ---- Claude Code snapshot (written by `modelplan statusline`)
 
 def session_key(session_id):
@@ -137,6 +196,10 @@ def read_claude_code(cache, session=""):
             for k in ("usedUsd", "limitUsd"):
                 if finite(w.get(k), 0, 1e9) is not None:
                     x[k] = w[k]
+            recent = s.get("recent") if isinstance(s.get("recent"), dict) else {}
+            samples = recent.get(kind) if isinstance(recent.get(kind), list) else []
+            x["_recent"] = [{"at": parse_time(r.get("at")), "used": finite(r.get("used"), 0, 1000), "resetsAt": parse_time(r.get("resetsAt"))}
+                            for r in samples[:64] if isinstance(r, dict) and parse_time(r.get("at")) and finite(r.get("used"), 0, 1000) is not None]
             windows.append(x)
     except (ValueError, AssertionError, AttributeError, TypeError):
         st["status"] = "invalid"
@@ -261,7 +324,9 @@ def scan_rollout(path):
                 else:
                     resets = None
                 kind = kind_of(minutes)
-                r["windows"][(lim, kind, minutes)] = window(kind, finite(cw.get("used_percent"), 0, 1000), resets, ts, minutes, "fixed", lim)
+                w = window(kind, finite(cw.get("used_percent"), 0, 1000), resets, ts, minutes, "fixed", lim)
+                key = (lim, kind, minutes)
+                r["windows"][key] = with_history(w, r["windows"][key]) if key in r["windows"] else w
     if r["observed"] is None and r["harness"] is None:
         return None
     return r
@@ -300,7 +365,9 @@ def merge_codex(rs):
         for k, w in r["windows"].items():
             if k in pos:
                 if w["observedAt"] > acct["windows"][pos[k]]["observedAt"]:
-                    acct["windows"][pos[k]] = w
+                    acct["windows"][pos[k]] = with_history(w, acct["windows"][pos[k]])
+                elif r is not newest:  # another thread's readings of the same meter
+                    acct["windows"][pos[k]] = with_history(acct["windows"][pos[k]], w)
                 continue
             pos[k] = len(acct["windows"])
             acct["windows"].append(w)
@@ -425,8 +492,10 @@ def read_local(path, now):
 
 def eval_window(w, now):
     observed = w.get("observedAt")
+    recent = w.pop("_recent", [])
     w["remainingPercent"] = w["resetsInMinutes"] = w["elapsedPercent"] = w["projectedPercent"] = None
     w["ageMinutes"] = int(max(0, (now - observed).total_seconds() / 60)) if observed else None
+    w["recentPercentPerHour"] = w["runsOutInMinutes"] = None
     if not w.get("windowMinutes"):
         if DEFAULT_MINUTES.get(w["kind"]):
             w["windowMinutes"] = DEFAULT_MINUTES[w["kind"]]
@@ -456,9 +525,12 @@ def eval_window(w, now):
     if elapsed >= 0.1:
         w["projectedPercent"] = round1(used / elapsed)
     proj = w["projectedPercent"]
+    recent_rate(w, recent, now, used, left)
+    out = w["runsOutInMinutes"]
     # Early projections are noisy: alone they decide after a fifth of the window; a window already
-    # half used that is on pace to run out is tight however early it is.
-    if used >= 90 or (proj is not None and proj > 100 and (elapsed >= 0.2 or used >= 50)):
+    # half used that is on pace to run out is tight however early it is. A recent burst that runs it
+    # out within three hours, before the reset, is tight whatever the average.
+    if used >= 90 or (proj is not None and proj > 100 and (elapsed >= 0.2 or used >= 50)) or (out is not None and out <= RUNS_OUT_TIGHT):
         w["pace"] = "tight"
     elif 100 - used >= 30 and (left <= length * 0.25 or (proj is not None and proj <= 60 and elapsed >= 0.5)):
         w["pace"] = "surplus"

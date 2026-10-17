@@ -374,6 +374,9 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			_ = quota.RecordClaudeCode(st.Dir, in, now)
 		}
 		a := in.Account(now)
+		if !preview {
+			quota.AttachRecent(st.Dir, &a)
+		}
 		quota.Evaluate(&a, now)
 		acct = &a
 	}

@@ -65,9 +65,15 @@ class Pace(unittest.TestCase):
         self.assertTrue(cases)
         for c in cases:
             resets = NOW + dt.timedelta(minutes=c["resetsInMinutes"]) if "resetsInMinutes" in c else None
-            w = quota.window(c["kind"], c["used"], resets, NOW, 0, c.get("resetMode", "fixed"))
+            obs = NOW - dt.timedelta(minutes=c.get("observedMinutesAgo", 0))
+            w = quota.window(c["kind"], c["used"], resets, obs, 0, c.get("resetMode", "fixed"))
+            w["_recent"] = [{"at": obs - dt.timedelta(minutes=x[0]), "used": x[1],
+                             "resetsAt": resets + dt.timedelta(minutes=x[2] if len(x) > 2 else 0) if resets else None} for x in c.get("recent", [])]
             quota.eval_window(w, NOW)
             self.assertEqual(c["pace"], w["pace"], c["name"])
+            self.assertNotIn("_recent", w)
+            if "recent" in c:
+                self.assertEqual((c["rate"], c["runsOut"]), (w["recentPercentPerHour"], w["runsOutInMinutes"]), c["name"])
 
 
 class ClaudeSession(unittest.TestCase):
