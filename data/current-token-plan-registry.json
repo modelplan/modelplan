@@ -314,7 +314,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -350,7 +349,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
         "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model.",
@@ -497,7 +496,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -533,7 +531,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
         "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model.",
@@ -680,7 +678,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -716,7 +713,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
         "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -864,7 +861,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -900,7 +896,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
         "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -1055,9 +1051,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -1247,9 +1241,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -1439,9 +1431,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -1610,7 +1600,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -1646,7 +1635,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
         "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model."
@@ -1791,7 +1780,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -1827,7 +1815,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
         "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model."
@@ -1972,7 +1960,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -2008,7 +1995,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
         "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -2154,7 +2141,6 @@
         "Claude Code",
         "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -2190,7 +2176,7 @@
         "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
         "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
         "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-        "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+        "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
         "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
         "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
         "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -2344,9 +2330,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -2537,9 +2521,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"
@@ -2730,9 +2712,7 @@
       "coverage": [],
       "clients": [
         "Claude Code",
-        "Cursor",
         "Qwen Code",
-        "Codex",
         "Qoder",
         "Qoder CN",
         "OpenClaw"

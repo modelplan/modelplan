@@ -1683,6 +1683,7 @@
     {
       "planIds": [
         "kimi-plus",
+        "kimi-plus-annual",
         "kimi-legacy-moderato"
       ],
       "generation": "reviewed-2026-10",
@@ -1723,6 +1724,11 @@
     {
       "planIds": [
         "kimi-pro",
+        "kimi-pro-annual",
+        "kimi-max",
+        "kimi-max-annual",
+        "kimi-ultra",
+        "kimi-ultra-annual",
         "kimi-legacy-allegretto"
       ],
       "generation": "reviewed-2026-10",

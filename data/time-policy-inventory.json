@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "revision": "2026-10-16.1",
-  "policy": "Every current product line has one row. Time-of-day quota or price rules live only in data/calendar-rule-registry.json; a row names the rules and the monitored sources that state them. Statuses: modelled, none-found, unverified, ended. Rows are re-checked whenever their sources are reviewed; the sources' own cadence and stale alerts keep them current.",
+  "policy": "Every current product line has one row. Time-of-day quota or price rules live only in data/calendar-rule-registry.json; a row names the rules and the monitored sources that state them. Statuses: modelled, none-found, unverified, ended. Rows are re-checked whenever their sources are reviewed, and a row not re-checked within 30 days becomes a review item (#295).",
   "lines": [
     { "productLineId": "openai:chatgpt-codex", "status": "none-found", "sourceIds": ["openai-pricing", "openai-pro-tiers"], "ruleIds": [], "checkedAt": "2026-10-16", "note": "No time-of-day rule on the pricing pages." },
     { "productLineId": "anthropic:claude", "status": "unverified", "sourceIds": ["claude-pricing", "claude-max-api-credits"], "ruleIds": [], "checkedAt": "2026-10-16", "note": "Press reports from March 2026 say 5-hour session limits move faster on weekdays 05:00–11:00 PT, citing an engineer's post. No Anthropic pricing or help page states it, so it is not modelled." },

@@ -57,6 +57,90 @@
           "evidenceIds": [
             "openai-pricing"
           ]
+        },
+        {
+          "id": "five-hour-gpt-6-astra",
+          "modelAlias": "GPT-6 Astra",
+          "amount": null,
+          "range": {
+            "min": 5,
+            "max": 45
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Astra; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-1-sol",
+          "modelAlias": "GPT-6.1 Sol",
+          "amount": null,
+          "range": {
+            "min": 15,
+            "max": 160
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6.1 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-sol",
+          "modelAlias": "GPT-6 Sol",
+          "amount": null,
+          "range": {
+            "min": 15,
+            "max": 150
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-luna",
+          "modelAlias": "GPT-6 Luna",
+          "amount": null,
+          "range": {
+            "min": 350,
+            "max": 3000
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Luna; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
         }
       ],
       "constraints": [
