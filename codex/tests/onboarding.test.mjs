@@ -87,8 +87,7 @@ test('the hook downloads nothing: quiet until the CLI is there, a failed fetch t
   await writeFile(join(h, '.cache/modelplan-cli/fetch-result'), `${pin.version} failed: download failed (curl: (6) Could not resolve host; network, proxy or GitHub unreachable)\n`);
   const n = JSON.parse(hook(h));
   assert.match(n.systemMessage, /没能下载插件配套的 modelplan CLI[\s\S]*download failed[\s\S]*重试/);
-  assert.match(n.hookSpecificOutput.additionalContext, /only if the user asks/);
-  assert.doesNotMatch(n.hookSpecificOutput.additionalContext, /ask whether|install it/, 'nothing to consent to');
+  assert.equal(n.hookSpecificOutput, undefined, 'shown to the user only; the model never hears of setup');
   assert.equal(hook(h), '', 'not again within a week');
   await assert.rejects(stat(join(h, '.cache/modelplan-cli', pin.version)), 'the hook fetched nothing');
   // A CLI the user installed, older than the pin: its own hints meanwhile.

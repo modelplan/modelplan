@@ -54,8 +54,8 @@ func TestAdviceLines(t *testing.T) {
 	if h := (Style{T: ZH}).AdviceShort(cases[6].e); h != "↺★Med" {
 		t.Errorf("short = %q", h)
 	}
-	if ctx := (Style{T: ZH}).AdviceContext([]advise.Event{cases[0].e}); !strings.HasPrefix(ctx, "Model Plan 本机额度提醒") || !strings.Contains(ctx, "\n- Claude Code 5小时") {
-		t.Errorf("context = %q", ctx)
+	if n := (Style{T: ZH, Color: true}).AdviceNotice([]advise.Event{cases[0].e, cases[6].e}); n != "ModelPlan："+cases[0].zh+"\nModelPlan："+cases[6].zh {
+		t.Errorf("notice = %q", n)
 	}
 }
 
@@ -66,20 +66,26 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 		Models:  []advise.BriefModel{{Name: "GPT-6.1 Sol", Rec: "Med", Ability: 51.2, CostRelative: 1.4, Tags: []string{"strongest"}}, {Name: "GPT-6 Astra", Rec: "Med", Ability: 44, CostRelative: 1.6, Skip: true}},
 		Ladder:  []advise.BriefStep{{Label: "Med", Recommended: true, Current: true}, {Label: "High", AbilityDelta: &d, CostRatio: &r}}}
 	got := TaskBrief(b)
-	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "GPT-6 Astra ★Med 44.0 pts ×1.60 (skip", "★Med (current) · High +4.8 pts ×1.37", "Otherwise say nothing about models or efforts.", "Default for ordinary tasks: GPT-6.1 Sol ★Med (both the strongest and the best value). The thread is on it.", "back to the default once it is done", "never say you changed them"} {
+	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "★Med (current) · High +4.8 pts ×1.37", "Say nothing about models or efforts unless", "Default for ordinary tasks: GPT-6.1 Sol ★Med; the thread is on it.", "back to the default after", "never say you changed them", "never a promised saving", "Do not bring up quota"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	if !strings.Contains(got, "never promise a quota saving") {
-		t.Errorf("brief does not say what the cost ratios are:\n%s", got)
+	if strings.Contains(got, "Astra") {
+		t.Errorf("a skipped option the thread is not on is left out:\n%s", got)
+	}
+	if len(got) > 1200 {
+		t.Errorf("brief is %d bytes; it rides on every thread's first prompt:\n%s", len(got), got)
+	}
+	if u := TaskBriefUpdate(b); u != "Model Plan: the thread is now on GPT-6.1 Sol. GPT-6.1 Sol efforts against the current one: ★Med (current) · High +4.8 pts ×1.37. The task-start brief's rules still apply." {
+		t.Errorf("update = %q", u)
 	}
 	if got := TaskBrief(&advise.Brief{Headroom: "unknown", Models: b.Models}); !strings.Contains(got, "go by the model your own instructions name") {
 		t.Errorf("unknown model:\n%s", got)
 	}
 	b.Harness = "claude-code"
 	got = TaskBrief(b)
-	for _, want := range []string{"model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "The session is on it."} {
+	for _, want := range []string{"model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "the session is on it."} {
 		if !strings.Contains(got, want) {
 			t.Errorf("claude-code brief: missing %q in:\n%s", want, got)
 		}

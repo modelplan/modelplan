@@ -180,7 +180,7 @@ No. Clients download the public publication anonymously. Your Claude Code and Co
 <details>
 <summary><b>Will it change my model or effort?</b></summary>
 
-Never. It advises; you switch. Hooks add one line of context to your agent only when there is something new to say.
+Never. It advises; you switch. Quota hints are shown to you, not your agent; the agent gets one short task-start brief per session and stays quiet about models unless the setting clearly does not fit the task.
 
 </details>
 
@@ -203,7 +203,7 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 | | Directory | What it is |
 | --- | --- | --- |
 | **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
-| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that passes new hints and a task-start brief to Claude once |
+| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session |
 | Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary: `lineup`, `effort`, `models`, `quota`, `advise`, `statusline`, `sync`, `doctor` |
 | Open data | [`data/`](data/) | The reviewed data behind the site: plan tiers, prices, quota metering, calendars, model identities and effort policies. Mirrored from modelplan.ai on every change, one pull request each |

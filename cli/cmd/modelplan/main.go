@@ -51,8 +51,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        this client fetches its pinned release and reads its JSON
   modelplan advise [--source codex]    what to do about them now: step up before a reset, step down,
                                        switch back after it, peak hours, cards, public resets
-                                       (--hook claude-code|codex: prompt hook, each hint once, plus
-                                       a task-start brief per thread and model)
+                                       (--hook claude-code|codex: prompt hook; hints shown to the
+                                       user once, a task-start brief for the model per thread)
   modelplan declare <planId> [generation]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -450,10 +450,11 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 }
 
 // adviseHook is a UserPromptSubmit hook for Claude Code or Codex (both accept the same
-// output): new advice goes to the model as additional context, once per event, and the first
-// prompt of a thread also gets the task-start brief. A plugin may pass its own setup notice
-// (system, context) so the hook prints one object. It never fails the prompt and never waits
-// on the network.
+// output). What the user decides on (quota hints, once per event; the question which plan pays
+// for another vendor's model) is shown to the user as the hook's systemMessage and never reaches
+// the model. The model gets only the task-start brief: once per thread, plus one line for a model
+// the thread was not briefed on. A plugin may pass its own setup notice (system, context) so the
+// hook prints one object. It never fails the prompt and never waits on the network.
 func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string) int {
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
@@ -509,11 +510,14 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		es[i].Key = advise.ConfigKey(es[i])
 	}
 	es = state.Unseen(es)
-	var parts []string
+	var parts, shown []string
+	if system != "" {
+		shown = append(shown, system)
+	}
 	if notice != "" {
 		parts = append(parts, notice)
 	}
-	// A session on another vendor's model with no declared plan: ask the user once per model.
+	// A session on another vendor's model with no declared plan: tell the user once per model.
 	if harness == "claude-code" && d != nil {
 		for i := range report.Accounts {
 			a := &report.Accounts[i]
@@ -522,16 +526,16 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			}
 			if m, plans := advise.Undeclared(a, report, d); m != nil && state.Once("declare|"+m.ID, now) {
 				self, _ := os.Executable()
-				parts = append(parts, declareAsk(m, plans, a.Harness.Endpoint, codexbarCommand(self)))
+				shown = append(shown, declareNotice(m, plans, a.Harness.Endpoint, codexbarCommand(self), style.T == render.EN))
 			}
 		}
 	}
 	if len(es) > 0 {
-		parts = append(parts, style.AdviceContext(es))
+		shown = append(shown, style.AdviceNotice(es))
 		state.MarkSeen(es, now)
 	}
-	// The first prompt of a thread also gets the task-start brief: the model judges the task,
-	// the publication supplies the options. Once per thread.
+	// The first prompt of a thread gets the task-start brief: the model judges the task, the
+	// publication supplies the options.
 	if in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
 		// Without a reading yet (a first thread, an API-key login, no status line) the brief
 		// still lists the options and the default; the quota and current model are then unknown.
@@ -553,20 +557,25 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			x.Harness = nil
 			acct = &x
 		}
-		// Once per thread, and again when what it is judged against changes in substance:
-		// another model, another (known) effort, quota turning tight, used up or into a surplus.
-		model, effort := "", ""
+		model := ""
 		if acct.Harness != nil {
-			model, effort = acct.Harness.Model, acct.Harness.Effort
+			model = acct.Harness.Model
 		}
-		if brief := advise.TaskStart(acct, report, d, now); brief != nil && state.BriefDue(in.SessionID, model, effort, acct.Headroom, now) {
-			parts = append(parts, render.TaskBrief(brief))
+		if brief := advise.TaskStart(acct, report, d, now); brief != nil {
+			switch state.BriefDue(in.SessionID, model, now) {
+			case advise.BriefFull:
+				parts = append(parts, render.TaskBrief(brief))
+			case advise.BriefSwitch:
+				if l := render.TaskBriefUpdate(brief); l != "" {
+					parts = append(parts, l)
+				}
+			}
 		}
 	}
-	if len(parts) > 0 || system != "" {
+	if len(parts) > 0 || len(shown) > 0 {
 		out := map[string]any{}
-		if system != "" {
-			out["systemMessage"] = system
+		if len(shown) > 0 {
+			out["systemMessage"] = strings.Join(shown, "\n")
 		}
 		if len(parts) > 0 {
 			out["hookSpecificOutput"] = map[string]any{"hookEventName": "UserPromptSubmit", "additionalContext": strings.Join(parts, "\n\n")}

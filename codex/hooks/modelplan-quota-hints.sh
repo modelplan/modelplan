@@ -3,8 +3,9 @@
 # pinned in ../cli-pin.json, which the plugin's server fetches in the background and checks
 # against the pinned SHA-256), else one the user installed: new quota hints and, on a thread's
 # first prompt, the task-start brief (`modelplan advise --hook codex`). Prints at most one JSON
-# object and never blocks the prompt. The hook itself downloads nothing; it writes only
-# ~/.cache/modelplan-codex.
+# object and never blocks the prompt. Setup notices and quota hints are shown to the user only
+# (systemMessage); only the task-start brief goes to the model. The hook itself downloads
+# nothing; it writes only ~/.cache/modelplan-codex.
 here=$(dirname "$0")
 state="$HOME/.cache/modelplan-codex"
 # Records, for the dashboard (all on this machine, from whichever chat ran last):
@@ -22,7 +23,7 @@ min=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../cli-pin.json" 2>/de
 pinned="$HOME/.cache/modelplan-cli/$min/modelplan"
 at_least() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
 esc() { printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); if (NR > 1) print "\\n"; print }'; }
-out() { printf '{"systemMessage":"%s","hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$(esc "$1")" "$(esc "$2")"; }
+out() { printf '{"systemMessage":"%s"}\n' "$(esc "$1")"; }
 input=$(cat)
 why=$(sed -n "s/^$min failed: //p" "$HOME/.cache/modelplan-cli/fetch-result" 2>/dev/null | head -1)
 # A failed fetch is told, at most once a week; there is nothing to install or agree to by hand.
@@ -31,8 +32,7 @@ fetch_notice() {
   [ -f "$state/notice-fetch" ] && [ -n "$(find "$state/notice-fetch" -mtime -7 2>/dev/null)" ] && return 1
   : > "$state/notice-fetch" 2>/dev/null
   out "ModelPlan：没能下载插件配套的 modelplan CLI $min（$why），额度提醒和任务开始简报暂不可用。打开 Model Plan 看板点“重试”。
-ModelPlan: could not fetch the plugin's modelplan CLI $min ($why), so quota hints and the task-start brief are off. Open the Model Plan dashboard and click Retry." \
-    "The ModelPlan plugin could not fetch its CLI ($why), so its quota hints and task-start brief are off. Mention it only if the user asks about ModelPlan, quota hints or setup."
+ModelPlan: could not fetch the plugin's modelplan CLI $min ($why), so quota hints and the task-start brief are off. Open the Model Plan dashboard and click Retry."
 }
 cli=$(sh "$here/find-cli.sh" "$min")
 if [ -z "$cli" ]; then

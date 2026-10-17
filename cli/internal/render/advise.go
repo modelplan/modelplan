@@ -21,7 +21,7 @@ type adviceText struct {
 	CardsExpire                       string
 	Public                            map[string]string
 	PublicTail                        string
-	Context                           string
+	Notice                            string
 }
 
 var adviceZH = adviceText{
@@ -39,7 +39,7 @@ var adviceZH = adviceText{
 		"reset_credit_issued": "Codex 官方发放了重置卡", "": "Codex 官方有新的重置消息",
 	},
 	PublicTail: "，你的余量以本机读数为准",
-	Context:    "Model Plan 本机额度提醒（只建议，不要改用户的设置；在回答开头用一句话转告即可。×是公开参考任务的 API 成本倍数：同一模型内大致对应额度消耗，跨模型只能作参考，不等于额度一定省这么多）：",
+	Notice:     "ModelPlan：",
 }
 
 var adviceEN = adviceText{
@@ -57,7 +57,7 @@ var adviceEN = adviceText{
 		"reset_credit_issued": "Codex issued reset credits", "": "New Codex reset news",
 	},
 	PublicTail: "; your own balance is the local reading",
-	Context:    "Model Plan local quota notice (advice only; do not change the user's settings; relay it in one sentence at the start of your reply. × is the published API cost of a reference task: within one model it roughly tracks plan usage; across models it is only a guide, not a promised quota saving):",
+	Notice:     "ModelPlan: ",
 }
 
 func (s Style) at() adviceText {
@@ -278,15 +278,13 @@ func (s Style) Advice(w io.Writer, es []advise.Event) {
 	}
 }
 
-// AdviceContext is the plain text a hook hands to the model.
-func (s Style) AdviceContext(es []advise.Event) string {
-	if len(es) == 0 {
-		return ""
-	}
+// AdviceNotice is what a hook shows the user (its systemMessage), one line per event. It never
+// reaches the model: the user decides, and the model's answer stays about the task.
+func (s Style) AdviceNotice(es []advise.Event) string {
 	plain := Style{T: s.T}
-	lines := []string{plain.at().Context}
+	var lines []string
 	for _, e := range es {
-		lines = append(lines, "- "+plain.AdviceLine(e))
+		lines = append(lines, plain.at().Notice+plain.AdviceLine(e))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -367,9 +365,9 @@ func planLine(p *advise.Plan, rates []advise.PlanRate) string {
 	return line + "."
 }
 
-// TaskBrief is the start-of-task context a hook hands to the model: the closed set of published
-// options and their arithmetic, plus when (not) to speak. English, for the model; it answers in
-// the user's language.
+// TaskBrief is the start-of-task context a hook hands to the model, once per thread: the closed
+// set of published options and their arithmetic, plus when (not) to speak. English, for the
+// model; it answers in the user's language. Kept short: it rides on every thread's first prompt.
 func TaskBrief(b *advise.Brief) string {
 	if b == nil {
 		return ""
@@ -396,14 +394,18 @@ func TaskBrief(b *advise.Brief) string {
 		}
 	}
 	if b.Headroom != "" {
-		now += "; quota " + map[string]string{"spend": "surplus (unused allowance resets away)", "normal": "on track", "conserve": "tight", "exhausted": "used up", "unknown": "unknown"}[b.Headroom]
+		now += "; quota " + map[string]string{"spend": "to spare", "normal": "on track", "conserve": "tight", "exhausted": "used up", "unknown": "unknown"}[b.Headroom]
 	}
 	lines = append(lines, now+".")
 	if p := b.Plan; p != nil {
 		lines = append(lines, planLine(p, b.PlanRates))
 	}
+	// Options a better one beats are left out, unless the thread is on one.
 	var ms []string
 	for _, m := range b.Models {
+		if m.Skip && m.Name != b.Model {
+			continue
+		}
 		x := fmt.Sprintf("%s ★%s %.1f pts ×%.2f", m.Name, m.Rec, m.Ability, m.CostRelative)
 		var tags []string
 		for _, t := range m.Tags {
@@ -419,41 +421,43 @@ func TaskBrief(b *advise.Brief) string {
 		}
 		ms = append(ms, x)
 	}
-	lines = append(lines, "Models at their ★ effort (ability, cost per task relative to the cheapest): "+strings.Join(ms, "; ")+".")
-	data := "Costs are the published API cost of a reference task: within one model they roughly track plan usage; across models vendors weight usage their own way, so never promise a quota saving of that size."
-	if b.PublishedAt != "" {
-		data = "Data: Model Plan publication of " + b.PublishedAt[:min(10, len(b.PublishedAt))] + ". " + data
-	}
-	lines = append(lines, data)
+	lines = append(lines, "Models at their ★ effort (ability; × is the API cost of a reference task against the cheapest, a guide to quota within one model, never a promised saving across models): "+strings.Join(ms, "; ")+".")
 	if df := b.Default; df != nil {
-		why := "the published best value, within 3 pts of the strongest"
-		if b.DefaultReason == "strongest" {
-			why = "the strongest; the best value scores more than 3 pts lower"
-		}
-		if contains(df.Tags, "strongest") && contains(df.Tags, "best_value") {
-			why = "both the strongest and the best value"
-		}
 		at := ""
 		if b.AtDefault {
-			at = " The " + thread + " is on it."
+			at = "; the " + thread + " is on it"
 		}
-		lines = append(lines, fmt.Sprintf("Default for ordinary tasks: %s ★%s (%s).%s", df.Name, df.Rec, why, at))
+		lines = append(lines, fmt.Sprintf("Default for ordinary tasks: %s ★%s%s.", df.Name, df.Rec, at))
 	}
-	if len(b.Ladder) > 0 && b.EffortKnown {
-		lines = append(lines, b.Model+" efforts against the current one: "+steps(b.Ladder, "current")+". A step that adds no ability for more cost is not worth it.")
-	} else if len(b.Ladder) > 0 {
-		lines = append(lines, b.Model+" efforts against its ★: "+steps(b.Ladder, "★")+". A step that adds no ability for more cost is not worth it.")
+	if l := ladderLine(b); l != "" {
+		lines = append(lines, l)
 	}
 	if len(b.DefaultLadder) > 0 {
 		lines = append(lines, b.Default.Name+" efforts against its ★: "+steps(b.DefaultLadder, "★")+".")
 	}
-	if sp := b.Speed; sp != nil {
-		speed := "speed-up not stated"
-		if sp.SpeedRatio != nil {
-			speed = "up to ×" + g(*sp.SpeedRatio) + " faster"
-		}
-		lines = append(lines, fmt.Sprintf("With the surplus, %s is an option: plan quota ×%s, %s.", sp.Label, g(sp.QuotaRatio), speed))
-	}
-	lines = append(lines, "Judge this task's difficulty from the request. The default fits most tasks. Only when the current setting clearly does not fit, suggest one configuration from the lines above in one sentence with its multipliers, then carry on: one step below the default for a small, well-bounded change; High or XHigh of the default model for a complex, cross-module task, and back to the default once it is done; the default itself when the "+thread+" is elsewhere and the task is ordinary. Otherwise say nothing about models or efforts.")
+	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change; High or XHigh of the default for a complex, cross-module task, back to the default after). Do not bring up quota: the user sees it themselves.")
 	return strings.Join(lines, "\n")
+}
+
+// TaskBriefUpdate is the one line a thread gets when it moves to a model it has no brief for:
+// that model's ladder. The first brief's options and rules still stand.
+func TaskBriefUpdate(b *advise.Brief) string {
+	if b == nil || b.Model == "" {
+		return ""
+	}
+	l := ladderLine(b)
+	if l == "" {
+		return ""
+	}
+	return "Model Plan: the " + map[bool]string{true: "session", false: "thread"}[b.Harness == "claude-code"] + " is now on " + b.Model + ". " + l + " The task-start brief's rules still apply."
+}
+
+func ladderLine(b *advise.Brief) string {
+	switch {
+	case len(b.Ladder) == 0:
+		return ""
+	case b.EffortKnown:
+		return b.Model + " efforts against the current one: " + steps(b.Ladder, "current") + "."
+	}
+	return b.Model + " efforts against its ★: " + steps(b.Ladder, "★") + "."
 }
