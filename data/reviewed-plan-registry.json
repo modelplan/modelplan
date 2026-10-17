@@ -373,6 +373,12 @@
       "sourceHash": "173ba7b8425008c1a8497d9306b73574644951a82d8e8c9baf3333c13e00c6ea",
       "observedAt": "2026-10-16T10:40:00Z",
       "quote": "Cloud models: deepseek-v4.1-flash, deepseek-v4-pro, glm-5.3, glm-5.3-flash, glm-5.2, kimi-k3, kimi-k2.7-code, kimi-k2.6, minimax-m3, minimax-m2.7, mistral-large-4, mistral-large-3, gpt-oss, nemotron-3-ultra, nemotron-3-super, nemotron-3-nano, gemma4, muse-spark-open"
+    },
+    "kimi-goods-oversea-oct16": {
+      "sourceUrl": "https://www.kimi.com/membership/pricing",
+      "sourceHash": "fa2a7d72b5c0d52ef894ed8f318b25b6912b515eaa89f81808d897053fcbcb97",
+      "observedAt": "2026-10-16T19:00:00Z",
+      "quote": "Public goods list behind the pricing page (REGION_OVERSEA, GOODS_VERSION_V2): Plus USD 19/month or 180/year; Pro 39/372; Max 99/948; Ultra 199/1908."
     }
   },
   "sources": [
@@ -454,6 +460,31 @@
       ],
       "format": "html",
       "provider": "kimi"
+    },
+    {
+      "id": "kimi-public-pricing",
+      "url": "https://www.kimi.com/membership/pricing",
+      "requiredText": [
+        "Kimi membership goods",
+        "Plus",
+        "Pro"
+      ],
+      "format": "json",
+      "provider": "kimi",
+      "fetchRequest": {
+        "method": "POST",
+        "body": "{}"
+      },
+      "planIds": [
+        "kimi-plus",
+        "kimi-plus-annual",
+        "kimi-pro",
+        "kimi-pro-annual",
+        "kimi-max",
+        "kimi-max-annual",
+        "kimi-ultra",
+        "kimi-ultra-annual"
+      ]
     },
     {
       "id": "kimi-code-models",
@@ -1945,7 +1976,7 @@
       "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
       "reviewedAt": "2026-10-01T07:59:13.569948Z",
       "notes": [
-        "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+        "海外区公开商品列表没有 Go 档；价格、ISO货币与计费周期未核验。",
         "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
         "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
         "第三方工具兼容不赠送其商业许可证"
@@ -2037,14 +2068,14 @@
       "productLineId": "kimi-membership",
       "tierLabel": "Plus",
       "tierOrder": 1,
-      "editionMarket": "unknown",
+      "editionMarket": "international",
       "billingKind": "general-subscription",
       "price": {
-        "amount": null,
-        "currency": "",
-        "currencySymbol": "",
-        "period": "unknown",
-        "qualifier": "当前金额待核验"
+        "amount": 19,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "month",
+        "qualifier": "海外区官网月付标价（USD）。"
       },
       "models": [
         "K2.8 Preview",
@@ -2099,7 +2130,7 @@
       "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
       "reviewedAt": "2026-10-01T07:59:13.569948Z",
       "notes": [
-        "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
         "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
         "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
         "第三方工具兼容不赠送其商业许可证"
@@ -2113,25 +2144,25 @@
           "qualification": ""
         },
         "price": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "currency": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "billing": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "models": {
           "status": "confirmed",
@@ -2205,7 +2236,205 @@
             "kimi-models-live"
           ]
         }
-      ]
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      }
+    },
+    {
+      "id": "kimi-plus-annual",
+      "provider": "kimi",
+      "name": "Kimi Plus / Kimi Code (annual)",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Plus",
+      "tierOrder": 1,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 180,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "year",
+        "qualifier": "海外区官网年付标价（约 $15/月）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      }
     },
     {
       "id": "kimi-pro",
@@ -2219,14 +2448,14 @@
       "productLineId": "kimi-membership",
       "tierLabel": "Pro",
       "tierOrder": 2,
-      "editionMarket": "unknown",
+      "editionMarket": "international",
       "billingKind": "general-subscription",
       "price": {
-        "amount": null,
-        "currency": "",
-        "currencySymbol": "",
-        "period": "unknown",
-        "qualifier": "当前金额待核验"
+        "amount": 39,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "month",
+        "qualifier": "海外区官网月付标价（USD）。"
       },
       "models": [
         "K2.8 Preview",
@@ -2282,7 +2511,7 @@
       "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
       "reviewedAt": "2026-10-01T07:59:13.569948Z",
       "notes": [
-        "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
         "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
         "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
         "第三方工具兼容不赠送其商业许可证"
@@ -2296,25 +2525,25 @@
           "qualification": ""
         },
         "price": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "currency": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "billing": {
-          "status": "unknown",
+          "status": "confirmed",
           "evidenceIds": [
-            "kimi-membership-live"
+            "kimi-goods-oversea-oct16"
           ],
-          "qualification": ""
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
         },
         "models": {
           "status": "confirmed",
@@ -2410,6 +2639,1089 @@
           "qualification": "Pro+或旧Allegretto+；256K",
           "evidenceIds": [
             "kimi-models-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      }
+    },
+    {
+      "id": "kimi-pro-annual",
+      "provider": "kimi",
+      "name": "Kimi Pro / Kimi Code (annual)",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Pro",
+      "tierOrder": 2,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 372,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "year",
+        "qualifier": "海外区官网年付标价（约 $31/月）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3",
+        "K2.7 Code HighSpeed"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "k3-256k",
+          "modelVersion": "K3",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "kimi-for-coding-highspeed",
+          "modelVersion": "K2.7 Code HighSpeed",
+          "nativeEfforts": [
+            "Thinking ON"
+          ],
+          "qualification": "Pro+或旧Allegretto+；256K",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      }
+    },
+    {
+      "id": "kimi-max",
+      "provider": "kimi",
+      "name": "Kimi Max / Kimi Code",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Max",
+      "tierOrder": 3,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 99,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "month",
+        "qualifier": "海外区官网月付标价（USD）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3",
+        "K2.7 Code HighSpeed"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "k3-256k",
+          "modelVersion": "K3",
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ],
+          "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        },
+        {
+          "alias": "kimi-for-coding-highspeed",
+          "modelVersion": "K2.7 Code HighSpeed",
+          "nativeEfforts": [
+            "Thinking ON"
+          ],
+          "qualification": "Pro+或旧Allegretto+；256K",
+          "evidenceIds": [
+            "kimi-models-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      }
+    },
+    {
+      "id": "kimi-max-annual",
+      "provider": "kimi",
+      "name": "Kimi Max / Kimi Code (annual)",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Max",
+      "tierOrder": 3,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 948,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "year",
+        "qualifier": "海外区官网年付标价（约 $79/月）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3",
+        "K2.7 Code HighSpeed"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      },
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3-256k",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "kimi-for-coding-highspeed",
+          "modelVersion": "K2.7 Code HighSpeed",
+          "qualification": "Pro+或旧Allegretto+；256K",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "Thinking ON"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kimi-ultra",
+      "provider": "kimi",
+      "name": "Kimi Ultra / Kimi Code",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Ultra",
+      "tierOrder": 4,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 199,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "month",
+        "qualifier": "海外区官网月付标价（USD）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3",
+        "K2.7 Code HighSpeed"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      },
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3-256k",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "kimi-for-coding-highspeed",
+          "modelVersion": "K2.7 Code HighSpeed",
+          "qualification": "Pro+或旧Allegretto+；256K",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "Thinking ON"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kimi-ultra-annual",
+      "provider": "kimi",
+      "name": "Kimi Ultra / Kimi Code (annual)",
+      "category": "direct",
+      "dataStatus": "partial",
+      "region": "multi",
+      "generation": "reviewed-2026-10",
+      "offeringLifecycle": "current",
+      "productLineId": "kimi-membership",
+      "tierLabel": "Ultra",
+      "tierOrder": 4,
+      "editionMarket": "international",
+      "billingKind": "general-subscription",
+      "price": {
+        "amount": 1908,
+        "currency": "USD",
+        "currencySymbol": "$",
+        "period": "year",
+        "qualifier": "海外区官网年付标价（约 $159/月）。"
+      },
+      "models": [
+        "K2.8 Preview",
+        "K3",
+        "K2.7 Code HighSpeed"
+      ],
+      "coverage": [],
+      "clients": [
+        "Kimi Code CLI",
+        "Kimi Code for VS Code",
+        "Kimi Code Desktop",
+        "Claude Code",
+        "OpenCode",
+        "Codex",
+        "Hermes"
+      ],
+      "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+      "quotaTerms": [
+        {
+          "id": "five-hour",
+          "amount": null,
+          "unit": "unknown",
+          "window": "rolling",
+          "windowHours": 5,
+          "resetKind": "rolling",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "id": "monthly",
+          "amount": null,
+          "unit": "unknown",
+          "window": "month",
+          "windowHours": null,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "kimi-membership-shared",
+          "aggregation": "simultaneous-gates",
+          "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "sourceId": "kimi-membership",
+      "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+      "reviewedAt": "2026-10-01T07:59:13.569948Z",
+      "notes": [
+        "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+        "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+        "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+        "第三方工具兼容不赠送其商业许可证"
+      ],
+      "fieldEvidence": {
+        "identity": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "price": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "currency": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "billing": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-goods-oversea-oct16"
+          ],
+          "qualification": "海外区公开商品列表；中国区价格未核验。"
+        },
+        "models": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "qualification": ""
+        },
+        "exactCoverage": {
+          "status": "unknown",
+          "evidenceIds": [],
+          "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+        },
+        "quota": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": ""
+        },
+        "eligibility": {
+          "status": "confirmed",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ],
+          "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+        }
+      },
+      "constraints": [
+        {
+          "kind": "coding-access",
+          "value": true,
+          "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        },
+        {
+          "kind": "weekly-cap",
+          "value": false,
+          "qualification": "新套餐无周频率窗口；旧套餐每7天",
+          "evidenceIds": [
+            "kimi-membership-live"
+          ]
+        }
+      ],
+      "availability": {
+        "exists": true,
+        "newSignup": "available",
+        "upgrade": "available",
+        "renewal": "available",
+        "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+        "effectiveFrom": null
+      },
+      "advertisedAccess": [
+        {
+          "alias": "kimi-for-coding",
+          "modelVersion": "K2.8 Preview",
+          "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "k3-256k",
+          "modelVersion": "K3",
+          "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "low",
+            "high",
+            "max"
+          ]
+        },
+        {
+          "alias": "kimi-for-coding-highspeed",
+          "modelVersion": "K2.7 Code HighSpeed",
+          "qualification": "Pro+或旧Allegretto+；256K",
+          "evidenceIds": [
+            "kimi-models-live"
+          ],
+          "nativeEfforts": [
+            "Thinking ON"
           ]
         }
       ]
@@ -7078,10 +8390,14 @@
           "anchor": null,
           "poolId": "meta-muse-code-everyday",
           "aggregation": "simultaneous-gates",
-          "qualification": "10-50 prompts every 5 hours, including image and video uploads; the official range is not a fixed count.",
+          "qualification": "10-50 prompts every 5 hours, including image and video uploads; the official figure is this range, not a fixed count.",
           "evidenceIds": [
             "meta-muse-code-everyday-oct15"
-          ]
+          ],
+          "range": {
+            "min": 10,
+            "max": 50
+          }
         }
       ],
       "sourceId": "meta-muse-code-subscriptions",

@@ -48,6 +48,12 @@
           "observedAt": "2026-10-01T07:59:14.342309Z",
           "quote": "k3→K3；kimi-for-coding→K2.8 Preview；kimi-for-coding-highspeed→K2.7 Code HighSpeed；Plus与Pro资格不同。"
         },
+        "kimi-goods-oversea-oct16": {
+          "sourceUrl": "https://www.kimi.com/membership/pricing",
+          "sourceHash": "fa2a7d72b5c0d52ef894ed8f318b25b6912b515eaa89f81808d897053fcbcb97",
+          "observedAt": "2026-10-16T19:00:00Z",
+          "quote": "Public goods list behind the pricing page (REGION_OVERSEA, GOODS_VERSION_V2): Plus USD 19/month or 180/year; Pro 39/372; Max 99/948; Ultra 199/1908."
+        },
         "minimax-token-live": {
           "sourceUrl": "https://platform.minimax.io/docs/token-plan/intro",
           "sourceHash": "de54e6fe1d60244d3286947c8eeccb9f76ae7069eccd755b2544cc5c1c99eb23",
@@ -458,6 +464,31 @@
           ],
           "format": "html",
           "provider": "kimi"
+        },
+        {
+          "id": "kimi-public-pricing",
+          "provider": "kimi",
+          "url": "https://www.kimi.com/membership/pricing",
+          "fetchRequest": {
+            "method": "POST",
+            "body": "{}"
+          },
+          "requiredText": [
+            "Kimi membership goods",
+            "Plus",
+            "Pro"
+          ],
+          "format": "json",
+          "planIds": [
+            "kimi-plus",
+            "kimi-plus-annual",
+            "kimi-pro",
+            "kimi-pro-annual",
+            "kimi-max",
+            "kimi-max-annual",
+            "kimi-ultra",
+            "kimi-ultra-annual"
+          ]
         },
         {
           "id": "kimi-code-models",
@@ -2216,7 +2247,13 @@
       "alibaba-int-coding",
       "kimi-go",
       "kimi-plus",
+      "kimi-plus-annual",
       "kimi-pro",
+      "kimi-pro-annual",
+      "kimi-max",
+      "kimi-max-annual",
+      "kimi-ultra",
+      "kimi-ultra-annual",
       "kimi-legacy-andante",
       "kimi-legacy-moderato",
       "kimi-legacy-allegretto",
@@ -2977,7 +3014,7 @@
         "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
         "reviewedAt": "2026-10-01T07:59:13.569948Z",
         "notes": [
-          "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+          "海外区公开商品列表没有 Go 档；价格、ISO货币与计费周期未核验。",
           "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
           "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
           "第三方工具兼容不赠送其商业许可证"
@@ -3095,7 +3132,7 @@
         "productLineId": "kimi-membership",
         "tierLabel": "Plus",
         "tierOrder": 1,
-        "editionMarket": "unknown",
+        "editionMarket": "international",
         "billingKind": "general-subscription",
         "models": [
           "K2.8 Preview",
@@ -3150,7 +3187,7 @@
         "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
         "reviewedAt": "2026-10-01T07:59:13.569948Z",
         "notes": [
-          "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+          "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
           "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
           "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
           "第三方工具兼容不赠送其商业许可证"
@@ -3164,25 +3201,25 @@
             "qualification": ""
           },
           "price": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "currency": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "billing": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "models": {
             "status": "confirmed",
@@ -3256,10 +3293,19 @@
               "kimi-models-live"
             ]
           }
-        ]
+        ],
+        "availability": {
+          "exists": true,
+          "newSignup": "available",
+          "upgrade": "available",
+          "renewal": "available",
+          "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+          "effectiveFrom": null
+        }
       },
       "profiles": {
-        "personal:unknown": {}
+        "personal:month": {},
+        "personal:year": {}
       },
       "prices": [
         {
@@ -3267,18 +3313,38 @@
           "output": "reviewed-plan-registry",
           "variant": {
             "scope": "personal",
-            "market": "unknown",
-            "billing": "unknown"
+            "market": "international",
+            "billing": "month"
           },
-          "profile": "personal:unknown",
+          "profile": "personal:month",
           "price": {
-            "amount": null,
-            "currency": "",
-            "currencySymbol": "",
-            "period": "unknown",
-            "qualifier": "当前金额待核验"
+            "amount": 19,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "month",
+            "qualifier": "海外区官网月付标价（USD）。"
           },
           "overrides": {}
+        },
+        {
+          "id": "kimi-plus-annual",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "year"
+          },
+          "profile": "personal:year",
+          "price": {
+            "amount": 180,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "year",
+            "qualifier": "海外区官网年付标价（约 $15/月）。"
+          },
+          "overrides": {
+            "name": "Kimi Plus / Kimi Code (annual)"
+          }
         }
       ],
       "discountRules": []
@@ -3296,7 +3362,7 @@
         "productLineId": "kimi-membership",
         "tierLabel": "Pro",
         "tierOrder": 2,
-        "editionMarket": "unknown",
+        "editionMarket": "international",
         "billingKind": "general-subscription",
         "models": [
           "K2.8 Preview",
@@ -3352,7 +3418,7 @@
         "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
         "reviewedAt": "2026-10-01T07:59:13.569948Z",
         "notes": [
-          "当前价格、ISO货币与购买计费周期未由公开会员页给出",
+          "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
           "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
           "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
           "第三方工具兼容不赠送其商业许可证"
@@ -3366,25 +3432,25 @@
             "qualification": ""
           },
           "price": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "currency": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "billing": {
-            "status": "unknown",
+            "status": "confirmed",
             "evidenceIds": [
-              "kimi-membership-live"
+              "kimi-goods-oversea-oct16"
             ],
-            "qualification": ""
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
           },
           "models": {
             "status": "confirmed",
@@ -3482,10 +3548,19 @@
               "kimi-models-live"
             ]
           }
-        ]
+        ],
+        "availability": {
+          "exists": true,
+          "newSignup": "available",
+          "upgrade": "available",
+          "renewal": "available",
+          "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+          "effectiveFrom": null
+        }
       },
       "profiles": {
-        "personal:unknown": {}
+        "personal:month": {},
+        "personal:year": {}
       },
       "prices": [
         {
@@ -3493,18 +3568,548 @@
           "output": "reviewed-plan-registry",
           "variant": {
             "scope": "personal",
-            "market": "unknown",
-            "billing": "unknown"
+            "market": "international",
+            "billing": "month"
           },
-          "profile": "personal:unknown",
+          "profile": "personal:month",
           "price": {
-            "amount": null,
-            "currency": "",
-            "currencySymbol": "",
-            "period": "unknown",
-            "qualifier": "当前金额待核验"
+            "amount": 39,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "month",
+            "qualifier": "海外区官网月付标价（USD）。"
           },
           "overrides": {}
+        },
+        {
+          "id": "kimi-pro-annual",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "year"
+          },
+          "profile": "personal:year",
+          "price": {
+            "amount": 372,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "year",
+            "qualifier": "海外区官网年付标价（约 $31/月）。"
+          },
+          "overrides": {
+            "name": "Kimi Pro / Kimi Code (annual)"
+          }
+        }
+      ],
+      "discountRules": []
+    },
+    {
+      "id": "kimi:membership:max",
+      "base": {
+        "provider": "kimi",
+        "name": "Kimi Max / Kimi Code",
+        "category": "direct",
+        "dataStatus": "partial",
+        "region": "multi",
+        "generation": "reviewed-2026-10",
+        "offeringLifecycle": "current",
+        "productLineId": "kimi-membership",
+        "tierLabel": "Max",
+        "tierOrder": 3,
+        "editionMarket": "international",
+        "billingKind": "general-subscription",
+        "models": [
+          "K2.8 Preview",
+          "K3",
+          "K2.7 Code HighSpeed"
+        ],
+        "coverage": [],
+        "clients": [
+          "Kimi Code CLI",
+          "Kimi Code for VS Code",
+          "Kimi Code Desktop",
+          "Claude Code",
+          "OpenCode",
+          "Codex",
+          "Hermes"
+        ],
+        "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+        "quotaTerms": [
+          {
+            "id": "five-hour",
+            "amount": null,
+            "unit": "unknown",
+            "window": "rolling",
+            "windowHours": 5,
+            "resetKind": "rolling",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "kimi-membership-shared",
+            "aggregation": "simultaneous-gates",
+            "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          },
+          {
+            "id": "monthly",
+            "amount": null,
+            "unit": "unknown",
+            "window": "month",
+            "windowHours": null,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "kimi-membership-shared",
+            "aggregation": "simultaneous-gates",
+            "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          }
+        ],
+        "sourceId": "kimi-membership",
+        "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+        "reviewedAt": "2026-10-01T07:59:13.569948Z",
+        "notes": [
+          "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+          "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+          "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+          "第三方工具兼容不赠送其商业许可证"
+        ],
+        "fieldEvidence": {
+          "identity": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": ""
+          },
+          "price": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "currency": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "billing": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "models": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-models-live"
+            ],
+            "qualification": ""
+          },
+          "exactCoverage": {
+            "status": "unknown",
+            "evidenceIds": [],
+            "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+          },
+          "quota": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": ""
+          },
+          "eligibility": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+          }
+        },
+        "constraints": [
+          {
+            "kind": "coding-access",
+            "value": true,
+            "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          },
+          {
+            "kind": "weekly-cap",
+            "value": false,
+            "qualification": "新套餐无周频率窗口；旧套餐每7天",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          }
+        ],
+        "advertisedAccess": [
+          {
+            "alias": "kimi-for-coding",
+            "modelVersion": "K2.8 Preview",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "k3",
+            "modelVersion": "K3",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "k3-256k",
+            "modelVersion": "K3",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "kimi-for-coding-highspeed",
+            "modelVersion": "K2.7 Code HighSpeed",
+            "nativeEfforts": [
+              "Thinking ON"
+            ],
+            "qualification": "Pro+或旧Allegretto+；256K",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          }
+        ],
+        "availability": {
+          "exists": true,
+          "newSignup": "available",
+          "upgrade": "available",
+          "renewal": "available",
+          "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+          "effectiveFrom": null
+        }
+      },
+      "profiles": {
+        "personal:month": {},
+        "personal:year": {}
+      },
+      "prices": [
+        {
+          "id": "kimi-max",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "month"
+          },
+          "profile": "personal:month",
+          "price": {
+            "amount": 99,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "month",
+            "qualifier": "海外区官网月付标价（USD）。"
+          },
+          "overrides": {}
+        },
+        {
+          "id": "kimi-max-annual",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "year"
+          },
+          "profile": "personal:year",
+          "price": {
+            "amount": 948,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "year",
+            "qualifier": "海外区官网年付标价（约 $79/月）。"
+          },
+          "overrides": {
+            "name": "Kimi Max / Kimi Code (annual)"
+          }
+        }
+      ],
+      "discountRules": []
+    },
+    {
+      "id": "kimi:membership:ultra",
+      "base": {
+        "provider": "kimi",
+        "name": "Kimi Ultra / Kimi Code",
+        "category": "direct",
+        "dataStatus": "partial",
+        "region": "multi",
+        "generation": "reviewed-2026-10",
+        "offeringLifecycle": "current",
+        "productLineId": "kimi-membership",
+        "tierLabel": "Ultra",
+        "tierOrder": 4,
+        "editionMarket": "international",
+        "billingKind": "general-subscription",
+        "models": [
+          "K2.8 Preview",
+          "K3",
+          "K2.7 Code HighSpeed"
+        ],
+        "coverage": [],
+        "clients": [
+          "Kimi Code CLI",
+          "Kimi Code for VS Code",
+          "Kimi Code Desktop",
+          "Claude Code",
+          "OpenCode",
+          "Codex",
+          "Hermes"
+        ],
+        "quota": "5小时滚动、与Kimi共享月总额度；无周频率限制",
+        "quotaTerms": [
+          {
+            "id": "five-hour",
+            "amount": null,
+            "unit": "unknown",
+            "window": "rolling",
+            "windowHours": 5,
+            "resetKind": "rolling",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "kimi-membership-shared",
+            "aggregation": "simultaneous-gates",
+            "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          },
+          {
+            "id": "monthly",
+            "amount": null,
+            "unit": "unknown",
+            "window": "month",
+            "windowHours": null,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "kimi-membership-shared",
+            "aggregation": "simultaneous-gates",
+            "qualification": "与Kimi共享月总额度，各设备与key共享；未知量不换算请求数",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          }
+        ],
+        "sourceId": "kimi-membership",
+        "sourceUrl": "https://www.kimi.com/code/docs/kimi-code/membership.html",
+        "reviewedAt": "2026-10-01T07:59:13.569948Z",
+        "notes": [
+          "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。",
+          "全部设备和API key共享额度；月总额度用尽会冻结Coding额度",
+          "Extra Usage另行开启，作为额度后的共享余额，不重复计作独立池",
+          "第三方工具兼容不赠送其商业许可证"
+        ],
+        "fieldEvidence": {
+          "identity": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": ""
+          },
+          "price": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "currency": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "billing": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-goods-oversea-oct16"
+            ],
+            "qualification": "海外区公开商品列表；中国区价格未核验。"
+          },
+          "models": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-models-live"
+            ],
+            "qualification": ""
+          },
+          "exactCoverage": {
+            "status": "unknown",
+            "evidenceIds": [],
+            "qualification": "Index links use a reviewed exact-version alias table; native effort support and personal eligibility remain separate."
+          },
+          "quota": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": ""
+          },
+          "eligibility": {
+            "status": "confirmed",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ],
+            "qualification": "Go无编程权益，Plus/Pro与旧会员资格不同"
+          }
+        },
+        "constraints": [
+          {
+            "kind": "coding-access",
+            "value": true,
+            "qualification": "旧Andante+；新Plus+；Go不含编程额度",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          },
+          {
+            "kind": "weekly-cap",
+            "value": false,
+            "qualification": "新套餐无周频率窗口；旧套餐每7天",
+            "evidenceIds": [
+              "kimi-membership-live"
+            ]
+          }
+        ],
+        "advertisedAccess": [
+          {
+            "alias": "kimi-for-coding",
+            "modelVersion": "K2.8 Preview",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Andante+；默认max；最高1M上下文",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "k3",
+            "modelVersion": "K3",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Moderato+；默认high；Plus最大256K，Pro/旧Allegretto可1M",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "k3-256k",
+            "modelVersion": "K3",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          },
+          {
+            "alias": "kimi-for-coding-highspeed",
+            "modelVersion": "K2.7 Code HighSpeed",
+            "nativeEfforts": [
+              "Thinking ON"
+            ],
+            "qualification": "Pro+或旧Allegretto+；256K",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
+          }
+        ],
+        "availability": {
+          "exists": true,
+          "newSignup": "available",
+          "upgrade": "available",
+          "renewal": "available",
+          "returnEligibility": "按官方订阅条款；账号与地区资格以结算为准。",
+          "effectiveFrom": null
+        }
+      },
+      "profiles": {
+        "personal:month": {},
+        "personal:year": {}
+      },
+      "prices": [
+        {
+          "id": "kimi-ultra",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "month"
+          },
+          "profile": "personal:month",
+          "price": {
+            "amount": 199,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "month",
+            "qualifier": "海外区官网月付标价（USD）。"
+          },
+          "overrides": {}
+        },
+        {
+          "id": "kimi-ultra-annual",
+          "output": "reviewed-plan-registry",
+          "variant": {
+            "scope": "personal",
+            "market": "international",
+            "billing": "year"
+          },
+          "profile": "personal:year",
+          "price": {
+            "amount": 1908,
+            "currency": "USD",
+            "currencySymbol": "$",
+            "period": "year",
+            "qualifier": "海外区官网年付标价（约 $159/月）。"
+          },
+          "overrides": {
+            "name": "Kimi Ultra / Kimi Code (annual)"
+          }
         }
       ],
       "discountRules": []
@@ -10914,7 +11519,6 @@
           "Claude Code",
           "Cursor",
           "Qwen Code",
-          "Codex",
           "Qoder",
           "Qoder CN",
           "OpenClaw"
@@ -11048,7 +11652,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
               "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model.",
@@ -11187,7 +11791,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
               "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model."
@@ -11271,7 +11875,6 @@
           "Claude Code",
           "Cursor",
           "Qwen Code",
-          "Codex",
           "Qoder",
           "Qoder CN",
           "OpenClaw"
@@ -11405,7 +12008,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
               "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model.",
@@ -11544,7 +12147,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
               "qwen3.8-max-preview has retired as an independent version; old ID routes to qwen3.8-max, with usage billed and recorded as the latter. It is not added as a separate currently covered model."
@@ -11626,7 +12229,6 @@
           "Claude Code",
           "Cursor",
           "Qwen Code",
-          "Codex",
           "Qoder",
           "Qoder CN",
           "OpenClaw"
@@ -11726,6 +12328,13 @@
             "happyhorse-1.1-t2v",
             "happyhorse-1.1-r2v"
           ],
+          "clients": [
+            "Claude Code",
+            "Qwen Code",
+            "Qoder",
+            "Qoder CN",
+            "OpenClaw"
+          ],
           "quota": "25,000 Credits per subscription month per seat; no rollover; usage stops after plan and eligible extra bundles are exhausted.",
           "reviewedAt": "2026-10-12T09:36:42Z",
           "fieldEvidence": {
@@ -11814,7 +12423,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
               "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -12068,7 +12677,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
               "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -12266,7 +12875,6 @@
           "Claude Code",
           "Cursor",
           "Qwen Code",
-          "Codex",
           "Qoder",
           "Qoder CN",
           "OpenClaw"
@@ -12366,6 +12974,13 @@
             "happyhorse-1.1-t2v",
             "happyhorse-1.1-r2v"
           ],
+          "clients": [
+            "Claude Code",
+            "Qwen Code",
+            "Qoder",
+            "Qoder CN",
+            "OpenClaw"
+          ],
           "quota": "100,000 Credits per subscription month per seat; no rollover; usage stops after plan and eligible extra bundles are exhausted.",
           "reviewedAt": "2026-10-12T09:36:42Z",
           "fieldEvidence": {
@@ -12454,7 +13069,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
               "CN Personal terms authorize use of model input/output for service improvement and model optimization; do not transfer Team no-training guarantee to Personal.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -12708,7 +13323,7 @@
               "CN Token Plan is offered only in Beijing; International Token Plan only in Singapore. Serving/global deployment and purchase eligibility are separate from currency.",
               "Limited-time public price is separate from basePrice; no fixed promotion end date is published.",
               "Personal cycle is 30 days from the subscription date; weekly quota was removed on 2026-09-22. No former 5-hour/weekly Credits caps are retained.",
-              "One subscription per verified identity per edition; personal use on one device; key/account sharing prohibited.",
+              "One subscription per verified identity per edition; for the subscriber's own use only: the same API Key may be configured on several of their own devices (since the 2026-10-16 page), but key/account sharing is prohibited. An expired subscription disables the API Key; repurchasing restores the same key.",
               "Standard/Pro include additional Harness benefits; CN page names AgentStudio benefits separately from Credits. Exact allocations not extracted.",
               "International Personal is offered in Singapore with Global deployment; prompts and outputs may be processed globally and cross-border.",
               "Personal page states unsubscription is currently unsupported; do not confuse this with the availability of renewal settings.",
@@ -12941,7 +13556,6 @@
           "Claude Code",
           "Cursor",
           "Qwen Code",
-          "Codex",
           "Qoder",
           "Qoder CN",
           "OpenClaw"
@@ -12999,7 +13613,15 @@
         }
       },
       "profiles": {
-        "team:month": {}
+        "team:month": {
+          "clients": [
+            "Claude Code",
+            "Qwen Code",
+            "Qoder",
+            "Qoder CN",
+            "OpenClaw"
+          ]
+        }
       },
       "prices": [
         {
@@ -16324,6 +16946,90 @@
             "evidenceIds": [
               "openai-pricing"
             ]
+          },
+          {
+            "id": "five-hour-gpt-6-astra",
+            "modelAlias": "GPT-6 Astra",
+            "amount": null,
+            "range": {
+              "min": 5,
+              "max": 45
+            },
+            "unit": "requests",
+            "window": "unknown",
+            "windowHours": 5,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "{{offeringId}}",
+            "aggregation": "do-not-sum",
+            "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Astra; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+            "evidenceIds": [
+              "openai-pricing-plus-estimates-oct16"
+            ]
+          },
+          {
+            "id": "five-hour-gpt-6-1-sol",
+            "modelAlias": "GPT-6.1 Sol",
+            "amount": null,
+            "range": {
+              "min": 15,
+              "max": 160
+            },
+            "unit": "requests",
+            "window": "unknown",
+            "windowHours": 5,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "{{offeringId}}",
+            "aggregation": "do-not-sum",
+            "qualification": "Official estimate of local messages per five-hour period when using GPT-6.1 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+            "evidenceIds": [
+              "openai-pricing-plus-estimates-oct16"
+            ]
+          },
+          {
+            "id": "five-hour-gpt-6-sol",
+            "modelAlias": "GPT-6 Sol",
+            "amount": null,
+            "range": {
+              "min": 15,
+              "max": 150
+            },
+            "unit": "requests",
+            "window": "unknown",
+            "windowHours": 5,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "{{offeringId}}",
+            "aggregation": "do-not-sum",
+            "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+            "evidenceIds": [
+              "openai-pricing-plus-estimates-oct16"
+            ]
+          },
+          {
+            "id": "five-hour-gpt-6-luna",
+            "modelAlias": "GPT-6 Luna",
+            "amount": null,
+            "range": {
+              "min": 350,
+              "max": 3000
+            },
+            "unit": "requests",
+            "window": "unknown",
+            "windowHours": 5,
+            "resetKind": "unknown",
+            "timezone": null,
+            "anchor": null,
+            "poolId": "{{offeringId}}",
+            "aggregation": "do-not-sum",
+            "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Luna; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+            "evidenceIds": [
+              "openai-pricing-plus-estimates-oct16"
+            ]
           }
         ],
         "constraints": [
@@ -18510,6 +19216,10 @@
               {
                 "id": "five-hour",
                 "amount": null,
+                "range": {
+                  "min": 10,
+                  "max": 50
+                },
                 "unit": "requests",
                 "window": "unknown",
                 "windowHours": 5,
@@ -18518,7 +19228,7 @@
                 "anchor": null,
                 "poolId": "meta-muse-code-everyday",
                 "aggregation": "simultaneous-gates",
-                "qualification": "10-50 prompts every 5 hours, including image and video uploads; the official range is not a fixed count.",
+                "qualification": "10-50 prompts every 5 hours, including image and video uploads; the official figure is this range, not a fixed count.",
                 "evidenceIds": [
                   "meta-muse-code-everyday-oct15"
                 ]

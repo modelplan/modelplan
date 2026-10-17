@@ -180,5 +180,12 @@
   "月度额度按各模型的 token 单价扣减，不结转；超出后从另购的用量额度扣费。": "Monthly credits are spent at each model's token rates and do not roll over; beyond them, purchased usage credits are charged.",
   "Ollama 官方提供一条命令接入 Claude Code 与 Codex。": "Ollama provides a one-command launch into Claude Code and Codex.",
   "其他 OpenAI/Anthropic 兼容客户端": "Other OpenAI- or Anthropic-compatible clients",
-  "官网年付标价（约 $16.67/月）；页面只显示$符号。": "Official annual list price (about $16.67/month); the page shows only a dollar sign."
+  "官网年付标价（约 $16.67/月）；页面只显示$符号。": "Official annual list price (about $16.67/month); the page shows only a dollar sign.",
+  "海外区公开商品列表没有 Go 档；价格、ISO货币与计费周期未核验。": "The international goods list has no Go tier; price, ISO currency and billing period are unverified.",
+  "海外区官网月付标价（USD）。": "International list price, billed monthly (USD).",
+  "价格取自 Kimi 定价页调用的公开商品列表（海外区，USD）；中国区人民币价格未核验。": "Prices come from the public goods list behind Kimi's pricing page (international, USD); China CNY prices are unverified.",
+  "海外区官网年付标价（约 $15/月）。": "International list price, billed annually (about $15/month).",
+  "海外区官网年付标价（约 $31/月）。": "International list price, billed annually (about $31/month).",
+  "海外区官网年付标价（约 $79/月）。": "International list price, billed annually (about $79/month).",
+  "海外区官网年付标价（约 $159/月）。": "International list price, billed annually (about $159/month)."
 }

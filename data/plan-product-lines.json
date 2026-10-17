@@ -86,6 +86,10 @@
       "name": "Alibaba Token Plan",
       "nameZh": "阿里百炼 Token Plan",
       "provider": "alibaba",
+      "officialUrls": {
+        "cn": "https://www.aliyun.com/benefit/scene/tokenplan",
+        "international": "https://www.alibabacloud.com/en/campaign/ai-landing-page-token"
+      },
       "sourceLines": [
         "alibaba-token-plan-personal",
         "alibaba-token-plan-team"
@@ -100,6 +104,7 @@
       "id": "kimi:membership",
       "name": "Kimi / Kimi Code",
       "provider": "kimi",
+      "officialUrl": "https://www.kimi.com/membership/pricing",
       "sourceLines": [
         "kimi-membership"
       ],
@@ -110,6 +115,10 @@
       "id": "minimax:token-plan",
       "name": "MiniMax Token Plan",
       "provider": "minimax",
+      "officialUrls": {
+        "cn": "https://www.minimax.cn/m-plan",
+        "international": "https://www.minimax.io/m-plan"
+      },
       "sourceLines": [
         "minimax-token-plan"
       ],
@@ -120,6 +129,10 @@
       "id": "minimax:m-plan",
       "name": "MiniMax M Plan",
       "provider": "minimax",
+      "officialUrls": {
+        "cn": "https://www.minimax.cn/m-plan",
+        "international": "https://www.minimax.io/m-plan"
+      },
       "sourceLines": [
         "minimax-m-plan",
         "minimax-m-plan-cn"
@@ -214,6 +227,7 @@
       "id": "xiaomi:token-plan",
       "name": "MiMo Token Plan",
       "provider": "xiaomi",
+      "officialUrl": "https://platform.xiaomimimo.com/token-plan",
       "sourceLines": [
         "xiaomi-personal",
         "xiaomi-team"
@@ -270,6 +284,7 @@
       "id": "xai:x-subscription",
       "name": "The X Subscription",
       "provider": "x-subscription",
+      "officialUrl": "https://x.ai/pricing",
       "sourceLines": [
         "x-subscription-personal",
         "x-subscription-team"

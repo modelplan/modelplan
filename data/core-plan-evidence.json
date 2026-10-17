@@ -61,6 +61,12 @@
       "sourceHash": "5741c0bb3a5db75cb1a77e5349bc3bbf4300126dcd929ce50f0478c3405b55b6",
       "observedAt": "2026-10-15T00:44:32Z",
       "quote": "You can use up to 50% of your weekly limit on Fable models, but your use of other models draws from the same usage limits and you can never use more than your weekly limit."
+    },
+    "openai-pricing-plus-estimates-oct16": {
+      "sourceUrl": "https://learn.chatgpt.com/docs/pricing.md",
+      "sourceHash": "e3e0a5ac79441fac79cf1e50d31c0bdbd8d27e0f30452a8307f87ab64495bdf3",
+      "observedAt": "2026-10-17T01:31:29Z",
+      "quote": "The estimates below show local messages per five-hour period for Plus and Standard Business. Pro plans currently have no five-hour limit. Cloud tasks may use more of your allowance than local messages. Usage depends on the model and task. These estimates are not fixed message limits; | GPT-6 Astra | 5-45 | GPT-6.1 Sol | 15-160 | GPT-6 Sol | 15-150 | GPT-6 Luna | 350-3,000 |"
     }
   },
   "patches": {
@@ -98,6 +104,90 @@
             "openai-pricing"
           ],
           "poolId": "openai-plus"
+        },
+        {
+          "id": "five-hour-gpt-6-astra",
+          "modelAlias": "GPT-6 Astra",
+          "amount": null,
+          "range": {
+            "min": 5,
+            "max": 45
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Astra; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-1-sol",
+          "modelAlias": "GPT-6.1 Sol",
+          "amount": null,
+          "range": {
+            "min": 15,
+            "max": 160
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6.1 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-sol",
+          "modelAlias": "GPT-6 Sol",
+          "amount": null,
+          "range": {
+            "min": 15,
+            "max": 150
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Sol; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
+        },
+        {
+          "id": "five-hour-gpt-6-luna",
+          "modelAlias": "GPT-6 Luna",
+          "amount": null,
+          "range": {
+            "min": 350,
+            "max": 3000
+          },
+          "unit": "requests",
+          "window": "unknown",
+          "windowHours": 5,
+          "resetKind": "unknown",
+          "timezone": null,
+          "anchor": null,
+          "poolId": "openai-plus",
+          "aggregation": "do-not-sum",
+          "qualification": "Official estimate of local messages per five-hour period when using GPT-6 Luna; not a fixed limit. All models draw on the one shared allowance, and cloud tasks may use more of it than local messages.",
+          "evidenceIds": [
+            "openai-pricing-plus-estimates-oct16"
+          ]
         }
       ],
       "constraints": [

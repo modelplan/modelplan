@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.164",
+  "version": "0.21.174",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -68,13 +68,13 @@
       "path": "data/core-plan-evidence.json",
       "description": "Evidence behind the core subscription plans",
       "license": "CC-BY-4.0",
-      "sha256": "31d645e6356eb94f2177677da15847489cf07d991730627cad06f4467401df3f"
+      "sha256": "b1daf5fcc3cd61dbfd74786c6c27ec3449892b0f642c04914b6553681c3b9c99"
     },
     {
       "path": "data/core-plan-registry.json",
       "description": "Core subscription plans (generated from plan-tier-registry.json)",
       "license": "CC-BY-4.0",
-      "sha256": "1c4c2e0dc5d04c3b23ef3ecf7b3e10bf0a6bc95256d0d31e9aa4b48d8b291545"
+      "sha256": "d7fe32b9d63e3261d469f20c0933dafe2bf1cd10fed132b7c02aafcc3cf859f1"
     },
     {
       "path": "data/current-model-products.json",
@@ -98,7 +98,7 @@
       "path": "data/current-token-plan-registry.json",
       "description": "Current token and credit plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "ec0eada635eeb93432b1259e386ba8e726d97eb208ce5925c4fb977e27ea4cdf"
+      "sha256": "530daae4c568858edd17a275fc2945cfec58572cee537e5ce3a3176559997977"
     },
     {
       "path": "data/current-tool-plan-registry.json",
@@ -134,7 +134,7 @@
       "path": "data/plan-display-en.json",
       "description": "English display text for plan notes",
       "license": "CC-BY-4.0",
-      "sha256": "d1660eaa46230350d540ec06555757e3cbc4172e15eb95d96c91f8f4bf2286ac"
+      "sha256": "ca5f02e5fd0163272cb8b53e3a0963c2284e65018f7687878a5772a20ec05b46"
     },
     {
       "path": "data/plan-edition-groups.json",
@@ -146,7 +146,7 @@
       "path": "data/plan-index-aliases.json",
       "description": "Plan model names mapped to index models",
       "license": "CC-BY-4.0",
-      "sha256": "33fe372ef477f0e68799ab4d4148edcf9074702986bfc512150194b8da020d7d"
+      "sha256": "f84b5b026d880853438570bad3f1d99a3cee3e9d4adb8b34479c04f2c853033a"
     },
     {
       "path": "data/plan-metering.json",
@@ -170,7 +170,7 @@
       "path": "data/plan-product-lines.json",
       "description": "Plan product lines",
       "license": "CC-BY-4.0",
-      "sha256": "62e273a0fc2b5e01fcc6e3ea36b8c883d28c63b05a4d084de907871eb2b95e46"
+      "sha256": "0af348cf49d8161fdd5f6af6aca86872cac061cf20c30a5e3fb1a8e37b0a567a"
     },
     {
       "path": "data/plan-providers.json",
@@ -182,7 +182,7 @@
       "path": "data/plan-tier-registry.json",
       "description": "Subscription tiers: the source the plan registries are generated from",
       "license": "CC-BY-4.0",
-      "sha256": "b17bda9eb6a4b7dba6708d25e92733ceb350152204957a1efd96e2c4ddd6196d"
+      "sha256": "ac07bb8734d032fd0f17e5eae6eb0ac5ad71bbf926118d4da1e50648b111b073"
     },
     {
       "path": "data/real-api-pricing/LICENSE",
@@ -212,7 +212,7 @@
       "path": "data/reviewed-plan-registry.json",
       "description": "Reviewed plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "8a7e02e94bb6d8e13b305a42b67c0fa765dadda3f105275b493c2c65af4a5a5e"
+      "sha256": "e00b6c43aeb0338efbbfed2b8db1fcd0ebfa34385118b392dafb69e0b9149939"
     },
     {
       "path": "data/reviewed-speed-claims.json",
@@ -242,7 +242,7 @@
       "path": "data/time-policy-inventory.json",
       "description": "Time-of-day quota and price rules per product line: modelled, none found or unverified, with the sources that state them",
       "license": "CC-BY-4.0",
-      "sha256": "1ad97af56ace9e397d737b898a83ae859a0c6125aa666b03c0edd8edbdc7e3a6"
+      "sha256": "5cd3cb7f8a402318a5874e0bbc72840b1d3b2733ca6d78b5def22cf535e6bd2e"
     },
     {
       "path": "data/tool-plan-facts-history.json",
