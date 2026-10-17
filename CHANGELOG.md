@@ -2,6 +2,17 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.7 and Claude Code plugin 0.7.7 (2026-10-17)
+
+- Pinned CLI v0.5.17: quota hints are shown to you, not the agent, and the task-start brief comes once per session.
+- Claude Code: the status-line reminder shows twice at most, a week apart, and is never relayed by Claude; the reply-parsing "not now" is gone (`/modelplan:setup` still records it).
+- Codex: the fetch-failure notice no longer goes to the model.
+
+## v0.5.17 (2026-10-17)
+
+- **Hints are for you, not the agent.** `advise --hook` shows quota hints, the plugins' setup notices and the "which plan pays for GLM" question as the hook's `systemMessage`; none of them enters the model's context, so replies no longer open or end with quota or setup talk.
+- **The task-start brief comes once per thread,** about 1.2k characters (from 1.6-1.8k): options a better one beats are left out unless the thread is on one, the disclaimer is one clause, and the model is told not to bring up quota. A model the thread was not briefed on adds one line with its ladder; quota and effort changes no longer resend the brief.
+
 ## Codex plugin 0.15.6 and Claude Code plugin 0.7.6 (2026-10-16)
 
 - Pinned CLI v0.5.16: the status line follows the declared plan for GLM through Z.ai.
