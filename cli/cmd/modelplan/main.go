@@ -17,6 +17,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
@@ -53,6 +54,9 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
+  modelplan history                    how much of each window you used and under which model and
+                                       effort, recorded on this machine only (MODELPLAN_HISTORY=off
+                                       stops it); the basis for suggesting a default effort later
   modelplan declare <planId> [generation]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -65,7 +69,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
-     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
+     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
 
@@ -204,7 +208,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		d, _, _ := publication.Load(st)
 		state := advise.Load(st.Dir)
 		now := time.Now()
-		es := filterSource(advise.Derive(advise.Input{Report: quota.Read(quotaPaths(st), now), Digest: d, State: state, Now: now}), *source)
+		report := quota.Read(quotaPaths(st), now)
+		_ = history.Observe(st.Dir, report, now)
+		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
 		_ = state.Save(st.Dir, now)
 		if c.json {
 			for i := range es {
@@ -213,6 +219,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return printJSON(stdout, map[string]any{"schemaVersion": 1, "evaluatedAt": now.UTC(), "events": nonNil(es)})
 		}
 		style.Advice(stdout, es)
+		return 0
+
+	case "history":
+		l := history.Load(st.Dir)
+		if c.json {
+			return printJSON(stdout, map[string]any{"schemaVersion": 1, "recording": !history.Off(), "file": history.Path(st.Dir), "cycles": nonNilCycles(l.Cycles),
+				"note": "Recorded on this machine only, never uploaded: per usage window, the use at its last reading and the points each harness configuration spent. Points before the first reading are not attributed."})
+		}
+		d, _, _ := publication.Load(st)
+		style.History(stdout, l, d, history.Path(st.Dir), time.Now())
 		return 0
 
 	case "statusline":
@@ -376,6 +392,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		a := in.Account(now)
 		if !preview {
 			quota.AttachRecent(st.Dir, &a)
+			_ = history.Observe(st.Dir, quota.Report{Accounts: []quota.Account{a}}, now)
 		}
 		quota.Evaluate(&a, now)
 		acct = &a
@@ -504,6 +521,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	var es []advise.Event
 	report := quota.Read(paths, now)
+	_ = history.Observe(st.Dir, report, now)
 	for _, e := range advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}) {
 		if e.Source == harness || (harness == "claude-code" && e.Source == "user") {
 			es = append(es, e)
@@ -627,6 +645,13 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 		}
 	}
 	return out
+}
+
+func nonNilCycles(cs []history.Cycle) []history.Cycle {
+	if cs == nil {
+		return []history.Cycle{}
+	}
+	return cs
 }
 
 func nonNil(es []advise.Event) []advise.Event {

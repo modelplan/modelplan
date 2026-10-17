@@ -23,6 +23,8 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
 
 `advise` events: a window used up, tight (also early: half used and on pace to run out; or a recent burst that runs it out within three hours, with the time), reset soon with allowance left, an announced Codex reset, switch back after a reset (to the configuration in use before the hint, and Codex Fast off if it was turned on since), peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
 
+`modelplan history` (`--json`) shows the local quota history: for each window cycle, how much was used by its last reading and how many points each model, effort and Fast setting spent (each rise goes to the configuration of the reading that saw it). It is recorded in `observed/cycles.json` whenever the status line, a plugin hook or `advise` runs, kept 28 days for five-hour cycles and 12 weeks for weekly ones, and never uploaded. `MODELPLAN_HISTORY=off` stops recording; deleting the file clears it. It is the basis for suggesting a default effort from a user's own finished weeks in a later release.
+
 ### Other plans through CodexBar
 
 `modelplan codexbar enable cursor zai` reads the usage of plans whose meters sit behind the vendor's own sign-in: `copilot`, `cursor`, `kiro`, `opencodego` and `zai`. It does this through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Claude Code and Codex are never read this way; this client reads them itself.
