@@ -2,6 +2,16 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.8 and Claude Code plugin 0.7.8 (2026-10-17)
+
+- Pinned CLI v0.5.18: after a reset, the hint points back to the model and effort you used before it (and Codex Fast off).
+
+## v0.5.18 (2026-10-17)
+
+- **Switch back to what you used before.** When it first advises on a window, the CLI records the model, effort and Codex Fast in use. After that window resets it suggests going back to that configuration rather than always to ★, and says nothing if you never changed it. A used-up window still says the allowance is back.
+- **The reset hint waits for your next prompt,** up to 24 hours (was 90 minutes), so coming back after a break or the next morning still gets it once. The status line shows `↺…` for 90 minutes from when it first appears.
+- **Codex Fast:** after the reset, a Fast you turned on since the hint gets "turn Fast off". A tight window with Fast on says to turn it off before stepping down. A surplus no longer offers Fast when it is already on.
+
 ## Codex plugin 0.15.7 and Claude Code plugin 0.7.7 (2026-10-17)
 
 - Pinned CLI v0.5.17: quota hints are shown to you, not the agent, and the task-start brief comes once per session.
