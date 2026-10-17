@@ -12,8 +12,8 @@ import (
 )
 
 // State is what the advisor remembers between runs, in <cache>/observed/advice.json:
-// which hints were already given, and which windows we advised on, so that after their
-// reset the user hears once that the ★ effort is fine again. No quota values are stored.
+// which hints were already given, and which windows we advised on with the configuration in use
+// then, so that after their reset the user hears once to go back to it. No quota values are stored.
 type State struct {
 	SchemaVersion int                  `json:"schemaVersion"`
 	Seen          map[string]time.Time `json:"seen"`
@@ -44,6 +44,18 @@ type Armed struct {
 	// WindowResetAt: for an announced reset, the window's own reset when we advised. Only a
 	// reading taken after the announced time with a later window reset shows it reached us.
 	WindowResetAt *time.Time `json:"windowResetAt,omitempty"`
+	// From: the configuration in use when this window was first advised on in this cycle; after
+	// the reset the user is pointed back to it. Nil in state written before 0.5.18 (then ★).
+	From *Config `json:"from,omitempty"`
+	// Noted: when the switch-back was first derived; the status line shows it for a while after.
+	Noted *time.Time `json:"noted,omitempty"`
+}
+
+// Config is a harness configuration as the harness reports it.
+type Config struct {
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"` // "" = the harness default (★)
+	Fast   bool   `json:"fast,omitempty"`   // Codex Fast, which draws plan quota
 }
 
 const seenFor = 8 * 24 * time.Hour
@@ -222,31 +234,43 @@ func (s *State) MarkSeen(es []Event, now time.Time) {
 	}
 }
 
-// arm remembers windows we advised on (surplus, tight, exhausted) until their reset.
+// arm remembers windows we advised on (surplus, tight, exhausted) until their reset, with the
+// configuration in use when the window was first advised on in this cycle: a later hint on the
+// same window (surplus, then tight) may come after the user already followed the first.
 func (s *State) arm(es []Event) {
 	for _, e := range es {
 		if e.At == nil || (e.Type != ResetSoonSurplus && e.Type != WindowTight && e.Type != WindowExhausted && e.Type != AnnouncedSurplus) {
 			continue
 		}
 		found := false
+		var from *Config
 		for _, a := range s.Armed {
 			found = found || a.Key == e.Key
+			if from == nil && a.From != nil && a.Source == e.Source && a.Plan == e.Plan && a.Window == e.Window && a.ResetAt.Equal(*e.At) {
+				from = a.From
+			}
 		}
-		if !found {
-			s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At, WindowResetAt: e.windowReset})
-			s.changed = true
+		if found {
+			continue
 		}
+		if from == nil && e.Model != "" {
+			from = &Config{Model: e.Model, Effort: e.Effort, Fast: e.Fast != nil}
+		}
+		s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At, WindowResetAt: e.windowReset, From: from})
+		s.changed = true
 	}
 }
 
-// switchBack: an advised window has reset. Suggest the ★ effort again when the harness is
-// elsewhere, or say the allowance is back after an exhausted window.
+// switchBack: an advised window has reset. Point the user back to the configuration in use when
+// it was advised on (and Codex Fast off if it was turned on since), or say the allowance is back
+// after an exhausted window. Nothing when the user is on that configuration already: a hint they
+// did not follow left nothing to undo.
 func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Event {
 	// One hint per window: a window advised more than once (surplus, then tight) or over
 	// several resets reports only its latest passed reset; exhausted wins at that reset.
-	latest := map[string]Armed{}
+	latest := map[string]int{}
 	var order []string
-	for _, a := range s.Armed {
+	for i, a := range s.Armed {
 		if now.Before(a.ResetAt) || now.Sub(a.ResetAt) > a.lasts() {
 			continue
 		}
@@ -255,14 +279,14 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 		switch {
 		case !seen:
 			order = append(order, k)
-			latest[k] = a
-		case a.ResetAt.After(prev.ResetAt), a.ResetAt.Equal(prev.ResetAt) && a.Type == WindowExhausted:
-			latest[k] = a
+			latest[k] = i
+		case a.ResetAt.After(s.Armed[prev].ResetAt), a.ResetAt.Equal(s.Armed[prev].ResetAt) && a.Type == WindowExhausted:
+			latest[k] = i
 		}
 	}
 	var out []Event
 	for _, k := range order {
-		a := latest[k]
+		a := &s.Armed[latest[k]]
 		var acct *quota.Account
 		for i := range r.Accounts {
 			if r.Accounts[i].Source == a.Source && r.Accounts[i].Plan == a.Plan {
@@ -286,36 +310,69 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 		if h := acct.Harness; h != nil {
 			e.Model, e.Effort = h.Model, h.Effort
 		}
+		back, known := backTo(a.From, acct, cfg, d)
+		if known {
+			// Fast in Codex draws plan quota: turned on for the surplus, it should go off with it.
+			if fast := fastNow(acct, cfg, d); fast != nil && !a.From.Fast {
+				e.Fast, e.FastOff = fast, true
+			}
+		}
 		switch {
-		case cfg.model != nil && cfg.rec != nil && cfg.cur != cfg.rec:
-			e.Suggest = cfg.step("switch_back", cfg.rec)
-		case a.Type == WindowExhausted:
+		case back != nil:
+			e.Suggest = back
+		case !known && cfg.model != nil && cfg.rec != nil && cfg.cur != cfg.rec:
+			e.Suggest = cfg.step("switch_back", cfg.rec) // advised before 0.5.18: no record of what came before
+		case a.Type == WindowExhausted, e.FastOff:
 			e.Suggest = &Step{Action: "none"}
-		case cfg.model == nil && a.Type == ResetSoonSurplus:
+		case !known && cfg.model == nil && a.Type == ResetSoonSurplus:
 			e.Suggest = &Step{Action: "switch_back"} // effort unknown: remind in general terms
 		default:
-			continue // already at ★, nothing to say
+			continue // on the configuration from before the advice: nothing to say
 		}
+		if a.Noted == nil {
+			n := now.UTC()
+			a.Noted = &n
+			s.changed = true
+		}
+		e.noted = a.Noted
 		out = append(out, e)
 	}
 	return out
 }
 
+// backTo: the step back to the configuration from before the advice, nil when the harness is on
+// it. known is false when that configuration was not recorded or no longer resolves.
+func backTo(from *Config, acct *quota.Account, cfg config, d *digest.Digest) (*Step, bool) {
+	if from == nil || cfg.model == nil || acct.Harness == nil {
+		return nil, false
+	}
+	was := current(&quota.Account{Source: acct.Source, Harness: &quota.Harness{Model: from.Model, Effort: from.Effort, Endpoint: acct.Harness.Endpoint}}, d)
+	if was.model == nil || was.cur == nil {
+		return nil, false
+	}
+	if was.model == cfg.model && was.cur == cfg.cur {
+		return nil, true
+	}
+	st := &Step{Action: "switch_back", Model: was.model.ID, ModelName: was.model.Name, Effort: was.cur.Effort, Label: was.cur.Label, Recommended: was.cur == was.rec, ModelChange: was.model != cfg.model}
+	st.AbilityDelta, st.CostRatio = cfg.ratioTo(was.model, was.cur)
+	return st, true
+}
+
+// InStatusLine: whether the status line still shows this event. A switch-back is shown for a
+// while after it first appeared; the prompt hook says it once either way.
+func (e Event) InStatusLine(now time.Time) bool {
+	return e.Type != SwitchBack || e.noted == nil || now.Sub(*e.noted) <= switchBackShown
+}
+
 // restarted: a reading taken after the announced time shows the window with a later reset than
 // when we advised, so the announced reset did reach this account.
-func restarted(acct *quota.Account, a Armed) bool {
+func restarted(acct *quota.Account, a *Armed) bool {
 	w := windowNow(acct, a.Window)
 	return a.WindowResetAt != nil && w != nil && w.ResetsAt != nil && w.ResetsAt.After(*a.WindowResetAt) && !w.ObservedAt.Before(a.ResetAt)
 }
 
-// lasts: how long after its reset an armed window may still say "switch back". An announced
-// reset needs a new reading as proof, which comes with the user's next turn, so it waits longer.
-func (a Armed) lasts() time.Duration {
-	if a.Type == AnnouncedSurplus {
-		return harnessQuiet
-	}
-	return switchBackFor
-}
+// lasts: how long after its reset an armed window may still say "switch back".
+func (a Armed) lasts() time.Duration { return switchBackFor }
 
 func windowNow(a *quota.Account, kind string) *quota.Window {
 	for i := range a.Windows {

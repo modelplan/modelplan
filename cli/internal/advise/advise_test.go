@@ -86,7 +86,7 @@ func TestSurplusSoonStepsUpAndArmsSwitchBack(t *testing.T) {
 		t.Fatalf("armed = %+v", s.Armed)
 	}
 
-	// 20 minutes after the reset the user is still on High: suggest ★ Med again.
+	// 20 minutes after the reset the user is still on High: back to Med, which was ★ and in use.
 	after := Derive(Input{Report: quota.Report{Accounts: []quota.Account{claudeAt("high", now.Add(60*time.Minute))}}, Digest: d, State: s, Now: now.Add(60 * time.Minute)})
 	if len(after) != 1 || after[0].Type != SwitchBack || after[0].Suggest.Action != "switch_back" || after[0].Suggest.Effort != "medium" || !after[0].Suggest.Recommended {
 		t.Fatalf("after reset = %+v", after)
@@ -95,8 +95,8 @@ func TestSurplusSoonStepsUpAndArmsSwitchBack(t *testing.T) {
 	if es := Derive(Input{Report: quota.Report{Accounts: []quota.Account{claudeAt("medium", now.Add(60*time.Minute))}}, Digest: d, State: s, Now: now.Add(60 * time.Minute)}); len(es) != 0 {
 		t.Fatalf("at ★ after reset = %v", types(es))
 	}
-	// Long after the reset the armed window is dropped.
-	s.prune(now.Add(3 * time.Hour))
+	// A day after the reset the armed window is dropped.
+	s.prune(now.Add(25 * time.Hour))
 	if len(s.Armed) != 0 {
 		t.Fatalf("armed not pruned: %+v", s.Armed)
 	}

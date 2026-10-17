@@ -17,6 +17,8 @@ type adviceText struct {
 	Announced                         string
 	OrFast, FastUnstated, FastUpTo    string
 	Back, BackTo, BackNone            string
+	FastFirst, FastFirstThen          string
+	BackFast, FastOff                 string
 	Peak, Offpeak                     string
 	CardsExpire                       string
 	Public                            map[string]string
@@ -32,6 +34,8 @@ var adviceZH = adviceText{
 	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
 	Announced: "Codex 官方预告重置（%s）：如果包含你的账号，%s额度剩下的 %s 届时作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
+	FastFirst: "先关掉 %s（额度消耗 ×%s）；", FastFirstThen: "先关掉 %s（额度消耗 ×%s）；还不够再%s",
+	BackFast: "，并关掉 %s（额度消耗 ×%s）", FastOff: "可以关掉 %s 了（额度消耗 ×%s）",
 	Peak: "%s %s后进入高峰：%s 额度消耗 %s → %s%s，重活可以提前做", Offpeak: "%s %s后进入优惠时段：%s 额度消耗 %s → %s%s，不急的活可以等",
 	CardsExpire: "%s 有 %d 张%s重置卡 %s后过期",
 	Public: map[string]string{
@@ -50,6 +54,8 @@ var adviceEN = adviceText{
 	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
 	Announced: "Codex announced a reset (%s): if it covers your account, the %s left in your %s is void then", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
+	FastFirst: "turn %s off first (it draws quota ×%s); ", FastFirstThen: "turn %s off first (it draws quota ×%s); if that is not enough, %s",
+	BackFast: " and turn %s off (it draws quota ×%s)", FastOff: "turn %s off now (it draws quota ×%s)",
 	Peak: "%s enters peak hours in %s: %s quota rate %s → %s%s; do heavy work first", Offpeak: "%s enters off-peak in %s: %s quota rate %s → %s%s; work that can wait is cheaper then",
 	CardsExpire: "%s: %d %s reset card(s) expire in %s",
 	Public: map[string]string{
@@ -98,6 +104,14 @@ func label(st *advise.Step) string {
 		return "★" + st.Label
 	}
 	return st.Label
+}
+
+// backLabel: the configuration a switch-back returns to, with the model when it is another one.
+func backLabel(st *advise.Step) string {
+	if st.ModelChange && st.ModelName != "" {
+		return Short(st.ModelName) + " " + label(st)
+	}
+	return label(st)
 }
 
 func pct(v *float64) string {
@@ -153,6 +167,13 @@ func (s Style) AdviceLine(e advise.Event) string {
 		case st.Action == "wait_offpeak":
 			act = fmt.Sprintf(t.WaitOffpeak, s.dur(st.InMinutes), rateX(st.RateFrom, t.Unknown), rateX(st.RateTo, t.Unknown))
 		}
+		if fs := e.Fast; fs != nil {
+			if st.Action == "step_down" && st.Label != "" {
+				act = fmt.Sprintf(t.FastFirstThen, fs.Label, g(fs.QuotaRatio), act)
+			} else {
+				act = fmt.Sprintf(t.FastFirst, fs.Label, g(fs.QuotaRatio)) + act
+			}
+		}
 		if alt := e.Alternative; alt != nil && alt.Label != "" {
 			act += fmt.Sprintf(t.OrModel, Short(alt.ModelName), label(alt), s.stepTail(alt))
 		}
@@ -185,10 +206,17 @@ func (s Style) AdviceLine(e advise.Event) string {
 		return fmt.Sprintf(t.Surplus, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
 	case advise.SwitchBack:
 		act := t.BackNone
-		if st.Action == "switch_back" {
-			act = strings.TrimSpace(fmt.Sprintf(t.BackTo, "★"+st.Label, tail))
-			if st.Label == "" {
-				act = strings.TrimSpace(fmt.Sprintf(t.BackTo, "★", ""))
+		switch {
+		case st.Action == "switch_back" && st.Label != "":
+			act = strings.TrimSpace(fmt.Sprintf(t.BackTo, backLabel(st), tail))
+		case st.Action == "switch_back":
+			act = strings.TrimSpace(fmt.Sprintf(t.BackTo, "★", ""))
+		}
+		if fs := e.Fast; e.FastOff && fs != nil {
+			if st.Action == "switch_back" {
+				act += fmt.Sprintf(t.BackFast, fs.Label, g(fs.QuotaRatio))
+			} else {
+				act = fmt.Sprintf(t.FastOff, fs.Label, g(fs.QuotaRatio))
 			}
 		}
 		when := "—"
@@ -244,8 +272,10 @@ func (s Style) AdviceShort(e advise.Event) string {
 		return s.c(amber, "◷"+s.dur(st.InMinutes))
 	case e.Type == advise.WindowTight && st.Action == "effort_free":
 		return s.c(warn, "!") // tight, but a lower effort would not help: no ↓
+	case e.Type == advise.SwitchBack && st.Action == "switch_back" && st.Label != "":
+		return s.c(gold, "↺"+backLabel(st))
 	case e.Type == advise.SwitchBack && st.Action == "switch_back":
-		return s.c(gold, "↺★"+st.Label)
+		return s.c(gold, "↺★")
 	case e.Type == advise.SwitchBack:
 		return s.c(okc, "↺")
 	}

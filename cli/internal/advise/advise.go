@@ -45,8 +45,10 @@ const (
 	cardLead = 48 * time.Hour
 	// Public resets are news for a day after publication.
 	publicFresh = 24 * time.Hour
-	// "Switch back" stays relevant for this long after the reset it waited for.
-	switchBackFor = 90 * time.Minute
+	// "Switch back" waits this long after the reset for the user's next prompt (back from a
+	// break or the next morning), and the status line shows it for switchBackShown after that.
+	switchBackFor   = 24 * time.Hour
+	switchBackShown = 90 * time.Minute
 	// Harness readings older than this belong to a finished session; no hints from them.
 	harnessQuiet = 6 * time.Hour
 	// An announced reset is worth spending ahead of within this lead, when at least this much of
@@ -63,6 +65,7 @@ type Step struct {
 	Effort       string   `json:"effort,omitempty"` // native key
 	Label        string   `json:"label,omitempty"`  // display label
 	Recommended  bool     `json:"recommended,omitempty"`
+	ModelChange  bool     `json:"modelChange,omitempty"`  // switch_back: to another model than the current one
 	AbilityDelta *float64 `json:"abilityDelta,omitempty"` // vs the current configuration
 	CostRatio    *float64 `json:"costRatio,omitempty"`    // vs the current configuration, in the plan's units when known
 	// wait_offpeak: when the model's time-of-day rate drops, and from what to what.
@@ -115,14 +118,19 @@ type Event struct {
 	Suggest          *Step      `json:"suggest,omitempty"`
 	// Alternative: when a window is tight, a cheaper configuration of another published model
 	// that scores at least as high as the current one (action cheaper_model).
-	Alternative *Step             `json:"alternative,omitempty"`
-	Speed       *Speed            `json:"speed,omitempty"`
-	Rate        *Rate             `json:"rate,omitempty"`
-	Public      *Public           `json:"public,omitempty"`
-	Stale       bool              `json:"stale,omitempty"`
-	Text        map[string]string `json:"text,omitempty"` // rendered by the CLI for plugins: zh, en
+	Alternative *Step  `json:"alternative,omitempty"`
+	Speed       *Speed `json:"speed,omitempty"`
+	// Fast: the harness runs the plan-quota Fast tier now (Codex), with what it costs.
+	Fast *Speed `json:"fast,omitempty"`
+	// FastOff: switch back only; Fast was turned on since the advice and draws extra quota.
+	FastOff bool              `json:"fastOff,omitempty"`
+	Rate    *Rate             `json:"rate,omitempty"`
+	Public  *Public           `json:"public,omitempty"`
+	Stale   bool              `json:"stale,omitempty"`
+	Text    map[string]string `json:"text,omitempty"` // rendered by the CLI for plugins: zh, en
 
 	windowReset *time.Time // AnnouncedSurplus: the window's own reset when advised
+	noted       *time.Time // SwitchBack: when it was first derived
 }
 
 // Input bundles everything Derive reads. Digest and State may be nil.
@@ -257,6 +265,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 	}
 	cfg := current(a, d)
 	cfg.plan, cfg.now = plan, now
+	fast := fastNow(a, cfg, d)
 	switch a.Headroom {
 	case "exhausted":
 		e := base(WindowExhausted, "warn")
@@ -283,11 +292,15 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 			}
 		}
 		e.Alternative = cfg.cheaper(d, harnessOf(a.Source))
+		e.Fast = fast // turning Fast off comes first: same answers, a fraction of the quota
 		return []Event{e}
 	case "spend":
 		e := base(ResetSoonSurplus, "info")
 		e.Suggest = cfg.up(d)
-		e.Speed = quotaSpeed(cfg, d, a.Source)
+		if fast == nil {
+			e.Speed = quotaSpeed(cfg, d, a.Source)
+		}
+		e.Fast = fast
 		return []Event{e}
 	}
 	return nil
@@ -487,6 +500,14 @@ func quotaSpeed(c config, d *digest.Digest, harness string) *Speed {
 		}
 	}
 	return nil
+}
+
+// fastNow: the Fast tier the harness runs now, when it draws plan quota (Codex only).
+func fastNow(a *quota.Account, c config, d *digest.Digest) *Speed {
+	if a.Harness == nil || a.Harness.ServiceTier != "fast" {
+		return nil
+	}
+	return quotaSpeed(c, d, harnessOf(a.Source))
 }
 
 // down: back to ★ when above it, otherwise one effort lower.

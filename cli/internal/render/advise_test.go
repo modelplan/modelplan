@@ -59,6 +59,45 @@ func TestAdviceLines(t *testing.T) {
 	}
 }
 
+func TestSwitchBackAndFastLines(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	n := func(v int) *int { return &v }
+	at := time.Date(2026, 10, 14, 10, 40, 0, 0, time.UTC)
+	when := at.Local().Format("15:04")
+	fast := &advise.Speed{Tier: "fast", Label: "Fast", QuotaRatio: 2.5}
+	cases := []struct {
+		e             advise.Event
+		zh, en, short string
+	}{
+		{advise.Event{Type: advise.SwitchBack, Source: "claude-code", Window: "five_hour", At: &at, Suggest: &advise.Step{Action: "switch_back", Label: "High", AbilityDelta: f(-3.7), CostRatio: f(0.69)}},
+			"Claude Code 5小时已于 " + when + " 重置：可换回 High（-3.7分 ×0.69）",
+			"Claude Code 5h window reset at " + when + ": switch back to High (-3.7 pts ×0.69)", "↺High"},
+		{advise.Event{Type: advise.SwitchBack, Source: "claude-code", Window: "weekly", At: &at, Suggest: &advise.Step{Action: "switch_back", ModelName: "Claude Opus 5.5", ModelChange: true, Label: "Med", Recommended: true, AbilityDelta: f(8), CostRatio: f(1.82)}},
+			"Claude Code 每周已于 " + when + " 重置：可换回 Opus 5.5 ★Med（+8.0分 ×1.82）",
+			"Claude Code week window reset at " + when + ": switch back to Opus 5.5 ★Med (+8.0 pts ×1.82)", "↺Opus 5.5 ★Med"},
+		{advise.Event{Type: advise.SwitchBack, Source: "codex", Window: "five_hour", At: &at, Fast: fast, FastOff: true, Suggest: &advise.Step{Action: "none"}},
+			"Codex 5小时已于 " + when + " 重置：可以关掉 Fast 了（额度消耗 ×2.5）",
+			"Codex 5h window reset at " + when + ": turn Fast off now (it draws quota ×2.5)", "↺"},
+		{advise.Event{Type: advise.SwitchBack, Source: "codex", Window: "five_hour", At: &at, Fast: fast, FastOff: true, Suggest: &advise.Step{Action: "switch_back", Label: "Med", Recommended: true, AbilityDelta: f(-3), CostRatio: f(0.83)}},
+			"Codex 5小时已于 " + when + " 重置：可换回 ★Med（-3.0分 ×0.83），并关掉 Fast（额度消耗 ×2.5）",
+			"Codex 5h window reset at " + when + ": switch back to ★Med (-3.0 pts ×0.83) and turn Fast off (it draws quota ×2.5)", "↺★Med"},
+		{advise.Event{Type: advise.WindowTight, Source: "codex", Window: "five_hour", InMinutes: n(90), RemainingPercent: f(7), Fast: fast, Suggest: &advise.Step{Action: "step_down", Label: "Med", Recommended: true, AbilityDelta: f(-3), CostRatio: f(0.83)}},
+			"Codex 5小时额度偏紧（剩 7%，1时30分后重置）：先关掉 Fast（额度消耗 ×2.5）；还不够再降到 ★Med（-3.0分 ×0.83）",
+			"Codex 5h window is tight (7% left, resets in 1h30m): turn Fast off first (it draws quota ×2.5); if that is not enough, step down to ★Med (-3.0 pts ×0.83)", ""},
+	}
+	for _, c := range cases {
+		if got := (Style{T: ZH}).AdviceLine(c.e); got != c.zh {
+			t.Errorf("zh:\n got %s\nwant %s", got, c.zh)
+		}
+		if got := (Style{T: EN}).AdviceLine(c.e); got != c.en {
+			t.Errorf("en:\n got %s\nwant %s", got, c.en)
+		}
+		if got := (Style{T: ZH}).AdviceShort(c.e); c.short != "" && got != c.short {
+			t.Errorf("short = %q, want %q", got, c.short)
+		}
+	}
+}
+
 func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 	d, r := 4.8, 1.37
 	b := &advise.Brief{Model: "GPT-6.1 Sol", Effort: "Med", AtRec: true, EffortKnown: true, Headroom: "normal", AtDefault: true, DefaultReason: "best_value",
