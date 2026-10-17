@@ -2,6 +2,17 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.9 and Claude Code plugin 0.7.9 (2026-10-17)
+
+- Pinned CLI v0.5.19: tight hints say when the window runs out at the recent rate.
+- Codex: the text summary and the dashboard's quota rows show the run-out time.
+
+## v0.5.19 (2026-10-17)
+
+- **Recent rate of use.** Windows carry `recentPercentPerHour` and `runsOutInMinutes`, measured over the last 10–45 minutes of readings (Claude Code: the status-line snapshot now keeps the last hour of readings; Codex: every turn in its logs). The Skill's Python reader follows the same rules, tested against the same cases.
+- **A burst counts as tight.** A window that runs out within three hours at the recent rate, before its reset, is tight whatever the average pace says. The hint names the time ("runs out in 2h20m, before the reset in 3h20m"), and a run-out within half an hour gets the hint shown once more.
+- **Status line:** `≈2时20分用完` / `out ~2h20m` next to the window. `modelplan quota` adds it to the window line.
+
 ## Codex plugin 0.15.8 and Claude Code plugin 0.7.8 (2026-10-17)
 
 - Pinned CLI v0.5.18: after a reset, the hint points back to the model and effort you used before it (and Codex Fast off).
