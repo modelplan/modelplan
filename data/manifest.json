@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.174",
+  "version": "0.21.183",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -131,6 +131,12 @@
       "sha256": "568119c4ac7432876ea53dc3327870e627fc9dbaf8ce76fa2f4d061ac0132ba9"
     },
     {
+      "path": "data/plan-change-log.json",
+      "description": "Reviewed vendor changes to plans, as shown in Mission Briefing",
+      "license": "CC-BY-4.0",
+      "sha256": "b60bbb75c23585ccb6470b01db3abf0f85b4ae0bba458679933867bc4ffaf7db"
+    },
+    {
       "path": "data/plan-display-en.json",
       "description": "English display text for plan notes",
       "license": "CC-BY-4.0",
@@ -182,7 +188,7 @@
       "path": "data/plan-tier-registry.json",
       "description": "Subscription tiers: the source the plan registries are generated from",
       "license": "CC-BY-4.0",
-      "sha256": "ac07bb8734d032fd0f17e5eae6eb0ac5ad71bbf926118d4da1e50648b111b073"
+      "sha256": "d27e41a321a9da54382cbb3a909e15d258ac323588208b3a3729953824fd0ee1"
     },
     {
       "path": "data/real-api-pricing/LICENSE",
@@ -212,7 +218,7 @@
       "path": "data/reviewed-plan-registry.json",
       "description": "Reviewed plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "e00b6c43aeb0338efbbfed2b8db1fcd0ebfa34385118b392dafb69e0b9149939"
+      "sha256": "4e30be4fbe55e4cad5cd12527f6fd87a4fb08f1ca7461a0efbff26a87b327e04"
     },
     {
       "path": "data/reviewed-speed-claims.json",

@@ -3292,6 +3292,19 @@
             "evidenceIds": [
               "kimi-models-live"
             ]
+          },
+          {
+            "alias": "k3-256k",
+            "modelVersion": "K3",
+            "nativeEfforts": [
+              "low",
+              "high",
+              "max"
+            ],
+            "qualification": "Plus+或旧Moderato+；上下文固定256K；k3（1M）消耗约为其两倍",
+            "evidenceIds": [
+              "kimi-models-live"
+            ]
           }
         ],
         "availability": {
