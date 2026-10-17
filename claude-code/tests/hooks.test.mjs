@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,8 +77,7 @@ test('not fetched yet: quiet, no question; a failed fetch says why, at most week
   await fetchFailed('download failed (curl: (6) Could not resolve host; network, proxy or GitHub unreachable)');
   const n = JSON.parse(sh('modelplan-quota-hints.sh'));
   assert.match(n.systemMessage, /没能下载插件配套的 modelplan CLI[\s\S]*download failed[\s\S]*\/modelplan:setup/);
-  assert.match(n.hookSpecificOutput.additionalContext, /only if the user asks/);
-  assert.doesNotMatch(n.hookSpecificOutput.additionalContext, /ask whether|install it/, 'nothing to consent to');
+  assert.equal(n.hookSpecificOutput, undefined, 'shown to the user only; the model never hears of setup');
   assert.equal(sh('modelplan-quota-hints.sh'), '', 'not again within a week');
   assert.match(sh('setup-status.sh', ''), /^cli: fetch of the plugin's CLI [\d.]+ failed: download failed/m);
   await rm(home, { recursive: true });
@@ -104,21 +103,23 @@ test('fetching off: a CLI the user installed is used, and nothing is said', asyn
   await rm(home, { recursive: true });
 });
 
-test('the status-line notice rides with the hints once; a short "no" is recorded by the hook', async () => {
+test('the status-line notice is shown to the user only, twice at most, a week apart', async () => {
   const { home, sh, state, pinned } = await setup();
   await pinned();
   await mkdir(state, { recursive: true });
   await writeFile(join(state, `announced-${pin.version}`), '');
-  const say = prompt => sh('modelplan-quota-hints.sh', JSON.stringify({ session_id: 's', prompt }));
-  say('first');
-  const args = (await readFile(join(home, 'args'), 'utf8')).split('\n');
-  assert.equal(args[3], '--add-system');
-  assert.match(args.slice(4).join('\n'), /\/modelplan:statusline[\s\S]*--add-context[\s\S]*run nothing for it/);
-  say('不用了');
-  assert.ok((await stat(join(state, 'statusline-declined'))).isFile());
-  assert.match(await readFile(join(home, 'args'), 'utf8'), /已记下[\s\S]*declined setting up the Model Plan status line/);
-  say('不用了');
-  assert.equal(await readFile(join(home, 'args'), 'utf8'), 'advise\n--hook\nclaude-code\n', 'only the reply right after the ask counts');
+  const say = prompt => { sh('modelplan-quota-hints.sh', JSON.stringify({ session_id: 's', prompt })); return readFile(join(home, 'args'), 'utf8'); };
+  const shown = args => args.split('\n').slice(0, 4).join(' ') === 'advise --hook claude-code --add-system';
+  const first = await say('first');
+  assert.ok(shown(first));
+  assert.match(first, /\/modelplan:statusline[\s\S]*twice at most/);
+  assert.doesNotMatch(first, /--add-context/, 'the model is not asked to ask');
+  assert.equal(await say('不用了'), 'advise\n--hook\nclaude-code\n', 'not again within the week');
+  const old = new Date(Date.now() - 8 * 864e5);
+  await utimes(join(state, 'notice-statusline'), old, old);
+  assert.ok(shown(await say('next')), 'once more a week later');
+  await utimes(join(state, 'notice-statusline'), old, old);
+  assert.equal(await say('next'), 'advise\n--hook\nclaude-code\n', 'and then never');
   assert.equal(execFileSync('sh', [join(root, 'hooks/decline.sh'), 'statusline'], { env: { PATH: '/usr/bin:/bin', HOME: home }, encoding: 'utf8' }), 'recorded: statusline declined for 90 days\n');
   await rm(home, { recursive: true });
 });

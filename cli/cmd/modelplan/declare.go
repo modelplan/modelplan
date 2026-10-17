@@ -65,10 +65,10 @@ func genText(g string) string {
 	return " (" + g + ")"
 }
 
-// declareAsk: context for the model, once per model, when a session runs another vendor's model
-// on a plan the user has not declared: which plans meter it, and the command that records the
-// answer. The model asks; the user answers; nothing is guessed.
-func declareAsk(m *digest.Model, plans []digest.MeteredPlan, endpoint, cli string) string {
+// declareNotice: shown to the user (never the model), once per model, when a session runs
+// another vendor's model on a plan the user has not declared: which plans meter it, and the
+// command that records it. Nothing is guessed.
+func declareNotice(m *digest.Model, plans []digest.MeteredPlan, endpoint, cli string, en bool) string {
 	plans = byEndpoint(plans, endpoint)
 	gens := map[string][]string{}
 	var ids []string
@@ -80,19 +80,24 @@ func declareAsk(m *digest.Model, plans []digest.MeteredPlan, endpoint, cli strin
 			gens[p.PlanID] = append(gens[p.PlanID], p.Generation)
 		}
 	}
+	or, open, close, sep := " 或 ", "（", "）", "；"
+	if en {
+		or, open, close, sep = " or ", " (", ")", "; "
+	}
 	var opts []string
 	for _, id := range ids {
 		if g := gens[id]; len(g) > 0 {
-			opts = append(opts, id+" ("+strings.Join(g, " or ")+")")
+			opts = append(opts, id+open+strings.Join(g, or)+close)
 		} else {
 			opts = append(opts, id)
 		}
 	}
-	return "Model Plan: this session runs " + m.Name + " through the vendor's own endpoint, so it draws on the user's plan with that vendor, not on Claude's. " +
-		"Which plan that is, and how it counts usage, is not declared (some plans count requests, where a lower effort saves nothing), so quota advice for it is off. " +
-		"After answering the user's request, ask once, in one sentence, which of these they have: " + strings.Join(opts, "; ") + ". " +
-		"Generations: legacy plans count prompts per 5 hours and week; credit plans count credits. " +
-		"If they answer, run `" + cli + " declare <planId> <generation>` and relay its one-line result; if they decline or do not know, drop it. Never guess the plan."
+	if en {
+		return "ModelPlan: this session runs " + m.Name + " on your plan with its vendor, not on Claude's. Which plan is not declared, so there are no quota hints for it. " +
+			"To declare it, run `" + cli + " declare <plan> <generation>` in a terminal: " + strings.Join(opts, sep) + " (legacy plans count prompts per 5 hours and week; credit plans count credits)."
+	}
+	return "ModelPlan：这个会话用的 " + m.Name + " 走你在那家厂商的套餐，不是 Claude 的。还不知道是哪个套餐，所以没有它的额度提示。" +
+		"在终端运行 `" + cli + " declare <套餐> <代际>` 说明：" + strings.Join(opts, sep) + "（legacy 按 5 小时和每周的次数计，credits 按积分计）。"
 }
 
 // endpointPlans: which plan ids a known vendor endpoint can bill, to keep the question short

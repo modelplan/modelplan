@@ -34,7 +34,7 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
 - **Shown, not hinted.** `quota` and the dashboards show these plans. They give no prompt hints in Claude Code or Codex, which do not draw on them.
 - **Estimates are not quota.** CodexBar's OpenCode Go estimate from local history uses fixed denominators, so it is reported as `estimated` and not shown as a quota.
 
-`advise --hook claude-code|codex` is the plugins' prompt hook: it reads the hook input from stdin, hands new hints to the model once and, on a thread's first prompt (and again when its model changes), a task-start brief with the published options. It never blocks the prompt; with no publication cached yet it waits up to 3.5 s for a first sync, then goes on in the background. `MODELPLAN_TASK_BRIEF=off` turns the brief off.
+`advise --hook claude-code|codex` is the plugins' prompt hook: it reads the hook input from stdin and shows new hints to the user once (the hook's `systemMessage`; they never reach the model). The model gets only a task-start brief with the published options on a thread's first prompt, and one line with the ladder of a model the thread was not briefed on. It never blocks the prompt; with no publication cached yet it waits up to 3.5 s for a first sync, then goes on in the background. `MODELPLAN_TASK_BRIEF=off` turns the brief off.
 
 Example output (publication `23cd7308…`, release 0.18.9):
 

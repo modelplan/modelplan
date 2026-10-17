@@ -11,13 +11,13 @@ Model Plan's verified public data plus your own quota inside Claude Code. Read-o
 | `/modelplan:lineup [厂商]` | 一家厂商各模型在 ★ 推荐档下的能力与成本，哪些可以跳过 |
 | `/modelplan:setup` | 逐项检查插件、配套 CLI、状态栏、钩子是否就绪，没就绪的说明原因和办法 |
 | `/modelplan:statusline` | 征得同意后写入状态栏设置（用插件配套 CLI 的固定路径 `~/.cache/modelplan-cli/modelplan`，插件升级后也不用改） |
-| `UserPromptSubmit` 钩子（唯一的钩子） | 你发消息时：有新的额度提示（快重置还有余量、额度偏紧或用完、重置后换回 ★、手填套餐的高峰时段或重置卡快过期）就用一句话转告 Claude，同一件事只说一次；每个会话的第一条消息附一份**任务开始简报**（下面说明）；数据过旧时在后台刷新。只读本机缓存，从不等网络 |
+| `UserPromptSubmit` 钩子（唯一的钩子） | 你发消息时：有新的额度提示（快重置还有余量、额度偏紧或用完、重置后换回 ★、手填套餐的高峰时段或重置卡快过期）就在界面上显示一行给你看，同一件事只显示一次，**不进 Claude 的上下文**，Claude 的回答不会被它打断；每个会话的第一条消息给 Claude 一份**任务开始简报**（下面说明）；数据过旧时在后台刷新。只读本机缓存，从不等网络 |
 
-**任务开始简报**：每个会话第一条消息时，钩子交给 Claude 一份简短材料：Anthropic 各模型在 ★ 档的能力和相对成本（被更好选项压过的标“可跳过”）、普通任务的默认配置（已发布的最划算模型 ★ 档；它比最强模型低 3 分以上时改用最强的，现在是 Opus 5.5 ★Med，两者都是它）、当前模型各档相对当前档的分数和倍数，以及额度余量。Claude 自己判断任务难度，只有当前设置明显不合适时才用一句话建议，不会替你切换。当前模型和档位来自状态栏为**本会话**记录的读数；状态栏记录的是别的会话时写“未知”。`MODELPLAN_TASK_BRIEF=off` 关闭。
+**任务开始简报**：每个会话第一条消息时，钩子交给 Claude 一份简短材料：Anthropic 各模型在 ★ 档的能力和相对成本（被更好选项压过的标“可跳过”）、普通任务的默认配置（已发布的最划算模型 ★ 档；它比最强模型低 3 分以上时改用最强的，现在是 Opus 5.5 ★Med，两者都是它）、当前模型各档相对当前档的分数和倍数，以及额度余量，约 1200 字符。Claude 自己判断任务难度，只有当前设置明显不合适时才用一句话建议，不主动提额度，不会替你切换。每个会话只给一次；之后换到没介绍过的模型时，只补一行那个模型的档位对比，额度和档位变化不再重发。当前模型和档位来自状态栏为**本会话**记录的读数；状态栏记录的是别的会话时写“未知”。`MODELPLAN_TASK_BRIEF=off` 关闭。
 
 **插件自带 CLI**：插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本和各平台程序包的 SHA-256。装好或升级插件后，钩子在后台从 GitHub 下载这个版本到 `~/.cache/modelplan-cli/<版本>`，校验值和插件里写的完全一致才使用。所以不需要另外安装或升级 CLI。不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan` 保持不动，只在配套的那份还没下载好时临时使用。下载好后聊天里提示一次；下载失败会说明原因，每周最多一次。`MODELPLAN_PLUGIN_CLI=off` 关闭自动下载。Windows 不自动下载。
 
-**设置提醒**：状态栏还没记录过额度时，钩子在聊天里提示一次，并请 Claude 在回答末尾问你一次要不要设置；你回一句“暂不”，钩子自己记下，90 天内不再提。之后最多每周提示一次，不再询问。状态都在 `~/.cache/modelplan-claude-code`。`/modelplan:setup` 分开显示钩子最近一次在本机（任一会话）什么时候运行、结果如何（正常 / 计算失败及退出码 / 尚未验证），以及最近一次成功的时间。提醒只随你的消息到达：一轮很长的任务进行中不会有新提醒，要等下一条消息。
+**设置提醒**：状态栏还没记录过额度时，钩子在界面上提示你，最多两次（隔一周），之后不再出现；Claude 不会问你，也看不到这条提示。状态都在 `~/.cache/modelplan-claude-code`。`/modelplan:setup` 分开显示钩子最近一次在本机（任一会话）什么时候运行、结果如何（正常 / 计算失败及退出码 / 尚未验证），以及最近一次成功的时间。提醒只随你的消息到达：一轮很长的任务进行中不会有新提醒，要等下一条消息。
 
 状态栏 Status line:
 
@@ -50,7 +50,7 @@ The status line shows the live effort and fast mode Claude Code reports, Model P
 
 升级插件：`/plugin marketplace update modelplan`，然后在 `/plugin` 里更新 modelplan，重启 Claude Code；配套 CLI 随后自动换成新版本。插件钩子随插件启用，不需要单独审核；钩子没运行时 `/modelplan:setup` 会说明（`disableAllHooks` 或组织策略会关掉它）。
 
-1. Install the plugin as above and send a message: the plugin fetches its own `modelplan` CLI in the background, the release pinned in `cli-pin.json`, used only if its SHA-256 matches the pinned one, into `~/.cache/modelplan-cli` (nothing else changes; `MODELPLAN_PLUGIN_CLI=off` turns it off). Plugin updates bring the matching CLI; there is no separate install or upgrade. `/modelplan:setup` shows each part. 2. `/modelplan:statusline`. The single `UserPromptSubmit` hook passes new quota hints once, gives Claude a task-start brief on each session's first prompt (the published options, the default configuration, the current model's ladder; advice only), tells you once when the CLI is ready or why its download failed, and offers the status line once (a short "no" in reply is recorded; quiet for 90 days).
+1. Install the plugin as above and send a message: the plugin fetches its own `modelplan` CLI in the background, the release pinned in `cli-pin.json`, used only if its SHA-256 matches the pinned one, into `~/.cache/modelplan-cli` (nothing else changes; `MODELPLAN_PLUGIN_CLI=off` turns it off). Plugin updates bring the matching CLI; there is no separate install or upgrade. `/modelplan:setup` shows each part. 2. `/modelplan:statusline`. The single `UserPromptSubmit` hook passes new quota hints once, gives Claude a task-start brief on each session's first prompt (the published options, the default configuration, the current model's ladder; advice only), tells you once when the CLI is ready or why its download failed, and mentions the status line twice at most, a week apart. Hints and setup notices are shown to you only (the hook's `systemMessage`); Claude gets only the brief, once per session, plus one line when the session moves to a model it was not briefed on.
 
 已经有自己的状态栏？在脚本开头加一行即可只记录额度、不改显示：
 Keep your own status line and only record quota:

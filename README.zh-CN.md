@@ -180,7 +180,7 @@ flowchart LR
 <details>
 <summary><b>会替我切换模型或档位吗？</b></summary>
 
-从不。它只给建议，切换由你决定。只有出现新情况时，hooks 才会给 Agent 补一行提示。
+从不。它只给建议，切换由你决定。额度提示只显示给你，不发给 Agent；Agent 每个会话只收一份简短的任务开始简报，除非当前设置明显不适合这个任务，否则不提模型和档位。
 
 </details>
 
@@ -203,7 +203,7 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 | | 目录 | 说明 |
 | --- | --- | --- |
 | **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
-| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及把新提示和任务开始简报只告诉 Claude 一次的 prompt hook |
+| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及一个 prompt hook：新提示只显示给你，Claude 每个会话只收一份简短的任务开始简报 |
 | Codex 插件 | [`codex/`](codex/) | Skill 和 GPT 档位面板：⚡ Fast / Ultrafast 开关、你的 Codex 额度、官方重置公告 |
 | `modelplan` 命令行 | [`cli/`](cli/) | 单个静态可执行文件：`lineup`、`effort`、`models`、`quota`、`advise`、`statusline`、`sync`、`doctor` |
 | 开放数据 | [`data/`](data/) | 网站背后经过审核的数据：套餐档位、价格、额度计量、日历、模型身份和档位策略。每次变化从 modelplan.ai 同步过来，一次一个 PR |

@@ -23,10 +23,11 @@ type State struct {
 	changed bool
 }
 
-// BriefMark is what a thread's briefs described: every model it was briefed on, with the last
-// effort known for each, the model in use and the headroom.
+// BriefMark is what a thread's briefs described: every model it was briefed on and the model in
+// use. (Efforts' values and Headroom are from clients before 0.5.17, which briefed again on
+// those changes; they are kept as read.)
 type BriefMark struct {
-	Efforts  map[string]string `json:"efforts,omitempty"` // model → last known effort ("" unknown)
+	Efforts  map[string]string `json:"efforts,omitempty"` // models briefed on
 	Model    string            `json:"model,omitempty"`
 	Headroom string            `json:"headroom,omitempty"`
 	At       time.Time         `json:"at"`
@@ -141,11 +142,9 @@ func (s *State) prune(now time.Time) {
 
 // ConfigKey is the key a prompt hook remembers an event under. Advice about the configuration
 // (tight, surplus before a reset, an announced reset) is about the model and effort in use: it is
-// said once per model and effort, whichever thread that is in, so a thread on another
-// configuration hears its own advice while ten threads on the same one do not repeat it; and once
-// more when a tight window gets critical (10% or less left). Everything else (exhausted, switch
+// shown once per model and effort, whichever thread that is in, so ten threads on the same one
+// do not repeat it; and once more when a tight window gets critical (10% or less left). Everything else (exhausted, switch
 // back, peak hours, cards, public resets) is about the account or the world and is said once.
-// Each thread still learns the quota state from its own task-start brief (BriefDue).
 func ConfigKey(e Event) string {
 	switch e.Type {
 	case WindowTight, ResetSoonSurplus, AnnouncedSurplus:
@@ -159,42 +158,47 @@ func ConfigKey(e Event) string {
 	return strings.Join([]string{e.Key, e.Model, e.Effort, risk}, "|")
 }
 
-// BriefDue says whether a thread needs a (new) task-start brief and records the one it gets:
-// its first prompt; another model; another effort when both are known (an effort first read
-// on a later prompt is not a change); and quota turning tight, used up or into a surplus. A
-// thread switching back to a model it was briefed on earlier already has that brief in context,
-// so that is no reason by itself (an effort or quota change still is).
-func (s *State) BriefDue(thread, model, effort, headroom string, now time.Time) bool {
+// Task-start briefs a thread can be due.
+const (
+	BriefFull   = "full"  // the thread's first prompt
+	BriefSwitch = "model" // a model the thread has no brief for: that model's ladder only
+)
+
+// BriefDue says which task-start brief a thread needs ("" none) and records it: the full brief
+// on its first prompt, and one line for a model it was not briefed on (read only on a later
+// prompt, or switched to). A model it was briefed on earlier is still in context. Effort and
+// quota changes are the user's to see (status line, hook notices), not a reason to brief again.
+func (s *State) BriefDue(thread, model string, now time.Time) string {
 	if thread == "" {
-		return false
+		return ""
 	}
 	if s.Briefs == nil {
 		s.Briefs = map[string]BriefMark{}
 	}
 	last, seen := s.Briefs[thread]
-	if model == "" {
-		model = last.Model
+	_, briefedOn := last.Efforts[model]
+	due := ""
+	switch {
+	case !seen:
+		due = BriefFull
+	case model != "" && !briefedOn:
+		due = BriefSwitch
 	}
-	known, briefedOn := last.Efforts[model]
-	due := !seen ||
-		(model != "" && !briefedOn) ||
-		(effort != "" && known != "" && effort != known) ||
-		(headroom != last.Headroom && (headroom == "conserve" || headroom == "exhausted" || headroom == "spend"))
-	next := BriefMark{Efforts: map[string]string{}, Model: model, Headroom: headroom, At: now.UTC()}
+	if due == "" && (model == "" || model == last.Model) && now.Sub(last.At) <= 24*time.Hour {
+		return ""
+	}
+	next := BriefMark{Efforts: map[string]string{}, Model: last.Model, At: now.UTC()}
 	for k, v := range last.Efforts {
 		next.Efforts[k] = v
 	}
-	if model != "" && (effort != "" || !briefedOn) {
-		next.Efforts[model] = effort
-		if effort == "" {
-			next.Efforts[model] = known
+	if model != "" {
+		next.Model = model
+		if !briefedOn {
+			next.Efforts[model] = ""
 		}
 	}
-	changed := due || next.Model != last.Model || next.Headroom != last.Headroom || len(next.Efforts) != len(last.Efforts) || next.Efforts[model] != known || now.Sub(last.At) > 24*time.Hour
-	if changed {
-		s.Briefs[thread] = next
-		s.changed = true
-	}
+	s.Briefs[thread] = next
+	s.changed = true
 	return due
 }
 

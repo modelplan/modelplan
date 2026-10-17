@@ -496,32 +496,28 @@ func TestConfigAdviceIsRememberedPerModelAndEffort(t *testing.T) {
 	}
 }
 
-func TestBriefIsResentOnlyOnSubstantialChange(t *testing.T) {
+func TestBriefOncePerThreadAndModel(t *testing.T) {
 	s := Load(t.TempDir())
 	steps := []struct {
-		model, effort, headroom string
-		due                     bool
+		model, due string
 	}{
-		{"sol", "", "normal", true},        // first prompt
-		{"sol", "medium", "normal", false}, // effort read later: not a change
-		{"sol", "medium", "normal", false},
-		{"sol", "high", "normal", true},    // effort changed
-		{"sol", "high", "conserve", true},  // quota turned tight
-		{"sol", "high", "conserve", false}, // still tight
-		{"sol", "high", "normal", false},   // better again: nothing to warn about
-		{"astra", "", "normal", true},      // another model
-		{"astra", "medium", "spend", true}, // a surplus
-		{"", "", "spend", false},           // model unreadable this time: not a change
-		{"sol", "", "spend", false},        // back to a model this thread was briefed on (Codex review)
-		{"astra", "", "spend", false},      // and back again
-		{"sol", "xhigh", "spend", true},    // but a new effort on it is a change
+		{"", BriefFull},      // first prompt, model not read yet
+		{"sol", BriefSwitch}, // model read later: its ladder
+		{"sol", ""},
+		{"astra", BriefSwitch}, // another model
+		{"", ""},               // model unreadable this time: not a change
+		{"sol", ""},            // back to a model this thread was briefed on (Codex review)
+		{"astra", ""},
 	}
 	for i, st := range steps {
-		if got := s.BriefDue("thread-1", st.model, st.effort, st.headroom, now.Add(time.Duration(i)*time.Minute)); got != st.due {
-			t.Errorf("step %d %+v: due %v", i, st, got)
+		if got := s.BriefDue("thread-1", st.model, now.Add(time.Duration(i)*time.Minute)); got != st.due {
+			t.Errorf("step %d %+v: due %q", i, st, got)
 		}
 	}
-	if !s.BriefDue("thread-2", "sol", "high", "normal", now) {
+	if s.BriefDue("thread-2", "sol", now) != BriefFull {
 		t.Error("each thread gets its own first brief")
+	}
+	if s.BriefDue("thread-2", "sol", now.Add(48*time.Hour)) != "" {
+		t.Error("a day later is no reason to brief again")
 	}
 }
