@@ -17,11 +17,18 @@ import (
 type Style struct {
 	Color bool
 	T     Text
+	// Narrow: the status line has under StatuslineWide columns; it drops the ability and
+	// shortens the quota bars.
+	Narrow bool
 }
+
+// StatuslineWide is the width (COLUMNS) from which the status line shows its full form.
+const StatuslineWide = 100
 
 // ANSI 256 palette from clients/design-kit/README.md.
 const (
 	amber = "38;5;215"
+	above = "38;5;221" // an effort above ★
 	gold  = "38;5;222"
 	cost  = "38;5;209"
 	tcyan = "38;5;117"
@@ -270,8 +277,10 @@ func timeOf(e, rec *digest.Effort, est string) string {
 	return s
 }
 
-// Statusline renders one line for a harness status bar. It never touches the network.
-func (s Style) Statusline(d *digest.Digest, m *digest.Model, effort string, stale bool, raw string) string {
+// Statusline renders one line for a harness status bar. It never touches the network. With a
+// quota segment to follow (withQuota) or a narrow bar it leaves out the cost and lineup tags;
+// a narrow bar also drops the ability.
+func (s Style) Statusline(d *digest.Digest, m *digest.Model, effort string, stale bool, raw string, withQuota bool) string {
 	tail := ""
 	if stale {
 		tail = " │ " + s.c(warn, s.T.Stale)
@@ -290,12 +299,15 @@ func (s Style) Statusline(d *digest.Digest, m *digest.Model, effort string, stal
 			cur = e
 		}
 	}
-	parts := []string{s.c(amber, "▲ ") + s.c(bold+";"+hi, Short(m.Name)) + " " + effTag(s, cur, rec)}
+	parts := []string{s.c(amber, "▲ ") + s.c(bold+";"+hi, Short(m.Name)) + " " + effTag(s, m, cur, rec)}
+	if s.Narrow {
+		return parts[0] + tail
+	}
 	if cur != nil && cur.Ability != nil {
 		parts = append(parts, s.c(dim, s.T.Ability+" ")+s.c(amber, fmt.Sprintf("%.1f", *cur.Ability)))
 	}
 	ms := d.Developer(m.DeveloperID)
-	if l := d.Lineup(m.DeveloperID); l != nil && cur == rec {
+	if l := d.Lineup(m.DeveloperID); l != nil && cur == rec && !withQuota {
 		by := map[string]*digest.Model{}
 		for _, x := range ms {
 			by[x.ID] = x
@@ -311,13 +323,31 @@ func (s Style) Statusline(d *digest.Digest, m *digest.Model, effort string, stal
 	return strings.Join(parts, s.c(dim, " │ ")) + tail
 }
 
-func effTag(s Style, cur, rec *digest.Effort) string {
+// effTag: ★ and the label at the recommended effort; otherwise the label, warm above ★ and cool
+// below it, with ★ in brackets.
+func effTag(s Style, m *digest.Model, cur, rec *digest.Effort) string {
 	switch {
 	case cur == nil:
 		return ""
 	case cur == rec:
 		return s.c(gold, "★"+cur.Label)
-	default:
-		return s.c(hi, cur.Label) + s.c(dim, " (★"+labelOf(rec)+")")
 	}
+	colour := hi
+	if rec != nil {
+		if i, r := effortIndex(m, cur), effortIndex(m, rec); i > r {
+			colour = above
+		} else if i < r {
+			colour = tcyan
+		}
+	}
+	return s.c(colour, cur.Label) + s.c(dim, " (★"+labelOf(rec)+")")
+}
+
+func effortIndex(m *digest.Model, e *digest.Effort) int {
+	for i := range m.Efforts {
+		if &m.Efforts[i] == e {
+			return i
+		}
+	}
+	return -1
 }

@@ -3,6 +3,7 @@ package render
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -14,6 +15,7 @@ type quotaText struct {
 	Kinds, Source, Headroom, Pace                             map[string]string
 	Day, Hour, Min                                            string
 	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
+	Left, WeekNarrow, RunsOutNarrow                           string // status line: "剩65%", the narrow week label, "≈35分"
 }
 
 var quotaZH = quotaText{
@@ -25,6 +27,7 @@ var quotaZH = quotaText{
 	Pace:     map[string]string{"surplus": "富余", "on_track": "正常", "tight": "偏紧", "exhausted": "用完", "reset_passed": "已过重置", "unknown": "—"},
 	Day:      "天", Hour: "时", Min: "分",
 	RunsOut: "按最近的用量约 %s后用完", RunsOutShort: "≈%s用完",
+	Left: "剩%s", WeekNarrow: "周", RunsOutNarrow: "≈%s",
 }
 
 var quotaEN = quotaText{
@@ -36,6 +39,7 @@ var quotaEN = quotaText{
 	Pace:     map[string]string{"surplus": "surplus", "on_track": "on track", "tight": "tight", "exhausted": "exhausted", "reset_passed": "reset since", "unknown": "—"},
 	Day:      "d", Hour: "h", Min: "m",
 	RunsOut: "at the recent rate, used up in %s", RunsOutShort: "out ~%s",
+	Left: "%s left", WeekNarrow: "wk", RunsOutNarrow: "~%s",
 }
 
 func (s Style) qt() quotaText {
@@ -156,8 +160,10 @@ func sourceName(q quotaText, source string) string {
 	return source
 }
 
-// QuotaSegment is the status-line part: "5h 39% ↻42m · week 41%" with a headroom arrow,
-// or with the advice hint in its place ("↑High ×1.37").
+// QuotaSegment is the status-line part, with the advice hint after it ("↑High ×1.37") or else a
+// headroom arrow. Wide: "5h ▓▓▓▓▓▓░░░░ 65% left ↻40m · week ▓▓▓▓▓▓▓░░░ 70% left"; narrow:
+// "▓▓▓▓░░ 65%↻40m wk70%". The bars show what is left, coloured by it (and amber when the pace is
+// tight with plenty left).
 func (s Style) QuotaSegment(a *quota.Account, hint string) string {
 	if a == nil || len(a.Windows) == 0 {
 		return ""
@@ -168,22 +174,69 @@ func (s Style) QuotaSegment(a *quota.Account, hint string) string {
 		if x.UsedPercent == nil || x.Pace == "reset_passed" || x.Kind == "unknown" {
 			continue
 		}
-		p := q.Kinds[x.Kind] + " " + s.c(s.paceColour(x.Pace), fmt.Sprintf("%.0f%%", *x.UsedPercent))
+		left := math.Max(0, 100-*x.UsedPercent)
+		tone := leftColour(left, x.Pace)
+		pct := fmt.Sprintf("%.0f%%", left)
+		reset := ""
 		if x.ResetsInMinutes != nil && (x.Kind == "five_hour" || *x.ResetsInMinutes < 24*60) {
-			p += s.c(dim, " ↻"+q.Dur(*x.ResetsInMinutes))
+			reset = "↻" + q.Dur(*x.ResetsInMinutes)
+		}
+		var p string
+		switch {
+		case s.Narrow && x.Kind == "five_hour":
+			p = s.leftBar(left, 6, tone) + " " + s.c(tone, pct) + s.c(dim, reset)
+		case s.Narrow:
+			kind := q.Kinds[x.Kind]
+			if x.Kind == "weekly" {
+				kind = q.WeekNarrow
+			}
+			p = s.c(dim, kind) + s.c(tone, pct) + s.c(dim, reset)
+		default:
+			p = q.Kinds[x.Kind] + " " + s.leftBar(left, 10, tone) + " " + s.c(tone, fmt.Sprintf(q.Left, pct))
+			if reset != "" {
+				p += s.c(dim, " "+reset)
+			}
 		}
 		// Only a run-out soon enough to make the window tight; a long one over a week overstates a burst.
 		if x.RunsOutInMinutes != nil && *x.RunsOutInMinutes <= quota.RunsOutTight {
-			p += " " + s.c(warn, fmt.Sprintf(q.RunsOutShort, q.Dur(*x.RunsOutInMinutes)))
+			f := q.RunsOutShort
+			if s.Narrow {
+				f = q.RunsOutNarrow
+			}
+			p += " " + s.c(warn, fmt.Sprintf(f, q.Dur(*x.RunsOutInMinutes)))
 		}
 		parts = append(parts, p)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	arrow := map[string]string{"spend": s.c(okc, " ↑"), "conserve": s.c(warn, " ↓"), "exhausted": s.c(warn, " ✕")}[a.Headroom]
-	if hint != "" {
-		arrow = " " + hint
+	gap, join := "  ", s.c(dim, " · ")
+	if s.Narrow {
+		gap, join = " ", " "
 	}
-	return strings.Join(parts, s.c(dim, " · ")) + arrow
+	arrow := map[string]string{"spend": s.c(okc, "↑"), "conserve": s.c(warn, "↓"), "exhausted": s.c(warn, "✕")}[a.Headroom]
+	if hint != "" {
+		arrow = hint
+	}
+	if arrow != "" {
+		arrow = gap + arrow
+	}
+	return strings.Join(parts, join) + arrow
+}
+
+// leftColour: green with 30% or more left, amber from 10%, red below; amber too when the pace
+// says tight while plenty is left.
+func leftColour(left float64, pace string) string {
+	switch {
+	case left < 10 || pace == "exhausted":
+		return warn
+	case left < 30 || pace == "tight":
+		return above
+	}
+	return okc
+}
+
+func (s Style) leftBar(left float64, cells int, tone string) string {
+	full := int(math.Round(left / 100 * float64(cells)))
+	return s.c(tone, strings.Repeat("▓", full)) + s.c(dim, strings.Repeat("░", cells-full))
 }

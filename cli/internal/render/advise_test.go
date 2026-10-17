@@ -175,15 +175,34 @@ func TestStatuslineHintNeverSaysStepDownOnAPerRequestPlan(t *testing.T) {
 func TestQuotaSegmentShowsASoonRunOut(t *testing.T) {
 	used, in, out := 30.0, 200, 140
 	a := &quota.Account{Windows: []quota.Window{{Kind: "five_hour", UsedPercent: &used, ResetsInMinutes: &in, RunsOutInMinutes: &out, Pace: "tight"}}, Headroom: "conserve"}
-	if got := (Style{T: ZH}).QuotaSegment(a, ""); got != "5小时 30% ↻3时20分 ≈2时20分用完 ↓" {
+	if got := (Style{T: ZH}).QuotaSegment(a, ""); got != "5小时 ▓▓▓▓▓▓▓░░░ 剩70% ↻3时20分 ≈2时20分用完  ↓" {
 		t.Errorf("zh = %q", got)
 	}
-	if got := (Style{T: EN}).QuotaSegment(a, ""); got != "5h 30% ↻3h20m out ~2h20m ↓" {
+	if got := (Style{T: EN}).QuotaSegment(a, ""); got != "5h ▓▓▓▓▓▓▓░░░ 70% left ↻3h20m out ~2h20m  ↓" {
 		t.Errorf("en = %q", got)
+	}
+	if got := (Style{T: ZH, Narrow: true}).QuotaSegment(a, ""); got != "▓▓▓▓░░ 70%↻3时20分 ≈2时20分 ↓" {
+		t.Errorf("narrow = %q", got)
 	}
 	far := 200
 	a.Windows[0].RunsOutInMinutes = &far // later than three hours: the segment leaves it out
 	if got := (Style{T: EN}).QuotaSegment(a, ""); strings.Contains(got, "out ~") {
 		t.Errorf("far run-out shown: %q", got)
+	}
+}
+
+func TestQuotaSegmentBarsAndNarrowWeek(t *testing.T) {
+	u5, u7, in5, in7 := 93.0, 30.0, 40, 5000
+	a := &quota.Account{Headroom: "conserve", Windows: []quota.Window{
+		{Kind: "five_hour", UsedPercent: &u5, ResetsInMinutes: &in5, Pace: "tight"},
+		{Kind: "weekly", UsedPercent: &u7, ResetsInMinutes: &in7, Pace: "on_track"}}}
+	if got := (Style{T: ZH}).QuotaSegment(a, "↓★Med ×0.73"); got != "5小时 ▓░░░░░░░░░ 剩7% ↻40分 · 每周 ▓▓▓▓▓▓▓░░░ 剩70%  ↓★Med ×0.73" {
+		t.Errorf("wide = %q", got)
+	}
+	if got := (Style{T: EN, Narrow: true}).QuotaSegment(a, "↓★Med ×0.73"); got != "░░░░░░ 7%↻40m wk70% ↓★Med ×0.73" {
+		t.Errorf("narrow = %q", got)
+	}
+	if c := (Style{Color: true}).QuotaSegment(a, ""); !strings.Contains(c, "\x1b[38;5;203m▓\x1b[0m") || !strings.Contains(c, "\x1b[38;5;120m▓▓▓▓▓▓▓\x1b[0m") {
+		t.Errorf("7%% left is red, 70%% green: %q", c)
 	}
 }
