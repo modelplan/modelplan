@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.183",
+  "version": "0.21.188",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -230,7 +230,7 @@
       "path": "data/reviewed-speed-tiers.json",
       "description": "Reviewed speed tiers (fast modes)",
       "license": "CC-BY-4.0",
-      "sha256": "c1df628d2621f3c8ba675b644fec5cafa9b8af7fe499b925f9eef94c9d24406e"
+      "sha256": "08642270b5b1a8378c2979f1e41be4de218bada98e8a86ebd69a76bf8c1ea86c"
     },
     {
       "path": "data/schemas/ranker-input.schema.json",
