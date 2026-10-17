@@ -29,6 +29,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`default-lineages.json`](default-lineages.json) | Default model lineages per developer | CC-BY-4.0 |
 | [`model-developers.json`](model-developers.json) | Model developers | CC-BY-4.0 |
 | [`model-identities.json`](model-identities.json) | Reviewed model identities and names | CC-BY-4.0 |
+| [`model-retirements.json`](model-retirements.json) | Reviewed retirements of source-matched model releases, with the developer's quoted statement | CC-BY-4.0 |
 | [`official-model-lineages.json`](official-model-lineages.json) | Official model lineages | CC-BY-4.0 |
 | [`plan-change-log.json`](plan-change-log.json) | Reviewed vendor changes to plans, as shown in Mission Briefing | CC-BY-4.0 |
 | [`plan-display-en.json`](plan-display-en.json) | English display text for plan notes | CC-BY-4.0 |

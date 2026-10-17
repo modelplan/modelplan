@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.188",
+  "version": "0.21.196",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -123,6 +123,12 @@
       "description": "Reviewed model identities and names",
       "license": "CC-BY-4.0",
       "sha256": "52ce478618b1f7f2a7d60f493f99f8f56d86d4db8df5d3767e0208e7f1bf037e"
+    },
+    {
+      "path": "data/model-retirements.json",
+      "description": "Reviewed retirements of source-matched model releases, with the developer's quoted statement",
+      "license": "CC-BY-4.0",
+      "sha256": "4feee771cfbcbbea79f5f93e601d53cf0b5f715de7e29af6ef34163ed882d6df"
     },
     {
       "path": "data/official-model-lineages.json",
