@@ -34,6 +34,8 @@ What only the CLI adds, so say "unknown" rather than improvise it: `advise` (hin
 
 1. Work out what the task needs. Ask only for facts that change the choice.
 2. Start from Model Plan's ★ recommended effort and the published lineup: `best_value`, `strongest`, and `dominated` / `equivalent_costlier` models to skip. Do not recompute these verdicts.
+   - ★ is the best-value effort among the model's own efforts, weighing ability, cost and task time. It is not the top effort and is not meant to match the vendor's default. Never describe it as an error or as "not recommending the top"; when the user wants maximum quality regardless of cost, point to the top effort from the same ladder.
+   - Ability is a frozen scale (50 = the September 2026 frontier average). A negative or above-100 value is valid data, not a bug.
 3. Show the ladder as **multipliers**, the step-by-step view the user cares about: for each step up, ability `+N points` and cost `×R` against the step below; time `×T` only when both efforts share a time basis. Give USD per reference task only if asked.
 4. Call out steps that are not worth it: no ability gain or a loss for more cost (for example a Max that scores below XHigh).
 5. Prefer the cheapest configuration that clearly fits the task. If you cannot tell whether it is sufficient, say so instead of underpowering it.

@@ -11,7 +11,7 @@ How Model Plan scores models, estimates cost and time, picks the ★ recommended
 | **Ability** | Each benchmark is put on one scale and averaged by weight. 50 is the origin and 10 points is about one standard deviation. Missing benchmarks never count as zero. |
 | **Cost** | API dollars to finish the same reference coding task. Across models we compare dollars; between one model's efforts, ratios. |
 | **Time** | Real task runtime by source priority, divided by a reference time. Token speed is not task time. ≈ marks an estimate. |
-| **★ Effort** | Among one model's efforts, AA ability is weighed against dollar cost. The pick is the effort with the smallest worst-case regret across a range of plausible preferences. With one measured effort, that effort is the pick. An unlabelled configuration is assumed to be the top setting. |
+| **★ Effort** | Among one model's efforts, the displayed ability is weighed against dollar cost and task time. The pick is the effort with the smallest worst-case regret across the preferences the owner recorded. It is the best-value effort, not the top one. With one measured effort, that effort is the pick. An unlabelled configuration is assumed to be the top setting. |
 
 ## Ability index
 
@@ -50,22 +50,32 @@ E       = exp(Σ w_s r_s · ln(C_s / C_ref,s) / Σ w_s r_s)
 T_index = T_s,e / T_ref,s
 ```
 
-Runtime is taken by source priority: AA Coding Agent wall time, then Terminal-Bench, then eligible Bug Hunt runtime. Decode time, time-to-first-token and tokens/s never stand in for task time. Estimates are marked and never affect the recommendation.
+Runtime is taken by source priority: AA Coding Agent wall time, then Terminal-Bench, then eligible Bug Hunt runtime. Decode time, time-to-first-token and tokens/s never stand in for task time. Estimates are marked, never rank models against each other, and enter the recommendation only as an uncertainty interval within one model.
 
 ## Recommended effort (★)
 
-The pick uses native AA ability `Q` and the matching USD task cost `C`. It chooses the effort with the smallest worst-case regret across nonnegative cost weights `a`, `b`, constrained by historical preferences:
+The pick uses the numbers the site shows: ability `A`, USD per reference task `C`, and the same-model task time `T`. It chooses the effort with the smallest worst-case regret across nonnegative weights `a`, `b`, `t`, constrained by the owner's recorded choices:
 
 ```
-U       = Q − a·C − b·log2(C / C_ref)          C_ref = $1 per AA task
-Q_guard = max(0.8·Q_max, Q_min + 0.1·(Q_max − Q_min))
+U       = A − a·C − b·log2(C / C_ref) − t·log2(T)     C_ref = $1 per task
+Q_guard = max(0.8·Q_max, Q_min + 0.1·(Q_max − Q_min))  on the native AA score Q
 ```
 
-Efforts below `Q_guard` are not picked.
+- Efforts below `Q_guard` are not picked. The guard reads the native AA Intelligence score, which is bounded, so a fraction of the best is meaningful; the ability index is an interval scale, where it is not.
+- Time enters only as a ratio between one model's own efforts. An unknown time spans the model's observed range, and an estimate is its p10–p90 interval. Both are read at the slow end for the effort being judged.
+- The choices: three on GPT-5.6 Sol (High over Max, Medium over High, Medium over Low; price only, made without time on screen), plus Luna XHigh over Max and Haiku 5.5 XHigh over High (with time). They are recorded in the producer's `balanced-coding-v5` calibration; see ADR 0045.
 
 - **Single configuration.** When only one effort was measured, that effort is the pick, with no trade-off claimed.
 - **Assumed top.** When a benchmark publishes one configuration without an effort label, it is assumed to be the top setting and shown as `★ Max (est.)`, or `On` for thinking toggles. A reviewed mapping replaces the assumption as soon as one exists.
-- Time does not enter the pick. Vendor defaults are references only. Picks do not imply equal ability across models.
+- Vendor defaults are references only and are shown beside ★. Picks do not imply equal ability across models.
+
+### FAQ
+
+- **Is ★ the top effort?** No, by design. ★ is the best-value effort among a model's own efforts. The top effort's ability, cost and time are listed beside it, and the website can switch every model to its top effort.
+- **Why does ★ differ from the vendor's default?** A vendor default is a product setting that also weighs responsiveness, rate limits and positioning. Taken together, no single trade-off explains every vendor's defaults, so they are a reference, not an input.
+- **Why do cheap models get higher efforts?** Marginal value: one step up costs cents on a cheap model and a dollar or more on an expensive one.
+- **Why can the ability score be negative or above 100?** It is a frozen scale (50 = the September 2026 frontier average, 10 ≈ one standard deviation), not a percentage.
+- **Known limits.** Ability mixes general and coding benchmarks; cost is one reference task at official API prices (Claude and Codex quotas track API prices); many task times are single runs or estimates. ★ is a calibrated product rule, not a guarantee of task success.
 
 ## Which models appear
 
