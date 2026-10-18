@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.196",
+  "version": "0.21.213",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -39,6 +39,12 @@
       "description": "Recommended-effort policy, v4",
       "license": "CC-BY-4.0",
       "sha256": "7d275727d3b0b7f1175662fe36049a139de28e73f4ede2d33352cc241778342d"
+    },
+    {
+      "path": "data/calibration/balanced-coding-v5.json",
+      "description": "Active ★ effort policy (balanced v5, ADR 0045): admission settings and the owner choices that bound the price and time weights",
+      "license": "CC-BY-4.0",
+      "sha256": "b6030b603d618f6394a6f451e744c47dc590f09596f216e460ca0dbaa8884c32"
     },
     {
       "path": "data/calibration/generic-policy.json",
@@ -261,6 +267,12 @@
       "description": "Frozen usage facts of coding tool plans",
       "license": "CC-BY-4.0",
       "sha256": "85e24472c6b856c3c114f4ee37152907cb67565b5cd4a9bc297c90cea1375a37"
+    },
+    {
+      "path": "data/vendor-effort-defaults.json",
+      "description": "Current effort defaults and suggested starts from each vendor's client and API docs, shown beside ★ as a reference",
+      "license": "CC-BY-4.0",
+      "sha256": "5b37d50b728af95b90a797a6d768c835757d391184ecad09aece292a41f3e040"
     }
   ]
 }

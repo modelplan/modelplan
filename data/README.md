@@ -15,6 +15,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`calibration/balanced-coding-v3.1.json`](calibration/balanced-coding-v3.1.json) | Recommended-effort policy, v3.1 | CC-BY-4.0 |
 | [`calibration/balanced-coding-v3.json`](calibration/balanced-coding-v3.json) | Recommended-effort policy, v3 | CC-BY-4.0 |
 | [`calibration/balanced-coding-v4.json`](calibration/balanced-coding-v4.json) | Recommended-effort policy, v4 | CC-BY-4.0 |
+| [`calibration/balanced-coding-v5.json`](calibration/balanced-coding-v5.json) | Active ★ effort policy (balanced v5, ADR 0045): admission settings and the owner choices that bound the price and time weights | CC-BY-4.0 |
 | [`calibration/generic-policy.json`](calibration/generic-policy.json) | Generic quality, cost and time policy | CC-BY-4.0 |
 | [`calibration/official-guidance.json`](calibration/official-guidance.json) | Vendors' own effort guidance and product defaults | CC-BY-4.0 |
 | [`client-harness-aliases.json`](client-harness-aliases.json) | Model names as Claude Code, Codex and other clients report them | CC-BY-4.0 |
@@ -52,6 +53,7 @@ The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers
 | [`schemas/ranker-output.schema.json`](schemas/ranker-output.schema.json) | Ranker output schema | CC-BY-4.0 |
 | [`time-policy-inventory.json`](time-policy-inventory.json) | Time-of-day quota and price rules per product line: modelled, none found or unverified, with the sources that state them | CC-BY-4.0 |
 | [`tool-plan-facts-history.json`](tool-plan-facts-history.json) | Frozen usage facts of coding tool plans | CC-BY-4.0 |
+| [`vendor-effort-defaults.json`](vendor-effort-defaults.json) | Current effort defaults and suggested starts from each vendor's client and API docs, shown beside ★ as a reference | CC-BY-4.0 |
 <!-- files:end -->
 
 ## 中文
