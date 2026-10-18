@@ -231,6 +231,7 @@ type codexWindow struct {
 
 type codexLimits struct {
 	LimitID   string       `json:"limit_id"`
+	LimitName string       `json:"limit_name"`
 	Primary   *codexWindow `json:"primary"`
 	Secondary *codexWindow `json:"secondary"`
 	PlanType  string       `json:"plan_type"`
@@ -275,7 +276,7 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 		st.Status, st.Reason = "empty", "recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)"
 		return nil, st
 	}
-	a.Harness = codexHarness(rs, own)
+	a.Harness, a.Pool = codexHarness(rs, own)
 	st.Status = "ok"
 	return []Account{*a}, st
 }
@@ -349,7 +350,8 @@ func mergeCodex(rs []*rollout) *Account {
 	return a
 }
 
-func codexHarness(rs []*rollout, own string) *Harness {
+// codexHarness also returns the pool of the thread it picked: the allowance that thread last drew from.
+func codexHarness(rs []*rollout, own string) (*Harness, string) {
 	var pick *rollout
 	for _, r := range rs {
 		if r.harness == nil {
@@ -367,7 +369,7 @@ func codexHarness(rs []*rollout, own string) *Harness {
 		}
 	}
 	if pick == nil {
-		return nil
+		return nil, ""
 	}
 	h := *pick.harness
 	h.Attribution = "recent-thread"
@@ -375,7 +377,19 @@ func codexHarness(rs []*rollout, own string) *Harness {
 		h.Attribution = "current-thread"
 	}
 	h.Origin = pick.origin
-	return &h
+	return &h, pick.pool
+}
+
+// codexLimit names a Codex allowance: "" for the main one (limit id codex), "reserve" for GPT
+// Reserve, else the limit id.
+func codexLimit(id, name string) string {
+	switch id, name = clip(id), clip(name); {
+	case id == "base_model_inference" || name == "gpt-reserve":
+		return "reserve"
+	case id == "codex":
+		return ""
+	}
+	return id
 }
 
 var rolloutName = regexp.MustCompile(`^rollout-.*\.jsonl$`)
@@ -427,11 +441,11 @@ func dirsDesc(p string) []string {
 }
 
 type rollout struct {
-	path, origin, plan string
-	observed           time.Time
-	harness            *Harness
-	windows            map[string]Window
-	order              []string
+	path, origin, plan, pool string
+	observed                 time.Time
+	harness                  *Harness
+	windows                  map[string]Window
+	order                    []string
 }
 
 // originOf names where a thread came from: cli, vscode, exec, … or subagent:review,
@@ -532,6 +546,7 @@ func scanRollout(path string) *rollout {
 			}
 			rl := ev.RateLimits
 			r.observed = ts.UTC()
+			r.pool = codexLimit(rl.LimitID, rl.LimitName) // the allowance this thread's latest turn drew from
 			if p := clip(rl.PlanType); p != "" {
 				r.plan = p
 			}
@@ -539,10 +554,7 @@ func scanRollout(path string) *rollout {
 				if cw == nil {
 					continue
 				}
-				w := Window{UsedPercent: finite(cw.UsedPercent, 0, 1000), ResetMode: "fixed", ObservedAt: ts.UTC(), Limit: clip(rl.LimitID)}
-				if w.Limit == "codex" {
-					w.Limit = ""
-				}
+				w := Window{UsedPercent: finite(cw.UsedPercent, 0, 1000), ResetMode: "fixed", ObservedAt: ts.UTC(), Limit: r.pool}
 				if cw.WindowMinutes != nil && *cw.WindowMinutes > 0 && *cw.WindowMinutes < 1e6 {
 					w.WindowMinutes = *cw.WindowMinutes
 				}

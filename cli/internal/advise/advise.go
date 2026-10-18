@@ -109,7 +109,8 @@ type Event struct {
 	Plan             string     `json:"plan,omitempty"`
 	Basis            string     `json:"basis,omitempty"` // the declared plan's billing basis, for a session linked to it
 	Window           string     `json:"window,omitempty"`
-	At               *time.Time `json:"at,omitempty"` // reset, rate boundary or card expiry
+	Limit            string     `json:"limit,omitempty"` // the window's allowance when not the main one (Codex: reserve)
+	At               *time.Time `json:"at,omitempty"`    // reset, rate boundary or card expiry
 	InMinutes        *int       `json:"inMinutes,omitempty"`
 	RemainingPercent *float64   `json:"remainingPercent,omitempty"`
 	// RunsOutInMinutes: at the recent rate of use the window is used up this soon, before its reset.
@@ -220,7 +221,7 @@ func minutesUntil(t, now time.Time) *int {
 
 func deciding(a *quota.Account) *quota.Window {
 	for i := range a.Windows {
-		if a.Windows[i].Kind == a.Deciding {
+		if a.Windows[i].Kind == a.Deciding && a.InPool(&a.Windows[i]) {
 			return &a.Windows[i]
 		}
 	}
@@ -242,7 +243,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		w = nil
 		for i := range a.Windows {
 			x := &a.Windows[i]
-			if x.Pace == "surplus" && x.ResetsInMinutes != nil && x.WindowMinutes > 0 && float64(*x.ResetsInMinutes) <= float64(x.WindowMinutes)*soonShare &&
+			if a.InPool(x) && x.Pace == "surplus" && x.ResetsInMinutes != nil && x.WindowMinutes > 0 && float64(*x.ResetsInMinutes) <= float64(x.WindowMinutes)*soonShare &&
 				(w == nil || *x.ResetsInMinutes < *w.ResetsInMinutes) {
 				w = x
 			}
@@ -252,7 +253,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		return nil
 	}
 	base := func(typ, sev string) Event {
-		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, RemainingPercent: w.RemainingPercent, RunsOutInMinutes: w.RunsOutInMinutes, Stale: a.Stale}
+		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, Limit: w.Limit, RemainingPercent: w.RemainingPercent, RunsOutInMinutes: w.RunsOutInMinutes, Stale: a.Stale}
 		if plan != nil {
 			e.Basis = plan.Basis
 		}
@@ -552,7 +553,7 @@ func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event 
 	var w *quota.Window
 	for i := range a.Windows {
 		x := &a.Windows[i]
-		if x.WindowMinutes > 300 && x.RemainingPercent != nil && x.ResetsAt != nil && (w == nil || x.WindowMinutes > w.WindowMinutes) {
+		if a.InPool(x) && x.WindowMinutes > 300 && x.RemainingPercent != nil && x.ResetsAt != nil && (w == nil || x.WindowMinutes > w.WindowMinutes) {
 			w = x
 		}
 	}

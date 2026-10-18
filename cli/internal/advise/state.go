@@ -377,7 +377,7 @@ func (a Armed) lasts() time.Duration { return switchBackFor }
 
 func windowNow(a *quota.Account, kind string) *quota.Window {
 	for i := range a.Windows {
-		if a.Windows[i].Kind == kind {
+		if a.Windows[i].Kind == kind && a.InPool(&a.Windows[i]) {
 			return &a.Windows[i]
 		}
 	}

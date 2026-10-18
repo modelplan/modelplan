@@ -84,6 +84,9 @@ func (s Style) who(e advise.Event) string {
 	if kind == "" {
 		return src
 	}
+	if e.Limit != "" {
+		kind += " " + LimitName(e.Limit)
+	}
 	if s.T.Pts == "pts" {
 		return src + " " + kind + " window"
 	}

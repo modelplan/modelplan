@@ -33,6 +33,16 @@ test('text summary shows windows, countdown and the headroom advice', () => {
   assert.match(renderQuota({ status: 'missing', account: null }, 'zh'), /本机没有可读的 Codex 额度/);
 });
 
+test('GPT Reserve shows as its own allowance and names the pool the headroom is about', () => {
+  const q = pickCodex(structuredClone(expected));
+  q.account.windows.push({ kind: 'weekly', limit: 'reserve', usedPercent: 100, pace: 'exhausted', resetsInMinutes: 60 });
+  q.account.pool = 'reserve'; q.account.headroom = 'exhausted';
+  const text = renderQuota(q, 'en');
+  assert.match(text, /week Reserve 100% used · resets in 1h · exhausted/);
+  assert.match(text, /→ Reserve · Exhausted/);
+  assert.match(renderQuota(q, 'zh'), /→ Reserve · 额度已用完/);
+});
+
 test('advice comes only from the CLI, keeps Codex events and drops anything malformed', async () => {
   const out = { schemaVersion: 1, events: [
     { type: 'reset_soon_with_surplus', severity: 'info', source: 'codex', text: { zh: 'Codex 5小时还剩 80%', en: 'Codex 5h window has 80% left' } },

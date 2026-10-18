@@ -171,6 +171,7 @@ type rlWindow struct {
 
 type rlSnapshot struct {
 	LimitID   *string   `json:"limitId"`
+	LimitName *string   `json:"limitName"`
 	Primary   *rlWindow `json:"primary"`
 	Secondary *rlWindow `json:"secondary"`
 	PlanType  *string   `json:"planType"`
@@ -266,10 +267,14 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 		if x == nil {
 			continue
 		}
-		limit := k
+		limit, name := k, ""
 		if x.LimitID != nil && *x.LimitID != "" {
 			limit = *x.LimitID
 		}
+		if x.LimitName != nil {
+			name = *x.LimitName
+		}
+		limit = codexLimit(limit, name)
 		if x.PlanType != nil && s.Plan == "" && *x.PlanType != "unknown" {
 			s.Plan = clip(*x.PlanType)
 		}
@@ -277,7 +282,7 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 			if w == nil || w.UsedPercent == nil || w.WindowDurationMins == nil || *w.WindowDurationMins <= 0 {
 				continue
 			}
-			win := Window{Kind: kindOf(*w.WindowDurationMins), Limit: clip(limit), UsedPercent: w.UsedPercent, WindowMinutes: *w.WindowDurationMins, ResetMode: "fixed", ObservedAt: now.UTC()}
+			win := Window{Kind: kindOf(*w.WindowDurationMins), Limit: limit, UsedPercent: w.UsedPercent, WindowMinutes: *w.WindowDurationMins, ResetMode: "fixed", ObservedAt: now.UTC()}
 			if w.ResetsAt != nil {
 				t := time.Unix(*w.ResetsAt, 0).UTC()
 				win.ResetsAt = &t
@@ -337,7 +342,7 @@ func applyAccount(r *Report, cache string, now time.Time) {
 		found := false
 		for i := range a.Windows {
 			x := &a.Windows[i]
-			if x.Kind == w.Kind && x.WindowMinutes == w.WindowMinutes && (x.Limit == w.Limit || x.Limit == "" || w.Limit == "") {
+			if x.Kind == w.Kind && x.WindowMinutes == w.WindowMinutes && x.Limit == w.Limit {
 				found = true
 				if w.ObservedAt.After(x.ObservedAt) {
 					*x = withHistory(w, *x)

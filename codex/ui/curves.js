@@ -34,18 +34,20 @@ function curveScale(rows, baselineIndex) {
 // The one comparison state behind the readout, the mini curve and the detail curve, always
 // relative to this model's ★ effort in standard mode. A speed tier leaves ability alone. Cost
 // becomes an estimated plan-quota draw: the reference-task cost ratio times the tier's
-// included-usage multiple, meaningful within one model only. Task time becomes unknown, because
-// tools, network and tests do not run faster with token generation. The tier's generation
-// speed-up is carried separately as an upper bound, or null when unstated.
+// included-usage multiple, meaningful within one model only. Task time, as on the website, divides
+// by the stated generation speed-up and is then an estimate (only generation gets faster, so the
+// real saving is smaller); an unstated speed-up leaves it as in standard mode. The speed-up itself
+// is carried with its qualifier (up-to, approximate), or null when unstated.
 export function speedComparison(model, ratioForTime, tier = null) {
   const standard = effortCurveData(model, ratioForTime);
   if (!tier) return { ...standard, mode: 'standard', costKind: 'reference-task' };
   const ratio = billsTo => tier.billing?.find(b => b.billsTo === billsTo && curveFinite(b.ratio))?.ratio ?? null;
   const quota = ratio('plan-quota');
-  const rows = standard.rows.map(r => ({ ...r, cost: curveFinite(r.cost) && quota !== null ? r.cost * quota : null, costEstimated: true, time: null, estimated: false }));
-  const speed = tier.model?.speed;
+  const speed = tier.model?.speed, s = curveFinite(speed?.ratio) && speed.ratio > 0 ? speed.ratio : null;
+  const rows = standard.rows.map(r => ({ ...r, cost: curveFinite(r.cost) && quota !== null ? r.cost * quota : null, costEstimated: true,
+    time: curveFinite(r.time) ? (s === null ? r.time : r.time / s) : null, estimated: r.estimated || s !== null }));
   return { ...curveScale(rows, standard.baselineIndex), mode: tier.tier, costKind: 'plan-quota', quotaRatio: quota, creditRatio: ratio('credits'),
-    generation: curveFinite(speed?.ratio) ? { ratio: speed.ratio, qualifier: speed.qualifier } : null };
+    generation: s !== null ? { ratio: s, qualifier: speed.qualifier } : null };
 }
 
 export function curveCoordinate(data, value, key) {
