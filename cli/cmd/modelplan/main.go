@@ -22,6 +22,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/snapshot"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -57,6 +58,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
+  modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
+                                       quota, advice and measured speed (docs/personal-snapshot.md)
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
@@ -242,6 +245,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout)
 		style.Measured(stdout, measured, d, true)
 		return 0
+
+	case "desktop":
+		return desktopCmd(stdout, st, c)
 
 	case "statusline":
 		if *recordOnly {
@@ -679,6 +685,30 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 		}
 	}
 	return out
+}
+
+// desktopCmd prints the personal snapshot (docs/personal-snapshot.md) for the desktop app: one
+// call gives it the sessions, quota, advice and measured speed. Like the hooks it refreshes the
+// Codex account reading, CodexBar and a stale publication in the background, records the quota
+// history and Codex speed, and arms switch-back; it marks nothing as told, which the app does
+// for its own notifications.
+func desktopCmd(stdout io.Writer, st *store.Store, c common) int {
+	now := time.Now()
+	d, ps, _ := publication.Load(st)
+	if !c.offline {
+		refreshAccountLater(st)
+		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
+			_ = detach.Start("sync", "--quiet", "--base", c.base)
+		}
+	}
+	report := quota.Read(quotaPaths(st), now)
+	_ = history.Observe(st.Dir, report, now)
+	observeCodexSpeed(st, now)
+	state := advise.Load(st.Dir)
+	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
+	_ = state.Save(st.Dir, now)
+	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
+		Measured: speed.Summarize(speed.Load(st.Dir), now), Recording: !history.Off(), CLIVersion: version, Now: now}))
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex

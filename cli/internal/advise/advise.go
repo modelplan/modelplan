@@ -227,6 +227,7 @@ func Derive(in Input) []Event {
 			}
 		}
 	}
+	out = dropRepeatedSwitch(out)
 	if in.State != nil {
 		for i := range out {
 			if out[i].Type == BetterModel {
@@ -236,6 +237,25 @@ func Derive(in Input) []Event {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Type] < rank[out[j].Type] })
 	return out
+}
+
+// dropRepeatedSwitch: a tight window that already offers the same model says it; the better-model
+// hint waits for a reading that is not tight.
+func dropRepeatedSwitch(es []Event) []Event {
+	offered := map[string]bool{}
+	for _, e := range es {
+		if e.Type == WindowTight && e.Alternative != nil {
+			offered[e.Source+"|"+e.Alternative.Model] = true
+		}
+	}
+	kept := es[:0]
+	for _, e := range es {
+		if e.Type == BetterModel && e.Suggest != nil && offered[e.Source+"|"+e.Suggest.Model] {
+			continue
+		}
+		kept = append(kept, e)
+	}
+	return kept
 }
 
 // betterEvents: a better model for the session's configuration, when there is one.
