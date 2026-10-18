@@ -10,6 +10,8 @@ Each run also does what the plugin hooks do:
 
 It marks no advice as told. A client keeps its own notified keys.
 
+`cli/internal/snapshot/testdata/snapshot.json` is a complete example, kept in step with the CLI by its tests (`go test ./internal/snapshot -update` rewrites it). The desktop app's tests read it, so a change that breaks a client fails there.
+
 ## Top level
 
 | Field | Meaning |

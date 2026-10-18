@@ -1,0 +1,404 @@
+{
+  "schemaVersion": 1,
+  "kind": "modelplan.personal-snapshot",
+  "generatedAt": "2026-10-18T09:00:00Z",
+  "cliVersion": "0.5.25",
+  "publication": {
+    "publicationId": "0d726f2402d395a043fb170e",
+    "publishedAt": "2026-10-18T01:50:38Z",
+    "checkedAt": "2026-10-18T08:40:00Z",
+    "verifiedAt": "2026-10-18T08:40:00Z",
+    "stale": false
+  },
+  "sessions": [
+    {
+      "source": "claude-code",
+      "observedAt": "2026-10-18T08:58:00Z",
+      "attribution": "current-thread",
+      "stale": false,
+      "model": {
+        "harnessId": "claude-opus-5-5",
+        "id": "opus",
+        "name": "Claude Opus 5.5",
+        "developerId": "anthropic"
+      },
+      "effort": {
+        "key": "high",
+        "label": "High",
+        "star": false
+      },
+      "recommended": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "vsRecommended": {
+        "abilityDelta": 4.8,
+        "costRatio": 1.37
+      },
+      "headroom": "conserve",
+      "deciding": "five_hour"
+    },
+    {
+      "source": "codex",
+      "observedAt": "2026-10-18T08:58:00Z",
+      "attribution": "recent-thread",
+      "origin": "cli",
+      "stale": false,
+      "model": {
+        "harnessId": "gpt-6-astra",
+        "id": "astra",
+        "name": "GPT-6 Astra",
+        "developerId": "openai"
+      },
+      "effort": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "recommended": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "vsRecommended": null,
+      "speed": "fast",
+      "headroom": "spend"
+    }
+  ],
+  "accounts": [
+    {
+      "source": "claude-code",
+      "observedAt": "2026-10-18T08:58:00Z",
+      "stale": false,
+      "harness": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "fastMode": false,
+        "version": "2.3.1",
+        "observedAt": "2026-10-18T08:58:00Z",
+        "attribution": "current-thread"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 88,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-18T10:35:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 12,
+          "resetsInMinutes": 95,
+          "elapsedPercent": 68,
+          "projectedPercent": 129,
+          "ageMinutes": 2,
+          "recentPercentPerHour": 20.6,
+          "runsOutInMinutes": 35,
+          "pace": "tight"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 30,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-21T09:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 70,
+          "resetsInMinutes": 4320,
+          "elapsedPercent": 57,
+          "projectedPercent": 53,
+          "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        }
+      ],
+      "headroom": "conserve",
+      "deciding": "five_hour"
+    },
+    {
+      "source": "codex",
+      "observedAt": "2026-10-18T08:58:00Z",
+      "stale": false,
+      "harness": {
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "version": "0.130.0",
+        "serviceTier": "fast",
+        "observedAt": "2026-10-18T08:58:00Z",
+        "attribution": "recent-thread",
+        "origin": "cli"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 20,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-18T09:40:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 80,
+          "resetsInMinutes": 40,
+          "elapsedPercent": 87,
+          "projectedPercent": 23,
+          "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "surplus"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 45,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-20T09:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 55,
+          "resetsInMinutes": 2880,
+          "elapsedPercent": 71,
+          "projectedPercent": 63,
+          "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        },
+        {
+          "kind": "weekly",
+          "limit": "reserve",
+          "usedPercent": 10,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-20T09:00:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 90,
+          "resetsInMinutes": 2880,
+          "elapsedPercent": null,
+          "projectedPercent": null,
+          "ageMinutes": 2,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        }
+      ],
+      "via": "codex-account",
+      "headroom": "spend"
+    },
+    {
+      "source": "codexbar:zai",
+      "plan": "GLM Coding Plan",
+      "observedAt": "2026-10-18T08:58:00Z",
+      "stale": false,
+      "windows": [
+        {
+          "kind": "monthly",
+          "usedPercent": 40,
+          "resetsAt": "2026-10-30T09:00:00Z",
+          "observedAt": "2026-10-18T08:58:00Z",
+          "remainingPercent": 60,
+          "resetsInMinutes": 17280,
+          "elapsedPercent": null,
+          "projectedPercent": null,
+          "ageMinutes": null,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        }
+      ],
+      "via": "codexbar",
+      "headroom": "normal"
+    }
+  ],
+  "sources": [
+    {
+      "source": "claude-code",
+      "status": "ok"
+    },
+    {
+      "source": "codex",
+      "status": "ok"
+    },
+    {
+      "source": "user",
+      "status": "missing"
+    },
+    {
+      "source": "codexbar:zai",
+      "status": "ok"
+    }
+  ],
+  "events": [
+    {
+      "type": "window_tight",
+      "key": "window_tight|claude-code||five_hour|2026-10-18T10:35:00Z|claude-opus-5-5|high|",
+      "severity": "warn",
+      "source": "claude-code",
+      "window": "five_hour",
+      "at": "2026-10-18T10:35:00Z",
+      "inMinutes": 95,
+      "remainingPercent": 12,
+      "runsOutInMinutes": 35,
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "suggest": {
+        "action": "step_down",
+        "model": "opus",
+        "modelName": "Claude Opus 5.5",
+        "effort": "medium",
+        "label": "Med",
+        "recommended": true,
+        "abilityDelta": -4.8,
+        "costRatio": 0.73
+      },
+      "text": {
+        "en": "Claude Code 5h window is tight (12% left; at the recent rate it runs out in 35m, before the reset in 1h35m): step down to ★Med (-4.8 pts ×0.73)",
+        "zh": "Claude Code 5小时额度偏紧（剩 12%，按最近的用量约 35分后用完，1时35分后才重置）：降到 ★Med（-4.8分 ×0.73）"
+      },
+      "short": {
+        "en": "↓★Med ×0.73",
+        "zh": "↓★Med ×0.73"
+      },
+      "inMenuBar": true
+    },
+    {
+      "type": "reset_passed_switch_back",
+      "key": "reset_passed_switch_back|claude-code|five_hour|2026-10-18T08:30:00Z",
+      "severity": "info",
+      "source": "claude-code",
+      "window": "five_hour",
+      "at": "2026-10-18T08:30:00Z",
+      "model": "claude-opus-5-5",
+      "effort": "low",
+      "suggest": {
+        "action": "switch_back",
+        "model": "opus",
+        "modelName": "Claude Opus 5.5",
+        "effort": "medium",
+        "label": "Med",
+        "recommended": true
+      },
+      "text": {
+        "en": "Claude Code 5h window reset at 08:30: switch back to ★Med",
+        "zh": "Claude Code 5小时已于 08:30 重置：可换回 ★Med"
+      },
+      "short": {
+        "en": "↺★Med",
+        "zh": "↺★Med"
+      },
+      "inMenuBar": true
+    },
+    {
+      "type": "better_model_available",
+      "key": "better|codex|astra|medium|sol-6.1|medium",
+      "severity": "info",
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "suggest": {
+        "action": "better_model",
+        "model": "sol-6.1",
+        "modelName": "GPT-6.1 Sol",
+        "effort": "medium",
+        "label": "Med",
+        "recommended": true,
+        "kind": "equivalent",
+        "abilityDelta": -0.2,
+        "costRatio": 0.55
+      },
+      "current": {
+        "action": "current",
+        "model": "astra",
+        "modelName": "GPT-6 Astra",
+        "effort": "medium",
+        "label": "Med",
+        "recommended": true
+      },
+      "text": {
+        "en": "Codex is on GPT-6 Astra ★Med: GPT-6.1 Sol ★Med scores about the same for much less (-0.2 pts ×0.55). By overall score; keep the current model if this task needs it",
+        "zh": "Codex 在用 GPT-6 Astra ★Med：GPT-6.1 Sol ★Med 能力相当、成本省得多（-0.2分 ×0.55）。按综合分，这个任务确实需要当前模型的话就不换"
+      },
+      "short": {
+        "en": "→GPT-6.1 Sol ★Med ×0.55",
+        "zh": "→GPT-6.1 Sol ★Med ×0.55"
+      },
+      "inMenuBar": true
+    },
+    {
+      "type": "reset_soon_with_surplus",
+      "key": "reset_soon_with_surplus|codex||five_hour|2026-10-18T09:40:00Z|gpt-6-astra|medium|",
+      "severity": "info",
+      "source": "codex",
+      "window": "five_hour",
+      "at": "2026-10-18T09:40:00Z",
+      "inMinutes": 40,
+      "remainingPercent": 80,
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "suggest": {
+        "action": "step_up",
+        "model": "astra",
+        "modelName": "GPT-6 Astra",
+        "effort": "high",
+        "label": "High",
+        "abilityDelta": 2.5,
+        "costRatio": 1.17
+      },
+      "fast": {
+        "tier": "fast",
+        "label": "Fast",
+        "quotaRatio": 2,
+        "speedRatio": 1.5,
+        "qualifier": "approximate"
+      },
+      "text": {
+        "en": "Codex 5h window has 80% left and resets in 40m; unused allowance is lost: step up to High (+2.5 pts ×1.17)",
+        "zh": "Codex 5小时还剩 80%，40分后重置，用不完就作废：可升到 High（+2.5分 ×1.17）"
+      },
+      "short": {
+        "en": "↑High ×1.17",
+        "zh": "↑High ×1.17"
+      },
+      "inMenuBar": true
+    }
+  ],
+  "measured": [
+    {
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "days": 6,
+      "requests": 412,
+      "turns": 38,
+      "outputTokensPerSecond": 116,
+      "ttftSeconds": 1.9,
+      "turnSeconds": 142,
+      "turnOutputTokens": 3800
+    },
+    {
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "days": 3,
+      "requests": 120,
+      "turns": 14,
+      "outputTokensPerSecond": 121,
+      "ttftSeconds": 1.6,
+      "turnSeconds": 98,
+      "turnOutputTokens": 2600
+    },
+    {
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "speed": "fast",
+      "days": 2,
+      "requests": 3,
+      "turns": 2,
+      "outputTokensPerSecond": null,
+      "ttftSeconds": null,
+      "turnSeconds": null,
+      "turnOutputTokens": null
+    }
+  ],
+  "recording": true,
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
+}
