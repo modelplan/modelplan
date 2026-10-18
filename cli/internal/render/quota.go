@@ -125,7 +125,7 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			}
 			kind := q.Kinds[x.Kind]
 			if x.Limit != "" {
-				kind += " " + x.Limit
+				kind += " " + LimitName(x.Limit)
 			}
 			line := fmt.Sprintf("  %s %s %s  %s  %s  %s", pad(kind, 8), s.c(s.paceColour(x.Pace), bar(frac, 10)), s.c(hi, pad(used, 5)), s.c(dim, pad(left, 9)), s.c(tcyan, pad(reset, 10)), s.c(s.paceColour(x.Pace), q.Pace[x.Pace]))
 			if x.ProjectedPercent != nil && x.Pace != "surplus" {
@@ -143,7 +143,11 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 				fmt.Fprintf(w, "  %s %d × %s\n", s.c(gold, "◆"), *c.Count, q.Kinds[c.Kind])
 			}
 		}
-		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), q.Headroom[a.Headroom]))
+		verdict := q.Headroom[a.Headroom]
+		if a.Pool != "" {
+			verdict = LimitName(a.Pool) + " · " + verdict // the allowance the verdict is about
+		}
+		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), verdict))
 	}
 }
 
@@ -239,4 +243,12 @@ func leftColour(left float64, pace string) string {
 func (s Style) leftBar(left float64, cells int, tone string) string {
 	full := int(math.Round(left / 100 * float64(cells)))
 	return s.c(tone, strings.Repeat("▓", full)) + s.c(dim, strings.Repeat("░", cells-full))
+}
+
+// LimitName labels an allowance kept apart from the main one: Codex's GPT Reserve, else its limit id.
+func LimitName(limit string) string {
+	if limit == "reserve" {
+		return "Reserve"
+	}
+	return limit
 }

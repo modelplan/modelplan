@@ -60,18 +60,22 @@ test('a speed tier changes cost and time in one state shared by readout and both
   assert.equal(standard.mode, 'standard');
   assert.deepEqual(fast.rows.map(r => r.ability), standard.rows.map(r => r.ability));
   assert.deepEqual(fast.rows.map(r => r.cost), standard.rows.map(r => r.cost * 2.5), 'plan-quota estimate vs ★ standard');
-  assert.ok(fast.rows.every(r => r.time === null), 'task time is unknown, never scaled by generation speed');
+  assert.deepEqual(fast.rows.map(r => r.time), standard.rows.map(r => r.time), 'an unstated speed-up leaves time as in standard mode');
   assert.equal(fast.baselineIndex, standard.baselineIndex);
   assert.equal(fast.generation, null, 'unstated speed stays unknown, not ×1');
   assert.deepEqual([fast.quotaRatio, fast.creditRatio], [2.5, 2]);
   const mini = effortCurveSvg(fast, { mini: true }), detail = effortCurveSvg(fast);
   for (const svg of [mini, detail]) {
-    assert.doesNotMatch(svg, /data-series-path="time"/);
+    assert.match(svg, /data-series-path="time"/);
     assert.match(svg, /data-series-path="cost"[^>]+stroke-dasharray/, 'estimated quota is dashed');
   }
   assert.notDeepEqual(effortCurveSvg(standard, { mini: true }), mini, 'the mini curve follows the speed mode');
   const ultra = speedComparison(m, timeRatio, tier('ultrafast', 8, 6, { ratio: 8, qualifier: 'up-to' }));
   assert.deepEqual(ultra.generation, { ratio: 8, qualifier: 'up-to' });
   assert.equal(ultra.rows[ultra.baselineIndex].cost, 8);
+  const about = speedComparison(m, timeRatio, tier('fast', 2.5, 2, { ratio: 1.5, qualifier: 'approximate' }));
+  assert.deepEqual(about.rows.map(r => r.time), standard.rows.map(r => r.time === null ? null : r.time / 1.5), 'time divides by the speed-up');
+  assert.ok(about.rows.every(r => r.time === null || r.estimated), 'and is an estimate');
+  assert.deepEqual(about.generation, { ratio: 1.5, qualifier: 'approximate' });
   assert.ok(speedComparison(m, timeRatio, { tier: 'fast', billing: [{ billsTo: 'credits', ratio: 2 }], model: {} }).rows.every(r => r.cost === null), 'no plan-quota multiple, no quota estimate');
 });

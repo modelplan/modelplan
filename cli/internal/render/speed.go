@@ -10,23 +10,23 @@ import (
 )
 
 type speedText struct {
-	Harness                                       map[string]string
-	Quota, Credits, Price, UsageCredits, API      string
-	Speed, Unstated, Approx, TimeAtBest, NotQuota string
-	Rebill, Restricted, Times                     string
+	Harness                                                  map[string]string
+	Quota, Credits, Price, UsageCredits, API                 string
+	Speed, Unstated, Approx, TimeAtBest, TimeAbout, NotQuota string
+	Rebill, Restricted, Times                                string
 }
 
 var speedZH = speedText{
 	Harness: map[string]string{"codex": "Codex", "claude-code": "Claude Code"},
 	Quota:   "套餐额度 ×%s", Credits: "积分 ×%s", Price: "价格 ×%s", UsageCredits: "扣 usage credits，不占订阅额度", API: "API ×%s",
-	Speed: "提速最多 ×%s", Unstated: "提速未公布", Approx: "提速约 ×%s", TimeAtBest: "生成耗时最低 ×%s",
+	Speed: "提速最多 ×%s", Unstated: "提速未公布", Approx: "提速约 ×%s", TimeAtBest: "生成耗时最低 ×%s", TimeAbout: "生成耗时约 ×%s",
 	NotQuota: "", Rebill: "对话中途开启会按 fast 价重算一次整段上下文", Restricted: "仅 %s", Times: "每一档的成本再乘这个倍数",
 }
 
 var speedEN = speedText{
 	Harness: map[string]string{"codex": "Codex", "claude-code": "Claude Code"},
 	Quota:   "plan quota ×%s", Credits: "credits ×%s", Price: "price ×%s", UsageCredits: "billed to usage credits, not plan quota", API: "API ×%s",
-	Speed: "up to ×%s faster", Unstated: "speed-up not stated", Approx: "about ×%s faster", TimeAtBest: "generation time ≥ ×%s",
+	Speed: "up to ×%s faster", Unstated: "speed-up not stated", Approx: "about ×%s faster", TimeAtBest: "generation time ≥ ×%s", TimeAbout: "generation time about ×%s",
 	NotQuota: "", Rebill: "turning it on mid-conversation re-bills the whole context once", Restricted: "only %s", Times: "multiply any effort's cost by this",
 }
 
@@ -69,7 +69,7 @@ func (s Style) SpeedLine(t digest.ModelTier) string {
 	case sp.Qualifier == "up-to":
 		parts = append(parts, fmt.Sprintf(x.Speed, g(*sp.Ratio)), fmt.Sprintf(x.TimeAtBest, g(1 / *sp.Ratio)))
 	default:
-		parts = append(parts, fmt.Sprintf(x.Approx, g(*sp.Ratio)))
+		parts = append(parts, fmt.Sprintf(x.Approx, g(*sp.Ratio)), fmt.Sprintf(x.TimeAbout, g(1 / *sp.Ratio)))
 	}
 	if t.Has("restricted-plans") {
 		var ps []string

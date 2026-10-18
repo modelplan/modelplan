@@ -95,6 +95,24 @@ type Account struct {
 	Via        string    `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs; codexbar: read by CodexBar
 	Headroom   string    `json:"headroom"`      // spend | normal | conserve | exhausted | unknown
 	Deciding   string    `json:"deciding,omitempty"`
+	// Pool: the allowance the session draws from when the account keeps more than one. Codex
+	// meters some models from their own allowance under another limit id (GPT Reserve is a weekly
+	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
+	Pool string `json:"pool,omitempty"`
+}
+
+// InPool: the window meters the account's pool. An account without a window of its pool keeps
+// every window.
+func (a *Account) InPool(w *Window) bool {
+	if w.Limit == a.Pool {
+		return true
+	}
+	for i := range a.Windows {
+		if a.Windows[i].Limit == a.Pool {
+			return false
+		}
+	}
+	return true
 }
 
 type SourceStatus struct {
@@ -152,7 +170,13 @@ func Evaluate(a *Account, now time.Time) {
 	for i := range a.Windows {
 		evalWindow(&a.Windows[i], now)
 	}
-	a.Headroom, a.Deciding = headroom(a.Windows)
+	var pool []Window
+	for i := range a.Windows {
+		if a.InPool(&a.Windows[i]) {
+			pool = append(pool, a.Windows[i])
+		}
+	}
+	a.Headroom, a.Deciding = headroom(pool)
 }
 
 func round1(v float64) *float64 { x := math.Round(v*10) / 10; return &x }

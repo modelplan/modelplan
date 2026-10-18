@@ -140,3 +140,35 @@ class Threads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReservePool(unittest.TestCase):
+    """GPT Reserve is its own weekly pool (as cli/internal/quota/pool_test.go)."""
+    now = dt.datetime(2026, 10, 17, 12, 0, tzinfo=dt.timezone.utc)
+
+    def report(self, main_last):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d)
+        day = d / "codex" / "sessions" / "2026" / "10" / "17"
+        day.mkdir(parents=True)
+        week = self.now + dt.timedelta(days=3)
+
+        def tc(at, lid, name, used, minutes, resets):
+            rl = {"limit_id": lid, "limit_name": name, "plan_type": "plus",
+                  "primary": {"used_percent": used, "window_minutes": minutes, "resets_at": int(resets.timestamp())}, "secondary": None}
+            return json.dumps({"timestamp": quota.iso(at), "type": "event_msg", "payload": {"type": "token_count", "rate_limits": rl}})
+        main = [tc(self.now - dt.timedelta(minutes=50), "codex", None, 20, 300, self.now + dt.timedelta(hours=2)),
+                tc(self.now - dt.timedelta(minutes=50), "codex", None, 30, 10080, week)]
+        reserve = [tc(self.now - dt.timedelta(minutes=40), "base_model_inference", "gpt-reserve", 100, 10080, week + dt.timedelta(hours=1))]
+        lines = ['{"timestamp":"2026-10-17T11:00:00Z","type":"session_meta","payload":{"id":"t1","source":"cli"}}',
+                 '{"timestamp":"2026-10-17T11:01:00Z","type":"turn_context","payload":{"model":"gpt-6-sol","effort":"medium"}}']
+        lines += reserve + main if main_last else main + reserve
+        (day / "rollout-2026-10-17T11-00-00-t1.jsonl").write_text("\n".join(lines) + "\n")
+        r = quota.report(str(d / "none"), str(d / "codex"), str(d / "none.json"), self.now)
+        return json.loads(json.dumps(r, default=str))["accounts"][0]
+
+    def test_pool_decides_headroom(self):
+        for main_last, pool, room, deciding in ((False, "reserve", "exhausted", "weekly"), (True, None, "spend", "weekly")):
+            a = self.report(main_last)
+            self.assertEqual({"/five_hour", "/weekly", "reserve/weekly"}, {w.get("limit", "") + "/" + w["kind"] for w in a["windows"]})
+            self.assertEqual((pool, room, deciding), (a.get("pool"), a["headroom"], a.get("deciding")))

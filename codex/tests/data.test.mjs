@@ -42,6 +42,10 @@ test('speed tiers: only Codex tiers reach the dashboard, and text shows quota mu
  const d=projectClient(f);assert.deepEqual(d.speedTiers.map(t=>t.id),['codex-fast','codex-ultrafast']);
  const text=renderEffort(d.models.find(m=>m.id==='astra'),'en',d.speedTiers);
  assert.match(text,/⚡ Codex Fast  plan quota ×2\.5 · credits ×2 · speed-up not stated/);
- assert.match(text,/⚡⚡ Codex Ultrafast  plan quota ×8 · up to ×8 faster · generation time ≥ ×0\.13/);
+ assert.match(text,/⚡⚡ Codex Ultrafast  plan quota ×8 · up to ×8 faster · generation time ≥ ×0\.13 · only Pro \$500\n/);
+ f.component.data.speedTiers[0].models[0].speed={ratio:1.5,qualifier:'approximate'};
+ const about=projectClient(f),astraAbout=about.models.find(m=>m.id==='astra');
+ assert.match(renderEffort(astraAbout,'en',about.speedTiers),/⚡ Codex Fast  plan quota ×2\.5 · credits ×2 · about ×1\.5 faster · generation time about ×0\.67\n/);
+ assert.match(renderEffort(astraAbout,'zh',about.speedTiers),/提速约 ×1\.5 · 生成耗时约 ×0\.67/);
  assert.deepEqual(projectClient(fixture).speedTiers,[]);
 });

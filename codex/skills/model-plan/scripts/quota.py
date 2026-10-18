@@ -279,7 +279,7 @@ def scan_rollout(path):
             data = f.read()
     except OSError:
         return None
-    r = {"path": path, "origin": "", "plan": "", "observed": None, "harness": None, "windows": {}}
+    r = {"path": path, "origin": "", "plan": "", "pool": "", "observed": None, "harness": None, "windows": {}}
     try:
         row = json.loads(first)
         if isinstance(row, dict) and row.get("type") == "session_meta" and isinstance(row.get("payload"), dict):
@@ -310,8 +310,8 @@ def scan_rollout(path):
             r["observed"] = ts
             if clip(rl.get("plan_type")):
                 r["plan"] = clip(rl["plan_type"])
-            lim = clip(rl.get("limit_id"))
-            lim = "" if lim == "codex" else lim
+            lim = codex_limit(rl.get("limit_id"), rl.get("limit_name"))
+            r["pool"] = lim  # the allowance this thread's latest turn drew from
             for cw in (rl.get("primary"), rl.get("secondary")):
                 if not isinstance(cw, dict):
                     continue
@@ -374,7 +374,16 @@ def merge_codex(rs):
     return acct
 
 
+def codex_limit(limit_id, name):
+    """"" for Codex's main allowance (limit id codex), "reserve" for GPT Reserve, else the limit id."""
+    limit_id, name = clip(limit_id), clip(name)
+    if limit_id == "base_model_inference" or name == "gpt-reserve":
+        return "reserve"
+    return "" if limit_id == "codex" else limit_id
+
+
 def codex_harness(rs, own):
+    """The thread's model and effort, and its pool: the allowance it last drew from."""
     pick = None
     for r in rs:
         h = r["harness"]
@@ -388,12 +397,12 @@ def codex_harness(rs, own):
         if pick is None or h["observedAt"] > pick["harness"]["observedAt"]:
             pick = r
     if pick is None:
-        return None
+        return None, ""
     h = dict(pick["harness"])
     h["attribution"] = "current-thread" if pick["path"] == own else "recent-thread"
     if pick["origin"]:
         h["origin"] = pick["origin"]
-    return h
+    return h, pick["pool"]
 
 
 def read_codex(home, thread=""):
@@ -417,9 +426,11 @@ def read_codex(home, thread=""):
     if acct is None:
         st.update(status="empty", reason="recent Codex sessions carry no rate-limit snapshot (API key login or no turn yet)")
         return [], st
-    h = codex_harness(rs, own)
+    h, pool = codex_harness(rs, own)
     if h:
         acct["harness"] = h
+    if pool:
+        acct["pool"] = pool
     st["status"] = "ok"
     return [acct], st
 
@@ -563,14 +574,16 @@ def evaluate(a, now):
     a["stale"] = bool(obs) and (now - obs).total_seconds() / 60 > STALE_AFTER
     for w in a["windows"]:
         eval_window(w, now)
-    a["headroom"], deciding = headroom(a["windows"])
+    # Headroom is the pool's: the allowance the session draws from (Codex keeps GPT Reserve apart).
+    pool = [w for w in a["windows"] if w.get("limit", "") == a.get("pool", "")] or a["windows"]
+    a["headroom"], deciding = headroom(pool)
     if deciding:
         a["deciding"] = deciding
 
 
 def ordered_account(a):
-    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "headroom", "deciding"]
-    out = {k: a[k] for k in keys if k in a and not (k in ("plan", "deciding") and not a[k]) and not (k == "harness" and not a[k])}
+    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "headroom", "deciding", "pool"]
+    out = {k: a[k] for k in keys if k in a and not (k in ("plan", "deciding", "pool") and not a[k]) and not (k == "harness" and not a[k])}
     if out.get("observedAt") is None:
         out["observedAt"] = dt.datetime(1, 1, 1, tzinfo=dt.timezone.utc)
     return out

@@ -71,7 +71,7 @@ func Link(a *quota.Account, r quota.Report, d *digest.Digest) (quota.Account, *P
 			}
 		}
 		if src != nil {
-			eff.Windows, eff.Headroom, eff.Deciding, eff.Stale = src.Windows, src.Headroom, src.Deciding, src.Stale
+			eff.Windows, eff.Headroom, eff.Deciding, eff.Stale, eff.Pool = src.Windows, src.Headroom, src.Deciding, src.Stale, src.Pool
 		}
 	}
 	return eff, p

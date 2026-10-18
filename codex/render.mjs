@@ -30,13 +30,15 @@ export function renderLineup(data,lang="zh") {
   }
   return out.join("\n")+"\n";
 }
-// Speed tiers for one model, as in `modelplan effort`: "⚡ Codex Fast  plan quota ×2.5 · credits ×2 · speed-up not stated".
-const g2=v=>String(Math.round(v*100)/100);
+// Speed tiers for one model, as in `modelplan effort`: "⚡ Codex Fast  plan quota ×2.5 · credits ×2 · about ×1.5 faster · generation time about ×0.67".
+const g2=v=>String(Math.round(v*100)/100),PLANS={"chatgpt-pro-500":"Pro $500","enterprise-eligible":"Enterprise","edu-eligible":"Edu"};
 export function renderSpeed(m,tiers=[],lang="zh") {
   const zh=lang==="zh",out=[];
   for(const t of tiers){const x=t.models.find(v=>v.modelId===m.id);if(!x)continue;
     const parts=t.billing.map(b=>b.billsTo==="plan-quota"?(zh?"套餐额度 ×":"plan quota ×")+g2(b.ratio):b.billsTo==="credits"?(zh?"积分 ×":"credits ×")+g2(b.ratio):null).filter(Boolean);
-    const s=x.speed.ratio;parts.push(s==null?(zh?"提速未公布":"speed-up not stated"):(zh?`提速最多 ×${g2(s)} · 生成耗时最低 ×${g2(1/s)}`:`up to ×${g2(s)} faster · generation time ≥ ×${g2(1/s)}`));
+    const s=x.speed.ratio,upTo=x.speed.qualifier==="up-to";
+    parts.push(s==null?(zh?"提速未公布":"speed-up not stated"):upTo?(zh?`提速最多 ×${g2(s)} · 生成耗时最低 ×${g2(1/s)}`:`up to ×${g2(s)} faster · generation time ≥ ×${g2(1/s)}`):(zh?`提速约 ×${g2(s)} · 生成耗时约 ×${g2(1/s)}`:`about ×${g2(s)} faster · generation time about ×${g2(1/s)}`));
+    if(t.caveats?.includes("restricted-plans")){const ps=(t.eligibility?.plans??[]).map(p=>PLANS[p]).filter(Boolean);if(ps.length)parts.push((zh?"仅 ":"only ")+ps.join(" / "));}
     out.push(`  ${t.tier==="ultrafast"?"⚡⚡":"⚡"} Codex ${t.label}  ${parts.join(" · ")}`);}
   return out.length?out.join("\n")+"\n":"";
 }
@@ -68,6 +70,8 @@ export const quotaWords = {
     headroom:{spend:"Surplus: it resets unused, step up or use Fast",normal:"On track: use the ★ effort",conserve:"Tight: stay at ★ or step down",exhausted:"Exhausted: wait for the reset or use another plan",unknown:"Quota unknown"},stale:"old reading",d:"d",h:"h",m:"m",
     others:"Other plans (read by CodexBar, on this machine)",reader:{cli:"read by the modelplan CLI",python:"read by the Python fallback",account:"Codex account reading"},setup:{codexbar:"Setup: %n was not read through CodexBar (%s%r); needs %x",codexbarCli:"Setup: CodexBar is on (%l) but its CLI is not available yet%f",fetching:"Setup: fetching the plugin's modelplan CLI %m; hints start with the next message after it lands",fetchFailed:"Setup: fetching the plugin's modelplan CLI %m failed (%f); click Retry on the dashboard",fetchOff:"Setup: fetching is off (MODELPLAN_PLUGIN_CLI=off) and no modelplan CLI is installed, so hints are off",unsupported:"Setup: no automatic CLI fetch on this system; download modelplan from the Releases page and put it on PATH",outdated:"Setup: using the CLI you installed, %v (older than the plugin's %m)",outdatedFetching:"; it switches once the plugin's copy lands",outdatedFailed:"; fetching the plugin's copy failed (%f), click Retry on the dashboard",failed:"Setup: modelplan CLI failed (%e)",hookNever:"Setup: the hook has not run on this machine yet, so hints are not verified. Plugins cannot see whether it is allowed; if not yet: in the desktop app click the hook icon with a yellow dot next to the input, find source modelplan-codex and allow it; in the CLI type /hooks. Send a message afterwards to verify",hookStale:"Setup: the hook definition changed and the new one has not run; Codex skips it until you review it again (the hook icon next to the input in the desktop app, or /hooks in the CLI)",hookFailed:"Setup: hints failed (%r), last success: %s; messages are not blocked, the next one retries",adviceFailed:"Setup: reading hints failed (%x)",panelOld:"The plugin was updated to %n but %o is still running: restart Codex (or open a new task) and look again",never:"never",ok:"Setup complete: CLI %v · hook ran %a ago on this machine (any chat) · hints computed",quiet:"; nothing to flag right now"},credits:"%n full reset credit(s) available%e · redeem them in Codex yourself",creditsExpire:", first expires %s",thread:{"current-thread":"this thread","recent-thread":"latest local thread"},threadUnknown:"may not be this conversation",defaultEffort:"default effort",observed:"seen %s ago",unseen:"not seen on this machine",runsOut:"at the recent rate, used up in %s",hintsOff:"Proactive hints off",hintReason:{cli_missing:"the plugin's modelplan CLI is not ready yet",cli_without_advise:"the installed modelplan CLI is too old for advise; upgrade it",advice_invalid:"the CLI's hints could not be parsed",cli_failed:"the modelplan CLI failed"}},
 };
+// Codex keeps GPT Reserve as its own allowance (limit "reserve"); other limit ids show as they are.
+export const limitName=l=>l==="reserve"?"Reserve":l;
 export function duration(min,q) {
   if(min<60)return `${min}${q.m}`;
   if(min<48*60)return min%60?`${Math.floor(min/60)}${q.h}${min%60}${q.m}`:`${min/60}${q.h}`;
@@ -81,13 +85,13 @@ export function renderQuota(quota,lang="zh",advice=null,setup=null) {
   const lines=[...threadLine(a.harness,q,quota.evaluatedAt),...a.windows.map(w=>{const kind=q.kinds[w.kind]??w.kind,used=typeof w.usedPercent==="number"?`${Math.round(w.usedPercent)}% ${q.used}`:"—";
     const reset=typeof w.resetsInMinutes==="number"?` · ${q.resets} ${duration(w.resetsInMinutes,q)}`:"";
     const out=typeof w.runsOutInMinutes==="number"?` · ${q.runsOut.replace("%s",duration(w.runsOutInMinutes,q))}`:"";
-    return `  ${kind}${w.limit?" "+w.limit:""} ${used}${reset} · ${q.pace[w.pace]??w.pace}${out}${age(w)}`;}),
+    return `  ${kind}${w.limit?" "+limitName(w.limit):""} ${used}${reset} · ${q.pace[w.pace]??w.pace}${out}${age(w)}`;}),
     ...["five_hour","weekly"].filter(k=>!a.windows.some(w=>w.kind===k&&!w.limit)).map(k=>`  ${q.kinds[k]} ${q.unseen}`)];
   const hints=(advice?.events??[]).map(e=>`  ${e.severity==="warn"?"!":"↑"} ${e.text[lang]??e.text.en}`);
   const cs=(a.cards??[]).filter(c=>c.kind==="full"&&c.count>0),first=cs.map(c=>c.expiresAt).filter(Boolean).sort()[0];
   const credits=cs.length?[`  ◆ ${q.credits.replace("%n",cs.reduce((s,c)=>s+c.count,0)).replace("%e",first?q.creditsExpire.replace("%s",first.slice(0,16).replace("T"," ")+"Z"):"")}`]:[];
   const reader=a.via==="codex-account"?q.reader.account:quota.reader?q.reader[quota.reader]:null;
-  return [head,...lines,...credits,`  → ${q.headroom[a.headroom]??a.headroom}`,...hints,...otherLines(quota,q),...status(),...(reader?[`  · ${reader}`]:[])].join("\n")+"\n";
+  return [head,...lines,...credits,`  → ${a.pool?limitName(a.pool)+" · ":""}${q.headroom[a.headroom]??a.headroom}`,...hints,...otherLines(quota,q),...status(),...(reader?[`  · ${reader}`]:[])].join("\n")+"\n";
 }
 // Plans read through CodexBar: one line each, its windows as CodexBar reported them.
 function otherLines(quota,q){

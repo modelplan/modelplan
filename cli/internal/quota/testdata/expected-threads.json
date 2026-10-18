@@ -66,7 +66,8 @@
         }
       ],
       "headroom": "normal",
-      "deciding": "five_hour"
+      "deciding": "five_hour",
+      "pool": "codex_sol"
     }
   ],
   "sources": [

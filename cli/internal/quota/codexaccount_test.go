@@ -93,7 +93,7 @@ func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
 	}
 	old := acctNow.Add(-2 * time.Hour)
 	r := Report{Accounts: []Account{{Source: "codex", Plan: "pro", ObservedAt: old, Harness: &Harness{Model: "gpt-6-astra"},
-		Windows: []Window{{Kind: "five_hour", Limit: "codex", UsedPercent: ptr(70.0), WindowMinutes: 300, ObservedAt: old}}}},
+		Windows: []Window{{Kind: "five_hour", UsedPercent: ptr(70.0), WindowMinutes: 300, ObservedAt: old}}}},
 		Sources: []SourceStatus{{Source: "codex", Status: "ok"}}}
 	applyAccount(&r, cache, acctNow)
 	a := r.Accounts[0]
