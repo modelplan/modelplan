@@ -30,7 +30,7 @@ static HIDDEN_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static LOGIN_PATH: OnceLock<OsString> = OnceLock::new();
 
 /// Runs a program with a deadline, returning stdout, or an error with the last stderr line.
-fn run(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>, String> {
+fn exec(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>, String> {
     let mut child = cmd
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -60,10 +60,17 @@ fn run(cmd: &mut Command, timeout: Duration) -> Result<Vec<u8>, String> {
         }
         std::thread::sleep(Duration::from_millis(40));
     };
-    let stdout = reader.join().map_err(|_| "cli_read")?.map_err(|e| e.to_string())?;
+    let stdout = reader
+        .join()
+        .map_err(|_| "cli_read")?
+        .map_err(|e| e.to_string())?;
     let stderr = errors.join().unwrap_or_default();
     if !status.success() {
-        let last = stderr.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let last = stderr
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("");
         return Err(format!("cli_exit {}: {last}", status.code().unwrap_or(-1)));
     }
     Ok(stdout)
@@ -76,7 +83,7 @@ fn login_path() -> &'static OsString {
             return current;
         }
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-        let probe = run(
+        let probe = exec(
             Command::new(shell).args(["-ilc", "printf '__MP_PATH__%s__MP_PATH__' \"$PATH\""]),
             SHELL_TIMEOUT,
         );
@@ -108,7 +115,10 @@ fn cli() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("MODELPLAN_CLI").map(PathBuf::from) {
         return p.is_file().then_some(p);
     }
-    if let Some(p) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("modelplan"))) {
+    if let Some(p) = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(|d| d.join("modelplan")))
+    {
         if p.is_file() {
             return Some(p);
         }
@@ -122,7 +132,8 @@ fn cli() -> Option<PathBuf> {
             .flatten()
             .filter_map(|e| {
                 let p = e.path().join("modelplan");
-                p.is_file().then(|| (version(&e.file_name().to_string_lossy()), p))
+                p.is_file()
+                    .then(|| (version(&e.file_name().to_string_lossy()), p))
             })
             .collect();
         found.sort();
@@ -130,7 +141,9 @@ fn cli() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    std::env::split_paths(login_path()).map(|d| d.join("modelplan")).find(|p| p.is_file())
+    std::env::split_paths(login_path())
+        .map(|d| d.join("modelplan"))
+        .find(|p| p.is_file())
 }
 
 /// The personal snapshot (docs/personal-snapshot.md), as the CLI prints it.
@@ -138,7 +151,12 @@ fn cli() -> Option<PathBuf> {
 async fn snapshot() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<String, String> {
         let cli = cli().ok_or("cli_missing")?;
-        let out = run(Command::new(cli).args(["desktop", "--json"]).env("PATH", login_path()), CLI_TIMEOUT)?;
+        let out = exec(
+            Command::new(cli)
+                .args(["desktop", "--json"])
+                .env("PATH", login_path()),
+            CLI_TIMEOUT,
+        )?;
         String::from_utf8(out).map_err(|e| e.to_string())
     })
     .await
@@ -149,9 +167,14 @@ async fn snapshot() -> Result<String, String> {
 #[tauri::command]
 fn set_menu_bar(app: AppHandle, title: String, tooltip: String) -> Result<(), String> {
     let tray = app.tray_by_id(TRAY).ok_or("no_tray")?;
-    tray.set_title(if title.is_empty() { None } else { Some(title) }).map_err(|e| e.to_string())?;
-    tray.set_tooltip(Some(if tooltip.is_empty() { "Model Plan".to_owned() } else { tooltip }))
-        .map_err(|e| e.to_string())
+    tray.set_title(if title.is_empty() { None } else { Some(title) })
+        .map_err(|e| e.to_string())?;
+    tray.set_tooltip(Some(if tooltip.is_empty() {
+        "Model Plan".to_owned()
+    } else {
+        tooltip
+    }))
+    .map_err(|e| e.to_string())
 }
 
 /// Opens the full window (one at a time).
@@ -179,12 +202,18 @@ fn quit(app: AppHandle) {
 }
 
 fn toggle_popover(app: &AppHandle) {
-    let Some(w) = app.get_webview_window(POPOVER) else { return };
+    let Some(w) = app.get_webview_window(POPOVER) else {
+        return;
+    };
     if w.is_visible().unwrap_or(false) {
         let _ = w.hide();
         return;
     }
-    let just_hidden = HIDDEN_AT.lock().ok().and_then(|t| *t).is_some_and(|t| t.elapsed() < Duration::from_millis(250));
+    let just_hidden = HIDDEN_AT
+        .lock()
+        .ok()
+        .and_then(|t| *t)
+        .is_some_and(|t| t.elapsed() < Duration::from_millis(250));
     if just_hidden {
         return;
     }
@@ -200,7 +229,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![snapshot, set_menu_bar, expand, quit])
+        .invoke_handler(tauri::generate_handler![
+            snapshot,
+            set_menu_bar,
+            expand,
+            quit
+        ])
         .setup(|app| {
             // A menu bar app: no Dock icon.
             #[cfg(target_os = "macos")]
@@ -229,7 +263,12 @@ pub fn run() {
                 })
                 .on_tray_icon_event(|tray, event| {
                     tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         toggle_popover(tray.app_handle());
                     }
                 })
@@ -250,7 +289,10 @@ pub fn run() {
         .expect("error while building the Model Plan app");
     app.run(|_, event| {
         // Closing the window keeps the menu bar item; only Quit ends the app.
-        if let RunEvent::ExitRequested { code: None, api, .. } = event {
+        if let RunEvent::ExitRequested {
+            code: None, api, ..
+        } = event
+        {
             api.prevent_exit();
         }
     });
@@ -262,16 +304,43 @@ mod tests {
 
     #[test]
     fn versions_sort_numerically() {
-        let mut v = vec![version("0.5.9"), version("0.5.25"), version("0.10.0"), version("x")];
+        let mut v = vec![
+            version("0.5.9"),
+            version("0.5.25"),
+            version("0.10.0"),
+            version("x"),
+        ];
         v.sort();
-        assert_eq!(v, vec![version("x"), version("0.5.9"), version("0.5.25"), version("0.10.0")]);
+        assert_eq!(
+            v,
+            vec![
+                version("x"),
+                version("0.5.9"),
+                version("0.5.25"),
+                version("0.10.0")
+            ]
+        );
     }
 
     #[test]
-    fn run_returns_stdout_and_reports_failures() {
-        assert_eq!(run(Command::new("sh").args(["-c", "printf ok"]), CLI_TIMEOUT).unwrap(), b"ok");
-        let err = run(Command::new("sh").args(["-c", "echo first >&2; echo boom >&2; exit 3"]), CLI_TIMEOUT).unwrap_err();
+    fn exec_returns_stdout_and_reports_failures() {
+        assert_eq!(
+            exec(Command::new("sh").args(["-c", "printf ok"]), CLI_TIMEOUT).unwrap(),
+            b"ok"
+        );
+        let err = exec(
+            Command::new("sh").args(["-c", "echo first >&2; echo boom >&2; exit 3"]),
+            CLI_TIMEOUT,
+        )
+        .unwrap_err();
         assert_eq!(err, "cli_exit 3: boom");
-        assert_eq!(run(Command::new("sh").args(["-c", "sleep 5"]), Duration::from_millis(200)).unwrap_err(), "cli_timeout");
+        assert_eq!(
+            exec(
+                Command::new("sh").args(["-c", "sleep 5"]),
+                Duration::from_millis(200)
+            )
+            .unwrap_err(),
+            "cli_timeout"
+        );
     }
 }

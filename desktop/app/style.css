@@ -44,7 +44,7 @@ h3{margin:6px 0 0;font:500 10.5px var(--mp-f-mono);letter-spacing:.08em;color:va
 .ok{color:var(--mp-ok,#8fd18a)}.tight{color:#ffc46b}.warn{color:var(--mp-flame,#df604c)}
 .events{list-style:none;margin:0;padding:0;display:grid;gap:6px}
 .ev{display:grid;gap:2px;padding:7px 9px;border-radius:9px;border:1px solid var(--mp-line);background:#ffffff06;font-size:12px}
-.ev.warn{border-color:#df604c88;background:#df604c14}
+.ev.warn{border-color:#df604c88;background:#df604c14;color:var(--mp-text)}
 .ev.warn .short{color:#ff9a7a}
 .ev.stale{opacity:.6}
 .ev .short{font:500 12px var(--mp-f-mono);color:var(--mp-lcd)}
@@ -85,6 +85,7 @@ h3{margin:6px 0 0;font:500 10.5px var(--mp-f-mono);letter-spacing:.08em;color:va
 .measured b{font:500 12px var(--mp-f-mono);color:var(--mp-lcd);margin-right:4px}
 .toggles{display:grid;gap:6px}
 .toggle{display:flex;gap:8px;align-items:center;font-size:12.5px}
+.toggle input{accent-color:#d9a94e}
 .field{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12.5px}
 .field select{background:#1b1714;border:1px solid var(--mp-bezel);border-radius:6px;padding:2px 6px}
 /* The browser dev page shows what the menu bar would. */
