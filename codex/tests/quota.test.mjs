@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { readAdvice, readQuota, pickCodex } from '../quota.mjs';
-import { renderQuota } from '../render.mjs';
+import { readAdvice, readQuota, pickCodex, readMeasured } from '../quota.mjs';
+import { renderQuota, renderMeasured } from '../render.mjs';
 
 const expected = JSON.parse(await readFile(new URL('../../cli/internal/quota/testdata/expected.json', import.meta.url), 'utf8'));
 
@@ -128,4 +128,26 @@ test('the CodexBar state is the CLI\'s own report; an older or missing CLI gives
   assert.deepEqual(s, { enabled: ['zai'], binary: '/c/CodexBarCLI', pinnedVersion: '0.76.0', pinned: true, fetch: null, providers: [{ id: 'zai', name: 'Z.ai / GLM Coding Plan', status: 'ok', reason: null, needs: null }] });
   assert.equal(await codexbarStatus({ cli: null }), null);
   assert.equal(await codexbarStatus({ cli: '/x/modelplan', exec: async () => { throw Error('usage: modelplan …'); } }), null);
+});
+
+test('measured speed comes from the CLI history, Codex rows only, and the effort text shows it against ★', async () => {
+  const report = { schemaVersion: 1, measured: [
+    { source: 'codex', model: 'gpt-6-astra', effort: 'medium', turns: 20, requests: 80, outputTokensPerSecond: 60, ttftSeconds: 1.8, turnSeconds: 40, turnOutputTokens: 1200 },
+    { source: 'codex', model: 'gpt-6-astra', effort: 'high', turns: 12, requests: 50, outputTokensPerSecond: 58, ttftSeconds: null, turnSeconds: 64, turnOutputTokens: 2040 },
+    { source: 'codex', model: 'gpt-6-astra', effort: 'high', speed: 'fast', turns: 6, requests: 30, outputTokensPerSecond: 81.2, turnSeconds: 50, turnOutputTokens: null },
+    { source: 'claude-code', model: 'claude-opus-5-5', effort: 'high', turns: 7, requests: 49, outputTokensPerSecond: 120 },
+    { source: 'codex', model: 'x'.repeat(200), turns: 1 }] };
+  const m = await readMeasured({ cli: '/bin/modelplan', exec: async (cmd, args) => { assert.deepEqual(args, ['history', '--json']); return JSON.stringify(report); } });
+  assert.equal(m.status, 'ok');
+  assert.deepEqual(m.rows.map(r => [r.effort, r.speed]), [['medium', ''], ['high', ''], ['high', 'fast']]);
+  assert.equal((await readMeasured({ cli: null })).reason, 'cli_missing');
+  assert.equal((await readMeasured({ cli: '/bin/old', exec: async () => '{"schemaVersion":1,"cycles":[]}' })).reason, 'cli_without_measured');
+  const astra = { id: 'astra', name: 'GPT-6 Astra', recommended: 'medium', harnessIds: { codex: ['gpt-6-astra'] },
+    configurations: [{ effort: 'medium', label: 'Med', ability: 50, cost: 1, time: 1 }, { effort: 'high', label: 'High', ability: 55, cost: 2, time: 1.4 }] };
+  const tiers = [{ tier: 'fast', models: [{ modelId: 'astra', speed: { ratio: 1.5, qualifier: 'approximate' } }] }];
+  const zh = renderMeasured(astra, m.rows, 'zh', tiers);
+  assert.match(zh, /▲ Codex · GPT-6 Astra\n  High +每轮 1分04秒 ×1\.60（公布 ×1\.40） · 2\.0k token ×1\.70 · 输出 58 tok\/s · 12 轮\n/);
+  assert.match(zh, /  High ⚡ +每轮 50秒 · 输出 81 tok\/s ×1\.40（公布约 ×1\.5） · 6 轮\n/);
+  assert.match(zh, /  ★Med +每轮 40秒 · 1\.2k token · 输出 60 tok\/s · 首字 1\.8秒 · 20 轮\n/);
+  assert.equal(renderMeasured({ ...astra, id: 'luna', harnessIds: {} }, m.rows, 'zh'), '');
 });

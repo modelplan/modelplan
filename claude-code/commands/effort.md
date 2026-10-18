@@ -6,4 +6,4 @@ allowed-tools: Bash(sh:*)
 
 !`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" effort --no-color $ARGUMENTS 2>&1`
 
-Show the ladder above in a code block. Then explain in two sentences, in the user's language, how much ability the efforts above ★ add and how many times the cost they take. Mention 估算 when time values are estimates. Do not change the session's model or effort; if the user wants to, tell them which setting to change.
+Show the ladder above in a code block. Then explain in two sentences, in the user's language, how much ability the efforts above ★ add and how many times the cost they take. Mention 估算 when time values are estimates. When a "measured here" section follows, add one sentence on what the user's own turns show against ★ (time, tokens) and, if it is there, how the published time multiple compares; it is measured on this machine only. Do not change the session's model or effort; if the user wants to, tell them which setting to change.

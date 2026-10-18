@@ -6,7 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 import { createReader, filterDashboard } from "./data.mjs";
 import { renderLineup, renderEffort, renderQuota } from "./render.mjs";
-import { readAdvice, readQuota } from "./quota.mjs";
+import { readAdvice, readMeasured, readQuota } from "./quota.mjs";
 import { fetchCli, fetchInBackground, supported } from "./install.mjs";
 import { pluginUpdate, setupStatus } from "./setup.mjs";
 
@@ -44,14 +44,14 @@ const inputSchema = { modelIds: z.array(z.string().max(180)).max(32).optional(),
   lang: z.enum(["zh", "en"]).optional(), view: z.enum(["lineup", "effort"]).optional(), modelId: z.string().max(180).optional() };
 async function result(args) {
   try {
-    const [published, quota, advice, state] = await Promise.all([reader({ refresh: args.refresh }), readQuota(), readAdvice(), setupStatus().then(async st => ({ ...st, pluginUpdate: await pluginUpdate({ version }) }))]);
+    const [published, quota, advice, state, measured] = await Promise.all([reader({ refresh: args.refresh }), readQuota(), readAdvice(), setupStatus().then(async st => ({ ...st, pluginUpdate: await pluginUpdate({ version }) })), readMeasured()]);
     const data = filterDashboard(published, args.modelIds);
     const model = args.modelId ? data.models.find(m => m.id === args.modelId) : null;
     if (args.modelId && !model) throw Error("unknown_model_id");
     if (args.view === "effort" && !model) throw Error("effort_view_requires_modelId");
     return {
-      structuredContent: { ...data, quota, advice, setup: setup(quota, advice, state), focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
-      content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang, data.speedTiers) : renderLineup(data, args.lang) },
+      structuredContent: { ...data, quota, advice, measured, setup: setup(quota, advice, state), focusModelId: model?.id ?? null, language: args.lang ?? "zh" },
+      content: [{ type: "text", text: args.view === "effort" ? renderEffort(model, args.lang, data.speedTiers, measured.rows) : renderLineup(data, args.lang) },
         { type: "text", text: renderQuota(quota, args.lang, advice, setup(quota, advice, state)) },
         { type: "text", text: `Publication ${data.publicationId}${data.stale ? " (last-good: " + data.error + ")" : ""}.\n` +
           "Codex public reset notices · not your own meter\n" + (data.resetFeed.events.slice(0,3).map(e =>
@@ -124,8 +124,8 @@ if (!process.argv.includes("--http")) {
       }
       if (req.method !== "GET") { res.writeHead(405); return res.end(); }
       if (url.pathname === "/api/dashboard") {
-        const [data, quota, advice, state] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice(), setupStatus().then(async st => ({ ...st, pluginUpdate: await pluginUpdate({ version }) }))]);
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice, setup: setup(quota, advice, state) }));
+        const [data, quota, advice, state, measured] = await Promise.all([reader({ refresh: url.searchParams.get("refresh") === "1" }), readQuota(), readAdvice(), setupStatus().then(async st => ({ ...st, pluginUpdate: await pluginUpdate({ version }) })), readMeasured()]);
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" }); return res.end(JSON.stringify({ ...data, quota, advice, measured, setup: setup(quota, advice, state) }));
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204); return res.end(); }
       if (["/", "/dashboard"].includes(url.pathname)) {

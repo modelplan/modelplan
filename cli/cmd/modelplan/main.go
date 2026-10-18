@@ -22,6 +22,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -42,7 +43,8 @@ const (
 const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
   modelplan lineup [--dev anthropic]   WHICH ENGINE: a developer's models at ★ recommended effort
-  modelplan effort [model]             one model's effort ladder (default: Claude Code's current model)
+  modelplan effort [model]             one model's effort ladder (default: Claude Code's current model),
+                                       with your own measured speed per effort when there is some
   modelplan models [--dev openai]      models with ★ effort, ability and cost
   modelplan quota                      your own usage windows: this machine's logs, and Codex's own
                                        account reading (--refresh-account asks it now; at most every
@@ -56,8 +58,10 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
   modelplan history                    how much of each window you used and under which model and
-                                       effort, recorded on this machine only (MODELPLAN_HISTORY=off
-                                       stops it); the basis for suggesting a default effort later
+                                       effort, and your measured speed (output tok/s, first token,
+                                       turn time and tokens) per configuration, recorded on this
+                                       machine only from log timestamps and token counts
+                                       (MODELPLAN_HISTORY=off stops both)
   modelplan declare <planId> [generation]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -70,7 +74,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
-     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
+     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history or speed measurement), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
 
@@ -211,6 +215,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		now := time.Now()
 		report := quota.Read(quotaPaths(st), now)
 		_ = history.Observe(st.Dir, report, now)
+		observeCodexSpeed(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
 		_ = state.Save(st.Dir, now)
 		if c.json {
@@ -224,12 +229,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "history":
 		l := history.Load(st.Dir)
+		now := time.Now()
+		observeCodexSpeed(st, now)
+		measured := speed.Summarize(speed.Load(st.Dir), now)
 		if c.json {
 			return printJSON(stdout, map[string]any{"schemaVersion": 1, "recording": !history.Off(), "file": history.Path(st.Dir), "cycles": nonNilCycles(l.Cycles),
-				"note": "Recorded on this machine only, never uploaded: per usage window, the use at its last reading and the points each harness configuration spent. Points before the first reading are not attributed."})
+				"measured": measured, "measuredFile": speed.Path(st.Dir),
+				"note": "Recorded on this machine only, never uploaded: per usage window, the use at its last reading and the points each harness configuration spent (points before the first reading are not attributed); per configuration, the measured output rate, time to first token and turn time and tokens, from the harness logs' timestamps and token counts only."})
 		}
 		d, _, _ := publication.Load(st)
-		style.History(stdout, l, d, history.Path(st.Dir), time.Now())
+		style.History(stdout, l, d, history.Path(st.Dir), now)
+		fmt.Fprintln(stdout)
+		style.Measured(stdout, measured, d, true)
 		return 0
 
 	case "statusline":
@@ -306,14 +317,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return exitErr
 		}
 		tiers := d.SpeedTiers(m.ID, "")
+		measured := render.MeasuredFor(speed.Summarize(speed.Load(st.Dir), time.Now()), d, m)
 		if c.json {
 			return printJSON(stdout, struct {
 				*digest.Model
 				SpeedTiers []digest.ModelTier `json:"speedTiers,omitempty"`
-			}{m, tiers})
+				Measured   []speed.Stat       `json:"measured"`
+			}{m, tiers, measured})
 		}
 		style.Effort(stdout, m)
 		style.Speed(stdout, tiers)
+		if len(measured) > 0 {
+			fmt.Fprintln(stdout)
+			style.Measured(stdout, measured, d, true)
+		}
 	case "models":
 		var ms []digest.Model
 		for _, m := range d.Models {
@@ -398,6 +415,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		if !preview {
 			quota.AttachRecent(st.Dir, &a)
 			_ = history.Observe(st.Dir, quota.Report{Accounts: []quota.Account{a}}, now)
+			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, true, now)
 		}
 		quota.Evaluate(&a, now)
 		acct = &a
@@ -489,8 +507,9 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	// Hook input names the prompting thread; nothing else is decoded from it.
 	var in struct {
-		SessionID string `json:"session_id"`
-		Model     string `json:"model"`
+		SessionID      string `json:"session_id"`
+		Model          string `json:"model"`
+		TranscriptPath string `json:"transcript_path"` // Claude Code: read for local speed measurement
 	}
 	_ = json.Unmarshal(b, &in)
 	now := time.Now()
@@ -528,6 +547,11 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	var es []advise.Event
 	report := quota.Read(paths, now)
 	_ = history.Observe(st.Dir, report, now)
+	if harness == "claude-code" {
+		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, now)
+	} else {
+		observeCodexSpeed(st, now)
+	}
 	for _, e := range advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}) {
 		if e.Source == harness || (harness == "claude-code" && e.Source == "user") {
 			es = append(es, e)
@@ -651,6 +675,13 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 		}
 	}
 	return out
+}
+
+// observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
+// runs by itself.
+func observeCodexSpeed(st *store.Store, now time.Time) {
+	home := quotaPaths(st).CodexHome
+	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, now)
 }
 
 func nonNilCycles(cs []history.Cycle) []history.Cycle {
