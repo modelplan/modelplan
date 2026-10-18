@@ -1,12 +1,17 @@
 {
   "id": "balanced-coding-unified-v5",
-  "version": "2026-10-18.1",
+  "version": "2026-10-18.2",
   "status": "experimental-scenario-policy-not-independent-validation",
   "adr": "docs/adr/0045-unified-effort-basis-with-time.md",
   "basis": {
     "ability": "displayed Model Plan ability (abilityWithinModel)",
     "cost": "displayed USD per reference task (expenseUsdPerTask)",
     "time": "same-model task time (taskTimeWithinModel; the cross-model coordinate when no same-model chain exists); only ratios within one model enter"
+  },
+  "time": {
+    "singleRunSpread": 1.3,
+    "singleRunNote": "A same-model time that is one run of its source spans ÷1.3 to ×1.3: Bug Hunt's 52 repeat groups (same model, effort and harness) have a median max/min wall time of 1.16 and a p90 of 1.65 (#485).",
+    "crossCheck": "When either side of a comparison is a single run, AA's published generation time for both efforts also scores the pair and the larger regret counts. It is a cross-check, never a task time."
   },
   "admission": {
     "note": "Unchanged from v4 and read on the AA Intelligence Index, a bounded percentage-like score where a fraction of the best is meaningful; the displayed ability is an interval scale where it is not.",

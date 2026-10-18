@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.213",
+  "version": "0.21.215",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -44,7 +44,7 @@
       "path": "data/calibration/balanced-coding-v5.json",
       "description": "Active ★ effort policy (balanced v5, ADR 0045): admission settings and the owner choices that bound the price and time weights",
       "license": "CC-BY-4.0",
-      "sha256": "b6030b603d618f6394a6f451e744c47dc590f09596f216e460ca0dbaa8884c32"
+      "sha256": "7c2cc6d9ef09bd42723b057bd95d5f63b50ab82d95aab8d066b933059d76cf43"
     },
     {
       "path": "data/calibration/generic-policy.json",
