@@ -449,9 +449,9 @@ func TestEarlyHeavyUseIsTightAndOffersACheaperModelThatKeepsAbility(t *testing.T
 	if alt == nil || alt.Action != "cheaper_model" || alt.Model != "sol" || alt.Label != "Med" && alt.Label != "High" {
 		t.Fatalf("alternative = %+v", alt)
 	}
-	// Sol High is the cheapest Sol effort at or above Astra Med's 51.4: not Med (51.2), not the
-	// API-only model (no Codex id).
-	if alt.Label != "High" || *alt.AbilityDelta != 2.4 || *alt.CostRatio != 0.25 {
+	// Sol Med is the cheapest Sol effort within the lineup's tie (1 point) of Astra Med's 51.4:
+	// 51.2 counts as equivalent; not the API-only model (no Codex id).
+	if alt.Label != "Med" || alt.Kind != "equivalent" || *alt.AbilityDelta != -0.2 || *alt.CostRatio != 0.18 {
 		t.Fatalf("alternative = %s %+v ×%v", alt.Label, *alt.AbilityDelta, *alt.CostRatio)
 	}
 	// Early and still light: the projection alone does not decide before a fifth of the window.

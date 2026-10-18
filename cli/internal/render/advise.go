@@ -12,7 +12,8 @@ type adviceText struct {
 	None, Tentative, Cards, Unknown   string
 	Exhausted, Wait, UseCard          string
 	Tight, TightOut, Down, Stay       string
-	OrModel                           string
+	ModelFirst                        string
+	Better, BetterSame                string
 	EffortFree, WaitOffpeak           string
 	Surplus, Up, UpAny, Stronger, Top string
 	Announced                         string
@@ -31,8 +32,11 @@ var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
 	Tight: "%s额度偏紧（剩 %s，%s后重置）", TightOut: "%s额度偏紧（剩 %s，按最近的用量约 %s后用完，%s后才重置）", Down: "降到 %s%s",
-	EffortFree: "这个套餐按请求次数计，降档不省额度；重活可以留到重置后", WaitOffpeak: "这个套餐按请求次数计，降档不省额度；%s后进入低倍率时段（%s → %s），不急的活可以等", Stay: "保持当前档，重活留给强模型", OrModel: "；或换 %s %s%s，能力不低于现在（除非这个任务确实需要当前模型）",
-	Surplus: "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
+	EffortFree: "这个套餐按请求次数计，降档不省额度；重活可以留到重置后", WaitOffpeak: "这个套餐按请求次数计，降档不省额度；%s后进入低倍率时段（%s → %s），不急的活可以等", Stay: "保持当前档，重活留给强模型",
+	ModelFirst: "换 %s %s%s，能力不降（这个任务确实需要当前模型的话就不换）；不换就%s",
+	Better:     "%s 在用 %s %s：%s %s 更强也更省%s。按综合分，这个任务确实需要当前模型的话就不换",
+	BetterSame: "%s 在用 %s %s：%s %s 能力相当、成本省得多%s。按综合分，这个任务确实需要当前模型的话就不换",
+	Surplus:    "%s还剩 %s，%s后重置，用不完就作废", OrFast: "；或开 %s（套餐额度 ×%s，%s）", FastUnstated: "提速未公布", FastUpTo: "提速最多 ×%s",
 	Announced: "Codex 官方预告重置（%s）：如果包含你的账号，%s额度剩下的 %s 届时作废", Up: "可升到 %s%s", UpAny: "可以升一档或换更强的模型", Stronger: "可换 %s %s%s", Top: "已在最高档，照常用",
 	Back: "%s已于 %s 重置", BackTo: "可换回 %s%s", BackNone: "额度已恢复",
 	FastFirst: "先关掉 %s（额度消耗 ×%s）；", FastFirstThen: "先关掉 %s（额度消耗 ×%s）；还不够再%s",
@@ -51,8 +55,11 @@ var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
 	Tight: "%s is tight (%s left, resets in %s)", TightOut: "%s is tight (%s left; at the recent rate it runs out in %s, before the reset in %s)", Down: "step down to %s%s",
-	EffortFree: "this plan counts requests, so a lower effort saves no quota; save heavy work for after the reset", WaitOffpeak: "this plan counts requests, so a lower effort saves no quota; the rate drops in %s (%s → %s), so work that can wait is cheaper then", Stay: "stay at this effort and keep the strong model for the hard parts", OrModel: "; or switch to %s %s%s, which scores at least as high (unless this task needs the current model)",
-	Surplus: "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
+	EffortFree: "this plan counts requests, so a lower effort saves no quota; save heavy work for after the reset", WaitOffpeak: "this plan counts requests, so a lower effort saves no quota; the rate drops in %s (%s → %s), so work that can wait is cheaper then", Stay: "stay at this effort and keep the strong model for the hard parts",
+	ModelFirst: "switch to %s %s%s, which scores as high (unless this task needs the current model); otherwise %s",
+	Better:     "%s is on %s %s: %s %s is stronger and cheaper%s. By overall score; keep the current model if this task needs it",
+	BetterSame: "%s is on %s %s: %s %s scores about the same for much less%s. By overall score; keep the current model if this task needs it",
+	Surplus:    "%s has %s left and resets in %s; unused allowance is lost", OrFast: "; or turn on %s (plan quota ×%s, %s)", FastUnstated: "speed-up not stated", FastUpTo: "up to ×%s faster",
 	Announced: "Codex announced a reset (%s): if it covers your account, the %s left in your %s is void then", Up: "step up to %s%s", UpAny: "worth a higher effort or a stronger model", Stronger: "switch to %s %s%s", Top: "already at the top effort",
 	Back: "%s reset at %s", BackTo: "switch back to %s%s", BackNone: "the allowance is back",
 	FastFirst: "turn %s off first (it draws quota ×%s); ", FastFirstThen: "turn %s off first (it draws quota ×%s); if that is not enough, %s",
@@ -178,13 +185,23 @@ func (s Style) AdviceLine(e advise.Event) string {
 				act = fmt.Sprintf(t.FastFirst, fs.Label, g(fs.QuotaRatio)) + act
 			}
 		}
+		// Another model that keeps the ability comes first: it saves quota without losing anything.
 		if alt := e.Alternative; alt != nil && alt.Label != "" {
-			act += fmt.Sprintf(t.OrModel, Short(alt.ModelName), label(alt), s.stepTail(alt))
+			act = fmt.Sprintf(t.ModelFirst, Short(alt.ModelName), label(alt), s.stepTail(alt), act)
 		}
 		if e.RunsOutInMinutes != nil {
 			return fmt.Sprintf(t.TightOut, s.who(e), pct(e.RemainingPercent), s.dur(e.RunsOutInMinutes), s.dur(e.InMinutes)) + sep + act
 		}
 		return fmt.Sprintf(t.Tight, s.who(e), pct(e.RemainingPercent), s.dur(e.InMinutes)) + sep + act
+	case advise.BetterModel:
+		cur, f := e.Current, t.Better
+		if st.Kind == "equivalent" {
+			f = t.BetterSame
+		}
+		if cur == nil {
+			cur = &advise.Step{ModelName: e.Model, Label: e.Effort}
+		}
+		return fmt.Sprintf(f, s.who(e), Short(cur.ModelName), label(cur), Short(st.ModelName), label(st), tail)
 	case advise.ResetSoonSurplus, advise.AnnouncedSurplus:
 		act := t.Top
 		switch {
@@ -269,6 +286,14 @@ func (s Style) AdviceShort(e advise.Event) string {
 		ratio = fmt.Sprintf(" ×%.2f", *st.CostRatio)
 	}
 	switch {
+	case e.Type == advise.BetterModel && st.Label != "":
+		return s.c(okc, "→"+Short(st.ModelName)+" "+label(st)) + s.c(dim, ratio)
+	case e.Type == advise.WindowTight && e.Alternative != nil && e.Alternative.Label != "":
+		alt, r := e.Alternative, ""
+		if alt.CostRatio != nil {
+			r = fmt.Sprintf(" ×%.2f", *alt.CostRatio)
+		}
+		return s.c(warn, "→"+Short(alt.ModelName)+" "+label(alt)) + s.c(dim, r)
 	case (e.Type == advise.ResetSoonSurplus || e.Type == advise.AnnouncedSurplus) && st.Action == "step_up" && st.Label != "":
 		return s.c(okc, "↑"+label(st)) + s.c(dim, ratio)
 	case (e.Type == advise.ResetSoonSurplus || e.Type == advise.AnnouncedSurplus) && st.Action == "stronger_model":
@@ -302,6 +327,8 @@ func (s Style) Advice(w io.Writer, es []advise.Event) {
 			mark = s.c(warn, "!")
 		case e.Type == advise.SwitchBack:
 			mark = s.c(gold, "↺")
+		case e.Type == advise.BetterModel:
+			mark = s.c(okc, "→")
 		case e.Type == advise.PublicReset:
 			mark = s.c(tcyan, "◆")
 		case e.Type == advise.PeakStartsSoon || e.Type == advise.OffpeakStartsSoon || e.Type == advise.CardsExpiring:

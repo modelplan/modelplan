@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.24 (2026-10-18)
+
+- **Switch models, not just efforts.** When the publication marks the model in use as beaten (`dominatedBy`) and the model that beats it runs in the same harness, the CLI names it: its cheapest effort within the lineup's tie (1 point) of the current configuration at no more than 0.7× its cost. Today that is Fable 5.1 → Opus 5.5 (★Med: +2.5 points, ×0.52) and GPT-6 Astra → GPT-6.1 Sol (★Med: about the same, ×0.18). New event `better_model_available`, with `suggest.kind` (`stronger` | `equivalent`) and `current`. The prompt hook tells you once per model and effort and not again for 90 days (if you stay on it, you chose it); the Claude Code status line shows `→Opus 5.5 ★Med ×0.52` for a week.
+- **Tight windows name the model first.** A tight window's alternative (`cheaper_model`) now uses the same tie, so Astra Med finds Sol Med (−0.2 points, ×0.18) rather than Sol High, and the hint puts it before stepping down, since it keeps the ability; the status line shows `→Sol …` instead of `↓Low`.
+
 ## Codex plugin 0.15.13 and Claude Code plugin 0.7.13 (2026-10-18)
 
 - Pinned CLI v0.5.23: your measured speed per model, effort and Fast, on this machine only.

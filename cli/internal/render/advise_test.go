@@ -29,8 +29,8 @@ func TestAdviceLines(t *testing.T) {
 		{advise.Event{Type: advise.WindowTight, Source: "codex", Window: "weekly", InMinutes: n(8487), RemainingPercent: f(28),
 			Suggest:     &advise.Step{Action: "step_down", Label: "Low", AbilityDelta: f(-6.4), CostRatio: f(0.59)},
 			Alternative: &advise.Step{Action: "cheaper_model", ModelName: "GPT-6.1 Sol", Label: "High", AbilityDelta: f(2.4), CostRatio: f(0.25)}},
-			"Codex 每周额度偏紧（剩 28%，5天21时后重置）：降到 Low（-6.4分 ×0.59）；或换 GPT-6.1 Sol High（+2.4分 ×0.25），能力不低于现在（除非这个任务确实需要当前模型）",
-			"Codex week window is tight (28% left, resets in 5d21h): step down to Low (-6.4 pts ×0.59); or switch to GPT-6.1 Sol High (+2.4 pts ×0.25), which scores at least as high (unless this task needs the current model)"},
+			"Codex 每周额度偏紧（剩 28%，5天21时后重置）：换 GPT-6.1 Sol High（+2.4分 ×0.25），能力不降（这个任务确实需要当前模型的话就不换）；不换就降到 Low（-6.4分 ×0.59）",
+			"Codex week window is tight (28% left, resets in 5d21h): switch to GPT-6.1 Sol High (+2.4 pts ×0.25), which scores as high (unless this task needs the current model); otherwise step down to Low (-6.4 pts ×0.59)"},
 		{advise.Event{Type: advise.PeakStartsSoon, Source: "user", Plan: "zhipu-cn-legacy", InMinutes: n(30), Rate: &advise.Rate{Model: "GLM-5.3", From: f(1), To: f(3), Status: "TENTATIVE"}},
 			"zhipu-cn-legacy 30分后进入高峰：GLM-5.3 额度消耗 ×1 → ×3（待确认），重活可以提前做",
 			"zhipu-cn-legacy enters peak hours in 30m: GLM-5.3 quota rate ×1 → ×3 (tentative); do heavy work first"},
@@ -43,6 +43,14 @@ func TestAdviceLines(t *testing.T) {
 		{advise.Event{Type: advise.SwitchBack, Source: "claude-code", Window: "five_hour", At: &at, Suggest: &advise.Step{Action: "switch_back", Label: "Med", Recommended: true, AbilityDelta: f(-4.8), CostRatio: f(0.73)}},
 			"Claude Code 5小时已于 " + at.Local().Format("15:04") + " 重置：可换回 ★Med（-4.8分 ×0.73）",
 			"Claude Code 5h window reset at " + at.Local().Format("15:04") + ": switch back to ★Med (-4.8 pts ×0.73)"},
+		{advise.Event{Type: advise.BetterModel, Source: "claude-code", Current: &advise.Step{ModelName: "Claude Fable 5.1", Label: "Med", Recommended: true},
+			Suggest: &advise.Step{Action: "better_model", ModelName: "Claude Opus 5.5", Label: "Med", Recommended: true, Kind: "stronger", AbilityDelta: f(2.5), CostRatio: f(0.52)}},
+			"Claude Code 在用 Fable 5.1 ★Med：Opus 5.5 ★Med 更强也更省（+2.5分 ×0.52）。按综合分，这个任务确实需要当前模型的话就不换",
+			"Claude Code is on Fable 5.1 ★Med: Opus 5.5 ★Med is stronger and cheaper (+2.5 pts ×0.52). By overall score; keep the current model if this task needs it"},
+		{advise.Event{Type: advise.BetterModel, Source: "codex", Current: &advise.Step{ModelName: "GPT-6 Astra", Label: "Med", Recommended: true},
+			Suggest: &advise.Step{Action: "better_model", ModelName: "GPT-6.1 Sol", Label: "Med", Recommended: true, Kind: "equivalent", AbilityDelta: f(-0.2), CostRatio: f(0.18)}},
+			"Codex 在用 GPT-6 Astra ★Med：GPT-6.1 Sol ★Med 能力相当、成本省得多（-0.2分 ×0.18）。按综合分，这个任务确实需要当前模型的话就不换",
+			"Codex is on GPT-6 Astra ★Med: GPT-6.1 Sol ★Med scores about the same for much less (-0.2 pts ×0.18). By overall score; keep the current model if this task needs it"},
 	}
 	for _, c := range cases {
 		if got := (Style{T: ZH}).AdviceLine(c.e); got != c.zh {
@@ -204,5 +212,18 @@ func TestQuotaSegmentBarsAndNarrowWeek(t *testing.T) {
 	}
 	if c := (Style{Color: true}).QuotaSegment(a, ""); !strings.Contains(c, "\x1b[38;5;203m▓\x1b[0m") || !strings.Contains(c, "\x1b[38;5;120m▓▓▓▓▓▓▓\x1b[0m") {
 		t.Errorf("7%% left is red, 70%% green: %q", c)
+	}
+}
+
+func TestShortHintsForAnotherModel(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	st := Style{T: ZH}
+	opus := &advise.Step{Action: "better_model", ModelName: "Claude Opus 5.5", Label: "Med", Recommended: true, Kind: "stronger", AbilityDelta: f(2.5), CostRatio: f(0.52)}
+	if got := st.AdviceShort(advise.Event{Type: advise.BetterModel, Suggest: opus}); got != "→Opus 5.5 ★Med ×0.52" {
+		t.Errorf("better = %q", got)
+	}
+	tight := advise.Event{Type: advise.WindowTight, Suggest: &advise.Step{Action: "step_down", Label: "Low", CostRatio: f(0.42)}, Alternative: opus}
+	if got := st.AdviceShort(tight); got != "→Opus 5.5 ★Med ×0.52" {
+		t.Errorf("tight with a model that keeps the ability = %q", got)
 	}
 }

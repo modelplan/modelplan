@@ -17,14 +17,19 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/lineup"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
 // Event types, most urgent first (Rank).
 const (
-	WindowExhausted  = "window_exhausted"
-	WindowTight      = "window_tight"
-	SwitchBack       = "reset_passed_switch_back"
+	WindowExhausted = "window_exhausted"
+	WindowTight     = "window_tight"
+	SwitchBack      = "reset_passed_switch_back"
+	// BetterModel: the publication marks the session's model as beaten (dominatedBy), and the
+	// model that beats it runs in this harness at an effort that scores within a tie for clearly
+	// less. Told once per model and effort; the status line shows it for betterShown after that.
+	BetterModel      = "better_model_available"
 	ResetSoonSurplus = "reset_soon_with_surplus"
 	// AnnouncedSurplus: a provider announced a reset for a stated time; if it covers this account,
 	// what is left in the longer window is void then. Never proof that it covers this account.
@@ -35,7 +40,7 @@ const (
 	PublicReset       = "public_reset_announced"
 )
 
-var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, ResetSoonSurplus: 3, AnnouncedSurplus: 4, PeakStartsSoon: 5, OffpeakStartsSoon: 6, CardsExpiring: 7, PublicReset: 8}
+var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, BetterModel: 3, ResetSoonSurplus: 4, AnnouncedSurplus: 5, PeakStartsSoon: 6, OffpeakStartsSoon: 7, CardsExpiring: 8, PublicReset: 9}
 
 const (
 	// A surplus counts as "reset soon" in the last quarter of the window, as in quota's pace rule.
@@ -55,6 +60,12 @@ const (
 	// the longer window is left and that window would not reset on its own before it.
 	announcedLead    = 24 * time.Hour
 	announcedMinLeft = 20.0
+	// Another model is worth naming when it costs at most betterSaving of the current
+	// configuration. Once told, the status line keeps it for betterShown, and the hint is not
+	// repeated for betterFor: a user still on that model a week later chose it.
+	betterSaving = 0.7
+	betterShown  = 7 * 24 * time.Hour
+	betterFor    = 90 * 24 * time.Hour
 )
 
 // Step is a concrete suggestion against what the harness reports now.
@@ -66,6 +77,7 @@ type Step struct {
 	Label        string   `json:"label,omitempty"`  // display label
 	Recommended  bool     `json:"recommended,omitempty"`
 	ModelChange  bool     `json:"modelChange,omitempty"`  // switch_back: to another model than the current one
+	Kind         string   `json:"kind,omitempty"`         // better_model, cheaper_model: equivalent (within the lineup's tie) | stronger
 	AbilityDelta *float64 `json:"abilityDelta,omitempty"` // vs the current configuration
 	CostRatio    *float64 `json:"costRatio,omitempty"`    // vs the current configuration, in the plan's units when known
 	// wait_offpeak: when the model's time-of-day rate drops, and from what to what.
@@ -121,8 +133,10 @@ type Event struct {
 	Suggest          *Step  `json:"suggest,omitempty"`
 	// Alternative: when a window is tight, a cheaper configuration of another published model
 	// that scores at least as high as the current one (action cheaper_model).
-	Alternative *Step  `json:"alternative,omitempty"`
-	Speed       *Speed `json:"speed,omitempty"`
+	Alternative *Step `json:"alternative,omitempty"`
+	// Current: better_model only; the configuration in use, as published.
+	Current *Step  `json:"current,omitempty"`
+	Speed   *Speed `json:"speed,omitempty"`
 	// Fast: the harness runs the plan-quota Fast tier now (Codex), with what it costs.
 	Fast *Speed `json:"fast,omitempty"`
 	// FastOff: switch back only; Fast was turned on since the advice and draws extra quota.
@@ -188,6 +202,9 @@ func Derive(in Input) []Event {
 			in.State.arm(es)
 		}
 		out = append(out, es...)
+		if plan == nil && harnessOf(a.Source) != "" {
+			out = append(out, betterEvents(a, in.Digest, now)...)
+		}
 		out = append(out, cardEvents(a, now)...)
 		if a.Source == "user" && a.Plan != "" && in.Digest != nil {
 			out = append(out, rateEvents(a, in.Digest, now)...)
@@ -210,8 +227,32 @@ func Derive(in Input) []Event {
 			}
 		}
 	}
+	if in.State != nil {
+		for i := range out {
+			if out[i].Type == BetterModel {
+				out[i].noted = in.State.firstNoted(out[i].Key)
+			}
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool { return rank[out[i].Type] < rank[out[j].Type] })
 	return out
+}
+
+// betterEvents: a better model for the session's configuration, when there is one.
+func betterEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
+	cfg := current(a, d)
+	s := cfg.better(d, harnessOf(a.Source))
+	if s == nil {
+		return nil
+	}
+	cur := cfg.step("current", cfg.cur)
+	cur.AbilityDelta, cur.CostRatio = nil, nil
+	e := Event{Type: BetterModel, Severity: "info", Source: a.Source, Plan: a.Plan, Stale: a.Stale, Suggest: s, Current: cur,
+		Key: strings.Join([]string{"better", a.Source, cfg.model.ID, cfg.cur.Effort, s.Model, s.Effort}, "|")}
+	if h := a.Harness; h != nil {
+		e.Model, e.Effort = h.Model, h.Effort
+	}
+	return []Event{e}
 }
 
 func minutesUntil(t, now time.Time) *int {
@@ -414,9 +455,64 @@ func (c config) up(d *digest.Digest) *Step {
 	return &Step{Action: "none"}
 }
 
+// tie: the lineup's published comparison tolerance in points (scores this close are equivalent).
+func tie(l *lineup.Lineup) float64 {
+	if l != nil && l.Tie > 0 {
+		return l.Tie
+	}
+	return lineup.Tie
+}
+
+// better: when the publication marks the session's model as beaten by another (dominatedBy,
+// weaker or equivalent at ★), that model's cheapest effort usable in this harness that scores
+// within a tie of the current configuration and costs at most betterSaving of it. It follows
+// the published verdict; nil when the model is not beaten or nothing qualifies.
+func (c config) better(d *digest.Digest, harness string) *Step {
+	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || c.plan != nil || d == nil || harness == "" {
+		return nil
+	}
+	l := d.Lineup(c.model.DeveloperID)
+	r := (*lineup.Row)(nil)
+	if l != nil {
+		r = l.Row(c.model.ID)
+	}
+	if r == nil || r.DominatedBy == nil {
+		return nil
+	}
+	m := d.Model(r.DominatedBy.ID)
+	if m == nil || m.ID == c.model.ID || len(m.HarnessIDs[harness]) == 0 {
+		return nil
+	}
+	t := tie(l)
+	var best *digest.Effort
+	for i := range m.Efforts {
+		e := &m.Efforts[i]
+		if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-t || *e.Cost > *c.cur.Cost*betterSaving {
+			continue
+		}
+		if best == nil || *e.Cost < *best.Cost {
+			best = e
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	s := &Step{Action: "better_model", Model: m.ID, ModelName: m.Name, Effort: best.Effort, Label: best.Label, Recommended: best == m.Rec(), Kind: kindOf(*best.Ability-*c.cur.Ability, t)}
+	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
+	return s
+}
+
+func kindOf(delta, tie float64) string {
+	if delta > tie {
+		return "stronger"
+	}
+	return "equivalent"
+}
+
 // cheaper: the lowest-cost effort of another model in the developer's published lineup, usable
-// in this harness, that scores at least as high as the current configuration on the same cost
-// basis. Lowering the effort trades ability for quota; this keeps it. Nil when none qualifies.
+// in this harness, that scores within the lineup's tie of the current configuration or higher, on
+// the same cost basis. Lowering the effort trades ability for quota; this keeps it. Nil when none
+// qualifies.
 func (c config) cheaper(d *digest.Digest, harness string) *Step {
 	if c.plan != nil {
 		return c.cheaperInPlan(d, harness)
@@ -437,7 +533,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 		}
 		for i := range m.Efforts {
 			e := &m.Efforts[i]
-			if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability || *e.Cost >= *c.cur.Cost {
+			if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-tie(l) || *e.Cost >= *c.cur.Cost {
 				continue
 			}
 			if best == nil || *e.Cost < *best.Cost || (*e.Cost == *best.Cost && *e.Ability > *best.Ability) {
@@ -448,7 +544,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 	if best == nil {
 		return nil
 	}
-	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec()}
+	s := &Step{Action: "cheaper_model", Model: bestModel.ID, ModelName: bestModel.Name, Effort: best.Effort, Label: best.Label, Recommended: best == bestModel.Rec(), Kind: kindOf(*best.Ability-*c.cur.Ability, tie(l))}
 	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
 	return s
 }
