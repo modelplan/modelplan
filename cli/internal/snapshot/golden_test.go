@@ -1,0 +1,105 @@
+package snapshot
+
+import (
+	"encoding/json"
+	"flag"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
+	"github.com/modelplan/modelplan/cli/internal/store"
+)
+
+var update = flag.Bool("update", false, "rewrite testdata/snapshot.json")
+
+func n(v int) *int { return &v }
+
+// golden is a full snapshot: two harness sessions (one on a tight window, one on Codex Fast with a
+// Reserve allowance), a CodexBar account, the advice a desktop client notifies about and measured
+// speed. desktop/ reads testdata/snapshot.json, so the shell and the CLI share one contract.
+func golden() Snapshot {
+	e := func(k, l string, a, c, t float64) digest.Effort {
+		return digest.Effort{Effort: k, Label: l, Ability: f(a), Cost: f(c), Time: f(t), CostBasisID: "ref"}
+	}
+	d := &digest.Digest{Models: []digest.Model{
+		{ID: "opus", Name: "Claude Opus 5.5", DeveloperID: "anthropic", Recommended: "medium", HarnessIDs: map[string][]string{"claude-code": {"claude-opus-5-5"}},
+			Efforts: []digest.Effort{e("low", "Low", 48.1, 1.62, 0.55), e("medium", "Med", 55.4, 2.91, 0.8), e("high", "High", 60.2, 3.98, 1), e("max", "Max", 61, 6.4, 1.6)}},
+		{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium", HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+			Efforts: []digest.Effort{e("low", "Low", 45, 2.21, 0.4), e("medium", "Med", 51.4, 3.4, 0.45), e("high", "High", 53.9, 3.97, 0.6)}},
+	}}
+	at := func(m int) *time.Time { t := now.Add(time.Duration(m) * time.Minute); return &t }
+	seen := now.Add(-2 * time.Minute)
+	off, fast := false, 1.5
+	r := quota.Report{SchemaVersion: 1, EvaluatedAt: now, Accounts: []quota.Account{
+		{Source: "claude-code", ObservedAt: seen, Headroom: "conserve", Deciding: "five_hour",
+			Harness: &quota.Harness{Model: "claude-opus-5-5", Effort: "high", FastMode: &off, Version: "2.3.1", ObservedAt: &seen, Attribution: "current-thread"},
+			Windows: []quota.Window{
+				{Kind: "five_hour", UsedPercent: f(88), WindowMinutes: 300, ResetsAt: at(95), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(12), ResetsInMinutes: n(95),
+					ElapsedPercent: f(68), ProjectedPercent: f(129), AgeMinutes: n(2), RecentPercentPerHour: f(20.6), RunsOutInMinutes: n(35), Pace: "tight"},
+				{Kind: "weekly", UsedPercent: f(30), WindowMinutes: 10080, ResetsAt: at(4320), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(70), ResetsInMinutes: n(4320),
+					ElapsedPercent: f(57), ProjectedPercent: f(53), AgeMinutes: n(2), Pace: "on_track"},
+			}},
+		{Source: "codex", ObservedAt: seen, Headroom: "spend", Via: "codex-account",
+			Harness: &quota.Harness{Model: "gpt-6-astra", Effort: "medium", ServiceTier: "fast", Version: "0.130.0", ObservedAt: &seen, Attribution: "recent-thread", Origin: "cli"},
+			Windows: []quota.Window{
+				{Kind: "five_hour", UsedPercent: f(20), WindowMinutes: 300, ResetsAt: at(40), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(80), ResetsInMinutes: n(40),
+					ElapsedPercent: f(87), ProjectedPercent: f(23), AgeMinutes: n(2), Pace: "surplus"},
+				{Kind: "weekly", UsedPercent: f(45), WindowMinutes: 10080, ResetsAt: at(2880), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(55), ResetsInMinutes: n(2880),
+					ElapsedPercent: f(71), ProjectedPercent: f(63), AgeMinutes: n(2), Pace: "on_track"},
+				{Kind: "weekly", Limit: "reserve", UsedPercent: f(10), WindowMinutes: 10080, ResetsAt: at(2880), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(90),
+					ResetsInMinutes: n(2880), AgeMinutes: n(2), Pace: "on_track"},
+			}},
+		{Source: "codexbar:zai", Plan: "GLM Coding Plan", ObservedAt: seen, Headroom: "normal", Via: "codexbar",
+			Windows: []quota.Window{{Kind: "monthly", UsedPercent: f(40), ResetsAt: at(12 * 1440), ObservedAt: seen, RemainingPercent: f(60), ResetsInMinutes: n(12 * 1440), Pace: "on_track"}}},
+	}, Sources: []quota.SourceStatus{{Source: "claude-code", Status: "ok"}, {Source: "codex", Status: "ok"}, {Source: "user", Status: "missing"}, {Source: "codexbar:zai", Status: "ok"}}}
+
+	tight := advise.Event{Type: advise.WindowTight, Key: "window_tight|claude-code||five_hour|" + at(95).Format(time.RFC3339), Severity: "warn", Source: "claude-code",
+		Window: "five_hour", At: at(95), InMinutes: n(95), RemainingPercent: f(12), RunsOutInMinutes: n(35), Model: "claude-opus-5-5", Effort: "high",
+		Suggest: &advise.Step{Action: "step_down", Model: "opus", ModelName: "Claude Opus 5.5", Effort: "medium", Label: "Med", Recommended: true, AbilityDelta: f(-4.8), CostRatio: f(0.73)}}
+	better := advise.Event{Type: advise.BetterModel, Key: "better|codex|astra|medium|sol-6.1|medium", Severity: "info", Source: "codex", Model: "gpt-6-astra", Effort: "medium",
+		Suggest: &advise.Step{Action: "better_model", Model: "sol-6.1", ModelName: "GPT-6.1 Sol", Effort: "medium", Label: "Med", Recommended: true, Kind: "equivalent", AbilityDelta: f(-0.2), CostRatio: f(0.55)},
+		Current: &advise.Step{Action: "current", Model: "astra", ModelName: "GPT-6 Astra", Effort: "medium", Label: "Med", Recommended: true}}
+	surplus := advise.Event{Type: advise.ResetSoonSurplus, Key: "reset_soon_with_surplus|codex||five_hour|" + at(40).Format(time.RFC3339), Severity: "info", Source: "codex",
+		Window: "five_hour", At: at(40), InMinutes: n(40), RemainingPercent: f(80), Model: "gpt-6-astra", Effort: "medium",
+		Suggest: &advise.Step{Action: "step_up", Model: "astra", ModelName: "GPT-6 Astra", Effort: "high", Label: "High", AbilityDelta: f(2.5), CostRatio: f(1.17)},
+		Fast:    &advise.Speed{Tier: "fast", Label: "Fast", QuotaRatio: 2, SpeedRatio: &fast, Qualifier: "approximate"}}
+	back := advise.Event{Type: advise.SwitchBack, Key: "reset_passed_switch_back|claude-code|five_hour|" + now.Add(-30*time.Minute).Format(time.RFC3339), Severity: "info",
+		Source: "claude-code", Window: "five_hour", At: at(-30), Model: "claude-opus-5-5", Effort: "low",
+		Suggest: &advise.Step{Action: "switch_back", Model: "opus", ModelName: "Claude Opus 5.5", Effort: "medium", Label: "Med", Recommended: true}}
+
+	rate := func(v float64) *float64 { return &v }
+	measured := []speed.Stat{
+		{Source: "claude-code", Model: "claude-opus-5-5", Effort: "high", Days: 6, Requests: 412, Turns: 38, OutputTokensPerSecond: rate(116), TTFTSeconds: rate(1.9), TurnSeconds: rate(142), TurnOutputTokens: rate(3800)},
+		{Source: "claude-code", Model: "claude-opus-5-5", Effort: "medium", Days: 3, Requests: 120, Turns: 14, OutputTokensPerSecond: rate(121), TTFTSeconds: rate(1.6), TurnSeconds: rate(98), TurnOutputTokens: rate(2600)},
+		{Source: "codex", Model: "gpt-6-astra", Effort: "medium", Speed: "fast", Days: 2, Requests: 3, Turns: 2},
+	}
+	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Recording: true, CLIVersion: "0.5.25", Now: now,
+		State: store.State{PublicationID: "0d726f2402d395a043fb170e", PublishedAt: "2026-10-18T01:50:38Z", CheckedAt: now.Add(-20 * time.Minute), VerifiedAt: now.Add(-20 * time.Minute)}})
+}
+
+func TestGoldenSnapshot(t *testing.T) {
+	// The text gives clock times in the machine's zone; the golden file is in UTC.
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = time.UTC
+	got, err := json.MarshalIndent(golden(), "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = append(got, '\n')
+	if *update {
+		if err := os.WriteFile("testdata/snapshot.json", got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile("testdata/snapshot.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("testdata/snapshot.json is out of date (go test ./internal/snapshot -update):\n%s", got)
+	}
+}

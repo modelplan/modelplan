@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Desktop app preview (unreleased)
+
+- **`desktop/`: a Tauri menu bar app**, macOS first. The menu bar shows what is left in the windows of the harness you used last and the current hint (`12% · wk70% ↓★Med ×0.73`). A popover has Now (sessions against ★, Fast, advice), Quota (windows, resets, run-out, Reserve, CodexBar) and Effort (the open curves and ladder, with your measured speed). Notifications are sent once per advice: tight or exhausted, switch back, a better model on by default; surplus before a reset off. Personal data comes from the bundled CLI (`modelplan desktop --json`), public data from the hash-checked publication; nothing personal leaves the machine. CI builds an ad-hoc signed Apple Silicon `.dmg` to try; not notarized yet. See `desktop/README.md`.
+- The CLI's golden snapshot (`cli/internal/snapshot/testdata/snapshot.json`) is the contract the app is tested against.
+
 ## Codex plugin 0.15.15 and Claude Code plugin 0.7.15 (2026-10-18)
 
 - Pinned CLI v0.5.25: a tight hint that already offers a model switch is not repeated as a separate better-model hint.

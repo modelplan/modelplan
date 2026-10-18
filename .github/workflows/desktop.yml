@@ -1,0 +1,78 @@
+name: desktop
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+  shell:
+    # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@1.90.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci --ignore-scripts && npm run build
+      - working-directory: desktop/src-tauri
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+  macos:
+    # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci --ignore-scripts
+      - run: node scripts/fetch-cli.mjs aarch64-apple-darwin
+      - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json -- --locked
+      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/Model Plan.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Model-Plan-macOS-arm64-unsigned
+          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 14

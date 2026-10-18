@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The popover and the expanded window: notifications, local settings, the published data and links to modelplan.ai only.",
+  "windows": ["popover", "main"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://modelplan.ai/publications/*" }]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://modelplan.ai/*" }, { "url": "https://github.com/modelplan/*" }]
+    }
+  ]
+}
