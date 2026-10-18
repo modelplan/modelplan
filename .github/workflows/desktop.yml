@@ -49,11 +49,7 @@ jobs:
           workspaces: desktop/src-tauri
       - run: npm ci --ignore-scripts && npm run build
       - working-directory: desktop/src-tauri
-        run: cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Cargo.lock
-          path: desktop/src-tauri/Cargo.lock
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   macos:
     # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
     runs-on: macos-latest
@@ -73,7 +69,7 @@ jobs:
           workspaces: desktop/src-tauri
       - run: npm ci --ignore-scripts
       - run: node scripts/fetch-cli.mjs aarch64-apple-darwin
-      - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json
+      - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json -- --locked
       - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/Model Plan.app"
       - uses: actions/upload-artifact@v4
         with:
