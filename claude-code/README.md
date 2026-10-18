@@ -36,6 +36,7 @@ Model Plan's verified public data plus your own quota inside Claude Code. Read-o
 - 档位和 fast 状态来自 Claude Code 本身；★ 是 Model Plan 的推荐档。
 - 额度：Claude Code 只把 5 小时 / 7 天用量传给状态栏（Pro / Max 订阅）。Model Plan 状态栏把这几个数字存进本机缓存，`/modelplan:plan` 和 Skill 才读得到。不上传任何东西。
 - 额度记录：状态栏和钩子运行时，CLI 还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history` 查看，保留 5 小时周期 28 天、每周周期 12 周；`MODELPLAN_HISTORY=off` 停止记录）。以后据此按你自己的几周用量建议默认档位。同时开多个会话时，用量算在最近刷新状态栏的那个会话的档位上。
+- 实测速度：状态栏和钩子运行时，CLI 还会读当前会话记录里的时间戳和 token 数（不读对话内容），按模型、档位和 Fast 统计输出 tok/s、首字延迟、每轮耗时和 token；`/modelplan:effort` 和 `modelplan history` 里显示，和 ★ 推荐档对比。每份记录只存本机，同样由 `MODELPLAN_HISTORY=off` 关闭。
 - `↑`：这个窗口重置前大概率用不完，升档不浪费。注意 Claude Code 的 fast 模式扣的是 usage credits（另付费），不占订阅额度，额度富余不是开 fast 的理由。`↓`：按当前速度会提前用完，保持 ★ 或降一档。`≈2时20分用完`：按最近 10–45 分钟的用量，这个窗口约 2 小时 20 分钟后用完，早于重置（只在 3 小时内会用完时显示，同时算作偏紧）。
 - `↑High ×1.37`：5 小时窗口 40 分钟后重置还剩很多，可以升到 High，成本是现在的 1.37 倍。`↓★Med ×0.73`：偏紧，降回 ★。`↺★Med`：之前提示过升档或降档的窗口已经重置，可以换回提示前用的档位（这里是 ★Med）。你照提示改过档才会出现，从出现起显示 90 分钟；重置后你下一次发消息时也会说一次（24 小时内）。
 - 状态栏只读本地缓存，从不等网络。

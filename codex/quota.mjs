@@ -107,3 +107,22 @@ export async function readQuota({ exec = run, cli = findCli() } = {}) {
   }
   return { status: 'unavailable', reader: null, others: [], reason: 'no local reader: ' + tried.join(', ') + ' (install Python 3 or the modelplan CLI)', account: null };
 }
+
+// The user's measured speed per Codex configuration (output tok/s, first token, turn time and
+// tokens), from `modelplan history --json` (CLI 0.5.23+), which reads it from the same session logs
+// as timestamps and token counts only. The Skill's Python reader does not measure.
+const num = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+const id = v => typeof v === 'string' && v.length <= 96 ? v : '';
+export function pickMeasured(report) {
+  if (report?.schemaVersion !== 1) throw Error('history_invalid');
+  if (!Array.isArray(report.measured)) return { status: 'unavailable', reason: 'cli_without_measured', rows: [] };
+  const rows = report.measured.filter(r => r?.source === 'codex' && id(r.model)).map(r => ({ model: id(r.model), effort: id(r.effort), speed: id(r.speed),
+    turns: num(r.turns) ?? 0, requests: num(r.requests) ?? 0, outputTokensPerSecond: num(r.outputTokensPerSecond), ttftSeconds: num(r.ttftSeconds),
+    turnSeconds: num(r.turnSeconds), turnOutputTokens: num(r.turnOutputTokens) }));
+  return { status: 'ok', rows };
+}
+export async function readMeasured({ exec = run, cli = findCli() } = {}) {
+  if (!cli) return { status: 'unavailable', reason: 'cli_missing', rows: [] };
+  try { return pickMeasured(JSON.parse(await exec(cli, ['history', '--json']))); }
+  catch { return { status: 'unavailable', reason: 'cli_failed', rows: [] }; }
+}

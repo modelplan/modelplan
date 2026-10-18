@@ -42,7 +42,7 @@ export function renderSpeed(m,tiers=[],lang="zh") {
     out.push(`  ${t.tier==="ultrafast"?"⚡⚡":"⚡"} Codex ${t.label}  ${parts.join(" · ")}`);}
   return out.length?out.join("\n")+"\n":"";
 }
-export function renderEffort(m,lang="zh",tiers=[]) {
+export function renderEffort(m,lang="zh",tiers=[],measured=[]) {
   const t=words[lang],rec=recommendation(m),ri=m.configurations.indexOf(rec);
   const out=[`${m.name}  ${m.configurations.length} · ★ ${rec?.label??"—"} ${t.recommended} · ${t.vs} · ${t.step}`];
   for(let i=m.configurations.length-1;i>=0;i--){const c=m.configurations[i];
@@ -52,7 +52,38 @@ export function renderEffort(m,lang="zh",tiers=[]) {
     const time=value===null?"—":ratio(value)+((c.timeEstimated||rec.timeEstimated)?" "+t.estimated:"");
     out.push(`  ${i===ri?"◆":ri>=0&&i>ri?"┆":"│"} ${pad(i===ri?"★ "+c.label:c.label,8)}  ${t.ability} ${pad(a,14)}  ${t.cost} ${pad(cost,7)}  ${t.time} ${pad(time,6)}  ${stepUp(m.configurations,i,t.pts)}`.trimEnd());
   }
-  return out.join("\n")+"\n"+renderSpeed(m,tiers,lang);
+  return out.join("\n")+"\n"+renderSpeed(m,tiers,lang)+renderMeasured(m,measured,lang,tiers);
+}
+
+// The user's own measured speed for this model, as `modelplan effort`: each effort against ★ in
+// standard mode (with the published time multiple), a speed mode's output rate against the same
+// effort in standard mode (with the published speed-up). Rows come from `modelplan history --json`.
+export const measuredWords={
+  zh:{title:"你的实测（只在这台电脑上，近 28 天；只读时间戳和 token 数）",turn:"每轮 %s",tokens:"%s token",rate:"输出 %s tok/s",ttft:"首字 %s",turns:"%s 轮",few:"样本不足（%t 轮，%r 次请求）",dflt:"默认档",pub:"（公布 %s）",about:"（公布约 %s）",upTo:"（公布最多 %s）",s:"秒",m:"分"},
+  en:{title:"Measured here (this machine only, last 28 days; timestamps and token counts only)",turn:"turn %s",tokens:"%s tokens",rate:"%s tok/s out",ttft:"first token %s",turns:"%s turns",few:"too few samples (%t turns, %r requests)",dflt:"default",pub:" (published %s)",about:" (published about %s)",upTo:" (published up to %s)",s:"s",m:"m"},
+};
+export const measuredOf=(m,rows)=>(rows??[]).filter(r=>r.model===m.id||m.harnessIds?.codex?.includes(r.model));
+export const seconds=(v,w)=>v<10?v.toFixed(1)+w.s:v<60?Math.round(v)+w.s:Math.floor(Math.round(v)/60)+w.m+String(Math.round(v)%60).padStart(2,"0")+w.s;
+export const kTokens=v=>v<1000?String(Math.round(v)):(v/1000).toFixed(1)+"k";
+export function renderMeasured(m,rows,lang="zh",tiers=[]) {
+  const w=measuredWords[lang],xs=measuredOf(m,rows);if(!xs.length)return "";
+  const rec=recommendation(m),idx=x=>m.configurations.findIndex(c=>c.effort===x.effort);
+  xs.sort((a,b)=>idx(b)-idx(a)||(a.speed<b.speed?-1:a.speed>b.speed?1:0));
+  const star=xs.find(x=>!x.speed&&rec&&x.effort===rec.effort),x2=v=>"×"+v.toFixed(2);
+  const label=x=>{const c=x.effort?m.configurations.find(c=>c.effort===x.effort):null;let l=c?(c===rec?"★":"")+c.label:(x.effort||w.dflt);return x.speed?l+" ⚡"+(x.speed==="fast"?"":x.speed):l;};
+  const out=["",w.title,`▲ Codex · ${m.name}`];
+  for(const x of xs){
+    if(x.turnSeconds==null&&x.outputTokensPerSecond==null){out.push(`  ${pad(label(x),14)}  ${w.few.replace("%t",x.turns).replace("%r",x.requests)}`);continue;}
+    const vs=star&&!x.speed&&x.effort!==star.effort,parts=[];
+    if(x.turnSeconds!=null){let p=w.turn.replace("%s",seconds(x.turnSeconds,w));if(vs&&star.turnSeconds>0){p+=" "+x2(x.turnSeconds/star.turnSeconds);const c=m.configurations.find(c=>c.effort===x.effort);if(c?.time>0&&rec?.time>0)p+=w.pub.replace("%s",x2(c.time/rec.time));}parts.push(p);}
+    if(x.turnOutputTokens!=null)parts.push(w.tokens.replace("%s",kTokens(x.turnOutputTokens))+(vs&&star.turnOutputTokens>0?" "+x2(x.turnOutputTokens/star.turnOutputTokens):""));
+    if(x.outputTokensPerSecond!=null){let p=w.rate.replace("%s",Math.round(x.outputTokensPerSecond));const std=x.speed?xs.find(y=>!y.speed&&y.effort===x.effort&&y.outputTokensPerSecond>0):null;
+      if(std){p+=" "+x2(x.outputTokensPerSecond/std.outputTokensPerSecond);const t=tiers.find(t=>t.tier===x.speed),s=t?.models?.find(v=>v.modelId===m.id)?.speed;if(s?.ratio!=null)p+=(s.qualifier==="up-to"?w.upTo:w.about).replace("%s","×"+g2(s.ratio));}parts.push(p);}
+    if(x.ttftSeconds!=null)parts.push(w.ttft.replace("%s",seconds(x.ttftSeconds,w)));
+    parts.push(w.turns.replace("%s",x.turns));
+    out.push(`  ${pad(label(x),14)}  ${parts.join(" · ")}`);
+  }
+  return out.join("\n")+"\n";
 }
 
 // One effort against the next lower one, as in the CLI: "↑ +3.7分 ×1.45".

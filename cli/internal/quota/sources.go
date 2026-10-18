@@ -33,6 +33,8 @@ type StatuslineInput struct {
 		Level string `json:"level"`
 	} `json:"effort"`
 	FastMode *bool `json:"fast_mode"`
+	// TranscriptPath: the session's transcript, read only for local speed measurement.
+	TranscriptPath string `json:"transcript_path"`
 	// Endpoint is not part of the status-line JSON: the caller sets it from ANTHROPIC_BASE_URL,
 	// reduced to scheme, host and path.
 	Endpoint   string `json:"-"`
@@ -850,3 +852,31 @@ func DeclarePlan(path, planID, generation string, remove bool) error {
 	}
 	return writeAtomic(path, append(nb, '\n'))
 }
+
+// RecentRollouts: the newest n Codex session logs under codexHome, newest first.
+func RecentRollouts(codexHome string, n int) []string {
+	return newestRollouts(filepath.Join(codexHome, "sessions"), n)
+}
+
+// ThreadOrigin: where the thread of a rollout came from (cli, vscode, exec, subagent:review, …),
+// from its first line; "" when unknown.
+func ThreadOrigin(path string) string {
+	fh, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer fh.Close()
+	first, _ := bufio.NewReaderSize(io.LimitReader(fh, codexHead), 64<<10).ReadBytes('\n')
+	var l rolloutLine
+	var meta struct {
+		Source json.RawMessage `json:"source"`
+	}
+	if json.Unmarshal(first, &l) != nil || l.Type != "session_meta" || json.Unmarshal(l.Payload, &meta) != nil || len(meta.Source) == 0 {
+		return ""
+	}
+	return originOf(meta.Source)
+}
+
+// Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),
+// not the user's own work.
+func Background(origin, model string) bool { return background(origin, model) }

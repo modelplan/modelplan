@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## v0.5.23 (2026-10-18)
+
+- **Your measured speed.** Per model, effort and speed mode, over the last 28 days on this machine: output tokens per second of generation, the median time to the first token, and the median turn time and output tokens per turn. `modelplan effort <model>` shows the model's rows under its ladder, each effort against ★ in standard mode beside the published time multiple, and Fast against the same effort in Standard beside the published speed-up; `modelplan history` shows every model. `--json` adds `measured[]`.
+- Read from the current Claude Code session's transcript (the status line and hooks name it) and the recent Codex rollouts: timestamps, output token counts, model, effort and speed mode only; never prompts, replies or tool output, and no paths or ids are stored (`observed/speed.json`, per day). A figure needs 5 samples. `MODELPLAN_HISTORY=off` stops it with the quota history.
+
 ## Codex plugin 0.15.12 and Claude Code plugin 0.7.12 (2026-10-17)
 
 - Pinned CLI v0.5.22: GPT Reserve kept apart from the main Codex allowance; Codex Fast read as about ×1.5.
