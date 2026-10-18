@@ -164,6 +164,13 @@ For each model, the native effort (Low, Medium, High, XHigh, Max…) with the be
 </details>
 
 <details>
+<summary><b>Why isn't ★ the top effort, or the vendor's default?</b></summary>
+
+By design. ★ is the best-value effort among a model's own efforts; the top effort is always listed beside it, and the website can switch every model to its top effort. Cheap models often get higher efforts than expensive ones because one step up costs cents rather than dollars. Vendor defaults also weigh responsiveness and rate limits, so they are shown beside ★ as a reference, not copied. The ability score is a frozen scale (50 = the September 2026 frontier average), so it can be below 0 or above 100.
+
+</details>
+
+<details>
 <summary><b>Where do the numbers come from, and how fresh are they?</b></summary>
 
 Ability comes from public benchmarks (such as Artificial Analysis) on one scale; cost is the API cost of one reference coding task at official prices; time comes from public task timings, estimated and marked where missing. Plans come from official pages. A new publication is built and verified every few hours; the website and every client show when it was published.
