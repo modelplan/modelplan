@@ -134,7 +134,11 @@ func (s *State) Save(cache string, now time.Time) error {
 
 func (s *State) prune(now time.Time) {
 	for k, t := range s.Seen {
-		if now.Sub(t) > seenFor {
+		keep := seenFor
+		if strings.HasPrefix(k, "better|") || strings.HasPrefix(k, shownPrefix+"better|") {
+			keep = betterFor
+		}
+		if now.Sub(t) > keep {
 			delete(s.Seen, k)
 		}
 	}
@@ -360,8 +364,11 @@ func backTo(from *Config, acct *quota.Account, cfg config, d *digest.Digest) (*S
 }
 
 // InStatusLine: whether the status line still shows this event. A switch-back is shown for a
-// while after it first appeared; the prompt hook says it once either way.
+// while after it first appeared, a better model for a week; the prompt hook says each once.
 func (e Event) InStatusLine(now time.Time) bool {
+	if e.Type == BetterModel {
+		return e.noted == nil || now.Sub(*e.noted) <= betterShown
+	}
 	return e.Type != SwitchBack || e.noted == nil || now.Sub(*e.noted) <= switchBackShown
 }
 
@@ -370,6 +377,29 @@ func (e Event) InStatusLine(now time.Time) bool {
 func restarted(acct *quota.Account, a *Armed) bool {
 	w := windowNow(acct, a.Window)
 	return a.WindowResetAt != nil && w != nil && w.ResetsAt != nil && w.ResetsAt.After(*a.WindowResetAt) && !w.ObservedAt.Before(a.ResetAt)
+}
+
+// shownPrefix marks an event the status line has shown, apart from the hook having told it.
+const shownPrefix = "shown|"
+
+// firstNoted: when the user first saw an event, in the hook or the status line.
+func (s *State) firstNoted(key string) *time.Time {
+	var first *time.Time
+	for _, k := range []string{key, shownPrefix + key} {
+		if t, ok := s.Seen[k]; ok && (first == nil || t.Before(*first)) {
+			t := t
+			first = &t
+		}
+	}
+	return first
+}
+
+// NoteShown records that the status line showed a better-model hint, so it stops after
+// betterShown even when no hook tells it.
+func (s *State) NoteShown(e Event, now time.Time) {
+	if e.Type == BetterModel {
+		s.Once(shownPrefix+e.Key, now)
+	}
 }
 
 // lasts: how long after its reset an armed window may still say "switch back".
