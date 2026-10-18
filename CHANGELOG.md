@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.15 and Claude Code plugin 0.7.15 (2026-10-18)
+
+- Pinned CLI v0.5.25: a tight hint that already offers a model switch is not repeated as a separate better-model hint.
+
 ## v0.5.25 (2026-10-18)
 
 - **`modelplan desktop`** prints the personal snapshot for the coming desktop app: sessions against ★, quota accounts, advice events with their text and a short menu-bar form, measured speed. One call; the format is in `docs/personal-snapshot.md` and is the one a mobile client will later receive through end-to-end encrypted sync.
