@@ -2,6 +2,11 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.12 and Claude Code plugin 0.7.12 (2026-10-17)
+
+- Pinned CLI v0.5.22: GPT Reserve kept apart from the main Codex allowance; Codex Fast read as about ×1.5.
+- Codex: the text summary and the dashboard show a `Reserve` row and name the allowance in the verdict; Fast reads "about ×1.5 faster", Ultrafast lists its plans, and the dashboard estimates task time from the speed-up, as the website does.
+
 ## v0.5.22 (2026-10-17)
 
 - **GPT Reserve is its own allowance.** Codex meters GPT Reserve from a weekly allowance of its own (limit `base_model_inference`, `gpt-reserve`). It now shows as `weekly Reserve`, and the account's new `pool` says which allowance the latest thread drew from: headroom, hints and switch-back look only at that one, so a used-up Reserve no longer makes the main allowance tight (or the other way round). The Codex account reading keeps the two apart too; it used to fold windows of different limits into one.
