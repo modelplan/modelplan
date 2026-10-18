@@ -140,14 +140,14 @@ func TestBetterModelIsToldOnceAndShownForAWeek(t *testing.T) {
 	}
 }
 
-func TestTightOnABeatenModelOffersTheBetterOneFirst(t *testing.T) {
+func TestTightOnABeatenModelOffersTheBetterOneOnce(t *testing.T) {
 	d := betterDigest()
 	a := onModel("codex", "gpt-6-astra", "medium")
 	a.Windows[0].UsedPercent = f(90)
 	quota.Evaluate(&a, now)
 	es := derive(t, nil, d, a)
-	if len(es) < 2 || es[0].Type != WindowTight || es[1].Type != BetterModel {
-		t.Fatalf("events = %v", types(es))
+	if len(es) != 1 || es[0].Type != WindowTight {
+		t.Fatalf("the tight hint offers the switch, not a second hint too: %v", types(es))
 	}
 	if alt := es[0].Alternative; alt == nil || alt.Model != "sol-6.1" || alt.Label != "Med" || alt.Kind != "equivalent" {
 		t.Fatalf("alternative = %+v", es[0].Alternative)
