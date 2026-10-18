@@ -1,0 +1,69 @@
+{
+  "version": "vendor-effort-defaults-2026-10-18.1",
+  "status": "reference-only",
+  "checkedAt": "2026-10-18",
+  "note": "What each vendor's own client or API uses when the user picks no effort, or the start it recommends. A product setting, not a measured optimum; Model Plan's ★ is decided separately and may differ.",
+  "models": [
+    {
+      "modelId": "opus",
+      "defaults": [
+        { "surface": "claude-code", "effort": "medium", "kind": "product-default", "sourceUrl": "https://code.claude.com/docs/en/model-config", "quote": "Opus 5.5, Sonnet 5.5, and Haiku 5.5 default to `medium`" }
+      ]
+    },
+    {
+      "modelId": "sonnet-5.5",
+      "defaults": [
+        { "surface": "claude-code", "effort": "medium", "kind": "product-default", "sourceUrl": "https://code.claude.com/docs/en/model-config", "quote": "Opus 5.5, Sonnet 5.5, and Haiku 5.5 default to `medium`" }
+      ]
+    },
+    {
+      "modelId": "auto:anthropic:ccb37fec2677f068",
+      "defaults": [
+        { "surface": "claude-code", "effort": "medium", "kind": "product-default", "sourceUrl": "https://code.claude.com/docs/en/model-config", "quote": "Opus 5.5, Sonnet 5.5, and Haiku 5.5 default to `medium`" }
+      ]
+    },
+    {
+      "modelId": "fable",
+      "defaults": [
+        { "surface": "claude-code", "effort": "high", "kind": "product-default", "sourceUrl": "https://code.claude.com/docs/en/model-config", "quote": "`high` on every model that supports effort, except that Opus 5.5, Sonnet 5.5, and Haiku 5.5 default to `medium`" }
+      ]
+    },
+    {
+      "modelId": "sol-6.1",
+      "defaults": [
+        { "surface": "api", "effort": "medium", "kind": "api-default", "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning", "quote": "GPT-6.1 Sol does not support none or minimal and defaults to medium" }
+      ]
+    },
+    {
+      "modelId": "luna",
+      "defaults": [
+        { "surface": "codex", "effort": "high", "kind": "vendor-starting-point", "sourceUrl": "https://learn.chatgpt.com/docs/models", "quote": "Start with High for Luna or Light for Astra." },
+        { "surface": "api", "effort": "medium", "kind": "api-default", "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning", "quote": "GPT-6.1 Sol, GPT-6 Sol, and GPT-6 Luna also default to medium reasoning effort." }
+      ]
+    },
+    {
+      "modelId": "astra",
+      "defaults": [
+        { "surface": "codex", "effort": "low", "kind": "vendor-starting-point", "sourceUrl": "https://learn.chatgpt.com/docs/models", "quote": "Start with High for Luna or Light for Astra. In configuration, Astra’s Light setting is low." }
+      ]
+    },
+    {
+      "modelId": "sol-5.6",
+      "defaults": [
+        { "surface": "api", "effort": "medium", "kind": "api-default", "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning", "quote": "If you omit reasoning.effort, GPT-5.6 defaults to medium in both modes." }
+      ]
+    },
+    {
+      "modelId": "terra-5.6",
+      "defaults": [
+        { "surface": "api", "effort": "medium", "kind": "api-default", "sourceUrl": "https://developers.openai.com/api/docs/guides/reasoning", "quote": "If you omit reasoning.effort, GPT-5.6 defaults to medium in both modes." }
+      ]
+    },
+    {
+      "modelId": "glm",
+      "defaults": [
+        { "surface": "api", "effort": "max", "kind": "api-default", "sourceUrl": "https://docs.z.ai/guides/llm/glm-5.3", "quote": "Recorded 2026-09-27 in data/calibration/official-guidance.json (glm53-api-default)." }
+      ]
+    }
+  ]
+}
