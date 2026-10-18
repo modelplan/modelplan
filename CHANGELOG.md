@@ -2,6 +2,12 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Codex plugin 0.15.13 and Claude Code plugin 0.7.13 (2026-10-18)
+
+- Pinned CLI v0.5.23: your measured speed per model, effort and Fast, on this machine only.
+- Codex: the effort text lists the model's measured configurations, and the dashboard shows the chosen effort's measured turn time, tokens and tok/s against ★ (a Fast row's rate against Standard).
+- Claude Code: `/modelplan:effort` explains the measured section under the ladder.
+
 ## v0.5.23 (2026-10-18)
 
 - **Your measured speed.** Per model, effort and speed mode, over the last 28 days on this machine: output tokens per second of generation, the median time to the first token, and the median turn time and output tokens per turn. `modelplan effort <model>` shows the model's rows under its ladder, each effort against ★ in standard mode beside the published time multiple, and Fast against the same effort in Standard beside the published speed-up; `modelplan history` shows every model. `--json` adds `measured[]`.
