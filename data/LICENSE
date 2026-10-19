@@ -16,6 +16,11 @@ Third-party real-api-pricing/ retains its MIT notice. Raw benchmark observations
 and upstream-specific figures are not relicensed by this statement. Code and brand
 permissions are separate; see ../LICENSING.md and ../TRADEMARKS.md.
 
+This license covers only explicitly listed open-package files, not the entire
+maintained API. Ordinary API use and bulk redistribution are addressed separately
+at https://modelplan.ai/api-terms.md. These service terms do not add restrictions
+to copies already licensed under CC, MIT or another upstream license.
+
 =======================================================================
 
 Creative Commons Attribution-ShareAlike 4.0 International

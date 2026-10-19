@@ -11,3 +11,5 @@ This repository contains different kinds of material. A single badge does not re
 Changing the current release's license policy does not recall previously distributed copies. Preserve the relevant historical and contributor notices. Add a scoped license before publishing a new material type; consult the owner when the scope is unclear.
 
 Production scoring/recommendation source and full calibration materials are reserved in the private implementation. Public methodology documentation does not grant a license to that private source. Historical grants for already distributed copies remain unaffected.
+
+API access is separate from the limited open-data package; see [API data policy](docs/api-data-policy.md). Do not infer a blanket data license from a public endpoint or the software MIT license.

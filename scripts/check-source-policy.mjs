@@ -48,6 +48,12 @@ for (const [p, meta] of Object.entries(core.files)) {
     "credential-like content in " + p,
   );
 }
+// Legacy BY exports remain historical grants. New SA exports must obey the narrowed allowlist.
+const dataManifest = JSON.parse(await read("data/manifest.json"));
+if (dataManifest.license.id === "CC-BY-SA-4.0") {
+ const allowed = new Set(["data/client-harness-aliases.json", "data/model-developers.json", "data/model-identities.json", "data/calibration/official-guidance.json", "data/schemas/ranker-input.schema.json", "data/schemas/ranker-output.schema.json", "data/vendor-effort-defaults.json"]);
+ for (const item of dataManifest.files) assert.ok(allowed.has(item.path) || item.path.startsWith("data/real-api-pricing/"), "production data must not re-enter the open package: " + item.path);
+}
 for (const p of ["AGENTS.md", "CLAUDE.md"])
   assert.match((await read(p)).toString(), /AGENTS\.md|source-policy/);
 for (const p of tracked.filter(

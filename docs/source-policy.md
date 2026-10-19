@@ -34,3 +34,7 @@ The public data directory remains an output mirror, not a competing editing sour
 ## Required gate
 
 Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, agent instruction entry points and standard hosted runner policy. Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content into a convenient public folder.
+
+## API access is not the open-data license
+
+See [API data policy](api-data-policy.md). Preserve anonymous ordinary client/Agent reads while separating API terms from the limited, explicit open-data package. Do not label all API results CC BY-SA or MIT. Respect historical and upstream grants; new service terms cannot remove them. Full production/calibration records must not reappear in future exports.
