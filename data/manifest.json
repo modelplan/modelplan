@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.215",
+  "version": "0.21.223",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -14,7 +14,7 @@
       "path": "data/calendar-rule-registry.json",
       "description": "Reviewed calendar rules: peaks, off-peak hours, promotions and quota resets",
       "license": "CC-BY-4.0",
-      "sha256": "a37f45ee4e6ac9cf24c5a1755c352d1c28338b42b6b5185b2cf9b5033369efae"
+      "sha256": "743c3561cbc1e106685fe277894b8fc3c6eab87ba1cdca95a023e12396c0d0d6"
     },
     {
       "path": "data/calibration/balanced-coding-v2.json",

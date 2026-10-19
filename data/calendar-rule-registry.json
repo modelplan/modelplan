@@ -444,7 +444,7 @@
       }
     },
     {
-      "revision": 1,
+      "revision": 2,
       "generations": [],
       "clients": [],
       "conditions": [
@@ -467,7 +467,8 @@
       "models": [
         "deepseek-v4-pro-0813",
         "deepseek-v4-flash-0731",
-        "deepseek-v4.1-flash"
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017"
       ],
       "timezone": "Asia/Shanghai",
       "startHour": 22,
@@ -478,9 +479,9 @@
       "sourceUrl": "https://help.aliyun.com/zh/model-studio/token-plan-personal-overview",
       "kind": "night",
       "evidence": {
-        "sourceHash": "e9165806e822bd953fc57dd3d0d2b7829d926718c0942599394a629b1adf81eb",
-        "observedAt": "2026-10-16T16:12:37.073Z",
-        "quote": "限时夜间五折 ：每晚 22:00 - 次日 08:00 调用 deepseek-v4-pro-0813、deepseek-v4-flash-0731、deepseek-v4.1-flash，Credits 消耗享 5 折优惠。"
+        "sourceHash": "340eaa95240f2869b7a539371e7b73712649eaab9c5d35067091cae69b792db5",
+        "observedAt": "2026-10-19T02:46:58.945Z",
+        "quote": "限时夜间五折 ：每晚 22:00 - 次日 08:00 调用 deepseek-v4-pro-0813、deepseek-v4-flash-0731、deepseek-v4.1-flash、deepseek-v4.1-flash-1017，Credits 消耗享 5 折优惠。"
       }
     },
     {
@@ -520,7 +521,7 @@
       }
     },
     {
-      "revision": 1,
+      "revision": 2,
       "generations": [],
       "clients": [],
       "conditions": [
@@ -543,7 +544,8 @@
       "models": [
         "deepseek-v4-pro-0813",
         "deepseek-v4-flash-0731",
-        "deepseek-v4.1-flash"
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017"
       ],
       "timezone": "Asia/Shanghai",
       "startHour": 22,
@@ -554,9 +556,9 @@
       "sourceUrl": "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview",
       "kind": "night",
       "evidence": {
-        "sourceHash": "31a948cab2a440a23a79a1bd5bf52fc7b3e079c50b0bbd8d0f27234cb04cef7b",
-        "observedAt": "2026-10-16T16:12:40.301Z",
-        "quote": "Limited-time night discount (50% off) : Invocations between 22:00 and 08:00 (UTC+8) enjoy 50% off Credits consumption for deepseek-v4-pro-0813, deepseek-v4-flash-0731, and deepseek-v4.1-flash."
+        "sourceHash": "fa24a0bbf12b8a01b93679cb0a0a6b30d31af8ce51267b645c5b3a109caafbf3",
+        "observedAt": "2026-10-19T02:46:58.946Z",
+        "quote": "Limited-time night discount (50% off) : Invocations between 22:00 and 08:00 (UTC+8) enjoy 50% off Credits consumption for deepseek-v4-pro-0813, deepseek-v4-flash-0731, deepseek-v4.1-flash, and deepseek-v4.1-flash-1017."
       }
     },
     {
