@@ -131,3 +131,9 @@ Model Plan stands on many public projects; thank you to their authors and mainta
 Every published value keeps its original source and check time. Third-party estimates and news leads never rewrite plan terms without review. Vendor names and marks belong to their owners and only identify vendors.
 
 Found a wrong number? Please [open an issue](https://github.com/modelplan/modelplan/issues/new) with a link to the source.
+
+## Executable public core
+
+The original supplied-input computation is in [`core/`](core/): [`metrics.mjs`](core/metrics.mjs) performs normalization/aggregation, [`effort.ts`](core/effort.ts) contains balanced-v5 calibration and minimax regret, and [`lineup.ts`](core/lineup.ts) produces the frontier/verdicts. The private producer consumes a pinned, hash-verified public revision; the website's disclosure links that revision, rather than an inaccessible private source branch.
+
+With a full public checkout and Node 24+: `npm ci --prefix core && npm test --prefix core`. Tests use synthetic inputs and exercise unknown values, integrity and deterministic outcomes. The source/parameter/input requirements are explicit: reproducing a live result also requires the same legally acquired source observations, admitted configurations, protocol identity, frozen normalization references and policy configuration. This is not a redistribution of third-party raw benchmark data, and the private collection/review/publication implementation and official visual source are not included. Runtime clients still display published verdicts rather than fitting their own scoring policy.
