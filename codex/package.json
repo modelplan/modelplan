@@ -1,6 +1,6 @@
 {
   "name": "@modelplan/codex",
-  "version": "0.15.15",
+  "version": "0.15.16",
   "type": "module",
   "scripts": {
     "start": "node server.mjs --http",
