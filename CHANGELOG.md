@@ -2,6 +2,12 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Public core / Codex 0.15.17 / Desktop community 0.1.1
+
+- Public computation/verifier source now has a canonical `core/` module with hash metadata and synthetic tests; clients continue to display published recommendations.
+- The desktop builds independently with a neutral community appearance. A private official package is an explicit optional build input; historical MIT grants remain documented.
+- Source/agent/CI policies separate public software, per-file data licenses, official visuals and brand identity. New original-data publications use CC BY-SA 4.0; historical and third-party exceptions remain separate.
+
 ## Desktop app preview (unreleased)
 
 - **`desktop/`: a Tauri menu bar app**, macOS first. The menu bar shows what is left in the windows of the harness you used last and the current hint (`12% · wk70% ↓★Med ×0.73`). A popover has Now (sessions against ★, Fast, advice), Quota (windows, resets, run-out, Reserve, CodexBar) and Effort (the open curves and ladder, with your measured speed). Notifications are sent once per advice: tight or exhausted, switch back, a better model on by default; surplus before a reset off. Personal data comes from the bundled CLI (`modelplan desktop --json`), public data from the hash-checked publication; nothing personal leaves the machine. CI builds an ad-hoc signed Apple Silicon `.dmg` to try; not notarized yet. See `desktop/README.md`.

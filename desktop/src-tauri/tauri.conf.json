@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Model Plan",
-  "version": "0.1.0",
-  "identifier": "ai.modelplan.desktop",
+  "productName": "Model Plan Community",
+  "version": "0.1.1",
+  "identifier": "ai.modelplan.community",
   "build": {
     "frontendDist": "../app/dist",
     "beforeDevCommand": "npm run build",
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "popover",
-        "title": "Model Plan",
+        "title": "Model Plan Community",
         "url": "index.html",
         "width": 380,
         "height": 580,

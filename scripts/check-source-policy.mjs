@@ -1,0 +1,69 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
+const root = resolve(new URL("..", import.meta.url).pathname);
+const read = async (p) => readFile(resolve(root, p));
+const hash = (b) => createHash("sha256").update(b).digest("hex");
+const policy = JSON.parse(await read("source-policy.json"));
+const tracked = execFileSync(
+  "git",
+  ["ls-files", "--cached", "--others", "--exclude-standard"],
+  { cwd: root, encoding: "utf8" },
+)
+  .trim()
+  .split("\n")
+  .filter(Boolean);
+for (const p of tracked) {
+  if (p.startsWith("docs/assets/") || p.startsWith("codex/ui/kit/"))
+    assert.ok(
+      Object.hasOwn(policy.legacyVisuals, p),
+      `new official visual requires private placement: ${p}`,
+    );
+  assert.ok(
+    !policy.privatePrefixes.some((prefix) => p.startsWith(prefix)),
+    `private source path: ${p}`,
+  );
+  assert.ok(
+    !/(^|\/)\.env(?:$|\.)|\.(pem|key)$/.test(p),
+    `credential-like file: ${p}`,
+  );
+}
+for (const [p, sha] of Object.entries(policy.legacyVisuals))
+  assert.equal(
+    hash(await read(p)),
+    sha,
+    `legacy visual changed: ${p}; route new official assets to the private package`,
+  );
+const core = JSON.parse(await read("core/manifest.json"));
+for (const [p, meta] of Object.entries(core.files)) {
+  assert.match(p, /^[a-z0-9.-]+$/i);
+  assert.equal(meta.license, "MIT");
+  const bytes = await read("core/" + p);
+  assert.equal(hash(bytes), meta.sha256, "public core integrity: " + p);
+  assert.ok(
+    !/aa_[A-Za-z0-9]{28,}|sk-or-v1-[a-f0-9]{40,}/.test(bytes.toString()),
+    "credential-like content in " + p,
+  );
+}
+for (const p of ["AGENTS.md", "CLAUDE.md"])
+  assert.match((await read(p)).toString(), /AGENTS\.md|source-policy/);
+for (const p of tracked.filter(
+  (p) => p.startsWith(".github/workflows/") && p.endsWith(".yml"),
+)) {
+  const s = (await read(p)).toString();
+  assert.ok(
+    !s.includes("self-hosted") && !s.includes("modelplans-publish"),
+    "public workflow must not access private runners: " + p,
+  );
+}
+assert.ok(
+  !(await read("desktop/build.mjs"))
+    .toString()
+    .includes("kit('kit/tokens.css')"),
+  "community build must not silently load official visual kit",
+);
+console.log(
+  "source, license, public-core integrity and community-build policy verified",
+);

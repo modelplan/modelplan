@@ -27,7 +27,7 @@ The CLI is found in this order: `MODELPLAN_CLI`, the copy bundled in the app, th
 The `desktop` workflow builds an Apple Silicon `.dmg` for each pull request and push to `main`; download it from the run's artifacts. The build is not notarized, so macOS blocks the first launch. Clear the quarantine flag once:
 
 ```sh
-xattr -dr com.apple.quarantine "/Applications/Model Plan.app"
+xattr -dr com.apple.quarantine "/Applications/Model Plan Community.app"
 ```
 
 ## Develop
@@ -71,3 +71,7 @@ The figures come from the CLI and the publication. The UI only shapes them: it d
 ## Licence and trademarks
 
 The code here is MIT, like the rest of this repository. The fonts are under the SIL Open Font License (`codex/ui/fonts`). "Model Plan", the Model Plan logo and the app icon are trademarks of the Model Plan project. Forks must use their own name and icon.
+
+## Community and official appearance
+
+The public default is the complete MIT community edition, with neutral styling and a generic mark. Official distinctive visual additions are assembled from an explicitly supplied private package outside this checkout; they are not part of this repository's MIT grant. See [source policy](../docs/source-policy.md) and [licensing map](../LICENSING.md). Historical MIT visual portions retain their grants. Rebuild from a full checkout including `core/`; a sparse plugin install runs its existing bundled runtime without rebuilding.

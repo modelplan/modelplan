@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "modelplan/modelplan",
+  "license": "MIT",
+  "files": {
+    "metrics.mjs": {
+      "sha256": "deeaf4e5dafd1b1dbfd983d08948c326b822ae83c702ac243421f47b165f1d01",
+      "license": "MIT"
+    },
+    "metrics.d.mts": {
+      "sha256": "ab89480f765ce40e1ffae18ecd3afcbc45f4fc0e8eb1e2b66e094319a322f31b",
+      "license": "MIT"
+    },
+    "effort.ts": {
+      "sha256": "11c5960551c91ad83cad66bf5fced086bd53f8aeab18fb2c5f0468963b8c9e8d",
+      "license": "MIT"
+    },
+    "lineup.ts": {
+      "sha256": "f2afa8bc726f750bba491639325c0ef897f4119e1dfbb60736ac84eb5d594996",
+      "license": "MIT"
+    },
+    "public-reader.mjs": {
+      "sha256": "e67bf376cf303afcd7c93fa337d794bb31c8d8041aa6625b7ccc78fb85bed01d",
+      "license": "MIT"
+    },
+    "public-reader.d.mts": {
+      "sha256": "1e54378c6140de30d01dfe10aec766fe46f0877a21f562463eb942694ffb7f34",
+      "license": "MIT"
+    }
+  },
+  "scope": "Pure supplied-input computation and an already-public verifier; excludes collection, publication, raw evidence and official visual implementation."
+}

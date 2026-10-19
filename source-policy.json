@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "codeLicense": "MIT",
+  "dataLicensePolicy": "per-file; new original-data publication CC-BY-SA-4.0; historical CC-BY-4.0 retained",
+  "privatePrefixes": [
+    "server/",
+    "deploy/",
+    "ops-worker/",
+    "official-visuals/",
+    "private/",
+    "source-caches/",
+    "desktop/app/dist/"
+  ],
+  "legacyVisuals": {
+    "codex/ui/kit/components.css": "2fa38ccec6c653ef47d475159a765a4aa3e84cb29ee579ff344053c780828ffc",
+    "codex/ui/kit/logo-light.svg": "0f1da3eada044082265fd7adb960a2ce83fd03da862b53b2c0a9e8f190ddd117",
+    "codex/ui/kit/logo.svg": "496544dc8192dea29d783c3e2e3ad2779f74ff710bea00c0476137d2cffbb70b",
+    "codex/ui/kit/source-hashes.json": "16ec4eb8d1efd9129febf9ca786e84c509c1051e39140f8f27b8685fba19cbc6",
+    "codex/ui/kit/tokens.css": "ae44be46edb7dd99fa79376f7376ce88bbb2f44faf3d775cc17530402519ce4d",
+    "docs/assets/banner-zh.jpg": "d95c6356ba3e64861b57e4417b7c1201cea1d7f674dfd1bf72db4d7d7fb0fe17",
+    "docs/assets/banner.jpg": "052c3e0f5e8d92fd1b20bc4eba92c0222054e211051bf45830bd47ffca1bfc77",
+    "docs/assets/cli-en.png": "0a7936500e49286da3f66bb0be92014809de2c25fa589d384f9f16bc9534f2bc",
+    "docs/assets/cli-zh.png": "183c2be7b8a1a427b5ab54c74f3e5f409857f77af6c8a030902e5967bd4e3096",
+    "docs/assets/codex-en.jpg": "3b234506933f99948c85a058ddb137395bb078f1ac4273adb6383d7b07dec1f0",
+    "docs/assets/codex-zh.jpg": "bede9ca1ae2de0309c4fbba1b9e3400b9c6f75524c9a3be349518e821ccbd951",
+    "docs/assets/effort-en.webp": "4a7bca468903ed6fd4bbca315cc85e03fde9667bdc8f2f31c9cba2c2f7c8f710",
+    "docs/assets/effort-zh.webp": "070b40c24d4d7022fa8f4d31b9de89be0b0c02f3b5841e5e569cc0a4c9432340",
+    "docs/assets/engine-en.jpg": "c4892f7db953c492d454d8774ab4863a8fa78db5058a8f2168edb0ca8d7c0f73",
+    "docs/assets/engine-zh.jpg": "991ff9782cd879332da0b0ee9f9cde1ae26676faa99eb11baab5e0463845f431",
+    "docs/assets/launch-en.webp": "043ee6ef0ae7144c67f1dccc1ec7b0ee5f225ce55c1b5960fa44ff6ce17a3613",
+    "docs/assets/launch-zh.webp": "2ded07a323805888a14c6eb89931a7067225de03a6cc9770de5c68ce264125c3",
+    "docs/assets/logo-512.png": "a160de71ae90d835532808f710676abf9c822a7636c749f6ef0f9a4992dc5dc6",
+    "docs/assets/plans-en.jpg": "22802c7a948126e14f246eafa96e4e2bb1538f66519ae3bd3345eb4a9449eae6",
+    "docs/assets/plans-zh.jpg": "610d1bbf1fd63dc18df5ba4bb97c7fafb23c7492292981be1f9d145bcc074192",
+    "docs/assets/social-preview.png": "9bb6b8851fb08d434598b5c29dfaf2aec1422c7113a39972c4830fbc13b90b20",
+    "docs/assets/statusline-en.png": "3015290d71ca4d2966a4f441ee24ca9e7852d26c24f110a70ca3f10462a18afb",
+    "docs/assets/statusline-zh.png": "d1ec1b137dacefc8977a58b33b587aaeee3bddf19a919648ad8812e7e6f0e68b"
+  },
+  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong in the private package."
+}

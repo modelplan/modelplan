@@ -227,4 +227,4 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 
 ## 许可
 
-代码：[MIT](LICENSE)。[`data/`](data/) 和 API 的数据：[CC BY 4.0](data/LICENSE)，注明 Model Plan 即可；第三方数据沿用其来源条款。Model Plan 是独立项目，与任何模型厂商无关；厂商名称与商标归各自所有者。
+代码：[MIT](LICENSE)。[`data/`](data/) 和 API 的数据：[per-file data licenses](data/LICENSE)，注明 Model Plan 即可；第三方数据沿用其来源条款。Model Plan 是独立项目，与任何模型厂商无关；厂商名称与商标归各自所有者。

@@ -56,6 +56,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
+## @modelplan/core@0.1.0
+
+License: MIT
+
+License text retained in upstream package and bundle copyright headers.
+
 ## ajv-formats@3.0.1
 
 License: MIT
