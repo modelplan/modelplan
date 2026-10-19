@@ -1,6 +1,6 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.223",
+  "version": "0.21.224",
   "license": {
     "id": "CC-BY-4.0",
     "url": "https://creativecommons.org/licenses/by/4.0/",
@@ -152,7 +152,7 @@
       "path": "data/plan-display-en.json",
       "description": "English display text for plan notes",
       "license": "CC-BY-4.0",
-      "sha256": "ca5f02e5fd0163272cb8b53e3a0963c2284e65018f7687878a5772a20ec05b46"
+      "sha256": "89ff0eaeee89cba7e0b32e0edf4ea2bc04f57a9c9f2f2cc290046ad77487ab3e"
     },
     {
       "path": "data/plan-edition-groups.json",
@@ -200,7 +200,7 @@
       "path": "data/plan-tier-registry.json",
       "description": "Subscription tiers: the source the plan registries are generated from",
       "license": "CC-BY-4.0",
-      "sha256": "d27e41a321a9da54382cbb3a909e15d258ac323588208b3a3729953824fd0ee1"
+      "sha256": "161a9101d63c6f797d5ec3640d28ef3d70381d37b15eb44c1520c9254fb1e080"
     },
     {
       "path": "data/real-api-pricing/LICENSE",
@@ -230,7 +230,7 @@
       "path": "data/reviewed-plan-registry.json",
       "description": "Reviewed plans (generated)",
       "license": "CC-BY-4.0",
-      "sha256": "4e30be4fbe55e4cad5cd12527f6fd87a4fb08f1ca7461a0efbff26a87b327e04"
+      "sha256": "a2915fcb75a71b4fe4556c0eb7a228244504b66b691319508589a0282496fb27"
     },
     {
       "path": "data/reviewed-speed-claims.json",

@@ -5541,7 +5541,7 @@
       "notes": [
         "Coding与Agent订阅及普通按量API分开；Coding使用/api/coding，普通/api/v3另计费。",
         "区域可用性依控制台；型号列表不核验个人资格或可调档位。",
-        "Seed2.1Turbo/Seed2.0Lite仅保留官网即将下线标记；Agent个人公告日期不作为Coding/企业截止证据。",
+        "MiniMax-M3与Kimi-K2.7-Code带官网即将下线标记，未写日期；Agent个人公告日期不作为Coding/企业截止证据。",
         "官方页为JS应用壳，自动HTTP采集失败将保留人工核验的事实，不能标为目录未公开。"
       ],
       "fieldEvidence": {
@@ -5829,7 +5829,7 @@
       "notes": [
         "Coding与Agent订阅及普通按量API分开；Coding使用/api/coding，普通/api/v3另计费。",
         "区域可用性依控制台；型号列表不核验个人资格或可调档位。",
-        "Seed2.1Turbo/Seed2.0Lite仅保留官网即将下线标记；Agent个人公告日期不作为Coding/企业截止证据。",
+        "MiniMax-M3与Kimi-K2.7-Code带官网即将下线标记，未写日期；Agent个人公告日期不作为Coding/企业截止证据。",
         "官方页为JS应用壳，自动HTTP采集失败将保留人工核验的事实，不能标为目录未公开。"
       ],
       "fieldEvidence": {
@@ -6047,9 +6047,7 @@
         "deepseek-v4-pro",
         "kimi-k2.7-code",
         "kimi-k2.8-preview",
-        "doubao-embedding-vision",
-        "doubao-seed-2.1-turbo",
-        "doubao-seed-2.0-lite"
+        "doubao-embedding-vision"
       ],
       "coverage": [],
       "clients": [
@@ -6120,7 +6118,7 @@
       "notes": [
         "Coding与Agent订阅及普通按量API分开；Coding使用/api/coding，普通/api/v3另计费。",
         "区域可用性依控制台；型号列表不核验个人资格或可调档位。",
-        "Seed2.1Turbo/Seed2.0Lite仅保留官网即将下线标记；Agent个人公告日期不作为Coding/企业截止证据。",
+        "MiniMax-M3与Kimi-K2.7-Code带官网即将下线标记，未写日期；Agent个人公告日期不作为Coding/企业截止证据。",
         "官方页为JS应用壳，自动HTTP采集失败将保留人工核验的事实，不能标为目录未公开。"
       ],
       "fieldEvidence": {
@@ -6338,9 +6336,7 @@
         "deepseek-v4-pro",
         "kimi-k2.7-code",
         "kimi-k2.8-preview",
-        "doubao-embedding-vision",
-        "doubao-seed-2.1-turbo",
-        "doubao-seed-2.0-lite"
+        "doubao-embedding-vision"
       ],
       "coverage": [],
       "clients": [
@@ -6411,7 +6407,7 @@
       "notes": [
         "Coding与Agent订阅及普通按量API分开；Coding使用/api/coding，普通/api/v3另计费。",
         "区域可用性依控制台；型号列表不核验个人资格或可调档位。",
-        "Seed2.1Turbo/Seed2.0Lite仅保留官网即将下线标记；Agent个人公告日期不作为Coding/企业截止证据。",
+        "MiniMax-M3与Kimi-K2.7-Code带官网即将下线标记，未写日期；Agent个人公告日期不作为Coding/企业截止证据。",
         "官方页为JS应用壳，自动HTTP采集失败将保留人工核验的事实，不能标为目录未公开。"
       ],
       "fieldEvidence": {
