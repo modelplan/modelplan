@@ -111,7 +111,7 @@
   "区域和购入资格以控制台为准": "Region and purchase eligibility are set by the console",
   "Coding与Agent订阅及普通按量API分开；Coding使用/api/coding，普通/api/v3另计费。": "Coding and Agent subscriptions are separate from pay-as-you-go API; Coding uses /api/coding, while regular /api/v3 is billed separately.",
   "区域可用性依控制台；型号列表不核验个人资格或可调档位。": "Regional availability follows the console; the model list does not verify personal eligibility or selectable efforts.",
-  "Seed2.1Turbo/Seed2.0Lite仅保留官网即将下线标记；Agent个人公告日期不作为Coding/企业截止证据。": "Seed2.1 Turbo and Seed2.0 Lite only carry the official 'retiring soon' mark; the Agent personal notice date is not used as a Coding or enterprise cut-off.",
+  "MiniMax-M3与Kimi-K2.7-Code带官网即将下线标记，未写日期；Agent个人公告日期不作为Coding/企业截止证据。": "MiniMax-M3 and Kimi-K2.7-Code carry the official 'retiring soon' mark without a date; the Agent personal notice date is not used as a Coding or enterprise cut-off.",
   "官方页为JS应用壳，自动HTTP采集失败将保留人工核验的事实，不能标为目录未公开。": "The official page is a JavaScript app shell; if automatic fetching fails, manually reviewed facts are kept and the catalogue is not marked unpublished.",
   "5h按首次请求定时刷新，机制非经证实滚动窗口；周一00:00、订阅月首日00:00，时区未知。未把情景估算当固定限额。": "The 5-hour window refreshes on a timer from the first request and is not a confirmed rolling window; weekly reset Monday 00:00 and monthly on the first day 00:00, time zone unknown. Scenario estimates are not treated as fixed limits.",
   "2026-06-08至2026-11-08公开活动，名额有限；新购/续费/升配共用最多首2个优惠月，第3个月标准价；精确结束时刻未知。": "Public offer 2026-06-08 to 2026-11-08 with limited places; new purchases, renewals and upgrades share at most the first 2 discounted months, and month 3 is standard price; exact end time unknown.",
