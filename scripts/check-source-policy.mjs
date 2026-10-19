@@ -36,12 +36,13 @@ for (const [p, sha] of Object.entries(policy.legacyVisuals))
     sha,
     `legacy visual changed: ${p}; route new official assets to the private package`,
   );
-const core = JSON.parse(await read("core/manifest.json"));
+const core = JSON.parse(await read("reader/manifest.json"));
+assert.deepEqual(Object.keys(core.files).sort(), ["LICENSE", "public-reader.d.mts", "public-reader.mjs"], "only publication verification may be exported here");
 for (const [p, meta] of Object.entries(core.files)) {
   assert.match(p, /^[a-z0-9.-]+$/i);
   assert.equal(meta.license, "MIT");
-  const bytes = await read("core/" + p);
-  assert.equal(hash(bytes), meta.sha256, "public core integrity: " + p);
+  const bytes = await read("reader/" + p);
+  assert.equal(hash(bytes), meta.sha256, "public reader integrity: " + p);
   assert.ok(
     !/aa_[A-Za-z0-9]{28,}|sk-or-v1-[a-f0-9]{40,}/.test(bytes.toString()),
     "credential-like content in " + p,
@@ -65,5 +66,5 @@ assert.ok(
   "community build must not silently load official visual kit",
 );
 console.log(
-  "source, license, public-core integrity and community-build policy verified",
+  "source, license, public-reader integrity and community-build policy verified",
 );

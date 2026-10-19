@@ -132,16 +132,8 @@ Every published value keeps its original source and check time. Third-party esti
 
 Found a wrong number? Please [open an issue](https://github.com/modelplan/modelplan/issues/new) with a link to the source.
 
-## Executable public core
+## Transparency and reserved implementation
 
-The original supplied-input computation is in [`core/`](core/): [`metrics.mjs`](core/metrics.mjs) performs normalization/aggregation, [`effort.ts`](core/effort.ts) contains balanced-v5 calibration and minimax regret, and [`lineup.ts`](core/lineup.ts) produces the frontier/verdicts. The private producer consumes a pinned, hash-verified public revision; the website's disclosure links that revision, rather than an inaccessible private source branch.
+The formulas, source-weight table and explanations above remain public. For admitted evidence, effective ability weights are `w_s*r_s / sum(w*r)`; missing sources are not zero scores. Coverage identifies which sources actually contribute. Multiple metrics from one publisher are not independent publishers. Cost uses separate weights; time coverage budgets do not blend runtimes. Unused research must be identified separately.
 
-With a full public checkout and Node 24+: `npm ci --prefix core && npm test --prefix core`. Tests use synthetic inputs and exercise unknown values, integrity and deterministic outcomes. The source/parameter/input requirements are explicit: reproducing a live result also requires the same legally acquired source observations, admitted configurations, protocol identity, frozen normalization references and policy configuration. This is not a redistribution of third-party raw benchmark data, and the private collection/review/publication implementation and official visual source are not included. Runtime clients still display published verdicts rather than fitting their own scoring policy.
-
-### Published weights and parameters
-
-The formulas and source-weight table above remain public. [`core/display-policy.json`](core/display-policy.json) publishes the exact base budgets, frozen means/spreads and source reference values; [`core/effort-policy.json`](core/effort-policy.json) publishes the admission thresholds and recorded calibration constraints; [`core/reference-workload.json`](core/reference-workload.json) declares the common cost anchor. These are original method parameters, not a mirror of raw benchmark rows. Historical `experimental` identifiers in the display file are retained for compatibility; the consuming publication identifies its active policy and pinned revision.
-
-Base budgets are not the effective contribution of every model. For the admitted observations of a configuration, the effective ability weight is `w_s*r_s / sum(w*r)`; missing/unqualified observations contribute neither a zero score nor a vote. Report the contributing source IDs and coverage with the result. Multiple metrics from one publisher are not independent publishers. Cost uses its own weights; time coverage budgets do not blend runtimes. Source-collection coverage and the prescribed budget are separate facts. Unused research policies must not be presented as active scoring.
-
-A private implementation change that alters weights, normalization or published recommendations must update the public policy/implementation first and refresh the reviewed consumer pin. Collection and publication remain private; scoring explanations do not.
+This is method disclosure, not an open-source license for the production scoring/recommendation engine. Its implementation, full calibration records, automated model entry/exit and acquisition/review/publication systems remain private. Public clients, plugins and the publication reader remain MIT. Third-party observations retain their own terms. Do not add production scorer source or complete calibration snapshots to this repository.

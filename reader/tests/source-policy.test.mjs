@@ -7,7 +7,7 @@ const root=fileURLToPath(new URL('../../',import.meta.url));
 function check(){return execFileSync(process.execPath,['scripts/check-source-policy.mjs'],{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']})}
 test('the real public policy gate rejects a private source path and an unreviewed official asset',async()=>{
  assert.match(check(),/verified/);
- const cases=[['server/','__source_policy_probe__.txt'],['codex/ui/kit/','__source_policy_probe__.svg']];
+ const cases=[['server/','__source_policy_probe__.txt'],['core/','__scoring_probe__.mjs'],['codex/ui/kit/','__source_policy_probe__.svg']];
  for(const [directory,name] of cases){
   const dir=new URL(directory,'file://'+root),file=new URL(name,dir);
   let created=false;

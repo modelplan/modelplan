@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "modelplan/modelplan",
+  "license": "MIT",
+  "scope": "Publication validation and caching only. Excludes scoring, ranking, calibration, acquisition, publication and official visual implementation.",
+  "files": {
+    "public-reader.mjs": {
+      "sha256": "e67bf376cf303afcd7c93fa337d794bb31c8d8041aa6625b7ccc78fb85bed01d",
+      "license": "MIT"
+    },
+    "public-reader.d.mts": {
+      "sha256": "1e54378c6140de30d01dfe10aec766fe46f0877a21f562463eb942694ffb7f34",
+      "license": "MIT"
+    },
+    "LICENSE": {
+      "sha256": "cab1ffcc0d3ed95f6736bc1f31b74f6a0ccdb1458deedc2f6e9a3532630d2a4f",
+      "license": "MIT"
+    }
+  }
+}

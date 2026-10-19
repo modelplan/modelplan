@@ -56,7 +56,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-## @modelplan/core@0.1.0
+## @modelplan/public-reader@0.1.0
 
 License: MIT
 

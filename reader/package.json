@@ -1,18 +1,12 @@
 {
-  "name": "@modelplan/core",
+  "name": "@modelplan/public-reader",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Public supplied-input computation and publication verification; source pinned by Git commit",
+  "description": "Public publication validation and caching; no scoring or recommendation engine",
   "exports": {
-    "./metrics": {
-      "types": "./metrics.d.mts",
-      "default": "./metrics.mjs"
-    },
-    "./effort": "./effort.ts",
-    "./lineup": "./lineup.ts",
-    "./public-reader": {
+    ".": {
       "types": "./public-reader.d.mts",
       "default": "./public-reader.mjs"
     }

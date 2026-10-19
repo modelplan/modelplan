@@ -17,7 +17,7 @@
     "@tauri-apps/plugin-opener": "2.7.0",
     "@tauri-apps/plugin-store": "2.5.0",
     "zod": "4.6.5",
-    "@modelplan/core": "file:../core"
+    "@modelplan/public-reader": "file:../reader"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.1",

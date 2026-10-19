@@ -4,7 +4,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 ## Public core / Codex 0.15.17 / Desktop community 0.1.1
 
-- Public computation/verifier source now has a canonical `core/` module with hash metadata and synthetic tests; clients continue to display published recommendations.
+- The already-public publication verifier has a canonical `reader/` module with hash metadata; clients display published recommendations. Scoring/recommendation source and full calibration remain private; method explanations stay public.
 - The desktop builds independently with a neutral community appearance. A private official package is an explicit optional build input; historical MIT grants remain documented.
 - Source/agent/CI policies separate public software, per-file data licenses, official visuals and brand identity. New original-data publications use CC BY-SA 4.0; historical and third-party exceptions remain separate.
 

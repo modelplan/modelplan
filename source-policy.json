@@ -9,7 +9,11 @@
     "official-visuals/",
     "private/",
     "source-caches/",
-    "desktop/app/dist/"
+    "desktop/app/dist/",
+    "core/",
+    "index/",
+    "scoring/",
+    "calibration/"
   ],
   "legacyVisuals": {
     "codex/ui/kit/components.css": "2fa38ccec6c653ef47d475159a765a4aa3e84cb29ee579ff344053c780828ffc",

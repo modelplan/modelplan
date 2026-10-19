@@ -1,9 +1,9 @@
-// Verified publication through the canonical public core: every
+// Verified publication through the canonical public reader: every
 // object is hash-checked before use, and the last good one is cached for offline use.
 import {
   ClientDataReader,
   verifyClientDigest,
-} from "@modelplan/core/public-reader";
+} from "@modelplan/public-reader";
 import type { Platform } from "./platform.ts";
 import { BASE, project, type Digest, type Publication } from "./published.ts";
 
