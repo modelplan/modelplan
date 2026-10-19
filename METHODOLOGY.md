@@ -131,3 +131,9 @@ Model Plan stands on many public projects; thank you to their authors and mainta
 Every published value keeps its original source and check time. Third-party estimates and news leads never rewrite plan terms without review. Vendor names and marks belong to their owners and only identify vendors.
 
 Found a wrong number? Please [open an issue](https://github.com/modelplan/modelplan/issues/new) with a link to the source.
+
+## Transparency and reserved implementation
+
+The formulas, source-weight table and explanations above remain public. For admitted evidence, effective ability weights are `w_s*r_s / sum(w*r)`; missing sources are not zero scores. Coverage identifies which sources actually contribute. Multiple metrics from one publisher are not independent publishers. Cost uses separate weights; time coverage budgets do not blend runtimes. Unused research must be identified separately.
+
+This is method disclosure, not an open-source license for the production scoring/recommendation engine. Its implementation, full calibration records, automated model entry/exit and acquisition/review/publication systems remain private. Public clients, plugins and the publication reader remain MIT. Third-party observations retain their own terms. Do not add production scorer source or complete calibration snapshots to this repository.

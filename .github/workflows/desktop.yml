@@ -8,6 +8,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: public-desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   app:
     runs-on: ubuntu-latest
@@ -70,9 +74,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/fetch-cli.mjs aarch64-apple-darwin
       - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json -- --locked
-      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/Model Plan.app"
+      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/Model Plan Community.app"
       - uses: actions/upload-artifact@v4
         with:
-          name: Model-Plan-macOS-arm64-unsigned
+          name: Model-Plan-Community-macOS-arm64-unsigned
           path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 14

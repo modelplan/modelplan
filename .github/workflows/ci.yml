@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
   pull_request:
+concurrency:
+  group: public-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cli:
     runs-on: ubuntu-latest

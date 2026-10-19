@@ -1,0 +1,23 @@
+{
+  "name": "@modelplan/public-reader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Public publication validation and caching; no scoring or recommendation engine",
+  "exports": {
+    ".": {
+      "types": "./public-reader.d.mts",
+      "default": "./public-reader.mjs"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

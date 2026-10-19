@@ -1,6 +1,6 @@
 {
   "name": "@modelplan/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -16,7 +16,8 @@
     "@tauri-apps/plugin-notification": "2.5.1",
     "@tauri-apps/plugin-opener": "2.7.0",
     "@tauri-apps/plugin-store": "2.5.0",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@modelplan/public-reader": "file:../reader"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.1",
