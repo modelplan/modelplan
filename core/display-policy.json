@@ -1,0 +1,261 @@
+{
+  "version": "0.3",
+  "methodId": "unified-v03-estimator-0.1.0-internal",
+  "status": "experimental",
+  "sourceBudgets": {
+    "aa": {
+      "label": "AA综合",
+      "publisher": "AA",
+      "ability": 0.3,
+      "cost": 0.2,
+      "time": 0
+    },
+    "aa-agent": {
+      "label": "AA Coding Agent",
+      "publisher": "AA",
+      "ability": 0.2,
+      "cost": 0.3,
+      "time": 0.6
+    },
+    "lb-coding": {
+      "label": "LiveBench Coding",
+      "publisher": "LiveBench",
+      "ability": 0.1,
+      "cost": 0,
+      "time": 0
+    },
+    "lb-agentic": {
+      "label": "LiveBench Agentic",
+      "publisher": "LiveBench",
+      "ability": 0.1,
+      "cost": 0,
+      "time": 0
+    },
+    "lb-cost": {
+      "label": "LiveBench任务费用",
+      "publisher": "LiveBench",
+      "ability": 0,
+      "cost": 0.1,
+      "time": 0
+    },
+    "cursor": {
+      "label": "CursorBench",
+      "publisher": "Cursor",
+      "ability": 0.1,
+      "cost": 0.15,
+      "time": 0
+    },
+    "tb": {
+      "label": "Terminal-Bench",
+      "publisher": "TB",
+      "ability": 0.1,
+      "cost": 0.15,
+      "time": 0.25
+    },
+    "swebench": {
+      "label": "SWE-bench",
+      "publisher": "SWE",
+      "ability": 0.04,
+      "cost": 0.03,
+      "time": 0
+    },
+    "aider": {
+      "label": "Aider",
+      "publisher": "Aider",
+      "ability": 0.02,
+      "cost": 0.02,
+      "time": 0
+    },
+    "livecodebench": {
+      "label": "LiveCodeBench",
+      "publisher": "LCB",
+      "ability": 0.02,
+      "cost": 0,
+      "time": 0
+    },
+    "bughunt": {
+      "label": "Bug Hunt",
+      "publisher": "Bug Hunt",
+      "ability": 0.02,
+      "cost": 0.05,
+      "time": 0.15
+    }
+  },
+  "references": {
+    "aa": {
+      "ability": {
+        "status": "ready",
+        "mu": 45.044444444444444,
+        "sd": 4.781703813289223,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "ready",
+        "mu": 0.4491124177869664,
+        "sd": 1.4180701137552665,
+        "geometricReference": 1.5669207970669967
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "aa-agent": {
+      "ability": {
+        "status": "ready",
+        "mu": 58.65231477076087,
+        "sd": 9.185549683865638,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "ready",
+        "mu": 1.4959394727153073,
+        "sd": 1.508417570970172,
+        "geometricReference": 4.463527946409263
+      },
+      "seconds": {
+        "status": "ready",
+        "mu": 7.70346257527284,
+        "sd": 0.535160611619162,
+        "geometricReference": 2216.0078167447414
+      }
+    },
+    "lb-coding": {
+      "ability": {
+        "status": "ready",
+        "mu": 84.15294642857143,
+        "sd": 4.131638835182962,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "insufficient-reference"
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "lb-agentic": {
+      "ability": {
+        "status": "ready",
+        "mu": 59.4504126984127,
+        "sd": 7.331316931406503,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "insufficient-reference"
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "lb-cost": {
+      "ability": {
+        "status": "insufficient-reference"
+      },
+      "cost": {
+        "status": "ready",
+        "mu": -1.0110654847069085,
+        "sd": 1.0254070298772795,
+        "geometricReference": 0.36383111648661043
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "cursor": {
+      "ability": {
+        "status": "ready",
+        "mu": 44.56666666666666,
+        "sd": 7.0521076439758215,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "ready",
+        "mu": 1.7998967091343137,
+        "sd": 0.7612549616257507,
+        "geometricReference": 6.049022623359992
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "tb": {
+      "ability": {
+        "status": "ready",
+        "mu": 36.843333333333334,
+        "sd": 16.45829392400345,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "ready",
+        "mu": 2.2593856984828053,
+        "sd": 0.8552892284718037,
+        "geometricReference": 9.577204068347337
+      },
+      "seconds": {
+        "status": "ready",
+        "mu": 8.386697437198304,
+        "sd": 0.35953490975737623,
+        "geometricReference": 4388.301096474238
+      }
+    },
+    "swebench": {
+      "ability": {
+        "status": "insufficient-reference"
+      },
+      "cost": {
+        "status": "insufficient-reference"
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "aider": {
+      "ability": {
+        "status": "insufficient-reference"
+      },
+      "cost": {
+        "status": "insufficient-reference"
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "livecodebench": {
+      "ability": {
+        "status": "insufficient-reference"
+      },
+      "cost": {
+        "status": "insufficient-reference"
+      },
+      "seconds": {
+        "status": "insufficient-reference"
+      }
+    },
+    "bughunt": {
+      "ability": {
+        "status": "ready",
+        "mu": 29.13227513227513,
+        "sd": 12.04373440054195,
+        "geometricReference": null
+      },
+      "cost": {
+        "status": "ready",
+        "mu": 3.356130136975273,
+        "sd": 1.0034045668975784,
+        "geometricReference": 28.677995947294892
+      },
+      "seconds": {
+        "status": "ready",
+        "mu": 8.445881749405338,
+        "sd": 0.7079230021833092,
+        "geometricReference": 4655.859204661198
+      }
+    }
+  },
+  "abilityFormula": "S = 50 + 10 * sum(w*r*z) / sum(w*r); z = (x-mu)/sigma",
+  "expenseFormula": "E = exp(sum(w*r*log(C/Cref)) / sum(w*r))",
+  "taskTimeFormula": "Tindex = T / Tref_source; AA Agent > Terminal-Bench > eligible Bug Hunt; boundaries never averaged",
+  "completenessFormula": "D = 100 * sum(admitted direct source budgets) / sum(all declared budgets)",
+  "recommendationPolicy": "balanced-coding-absolute-v4; unchanged; time excluded",
+  "anchorsEnabled": false
+}

@@ -12,3 +12,7 @@ Run: `node --test core/tests/*.test.mjs` (Node 24+).
 The module computes results for supplied inputs. The private producer acquires and reviews inputs, forms native-effort candidates, applies protocol/availability admission, then publishes results. These adapters are not secretly represented as part of this standalone module. Reproducing the live website requires the same legally acquired input snapshot, admission, parameters and reference values; synthetic tests are not model evaluations. No paid inference, collection, publication pipeline, private snapshot or official 3D/visual source is included.
 
 Policy configuration already released as open data remains in `data/calibration/`. Third-party input data keeps its original terms. Method descriptions are in the repository methodology; code visibility does not imply a raw-data redistribution right.
+
+## Auditable policy snapshots
+
+`display-policy.json`, `effort-policy.json` and `reference-workload.json` retain the production method parameters at this migration: source budgets, frozen references, calibration constraints and cost anchor. They are included in the integrity manifest. The private consumer verifies its compatibility copies against these reviewed inputs; changes must originate here and be pinned before production use. See the methodology documents for base versus effective weights and the distinction between runtime selection and time-coverage budgets. Legacy experimental identifiers are preserved rather than silently relabeled.

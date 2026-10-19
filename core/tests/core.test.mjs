@@ -136,3 +136,20 @@ test("public reader rejects credential-bearing/nonlocal plain HTTP bases", async
     64,
   );
 });
+
+test("published source budgets, reference scales and calibration remain inspectable", async () => {
+  const display = JSON.parse(await readFile(new URL("../display-policy.json", import.meta.url), "utf8"));
+  const effort = JSON.parse(await readFile(new URL("../effort-policy.json", import.meta.url), "utf8"));
+  const workload = JSON.parse(await readFile(new URL("../reference-workload.json", import.meta.url), "utf8"));
+  for (const field of ["ability", "cost", "time"]) {
+    const total = Object.values(display.sourceBudgets).reduce((sum, x) => sum + x[field], 0);
+    assert.ok(Math.abs(total - 1) < 1e-12, field);
+  }
+  assert.equal(display.sourceBudgets.aa.ability, 0.3);
+  assert.equal(display.sourceBudgets["aa-agent"].ability, 0.2);
+  assert.equal(effort.admission.retainedScoreFraction, 0.8);
+  assert.ok(effort.preferences.length >= 3);
+  assert.ok(workload.referenceCostUsd > 0);
+  assert.ok(display.references.aa.ability.sd > 0);
+  assert.match(display.taskTimeFormula, /never averaged/);
+});

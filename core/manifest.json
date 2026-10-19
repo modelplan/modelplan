@@ -30,6 +30,18 @@
     "LICENSE": {
       "sha256": "cab1ffcc0d3ed95f6736bc1f31b74f6a0ccdb1458deedc2f6e9a3532630d2a4f",
       "license": "MIT"
+    },
+    "display-policy.json": {
+      "sha256": "c9c44d1dd5432b4e5f0c0c5f7aa95b31f3fd12b7d60bb5164d38e4d48fcfa7be",
+      "license": "MIT"
+    },
+    "effort-policy.json": {
+      "sha256": "7c2cc6d9ef09bd42723b057bd95d5f63b50ab82d95aab8d066b933059d76cf43",
+      "license": "MIT"
+    },
+    "reference-workload.json": {
+      "sha256": "f87861434c92add1494c578582139eb7775508215c5a53434cb270033f7c29df",
+      "license": "MIT"
     }
   },
   "scope": "Pure supplied-input computation and an already-public verifier; excludes collection, publication, raw evidence and official visual implementation."
