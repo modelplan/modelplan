@@ -5,6 +5,10 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: public-source-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   policy:
     runs-on: ubuntu-latest
