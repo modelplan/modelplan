@@ -1,10 +1,10 @@
 {
-  "version": "0.5.25",
-  "release": "https://github.com/modelplan/modelplan/releases/download/v0.5.25",
+  "version": "0.5.26",
+  "release": "https://github.com/modelplan/modelplan/releases/download/v0.5.26",
   "sha256": {
-    "darwin_arm64": "b2e7aaf5fb5bbcf1c3dd3a05aa4dcb182f1776c48d0180a3fd062d59d1bb57ab",
-    "darwin_amd64": "ac302b084c5738e6c11f2278cb59964af9cd69cbcb8abf943cab369123400139",
-    "linux_arm64": "5f224b10a14c0b043b7766624f6e3d3aa3d723b52012857852f73b84de77fe1d",
-    "linux_amd64": "8f24263725e0b010ebcbd0f26b3458dcc42ba88c37b6b1be0fa73a317fea96bf"
+    "darwin_arm64": "356cfc6899775ab865ffe6d4da24c0c5dff643aa8bab2b6b35baecca3cdec298",
+    "darwin_amd64": "d1859d95c74b78446b55c3b8c88786e65757b22c44e22932f8acbe3da349d6c9",
+    "linux_arm64": "51b864143ad2328155a1e045d69692923bd1eb82aba41c10ea6d0093afb16dcb",
+    "linux_amd64": "b1465a7aa7a1c01cc6cc5f356eb0b82dae88e4842fa7a2e4156ff8a5a0da2d76"
   }
 }
