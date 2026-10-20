@@ -61,7 +61,7 @@ try {
   } while (cursor);
   const server = servers.find(s => s.pluginId === pluginId && s.name === serverName);
   assert.ok(server, 'Installed plugin absent from Codex MCP inventory');
-  assert.deepEqual(Object.keys(server.tools).sort(), ['dismiss_cli_setup', 'get_model_dashboard', 'install_modelplan_cli', 'open_model_board', 'open_model_dashboard', 'open_model_panel']);
+  assert.deepEqual(Object.keys(server.tools).sort(), ['get_model_dashboard', 'install_modelplan_cli', 'open_model_board', 'open_model_dashboard', 'open_model_panel']);
   assert.deepEqual(server.tools.open_model_panel._meta?.['openai/ui']?.entrypoints, [{ type: 'thread' }], 'Codex keeps the thread entrypoint');
   assert.equal(server.serverInfo.version, version);
   report.inventory = { name: server.name, pluginId: server.pluginId, serverInfo: server.serverInfo, tools: Object.keys(server.tools) };
