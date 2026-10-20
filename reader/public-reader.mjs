@@ -585,7 +585,7 @@ var LINEUP_METHOD = "lineup-v1";
 var LINEUP_TIE = 1;
 
 // shared/client-digest.ts
-var CLIENT_RAW_LIMIT = 15e4;
+var CLIENT_RAW_LIMIT = 25e4;
 var text3 = z3.string().min(1);
 var scalar = z3.number().finite();
 var nullable = scalar.nullable();

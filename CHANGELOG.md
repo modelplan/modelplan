@@ -2,6 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.26 (pending tag)
+
+- The client digest size limit rises from 150 kB to 250 kB in the CLI (`maxObjectBytes`) and the publication reader (`CLIENT_RAW_LIMIT`), and the Codex plugin bundle is rebuilt with it. The digest reached 86% of the old limit as the multiplier packs and per-effort data grew. Integrity checks (exact byte length and SHA-256 against the manifest) are unchanged. The producer only raises its own budget after clients that accept the larger digest are released.
+
 ## Public core / Codex 0.15.17 / Desktop community 0.1.1
 
 - The already-public publication verifier has a canonical `reader/` module with hash metadata; clients display published recommendations. Scoring/recommendation source and full calibration remain private; method explanations stay public.
