@@ -1,9 +1,9 @@
 {
   "source": "https://modelplan.ai/open-data.json",
-  "version": "0.21.224",
+  "version": "0.22.0",
   "license": {
-    "id": "CC-BY-4.0",
-    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "id": "CC-BY-SA-4.0",
+    "url": "https://creativecommons.org/licenses/by-sa/4.0/",
     "attribution": "Model Plan (https://modelplan.ai)"
   },
   "redactedKeys": {
@@ -11,196 +11,28 @@
   },
   "files": [
     {
-      "path": "data/calendar-rule-registry.json",
-      "description": "Reviewed calendar rules: peaks, off-peak hours, promotions and quota resets",
-      "license": "CC-BY-4.0",
-      "sha256": "743c3561cbc1e106685fe277894b8fc3c6eab87ba1cdca95a023e12396c0d0d6"
-    },
-    {
-      "path": "data/calibration/balanced-coding-v2.json",
-      "description": "Recommended-effort policy, v2",
-      "license": "CC-BY-4.0",
-      "sha256": "1344ae07e0f641f91cc0317af1e42cf7ac8dac860cdfa14c20a345d8235a5775"
-    },
-    {
-      "path": "data/calibration/balanced-coding-v3.1.json",
-      "description": "Recommended-effort policy, v3.1",
-      "license": "CC-BY-4.0",
-      "sha256": "8b1a7bf7c69d29904fe0e69afccfcb9b5bf8a374a1f83f88ef9b1408b290273c"
-    },
-    {
-      "path": "data/calibration/balanced-coding-v3.json",
-      "description": "Recommended-effort policy, v3",
-      "license": "CC-BY-4.0",
-      "sha256": "66eaf4ec2e47aac5ce32141e5567a259ad3e574fe78ecb0408e2fac67e3f7a2a"
-    },
-    {
-      "path": "data/calibration/balanced-coding-v4.json",
-      "description": "Recommended-effort policy, v4",
-      "license": "CC-BY-4.0",
-      "sha256": "7d275727d3b0b7f1175662fe36049a139de28e73f4ede2d33352cc241778342d"
-    },
-    {
-      "path": "data/calibration/balanced-coding-v5.json",
-      "description": "Active ★ effort policy (balanced v5, ADR 0045): admission settings and the owner choices that bound the price and time weights",
-      "license": "CC-BY-4.0",
-      "sha256": "7c2cc6d9ef09bd42723b057bd95d5f63b50ab82d95aab8d066b933059d76cf43"
-    },
-    {
-      "path": "data/calibration/generic-policy.json",
-      "description": "Generic quality, cost and time policy",
-      "license": "CC-BY-4.0",
-      "sha256": "2c84d2981da8286995eb02950f127bb1a88dcc40cf22d7cdba7bcd7d3f38555e"
-    },
-    {
       "path": "data/calibration/official-guidance.json",
       "description": "Vendors' own effort guidance and product defaults",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "d1d7ce6ec60b3ee8055d1a2737e0839d27ffc40496f7788c90b0ed1d47a0b840"
     },
     {
       "path": "data/client-harness-aliases.json",
       "description": "Model names as Claude Code, Codex and other clients report them",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "78f269c374f137b9c3ef4149122589756d353716674e72e88dc26a428ee86251"
-    },
-    {
-      "path": "data/coding-tool-models.json",
-      "description": "Models advertised by coding tools",
-      "license": "CC-BY-4.0",
-      "sha256": "51d4bf7656c4c2e6d8c49ae105e3345c0a1fba7e8a8ade9b5423809af8d85b09"
-    },
-    {
-      "path": "data/core-plan-evidence.json",
-      "description": "Evidence behind the core subscription plans",
-      "license": "CC-BY-4.0",
-      "sha256": "b1daf5fcc3cd61dbfd74786c6c27ec3449892b0f642c04914b6553681c3b9c99"
-    },
-    {
-      "path": "data/core-plan-registry.json",
-      "description": "Core subscription plans (generated from plan-tier-registry.json)",
-      "license": "CC-BY-4.0",
-      "sha256": "d7fe32b9d63e3261d469f20c0933dafe2bf1cd10fed132b7c02aafcc3cf859f1"
-    },
-    {
-      "path": "data/current-model-products.json",
-      "description": "Current model products",
-      "license": "CC-BY-4.0",
-      "sha256": "c13f57be2c96d45bbd7e25cdfd5e951bc073e492deb4daa2ff57c9e0bbf7554e"
-    },
-    {
-      "path": "data/current-openai-pro-offerings.json",
-      "description": "Current ChatGPT Pro offerings",
-      "license": "CC-BY-4.0",
-      "sha256": "1828a3b984d6487f112671d394f336c95674d1b20b338071fb1c7fa36c7d97fd"
-    },
-    {
-      "path": "data/current-public-plan-registry.json",
-      "description": "Current public subscription plans (generated)",
-      "license": "CC-BY-4.0",
-      "sha256": "eb305bb8d8c8230725b959d8b7559e5c6cb9118a9b053aaadd5ad2415f504936"
-    },
-    {
-      "path": "data/current-token-plan-registry.json",
-      "description": "Current token and credit plans (generated)",
-      "license": "CC-BY-4.0",
-      "sha256": "530daae4c568858edd17a275fc2945cfec58572cee537e5ce3a3176559997977"
-    },
-    {
-      "path": "data/current-tool-plan-registry.json",
-      "description": "Current coding tool plans (generated)",
-      "license": "CC-BY-4.0",
-      "sha256": "a1363ab0300d95a5097e47de01fab4e330f1e136b3fa6ca2eb8fe157b7f29fdc"
-    },
-    {
-      "path": "data/default-lineages.json",
-      "description": "Default model lineages per developer",
-      "license": "CC-BY-4.0",
-      "sha256": "bc62ecc736b9703fcb7912f082dbba155557599eb975be64cd15e1d573367e31"
     },
     {
       "path": "data/model-developers.json",
       "description": "Model developers",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "cfa9d207cc98e2769870055a2b84641686b46bd3f049581e6f5ece794a0e59c6"
     },
     {
       "path": "data/model-identities.json",
       "description": "Reviewed model identities and names",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "52ce478618b1f7f2a7d60f493f99f8f56d86d4db8df5d3767e0208e7f1bf037e"
-    },
-    {
-      "path": "data/model-retirements.json",
-      "description": "Reviewed retirements of source-matched model releases, with the developer's quoted statement",
-      "license": "CC-BY-4.0",
-      "sha256": "4feee771cfbcbbea79f5f93e601d53cf0b5f715de7e29af6ef34163ed882d6df"
-    },
-    {
-      "path": "data/official-model-lineages.json",
-      "description": "Official model lineages",
-      "license": "CC-BY-4.0",
-      "sha256": "568119c4ac7432876ea53dc3327870e627fc9dbaf8ce76fa2f4d061ac0132ba9"
-    },
-    {
-      "path": "data/plan-change-log.json",
-      "description": "Reviewed vendor changes to plans, as shown in Mission Briefing",
-      "license": "CC-BY-4.0",
-      "sha256": "b60bbb75c23585ccb6470b01db3abf0f85b4ae0bba458679933867bc4ffaf7db"
-    },
-    {
-      "path": "data/plan-display-en.json",
-      "description": "English display text for plan notes",
-      "license": "CC-BY-4.0",
-      "sha256": "89ff0eaeee89cba7e0b32e0edf4ea2bc04f57a9c9f2f2cc290046ad77487ab3e"
-    },
-    {
-      "path": "data/plan-edition-groups.json",
-      "description": "Plan edition groups (China and international editions)",
-      "license": "CC-BY-4.0",
-      "sha256": "79b7d64a12f881ee7925e70980ffaeee5c5b1baf0c3563b01b74745de9f037d2"
-    },
-    {
-      "path": "data/plan-index-aliases.json",
-      "description": "Plan model names mapped to index models",
-      "license": "CC-BY-4.0",
-      "sha256": "f84b5b026d880853438570bad3f1d99a3cee3e9d4adb8b34479c04f2c853033a"
-    },
-    {
-      "path": "data/plan-metering.json",
-      "description": "How each plan meters usage: windows, limits, multipliers",
-      "license": "CC-BY-4.0",
-      "sha256": "0e2a6dbff788177b60ccd253b254f58f2f4df409917f06c5ed82e3d87a9e54ba"
-    },
-    {
-      "path": "data/plan-model-access.json",
-      "description": "Which models each plan includes",
-      "license": "CC-BY-4.0",
-      "sha256": "3ae57c59e5f5159a216b626038468e12ea3481e94bce77ad7ca05ac26e373e71"
-    },
-    {
-      "path": "data/plan-price-observations.json",
-      "description": "Observed plan prices",
-      "license": "CC-BY-4.0",
-      "sha256": "7f2ce5c22a8061053d73f31820e944c815182c2c56efdd33b577279f68413fa5"
-    },
-    {
-      "path": "data/plan-product-lines.json",
-      "description": "Plan product lines",
-      "license": "CC-BY-4.0",
-      "sha256": "0af348cf49d8161fdd5f6af6aca86872cac061cf20c30a5e3fb1a8e37b0a567a"
-    },
-    {
-      "path": "data/plan-providers.json",
-      "description": "Plan providers",
-      "license": "CC-BY-4.0",
-      "sha256": "f574ed72edf9424c901989ac8d63d8d765fe9b769aa545f40043f740d71ee078"
-    },
-    {
-      "path": "data/plan-tier-registry.json",
-      "description": "Subscription tiers: the source the plan registries are generated from",
-      "license": "CC-BY-4.0",
-      "sha256": "161a9101d63c6f797d5ec3640d28ef3d70381d37b15eb44c1520c9254fb1e080"
     },
     {
       "path": "data/real-api-pricing/LICENSE",
@@ -227,51 +59,21 @@
       "sha256": "a759ae69aab7a32bb6c6e6c124e17ff115885d5080cdad68c16015367b51d205"
     },
     {
-      "path": "data/reviewed-plan-registry.json",
-      "description": "Reviewed plans (generated)",
-      "license": "CC-BY-4.0",
-      "sha256": "a2915fcb75a71b4fe4556c0eb7a228244504b66b691319508589a0282496fb27"
-    },
-    {
-      "path": "data/reviewed-speed-claims.json",
-      "description": "Reviewed vendor speed claims",
-      "license": "CC-BY-4.0",
-      "sha256": "5383e78ae4daa86e1d5cc86ffa19cea2d6d9294099b0b38eeb104c2ef0281fd0"
-    },
-    {
-      "path": "data/reviewed-speed-tiers.json",
-      "description": "Reviewed speed tiers (fast modes)",
-      "license": "CC-BY-4.0",
-      "sha256": "08642270b5b1a8378c2979f1e41be4de218bada98e8a86ebd69a76bf8c1ea86c"
-    },
-    {
       "path": "data/schemas/ranker-input.schema.json",
       "description": "Ranker input schema",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "c5dfa97ce87d5c4ea9fd434f7b52a13f32bf3b6cec79b270b9cac3677af94dd7"
     },
     {
       "path": "data/schemas/ranker-output.schema.json",
       "description": "Ranker output schema",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "3ff3f20d19a127a26745ea13e1269dc6aa80165bf2b368228744c1b0f7b49107"
-    },
-    {
-      "path": "data/time-policy-inventory.json",
-      "description": "Time-of-day quota and price rules per product line: modelled, none found or unverified, with the sources that state them",
-      "license": "CC-BY-4.0",
-      "sha256": "5cd3cb7f8a402318a5874e0bbc72840b1d3b2733ca6d78b5def22cf535e6bd2e"
-    },
-    {
-      "path": "data/tool-plan-facts-history.json",
-      "description": "Frozen usage facts of coding tool plans",
-      "license": "CC-BY-4.0",
-      "sha256": "85e24472c6b856c3c114f4ee37152907cb67565b5cd4a9bc297c90cea1375a37"
     },
     {
       "path": "data/vendor-effort-defaults.json",
       "description": "Current effort defaults and suggested starts from each vendor's client and API docs, shown beside ★ as a reference",
-      "license": "CC-BY-4.0",
+      "license": "CC-BY-SA-4.0",
       "sha256": "5b37d50b728af95b90a797a6d768c835757d391184ecad09aece292a41f3e040"
     }
   ]

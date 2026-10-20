@@ -1,5 +1,0 @@
-{
-  "version": "2026-10-17.1",
-  "basis": "Reviewed retirements of source-matched releases (#405). An entry needs the developer's own statement, quoted verbatim from sourceUrl. The repair agent adds one when it confirms a possibly retired release.",
-  "retirements": []
-}
