@@ -2,9 +2,10 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## CLI v0.5.26 (pending tag)
+## CLI v0.5.26, Codex plugin 0.15.18 and Claude Code plugin 0.7.17 (2026-10-20)
 
 - The client digest size limit rises from 150 kB to 250 kB in the CLI (`maxObjectBytes`) and the publication reader (`CLIENT_RAW_LIMIT`), and the Codex plugin bundle is rebuilt with it. The digest reached 86% of the old limit as the multiplier packs and per-effort data grew. Integrity checks (exact byte length and SHA-256 against the manifest) are unchanged. The producer only raises its own budget after clients that accept the larger digest are released.
+- Both plugins pin CLI v0.5.26.
 
 ## Public core / Codex 0.15.17 / Desktop community 0.1.1
 

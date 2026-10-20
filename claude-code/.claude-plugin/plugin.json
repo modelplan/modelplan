@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "modelplan",
-  "version": "0.7.16",
+  "version": "0.7.17",
   "description": "Model Plan inside Claude Code: which model and effort to use, what each step up costs, and how to spend your remaining quota before it resets. Status line with live effort and 5h/7d quota. Read-only, advisory, anonymous. Fetches its pinned modelplan CLI release (SHA-256 pinned in the plugin) into ~/.cache/modelplan-cli; changes nothing else.",
   "author": {
     "name": "Model Plan",
