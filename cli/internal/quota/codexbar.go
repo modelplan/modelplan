@@ -74,6 +74,9 @@ var CodexBarProviders = map[string]struct{ Name, Needs string }{
 	"opencodego": {"OpenCode Go", "an OpenCode API key in CodexBar's config (<codexbar> config set-api-key --provider opencodego --stdin), or signed in to opencode.ai; without one CodexBar only estimates from this machine's history, which is not shown"},
 }
 
+// CodexBarOff: MODELPLAN_CODEXBAR turns the CodexBar bridge off.
+func CodexBarOff() bool { return codexbarOff() }
+
 func codexbarOff() bool {
 	v := strings.ToLower(os.Getenv("MODELPLAN_CODEXBAR"))
 	return v == "off" || v == "0" || v == "false"

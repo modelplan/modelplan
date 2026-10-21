@@ -79,6 +79,9 @@ func AccountDue(cache string, now time.Time) bool {
 	return now.Sub(s.ObservedAt) >= wait
 }
 
+// CodexAccountOff: MODELPLAN_CODEX_ACCOUNT=off keeps the CLI to the session logs.
+func CodexAccountOff() bool { return off() }
+
 // off: MODELPLAN_CODEX_ACCOUNT=off keeps the CLI to the session logs.
 func off() bool {
 	v := strings.ToLower(os.Getenv("MODELPLAN_CODEX_ACCOUNT"))
