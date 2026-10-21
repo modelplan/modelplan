@@ -2,6 +2,13 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.28, Codex plugin 0.15.20 and Claude Code plugin 0.7.19 (2026-10-21)
+
+- The task-start brief no longer gives the agent quota figures: no remaining share, reset time or headroom verdict. You see those in the quota hints. Figures given once per thread went stale and the agent repeated them.
+- While quota is tight or used up, the brief offers no step up, so the agent cannot contradict a "step down" hint.
+- When you ask about quota or a hint, the agent is told to run `modelplan quota` or `modelplan advise` for current figures.
+- Both plugins pin CLI v0.5.28.
+
 ## CLI v0.5.27, Codex plugin 0.15.19 and Claude Code plugin 0.7.18 (2026-10-21)
 
 - `modelplan desktop --json --read-only` builds the personal snapshot without writing a file, starting a background process, asking Codex for an account reading or using the network. The default form and `--offline` are unchanged.
