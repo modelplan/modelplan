@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"flag"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -107,11 +109,19 @@ func golden() Snapshot {
 	}
 	pace := &history.PaceView{OK: true, Recording: true, Now: now, Ledger: history.PaceLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Cycles: []history.PaceCycle{
 		cyc(-10*time.Hour, 5, 65, 3*time.Hour, 0), cyc(-5*time.Hour+5*time.Minute, 0, 70, 3*time.Hour+30*time.Minute, 0), cyc(95*time.Minute, 30, 88, 2*time.Hour, 0)}}}
-	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Perf: perf, Pace: pace, Recording: true, CLIVersion: "0.5.25", Now: now,
+	// Connections: Codex and Claude Code installed, Kiro's CLI on the path, CodexBar on for Z.ai.
+	cb := filepath.Join(os.TempDir(), "modelplan-golden-codexbar.json")
+	_ = os.WriteFile(cb, []byte(`{"schemaVersion":1,"providers":["zai"]}`), 0o600)
+	found := map[string]bool{"/home/u/.codex": true, "/home/u/.claude": true, "/home/u/.local/bin/kiro-cli": true}
+	conns := connections.Diagnose(connections.Env{Home: "/home/u", CodexHome: "/home/u/.codex", CodexBarFile: cb, Exists: func(p string) bool { return found[p] }}, r)
+	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Perf: perf, Pace: pace, Connections: conns, Recording: true, CLIVersion: "0.5.25", Now: now,
 		State: store.State{PublicationID: "0d726f2402d395a043fb170e", PublishedAt: "2026-10-18T01:50:38Z", CheckedAt: now.Add(-20 * time.Minute), VerifiedAt: now.Add(-20 * time.Minute)}})
 }
 
 func TestGoldenSnapshot(t *testing.T) {
+	for _, k := range []string{"MODELPLAN_CODEXBAR", "MODELPLAN_CODEX_ACCOUNT", "XDG_DATA_HOME"} {
+		t.Setenv(k, "")
+	}
 	// The text gives clock times in the machine's zone; the golden file is in UTC.
 	defer func(l *time.Location) { time.Local = l }(time.Local)
 	time.Local = time.UTC

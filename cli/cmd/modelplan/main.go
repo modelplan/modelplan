@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
@@ -710,7 +711,8 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 			_ = startDetached("sync", "--quiet", "--base", c.base)
 		}
 	}
-	report := quota.Read(quotaPaths(st), now)
+	paths := quotaPaths(st)
+	report := quota.Read(paths, now)
 	if !readOnly {
 		_ = history.Observe(st.Dir, report, now)
 		observeCodexSpeed(st, now)
@@ -725,7 +727,8 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	pace, paceOK := history.LoadPace(st.Dir)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Recording: !history.Off(), Now: now},
-		Pace: &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
+		Connections: connections.Diagnose(connections.Local(paths), report),
+		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), CLIVersion: version, Now: now}))
 }
 

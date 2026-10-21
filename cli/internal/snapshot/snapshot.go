@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -41,8 +42,10 @@ type Snapshot struct {
 	Sessions    []Session            `json:"sessions"`
 	Accounts    []quota.Account      `json:"accounts"`
 	Sources     []quota.SourceStatus `json:"sources"`
-	Events      []Event              `json:"events"`
-	Measured    []speed.Stat         `json:"measured"`
+	// Connections: per agent and quota source, installed / history / authorization / quota.
+	Connections []connections.Connection `json:"connections"`
+	Events      []Event                  `json:"events"`
+	Measured    []speed.Stat             `json:"measured"`
 	// PerfStats, Daily and DailyCoverage come from the performance ledger (perf.json), which runs
 	// beside the one behind Measured and is never mixed with it.
 	PerfStats     []speed.PerfStat    `json:"perfStats"`
@@ -172,7 +175,8 @@ type Input struct {
 	Events   []advise.Event // from advise.Derive with the advice state
 	Measured []speed.Stat
 	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
-	Ledger []speed.Row
+	Ledger      []speed.Row
+	Connections []connections.Connection
 	// Perf: the performance ledger; nil leaves its fields empty.
 	Perf *speed.PerfView
 	// Pace: the pace ledger; nil leaves paceHistory empty.
@@ -195,6 +199,10 @@ func Build(in Input) Snapshot {
 	}
 	if s.Sources == nil {
 		s.Sources = []quota.SourceStatus{}
+	}
+	s.Connections = in.Connections
+	if s.Connections == nil {
+		s.Connections = []connections.Connection{}
 	}
 	if s.Measured == nil {
 		s.Measured = []speed.Stat{}
@@ -274,6 +282,7 @@ func revision(in Input) string {
 		PerfOK      bool
 		Pace        *history.PaceLedger
 		PaceOK      bool
+		Connections []connections.Connection
 		Publication string
 		Recording   bool
 	}
@@ -285,7 +294,7 @@ func revision(in Input) string {
 		}
 		v.Accounts = append(v.Accounts, x)
 	}
-	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
+	v.Sources, v.Ledger, v.Recording, v.Connections = in.Report.Sources, in.Ledger, in.Recording, in.Connections
 	if in.Perf != nil {
 		l := in.Perf.Ledger
 		l.Files = nil // how far the logs were read is no observation
