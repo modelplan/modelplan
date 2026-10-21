@@ -59,7 +59,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
   modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
-                                       quota, advice and measured speed (docs/personal-snapshot.md)
+                                       quota, advice and measured speed (docs/personal-snapshot.md;
+                                       --read-only writes, refreshes and starts nothing)
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
@@ -105,6 +106,9 @@ func env(k, def string) string {
 
 func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 
+// startDetached runs this binary again in the background; tests replace it.
+var startDetached = detach.Start
+
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		fmt.Fprint(stdout, usage)
@@ -129,11 +133,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	addContext := fs.String("add-context", "", "advise --hook: context for the model to hand over with the hints")
 	refreshAccount := fs.Bool("refresh-account", false, "quota: ask Codex for the account's windows and reset credits now")
 	remove := fs.Bool("remove", false, "declare: take the plan out of local.json")
+	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
 
-	st, err := store.Open()
+	open := store.Open
+	if cmd == "desktop" && *readOnly {
+		open = store.Locate // creates nothing
+	}
+	st, err := open()
 	if err != nil {
 		fmt.Fprintln(stderr, "cache:", err)
 		return exitErr
@@ -155,7 +164,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "sync":
 		if *background {
-			if err := detach.Start("sync", "--quiet", "--base", c.base); err != nil {
+			if err := startDetached("sync", "--quiet", "--base", c.base); err != nil {
 				fmt.Fprintln(stderr, err)
 				return exitErr
 			}
@@ -247,7 +256,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 
 	case "desktop":
-		return desktopCmd(stdout, st, c)
+		return desktopCmd(stdout, st, c, *readOnly)
 
 	case "statusline":
 		if *recordOnly {
@@ -428,7 +437,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	s, _ := st.State()
 	if !c.offline && time.Since(s.CheckedAt) > staleAfter && time.Since(s.LastAttemptAt) > backgroundEvery {
-		_ = detach.Start("sync", "--quiet", "--base", c.base)
+		_ = startDetached("sync", "--quiet", "--base", c.base)
 	}
 	tail := ""
 	if in.FastMode != nil && *in.FastMode {
@@ -534,10 +543,10 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 			_, _ = client.Sync(ctx, false)
 			cancel()
 			if d, _, _ = publication.Load(st); d == nil {
-				_ = detach.Start("sync", "--quiet", "--base", c.base)
+				_ = startDetached("sync", "--quiet", "--base", c.base)
 			}
 		} else if time.Since(s.CheckedAt) > staleAfter {
-			_ = detach.Start("sync", "--quiet", "--base", c.base)
+			_ = startDetached("sync", "--quiet", "--base", c.base)
 		}
 	}
 	state := advise.Load(st.Dir)
@@ -654,7 +663,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 func refreshAccountLater(st *store.Store) {
 	now := time.Now()
 	if quota.AccountDue(st.Dir, now) {
-		_ = detach.Start("quota", "--refresh-account", "--quiet")
+		_ = startDetached("quota", "--refresh-account", "--quiet")
 	}
 	refreshCodexBarLater(st, now)
 }
@@ -668,9 +677,9 @@ func refreshCodexBarLater(st *store.Store, now time.Time) {
 	}
 	switch {
 	case quota.CodexBarFetchDue(st.Dir, now):
-		_ = detach.Start("codexbar", "fetch", "--quiet") // refreshes once fetched
+		_ = startDetached("codexbar", "fetch", "--quiet") // refreshes once fetched
 	case quota.CodexBarDue(p, now):
-		_ = detach.Start("codexbar", "refresh", "--quiet")
+		_ = startDetached("codexbar", "refresh", "--quiet")
 	}
 }
 
@@ -692,23 +701,29 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 // Codex account reading, CodexBar and a stale publication in the background, records the quota
 // history and Codex speed, and arms switch-back; it marks nothing as told, which the app does
 // for its own notifications.
-func desktopCmd(stdout io.Writer, st *store.Store, c common) int {
+func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int {
 	now := time.Now()
 	d, ps, _ := publication.Load(st)
-	if !c.offline {
+	if !c.offline && !readOnly {
 		refreshAccountLater(st)
 		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
-			_ = detach.Start("sync", "--quiet", "--base", c.base)
+			_ = startDetached("sync", "--quiet", "--base", c.base)
 		}
 	}
 	report := quota.Read(quotaPaths(st), now)
-	_ = history.Observe(st.Dir, report, now)
-	observeCodexSpeed(st, now)
+	if !readOnly {
+		_ = history.Observe(st.Dir, report, now)
+		observeCodexSpeed(st, now)
+	}
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
-	_ = state.Save(st.Dir, now)
+	if !readOnly {
+		_ = state.Save(st.Dir, now)
+	}
+	ledger := speed.Load(st.Dir)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
-		Measured: speed.Summarize(speed.Load(st.Dir), now), Recording: !history.Off(), CLIVersion: version, Now: now}))
+		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
+		Recording: !history.Off(), CLIVersion: version, Now: now}))
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex

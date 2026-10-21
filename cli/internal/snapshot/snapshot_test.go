@@ -82,3 +82,55 @@ func TestEmptySnapshotHasNoNulls(t *testing.T) {
 		t.Errorf("a publication unchecked for two days is stale: %+v", old.Publication)
 	}
 }
+
+// clocked builds the snapshot of one fixed set of readings at another clock time, as the CLI
+// does: the accounts' verdicts, the advice and the boundaries all from that time.
+func clocked(at time.Time, used float64) Snapshot {
+	d, _ := fixture()
+	seen, reset := now.Add(-2*time.Minute), now.Add(30*time.Minute)
+	r := quota.Report{SchemaVersion: 1, EvaluatedAt: at, Accounts: []quota.Account{{Source: "claude-code", ObservedAt: seen,
+		Harness: &quota.Harness{Model: "claude-opus-5-5", ObservedAt: &seen},
+		Windows: []quota.Window{{Kind: "five_hour", UsedPercent: f(used), WindowMinutes: 300, ResetsAt: &reset, ResetMode: "fixed", ObservedAt: seen}}}},
+		Sources: []quota.SourceStatus{{Source: "claude-code", Status: "ok"}}}
+	for i := range r.Accounts {
+		quota.Evaluate(&r.Accounts[i], at)
+	}
+	in := advise.Input{Report: r, Digest: d, State: advise.Load(""), Now: at}
+	return Build(Input{Report: r, Digest: d, State: store.State{PublicationID: "p1", CheckedAt: now.Add(-time.Hour)}, Events: advise.Derive(in),
+		Boundaries: advise.Boundaries(in), Ledger: []speed.Row{{Day: "2026-10-18", Source: "claude-code", Model: "claude-opus-5-5", Requests: 6}}, Recording: true, Now: at})
+}
+
+func TestRevisionAndValidUntil(t *testing.T) {
+	a := clocked(now, 40)
+	if a.Sessions[0].EffortStatus != "unreported" || a.Sessions[0].Effort == nil || !a.Sessions[0].Effort.Star {
+		t.Errorf("no reported effort: unreported, with the ★ fallback kept: %+v", a.Sessions[0])
+	}
+	// The recent rate of the reading taken two minutes ago lapses first, ten minutes after it.
+	if a.ValidUntil == nil || !a.ValidUntil.Equal(now.Add(8*time.Minute)) {
+		t.Fatalf("validUntil = %v", a.ValidUntil)
+	}
+	b := clocked(now.Add(5*time.Minute), 40)
+	if b.DataRevision != a.DataRevision || !b.ValidUntil.Equal(*a.ValidUntil) {
+		t.Errorf("five minutes later, no boundary crossed: %s %v, was %s %v", b.DataRevision, b.ValidUntil, a.DataRevision, a.ValidUntil)
+	}
+	c := clocked(now.Add(31*time.Minute), 40)
+	w := c.Accounts[0].Windows[0]
+	if c.DataRevision != a.DataRevision || w.Pace != "reset_passed" || w.RemainingPercent != nil {
+		t.Errorf("past the reset: same revision, allowance unknown until read again: %s %+v", c.DataRevision, w)
+	}
+	if c.ValidUntil == nil || !c.ValidUntil.Equal(now.Add(58*time.Minute)) {
+		t.Errorf("past the reset the next boundary is the reading going stale: %v", c.ValidUntil)
+	}
+	types := func(s Snapshot) (out []string) {
+		for _, e := range s.Events {
+			out = append(out, e.Type)
+		}
+		return
+	}
+	if strings.Join(types(a), ",") == strings.Join(types(c), ",") {
+		t.Errorf("the events follow the clock: %v and %v", types(a), types(c))
+	}
+	if d := clocked(now, 41); d.DataRevision == a.DataRevision {
+		t.Error("a changed reading changes the revision")
+	}
+}

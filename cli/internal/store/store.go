@@ -29,8 +29,20 @@ type State struct {
 
 type Store struct{ Dir string }
 
-// Open uses $MODELPLAN_CACHE, else os.UserCacheDir()/modelplan.
+// Open uses $MODELPLAN_CACHE, else os.UserCacheDir()/modelplan, and creates it.
 func Open() (*Store, error) {
+	s, err := Locate()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(s.Dir, "objects"), 0o755); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Locate is Open without creating anything, for readers that must not write.
+func Locate() (*Store, error) {
 	dir := os.Getenv("MODELPLAN_CACHE")
 	if dir == "" {
 		base, err := os.UserCacheDir()
@@ -38,9 +50,6 @@ func Open() (*Store, error) {
 			return nil, err
 		}
 		dir = filepath.Join(base, "modelplan")
-	}
-	if err := os.MkdirAll(filepath.Join(dir, "objects"), 0o755); err != nil {
-		return nil, err
 	}
 	return &Store{Dir: dir}, nil
 }

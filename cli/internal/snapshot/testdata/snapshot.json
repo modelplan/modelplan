@@ -27,6 +27,7 @@
         "label": "High",
         "star": false
       },
+      "effortStatus": "reported",
       "recommended": {
         "key": "medium",
         "label": "Med",
@@ -56,6 +57,7 @@
         "label": "Med",
         "star": true
       },
+      "effortStatus": "reported",
       "recommended": {
         "key": "medium",
         "label": "Med",
@@ -400,5 +402,7 @@
     }
   ],
   "recording": true,
-  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
+  "dataRevision": "sha256:a2d1b418067510b5ca7f782c73610bd4",
+  "validUntil": "2026-10-18T09:08:00Z"
 }

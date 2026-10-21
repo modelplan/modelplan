@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -75,9 +74,9 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 				say("正在后台下载 CodexBar CLI %s（macOS 约 14 MB，Linux 约 53 MB），按锁定的 SHA-256 校验后放在 %s/codexbar。",
 					"Fetching CodexBar CLI %s in the background (about 14 MB on macOS, 53 MB on Linux), checked against the pinned SHA-256, into %s/codexbar.",
 					quota.CodexBarVersion, st.Dir)
-				_ = detach.Start("codexbar", "fetch", "--quiet")
+				_ = startDetached("codexbar", "fetch", "--quiet")
 			} else {
-				_ = detach.Start("codexbar", "refresh", "--quiet")
+				_ = startDetached("codexbar", "refresh", "--quiet")
 			}
 			say("几分钟后运行 modelplan codexbar 查看结果；每家需要的登录或 key 由 CodexBar 保管。",
 				"Run `modelplan codexbar` in a minute for the result; CodexBar keeps each vendor's sign-in or key.")
