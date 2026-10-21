@@ -760,8 +760,107 @@
     "from": "2026-10-15",
     "recording": true
   },
+  "paceHistory": {
+    "since": "2026-10-15T09:00:00Z",
+    "status": "ok",
+    "gapLimitMinutes": {
+      "five_hour": 60,
+      "monthly": 1440,
+      "weekly": 360
+    },
+    "groups": [
+      {
+        "source": "claude-code",
+        "kind": "five_hour",
+        "windowMinutes": 300,
+        "attribution": "unattributed",
+        "closedCycles": 2,
+        "validCycles": 2,
+        "observedIntervalRatePerHour": 20,
+        "status": "ok",
+        "min": 2,
+        "cycles": [
+          {
+            "resetsAt": "2026-10-18T10:35:00Z",
+            "closed": false,
+            "firstObservedAt": "2026-10-18T06:35:00Z",
+            "firstUsed": 30,
+            "lastObservedAt": "2026-10-18T08:35:00Z",
+            "lastUsed": 88,
+            "readings": 12,
+            "spanMinutes": 120,
+            "coverage": 0.4,
+            "gapCount": 0,
+            "maxGapMinutes": 0,
+            "drops": 0,
+            "hadDrop": false,
+            "points": 58,
+            "gapPoints": 0,
+            "spent": [
+              {
+                "model": "claude-opus-5-5",
+                "effort": "high",
+                "points": 58
+              }
+            ],
+            "spentBasis": "reading-time-heuristic"
+          },
+          {
+            "resetsAt": "2026-10-18T04:05:00Z",
+            "closed": true,
+            "firstObservedAt": "2026-10-18T00:05:00Z",
+            "firstUsed": 0,
+            "lastObservedAt": "2026-10-18T03:35:00Z",
+            "lastUsed": 70,
+            "readings": 12,
+            "spanMinutes": 210,
+            "coverage": 0.7,
+            "gapCount": 0,
+            "maxGapMinutes": 0,
+            "drops": 0,
+            "hadDrop": false,
+            "points": 70,
+            "gapPoints": 0,
+            "spent": [
+              {
+                "model": "claude-opus-5-5",
+                "effort": "high",
+                "points": 70
+              }
+            ],
+            "spentBasis": "reading-time-heuristic"
+          },
+          {
+            "resetsAt": "2026-10-17T23:00:00Z",
+            "closed": true,
+            "firstObservedAt": "2026-10-17T19:00:00Z",
+            "firstUsed": 5,
+            "lastObservedAt": "2026-10-17T22:00:00Z",
+            "lastUsed": 65,
+            "readings": 12,
+            "spanMinutes": 180,
+            "coverage": 0.6,
+            "gapCount": 0,
+            "maxGapMinutes": 0,
+            "drops": 0,
+            "hadDrop": false,
+            "points": 60,
+            "gapPoints": 0,
+            "spent": [
+              {
+                "model": "claude-opus-5-5",
+                "effort": "high",
+                "points": 60
+              }
+            ],
+            "spentBasis": "reading-time-heuristic"
+          }
+        ]
+      }
+    ]
+  },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:6218d737cdc6f3130ae1dca85d3418b6",
+  "dataRevision": "sha256:2bb34a2009066dfe125a091496a30b3c",
   "validUntil": "2026-10-18T09:08:00Z"
 }
