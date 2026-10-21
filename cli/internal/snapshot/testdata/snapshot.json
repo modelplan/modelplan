@@ -284,6 +284,177 @@
       "status": "ok"
     }
   ],
+  "connections": [
+    {
+      "id": "codex",
+      "kind": "agent",
+      "installed": {
+        "status": "yes"
+      },
+      "history": {
+        "status": "yes",
+        "at": "2026-10-18T08:58:00Z"
+      },
+      "authorization": {
+        "status": "yes",
+        "via": "agent-owned-reader"
+      },
+      "quota": {
+        "status": "yes",
+        "at": "2026-10-18T08:58:00Z",
+        "binding": "unknown"
+      },
+      "support": "full"
+    },
+    {
+      "id": "claude-code",
+      "kind": "agent",
+      "installed": {
+        "status": "yes"
+      },
+      "history": {
+        "status": "yes",
+        "at": "2026-10-18T08:58:00Z"
+      },
+      "authorization": {
+        "status": "not-applicable",
+        "via": "status-line"
+      },
+      "quota": {
+        "status": "yes",
+        "at": "2026-10-18T08:58:00Z",
+        "binding": "unknown"
+      },
+      "support": "full"
+    },
+    {
+      "id": "opencode",
+      "kind": "agent",
+      "installed": {
+        "status": "no",
+        "reason": "not-found"
+      },
+      "history": {
+        "status": "no",
+        "reason": "no-session-reader"
+      },
+      "authorization": {
+        "status": "not-applicable"
+      },
+      "quota": {
+        "status": "not-applicable",
+        "reason": "see-codexbar:opencodego"
+      },
+      "support": "detected-only"
+    },
+    {
+      "id": "codexbar:copilot",
+      "kind": "quota",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "no",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "no",
+        "reason": "not-enabled",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
+      "id": "codexbar:cursor",
+      "kind": "quota",
+      "installed": {
+        "status": "no",
+        "reason": "not-found"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "no",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "no",
+        "reason": "not-enabled",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
+      "id": "codexbar:kiro",
+      "kind": "quota",
+      "installed": {
+        "status": "yes"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "no",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "no",
+        "reason": "not-enabled",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
+      "id": "codexbar:opencodego",
+      "kind": "quota",
+      "installed": {
+        "status": "no",
+        "reason": "not-found"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "no",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "no",
+        "reason": "not-enabled",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
+      "id": "codexbar:zai",
+      "kind": "quota",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "yes",
+        "via": "codexbar"
+      },
+      "quota": {
+        "status": "yes",
+        "at": "2026-10-18T08:58:00Z",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    }
+  ],
   "events": [
     {
       "type": "window_tight",
@@ -960,6 +1131,6 @@
   },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:11e72f44f2cd8758d1d163b7cf9c352a",
+  "dataRevision": "sha256:22b86f0be1a94ad89551646340d38414",
   "validUntil": "2026-10-18T09:08:00Z"
 }

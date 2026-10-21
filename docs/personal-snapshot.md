@@ -28,6 +28,7 @@ It marks no advice as told. A client keeps its own notified keys.
 | `sessions[]` | Each harness's current configuration (below) |
 | `accounts[]` | The quota accounts, exactly as `modelplan quota --json` gives them: windows with pace, run-out, pools (Codex `reserve`), reset cards; `codexbar:<provider>` accounts when the user enabled CodexBar |
 | `sources[]` | The status of each reader (`ok`, `missing`, …, with a reason) |
+| `connections[]` | CLI 0.5.27+. Per agent and quota source, how far it is connected (below) |
 | `events[]` | Advice events (below), most urgent first |
 | `measured[]` | The measured speed per configuration over the last 28 days, as in `modelplan history --json`, from `observed/speed.json`. Kept as it is; a client shows it only as history before `perfStats[].since` |
 | `perfStats[]` | CLI 0.5.27+. The performance ledger per configuration (below) |
@@ -78,6 +79,17 @@ One entry per configuration with a row in the last 30 days:
 Rates are always ratios of sums and quantiles always come from merged histograms; nothing averages rates or medians. A generation rate is a per-request speed, not throughput: two sessions generating at 60 tok/s at the same time read 60, not 120. Speed is never used to infer plan usage or remaining quota, and it never changes published ability or recommendations.
 
 Display rules for clients: one number per engine, `workloadRate.value`, labelled with its window and scope ("62 t/s · 7 days · all configurations"); shown only when `ok`, dimmed when `aging`, hidden when `stale`, and not drawn at all otherwise (never `0`, never the legacy `measured[]`). `tokenRate` and the `perfStats[]` entries go in hover or expanded views. Nothing in this version is any subscription's speed.
+
+## `connections[]`
+
+CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, then `codexbar:<provider>` for each CodexBar provider. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
+
+- `id`, `kind` (`agent` | `quota`) and `support`: `full` (sessions and quota), `quota-only` (CodexBar providers such as Kiro: quota, no session reader) or `detected-only` (OpenCode: found, nothing read yet).
+- Four levels, each `{status, reason, via, at, binding}` with `status` `yes`, `no`, `off` (turned off by the user's switch), `unknown` or `not-applicable`, and `reason` a stable code:
+  - `installed`: the client or its CLI is at a known path (on `PATH` or the usual install places, a macOS app, or its data folder). A desktop app started from Finder has a short `PATH`, so the usual places are checked too;
+  - `history`: its local logs were read (`at`: the newest reading). OpenCode: `no-session-reader`;
+  - `authorization`: a reader that needs the user's opt-in is enabled: Codex's own account reader (`via: "agent-owned-reader"`, `off` with `MODELPLAN_CODEX_ACCOUNT=off`), a CodexBar provider the user enabled (`via: "codexbar"`, `off` with `MODELPLAN_CODEXBAR=off`, else `not-enabled`). Claude Code needs none (`via: "status-line"`);
+  - `quota`: windows were read (`at`: when). `binding` is `unknown`: a reading proves a meter, not whose subscription it is.
 
 ## `sessionRanking`
 
