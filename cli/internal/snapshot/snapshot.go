@@ -7,6 +7,10 @@
 package snapshot
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
@@ -22,6 +26,8 @@ const (
 	SchemaVersion = 1
 	// A publication not checked for this long is stale, as in the plugins.
 	publicationStale = 48 * time.Hour
+	// Cached CodexBar and Codex account readings are used for this long.
+	cachedKeep = 6 * time.Hour
 )
 
 type Snapshot struct {
@@ -39,6 +45,13 @@ type Snapshot struct {
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
+	// DataRevision changes only when what was observed changes (readings, session configuration,
+	// the speed ledger, the publication, recording), never with the clock alone.
+	DataRevision string `json:"dataRevision"`
+	// ValidUntil: the next instant at which the clock alone changes a verdict here (a reset, a
+	// card expiry, a reading going stale, an advice lead); read again then, even with the same
+	// DataRevision. Nil when nothing is due.
+	ValidUntil *time.Time `json:"validUntil"`
 }
 
 type Publication struct {
@@ -60,9 +73,11 @@ type Session struct {
 	Stale       bool       `json:"stale"`
 	Model       ModelRef   `json:"model"`
 	// Effort is the effort in use (the harness default reads as ★), Recommended the ★ effort;
-	// both nil when the model is not in the publication.
-	Effort      *EffortRef `json:"effort"`
-	Recommended *EffortRef `json:"recommended"`
+	// both nil when the model is not in the publication. Effort keeps that fallback for older
+	// clients; EffortStatus says whether the harness reported an effort at all.
+	Effort       *EffortRef `json:"effort"`
+	EffortStatus string     `json:"effortStatus"` // reported | unreported
+	Recommended  *EffortRef `json:"recommended"`
 	// VsRecommended: the effort in use against ★ (points, cost multiple); nil at ★ or unknown.
 	VsRecommended *Delta `json:"vsRecommended"`
 	Speed         string `json:"speed,omitempty"` // "" standard; fast, …
@@ -103,11 +118,15 @@ type Event struct {
 }
 
 type Input struct {
-	Report     quota.Report
-	Digest     *digest.Digest
-	State      store.State
-	Events     []advise.Event // from advise.Derive with the advice state
-	Measured   []speed.Stat
+	Report   quota.Report
+	Digest   *digest.Digest
+	State    store.State
+	Events   []advise.Event // from advise.Derive with the advice state
+	Measured []speed.Stat
+	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
+	Ledger []speed.Row
+	// Boundaries: advise.Boundaries for the same input.
+	Boundaries []time.Time
 	Recording  bool
 	CLIVersion string
 	Now        time.Time
@@ -156,7 +175,80 @@ func Build(in Input) Snapshot {
 		}
 		s.Events = append(s.Events, x)
 	}
+	s.DataRevision = revision(in)
+	s.ValidUntil = validUntil(in, s)
 	return s
+}
+
+// revision hashes the observations the snapshot is built from, and none of what the clock derives
+// from them (remaining minutes, elapsed and projected shares, pace, staleness, events).
+func revision(in Input) string {
+	type window struct {
+		Kind, Limit, ResetMode  string
+		Used, UsedUSD, LimitUSD *float64
+		Minutes                 int
+		ResetsAt                *time.Time
+		ObservedAt              time.Time
+	}
+	type account struct {
+		Source, Plan, Generation, Via, Pool string
+		ObservedAt                          time.Time
+		Harness                             *quota.Harness
+		Windows                             []window
+		Cards                               []quota.Card
+	}
+	var v struct {
+		Accounts    []account
+		Sources     []quota.SourceStatus
+		Ledger      []speed.Row
+		Publication string
+		Recording   bool
+	}
+	for _, a := range in.Report.Accounts {
+		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards}
+		for _, w := range a.Windows {
+			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: w.UsedPercent, UsedUSD: w.UsedUSD, LimitUSD: w.LimitUSD,
+				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
+		}
+		v.Accounts = append(v.Accounts, x)
+	}
+	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
+	if in.Digest != nil {
+		v.Publication = in.State.PublicationID
+	}
+	b, _ := json.Marshal(v)
+	h := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(h[:16])
+}
+
+// validUntil: the earliest coming boundary of the quota verdicts, the advice, a cached reading
+// leaving use, the publication going stale and, with measured speed, the local midnight that
+// moves its days.
+func validUntil(in Input, s Snapshot) *time.Time {
+	now := in.Now.UTC()
+	ts := append([]time.Time(nil), in.Boundaries...)
+	for i := range in.Report.Accounts {
+		a := &in.Report.Accounts[i]
+		ts = append(ts, quota.Boundaries(a)...)
+		if !a.ObservedAt.IsZero() {
+			ts = append(ts, a.ObservedAt.Add(cachedKeep)) // a CodexBar or Codex account reading this old is no longer used
+		}
+	}
+	if s.Publication != nil && s.Publication.CheckedAt != nil {
+		ts = append(ts, s.Publication.CheckedAt.Add(publicationStale))
+	}
+	if len(s.Measured) > 0 {
+		l := in.Now.Local()
+		ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i].Before(ts[j]) })
+	for _, t := range ts {
+		if t.After(now) {
+			u := t.UTC()
+			return &u
+		}
+	}
+	return nil
 }
 
 func session(a *quota.Account, d *digest.Digest) (Session, bool) {
@@ -165,7 +257,10 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 		return Session{}, false
 	}
 	x := Session{Source: a.Source, ObservedAt: h.ObservedAt, Attribution: h.Attribution, Origin: h.Origin, Stale: a.Stale,
-		Model: ModelRef{HarnessID: h.Model}, Headroom: a.Headroom, Deciding: a.Deciding, Pool: a.Pool, Speed: speedOf(h)}
+		Model: ModelRef{HarnessID: h.Model}, Headroom: a.Headroom, Deciding: a.Deciding, Pool: a.Pool, Speed: speedOf(h), EffortStatus: "unreported"}
+	if h.Effort != "" {
+		x.EffortStatus = "reported"
+	}
 	if x.ObservedAt == nil && !a.ObservedAt.IsZero() {
 		t := a.ObservedAt.UTC()
 		x.ObservedAt = &t

@@ -179,6 +179,41 @@ func Evaluate(a *Account, now time.Time) {
 	a.Headroom, a.Deciding = headroom(pool)
 }
 
+// Boundaries: the instants at which Evaluate gives the account other verdicts from the same
+// readings, only because the clock passed them: it goes stale, a window resets, its recent rate
+// lapses, or its elapsed share crosses a pace threshold (a tenth, a fifth, a half, the last
+// quarter, or where the projection passes 100% or 60%). Past instants are included; callers filter.
+func Boundaries(a *Account) []time.Time {
+	var out []time.Time
+	if !a.ObservedAt.IsZero() {
+		out = append(out, a.ObservedAt.Add(staleAfter))
+	}
+	for i := range a.Windows {
+		w := &a.Windows[i]
+		if w.UsedPercent == nil || w.ResetsAt == nil {
+			continue
+		}
+		out = append(out, *w.ResetsAt)
+		if !w.ObservedAt.IsZero() {
+			out = append(out, w.ObservedAt.Add(recentFresh))
+		}
+		length := w.WindowMinutes
+		if length == 0 {
+			length = defaultMinutes[w.Kind]
+		}
+		if length == 0 || w.ResetMode == "rolling" {
+			continue
+		}
+		used := *w.UsedPercent
+		for _, e := range []float64{0.1, 0.2, 0.5, 0.75, used / 100, used / 60} {
+			if e > 0 && e < 1 {
+				out = append(out, w.ResetsAt.Add(-time.Duration((1-e)*float64(length)*float64(time.Minute))))
+			}
+		}
+	}
+	return out
+}
+
 func round1(v float64) *float64 { x := math.Round(v*10) / 10; return &x }
 
 func evalWindow(w *Window, now time.Time) {
