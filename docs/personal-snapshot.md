@@ -29,11 +29,14 @@ It marks no advice as told. A client keeps its own notified keys.
 | `accounts[]` | The quota accounts, exactly as `modelplan quota --json` gives them: windows with pace, run-out, pools (Codex `reserve`), reset cards; `codexbar:<provider>` accounts when the user enabled CodexBar |
 | `sources[]` | The status of each reader (`ok`, `missing`, …, with a reason) |
 | `events[]` | Advice events (below), most urgent first |
-| `measured[]` | The measured speed per configuration over the last 28 days, as in `modelplan history --json` |
+| `measured[]` | The measured speed per configuration over the last 28 days, as in `modelplan history --json`, from `observed/speed.json`. Kept as it is; a client shows it only as history before `perfStats[].since` |
+| `perfStats[]` | CLI 0.5.27+. The performance ledger per configuration (below) |
+| `daily[]` | CLI 0.5.27+. `{day, source, model, observedOutputTokens, observedRequests}` per local day of the last 30 (today included) and model, across efforts, speed modes and parsers. Days without rows are left out, not `0`: the ledger cannot tell no activity from no coverage. Days before the ledger started are absent |
+| `dailyCoverage` | CLI 0.5.27+. `{from, recording}`: the first day `daily[]` covers (the later of the ledger's start and 30 days ago; `null` without a ledger), for a label such as "observed on this machine since <from>" |
 | `recording` | Local quota history and speed measurement are on (`MODELPLAN_HISTORY` is not `off`) |
 | `note` | The data boundary, in English |
-| `dataRevision` | CLI 0.5.27+. A hash of what was observed: the accounts' readings (time, used share, reset, limit, window length, cards), the sessions' configuration, the readers' status, the speed ledger's rows, the publication id and `recording`. It leaves out `generatedAt` and everything the clock derives (`resetsInMinutes`, `elapsedPercent`, `projectedPercent`, `ageMinutes`, pace, staleness, events). The same revision means the same inputs, not the same document |
-| `validUntil` | CLI 0.5.27+. The next instant at which the clock alone changes a verdict: a window's reset or pace threshold, its recent rate lapsing, an account reading going stale (60 minutes) or out of use (6 hours, for cached CodexBar and Codex account readings), a card expiry or its 48-hour lead, an advice lead (a public reset, a rate boundary, a switch-back's or better model's time in the menu bar), the publication going stale, and local midnight while `measured[]` has rows. `null` when nothing is due. Read again at or after it even when `dataRevision` is unchanged; never reuse an expired event or the allowance of a passed reset. Shares that move every minute (elapsed, projected) have no boundary, so a client showing them refreshes on its own cadence too |
+| `dataRevision` | CLI 0.5.27+. A hash of what was observed: the accounts' readings (time, used share, reset, limit, window length, cards), the sessions' configuration, the readers' status, the rows of both speed ledgers, the publication id and `recording`. It leaves out `generatedAt` and everything the clock derives (`resetsInMinutes`, `elapsedPercent`, `projectedPercent`, `ageMinutes`, pace, staleness, events). The same revision means the same inputs, not the same document |
+| `validUntil` | CLI 0.5.27+. The next instant at which the clock alone changes a verdict: a window's reset or pace threshold, its recent rate lapsing, an account reading going stale (60 minutes) or out of use (6 hours, for cached CodexBar and Codex account readings), a card expiry or its 48-hour lead, an advice lead (a public reset, a rate boundary, a switch-back's or better model's time in the menu bar), the publication going stale, and local midnight while `measured[]` or the performance ledger has rows, and a configuration's newest sample turning 24 hours and 7 days old. `null` when nothing is due. Read again at or after it even when `dataRevision` is unchanged; never reuse an expired event or the allowance of a passed reset. Shares that move every minute (elapsed, projected) have no boundary, so a client showing them refreshes on its own cadence too |
 
 A cached reading that ages out of use (a CodexBar or Codex account reading after 6 hours) changes the accounts, so it changes `dataRevision` too.
 
@@ -47,7 +50,30 @@ One entry per harness that reported a model (`claude-code`, `codex`):
 - `effortStatus` (CLI 0.5.27+): `reported` when the harness reported an effort, `unreported` when it did not (then `effort` is only the ★ fallback). A client draws an effort marker as the user's own only when it is `reported`;
 - `vsRecommended`: `{abilityDelta, costRatio}` of the effort in use against ★, or `null` at ★;
 - `speed`: `""` for standard, else the mode (`fast`, …);
-- `headroom`, `deciding`, `pool`: the quota verdict of the session's account for the allowance it draws from.
+- `headroom`, `deciding`, `pool`: the quota verdict of the session's account for the allowance it draws from;
+- `workloadRate` (CLI 0.5.27+): the one speed reading per engine. `{source, window: "recent7d", scope: "all-configurations", configCount, value, status, n, min, lastAt, freshness}`: the generation rate of all the harness's configurations in the recent 7 days, as the ratio of their summed eligible output tokens and generation time. It describes what this user's mix produced, unreported efforts included; it is not a plan's speed and moves when the mix changes;
+- `tokenRate` (CLI 0.5.27+): the same for the session's own configuration, `{configKey, window: "recent7d", value, status, n, min, lastAt, freshness}`. With `effortStatus: "unreported"` it is `unavailable` with `reason: "effort-unreported"`, since an unknown configuration is no proof of the same one. No other configuration stands in.
+
+`value` is set only when `status` is `ok`.
+
+## `perfStats[]`
+
+CLI 0.5.27+. From `observed/perf.json`, a ledger beside `speed.json` that is never merged with it. It starts when it is created (`since`, UTC): only turns that started at or after that count, so log content read before can never be counted again; the time before it exists only in `measured[]`. It keeps 35 days, at most 3,000 rows and 2 MiB. An unreadable, oversized or other-schema file is never overwritten; its figures are `unavailable` with `reason: "ledger-unreadable"`.
+
+One entry per configuration with a row in the last 30 days:
+
+- `source`, `model`, `effortStatus`, `effort` (native key; `""` when unreported), `speed`, `parser` (`codex-rollout/1` | `claude-transcript/1`), `eligibility` (`gen-v1`). Rows of different parsers or eligibility rules never merge;
+- `basis`: `tokenBasis: "harness-reported-output"` (believed to include hidden reasoning for both harnesses, not yet confirmed), `timing: {start, first, end, quality: "harness-log-proxy"}` and `quantile: "log1.1-centre-lower"`. Codex: the input logged, the item's `started_at_ms`, the usage record logged. Claude Code: the input logged, the thinking block's time minus its duration, the last block logged. They are the times the harness logged, a proxy for the model's own;
+- `attribution: "unattributed"`: the samples belong to the harness, not to a verified subscription;
+- `since`, `lastAt` (when the newest sample completed, to the minute) and `freshness`: `fresh` within 24 hours, `aging` within 7 days, else `stale`. A recent `lastAt` does not make the figures recent, and a completed request does not mean a session is working now;
+- `windows.recent7d` and `windows.recent30d`: the rows of the last 7 or 30 local calendar days, today included. Not a current or last-24-hour rate. Each has:
+  - `sums`: `observedRequests` and `observedOutputTokens` (every request the parser saw in a finished turn of the logs this CLI reads, counted once: Codex rollouts it scans, Claude Code transcripts seen through the status line; not the account's consumption), `eligibleRequests`, `eligibleOutputTokens`, `genMs` (requests with a known first token, at least 20 output tokens, 0.2 s to 30 min of generation and at most 3,000 tok/s), `turns`, `turnMs`, `turnOutputTokens` and `mixedConfigTurnsExcluded` (Claude Code turns whose requests ran under more than one configuration; their requests count under their own);
+  - `hist`: `ttftMs`, `turnMsHist`, `turnTokensHist`, each `{scheme: "log1.1/v1", unit, counts}`. Bucket `k` ≥ 1 holds [1.1^k, 1.1^(k+1)), bucket `0` everything below 1.1. Histograms merge by adding counts, only with the same scheme and unit;
+  - `metrics`: `generationTps` (Σ eligible output tokens ÷ Σ generation seconds), `ttftMs` (the merged histogram's estimate: the lowest bucket whose count reaches half, at its geometric centre; within about 5% of the lower median, never exact) and `wholeTurnTps` (Σ turn output tokens ÷ Σ turn seconds, tools included; for expanded views). Each is `{value, status, n, min, reason}` with `min` 5. `status`: `ok`, `insufficient` (fewer than `min`), `stale` (newest sample older than 7 days), `unavailable` (`no-first-token`: the source gives none, such as Claude Code without thinking; or `ledger-unreadable`), `off` (recording is off).
+
+Rates are always ratios of sums and quantiles always come from merged histograms; nothing averages rates or medians. A generation rate is a per-request speed, not throughput: two sessions generating at 60 tok/s at the same time read 60, not 120. Speed is never used to infer plan usage or remaining quota, and it never changes published ability or recommendations.
+
+Display rules for clients: one number per engine, `workloadRate.value`, labelled with its window and scope ("62 t/s · 7 days · all configurations"); shown only when `ok`, dimmed when `aging`, hidden when `stale`, and not drawn at all otherwise (never `0`, never the legacy `measured[]`). `tokenRate` and the `perfStats[]` entries go in hover or expanded views. Nothing in this version is any subscription's speed.
 
 ## `events[]`
 

@@ -117,7 +117,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if out < 0 {
 			return // a rate-limit notice without usage
 		}
-		r := request{out: out}
+		r := request{out: out, end: ts}
 		if t.first > 0 {
 			first := time.UnixMilli(t.first)
 			if ts.After(first) {
@@ -145,7 +145,12 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		if c.Payload.DurationMs != nil && *c.Payload.DurationMs > 0 {
 			dur = time.Duration(*c.Payload.DurationMs) * time.Millisecond
 		}
-		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs})
+		all := make([]request, len(t.reqs))
+		for i, r := range t.reqs {
+			r.cfg = t.cfg
+			all[i] = r
+		}
+		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all})
 	case event == "turn_aborted":
 		p.cur = nil
 	}

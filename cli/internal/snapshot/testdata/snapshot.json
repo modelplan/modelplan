@@ -37,6 +37,28 @@
         "abilityDelta": 4.8,
         "costRatio": 1.37
       },
+      "tokenRate": {
+        "configKey": "claude-code|claude-opus-5-5|reported|high||claude-transcript/1|gen-v1",
+        "window": "recent7d",
+        "value": 119.4,
+        "status": "ok",
+        "n": 9,
+        "min": 5,
+        "lastAt": "2026-10-18T08:20:00Z",
+        "freshness": "fresh"
+      },
+      "workloadRate": {
+        "source": "claude-code",
+        "window": "recent7d",
+        "scope": "all-configurations",
+        "configCount": 1,
+        "value": 119.4,
+        "status": "ok",
+        "n": 9,
+        "min": 5,
+        "lastAt": "2026-10-18T08:20:00Z",
+        "freshness": "fresh"
+      },
       "headroom": "conserve",
       "deciding": "five_hour"
     },
@@ -65,6 +87,28 @@
       },
       "vsRecommended": null,
       "speed": "fast",
+      "tokenRate": {
+        "configKey": "codex|gpt-6-astra|reported|medium|fast|codex-rollout/1|gen-v1",
+        "window": "recent7d",
+        "value": null,
+        "status": "insufficient",
+        "n": 3,
+        "min": 5,
+        "lastAt": "2026-10-18T08:20:00Z",
+        "freshness": "fresh"
+      },
+      "workloadRate": {
+        "source": "codex",
+        "window": "recent7d",
+        "scope": "all-configurations",
+        "configCount": 1,
+        "value": null,
+        "status": "insufficient",
+        "n": 3,
+        "min": 5,
+        "lastAt": "2026-10-18T08:20:00Z",
+        "freshness": "fresh"
+      },
       "headroom": "spend"
     }
   ],
@@ -401,8 +445,323 @@
       "turnOutputTokens": null
     }
   ],
+  "perfStats": [
+    {
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "effortStatus": "reported",
+      "effort": "high",
+      "speed": "",
+      "parser": "claude-transcript/1",
+      "eligibility": "gen-v1",
+      "basis": {
+        "tokenBasis": "harness-reported-output",
+        "timing": {
+          "start": "input-logged",
+          "first": "thinking-start",
+          "end": "last-block-logged",
+          "quality": "harness-log-proxy"
+        },
+        "quantile": "log1.1-centre-lower"
+      },
+      "attribution": "unattributed",
+      "since": "2026-10-15T09:00:00Z",
+      "lastAt": "2026-10-18T08:20:00Z",
+      "freshness": "fresh",
+      "windows": {
+        "recent7d": {
+          "sums": {
+            "observedRequests": 42,
+            "observedOutputTokens": 30000,
+            "eligibleRequests": 9,
+            "eligibleOutputTokens": 7400,
+            "genMs": 62000,
+            "turns": 6,
+            "turnMs": 580000,
+            "turnOutputTokens": 21400,
+            "mixedConfigTurnsExcluded": 1
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "75": 3,
+                "77": 6,
+                "79": 2
+              }
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "133": 2,
+                "134": 2,
+                "135": 2
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "86": 2,
+                "87": 2,
+                "88": 2
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 119.4,
+              "status": "ok",
+              "n": 9,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": 1614,
+              "status": "ok",
+              "n": 11,
+              "min": 5
+            },
+            "wholeTurnTps": {
+              "value": 36.9,
+              "status": "ok",
+              "n": 6,
+              "min": 5
+            }
+          }
+        },
+        "recent30d": {
+          "sums": {
+            "observedRequests": 42,
+            "observedOutputTokens": 30000,
+            "eligibleRequests": 9,
+            "eligibleOutputTokens": 7400,
+            "genMs": 62000,
+            "turns": 6,
+            "turnMs": 580000,
+            "turnOutputTokens": 21400,
+            "mixedConfigTurnsExcluded": 1
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "75": 3,
+                "77": 6,
+                "79": 2
+              }
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "133": 2,
+                "134": 2,
+                "135": 2
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "86": 2,
+                "87": 2,
+                "88": 2
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 119.4,
+              "status": "ok",
+              "n": 9,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": 1614,
+              "status": "ok",
+              "n": 11,
+              "min": 5
+            },
+            "wholeTurnTps": {
+              "value": 36.9,
+              "status": "ok",
+              "n": 6,
+              "min": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "effortStatus": "reported",
+      "effort": "medium",
+      "speed": "fast",
+      "parser": "codex-rollout/1",
+      "eligibility": "gen-v1",
+      "basis": {
+        "tokenBasis": "harness-reported-output",
+        "timing": {
+          "start": "input-logged",
+          "first": "item-started-at",
+          "end": "usage-logged",
+          "quality": "harness-log-proxy"
+        },
+        "quantile": "log1.1-centre-lower"
+      },
+      "attribution": "unattributed",
+      "since": "2026-10-15T09:00:00Z",
+      "lastAt": "2026-10-18T08:20:00Z",
+      "freshness": "fresh",
+      "windows": {
+        "recent7d": {
+          "sums": {
+            "observedRequests": 3,
+            "observedOutputTokens": 1800,
+            "eligibleRequests": 3,
+            "eligibleOutputTokens": 1800,
+            "genMs": 9000,
+            "turns": 1,
+            "turnMs": 60000,
+            "turnOutputTokens": 1800,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "76": 3
+              }
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "115": 1
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "78": 1
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 1,
+              "min": 5
+            }
+          }
+        },
+        "recent30d": {
+          "sums": {
+            "observedRequests": 3,
+            "observedOutputTokens": 1800,
+            "eligibleRequests": 3,
+            "eligibleOutputTokens": 1800,
+            "genMs": 9000,
+            "turns": 1,
+            "turnMs": 60000,
+            "turnOutputTokens": 1800,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "76": 3
+              }
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "115": 1
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "78": 1
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 1,
+              "min": 5
+            }
+          }
+        }
+      }
+    }
+  ],
+  "daily": [
+    {
+      "day": "2026-10-17",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 21000,
+      "observedRequests": 30
+    },
+    {
+      "day": "2026-10-18",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 9000,
+      "observedRequests": 12
+    },
+    {
+      "day": "2026-10-18",
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "observedOutputTokens": 1800,
+      "observedRequests": 3
+    }
+  ],
+  "dailyCoverage": {
+    "from": "2026-10-15",
+    "recording": true
+  },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:a2d1b418067510b5ca7f782c73610bd4",
+  "dataRevision": "sha256:6218d737cdc6f3130ae1dca85d3418b6",
   "validUntil": "2026-10-18T09:08:00Z"
 }

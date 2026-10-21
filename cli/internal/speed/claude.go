@@ -129,7 +129,7 @@ func (p *claudeParser) close() {
 	}
 	out := turn{cfg: t.reqs[len(t.reqs)-1].cfg, at: t.at, dur: t.last.Sub(t.at)}
 	for _, q := range t.reqs {
-		r := request{out: q.out}
+		r := request{out: q.out, cfg: q.cfg, end: q.end}
 		if !q.first.IsZero() && q.end.After(q.first) {
 			r.gen = q.end.Sub(q.first)
 			if !q.start.IsZero() && !q.first.Before(q.start) {
@@ -137,8 +137,11 @@ func (p *claudeParser) close() {
 			}
 		}
 		out.out += q.out
+		out.all = append(out.all, r)
 		if q.cfg == out.cfg {
 			out.reqs = append(out.reqs, r)
+		} else {
+			out.mixed = true
 		}
 	}
 	p.done = append(p.done, out)

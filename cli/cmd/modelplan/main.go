@@ -721,8 +721,9 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		_ = state.Save(st.Dir, now)
 	}
 	ledger := speed.Load(st.Dir)
+	perf, ok := speed.LoadPerf(st.Dir)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
-		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
+		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), CLIVersion: version, Now: now}))
 }
 
