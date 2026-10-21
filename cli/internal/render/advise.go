@@ -451,15 +451,8 @@ func TaskBrief(b *advise.Brief) string {
 			now += " (★ recommended)"
 		}
 	}
-	if b.Window != "" && b.Remaining != nil {
-		now += fmt.Sprintf("; %s window %.0f%% left", map[string]string{"five_hour": "5h", "weekly": "weekly"}[b.Window], *b.Remaining)
-		if b.ResetsIn != nil {
-			now += ", resets in " + Style{T: EN}.dur(b.ResetsIn)
-		}
-	}
-	if b.Headroom != "" {
-		now += "; quota " + map[string]string{"spend": "to spare", "normal": "on track", "conserve": "tight", "exhausted": "used up", "unknown": "unknown"}[b.Headroom]
-	}
+	// No quota figures: the user sees them in the hook's hints; figures handed to the model go stale
+	// within the thread and invite it to repeat them.
 	lines = append(lines, now+".")
 	if p := b.Plan; p != nil {
 		lines = append(lines, planLine(p, b.PlanRates))
@@ -499,7 +492,12 @@ func TaskBrief(b *advise.Brief) string {
 	if len(b.DefaultLadder) > 0 {
 		lines = append(lines, b.Default.Name+" efforts against its ★: "+steps(b.DefaultLadder, "★")+".")
 	}
-	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change; High or XHigh of the default for a complex, cross-module task, back to the default after). Do not bring up quota: the user sees it themselves.")
+	// With little quota left, no step up is offered: it would contradict the quota hint.
+	up := "; High or XHigh of the default for a complex, cross-module task, back to the default after"
+	if b.Headroom == "conserve" || b.Headroom == "exhausted" {
+		up = ""
+	}
+	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change"+up+"). Do not bring up quota: the user sees it themselves. If the user asks about quota or a Model Plan hint, run `modelplan quota` or `modelplan advise` for current figures.")
 	return strings.Join(lines, "\n")
 }
 

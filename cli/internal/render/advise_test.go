@@ -146,6 +146,35 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 	}
 }
 
+func TestTaskBriefCarriesNoQuota(t *testing.T) {
+	left, in := 39.0, 8520
+	b := &advise.Brief{Model: "GPT-6.1 Sol", Effort: "Med", AtRec: true, EffortKnown: true, Window: "weekly", Remaining: &left, ResetsIn: &in, Headroom: "conserve",
+		Default: &advise.BriefModel{Name: "GPT-6.1 Sol", Rec: "Med"}, Models: []advise.BriefModel{{Name: "GPT-6.1 Sol", Rec: "Med", Ability: 51.2, CostRelative: 1.4}}}
+	tight := TaskBrief(b)
+	for _, leak := range []string{"39", "left", "resets", "tight", "High or XHigh"} {
+		if strings.Contains(tight, leak) {
+			t.Errorf("a tight brief holds %q:\n%s", leak, tight)
+		}
+	}
+	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended).", "one step below the default for a small, bounded change).", "Do not bring up quota", "run `modelplan quota` or `modelplan advise` for current figures"} {
+		if !strings.Contains(tight, want) {
+			t.Errorf("missing %q in:\n%s", want, tight)
+		}
+	}
+	for _, h := range []string{"exhausted", "conserve"} {
+		b.Headroom = h
+		if strings.Contains(TaskBrief(b), "High or XHigh") {
+			t.Errorf("%s: a step up is offered", h)
+		}
+	}
+	for _, h := range []string{"spend", "normal", "unknown", ""} {
+		b.Headroom = h
+		if got := TaskBrief(b); !strings.Contains(got, "High or XHigh of the default for a complex, cross-module task, back to the default after).") || strings.Contains(got, "39") {
+			t.Errorf("%s:\n%s", h, got)
+		}
+	}
+}
+
 func TestPlanAwareWording(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	n := func(v int) *int { return &v }
