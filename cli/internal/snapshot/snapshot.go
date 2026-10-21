@@ -51,6 +51,8 @@ type Snapshot struct {
 	// PaceHistory: how fast each window's percentage rose per cycle (pace.json), beside the quota
 	// history behind `modelplan history`. Percentage points, never tokens.
 	PaceHistory history.PaceHistory `json:"paceHistory"`
+	// SessionRanking: the sessions with the most observed output tokens (perf.json).
+	SessionRanking speed.SessionRanking `json:"sessionRanking"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -94,10 +96,43 @@ type Session struct {
 	// harness's configurations together, the one reading to show per engine.
 	TokenRate    *speed.Rate `json:"tokenRate,omitempty"`
 	WorkloadRate *speed.Rate `json:"workloadRate,omitempty"`
+	Activity     *Activity   `json:"activity,omitempty"`
 	// The quota verdict of the session's account, for the allowance it draws from.
 	Headroom string `json:"headroom"`
 	Deciding string `json:"deciding,omitempty"`
 	Pool     string `json:"pool,omitempty"`
+}
+
+// Activity: whether the harness showed recent activity in its own timestamps. recent: a turn
+// started or a request completed within WithinMinutes; quiet: not since; unknown: no such
+// timestamp. It never claims a session is working now.
+type Activity struct {
+	Status        string     `json:"status"` // recent | quiet | unknown
+	LastSignalAt  *time.Time `json:"lastSignalAt"`
+	Basis         string     `json:"basis,omitempty"` // turn-started (Codex turn context) | completed-request
+	WithinMinutes int        `json:"withinMinutes"`
+}
+
+const activeWithin = 10 * time.Minute
+
+func activity(source string, h *quota.Harness, p *speed.PerfView, now time.Time) *Activity {
+	a := &Activity{Status: "unknown", WithinMinutes: int(activeWithin.Minutes())}
+	if t := p.LastCompleted(source); t != nil {
+		a.LastSignalAt, a.Basis = t, "completed-request"
+	}
+	// Claude Code's status line also renders while idle, so its time is no sign of activity.
+	if source == "codex" && h != nil && h.ObservedAt != nil && (a.LastSignalAt == nil || h.ObservedAt.After(*a.LastSignalAt)) {
+		t := h.ObservedAt.UTC()
+		a.LastSignalAt, a.Basis = &t, "turn-started"
+	}
+	switch {
+	case a.LastSignalAt == nil:
+	case now.Sub(*a.LastSignalAt) <= activeWithin:
+		a.Status = "recent"
+	default:
+		a.Status = "quiet"
+	}
+	return a
 }
 
 type ModelRef struct {
@@ -168,6 +203,10 @@ func Build(in Input) Snapshot {
 	if in.Perf != nil {
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 	}
+	s.SessionRanking = speed.PerfView{Now: in.Now}.Ranking()
+	if in.Perf != nil {
+		s.SessionRanking = in.Perf.Ranking()
+	}
 	s.PaceHistory = history.PaceView{OK: true, Recording: in.Recording, Now: in.Now}.History()
 	if in.Pace != nil {
 		s.PaceHistory = in.Pace.History()
@@ -190,7 +229,7 @@ func Build(in Input) Snapshot {
 			if p := in.Perf; p != nil {
 				h := in.Report.Accounts[i].Harness
 				t, w := p.TokenRate(x.Source, h.Model, h.Effort, x.Speed), p.WorkloadRate(x.Source)
-				x.TokenRate, x.WorkloadRate = &t, &w
+				x.TokenRate, x.WorkloadRate, x.Activity = &t, &w, activity(x.Source, h, p, in.Now)
 			}
 			s.Sessions = append(s.Sessions, x)
 		}
@@ -281,6 +320,11 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if in.Perf != nil {
 		ts = append(ts, in.Perf.Boundaries()...)
+	}
+	for _, x := range s.Sessions {
+		if x.Activity != nil && x.Activity.LastSignalAt != nil {
+			ts = append(ts, x.Activity.LastSignalAt.Add(activeWithin))
+		}
 	}
 	if in.Pace != nil {
 		ts = append(ts, in.Pace.Boundaries()...)

@@ -456,3 +456,112 @@ func (v PerfView) Boundaries() []time.Time {
 	}
 	return out
 }
+
+// SessionConfig: one configuration's part of a ranked session.
+type SessionConfig struct {
+	Model                string `json:"model"`
+	EffortStatus         string `json:"effortStatus"`
+	Effort               string `json:"effort"`
+	Speed                string `json:"speed"`
+	ObservedOutputTokens int64  `json:"observedOutputTokens"`
+}
+
+// RankedSession is one session in a ranking. Share is its part of the observed output tokens of
+// all sessions in the window: of what this CLI saw, not of any plan.
+type RankedSession struct {
+	Ref                  string          `json:"ref"`
+	Source               string          `json:"source"`
+	FirstAt              time.Time       `json:"firstAt"`
+	LastAt               time.Time       `json:"lastAt"`
+	ObservedOutputTokens int64           `json:"observedOutputTokens"`
+	ObservedRequests     int             `json:"observedRequests"`
+	Share                float64         `json:"share"`
+	Configs              []SessionConfig `json:"configs"` // the largest first, at most 3
+}
+
+type SessionWindow struct {
+	Sessions                  int             `json:"sessions"` // with observed output in the window
+	TotalObservedOutputTokens int64           `json:"totalObservedOutputTokens"`
+	Top                       []RankedSession `json:"top"`
+}
+
+// SessionRanking: the sessions that produced the most observed output tokens, over the recent 7
+// and 30 local days.
+type SessionRanking struct {
+	Measure   string        `json:"measure"` // observed-output-tokens
+	Recent7d  SessionWindow `json:"recent7d"`
+	Recent30d SessionWindow `json:"recent30d"`
+}
+
+const rankedSessions = 5
+
+func (v PerfView) Ranking() SessionRanking {
+	return SessionRanking{Measure: "observed-output-tokens", Recent7d: v.rank(windowFrom(v.Now, 7)), Recent30d: v.rank(windowFrom(v.Now, 30))}
+}
+
+func (v PerfView) rank(from string) SessionWindow {
+	w := SessionWindow{Top: []RankedSession{}}
+	if !v.OK {
+		return w
+	}
+	var all []RankedSession
+	for _, s := range v.Ledger.Sessions {
+		r := RankedSession{Ref: s.Ref, Source: s.Source, FirstAt: s.FirstAt, LastAt: s.LastAt, Configs: []SessionConfig{}}
+		by := map[[4]string]*SessionConfig{}
+		var keys [][4]string
+		for _, d := range s.Days {
+			if d.Day < from {
+				continue
+			}
+			r.ObservedOutputTokens += d.ObservedOutputTokens
+			r.ObservedRequests += d.ObservedRequests
+			k := [4]string{d.Model, d.EffortStatus, d.Effort, d.Speed}
+			if by[k] == nil {
+				by[k] = &SessionConfig{Model: d.Model, EffortStatus: d.EffortStatus, Effort: d.Effort, Speed: d.Speed}
+				keys = append(keys, k)
+			}
+			by[k].ObservedOutputTokens += d.ObservedOutputTokens
+		}
+		if r.ObservedOutputTokens == 0 {
+			continue
+		}
+		for _, k := range keys {
+			r.Configs = append(r.Configs, *by[k])
+		}
+		sort.SliceStable(r.Configs, func(i, j int) bool { return r.Configs[i].ObservedOutputTokens > r.Configs[j].ObservedOutputTokens })
+		if len(r.Configs) > 3 {
+			r.Configs = r.Configs[:3]
+		}
+		w.TotalObservedOutputTokens += r.ObservedOutputTokens
+		all = append(all, r)
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ObservedOutputTokens != all[j].ObservedOutputTokens {
+			return all[i].ObservedOutputTokens > all[j].ObservedOutputTokens
+		}
+		return all[i].LastAt.After(all[j].LastAt)
+	})
+	w.Sessions = len(all)
+	for i := range all {
+		if i == rankedSessions {
+			break
+		}
+		all[i].Share = math.Round(float64(all[i].ObservedOutputTokens)/float64(w.TotalObservedOutputTokens)*1000) / 1000
+		w.Top = append(w.Top, all[i])
+	}
+	return w
+}
+
+// LastCompleted: when the harness's newest counted request or turn completed (to the minute);
+// nil when none is known.
+func (v PerfView) LastCompleted(source string) *time.Time {
+	var last *time.Time
+	for i := range v.Ledger.Rows {
+		r := &v.Ledger.Rows[i]
+		if r.Source == source && r.LastAt != nil && (last == nil || r.LastAt.After(*last)) {
+			t := *r.LastAt
+			last = &t
+		}
+	}
+	return last
+}

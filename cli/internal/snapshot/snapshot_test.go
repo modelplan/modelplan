@@ -134,3 +134,23 @@ func TestRevisionAndValidUntil(t *testing.T) {
 		t.Error("a changed reading changes the revision")
 	}
 }
+
+func TestActivity(t *testing.T) {
+	_, r := fixture()
+	done := now.Add(-30 * time.Minute)
+	p := &speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Since: now.Add(-time.Hour), Rows: []speed.PerfRow{{Day: "2026-10-18", Source: "claude-code", Model: "claude-opus-5-5", LastAt: &done}}}}
+	s := Build(Input{Report: r, Perf: p, Now: now})
+	cc, cx := s.Sessions[0].Activity, s.Sessions[1].Activity
+	// Claude Code's status line time (two minutes ago) is no sign of activity; its last completed
+	// request is half an hour old. Codex's turn started two minutes ago.
+	if cc.Status != "quiet" || cc.Basis != "completed-request" || !cc.LastSignalAt.Equal(done) || cx.Status != "recent" || cx.Basis != "turn-started" || cx.WithinMinutes != 10 {
+		t.Errorf("activity = %+v, %+v", cc, cx)
+	}
+	if s.ValidUntil == nil || s.ValidUntil.After(now.Add(8*time.Minute)) {
+		t.Errorf("validUntil = %v: the Codex signal lapses at +8 min", s.ValidUntil)
+	}
+	empty := Build(Input{Report: quota.Report{Accounts: []quota.Account{{Source: "claude-code", Harness: &quota.Harness{Model: "x"}}}}, Perf: &speed.PerfView{OK: true, Now: now}, Now: now})
+	if a := empty.Sessions[0].Activity; a.Status != "unknown" || a.LastSignalAt != nil {
+		t.Errorf("no timestamp: %+v", a)
+	}
+}

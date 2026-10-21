@@ -59,6 +59,12 @@
         "lastAt": "2026-10-18T08:20:00Z",
         "freshness": "fresh"
       },
+      "activity": {
+        "status": "quiet",
+        "lastSignalAt": "2026-10-18T08:20:00Z",
+        "basis": "completed-request",
+        "withinMinutes": 10
+      },
       "headroom": "conserve",
       "deciding": "five_hour"
     },
@@ -108,6 +114,12 @@
         "min": 5,
         "lastAt": "2026-10-18T08:20:00Z",
         "freshness": "fresh"
+      },
+      "activity": {
+        "status": "recent",
+        "lastSignalAt": "2026-10-18T08:58:00Z",
+        "basis": "turn-started",
+        "withinMinutes": 10
       },
       "headroom": "spend"
     }
@@ -859,8 +871,95 @@
       }
     ]
   },
+  "sessionRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "sessions": 2,
+      "totalObservedOutputTokens": 31800,
+      "top": [
+        {
+          "ref": "5c1e0d2a9b7f4e31",
+          "source": "claude-code",
+          "firstAt": "2026-10-17T07:00:00Z",
+          "lastAt": "2026-10-18T08:20:00Z",
+          "observedOutputTokens": 30000,
+          "observedRequests": 42,
+          "share": 0.943,
+          "configs": [
+            {
+              "model": "claude-opus-5-5",
+              "effortStatus": "reported",
+              "effort": "high",
+              "speed": "",
+              "observedOutputTokens": 30000
+            }
+          ]
+        },
+        {
+          "ref": "a83f6c0e12d94b70",
+          "source": "codex",
+          "firstAt": "2026-10-18T07:00:00Z",
+          "lastAt": "2026-10-18T08:20:00Z",
+          "observedOutputTokens": 1800,
+          "observedRequests": 3,
+          "share": 0.057,
+          "configs": [
+            {
+              "model": "gpt-6-astra",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "fast",
+              "observedOutputTokens": 1800
+            }
+          ]
+        }
+      ]
+    },
+    "recent30d": {
+      "sessions": 2,
+      "totalObservedOutputTokens": 31800,
+      "top": [
+        {
+          "ref": "5c1e0d2a9b7f4e31",
+          "source": "claude-code",
+          "firstAt": "2026-10-17T07:00:00Z",
+          "lastAt": "2026-10-18T08:20:00Z",
+          "observedOutputTokens": 30000,
+          "observedRequests": 42,
+          "share": 0.943,
+          "configs": [
+            {
+              "model": "claude-opus-5-5",
+              "effortStatus": "reported",
+              "effort": "high",
+              "speed": "",
+              "observedOutputTokens": 30000
+            }
+          ]
+        },
+        {
+          "ref": "a83f6c0e12d94b70",
+          "source": "codex",
+          "firstAt": "2026-10-18T07:00:00Z",
+          "lastAt": "2026-10-18T08:20:00Z",
+          "observedOutputTokens": 1800,
+          "observedRequests": 3,
+          "share": 0.057,
+          "configs": [
+            {
+              "model": "gpt-6-astra",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "fast",
+              "observedOutputTokens": 1800
+            }
+          ]
+        }
+      ]
+    }
+  },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:2bb34a2009066dfe125a091496a30b3c",
+  "dataRevision": "sha256:11e72f44f2cd8758d1d163b7cf9c352a",
   "validUntil": "2026-10-18T09:08:00Z"
 }
