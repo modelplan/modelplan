@@ -32,6 +32,7 @@ It marks no advice as told. A client keeps its own notified keys.
 | `measured[]` | The measured speed per configuration over the last 28 days, as in `modelplan history --json`, from `observed/speed.json`. Kept as it is; a client shows it only as history before `perfStats[].since` |
 | `perfStats[]` | CLI 0.5.27+. The performance ledger per configuration (below) |
 | `daily[]` | CLI 0.5.27+. `{day, source, model, observedOutputTokens, observedRequests}` per local day of the last 30 (today included) and model, across efforts, speed modes and parsers. Days without rows are left out, not `0`: the ledger cannot tell no activity from no coverage. Days before the ledger started are absent |
+| `sessionRanking` | CLI 0.5.27+. The sessions with the most observed output tokens (below) |
 | `paceHistory` | CLI 0.5.27+. How fast each window's percentage rose per cycle (below) |
 | `dailyCoverage` | CLI 0.5.27+. `{from, recording}`: the first day `daily[]` covers (the later of the ledger's start and 30 days ago; `null` without a ledger), for a label such as "observed on this machine since <from>" |
 | `recording` | Local quota history and speed measurement are on (`MODELPLAN_HISTORY` is not `off`) |
@@ -55,6 +56,8 @@ One entry per harness that reported a model (`claude-code`, `codex`):
 - `workloadRate` (CLI 0.5.27+): the one speed reading per engine. `{source, window: "recent7d", scope: "all-configurations", configCount, value, status, n, min, lastAt, freshness}`: the generation rate of all the harness's configurations in the recent 7 days, as the ratio of their summed eligible output tokens and generation time. It describes what this user's mix produced, unreported efforts included; it is not a plan's speed and moves when the mix changes;
 - `tokenRate` (CLI 0.5.27+): the same for the session's own configuration, `{configKey, window: "recent7d", value, status, n, min, lastAt, freshness}`. With `effortStatus: "unreported"` it is `unavailable` with `reason: "effort-unreported"`, since an unknown configuration is no proof of the same one. No other configuration stands in.
 
+- `activity` (CLI 0.5.27+): `{status, lastSignalAt, basis, withinMinutes}`. `recent` when the harness's own timestamps show a turn started (Codex's turn context, `basis: "turn-started"`) or a request completed (`completed-request`, from the performance ledger) within `withinMinutes` (10); `quiet` when not since; `unknown` without such a timestamp. Claude Code's status line also renders while idle, so its time is not used. It never says a session is working now: a long turn shows only once a request in it completes.
+
 `value` is set only when `status` is `ok`.
 
 ## `perfStats[]`
@@ -75,6 +78,17 @@ One entry per configuration with a row in the last 30 days:
 Rates are always ratios of sums and quantiles always come from merged histograms; nothing averages rates or medians. A generation rate is a per-request speed, not throughput: two sessions generating at 60 tok/s at the same time read 60, not 120. Speed is never used to infer plan usage or remaining quota, and it never changes published ability or recommendations.
 
 Display rules for clients: one number per engine, `workloadRate.value`, labelled with its window and scope ("62 t/s · 7 days · all configurations"); shown only when `ok`, dimmed when `aging`, hidden when `stale`, and not drawn at all otherwise (never `0`, never the legacy `measured[]`). `tokenRate` and the `perfStats[]` entries go in hover or expanded views. Nothing in this version is any subscription's speed.
+
+## `sessionRanking`
+
+CLI 0.5.27+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each window is `{sessions, totalObservedOutputTokens, top}`, with `top` the five sessions with the most observed output tokens in its local days:
+
+- `ref`: a random reference made on this machine. Sessions carry no title, path or session id;
+- `source`, `firstAt` (the first counted turn's start) and `lastAt` (the newest sample's completion), to the minute;
+- `observedOutputTokens`, `observedRequests` and `share`: the session's part of the window's observed output tokens. That is a share of what this CLI saw in the logs it reads, not of any plan or allowance;
+- `configs[]`: `{model, effortStatus, effort, speed, observedOutputTokens}`, the largest first, at most three.
+
+The sessions are kept in the performance ledger with the same `since`, 35 days and size limits; a session whose last day is older leaves it. Codex's own threads (subagents, reviews) are not read, so they are neither ranked nor counted, and never counted twice; Claude Code's sidechain requests are not counted either. Titles are not kept at all.
 
 ## `paceHistory`
 

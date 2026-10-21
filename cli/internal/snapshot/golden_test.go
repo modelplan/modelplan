@@ -91,6 +91,12 @@ func golden() Snapshot {
 		{Day: "2026-10-18", Source: "codex", Model: "gpt-6-astra", EffortStatus: "reported", Effort: "medium", Speed: "fast", Parser: speed.ParserCodex, Eligibility: speed.EligibilityV1,
 			ObservedRequests: 3, ObservedOutputTokens: 1800, EligibleRequests: 3, EligibleOutputTokens: 1800, GenMs: 9000, Turns: 1, TurnMs: 60000, TurnOutputTokens: 1800,
 			TTFTMs: speed.Hist{"76": 3}, TurnMsHist: speed.Hist{"115": 1}, TurnTokensHist: speed.Hist{"78": 1}, LastAt: &last},
+	}, Sessions: []speed.PerfSession{
+		{Ref: "5c1e0d2a9b7f4e31", Key: "k1", Source: "claude-code", FirstAt: now.Add(-26 * time.Hour), LastAt: last, Days: []speed.SessionDay{
+			{Day: "2026-10-17", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 30, ObservedOutputTokens: 21000},
+			{Day: "2026-10-18", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 12, ObservedOutputTokens: 9000}}},
+		{Ref: "a83f6c0e12d94b70", Key: "k2", Source: "codex", FirstAt: now.Add(-2 * time.Hour), LastAt: last, Days: []speed.SessionDay{
+			{Day: "2026-10-18", Model: "gpt-6-astra", EffortStatus: "reported", Effort: "medium", Speed: "fast", ObservedRequests: 3, ObservedOutputTokens: 1800}}},
 	}}}
 	// The pace ledger: two closed Claude Code five-hour cycles and the open one.
 	cyc := func(reset time.Duration, from, to float64, span time.Duration, drops int) history.PaceCycle {

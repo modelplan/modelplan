@@ -297,3 +297,56 @@ func TestEngineRates(t *testing.T) {
 		t.Errorf("a week later = %+v", r)
 	}
 }
+
+func TestSessionRanking(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	parent, other := filepath.Join(dir, "rollout-p.jsonl"), filepath.Join(dir, "rollout-o.jsonl")
+	sub1, sub2, loose := filepath.Join(dir, "rollout-s1.jsonl"), filepath.Join(dir, "rollout-s2.jsonl"), filepath.Join(dir, "rollout-x.jsonl")
+	writeLines(t, parent, append([]string{cx(0, "session_meta", `{"id":"p","source":"cli","title":"Secret project title"}`)}, cxTurnLines(1, high, 30, req{3000, 20, 1})...)...)
+	writeLines(t, other, append([]string{cx(0, "session_meta", `{"id":"o","source":"cli"}`)}, cxTurnLines(1, `{"model":"fixture-model"}`, 30, req{1000, 10, 1})...)...)
+	// Two subagent threads of the parent, and one with no link: Codex's own threads, never counted.
+	for _, p := range []string{sub1, sub2} {
+		writeLines(t, p, append([]string{cx(0, "session_meta", `{"id":"s","source":{"subagent":{"thread_spawn":{"parent_thread_id":"p","depth":1}}}}`)}, cxTurnLines(1, high, 30, req{5000, 20, 1})...)...)
+	}
+	writeLines(t, loose, append([]string{cx(0, "session_meta", `{"id":"x","source":{"subagent":"review"}}`)}, cxTurnLines(1, high, 30, req{7000, 20, 1})...)...)
+	sub := map[string]bool{sub1: true, sub2: true, loose: true}
+	now := t0.Add(5 * time.Minute)
+	if err := ObserveCodex(cache, []string{parent, other, sub1, sub2, loose}, func(p string) bool { return sub[p] }, now); err != nil {
+		t.Fatal(err)
+	}
+	r := view(t, cache, now).Ranking()
+	w := r.Recent7d
+	if r.Measure != "observed-output-tokens" || w.Sessions != 2 || w.TotalObservedOutputTokens != 4000 || len(w.Top) != 2 {
+		t.Fatalf("ranking = %+v", r)
+	}
+	top := w.Top[0]
+	if top.Source != "codex" || top.ObservedOutputTokens != 3000 || top.Share != 0.75 || len(top.Ref) != 16 || top.Configs[0] != (SessionConfig{Model: "fixture-model", EffortStatus: "reported", Effort: "high", ObservedOutputTokens: 3000}) {
+		t.Errorf("top = %+v", top)
+	}
+	if w.Top[1].Configs[0].EffortStatus != "unreported" || w.Top[1].Share != 0.25 {
+		t.Errorf("second = %+v", w.Top[1])
+	}
+	b, _ := os.ReadFile(PerfPath(cache))
+	out, _ := json.Marshal(r)
+	for _, leak := range []string{"Secret project title", dir, `"p"`, "rollout-p"} {
+		if bytes.Contains(b, []byte(leak)) || bytes.Contains(out, []byte(leak)) {
+			t.Errorf("%q leaked", leak)
+		}
+	}
+	if bytes.Contains(out, []byte(`"key"`)) {
+		t.Error("the file key is not exported")
+	}
+
+	// A session last active 36 days ago is pruned with its days.
+	l, _ := LoadPerf(cache)
+	old := l.Sessions[0]
+	old.Ref, old.Key = "old", "k"
+	old.Days = []SessionDay{{Day: t0.AddDate(0, 0, -36).Format("2006-01-02"), Model: "fixture-model", EffortStatus: "reported", Effort: "high", ObservedRequests: 1, ObservedOutputTokens: 9}}
+	l.Sessions = append(l.Sessions, old)
+	l.prune(t0)
+	if len(l.Sessions) != 2 {
+		t.Errorf("sessions after pruning = %d", len(l.Sessions))
+	}
+}

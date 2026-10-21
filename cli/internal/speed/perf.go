@@ -1,6 +1,8 @@
 package speed
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -29,7 +31,31 @@ type PerfLedger struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	Since         time.Time         `json:"since"` // UTC, when the file was created
 	Rows          []PerfRow         `json:"rows"`
+	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
+}
+
+// PerfSession is one harness session (a Claude Code transcript, a Codex thread), known only by a
+// random reference. It holds no title, path or session id: Key is the log's file key, as the
+// cursors use, and never leaves this file.
+type PerfSession struct {
+	Ref     string       `json:"ref"`
+	Key     string       `json:"key"`
+	Source  string       `json:"source"`
+	FirstAt time.Time    `json:"firstAt"` // its first counted turn's start, to the minute
+	LastAt  time.Time    `json:"lastAt"`  // its newest sample's completion, to the minute
+	Days    []SessionDay `json:"days"`
+}
+
+// SessionDay: what one configuration of a session produced on one local day.
+type SessionDay struct {
+	Day                  string `json:"day"`
+	Model                string `json:"model"`
+	EffortStatus         string `json:"effortStatus"`
+	Effort               string `json:"effort,omitempty"`
+	Speed                string `json:"speed,omitempty"`
+	ObservedRequests     int    `json:"observedRequests"`
+	ObservedOutputTokens int64  `json:"observedOutputTokens"`
 }
 
 // PerfRow is one local day of one configuration, as one parser read it.
@@ -115,8 +141,68 @@ func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) 
 	done, changed := scanLog(l.Files, path, p, now)
 	for _, t := range done {
 		l.add(source, parser, t)
+		l.addSession(fileKey(path), source, t)
 	}
 	return changed
+}
+
+// maxSessions: the sessions kept; the ones last active longest ago go first.
+const maxSessions = 2000
+
+func (l *PerfLedger) addSession(key, source string, t turn) {
+	if t.at.IsZero() || t.at.Before(l.Since) || len(t.all) == 0 {
+		return
+	}
+	var s *PerfSession
+	for i := range l.Sessions {
+		if l.Sessions[i].Key == key && l.Sessions[i].Source == source {
+			s = &l.Sessions[i]
+		}
+	}
+	start := t.at.UTC().Truncate(time.Minute)
+	if s == nil {
+		l.Sessions = append(l.Sessions, PerfSession{Ref: newRef(), Key: key, Source: source, FirstAt: start, LastAt: start})
+		s = &l.Sessions[len(l.Sessions)-1]
+	}
+	if start.Before(s.FirstAt) {
+		s.FirstAt = start
+	}
+	d := day(t.at)
+	for _, q := range t.all {
+		if q.cfg.model == "" {
+			continue
+		}
+		status := "reported"
+		if q.cfg.effort == "" {
+			status = "unreported"
+		}
+		var x *SessionDay
+		for i := range s.Days {
+			y := &s.Days[i]
+			if y.Day == d && y.Model == q.cfg.model && y.EffortStatus == status && y.Effort == q.cfg.effort && y.Speed == q.cfg.speed {
+				x = y
+			}
+		}
+		if x == nil {
+			s.Days = append(s.Days, SessionDay{Day: d, Model: q.cfg.model, EffortStatus: status, Effort: q.cfg.effort, Speed: q.cfg.speed})
+			x = &s.Days[len(s.Days)-1]
+		}
+		x.ObservedRequests++
+		x.ObservedOutputTokens += q.out
+		if e := q.end.UTC().Truncate(time.Minute); e.After(s.LastAt) {
+			s.LastAt = e
+		}
+	}
+	if e := t.at.Add(t.dur).UTC().Truncate(time.Minute); t.dur > 0 && e.After(s.LastAt) {
+		s.LastAt = e
+	}
+}
+
+// newRef: a random reference, so a session is known here without any id of its own.
+func newRef() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (l *PerfLedger) add(source, parser string, t turn) {
@@ -200,6 +286,23 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 		kept = kept[len(kept)-maxRows:]
 	}
 	l.Rows = kept
+	sessions := l.Sessions[:0]
+	for _, x := range l.Sessions {
+		days := x.Days[:0]
+		for _, d := range x.Days {
+			if d.Day >= from {
+				days = append(days, d)
+			}
+		}
+		if x.Days = days; len(days) > 0 {
+			sessions = append(sessions, x)
+		}
+	}
+	sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].LastAt.Before(sessions[j].LastAt) })
+	if len(sessions) > maxSessions {
+		sessions = sessions[len(sessions)-maxSessions:]
+	}
+	l.Sessions = sessions
 	for k, c := range l.Files {
 		if c.Seen < from {
 			delete(l.Files, k)
@@ -207,9 +310,13 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 	}
 	for {
 		b, _ := json.Marshal(l)
-		if len(b) < maxFile || len(l.Rows) == 0 {
+		if len(b) < maxFile || (len(l.Rows) == 0 && len(l.Sessions) == 0) {
 			return append(b, '\n')
 		}
-		l.Rows = l.Rows[len(l.Rows)/10+1:]
+		l.Rows = l.Rows[len(l.Rows)/10:]
+		l.Sessions = l.Sessions[len(l.Sessions)/10:]
+		if len(l.Rows) < 10 && len(l.Sessions) < 10 {
+			l.Rows, l.Sessions = nil, nil
+		}
 	}
 }
