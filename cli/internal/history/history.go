@@ -4,12 +4,13 @@
 // the machine. It holds no prompts, projects, tokens or session ids: only window meters and the
 // harness's model and effort, which the quota snapshot already holds.
 //
-// The ledger is <cache>/observed/cycles.json. MODELPLAN_HISTORY=off stops recording; deleting
-// the file clears it.
+// The ledger is <cache>/observed/cycles.json; the pace ledger, pace.json (pace.go), is kept from
+// the same readings beside it. MODELPLAN_HISTORY=off stops both; deleting a file clears it.
 package history
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -83,14 +84,19 @@ func Load(cache string) Ledger {
 	return l
 }
 
-// Observe adds the harness windows of a report to the ledger. A rise since the cycle's last
-// reading is attributed to the configuration in use now. When another process holds the ledger
-// the reading is skipped: the next one counts the same rise, since it starts from LastUsed.
+// Observe adds the harness windows of a report to the ledger, and to the pace ledger beside it. A
+// rise since the cycle's last reading is attributed to the configuration in use now. When
+// another process holds the ledger the reading is skipped: the next one counts the same rise,
+// since it starts from LastUsed.
 func Observe(cache string, r quota.Report, now time.Time) error {
 	if Off() {
 		return nil
 	}
-	unlock, ok := lock(cache)
+	return errors.Join(observe(cache, r, now), observePace(cache, r, now))
+}
+
+func observe(cache string, r quota.Report, now time.Time) error {
+	unlock, ok := lockNamed(cache, "cycles.lock")
 	if !ok {
 		return nil
 	}
@@ -192,8 +198,8 @@ func (l *Ledger) prune(now time.Time) {
 	l.Cycles = kept
 }
 
-func lock(cache string) (func(), bool) {
-	p := filepath.Join(cache, "observed", "cycles.lock")
+func lockNamed(cache, name string) (func(), bool) {
+	p := filepath.Join(cache, "observed", name)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return nil, false
 	}

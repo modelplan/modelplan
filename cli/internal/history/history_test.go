@@ -64,7 +64,7 @@ func TestOffLockedAndPrivate(t *testing.T) {
 	}
 	t.Setenv("MODELPLAN_HISTORY", "")
 	// Another process holds the ledger: skip, and the next reading counts the same rise.
-	unlock, _ := lock(cache)
+	unlock, _ := lockNamed(cache, "cycles.lock")
 	Observe(cache, reading("claude-code", "claude-opus-5-5", "high", "", 20, now, reset), now)
 	unlock()
 	if len(Load(cache).Cycles) != 0 {

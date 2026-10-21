@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -47,6 +48,9 @@ type Snapshot struct {
 	PerfStats     []speed.PerfStat    `json:"perfStats"`
 	Daily         []speed.Daily       `json:"daily"`
 	DailyCoverage speed.DailyCoverage `json:"dailyCoverage"`
+	// PaceHistory: how fast each window's percentage rose per cycle (pace.json), beside the quota
+	// history behind `modelplan history`. Percentage points, never tokens.
+	PaceHistory history.PaceHistory `json:"paceHistory"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -136,6 +140,8 @@ type Input struct {
 	Ledger []speed.Row
 	// Perf: the performance ledger; nil leaves its fields empty.
 	Perf *speed.PerfView
+	// Pace: the pace ledger; nil leaves paceHistory empty.
+	Pace *history.PaceView
 	// Boundaries: advise.Boundaries for the same input.
 	Boundaries []time.Time
 	Recording  bool
@@ -161,6 +167,10 @@ func Build(in Input) Snapshot {
 	s.PerfStats, s.Daily, s.DailyCoverage = []speed.PerfStat{}, []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
 	if in.Perf != nil {
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
+	}
+	s.PaceHistory = history.PaceView{OK: true, Recording: in.Recording, Now: in.Now}.History()
+	if in.Pace != nil {
+		s.PaceHistory = in.Pace.History()
 	}
 	if in.Digest != nil && in.State.PublicationID != "" {
 		p := &Publication{PublicationID: in.State.PublicationID, PublishedAt: in.State.PublishedAt, LastError: in.State.LastError,
@@ -223,6 +233,8 @@ func revision(in Input) string {
 		Ledger      []speed.Row
 		Perf        *speed.PerfLedger
 		PerfOK      bool
+		Pace        *history.PaceLedger
+		PaceOK      bool
 		Publication string
 		Recording   bool
 	}
@@ -239,6 +251,9 @@ func revision(in Input) string {
 		l := in.Perf.Ledger
 		l.Files = nil // how far the logs were read is no observation
 		v.Perf, v.PerfOK = &l, in.Perf.OK
+	}
+	if in.Pace != nil {
+		v.Pace, v.PaceOK = &in.Pace.Ledger, in.Pace.OK
 	}
 	if in.Digest != nil {
 		v.Publication = in.State.PublicationID
@@ -266,6 +281,9 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if in.Perf != nil {
 		ts = append(ts, in.Perf.Boundaries()...)
+	}
+	if in.Pace != nil {
+		ts = append(ts, in.Pace.Boundaries()...)
 	}
 	if len(s.Measured) > 0 {
 		l := in.Now.Local()

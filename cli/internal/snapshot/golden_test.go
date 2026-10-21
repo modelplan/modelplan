@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -91,7 +92,16 @@ func golden() Snapshot {
 			ObservedRequests: 3, ObservedOutputTokens: 1800, EligibleRequests: 3, EligibleOutputTokens: 1800, GenMs: 9000, Turns: 1, TurnMs: 60000, TurnOutputTokens: 1800,
 			TTFTMs: speed.Hist{"76": 3}, TurnMsHist: speed.Hist{"115": 1}, TurnTokensHist: speed.Hist{"78": 1}, LastAt: &last},
 	}}}
-	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Perf: perf, Recording: true, CLIVersion: "0.5.25", Now: now,
+	// The pace ledger: two closed Claude Code five-hour cycles and the open one.
+	cyc := func(reset time.Duration, from, to float64, span time.Duration, drops int) history.PaceCycle {
+		r := now.Add(reset)
+		first := r.Add(-4 * time.Hour)
+		return history.PaceCycle{Source: "claude-code", Kind: "five_hour", WindowMinutes: 300, LengthBasis: "field-name", ResetsAt: r, FirstObservedAt: first, FirstUsed: from,
+			LastObservedAt: first.Add(span), LastUsed: to, Readings: 12, Drops: drops, Points: to - from, Spent: []history.Share{{Model: "claude-opus-5-5", Effort: "high", Points: to - from}}}
+	}
+	pace := &history.PaceView{OK: true, Recording: true, Now: now, Ledger: history.PaceLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Cycles: []history.PaceCycle{
+		cyc(-10*time.Hour, 5, 65, 3*time.Hour, 0), cyc(-5*time.Hour+5*time.Minute, 0, 70, 3*time.Hour+30*time.Minute, 0), cyc(95*time.Minute, 30, 88, 2*time.Hour, 0)}}}
+	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Perf: perf, Pace: pace, Recording: true, CLIVersion: "0.5.25", Now: now,
 		State: store.State{PublicationID: "0d726f2402d395a043fb170e", PublishedAt: "2026-10-18T01:50:38Z", CheckedAt: now.Add(-20 * time.Minute), VerifiedAt: now.Add(-20 * time.Minute)}})
 }
 
