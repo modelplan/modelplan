@@ -42,6 +42,11 @@ type Snapshot struct {
 	Sources     []quota.SourceStatus `json:"sources"`
 	Events      []Event              `json:"events"`
 	Measured    []speed.Stat         `json:"measured"`
+	// PerfStats, Daily and DailyCoverage come from the performance ledger (perf.json), which runs
+	// beside the one behind Measured and is never mixed with it.
+	PerfStats     []speed.PerfStat    `json:"perfStats"`
+	Daily         []speed.Daily       `json:"daily"`
+	DailyCoverage speed.DailyCoverage `json:"dailyCoverage"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -81,6 +86,10 @@ type Session struct {
 	// VsRecommended: the effort in use against ★ (points, cost multiple); nil at ★ or unknown.
 	VsRecommended *Delta `json:"vsRecommended"`
 	Speed         string `json:"speed,omitempty"` // "" standard; fast, …
+	// TokenRate: the recent generation rate of this configuration; WorkloadRate: of all the
+	// harness's configurations together, the one reading to show per engine.
+	TokenRate    *speed.Rate `json:"tokenRate,omitempty"`
+	WorkloadRate *speed.Rate `json:"workloadRate,omitempty"`
 	// The quota verdict of the session's account, for the allowance it draws from.
 	Headroom string `json:"headroom"`
 	Deciding string `json:"deciding,omitempty"`
@@ -125,6 +134,8 @@ type Input struct {
 	Measured []speed.Stat
 	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
 	Ledger []speed.Row
+	// Perf: the performance ledger; nil leaves its fields empty.
+	Perf *speed.PerfView
 	// Boundaries: advise.Boundaries for the same input.
 	Boundaries []time.Time
 	Recording  bool
@@ -147,6 +158,10 @@ func Build(in Input) Snapshot {
 	if s.Measured == nil {
 		s.Measured = []speed.Stat{}
 	}
+	s.PerfStats, s.Daily, s.DailyCoverage = []speed.PerfStat{}, []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
+	if in.Perf != nil {
+		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
+	}
 	if in.Digest != nil && in.State.PublicationID != "" {
 		p := &Publication{PublicationID: in.State.PublicationID, PublishedAt: in.State.PublishedAt, LastError: in.State.LastError,
 			Stale: in.State.CheckedAt.IsZero() || in.Now.Sub(in.State.CheckedAt) > publicationStale}
@@ -162,6 +177,11 @@ func Build(in Input) Snapshot {
 	}
 	for i := range in.Report.Accounts {
 		if x, ok := session(&in.Report.Accounts[i], in.Digest); ok {
+			if p := in.Perf; p != nil {
+				h := in.Report.Accounts[i].Harness
+				t, w := p.TokenRate(x.Source, h.Model, h.Effort, x.Speed), p.WorkloadRate(x.Source)
+				x.TokenRate, x.WorkloadRate = &t, &w
+			}
 			s.Sessions = append(s.Sessions, x)
 		}
 	}
@@ -201,6 +221,8 @@ func revision(in Input) string {
 		Accounts    []account
 		Sources     []quota.SourceStatus
 		Ledger      []speed.Row
+		Perf        *speed.PerfLedger
+		PerfOK      bool
 		Publication string
 		Recording   bool
 	}
@@ -213,6 +235,11 @@ func revision(in Input) string {
 		v.Accounts = append(v.Accounts, x)
 	}
 	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
+	if in.Perf != nil {
+		l := in.Perf.Ledger
+		l.Files = nil // how far the logs were read is no observation
+		v.Perf, v.PerfOK = &l, in.Perf.OK
+	}
 	if in.Digest != nil {
 		v.Publication = in.State.PublicationID
 	}
@@ -236,6 +263,9 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if s.Publication != nil && s.Publication.CheckedAt != nil {
 		ts = append(ts, s.Publication.CheckedAt.Add(publicationStale))
+	}
+	if in.Perf != nil {
+		ts = append(ts, in.Perf.Boundaries()...)
 	}
 	if len(s.Measured) > 0 {
 		l := in.Now.Local()

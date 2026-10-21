@@ -6,8 +6,9 @@
 // output, paths or ids, and nothing leaves the machine.
 //
 // The ledger is <cache>/observed/speed.json: one row per local day and configuration, with sums
-// and histograms only. MODELPLAN_HISTORY=off stops it, as it stops the quota history; deleting
-// the file clears it.
+// and histograms only. The performance ledger, perf.json (perf.go), is read from the same logs
+// beside it. MODELPLAN_HISTORY=off stops both, as it stops the quota history; deleting a file
+// clears it.
 package speed
 
 import (
@@ -15,6 +16,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"os"
@@ -63,6 +65,8 @@ type config struct{ model, effort, speed string }
 type request struct {
 	out       int64
 	gen, ttft time.Duration // 0 when unknown
+	cfg       config        // Claude Code: the request's own; Codex: the turn's
+	end       time.Time     // when its last output was logged
 }
 
 type turn struct {
@@ -70,7 +74,11 @@ type turn struct {
 	at   time.Time
 	dur  time.Duration
 	out  int64
-	reqs []request
+	reqs []request // the requests under cfg
+	// all: every request of the turn under its own configuration; mixed: they were not all under
+	// cfg (Claude Code can change model within a turn).
+	all   []request
+	mixed bool
 }
 
 const (
@@ -116,8 +124,8 @@ func Load(cache string) Ledger {
 	return l
 }
 
-// ObserveClaude reads what is new in the current Claude Code session's transcript. From the
-// status line (often=true) it reads at most every statusGap.
+// ObserveClaude reads what is new in the current Claude Code session's transcript, into both
+// ledgers. From the status line (often=true) it reads at most every statusGap.
 func ObserveClaude(cache, transcript string, often bool, now time.Time) error {
 	if transcript == "" || !filepath.IsAbs(transcript) {
 		return nil
@@ -127,38 +135,50 @@ func ObserveClaude(cache, transcript string, often bool, now time.Time) error {
 			return nil
 		}
 	}
-	return observe(cache, now, func(l *Ledger) bool { return l.scan(transcript, "claude-code", newClaude(now), now) })
+	err := observe(cache, now, func(l *Ledger) bool { return l.scan(transcript, "claude-code", newClaude(now), now) })
+	return errors.Join(err, observePerf(cache, now, func(l *PerfLedger) bool {
+		return l.scan(transcript, "claude-code", ParserClaude, newClaude(now), now)
+	}))
 }
 
-// ObserveCodex reads what is new in the most recent Codex rollouts.
+// ObserveCodex reads what is new in the most recent Codex rollouts, into both ledgers.
 func ObserveCodex(cache string, rollouts []string, background func(string) bool, now time.Time) error {
 	if len(rollouts) == 0 {
 		return nil
 	}
-	return observe(cache, now, func(l *Ledger) bool {
-		changed := false
-		for _, p := range rollouts {
-			key := fileKey(p)
-			c, seen := l.Files[key]
-			if !seen && background(p) {
-				l.Files[key] = Cursor{Seen: day(now), Skip: true}
-				changed = true
-				continue
-			}
-			if c.Skip {
-				continue
-			}
-			changed = l.scan(p, "codex", newCodex(), now) || changed
-		}
-		return changed
+	err := observe(cache, now, func(l *Ledger) bool {
+		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", newCodex(), now) })
 	})
+	return errors.Join(err, observePerf(cache, now, func(l *PerfLedger) bool {
+		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", ParserCodex, newCodex(), now) })
+	}))
+}
+
+// scanCodex scans the rollouts with their cursors in files, marking the threads Codex runs by
+// itself to skip.
+func scanCodex(files map[string]Cursor, rollouts []string, background func(string) bool, now time.Time, scan func(string) bool) bool {
+	changed := false
+	for _, p := range rollouts {
+		key := fileKey(p)
+		c, seen := files[key]
+		if !seen && background(p) {
+			files[key] = Cursor{Seen: day(now), Skip: true}
+			changed = true
+			continue
+		}
+		if c.Skip {
+			continue
+		}
+		changed = scan(p) || changed
+	}
+	return changed
 }
 
 func observe(cache string, now time.Time, f func(*Ledger) bool) error {
 	if Off() {
 		return nil
 	}
-	unlock, ok := lock(cache)
+	unlock, ok := lock(cache, "speed.lock")
 	if !ok {
 		return nil // another process is reading; the next run picks up the same lines
 	}
@@ -182,20 +202,29 @@ type parser interface {
 	finish() (done []turn, commit int64)
 }
 
-// scan reads one log from its cursor. A log seen for the first time is read from its last maxScan
-// bytes; a log that shrank (rewritten) starts over.
+// scan reads one log from its cursor into the ledger.
 func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
+	done, changed := scanLog(l.Files, path, p, now)
+	for _, t := range done {
+		l.add(source, t)
+	}
+	return changed
+}
+
+// scanLog reads one log from its cursor in files and returns its finished turns. A log seen for
+// the first time is read from its last maxScan bytes; a log that shrank (rewritten) starts over.
+func scanLog(files map[string]Cursor, path string, p parser, now time.Time) ([]turn, bool) {
 	fh, err := os.Open(path)
 	if err != nil {
-		return false
+		return nil, false
 	}
 	defer fh.Close()
 	fi, err := fh.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
-		return false
+		return nil, false
 	}
 	key := fileKey(path)
-	c, seen := l.Files[key]
+	c, seen := files[key]
 	start, partial := c.Offset, false
 	if !seen && fi.Size() > maxScan {
 		start, partial = fi.Size()-maxScan, true
@@ -206,20 +235,20 @@ func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
 	if seen && start == fi.Size() {
 		if c.Seen != day(now) {
 			c.Seen = day(now)
-			l.Files[key] = c
-			return true
+			files[key] = c
+			return nil, true
 		}
-		return false
+		return nil, false
 	}
 	if _, err := fh.Seek(start, io.SeekStart); err != nil {
-		return false
+		return nil, false
 	}
 	r := bufio.NewReaderSize(io.LimitReader(fh, maxScan), 256<<10)
 	off := start
 	if partial { // starting inside a line: skip to the next one
 		_, n, err := readLine(r)
 		if err != nil {
-			return false
+			return nil, false
 		}
 		off += n
 	}
@@ -246,11 +275,8 @@ func (l *Ledger) scan(path, source string, p parser, now time.Time) bool {
 			commit = start + maxScan
 		}
 	}
-	for _, t := range done {
-		l.add(source, t)
-	}
-	l.Files[key] = Cursor{Offset: commit, Seen: day(now)}
-	return true
+	files[key] = Cursor{Offset: commit, Seen: day(now)}
+	return done, true
 }
 
 // readLine reads one line through its newline and returns its length, with its bytes unless it is
@@ -286,7 +312,7 @@ func (l *Ledger) add(source string, t turn) {
 		if q.ttft > 0 && q.ttft <= maxTTFT {
 			r.TTFTMs = r.TTFTMs.add(float64(q.ttft.Milliseconds()))
 		}
-		if q.out < minOutput || q.gen < minGen || q.gen > maxGen || float64(q.out)/q.gen.Seconds() > maxRate {
+		if !q.eligible() {
 			continue
 		}
 		r.Requests++
@@ -298,6 +324,12 @@ func (l *Ledger) add(source string, t turn) {
 		r.TurnMs = r.TurnMs.add(float64(t.dur.Milliseconds()))
 		r.TurnTokens = r.TurnTokens.add(float64(t.out))
 	}
+}
+
+// eligible: a valid sample of generation speed (first token known, enough output, a plausible
+// generation time and rate).
+func (q request) eligible() bool {
+	return q.out >= minOutput && q.gen >= minGen && q.gen <= maxGen && float64(q.out)/q.gen.Seconds() <= maxRate
 }
 
 func (l *Ledger) row(d, source string, c config) *Row {
@@ -397,8 +429,8 @@ func (h Hist) Median() float64 {
 	return 0
 }
 
-func lock(cache string) (func(), bool) {
-	p := filepath.Join(cache, "observed", "speed.lock")
+func lock(cache, name string) (func(), bool) {
+	p := filepath.Join(cache, "observed", name)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return nil, false
 	}

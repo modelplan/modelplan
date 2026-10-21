@@ -20,7 +20,7 @@ func n(v int) *int { return &v }
 
 // golden is a full snapshot: two harness sessions (one on a tight window, one on Codex Fast with a
 // Reserve allowance), a CodexBar account, the advice a desktop client notifies about and measured
-// speed. desktop/ reads testdata/snapshot.json, so the shell and the CLI share one contract.
+// speed from both ledgers. desktop/ reads testdata/snapshot.json, so the shell and the CLI share one contract.
 func golden() Snapshot {
 	e := func(k, l string, a, c, t float64) digest.Effort {
 		return digest.Effort{Effort: k, Label: l, Ability: f(a), Cost: f(c), Time: f(t), CostBasisID: "ref"}
@@ -77,7 +77,21 @@ func golden() Snapshot {
 		{Source: "claude-code", Model: "claude-opus-5-5", Effort: "medium", Days: 3, Requests: 120, Turns: 14, OutputTokensPerSecond: rate(121), TTFTSeconds: rate(1.6), TurnSeconds: rate(98), TurnOutputTokens: rate(2600)},
 		{Source: "codex", Model: "gpt-6-astra", Effort: "medium", Speed: "fast", Days: 2, Requests: 3, Turns: 2},
 	}
-	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Recording: true, CLIVersion: "0.5.25", Now: now,
+	// The performance ledger: Opus at High with enough samples over two days, Codex Fast with too few.
+	last := now.Add(-40 * time.Minute)
+	ttft := speed.Hist{"75": 3, "77": 6, "79": 2}
+	perf := &speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Rows: []speed.PerfRow{
+		{Day: "2026-10-17", Source: "claude-code", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", Parser: speed.ParserClaude, Eligibility: speed.EligibilityV1,
+			ObservedRequests: 30, ObservedOutputTokens: 21000, EligibleRequests: 6, EligibleOutputTokens: 4800, GenMs: 40000, Turns: 4, TurnMs: 380000, TurnOutputTokens: 15000,
+			TTFTMs: ttft, TurnMsHist: speed.Hist{"133": 2, "135": 2}, TurnTokensHist: speed.Hist{"86": 2, "88": 2}, LastAt: &last},
+		{Day: "2026-10-18", Source: "claude-code", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", Parser: speed.ParserClaude, Eligibility: speed.EligibilityV1,
+			ObservedRequests: 12, ObservedOutputTokens: 9000, EligibleRequests: 3, EligibleOutputTokens: 2600, GenMs: 22000, Turns: 2, TurnMs: 200000, TurnOutputTokens: 6400,
+			MixedConfigTurnsExcluded: 1, TurnMsHist: speed.Hist{"134": 2}, TurnTokensHist: speed.Hist{"87": 2}, LastAt: &last},
+		{Day: "2026-10-18", Source: "codex", Model: "gpt-6-astra", EffortStatus: "reported", Effort: "medium", Speed: "fast", Parser: speed.ParserCodex, Eligibility: speed.EligibilityV1,
+			ObservedRequests: 3, ObservedOutputTokens: 1800, EligibleRequests: 3, EligibleOutputTokens: 1800, GenMs: 9000, Turns: 1, TurnMs: 60000, TurnOutputTokens: 1800,
+			TTFTMs: speed.Hist{"76": 3}, TurnMsHist: speed.Hist{"115": 1}, TurnTokensHist: speed.Hist{"78": 1}, LastAt: &last},
+	}}}
+	return Build(Input{Report: r, Digest: d, Events: []advise.Event{tight, back, better, surplus}, Measured: measured, Perf: perf, Recording: true, CLIVersion: "0.5.25", Now: now,
 		State: store.State{PublicationID: "0d726f2402d395a043fb170e", PublishedAt: "2026-10-18T01:50:38Z", CheckedAt: now.Add(-20 * time.Minute), VerifiedAt: now.Add(-20 * time.Minute)}})
 }
 
