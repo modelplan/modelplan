@@ -2,6 +2,25 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.27, Codex plugin 0.15.19 and Claude Code plugin 0.7.18 (2026-10-21)
+
+- `modelplan desktop --json --read-only` builds the personal snapshot without writing a file, starting a background process, asking Codex for an account reading or using the network. The default form and `--offline` are unchanged.
+- The snapshot (schema v1, additive) gains these fields. `docs/personal-snapshot.md` describes all of them.
+  - `dataRevision`: a hash of the observed inputs only.
+  - `validUntil`: the next instant at which the clock alone changes a verdict.
+  - `sessions[].effortStatus`: `reported` or `unreported`. The `effort` fallback to ★ stays for older clients.
+  - `sessions[].workloadRate` and `tokenRate`: the recent 7-day generation rate per engine and per configuration, as ratios of sums.
+  - `sessions[].activity`: `recent`, `quiet` or `unknown`, from the harness's own timestamps.
+  - `perfStats[]`, `daily[]` and `dailyCoverage`: per-configuration figures and observed tokens per day over the recent 7 and 30 days.
+  - `sessionRanking`: the top five sessions by observed output tokens.
+  - `paceHistory`: quota percentage pace per window cycle, with gaps and drops.
+  - `connections[]`: whether each agent and quota source is installed, has readable history, is authorized and has quota read. Only paths are checked; nothing is run and no credential is read.
+- Two new local ledgers sit beside the existing ones. Neither changes `speed.json`, `cycles.json`, `measured[]` or `modelplan history`.
+  - `observed/perf.json`: 35 days, counted from when it is created. It holds per-configuration sums and histograms, plus sessions under random references.
+  - `observed/pace.json`: every counted quota reading with its gaps and drops.
+  - Neither stores prompts, replies, titles, paths or ids. `MODELPLAN_HISTORY=off` stops both.
+- Both plugins pin CLI v0.5.27.
+
 ## CLI v0.5.26, Codex plugin 0.15.18 and Claude Code plugin 0.7.17 (2026-10-20)
 
 - The client digest size limit rises from 150 kB to 250 kB in the CLI (`maxObjectBytes`) and the publication reader (`CLIENT_RAW_LIMIT`), and the Codex plugin bundle is rebuilt with it. The digest reached 86% of the old limit as the multiplier packs and per-effort data grew. Integrity checks (exact byte length and SHA-256 against the manifest) are unchanged. The producer only raises its own budget after clients that accept the larger digest are released.
