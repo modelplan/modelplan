@@ -351,16 +351,36 @@
       },
       "history": {
         "status": "no",
-        "reason": "no-session-reader"
+        "reason": "no-database"
       },
       "authorization": {
         "status": "not-applicable"
       },
       "quota": {
         "status": "not-applicable",
-        "reason": "see-codexbar:opencodego"
+        "reason": "see-opencodego"
       },
-      "support": "detected-only"
+      "support": "sessions-only"
+    },
+    {
+      "id": "zcode",
+      "kind": "agent",
+      "installed": {
+        "status": "no",
+        "reason": "not-found"
+      },
+      "history": {
+        "status": "no",
+        "reason": "no-database"
+      },
+      "authorization": {
+        "status": "not-applicable"
+      },
+      "quota": {
+        "status": "not-applicable",
+        "reason": "see-zai"
+      },
+      "support": "sessions-only"
     },
     {
       "id": "codexbar:copilot",
@@ -1254,6 +1274,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:1a6f58ec3343fcfa6b3064963cbfae84",
+  "dataRevision": "sha256:68007903c6cdd508534fe28a761844e8",
   "validUntil": "2026-10-18T09:08:00Z"
 }

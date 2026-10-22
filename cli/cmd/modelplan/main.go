@@ -244,6 +244,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		report := quota.Read(quotaPaths(st), now)
 		_ = history.Observe(st.Dir, report, now)
 		observeCodexSpeed(st, now)
+		observeAgents(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
 		_ = state.Save(st.Dir, now)
 		if c.json {
@@ -259,6 +260,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		l := history.Load(st.Dir)
 		now := time.Now()
 		observeCodexSpeed(st, now)
+		observeAgents(st, now)
 		measured := speed.Summarize(speed.Load(st.Dir), now)
 		if c.json {
 			return printJSON(stdout, map[string]any{"schemaVersion": 1, "recording": !history.Off(), "file": history.Path(st.Dir), "cycles": nonNilCycles(l.Cycles),
@@ -592,6 +594,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}, now)
 	} else {
 		observeCodexSpeed(st, now)
+		observeAgents(st, now)
 	}
 	for _, e := range advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}) {
 		if e.Source == harness || (harness == "claude-code" && e.Source == "user") {
@@ -740,6 +743,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	if !readOnly {
 		_ = history.Observe(st.Dir, report, now)
 		observeCodexSpeed(st, now)
+		observeAgents(st, now)
 	}
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
@@ -798,6 +802,15 @@ func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, 
 		fmt.Fprintln(stdout, "项目名称已关闭：项目只以不透明的引用记录。")
 	}
 	return 0
+}
+
+// observeAgents measures what is new in the other agents' databases (ZCode, OpenCode V2); each
+// is read at most every 30 seconds and only when it changed.
+func observeAgents(st *store.Store, now time.Time) {
+	home, _ := os.UserHomeDir()
+	in := speed.Ingest{Labels: projectLabels()}
+	_ = speed.ObserveZCode(st.Dir, home, in, now)
+	_ = speed.ObserveOpenCode(st.Dir, home, in, now)
 }
 
 // projectLabels: the user turned project labels on (`modelplan project-labels on`).

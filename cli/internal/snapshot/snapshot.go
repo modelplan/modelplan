@@ -226,6 +226,11 @@ func Build(in Input) Snapshot {
 	if in.Perf != nil {
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 	}
+	for i := range s.Connections {
+		if c := &s.Connections[i]; in.Perf != nil && c.Kind == "agent" && c.History.Status == "yes" && c.History.At == nil {
+			c.History.At = in.Perf.LastCompleted(c.ID) // agents read from a database: their last counted request
+		}
+	}
 	s.SessionRanking, s.ProjectRanking = speed.PerfView{Now: in.Now}.Ranking(), speed.PerfView{Now: in.Now}.Projects()
 	if in.Perf != nil {
 		s.SessionRanking, s.ProjectRanking = in.Perf.Ranking(), in.Perf.Projects()

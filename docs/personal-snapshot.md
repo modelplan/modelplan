@@ -72,7 +72,7 @@ CLI 0.5.27+. From `observed/perf.json`, a ledger beside `speed.json` that is nev
 
 One entry per configuration with a row in the last 30 days:
 
-- `source`, `model`, `effortStatus`, `effort` (native key; `""` when unreported), `speed`, `parser` (`codex-rollout/1` | `claude-transcript/1`), `eligibility` (`gen-v1`). Rows of different parsers or eligibility rules never merge;
+- `source`, `model`, `effortStatus`, `effort` (native key; `""` when unreported), `speed`, `parser` (`codex-rollout/1` | `claude-transcript/1` | `zcode-db/1` | `opencode-db/1`), `eligibility` (`gen-v1`). Rows of different parsers or eligibility rules never merge;
 - `basis`: `tokenBasis: "harness-reported-output"` (believed to include hidden reasoning for both harnesses, not yet confirmed), `timing: {start, first, end, quality: "harness-log-proxy"}` and `quantile: "log1.1-centre-lower"`. Codex: the input logged, the item's `started_at_ms`, the usage record logged. Claude Code: the input logged, the thinking block's time minus its duration, the last block logged. They are the times the harness logged, a proxy for the model's own;
 - `attribution: "unattributed"`: the samples belong to the harness, not to a verified subscription;
 - `since`, `lastAt` (when the newest sample completed, to the minute) and `freshness`: `fresh` within 24 hours, `aging` within 7 days, else `stale`. A recent `lastAt` does not make the figures recent, and a completed request does not mean a session is working now;
@@ -87,7 +87,7 @@ Display rules for clients: one number per engine, `workloadRate.value`, labelled
 
 ## `connections[]`
 
-CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, then one entry per optional quota provider: `codexbar:<provider>`, or `native:<provider>` (CLI 0.5.30+) when connections.json gives it to a native reader. A native entry's authorization is `yes` with `via: "env:<NAME>"` when the key variable is set where the CLI runs, else `no` with `reason: "key-env-unset"`; a provider turned off in connections.json is `off`. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
+CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, `zcode` (CLI 0.5.31+), then one entry per optional quota provider: `codexbar:<provider>`, or `native:<provider>` (CLI 0.5.30+) when connections.json gives it to a native reader. A native entry's authorization is `yes` with `via: "env:<NAME>"` when the key variable is set where the CLI runs, else `no` with `reason: "key-env-unset"`; a provider turned off in connections.json is `off`. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
 
 - `id`, `kind` (`agent` | `quota`) and `support`: `full` (sessions and quota), `quota-only` (CodexBar providers such as Kiro: quota, no session reader) or `detected-only` (OpenCode: found, nothing read yet).
 - Four levels, each `{status, reason, via, at, binding}` with `status` `yes`, `no`, `off` (turned off by the user's switch), `unknown` or `not-applicable`, and `reason` a stable code:
@@ -95,6 +95,15 @@ CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code
   - `history`: its local logs were read (`at`: the newest reading). OpenCode: `no-session-reader`;
   - `authorization`: a reader that needs the user's opt-in is enabled: Codex's own account reader (`via: "agent-owned-reader"`, `off` with `MODELPLAN_CODEX_ACCOUNT=off`), a CodexBar provider the user enabled (`via: "codexbar"`, `off` with `MODELPLAN_CODEXBAR=off`, else `not-enabled`). Claude Code needs none (`via: "status-line"`);
   - `quota`: windows were read (`at`: when). `binding` is `unknown`: a reading proves a meter, not whose subscription it is.
+
+### Agents read from their databases
+
+CLI 0.5.31+. Besides the Codex and Claude Code logs, the ledger reads two agents' own SQLite databases, opened read-only and never created or changed:
+
+- **ZCode**: `~/.zcode/cli/db/db.sqlite` (`MODELPLAN_ZCODE_DB` to override), table `model_usage`, one row per model call; the working directory from its `session` table.
+- **OpenCode V2**: `opencode.db` under `$XDG_DATA_HOME/opencode` (default `~/.local/share/opencode`, `MODELPLAN_OPENCODE_DB` to override), assistant rows of `session_message`; output and reasoning tokens both count as output, as Codex and Claude Code report them. A forked session's copies of earlier messages are not counted again. The V1 `message` table and JSON storage are not read.
+
+Each finished request counts once, from rows written after the ledger's `since`; the rest follows in batches of 5,000 rows, at most every 30 seconds and only when the database changed. Their times run from the request's start to its end, the wait for the first token included, so they are never eligible generation samples: tokens, days, sessions, projects and rankings count, generation rates stay `insufficient` for these sources. Efforts are `unreported` (neither records one the CLI can rely on yet). Neither prompts, replies, titles nor ids reach the ledger. The formats follow [tokei](https://github.com/cclank/tokei) and [Tokscale](https://github.com/junhoyeo/tokscale) (both MIT); no code is copied.
 
 ## `sessionRanking`
 
