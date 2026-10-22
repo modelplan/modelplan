@@ -28,7 +28,14 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
+      # Both editions: the official one from desktop/official-visuals/ (reserved license), then the
+      # default community one, which must contain none of it.
+      - run: npm run build:official
       - run: npm run build
+      - run: |
+          test ! -e app/dist/VISUAL-LICENSE.md
+          grep -q '"edition": "community"' app/dist/build-edition.json
+          cmp app/dist/app.css app/style.css
   shell:
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest

@@ -6,4 +6,4 @@ You may truthfully refer/link to Model Plan, describe compatibility, and show or
 
 Choose a distinct identity for materially modified third-party distributions and services. Request separate permission for an endorsement, official-branded product, merchandise or other use beyond truthful reference. No restriction here removes rights already granted under MIT/CC or applicable law. Historical public assets retain their copyright licenses; new official assets can carry separate reserved notices.
 
-The independently buildable desktop community edition uses a neutral mark and identifies itself as a community build. Proprietary official visual packages are licensed with the official distribution, not by this public repository's root MIT license.
+The independently buildable desktop community edition uses a neutral mark and identifies itself as a community build. The official edition's visuals are licensed by [`desktop/official-visuals/LICENSE.md`](desktop/official-visuals/LICENSE.md), not by this repository's root MIT license.

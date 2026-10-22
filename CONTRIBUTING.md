@@ -39,7 +39,7 @@ The plugins bring their own CLI: each pins one release in `cli-pin.json` (versio
 
 The CLI itself pins the CodexBar CLI release that `modelplan codexbar` fetches, in `cli/internal/quota/codexbar-pin.json`. The weekly `codexbar-pin` workflow runs `node scripts/pin-codexbar.mjs --latest` and the live contract test, then opens a PR. Close and reopen that PR to run CI; a new pin ships with the next CLI release.
 
-By contributing you agree that your contribution is licensed under the [MIT License](LICENSE).
+By contributing you agree that your contribution is licensed under the [MIT License](LICENSE). The official visuals in `desktop/official-visuals/` are the exception: they are under their own [license](desktop/official-visuals/LICENSE.md), and outside changes to them need a separate written agreement.
 
 ---
 
@@ -51,4 +51,4 @@ By contributing you agree that your contribution is licensed under the [MIT Lice
 
 **发版**：插件自带 CLI，各自在 `cli-pin.json` 里锁定一个版本和各平台的 SHA-256。所以 CLI 的改动分两步发：先合并并在合并提交上打 `vX.Y.Z` 标签，等发版流程生成程序包和 `checksums.txt`；再运行 `node scripts/pin-cli.mjs vX.Y.Z` 写入两个插件的 `cli-pin.json`，升两个插件的版本号并开 PR，CI 会用 `node scripts/pin-cli.mjs --check` 对照已发布的版本核验。CLI 自己锁定 `modelplan codexbar` 下载的 CodexBar CLI 版本，写在 `cli/internal/quota/codexbar-pin.json`。每周的 `codexbar-pin` 流程会运行 `node scripts/pin-codexbar.mjs --latest` 和实时格式检查，再开 PR；关闭并重新打开这个 PR 才会跑 CI，新锁定的版本随下一次 CLI 发版生效。
 
-**Pull request**：按上表在本地跑对应检查。客户端不自己排名、只读匿名不上传、从不替用户切换模型或档位、中英文同步更新。提交即表示你同意以 [MIT 许可](LICENSE)发布你的贡献。
+**Pull request**：按上表在本地跑对应检查。客户端不自己排名、只读匿名不上传、从不替用户切换模型或档位、中英文同步更新。提交即表示你同意以 [MIT 许可](LICENSE)发布你的贡献。`desktop/official-visuals/` 里的官方视觉例外：它有自己的[许可](desktop/official-visuals/LICENSE.md)，外部修改需要另签书面协议。
