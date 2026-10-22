@@ -1,6 +1,6 @@
 {
   "name": "modelplan-codex",
-  "version": "0.15.22",
+  "version": "0.15.23",
   "description": "Read-only Codex GPT console: recommended efforts, your own quota and reset countdown (read locally), and public reset notices. Needs Node.js 22 or newer; finds one automatically when Codex has it. Fetches its pinned modelplan CLI release (SHA-256 pinned in the plugin) into ~/.cache/modelplan-cli; changes nothing else.",
   "author": {
     "name": "Model Plan",

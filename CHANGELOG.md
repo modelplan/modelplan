@@ -2,6 +2,17 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.31, Codex plugin 0.15.23 and Claude Code plugin 0.7.22 (2026-10-22)
+
+- ZCode and OpenCode (V2) sessions are read from their own local databases (`~/.zcode/cli/db/db.sqlite`, `opencode.db`). They are opened read-only and never changed.
+  - Tokens per day, sessions, projects and both rankings in the desktop snapshot include them.
+  - Their request times include the wait for the first token, so they give no generation rate.
+  - Their efforts stay unreported.
+  - The formats follow tokei and Tokscale.
+- `modelplan connect kiro` reads Kiro credits natively through `kiro-cli`'s own ACP usage call. No prompt or session is sent, and Kiro keeps its sign-in. The route follows Pulse.
+- The CLI now includes a pure-Go SQLite library, about 4 MB larger. Release archives ship `THIRD-PARTY-NOTICES.md`.
+- Both plugins pin CLI v0.5.31.
+
 ## CLI v0.5.30, Codex plugin 0.15.22 and Claude Code plugin 0.7.21 (2026-10-22)
 
 - Other plans can be read natively, without CodexBar.
