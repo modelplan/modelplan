@@ -16,7 +16,8 @@ import (
 // sample, and say which parser and which validity rule produced them, so their figures are sums
 // that add up across days rather than rates. It starts at Since: only turns that started at or
 // after it are counted, so log content read before it can never be counted again. speed.json keeps
-// being written as before, by this CLI and older ones.
+// being written as before, by this CLI and older ones. Each write also rolls its days up into
+// daily-long.json (daily.go), which keeps them for a year.
 
 const (
 	PerfKeep = 35 * 24 * time.Hour // a 30-day view stays complete on any day
@@ -162,8 +163,12 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 	if !f(&l) && !created && !changed {
 		return nil
 	}
+	roll := rollup(l.Rows, "") // before pruning, so days perf.json lets go are kept in daily-long.json
 	b := l.prune(now)
-	return write(PerfPath(cache), b)
+	if err := write(PerfPath(cache), b); err != nil {
+		return err
+	}
+	return observeLong(cache, now, l.Since, roll)
 }
 
 func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) bool {

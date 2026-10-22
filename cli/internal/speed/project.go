@@ -20,28 +20,38 @@ import (
 // directory when the session's working directory is inside a checkout or worktree that still
 // exists, so worktrees of one repository are one project; otherwise the working directory itself.
 // It is found by reading .git files, never by running git. The label (the root folder's name) is
-// stored only while the user has turned project labels on (`modelplan project-labels on`).
+// stored only while project labels are on: the default, until the user turns them off
+// (`modelplan project-labels off`, which deletes the stored labels). Labels never leave the machine.
 
 const maxProjects = 500
 
-// ProjectLabelsFile is the opt-in, ~/.config/modelplan/project-labels.json.
+// ProjectLabelsFile is the user's choice, ~/.config/modelplan/project-labels.json.
 func ProjectLabelsFile(home string) string {
 	return filepath.Join(home, ".config", "modelplan", "project-labels.json")
 }
 
-// ProjectLabels: the user turned project labels on. A missing or unreadable file is off.
+// ProjectLabels: project labels are on. They are on unless the user turned them off: without a
+// file (no choice made) or a choice in it they are on, a stored choice is kept, and a file that
+// cannot be read is off, since the choice in it is unknown.
 func ProjectLabels(file string) bool {
 	b, err := readSmall(file)
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
 	if err != nil {
 		return false
 	}
 	var v struct {
-		ProjectLabels bool `json:"projectLabels"`
+		ProjectLabels *bool `json:"projectLabels"`
 	}
-	return json.Unmarshal(b, &v) == nil && v.ProjectLabels
+	if json.Unmarshal(b, &v) != nil {
+		return false
+	}
+	return v.ProjectLabels == nil || *v.ProjectLabels
 }
 
-// SetProjectLabels writes the opt-in. Turning it off also deletes the labels the ledger holds.
+// SetProjectLabels stores the user's choice. Turning labels off also deletes the labels the ledger
+// holds.
 func SetProjectLabels(file, cache string, on bool) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
 		return err

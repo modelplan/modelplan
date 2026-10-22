@@ -33,16 +33,18 @@ It marks no advice as told. A client keeps its own notified keys.
 | `measured[]` | The measured speed per configuration over the last 28 days, as in `modelplan history --json`, from `observed/speed.json`. Kept as it is; a client shows it only as history before `perfStats[].since` |
 | `perfStats[]` | CLI 0.5.27+. The performance ledger per configuration (below) |
 | `daily[]` | CLI 0.5.27+. `{day, source, model, observedOutputTokens, observedRequests}` per local day of the last 30 (today included) and model, across efforts, speed modes and parsers. Days without rows are left out, not `0`: the ledger cannot tell no activity from no coverage. Days before the ledger started are absent |
+| `dailyLong[]` | CLI 0.5.32+. The same rows for the last 371 local days (53 weeks, today included), from `observed/daily-long.json`, for a year-long heatmap (below) |
 | `sessionRanking` | CLI 0.5.27+. The sessions with the most observed output tokens (below) |
 | `projectRanking` | CLI 0.5.29+. The same sessions summed per project (below) |
 | `subscriptions` | CLI 0.5.30+. `[{subscriptionRef, sources, basis, observedAt}]`: each subscription the accounts were bound to, with the account sources read from it, for a scope selector (below) |
-| `projectLabels` | CLI 0.5.29+. Whether the user turned project labels on (`modelplan project-labels on`); off by default |
+| `projectLabels` | CLI 0.5.29+. Whether project labels are on. Since CLI 0.5.32 they are on unless the user turned them off (`modelplan project-labels off`), and a stored choice is kept; before, they were off until `modelplan project-labels on` |
 | `paceHistory` | CLI 0.5.27+. How fast each window's percentage rose per cycle (below) |
 | `dailyCoverage` | CLI 0.5.27+. `{from, recording}`: the first day `daily[]` covers (the later of the ledger's start and 30 days ago; `null` without a ledger), for a label such as "observed on this machine since <from>" |
+| `dailyLongCoverage` | CLI 0.5.32+. `{from, recording}`: the first day `dailyLong[]` covers, with the same meaning (below) |
 | `recording` | Local quota history and speed measurement are on (`MODELPLAN_HISTORY` is not `off`) |
 | `note` | The data boundary, in English |
-| `dataRevision` | CLI 0.5.27+. A hash of what was observed: the accounts' readings (time, used share, reset, limit, window length, cards, the usage-credit balance and its reading time), the sessions' configuration, the readers' status, the rows of both speed ledgers, the pace ledger's cycles, the publication id and `recording`. It leaves out `generatedAt` and everything the clock derives (`resetsInMinutes`, `elapsedPercent`, `projectedPercent`, `ageMinutes`, pace, staleness, events). The same revision means the same inputs, not the same document |
-| `validUntil` | CLI 0.5.27+. The next instant at which the clock alone changes a verdict: a window's reset or pace threshold, its recent rate lapsing, an account reading going stale (60 minutes) or out of use (6 hours, for cached CodexBar and Codex account readings), a card expiry or its 48-hour lead, an advice lead (a public reset, a rate boundary, a switch-back's or better model's time in the menu bar), the publication going stale, and local midnight while `measured[]` or the performance ledger has rows, a configuration's newest sample turning 24 hours and 7 days old, and a watched cycle closing at its reset. `null` when nothing is due. Read again at or after it even when `dataRevision` is unchanged; never reuse an expired event or the allowance of a passed reset. Shares that move every minute (elapsed, projected) have no boundary, so a client showing them refreshes on its own cadence too |
+| `dataRevision` | CLI 0.5.27+. A hash of what was observed: the accounts' readings (time, used share, reset, limit, window length, cards, the usage-credit balance and its reading time), the sessions' configuration, the readers' status, the rows of both speed ledgers and of the long-term daily ledger, the pace ledger's cycles, the publication id and `recording`. It leaves out `generatedAt` and everything the clock derives (`resetsInMinutes`, `elapsedPercent`, `projectedPercent`, `ageMinutes`, pace, staleness, events). The same revision means the same inputs, not the same document |
+| `validUntil` | CLI 0.5.27+. The next instant at which the clock alone changes a verdict: a window's reset or pace threshold, its recent rate lapsing, an account reading going stale (60 minutes) or out of use (6 hours, for cached CodexBar and Codex account readings), a card expiry or its 48-hour lead, an advice lead (a public reset, a rate boundary, a switch-back's or better model's time in the menu bar), the publication going stale, and local midnight while `measured[]`, the performance ledger or the long-term daily ledger has rows, a configuration's newest sample turning 24 hours and 7 days old, and a watched cycle closing at its reset. `null` when nothing is due. Read again at or after it even when `dataRevision` is unchanged; never reuse an expired event or the allowance of a passed reset. Shares that move every minute (elapsed, projected) have no boundary, so a client showing them refreshes on its own cadence too |
 
 A cached reading that ages out of use (a CodexBar or Codex account reading after 6 hours) changes the accounts, so it changes `dataRevision` too.
 
@@ -84,6 +86,23 @@ One entry per configuration with a row in the last 30 days:
 Rates are always ratios of sums and quantiles always come from merged histograms; nothing averages rates or medians. A generation rate is a per-request speed, not throughput: two sessions generating at 60 tok/s at the same time read 60, not 120. Speed is never used to infer plan usage or remaining quota, and it never changes published ability or recommendations.
 
 Display rules for clients: one number per engine, `workloadRate.value`, labelled with its window and scope ("62 t/s · 7 days · all configurations"); shown only when `ok`, dimmed when `aging`, hidden when `stale`, and not drawn at all otherwise (never `0`, never the legacy `measured[]`). `tokenRate` and the `perfStats[]` entries go in hover or expanded views. Nothing in this version is any subscription's speed.
+
+## `dailyLong[]`
+
+CLI 0.5.32+. The rows of `daily[]` (`{day, source, model, observedOutputTokens, observedRequests}`, per local day, source and model, across efforts, speed modes and parsers) for the last 371 local days, today included: 53 weeks, for a year-long heatmap. They come from `observed/daily-long.json`. Each time the CLI writes `perf.json`, it rolls that ledger's days up into this file, which keeps them after `perf.json` lets them go at 35 days.
+
+- It counts nothing `perf.json` did not: the same logs and databases, read the same way, from the same `since`. Per day, source and model it keeps the larger of its stored figure and the current one, so reading a log again never counts a request twice. Where its days overlap `daily[]`, the figures are the same.
+- It holds only days, sources, model names and the two sums. It has no prompts, replies, titles, paths, projects, sessions, subscriptions or ids.
+- It stays below 1 MiB, about 0.3 MB for a year of a few models a day. If a year does not fit, the oldest days go first, each day whole, and coverage starts after them.
+- `MODELPLAN_HISTORY=off` stops it together with `perf.json`; deleting the file clears it. An unreadable file is never overwritten.
+
+`dailyLongCoverage` is `{from, recording}`, read as `dailyCoverage`. `from` is the first day `dailyLong[]` covers, the latest of:
+
+- 371 days ago;
+- the ledger's `since`: `perf.json`'s `since`, or, when `perf.json` was older than 35 days when the file was made, the start of the oldest day it still held whole;
+- the day after a size trim.
+
+Before the file's first write, or when it cannot be read, `dailyLong[]` is what `perf.json` holds: its days from its `since`, at most 35 days back. `from` is `null` when `perf.json` cannot be read (nothing is recorded then) or neither ledger has started. Days without rows are left out, not `0`, as in `daily[]`.
 
 ## `connections[]`
 
@@ -134,7 +153,7 @@ An account without one (Codex read only from its logs, a declared plan) has none
 CLI 0.5.29+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each window is `{projects, totalObservedOutputTokens, unattributedOutputTokens, top}`. `totalObservedOutputTokens` counts every session in the window; `unattributedOutputTokens` is the part from sessions whose log records no working directory. `top` holds the ten projects with the most observed output tokens:
 
 - `ref`: an opaque reference, a keyed hash of the project root with a random key kept beside the ledger (`observed/project-key`). It says nothing about the path and differs between machines. The root is the repository's git common directory when the session's working directory is inside a checkout or worktree that still exists when it is read, so all worktrees of one repository are one project; otherwise it is the working directory itself, also when that was removed before it was read. `.git` files are read; git is never run;
-- `label`: the project folder's name, only while `projectLabels` is on; `null` otherwise, and the desktop names projects by rank ("Project A / B / C"). Turning labels off (`modelplan project-labels off`) deletes the stored names; the references stay;
+- `label`: the project folder's name (not its path), only while `projectLabels` is on, which is the default since CLI 0.5.32; `null` otherwise, and the desktop names projects by rank ("Project A / B / C"). A choice the user stored is kept: a user who turned labels off stays off. Turning labels off (`modelplan project-labels off`) deletes the stored names; the references stay. Names are kept only on this machine and are never synced or uploaded;
 - `sessions`, `lastAt`, `observedOutputTokens`, `observedRequests` and `share` (the project's part of `totalObservedOutputTokens`);
 - `subscriptionRefs` (CLI 0.5.30+): the subscriptions its sessions ran under, as far as known;
 - `configs[]`: as in `sessionRanking`, across the project's sessions.
@@ -166,4 +185,4 @@ The events of `modelplan advise --json` (types, `suggest`, `alternative`, `curre
 
 ## Privacy
 
-The snapshot holds no prompts, replies, tool output, credentials, file paths, session ids or account identities: subscriptions appear only as random local references. It carries window meters, the harness's model, effort and speed mode, and the measured figures. A Claude Code session on a custom endpoint also carries that endpoint's scheme, host and path (`ANTHROPIC_BASE_URL` without query or credentials), as `modelplan quota --json` does. Anything that sends it off the machine, such as a future mobile sync, must encrypt it end to end.
+The snapshot holds no prompts, replies, tool output, credentials, file paths, session ids or account identities: subscriptions appear only as random local references. With project labels on (the default since CLI 0.5.32), `projectRanking` names each project by its folder's name, not its path; `modelplan project-labels off` removes the names. It carries window meters, the harness's model, effort and speed mode, and the measured figures. A Claude Code session on a custom endpoint also carries that endpoint's scheme, host and path (`ANTHROPIC_BASE_URL` without query or credentials), as `modelplan quota --json` does. Anything that sends it off the machine, such as a future mobile sync, must encrypt it end to end.

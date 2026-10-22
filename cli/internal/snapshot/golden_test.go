@@ -82,9 +82,16 @@ func golden() Snapshot {
 		{Source: "codex", Model: "gpt-6-astra", Effort: "medium", Speed: "fast", Days: 2, Requests: 3, Turns: 2},
 	}
 	// The performance ledger: Opus at High with enough samples over two days, Codex Fast with too few.
+	// The long-term daily ledger keeps two older days, and a figure for 17 October that perf.json
+	// has since grown past.
 	last := now.Add(-40 * time.Minute)
 	ttft := speed.Hist{"75": 3, "77": 6, "79": 2}
-	perf := &speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Rows: []speed.PerfRow{
+	long := speed.LongLedger{SchemaVersion: 1, Since: time.Date(2026, 4, 20, 7, 30, 0, 0, time.UTC), Rows: []speed.Daily{
+		{Day: "2026-05-04", Source: "claude-code", Model: "claude-opus-5-5", ObservedOutputTokens: 52000, ObservedRequests: 61},
+		{Day: "2026-09-15", Source: "codex", Model: "gpt-6-astra", ObservedOutputTokens: 8000, ObservedRequests: 12},
+		{Day: "2026-10-17", Source: "claude-code", Model: "claude-opus-5-5", ObservedOutputTokens: 20000, ObservedRequests: 28},
+	}}
+	perf := &speed.PerfView{OK: true, Recording: true, Now: now, Long: long, LongOK: true, Ledger: speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Rows: []speed.PerfRow{
 		{Day: "2026-10-17", Source: "claude-code", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", Parser: speed.ParserClaude, Eligibility: speed.EligibilityV1,
 			ObservedRequests: 30, ObservedOutputTokens: 21000, EligibleRequests: 6, EligibleOutputTokens: 4800, GenMs: 40000, Turns: 4, TurnMs: 380000, TurnOutputTokens: 15000,
 			TTFTMs: ttft, TurnMsHist: speed.Hist{"133": 2, "135": 2}, TurnTokensHist: speed.Hist{"86": 2, "88": 2}, LastAt: &last},

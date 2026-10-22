@@ -68,17 +68,18 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
   modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
-                                       quota, advice and measured speed (docs/personal-snapshot.md;
-                                       --read-only writes, refreshes and starts nothing)
+                                       quota, advice, measured speed and a year of tokens per day
+                                       (docs/personal-snapshot.md; --read-only writes, refreshes
+                                       and starts nothing)
   modelplan project-labels [status|on|off]
                                        name projects by their folder in the snapshot's project
-                                       ranking; off (the default) keeps only opaque references,
-                                       and turning it off deletes the stored names
+                                       ranking: on by default, the names stay on this machine;
+                                       off keeps only opaque references and deletes the stored names
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
                                        machine only from log timestamps and token counts
-                                       (MODELPLAN_HISTORY=off stops both)
+                                       (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan declare <planId> [generation]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -91,7 +92,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
-     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history or speed measurement), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
+     MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
 
@@ -752,9 +753,10 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	}
 	ledger := speed.Load(st.Dir)
 	perf, ok := speed.LoadPerf(st.Dir)
+	long, longOK := speed.LoadLong(st.Dir)
 	pace, paceOK := history.LoadPace(st.Dir)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
-		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Recording: !history.Off(), Now: now},
+		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 		Connections: connections.Diagnose(connections.Local(paths), report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
@@ -768,7 +770,8 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 		speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
 }
 
-// projectLabelsCmd shows or sets the project-label opt-in (the desktop asks on first open).
+// projectLabelsCmd shows or sets the project-label switch: on unless the user turned it off (the
+// desktop offers it in its settings).
 func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, c common) int {
 	home, _ := os.UserHomeDir()
 	file := speed.ProjectLabelsFile(home)
@@ -793,9 +796,9 @@ func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, 
 	}
 	switch {
 	case on && c.lang == "en":
-		fmt.Fprintln(stdout, "Project labels are on: the project ranking names projects by their folder.")
+		fmt.Fprintln(stdout, "Project labels are on: the project ranking names projects by their folder. The names stay on this machine; `modelplan project-labels off` deletes them.")
 	case on:
-		fmt.Fprintln(stdout, "项目名称已开启：项目排行按文件夹名称显示。")
+		fmt.Fprintln(stdout, "项目名称已开启：项目排行按文件夹名称显示。名称只留在本机；`modelplan project-labels off` 会删除已记下的名称。")
 	case c.lang == "en":
 		fmt.Fprintln(stdout, "Project labels are off: projects are kept only as opaque references.")
 	default:
@@ -813,7 +816,7 @@ func observeAgents(st *store.Store, now time.Time) {
 	_ = speed.ObserveOpenCode(st.Dir, home, in, now)
 }
 
-// projectLabels: the user turned project labels on (`modelplan project-labels on`).
+// projectLabels: project labels are on, unless the user turned them off (`modelplan project-labels off`).
 func projectLabels() bool {
 	home, _ := os.UserHomeDir()
 	return speed.ProjectLabels(speed.ProjectLabelsFile(home))

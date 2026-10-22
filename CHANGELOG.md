@@ -2,6 +2,19 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## Unreleased
+
+These ship with the next CLI release; its pin PR gives them a version heading.
+
+- The desktop snapshot (schema v1, additive) gains `dailyLong[]` and `dailyLongCoverage`: observed output tokens and requests per local day, source and model over the last 371 days (53 weeks), for a year-long heatmap.
+  - They come from a new local ledger, `observed/daily-long.json`. It keeps the days `perf.json` lets go after 35 days, counts nothing `perf.json` did not, from the same `since`, and stays below 1 MiB.
+  - It holds only days, model names and the two sums: no prompts, paths, projects, sessions or ids. `MODELPLAN_HISTORY=off` stops it.
+  - `docs/personal-snapshot.md` describes both fields.
+- Project labels are on by default: the desktop snapshot's project ranking names projects by their folder.
+  - A stored choice is kept, so a user who turned labels off stays off.
+  - `modelplan project-labels off` still deletes the stored names.
+  - The names stay on this machine and are never synced or uploaded.
+
 ## CLI v0.5.31, Codex plugin 0.15.23 and Claude Code plugin 0.7.22 (2026-10-22)
 
 - ZCode and OpenCode (V2) sessions are read from their own local databases (`~/.zcode/cli/db/db.sqlite`, `opencode.db`). They are opened read-only and never changed.

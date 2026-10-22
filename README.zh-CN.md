@@ -180,7 +180,7 @@ flowchart LR
 <details>
 <summary><b>会上传我的任何信息吗？</b></summary>
 
-不会。客户端匿名下载公开数据；Claude Code 和 Codex 的额度从本机文件读取，只在本机使用。没有账号，没有遥测。
+不会。客户端匿名下载公开数据；Claude Code 和 Codex 的额度从本机文件读取，只在本机使用。命令行自己的记录也只留在本机：额度历史、实测速度、最长一年的每日 token，以及桌面端用来称呼项目的文件夹名（默认开启）。这些都不同步、不上传。`modelplan project-labels off` 会隐藏文件夹名并删除已记下的名称；`MODELPLAN_HISTORY=off` 停止记录。没有账号，没有遥测。
 
 </details>
 

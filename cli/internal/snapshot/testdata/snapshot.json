@@ -978,6 +978,47 @@
     "from": "2026-10-15",
     "recording": true
   },
+  "dailyLong": [
+    {
+      "day": "2026-05-04",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 52000,
+      "observedRequests": 61
+    },
+    {
+      "day": "2026-09-15",
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "observedOutputTokens": 8000,
+      "observedRequests": 12
+    },
+    {
+      "day": "2026-10-17",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 21000,
+      "observedRequests": 30
+    },
+    {
+      "day": "2026-10-18",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 9000,
+      "observedRequests": 12
+    },
+    {
+      "day": "2026-10-18",
+      "source": "codex",
+      "model": "gpt-6-astra",
+      "observedOutputTokens": 1800,
+      "observedRequests": 3
+    }
+  ],
+  "dailyLongCoverage": {
+    "from": "2026-04-20",
+    "recording": true
+  },
   "paceHistory": {
     "since": "2026-10-15T09:00:00Z",
     "status": "ok",
@@ -1274,6 +1315,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:68007903c6cdd508534fe28a761844e8",
+  "dataRevision": "sha256:2c7f7e06ee816741ac12b916b9edb011",
   "validUntil": "2026-10-18T09:08:00Z"
 }

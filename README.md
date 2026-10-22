@@ -180,7 +180,7 @@ Ability comes from public benchmarks (such as Artificial Analysis) on one scale;
 <details>
 <summary><b>Does anything about me leave my machine?</b></summary>
 
-No. Clients download the public publication anonymously. Your Claude Code and Codex quota is read from local files and only used on your machine. There is no account and no telemetry.
+No. Clients download the public publication anonymously. Your Claude Code and Codex quota is read from local files and only used on your machine. The CLI's own records stay there too: the quota history, your measured speed, tokens per day for up to a year, and the folder names that name your projects in the desktop app (on by default). None of them is synced or uploaded. `modelplan project-labels off` hides the folder names and deletes the stored ones; `MODELPLAN_HISTORY=off` stops the records. There is no account and no telemetry.
 
 </details>
 
