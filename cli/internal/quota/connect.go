@@ -136,14 +136,18 @@ func Selections(p Paths) ([]Selection, error) {
 			if x.Region == "" {
 				x.Region = n.Regions[0]
 			}
-			if x.KeyEnv == "" {
+			if n.KeyEnv == "" {
+				x.KeyEnv = "" // the agent's own CLI keeps the sign-in
+			} else if x.KeyEnv == "" {
 				x.KeyEnv = n.KeyEnv
 			}
-			x.KeySet = os.Getenv(x.KeyEnv) != "" // only whether it is there; the value stays in the environment
+			if x.KeyEnv != "" {
+				x.KeySet = os.Getenv(x.KeyEnv) != "" // only whether it is there; the value stays in the environment
+			}
 			switch {
 			case nativeOff():
 				x.Blocked = "native-off"
-			case !x.KeySet:
+			case x.KeyEnv != "" && !x.KeySet:
 				x.Blocked = "no-key"
 			}
 		}

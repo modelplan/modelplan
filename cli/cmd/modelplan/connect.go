@@ -130,7 +130,7 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 	}
 	for _, w := range rows {
 		line := fmt.Sprintf("%-11s %-16s %s", w.Provider, w.Backend, w.Origin)
-		if w.Backend == quota.BackendNative {
+		if w.Backend == quota.BackendNative && w.KeyEnv != "" {
 			set := "unset"
 			if w.KeySet {
 				set = "set"

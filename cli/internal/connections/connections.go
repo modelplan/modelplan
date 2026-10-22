@@ -191,8 +191,11 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				c.Authorization = Level{Status: "no", Reason: "no-native-reader"}
 			case "no-key":
 				c.Authorization = Level{Status: "no", Reason: "key-env-unset", Via: "env:" + x.KeyEnv}
-			default:
+			case "":
 				c.Authorization = Level{Status: "yes", Via: "env:" + x.KeyEnv}
+				if x.KeyEnv == "" {
+					c.Authorization.Via = "agent-owned-reader" // the agent's own CLI keeps the sign-in (Kiro)
+				}
 			}
 			c.Quota = quotaLevel(c.ID)
 		case quota.CodexBarOff():
