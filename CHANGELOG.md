@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- The CLI, the publication reader and the Codex plugin now skip manifest component kinds they do not know, instead of rejecting the whole publication. This lets the producer add page-sized slices (modelplans.ai #544) without breaking installed clients.
+  - Unknown kinds still need a well-formed name and reference (hash, size, schema version), and are never downloaded.
+  - The seven base kinds and `client` remain required. A manifest may list at most 32 kinds.
 - The desktop snapshot (schema v1, additive) gains `dailyLong[]` and `dailyLongCoverage`: observed output tokens and requests per local day, source and model over the last 371 days (53 weeks), for a year-long heatmap.
   - They come from a new local ledger, `observed/daily-long.json`. It keeps the days `perf.json` lets go after 35 days, counts nothing `perf.json` did not, from the same `since`, and stays below 1 MiB.
   - It holds only days, model names and the two sums: no prompts, paths, projects, sessions or ids. `MODELPLAN_HISTORY=off` stops it.
