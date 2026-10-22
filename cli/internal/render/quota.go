@@ -184,7 +184,8 @@ func Thousands(v float64) string {
 	return b.String()
 }
 
-// sourceName: the harness, "manual", or a provider read through CodexBar ("Cursor · CodexBar").
+// sourceName: the harness, "manual", or another provider: "Cursor · CodexBar" when CodexBar read it,
+// its plain name when a native reader did.
 func sourceName(q quotaText, source string) string {
 	if n, ok := q.Source[source]; ok {
 		return n
@@ -192,6 +193,11 @@ func sourceName(q quotaText, source string) string {
 	if p, ok := strings.CutPrefix(source, "codexbar:"); ok {
 		if x, ok := quota.CodexBarProviders[p]; ok {
 			return x.Name + " · CodexBar"
+		}
+	}
+	if p, ok := strings.CutPrefix(source, "native:"); ok {
+		if x, ok := quota.CodexBarProviders[p]; ok {
+			return x.Name
 		}
 	}
 	return source

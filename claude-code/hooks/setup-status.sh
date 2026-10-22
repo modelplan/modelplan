@@ -36,6 +36,10 @@ if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" 0.5.13; then
   echo "codexbar (other plans, optional):"
   "$cli" codexbar --lang en </dev/null 2>&1 | head -16 | sed 's/^/  /'
 fi
+if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" 0.5.30; then
+  echo "connections (other plans: native or CodexBar):"
+  "$cli" connections --lang en </dev/null 2>&1 | head -12 | sed 's/^/  /'
+fi
 # These records are this machine's, from whichever session ran last.
 if m=$(ago "$state/hook-ran"); then
   r=$(head -1 "$state/hook-result" 2>/dev/null)

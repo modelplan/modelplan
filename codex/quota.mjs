@@ -18,13 +18,13 @@ export function pickCodex(report) {
   return { status: account ? 'ok' : source.status, reason: source.reason ?? null, evaluatedAt: report.evaluatedAt, account, others: others(report), note: report.note };
 }
 
-// Other plans the user enabled through CodexBar (`modelplan codexbar enable …`), as the CLI cached
-// them. Shown under Codex's own quota; hints and advice stay Codex's.
+// Other plans the user connected, read natively (`modelplan connect …`) or through CodexBar
+// (`modelplan codexbar enable …`), as the CLI cached them. Shown under Codex's own quota; hints and advice stay Codex's.
 export const OTHER_PLANS = { copilot: 'GitHub Copilot', cursor: 'Cursor', zai: 'Z.ai / GLM Coding Plan', kiro: 'Kiro', opencodego: 'OpenCode Go' };
 function others(report) {
-  return report.accounts.filter(a => typeof a?.source === 'string' && a.source.startsWith('codexbar:') && Array.isArray(a.windows)).slice(0, 8).map(a => {
-    const id = a.source.slice('codexbar:'.length);
-    return { id, name: OTHER_PLANS[id] ?? id, plan: a.plan ?? null, stale: a.stale === true, observedAt: a.observedAt ?? null, windows: a.windows.slice(0, 6) };
+  return report.accounts.filter(a => typeof a?.source === 'string' && /^(codexbar|native):/.test(a.source) && Array.isArray(a.windows)).slice(0, 8).map(a => {
+    const [via, id] = a.source.split(':');
+    return { id, via, name: OTHER_PLANS[id] ?? id, plan: a.plan ?? null, stale: a.stale === true, observedAt: a.observedAt ?? null, windows: a.windows.slice(0, 6) };
   });
 }
 

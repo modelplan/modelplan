@@ -184,9 +184,10 @@ func Derive(in Input) []Event {
 		if harnessOf(a.Source) != "" && !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > harnessQuiet {
 			continue
 		}
-		// Plans read through CodexBar (Cursor, Copilot, …) are shown by `quota` and the dashboards;
-		// a prompt in Claude Code or Codex does not draw on them, so they give no hints there.
-		if strings.HasPrefix(a.Source, "codexbar:") {
+		// Other plans (Cursor, Copilot, …, read natively or through CodexBar) are shown by `quota`
+		// and the dashboards; a prompt in Claude Code or Codex does not draw on them, so they give
+		// no hints there.
+		if strings.HasPrefix(a.Source, "codexbar:") || strings.HasPrefix(a.Source, "native:") {
 			continue
 		}
 		var plan *Plan

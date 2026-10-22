@@ -39,14 +39,14 @@ type Connection struct {
 
 // Env is where to look; tests replace Exists.
 type Env struct {
-	Home, CodexHome, CodexBarFile string
-	Exists                        func(path string) bool
+	Home, CodexHome, CodexBarFile, ConnectionsFile string
+	Exists                                         func(path string) bool
 }
 
 // Local: the machine's own paths.
 func Local(p quota.Paths) Env {
 	home, _ := os.UserHomeDir()
-	return Env{Home: home, CodexHome: p.CodexHome, CodexBarFile: p.CodexBarFile, Exists: func(path string) bool { _, err := os.Stat(path); return err == nil }}
+	return Env{Home: home, CodexHome: p.CodexHome, CodexBarFile: p.CodexBarFile, ConnectionsFile: p.ConnectionsFile, Exists: func(path string) bool { _, err := os.Stat(path); return err == nil }}
 }
 
 // onPath: a command named name on PATH or in the usual install places, found by its path only.
@@ -146,10 +146,12 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		Quota:         Level{Status: "not-applicable", Reason: "see-codexbar:opencodego"}}
 	out = append(out, oc)
 
-	// Quota through CodexBar, each provider only when the user enabled it.
-	enabled := map[string]bool{}
-	for _, p := range quota.CodexBarEnabled(e.CodexBarFile) {
-		enabled[p] = true
+	// Other plans' quota, natively or through CodexBar, each provider only when the user enabled
+	// it. The entry's id names the backend that serves it.
+	sel := map[string]quota.Selection{}
+	ss, err := quota.Selections(quota.Paths{CodexBarFile: e.CodexBarFile, ConnectionsFile: e.ConnectionsFile})
+	for _, x := range ss {
+		sel[x.Provider] = x
 	}
 	installed := map[string]Level{
 		"kiro":       yesNo(e.onPath("kiro-cli"), "not-found"),
@@ -160,11 +162,31 @@ func Diagnose(e Env, r quota.Report) []Connection {
 	}
 	for _, p := range []string{"copilot", "cursor", "kiro", "opencodego", "zai"} {
 		c := Connection{ID: "codexbar:" + p, Kind: "quota", Support: "quota-only", Installed: installed[p], History: Level{Status: "not-applicable", Reason: "quota-only"}}
+		x, on := sel[p]
 		switch {
+		case err != nil:
+			c.Authorization = Level{Status: "no", Reason: "connections-invalid"}
+			c.Quota = Level{Status: "no", Reason: "connections-invalid", Binding: "unknown"}
+		case on && x.Backend == quota.BackendOff:
+			c.Authorization = Level{Status: "off", Reason: "connections.json"}
+			c.Quota = Level{Status: "off", Binding: "unknown"}
+		case on && x.Backend == quota.BackendNative:
+			c.ID = "native:" + p
+			switch x.Blocked {
+			case "native-off":
+				c.Authorization = Level{Status: "off", Reason: "MODELPLAN_NATIVE"}
+			case "no-native-reader":
+				c.Authorization = Level{Status: "no", Reason: "no-native-reader"}
+			case "no-key":
+				c.Authorization = Level{Status: "no", Reason: "key-env-unset", Via: "env:" + x.KeyEnv}
+			default:
+				c.Authorization = Level{Status: "yes", Via: "env:" + x.KeyEnv}
+			}
+			c.Quota = quotaLevel(c.ID)
 		case quota.CodexBarOff():
 			c.Authorization = Level{Status: "off", Reason: "MODELPLAN_CODEXBAR"}
 			c.Quota = Level{Status: "off", Binding: "unknown"}
-		case !enabled[p]:
+		case !on:
 			c.Authorization = Level{Status: "no", Reason: "not-enabled"}
 			c.Quota = Level{Status: "no", Reason: "not-enabled", Binding: "unknown"}
 		default:

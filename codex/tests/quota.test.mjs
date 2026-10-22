@@ -121,13 +121,22 @@ test('plans read through CodexBar come along, after Codex, with what each still 
   const setup = { cli: { status: 'ok', version: '9.9.9' }, hook: { lastRun: new Date().toISOString(), current: true, result: 'ok' }, advice: { status: 'ok' }, adviceEvents: 0,
     codexbar: { enabled: ['cursor', 'zai'], binary: '/c/CodexBarCLI', providers: [{ id: 'zai', name: 'Z.ai / GLM Coding Plan', status: 'ok' }, { id: 'cursor', name: 'Cursor', status: 'unavailable', reason: 'no session', needs: 'signed in to cursor.com' }] } };
   const text = renderQuota(q, 'en', { status: 'ok', events: [] }, setup);
-  assert.match(text, /Other plans \(read by CodexBar, on this machine\)\n  Z\.ai \/ GLM Coding Plan Pro: 5h 1% used ↻ 3h20m · week 52% used\n/);
+  assert.match(text, /Other plans \(read on this machine\)\n  Z\.ai \/ GLM Coding Plan Pro · CodexBar: 5h 1% used ↻ 3h20m · week 52% used\n/);
   assert.match(text, /Setup: Cursor was not read through CodexBar \(unavailable: no session\); needs signed in to cursor\.com/);
   assert.doesNotMatch(text, /Setup: Z\.ai/);
   assert.doesNotMatch(text, /Setup complete/, 'a provider that needs something is not a complete setup');
   const off = renderQuota(q, 'zh', { status: 'ok', events: [] }, { ...setup, codexbar: { enabled: ['zai'], binary: null, fetch: '0.76.0 failed: download failed', providers: [] } });
   assert.match(off, /设置：已开启 CodexBar（zai），CodexBar CLI 还不可用：0\.76\.0 failed: download failed/);
   assert.equal(pickCodex(expected).others.length, 0);
+});
+
+test('a plan read natively shows without the CodexBar mark', () => {
+  const report = { ...expected, accounts: [...expected.accounts,
+    { source: 'native:zai', plan: 'GLM Coding Pro', observedAt: expected.evaluatedAt, stale: false, via: 'native', headroom: 'unknown',
+      windows: [{ kind: 'five_hour', usedPercent: 61, resetsInMinutes: 60, pace: 'unknown' }] }] };
+  const q = pickCodex(report);
+  assert.deepEqual(q.others.map(o => [o.id, o.via]), [['zai', 'native']]);
+  assert.match(renderQuota(q, 'zh'), /其他套餐（本机读取）\n  Z\.ai \/ GLM Coding Plan GLM Coding Pro: 5小时 61% 已用 ↻ 1时\n/);
 });
 
 test('the CodexBar state is the CLI\'s own report; an older or missing CLI gives none', async () => {

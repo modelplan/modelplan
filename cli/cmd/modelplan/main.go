@@ -51,6 +51,13 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan quota                      your own usage windows: this machine's logs, and Codex's own
                                        account reading (--refresh-account asks it now; at most every
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
+  modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
+  modelplan disconnect <provider>
+  modelplan connections [status|refresh]
+                                       which reader serves each other plan (connections.json):
+                                       native readers ask the vendor with an API key from an
+                                       environment variable (zai: Z_AI_API_KEY); the key is never
+                                       stored. Providers without one stay on CodexBar
   modelplan codexbar [status|enable <provider…>|disable [provider…]|fetch|refresh]
                                        other plans through CodexBar's CLI (copilot, cursor, zai, kiro,
                                        opencodego): off until enabled; CodexBar keeps the sign-ins,
@@ -138,6 +145,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	addContext := fs.String("add-context", "", "advise --hook: context for the model to hand over with the hints")
 	refreshAccount := fs.Bool("refresh-account", false, "quota: ask Codex for the account's windows and reset credits now")
 	remove := fs.Bool("remove", false, "declare: take the plan out of local.json")
+	backend := fs.String("backend", "native", "connect: native (this client's own reader) or codexbar")
+	region := fs.String("region", "", "connect: the provider's region (zai: global or bigmodel-cn)")
+	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -271,6 +281,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "project-labels":
 		return projectLabelsCmd(fs.Args(), stdout, stderr, st, c)
+
+	case "connect", "disconnect", "connections":
+		return connectCmd(cmd, fs.Args(), stdout, stderr, st, c, *quiet, *backend, *region, *keyEnv)
 
 	case "codexbar":
 		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
@@ -680,7 +693,10 @@ func refreshAccountLater(st *store.Store) {
 // reading is due (both hooks, quota and advise), so nothing waits for it.
 func refreshCodexBarLater(st *store.Store, now time.Time) {
 	p := quotaPaths(st)
-	if len(quota.CodexBarEnabled(p.CodexBarFile)) == 0 {
+	if quota.NativeDue(p, now) {
+		_ = startDetached("connections", "refresh", "--quiet")
+	}
+	if len(quota.CodexBarActive(p)) == 0 {
 		return
 	}
 	switch {
@@ -813,7 +829,7 @@ func quotaPaths(st *store.Store) quota.Paths {
 	// Codex sets CODEX_THREAD_ID and Claude Code CLAUDE_CODE_SESSION_ID for the commands a
 	// thread runs, so a Skill calling `modelplan quota` reads that thread's own model and effort.
 	return quota.Paths{Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexBarFile: filepath.Join(home, ".config", "modelplan", "codexbar.json"), CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
+		CodexBarFile: filepath.Join(home, ".config", "modelplan", "codexbar.json"), ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"), CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.
@@ -835,7 +851,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

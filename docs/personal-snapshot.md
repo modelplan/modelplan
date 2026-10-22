@@ -26,7 +26,7 @@ It marks no advice as told. A client keeps its own notified keys.
 | `cliVersion` | The CLI that built it |
 | `publication` | `{publicationId, publishedAt, checkedAt, verifiedAt, stale, lastError}` of the verified publication the figures come from; `null` before the first sync. `stale`: not checked for 48 hours |
 | `sessions[]` | Each harness's current configuration (below) |
-| `accounts[]` | The quota accounts, exactly as `modelplan quota --json` gives them: windows with pace, run-out, pools (Codex `reserve`), reset cards, Codex usage credits (`credits`, CLI 0.5.29+); `codexbar:<provider>` accounts when the user enabled CodexBar |
+| `accounts[]` | The quota accounts, exactly as `modelplan quota --json` gives them: windows with pace, run-out, pools (Codex `reserve`), reset cards, Codex usage credits (`credits`, CLI 0.5.29+); `codexbar:<provider>` accounts when the user enabled CodexBar, `native:<provider>` (CLI 0.5.30+, `via: "native"`) when a native reader serves the provider (`modelplan connect`) |
 | `sources[]` | The status of each reader (`ok`, `missing`, …, with a reason) |
 | `connections[]` | CLI 0.5.27+. Per agent and quota source, how far it is connected (below) |
 | `events[]` | Advice events (below), most urgent first |
@@ -85,7 +85,7 @@ Display rules for clients: one number per engine, `workloadRate.value`, labelled
 
 ## `connections[]`
 
-CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, then `codexbar:<provider>` for each CodexBar provider. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
+CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, then one entry per optional quota provider: `codexbar:<provider>`, or `native:<provider>` (CLI 0.5.30+) when connections.json gives it to a native reader. A native entry's authorization is `yes` with `via: "env:<NAME>"` when the key variable is set where the CLI runs, else `no` with `reason: "key-env-unset"`; a provider turned off in connections.json is `off`. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
 
 - `id`, `kind` (`agent` | `quota`) and `support`: `full` (sessions and quota), `quota-only` (CodexBar providers such as Kiro: quota, no session reader) or `detected-only` (OpenCode: found, nothing read yet).
 - Four levels, each `{status, reason, via, at, binding}` with `status` `yes`, `no`, `off` (turned off by the user's switch), `unknown` or `not-applicable`, and `reason` a stable code:
