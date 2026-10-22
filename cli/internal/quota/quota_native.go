@@ -121,6 +121,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		key := os.Getenv(x.KeyEnv)
 		e := nativeReaders[x.Provider].Fetch(ctx, nativeClient, x.Region, key, now)
 		e.Provider, e.Source = x.Provider, "api"
+		if e.Status == "ok" && !IdentityOff() {
+			e.SubscriptionRef = assignSubscription(p.Cache, "api-key:"+x.Provider, key, now) // a key is one subscription
+		}
 		if e.Error != "" {
 			e.Error = clean(e.Error, home)
 		}
@@ -207,7 +210,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
 			st.Status = "ok"
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...), Via: "native"})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...), Via: "native", Subscription: e.binding("api-key")})
 		}
 		r.Sources = append(r.Sources, st)
 	}

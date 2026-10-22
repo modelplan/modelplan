@@ -208,6 +208,12 @@ def read_claude_code(cache, session=""):
     if not windows:
         st["reason"] = "Claude Code reported no usage windows (API key or not yet a response this session)"
     acct = {"source": "claude-code", "observedAt": observed, "harness": harness, "windows": windows}
+    # The subscription the CLI's status line recorded (a random local reference, never an identity).
+    ident = s.get("identity") if isinstance(s.get("identity"), dict) else {}
+    ref = ident.get("subscriptionRef")
+    if isinstance(ref, str) and re.fullmatch(r"[0-9a-f]{16}", ref) and parse_time(ident.get("observedAt")) \
+            and os.environ.get("MODELPLAN_IDENTITY", "").lower() not in ("off", "0", "false"):
+        acct["subscription"] = {"subscriptionRef": ref, "status": "verified", "basis": "claude-config", "observedAt": parse_time(ident["observedAt"])}
     return [acct], st
 
 
@@ -608,7 +614,7 @@ def evaluate(a, now):
 
 
 def ordered_account(a):
-    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "credits", "headroom", "deciding", "pool"]
+    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "subscription", "credits", "headroom", "deciding", "pool"]
     out = {k: a[k] for k in keys if k in a and not (k in ("plan", "deciding", "pool") and not a[k]) and not (k == "harness" and not a[k])}
     if out.get("observedAt") is None:
         out["observedAt"] = dt.datetime(1, 1, 1, tzinfo=dt.timezone.utc)

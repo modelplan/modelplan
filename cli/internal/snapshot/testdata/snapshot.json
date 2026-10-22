@@ -66,6 +66,12 @@
         "withinMinutes": 10
       },
       "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+      "subscription": {
+        "subscriptionRef": "9b1e44d07a2c3f58",
+        "status": "verified",
+        "basis": "claude-config",
+        "observedAt": "2026-10-18T08:58:00Z"
+      },
       "headroom": "conserve",
       "deciding": "five_hour"
     },
@@ -123,6 +129,7 @@
         "withinMinutes": 10
       },
       "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+      "subscription": null,
       "headroom": "spend"
     }
   ],
@@ -173,6 +180,12 @@
           "pace": "on_track"
         }
       ],
+      "subscription": {
+        "subscriptionRef": "9b1e44d07a2c3f58",
+        "status": "verified",
+        "basis": "claude-config",
+        "observedAt": "2026-10-18T08:58:00Z"
+      },
       "headroom": "conserve",
       "deciding": "five_hour"
     },
@@ -325,7 +338,7 @@
       "quota": {
         "status": "yes",
         "at": "2026-10-18T08:58:00Z",
-        "binding": "unknown"
+        "binding": "verified"
       },
       "support": "full"
     },
@@ -1054,6 +1067,7 @@
           "ref": "5c1e0d2a9b7f4e31",
           "source": "claude-code",
           "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+          "subscriptionRef": "9b1e44d07a2c3f58",
           "firstAt": "2026-10-17T07:00:00Z",
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 30000,
@@ -1075,6 +1089,7 @@
           "ref": "a83f6c0e12d94b70",
           "source": "codex",
           "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+          "subscriptionRef": null,
           "firstAt": "2026-10-18T07:00:00Z",
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 1800,
@@ -1102,6 +1117,7 @@
           "ref": "5c1e0d2a9b7f4e31",
           "source": "claude-code",
           "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+          "subscriptionRef": "9b1e44d07a2c3f58",
           "firstAt": "2026-10-17T07:00:00Z",
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 30000,
@@ -1123,6 +1139,7 @@
           "ref": "a83f6c0e12d94b70",
           "source": "codex",
           "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+          "subscriptionRef": null,
           "firstAt": "2026-10-18T07:00:00Z",
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 1800,
@@ -1154,6 +1171,9 @@
           "ref": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
           "label": null,
           "sessions": 2,
+          "subscriptionRefs": [
+            "9b1e44d07a2c3f58"
+          ],
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 31800,
           "observedRequests": 45,
@@ -1190,6 +1210,9 @@
           "ref": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
           "label": null,
           "sessions": 2,
+          "subscriptionRefs": [
+            "9b1e44d07a2c3f58"
+          ],
           "lastAt": "2026-10-18T08:20:00Z",
           "observedOutputTokens": 31800,
           "observedRequests": 45,
@@ -1219,8 +1242,18 @@
     }
   },
   "projectLabels": false,
+  "subscriptions": [
+    {
+      "subscriptionRef": "9b1e44d07a2c3f58",
+      "sources": [
+        "claude-code"
+      ],
+      "basis": "claude-config",
+      "observedAt": "2026-10-18T08:58:00Z"
+    }
+  ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:28aa6adbd9c7d49f0a3f673dc136a063",
+  "dataRevision": "sha256:1a6f58ec3343fcfa6b3064963cbfae84",
   "validUntil": "2026-10-18T09:08:00Z"
 }

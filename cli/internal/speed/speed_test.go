@@ -76,7 +76,7 @@ func TestClaudeTranscript(t *testing.T) {
 		ccPrompt(60),
 		ccReply(64, "r3", "claude-opus-5-5", "high", "fast", 500, 2000, "end_turn", false),
 	)
-	if err := ObserveClaude(cache, p, false, false, t0.Add(70*time.Second)); err != nil {
+	if err := ObserveClaude(cache, p, false, Ingest{}, t0.Add(70*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	l := Load(cache)
@@ -89,7 +89,7 @@ func TestClaudeTranscript(t *testing.T) {
 	}
 	// The second turn is still open (ended 6 s ago): it is read again next time, and counted once.
 	writeLines(t, p, ccPrompt(120))
-	if err := ObserveClaude(cache, p, false, false, t0.Add(121*time.Second)); err != nil {
+	if err := ObserveClaude(cache, p, false, Ingest{}, t0.Add(121*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	l = Load(cache)
@@ -113,13 +113,13 @@ func TestStatusLineReadsAtMostEveryFewSeconds(t *testing.T) {
 	recent(t)
 	writeLines(t, p, ccPrompt(0), ccReply(3, "r1", "claude-opus-5-5", "high", "", 300, 1000, "end_turn", false), ccPrompt(50))
 	now := time.Now()
-	ObserveClaude(cache, p, true, false, now)
+	ObserveClaude(cache, p, true, Ingest{}, now)
 	writeLines(t, p, ccReply(53, "r2", "claude-opus-5-5", "high", "", 300, 1000, "end_turn", false), ccPrompt(90))
-	ObserveClaude(cache, p, true, false, now) // right after a write: skipped
+	ObserveClaude(cache, p, true, Ingest{}, now) // right after a write: skipped
 	if l := Load(cache); len(l.Rows) != 1 || l.Rows[0].Turns != 1 {
 		t.Fatalf("rows = %+v", l.Rows)
 	}
-	ObserveClaude(cache, p, false, false, now) // a hook reads now
+	ObserveClaude(cache, p, false, Ingest{}, now) // a hook reads now
 	if l := Load(cache); l.Rows[0].Turns != 2 {
 		t.Fatalf("rows = %+v", l.Rows)
 	}
@@ -129,7 +129,7 @@ func TestInterruptedClaudeTurnIsDropped(t *testing.T) {
 	cache, dir := t.TempDir(), t.TempDir()
 	p := filepath.Join(dir, "s.jsonl")
 	writeLines(t, p, ccPrompt(0), ccReply(3, "r1", "claude-opus-5-5", "high", "", 300, 1000, "tool_use", false))
-	ObserveClaude(cache, p, false, false, t0.Add(2*time.Hour))
+	ObserveClaude(cache, p, false, Ingest{}, t0.Add(2*time.Hour))
 	l := Load(cache)
 	fi, _ := os.Stat(p)
 	if len(l.Rows) != 0 || l.Files[fileKey(p)].Offset != fi.Size() {
@@ -167,7 +167,7 @@ func TestCodexRollout(t *testing.T) {
 	writeLines(t, review, cx(0, "session_meta", `{"id":"b","source":{"subagent":"review"}}`),
 		cx(0, "event_msg", `{"type":"task_started"}`), cx(1, "turn_context", `{"model":"gpt-6-sol"}`), cx(5, "event_msg", `{"type":"task_complete","duration_ms":5000}`))
 	bg := func(path string) bool { return path == review }
-	if err := ObserveCodex(cache, []string{p, review}, bg, false, t0.Add(time.Minute)); err != nil {
+	if err := ObserveCodex(cache, []string{p, review}, bg, Ingest{}, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	l := Load(cache)
@@ -184,7 +184,7 @@ func TestCodexRollout(t *testing.T) {
 	}
 	// The running third turn is read again once it completes.
 	writeLines(t, p, cx(30.1, "turn_context", `{"model":"gpt-6-sol","effort":"medium"}`), cx(40, "event_msg", `{"type":"task_complete","duration_ms":10000}`))
-	ObserveCodex(cache, []string{p, review}, bg, false, t0.Add(2*time.Minute))
+	ObserveCodex(cache, []string{p, review}, bg, Ingest{}, t0.Add(2*time.Minute))
 	if l = Load(cache); len(l.Rows) != 2 {
 		t.Fatalf("rows = %+v", l.Rows)
 	}
@@ -213,7 +213,7 @@ func TestOffMeansOff(t *testing.T) {
 	cache, dir := t.TempDir(), t.TempDir()
 	p := filepath.Join(dir, "s.jsonl")
 	writeLines(t, p, ccPrompt(0), ccReply(3, "r1", "claude-opus-5-5", "high", "", 300, 1000, "end_turn", false), ccPrompt(50))
-	ObserveClaude(cache, p, false, false, t0.Add(time.Hour))
+	ObserveClaude(cache, p, false, Ingest{}, t0.Add(time.Hour))
 	if _, err := os.Stat(Path(cache)); !os.IsNotExist(err) {
 		t.Fatal("nothing is written when recording is off")
 	}

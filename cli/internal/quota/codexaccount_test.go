@@ -33,6 +33,7 @@ while IFS= read -r line; do
   m=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p'); echo "$m" >> "` + log + `"
   case "$line" in
     *'"id":1,'*) echo '{"id":1,"result":{"userAgent":"x"}}' ;;
+    *'"method":"account/read"'*) echo '{"id":3,"result":{"account":{"type":"chatgpt","email":"Someone@Example.com","planType":"pro"},"requiresOpenaiAuth":true}}' ;;
     *'"method":"account/rateLimits/read"'*) printf '{"id":2,"result":%s}\n' '` + strings.ReplaceAll(result, "\n", "") + `' ;;
   esac
 done
@@ -53,12 +54,19 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls, _ := os.ReadFile(log)
-	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read" {
+	if got := strings.Fields(string(calls)); strings.Join(got, ",") != "initialize,initialized,account/rateLimits/read,account/read" {
 		t.Fatalf("calls = %v", got)
 	}
 	b, _ := os.ReadFile(accountPath(cache))
-	if strings.Contains(string(b), "secret") {
-		t.Fatalf("ids cached: %s", b)
+	m, _ := os.ReadFile(subscriptionsPath(cache))
+	for _, f := range [][]byte{b, m} {
+		if strings.Contains(strings.ToLower(string(f)), "secret") || strings.Contains(strings.ToLower(string(f)), "example.com") {
+			t.Fatalf("ids cached: %s", f)
+		}
+	}
+	ref := loadAccount(cache).SubscriptionRef
+	if len(ref) != 16 {
+		t.Fatalf("subscription = %q", ref)
 	}
 	s := loadAccount(cache)
 	if s.Status != "ok" || s.Plan != "pro" || len(s.Windows) != 2 || s.Credits.Count != 2 || len(s.Credits.Expiries) != 2 {
@@ -66,6 +74,15 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 	}
 	if AccountDue(cache, acctNow.Add(4*time.Minute)) || !AccountDue(cache, acctNow.Add(5*time.Minute)) {
 		t.Fatal("refresh at most every 5 minutes")
+	}
+	// The same account keeps its reference; the report carries it as verified.
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(2*time.Hour)); err != nil || loadAccount(cache).SubscriptionRef != ref {
+		t.Fatal("the reference is stable")
+	}
+	r := Report{}
+	applyAccount(&r, cache, acctNow.Add(2*time.Hour))
+	if s := r.Accounts[0].Subscription; s == nil || s.Ref != ref || s.Status != "verified" || s.Basis != "codex-account" {
+		t.Fatalf("binding = %+v", s)
 	}
 }
 

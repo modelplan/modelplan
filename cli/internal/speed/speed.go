@@ -127,7 +127,7 @@ func Load(cache string) Ledger {
 
 // ObserveClaude reads what is new in the current Claude Code session's transcript, into both
 // ledgers. From the status line (often=true) it reads at most every statusGap.
-func ObserveClaude(cache, transcript string, often, labels bool, now time.Time) error {
+func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Time) error {
 	if transcript == "" || !filepath.IsAbs(transcript) {
 		return nil
 	}
@@ -137,20 +137,20 @@ func ObserveClaude(cache, transcript string, often, labels bool, now time.Time) 
 		}
 	}
 	err := observe(cache, now, func(l *Ledger) bool { return l.scan(transcript, "claude-code", newClaude(now), now) })
-	return errors.Join(err, observePerf(cache, now, labels, func(l *PerfLedger) bool {
+	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
 		return l.scan(transcript, "claude-code", ParserClaude, newClaude(now), now)
 	}))
 }
 
 // ObserveCodex reads what is new in the most recent Codex rollouts, into both ledgers.
-func ObserveCodex(cache string, rollouts []string, background func(string) bool, labels bool, now time.Time) error {
+func ObserveCodex(cache string, rollouts []string, background func(string) bool, in Ingest, now time.Time) error {
 	if len(rollouts) == 0 {
 		return nil
 	}
 	err := observe(cache, now, func(l *Ledger) bool {
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", newCodex(), now) })
 	})
-	return errors.Join(err, observePerf(cache, now, labels, func(l *PerfLedger) bool {
+	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", ParserCodex, newCodex(), now) })
 	}))
 }

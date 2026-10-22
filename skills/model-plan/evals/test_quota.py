@@ -172,3 +172,23 @@ class ReservePool(unittest.TestCase):
             a = self.report(main_last)
             self.assertEqual({"/five_hour", "/weekly", "reserve/weekly"}, {w.get("limit", "") + "/" + w["kind"] for w in a["windows"]})
             self.assertEqual((pool, room, deciding), (a.get("pool"), a["headroom"], a.get("deciding")))
+
+
+class ClaudeSubscription(unittest.TestCase):
+    """The subscription reference the CLI's status line records travels as it is (identity.go)."""
+
+    def test_reference_is_passed_through(self):
+        d = Path(tempfile.mkdtemp())
+        try:
+            (d / "observed").mkdir()
+            snap = json.loads((FIX / "claude-code-snapshot.json").read_text())
+            snap["identity"] = {"subscriptionRef": "5d1c0a3b7e9f2468", "fileSize": 120, "fileTime": "2026-10-14T09:00:00Z", "observedAt": "2026-10-14T09:58:00Z"}
+            (d / "observed" / "claude-code.json").write_text(json.dumps(snap))
+            accts, _ = quota.read_claude_code(str(d))
+            self.assertEqual(("5d1c0a3b7e9f2468", "verified", "claude-config"),
+                             tuple(accts[0]["subscription"][k] for k in ("subscriptionRef", "status", "basis")))
+            snap["identity"]["subscriptionRef"] = "person@example.com"
+            (d / "observed" / "claude-code.json").write_text(json.dumps(snap))
+            self.assertNotIn("subscription", quota.read_claude_code(str(d))[0][0])
+        finally:
+            shutil.rmtree(d)

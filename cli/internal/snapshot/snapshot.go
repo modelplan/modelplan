@@ -61,6 +61,9 @@ type Snapshot struct {
 	ProjectRanking speed.ProjectRanking `json:"projectRanking"`
 	// ProjectLabels: the user turned project labels on (`modelplan project-labels on`).
 	ProjectLabels bool `json:"projectLabels"`
+	// Subscriptions: every subscription the accounts were bound to, with the accounts that read
+	// it, for a scope selector. References are random and local; they name no account.
+	Subscriptions []Subscription `json:"subscriptions"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -108,6 +111,8 @@ type Session struct {
 	// ProjectRef: the project of the harness's most recently active session in the performance
 	// ledger (the session this entry describes when it is the recent one); null when unknown.
 	ProjectRef *string `json:"projectRef"`
+	// Subscription: the account the session's harness is signed in to, when a reader saw it.
+	Subscription *quota.Binding `json:"subscription"`
 	// The quota verdict of the session's account, for the allowance it draws from.
 	Headroom string `json:"headroom"`
 	Deciding string `json:"deciding,omitempty"`
@@ -226,6 +231,7 @@ func Build(in Input) Snapshot {
 		s.SessionRanking, s.ProjectRanking = in.Perf.Ranking(), in.Perf.Projects()
 	}
 	s.ProjectLabels = in.ProjectLabels
+	s.Subscriptions = subscriptions(in.Report.Accounts)
 	starRankings(&s, in.Digest, in.ProjectLabels)
 	s.PaceHistory = history.PaceView{OK: true, Recording: in.Recording, Now: in.Now}.History()
 	if in.Pace != nil {
@@ -289,6 +295,7 @@ func revision(in Input) string {
 		Windows                             []window
 		Cards                               []quota.Card
 		Credits                             *quota.Credits `json:",omitempty"`
+		Subscription                        *quota.Binding `json:",omitempty"`
 	}
 	var v struct {
 		Accounts    []account
@@ -303,7 +310,7 @@ func revision(in Input) string {
 		Recording   bool
 	}
 	for _, a := range in.Report.Accounts {
-		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards}
+		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards, Subscription: a.Subscription}
 		if c := a.Credits; c != nil {
 			x.Credits = &quota.Credits{Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: c.ObservedAt.UTC()} // not its age
 		}
@@ -377,7 +384,7 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 		return Session{}, false
 	}
 	x := Session{Source: a.Source, ObservedAt: h.ObservedAt, Attribution: h.Attribution, Origin: h.Origin, Stale: a.Stale,
-		Model: ModelRef{HarnessID: h.Model}, Headroom: a.Headroom, Deciding: a.Deciding, Pool: a.Pool, Speed: speedOf(h), EffortStatus: "unreported"}
+		Model: ModelRef{HarnessID: h.Model}, Subscription: a.Subscription, Headroom: a.Headroom, Deciding: a.Deciding, Pool: a.Pool, Speed: speedOf(h), EffortStatus: "unreported"}
 	if h.Effort != "" {
 		x.EffortStatus = "reported"
 	}
@@ -421,6 +428,35 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 		x.VsRecommended = dl
 	}
 	return x, true
+}
+
+// Subscription: one subscription reference and the accounts read from it.
+type Subscription struct {
+	Ref        string    `json:"subscriptionRef"`
+	Sources    []string  `json:"sources"`
+	Basis      string    `json:"basis"`
+	ObservedAt time.Time `json:"observedAt"`
+}
+
+func subscriptions(as []quota.Account) []Subscription {
+	out := []Subscription{}
+	at := map[string]int{}
+	for _, a := range as {
+		b := a.Subscription
+		if b == nil {
+			continue
+		}
+		i, ok := at[b.Ref]
+		if !ok {
+			i, at[b.Ref] = len(out), len(out)
+			out = append(out, Subscription{Ref: b.Ref, Basis: b.Basis, ObservedAt: b.ObservedAt.UTC()})
+		}
+		out[i].Sources = append(out[i].Sources, a.Source)
+		if b.ObservedAt.After(out[i].ObservedAt) {
+			out[i].ObservedAt = b.ObservedAt.UTC()
+		}
+	}
+	return out
 }
 
 // starRankings gives each ranked configuration its model's published ★ effort, and drops

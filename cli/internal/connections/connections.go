@@ -20,8 +20,8 @@ type Level struct {
 	Reason string     `json:"reason,omitempty"` // a stable code
 	Via    string     `json:"via,omitempty"`    // authorization: how
 	At     *time.Time `json:"at,omitempty"`     // history, quota: the last successful reading
-	// Binding: quota only; how the windows are tied to a subscription. Always unknown for now:
-	// a reading proves a meter, not whose account it is.
+	// Binding: quota only; how the windows are tied to a subscription: verified when the reader
+	// saw the account (accounts[].subscription), else unknown: a meter alone is not an account.
 	Binding string `json:"binding,omitempty"`
 }
 
@@ -93,7 +93,11 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			return Level{Status: "no", Reason: reason, Binding: "unknown"}
 		}
 		t := a.ObservedAt.UTC()
-		return Level{Status: "yes", At: &t, Binding: "unknown"}
+		l := Level{Status: "yes", At: &t, Binding: "unknown"}
+		if a.Subscription != nil {
+			l.Binding = a.Subscription.Status // the reader saw the account (quota's identity.go)
+		}
+		return l
 	}
 	var out []Connection
 
