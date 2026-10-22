@@ -1,8 +1,9 @@
 // Package quota reads the user's own usage windows from files the harnesses already write
 // on this machine: Codex session logs, the Claude Code status-line snapshot that
 // `modelplan statusline` records, the user-maintained local.json and, for providers the user
-// enabled, CodexBar's reading (codexbar.go). It never opens credential files or calls an
-// account endpoint itself, and nothing it reads leaves the machine.
+// enabled, CodexBar's reading (codexbar.go) or a native reader's (quota_native.go: the vendor's
+// usage endpoint, with an API key the user keeps in an environment variable, sent only to that
+// vendor). It never opens credential files, and nothing it reads leaves the machine.
 package quota
 
 import (
@@ -174,6 +175,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 type Paths struct {
 	Cache, CodexHome, LocalFile string
 	CodexBarFile                string // ~/.config/modelplan/codexbar.json: providers read through CodexBar
+	ConnectionsFile             string // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
 	ClaudeSession               string // the calling Claude Code session, when known
 }
@@ -192,6 +194,7 @@ func Read(p Paths, now time.Time) Report {
 		applyAccount(&r, p.Cache, now)
 	}
 	applyCodexBar(&r, p, now)
+	applyNative(&r, p, now)
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}

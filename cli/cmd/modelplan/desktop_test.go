@@ -172,3 +172,59 @@ func TestProjectLabelsCommand(t *testing.T) {
 		t.Fatal("unknown subcommand is a usage error")
 	}
 }
+
+func TestConnectCommands(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("Z_AI_API_KEY", "")
+	var started [][]string
+	old := startDetached
+	startDetached = func(args ...string) error { started = append(started, args); return nil }
+	t.Cleanup(func() { startDetached = old })
+	list := func() []map[string]any {
+		var out bytes.Buffer
+		if code := run([]string{"connections", "--json"}, nil, &out, io.Discard); code != 0 {
+			t.Fatalf("connections exit %d", code)
+		}
+		var v struct{ Connections []map[string]any }
+		_ = json.Unmarshal(out.Bytes(), &v)
+		return v.Connections
+	}
+	if len(list()) != 0 {
+		t.Fatal("nothing connected yet")
+	}
+	if code := run([]string{"connect", "zai", "--region", "bigmodel-cn"}, nil, io.Discard, io.Discard); code != 0 {
+		t.Fatalf("connect exit %d", code)
+	}
+	c := list()
+	if len(c) != 1 || c[0]["backend"] != "native" || c[0]["region"] != "bigmodel-cn" || c[0]["keyEnv"] != "Z_AI_API_KEY" || c[0]["blocked"] != "no-key" {
+		t.Fatalf("connections = %v", c)
+	}
+	if len(started) == 0 || strings.Join(started[0], " ") != "connections refresh --quiet" {
+		t.Fatalf("started = %v", started)
+	}
+	if code := run([]string{"connect", "cursor"}, nil, io.Discard, io.Discard); code != exitUsage {
+		t.Fatal("cursor has no native reader")
+	}
+	if code := run([]string{"connect", "cursor", "--backend", "codexbar"}, nil, io.Discard, io.Discard); code != 0 {
+		t.Fatal("cursor through CodexBar")
+	}
+	if code := run([]string{"disconnect", "zai"}, nil, io.Discard, io.Discard); code != 0 {
+		t.Fatal("disconnect")
+	}
+	got := map[string]any{}
+	for _, x := range list() {
+		got[x["provider"].(string)] = x["backend"]
+	}
+	if got["zai"] != "off" || got["cursor"] != "codexbar-compat" {
+		t.Fatalf("after disconnect = %v", got)
+	}
+	// codexbar enable cannot quietly override an explicit entry: it says which one decides.
+	var errOut bytes.Buffer
+	run([]string{"codexbar", "enable", "zai"}, nil, io.Discard, &errOut)
+	if !strings.Contains(errOut.String(), "zai is set to off in connections.json") {
+		t.Fatalf("stderr = %q", errOut.String())
+	}
+}

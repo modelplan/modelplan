@@ -89,9 +89,17 @@ type codexbarConfig struct {
 	Providers     []string `json:"providers"`
 }
 
-// CodexBarEnabled: the known providers listed in the config file, sorted; nil when none.
+// CodexBarEnabled: the known providers listed in the config file, sorted; nil when none. Which of
+// them CodexBar actually reads is CodexBarActive: connections.json may override them.
 func CodexBarEnabled(file string) []string {
-	if file == "" || codexbarOff() {
+	if codexbarOff() {
+		return nil
+	}
+	return legacyCodexBar(file)
+}
+
+func legacyCodexBar(file string) []string {
+	if file == "" {
 		return nil
 	}
 	b, status := readBounded(file, 16<<10)
@@ -373,7 +381,7 @@ func loadCodexBar(cache string) *codexbarSnap {
 
 // CodexBarDue: providers are enabled and the cached reading is old enough to run CodexBar again.
 func CodexBarDue(p Paths, now time.Time) bool {
-	enabled := CodexBarEnabled(p.CodexBarFile)
+	enabled := CodexBarActive(p)
 	if len(enabled) == 0 || p.Cache == "" {
 		return false
 	}
@@ -410,7 +418,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 	if codexbarOff() {
 		return errors.New("disabled by MODELPLAN_CODEXBAR")
 	}
-	enabled := CodexBarEnabled(p.CodexBarFile)
+	enabled := CodexBarActive(p)
 	if len(enabled) == 0 {
 		return errors.New("no CodexBar provider enabled")
 	}
@@ -636,7 +644,7 @@ func clean(s, home string) string {
 // applyCodexBar adds one account per enabled provider with a recent usable reading, and one
 // source status per enabled provider saying what was read or why not.
 func applyCodexBar(r *Report, p Paths, now time.Time) {
-	enabled := CodexBarEnabled(p.CodexBarFile)
+	enabled := CodexBarActive(p)
 	if len(enabled) == 0 {
 		return
 	}

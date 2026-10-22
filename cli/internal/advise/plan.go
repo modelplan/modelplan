@@ -24,14 +24,14 @@ type Plan struct {
 	rules map[string]bool
 }
 
-// vendorReading: the CodexBar provider that reads a developer's plan, for a declared plan
-// without windows of its own.
-var vendorReading = map[string]string{"zhipuai": "codexbar:zai"}
+// vendorReading: the provider that reads a developer's plan (natively or through CodexBar), for a
+// declared plan without windows of its own.
+var vendorReading = map[string]string{"zhipuai": "zai"}
 
 // Link resolves the plan behind a harness account whose model needs a custom endpoint: the one
 // declared plan (local.json) that meters that model. The returned account is the session with
 // that plan's windows when the session reports none (Z.ai's endpoint passes no usage to Claude
-// Code): the declared plan's own windows, else the vendor's reading through CodexBar. Without
+// Code): the declared plan's own windows, else the vendor's reading (native or through CodexBar). Without
 // exactly one such plan the account comes back unchanged and the plan is nil: never a guess.
 func Link(a *quota.Account, r quota.Report, d *digest.Digest) (quota.Account, *Plan) {
 	cfg := current(a, d)
@@ -65,7 +65,7 @@ func Link(a *quota.Account, r quota.Report, d *digest.Digest) (quota.Account, *P
 		if len(from.Windows) == 0 {
 			src = nil
 			for i := range r.Accounts {
-				if r.Accounts[i].Source == vendorReading[cfg.model.DeveloperID] {
+				if p := vendorReading[cfg.model.DeveloperID]; p != "" && (r.Accounts[i].Source == "codexbar:"+p || r.Accounts[i].Source == "native:"+p) {
 					src = &r.Accounts[i]
 				}
 			}

@@ -63,7 +63,12 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 			fmt.Fprintln(stderr, "codexbar:", err)
 			return exitUsage
 		}
-		enabled := quota.CodexBarEnabled(p.CodexBarFile)
+		for _, x := range list {
+			if o, ok := quota.Overridden(p, x); ok {
+				fmt.Fprintf(stderr, "codexbar: %s is set to %s in connections.json, which decides it; run `modelplan connect %s --backend codexbar` to read it through CodexBar\n", x, o.Backend, x)
+			}
+		}
+		enabled := quota.CodexBarActive(p)
 		if len(enabled) == 0 {
 			say("已关闭：不再通过 CodexBar 读取任何套餐。", "Off: no plan is read through CodexBar.")
 			return 0
@@ -93,7 +98,7 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 		} else {
 			say("CodexBar CLI %s：%s", "CodexBar CLI %s: %s", quota.CodexBarVersion, bin)
 		}
-		if bin != "" && len(quota.CodexBarEnabled(p.CodexBarFile)) > 0 {
+		if bin != "" && len(quota.CodexBarActive(p)) > 0 {
 			_ = quota.RefreshCodexBar(ctx, p, bin, time.Now())
 		}
 		if err != nil {
@@ -118,7 +123,7 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 }
 
 func codexbarStatus(stdout io.Writer, p quota.Paths, st *store.Store, home string, c common) int {
-	enabled := quota.CodexBarEnabled(p.CodexBarFile)
+	enabled := quota.CodexBarActive(p)
 	bin := quota.CodexBarBin(st.Dir, home)
 	r := quota.Read(p, time.Now())
 	type row struct {
