@@ -240,8 +240,10 @@ func TestThinClientAcceptsCompactComponentsAndLazyExtras(t *testing.T) {
 	}
 	m.Components["display"] = component{2, strings.Repeat("b", 64), 100000}
 	m.Components["plan-value"] = component{2, strings.Repeat("c", 64), 1000000}
+	// A kind this CLI does not read is accepted and never fetched.
+	m.Components["calendar-week-zh"] = component{2, strings.Repeat("d", 64), 300000}
 	refs := []byte("{")
-	for i, name := range []string{"methods", "registry", "models", "plans", "rules", "news", "calendar", "client", "plan-value", "display"} {
+	for i, name := range []string{"methods", "registry", "models", "plans", "rules", "news", "calendar", "client", "plan-value", "display", "calendar-week-zh"} {
 		if i > 0 {
 			refs = append(refs, ',')
 		}

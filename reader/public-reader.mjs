@@ -1485,6 +1485,7 @@ var PUBLIC_COMPONENTS = [
   "calendar"
 ];
 var ALL_PUBLIC_COMPONENTS = [...PUBLIC_COMPONENTS, "client", "plan-value", "display"];
+var COMPONENT_NAME = /^[a-z][a-z0-9-]{0,47}$/;
 var COMPONENT_DEPENDENCIES = {
   methods: [],
   registry: [],
@@ -2136,7 +2137,9 @@ function validateManifest(value) {
   if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.publicationId !== "string" || !PUBLIC_ID.test(value.publicationId) || typeof value.publishedAt !== "string" || !Number.isFinite(Date.parse(value.publishedAt)) || typeof value.comparisonVersion !== "string" || !isRecord(value.methods) || value.methods.index !== "unified-v03-estimator-0.1.0-internal" || value.methods.recommendation !== "balanced-coding-absolute-v4" || !isRecord(value.components))
     throw new Error("publication_incompatible_manifest");
   const components = value.components;
-  if (PUBLIC_COMPONENTS.some((kind) => !components[kind]) || Object.keys(components).some((kind) => !ALL_PUBLIC_COMPONENTS.includes(kind)))
+  // Kinds this reader does not know (for example page-sized slices) are skipped, not rejected:
+  // their references are still checked below, and nothing reads them here.
+  if (PUBLIC_COMPONENTS.some((kind) => !components[kind]) || Object.keys(components).length > 32 || Object.keys(components).some((kind) => !COMPONENT_NAME.test(kind)))
     throw new Error("publication_invalid_components");
   for (const kind of Object.keys(value.components)) {
     const ref = value.components[kind];
