@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -203,4 +204,68 @@ func TestSelections(t *testing.T) {
 	if s := r.Sources[len(r.Sources)-1]; s.Source != "connections" || s.Status != "invalid" {
 		t.Fatalf("sources = %+v", r.Sources)
 	}
+}
+
+func TestParseOpenCodeGo(t *testing.T) {
+	parse := func(body string) codexbarEntry {
+		t.Helper()
+		var r map[string]any
+		if err := json.Unmarshal([]byte(body), &r); err != nil {
+			t.Fatal(err)
+		}
+		return parseOpenCodeGo(r, zaiNow)
+	}
+	weekReset := zaiNow.Add(3 * 24 * time.Hour)
+	e := parse(`{"usage":{"rolling":{"usagePercent":42.5,"resetInSec":3600},"weekly":{"used":30,"limit":120,"resetAt":"` + weekReset.Format(time.RFC3339) + `"},"monthly":{"percent":"7","resetsAt":` + itoa64(zaiNow.Add(20*24*time.Hour).UnixMilli()) + `}}}`)
+	if e.Status != "ok" || len(e.Windows) != 3 {
+		t.Fatalf("entry = %+v", e)
+	}
+	got := []string{}
+	for _, w := range e.Windows {
+		got = append(got, w.Kind+"/"+strconv.FormatFloat(*w.UsedPercent, 'f', -1, 64)+"/"+w.ResetsAt.Sub(zaiNow).String())
+	}
+	if strings.Join(got, " ") != "five_hour/42.5/1h0m0s weekly/25/72h0m0s monthly/7/480h0m0s" {
+		t.Errorf("windows = %v", got)
+	}
+	// Weekly present but unreadable fails the reading, as upstream; a bad monthly is left out.
+	if e := parse(`{"usage":{"rolling":{"usagePercent":10},"weekly":{"note":"x"}}}`); e.Status != "error" {
+		t.Errorf("bad weekly = %+v", e)
+	}
+	if e := parse(`{"usage":{"rolling":{"usagePercent":150},"monthly":{"note":"x"}}}`); e.Status != "ok" || len(e.Windows) != 1 || *e.Windows[0].UsedPercent != 100 || e.Windows[0].ResetsAt != nil {
+		t.Errorf("rolling only = %+v", e)
+	}
+	if e := parse(`{"usage":{}}`); e.Status != "error" || e.Error != "missing usage fields" {
+		t.Errorf("empty = %+v", e)
+	}
+}
+
+func TestNativeOpenCodeGoRefresh(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path+" "+r.Header.Get("Authorization"))
+		w.Write([]byte(`{"usage":{"rolling":{"usagePercent":12,"resetInSec":600},"weekly":{"usagePercent":40,"resetInSec":86400}}}`))
+	}))
+	defer srv.Close()
+	oldHosts, oldClient := opencodegoHosts, nativeClient
+	opencodegoHosts, nativeClient = map[string]string{"global": srv.URL}, srv.Client()
+	defer func() { opencodegoHosts, nativeClient = oldHosts, oldClient }()
+	p := nativePaths(t)
+	t.Setenv("OPENCODE_API_KEY", "test-key")
+	if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "opencodego", Backend: BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := RefreshNative(context.Background(), p, now); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(seen, ",") != "/zen/go/v1/usage Bearer test-key" {
+		t.Fatalf("requests = %v", seen)
+	}
+	r := Read(p, now)
+	for _, a := range r.Accounts {
+		if a.Source == "native:opencodego" && len(a.Windows) == 2 && *a.Windows[1].UsedPercent == 40 {
+			return
+		}
+	}
+	t.Fatalf("report = %+v", r)
 }
