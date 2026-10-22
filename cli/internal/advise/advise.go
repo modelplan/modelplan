@@ -130,7 +130,9 @@ type Event struct {
 	Model            string `json:"model,omitempty"`  // harness model id as reported
 	Effort           string `json:"effort,omitempty"` // harness effort as reported
 	Count            *int   `json:"count,omitempty"`  // reset cards
-	Suggest          *Step  `json:"suggest,omitempty"`
+	// Credits: window_exhausted only; the account's usage credits, which the harness draws on now.
+	Credits *quota.Credits `json:"credits,omitempty"`
+	Suggest *Step          `json:"suggest,omitempty"`
 	// Alternative: when a window is tight, a cheaper configuration of another published model
 	// that scores at least as high as the current one (action cheaper_model).
 	Alternative *Step `json:"alternative,omitempty"`
@@ -334,6 +336,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 	case "exhausted":
 		e := base(WindowExhausted, "warn")
 		e.Suggest = &Step{Action: "wait"}
+		e.Credits = a.Credits
 		for _, c := range a.Cards {
 			if (c.Kind == w.Kind || c.Kind == "full") && c.Count != nil && *c.Count > 0 && (c.ExpiresAt == nil || c.ExpiresAt.After(now)) {
 				e.Suggest = &Step{Action: "use_card"}

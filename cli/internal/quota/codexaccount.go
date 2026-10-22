@@ -16,9 +16,9 @@ import (
 )
 
 // The Codex account reading comes from Codex itself: `codex app-server` answers
-// account/rateLimits/read with the account's windows and its reset credits, using the login
-// Codex already holds. This client never sees a credential, starts no thread or turn, and never
-// calls account/rateLimitResetCredit/consume. The reading is cached in
+// account/rateLimits/read with the account's windows, its reset credits and its usage-credit
+// balance, using the login Codex already holds. This client never sees a credential, starts no
+// thread or turn, and never calls account/rateLimitResetCredit/consume. The reading is cached in
 // <cache>/observed/codex-account.json without account or credit ids; Read merges it with the
 // session-log windows (newest observation per window wins).
 
@@ -44,6 +44,10 @@ type accountSnap struct {
 		Count    int          `json:"count"`
 		Expiries []*time.Time `json:"expiries,omitempty"`
 	} `json:"credits,omitempty"`
+	// Usage: the account's usage credits (not reset credits), nil when it has none. UsageRead:
+	// the answer carried the field at all (older Codex versions leave it out).
+	Usage     *Credits `json:"usageCredits,omitempty"`
+	UsageRead bool     `json:"usageRead,omitempty"`
 }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
@@ -178,6 +182,11 @@ type rlSnapshot struct {
 	Primary   *rlWindow `json:"primary"`
 	Secondary *rlWindow `json:"secondary"`
 	PlanType  *string   `json:"planType"`
+	Credits   *struct {
+		HasCredits bool            `json:"hasCredits"`
+		Unlimited  bool            `json:"unlimited"`
+		Balance    json.RawMessage `json:"balance"`
+	} `json:"credits"`
 }
 
 type rlResponse struct {
@@ -281,6 +290,9 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 		if x.PlanType != nil && s.Plan == "" && *x.PlanType != "unknown" {
 			s.Plan = clip(*x.PlanType)
 		}
+		if c := x.Credits; c != nil && !s.UsageRead {
+			s.Usage, s.UsageRead = creditsFrom(c.HasCredits, c.Unlimited, c.Balance, now), true
+		}
 		for _, w := range []*rlWindow{x.Primary, x.Secondary} {
 			if w == nil || w.UsedPercent == nil || w.WindowDurationMins == nil || *w.WindowDurationMins <= 0 {
 				continue
@@ -362,6 +374,9 @@ func applyAccount(r *Report, cache string, now time.Time) {
 		a.ObservedAt = s.ObservedAt
 	}
 	a.Via = "codex-account"
+	if s.UsageRead && (a.Credits == nil || !s.ObservedAt.Before(a.Credits.ObservedAt)) {
+		a.Credits = s.Usage // the newer say wins, "none" included
+	}
 	if c := s.Credits; c != nil && c.Count > 0 {
 		a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
 	}

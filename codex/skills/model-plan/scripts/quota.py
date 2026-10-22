@@ -279,7 +279,7 @@ def scan_rollout(path):
             data = f.read()
     except OSError:
         return None
-    r = {"path": path, "origin": "", "plan": "", "pool": "", "observed": None, "harness": None, "windows": {}}
+    r = {"path": path, "origin": "", "plan": "", "pool": "", "observed": None, "harness": None, "credits": None, "windows": {}}
     try:
         row = json.loads(first)
         if isinstance(row, dict) and row.get("type") == "session_meta" and isinstance(row.get("payload"), dict):
@@ -310,6 +310,8 @@ def scan_rollout(path):
             r["observed"] = ts
             if clip(rl.get("plan_type")):
                 r["plan"] = clip(rl["plan_type"])
+            if isinstance(rl.get("credits"), dict):
+                r["credits"] = credits_from(rl["credits"], ts)  # the latest turn's say, none included
             lim = codex_limit(rl.get("limit_id"), rl.get("limit_name"))
             r["pool"] = lim  # the allowance this thread's latest turn drew from
             for cw in (rl.get("primary"), rl.get("secondary")):
@@ -330,6 +332,26 @@ def scan_rollout(path):
     if r["observed"] is None and r["harness"] is None:
         return None
     return r
+
+
+def credits_from(c, ts):
+    """Usage credits (bought or granted), drawn on once a plan window is used up; None without any."""
+    has, unlimited = c.get("has_credits") is True, c.get("unlimited") is True
+    if not has and not unlimited:
+        return None
+    out = {"observedAt": ts}
+    if unlimited:
+        out["unlimited"] = True
+    bal = c.get("balance")
+    try:
+        bal = float(bal) if type(bal) in (int, float, str) and not isinstance(bal, bool) else None
+    except ValueError:
+        bal = None
+    if bal is not None and math.isfinite(bal) and 0 <= bal < 1e12:
+        out["balance"] = bal
+    elif not unlimited:
+        return None  # credits with no figure tell the user nothing they can check
+    return out
 
 
 def find_thread(root, thread):
@@ -358,6 +380,8 @@ def merge_codex(rs):
     acct = {"source": "codex", "observedAt": newest["observed"], "windows": []}
     if newest["plan"]:
         acct["plan"] = newest["plan"]
+    if newest["credits"]:
+        acct["credits"] = dict(newest["credits"])
     pos = {}
     for r in [newest] + snaps:
         if r["plan"] and newest["plan"] and r["plan"] != newest["plan"]:
@@ -579,10 +603,12 @@ def evaluate(a, now):
     a["headroom"], deciding = headroom(pool)
     if deciding:
         a["deciding"] = deciding
+    if a.get("credits"):
+        a["credits"]["ageMinutes"] = int(max(0, (now - a["credits"]["observedAt"]).total_seconds() / 60))
 
 
 def ordered_account(a):
-    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "headroom", "deciding", "pool"]
+    keys = ["source", "plan", "observedAt", "stale", "harness", "windows", "cards", "credits", "headroom", "deciding", "pool"]
     out = {k: a[k] for k in keys if k in a and not (k in ("plan", "deciding", "pool") and not a[k]) and not (k == "harness" and not a[k])}
     if out.get("observedAt") is None:
         out["observedAt"] = dt.datetime(1, 1, 1, tzinfo=dt.timezone.utc)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -115,6 +116,79 @@ func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
 	applyAccount(&stale, cache, acctNow.Add(7*time.Hour))
 	if len(stale.Accounts) != 0 {
 		t.Fatal("a reading older than 6h is ignored")
+	}
+}
+
+func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
+	withCredits := strings.Replace(acctResponse, `"planType":"pro",`, `"planType":"pro","credits":{"hasCredits":true,"unlimited":false,"balance":"73172.5"},`, 1)
+	var resp rlResponse
+	if err := json.Unmarshal([]byte(withCredits), &resp); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	if err := save(cache, snapFrom(&resp, acctNow)); err != nil {
+		t.Fatal(err)
+	}
+	// The logs' older balance gives way to the newer account reading.
+	old := acctNow.Add(-time.Hour)
+	r := Report{Accounts: []Account{{Source: "codex", Plan: "pro", ObservedAt: old, Credits: &Credits{Balance: ptr(80000), ObservedAt: old}}}}
+	applyAccount(&r, cache, acctNow)
+	c := r.Accounts[0].Credits
+	if c == nil || c.Balance == nil || *c.Balance != 73172.5 || !c.ObservedAt.Equal(acctNow) {
+		t.Fatalf("credits = %+v", c)
+	}
+	Evaluate(&r.Accounts[0], acctNow.Add(20*time.Minute))
+	if *c.AgeMinutes != 20 {
+		t.Fatalf("age = %d", *c.AgeMinutes)
+	}
+
+	// A reading without the field (older Codex) leaves the logs' balance alone; one that says
+	// there are none clears it.
+	none := strings.Replace(acctResponse, `"planType":"pro",`, `"planType":"pro","credits":{"hasCredits":false,"unlimited":false,"balance":null},`, 1)
+	var older rlResponse
+	_ = json.Unmarshal([]byte(acctResponse), &older)
+	_ = save(cache, snapFrom(&older, acctNow))
+	r = Report{Accounts: []Account{{Source: "codex", ObservedAt: old, Credits: &Credits{Balance: ptr(5), ObservedAt: old}}}}
+	applyAccount(&r, cache, acctNow)
+	if r.Accounts[0].Credits == nil {
+		t.Fatal("a reading without the field keeps the logs' balance")
+	}
+	var empty rlResponse
+	_ = json.Unmarshal([]byte(none), &empty)
+	_ = save(cache, snapFrom(&empty, acctNow))
+	applyAccount(&r, cache, acctNow)
+	if r.Accounts[0].Credits != nil {
+		t.Fatal("no credits now: cleared")
+	}
+
+	// Session logs: the latest turn's balance; unlimited without a figure; bad figures dropped.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "rollout-2026-10-16T07-00-00-x.jsonl")
+	line := func(ts, credits string) string {
+		return `{"timestamp":"` + ts + `","type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":100,"window_minutes":10080,"resets_at":1792649570},"credits":` + credits + `,"plan_type":"plus"}}}` + "\n"
+	}
+	_ = os.WriteFile(p, []byte(line("2026-10-16T07:00:00Z", `{"has_credits":true,"unlimited":false,"balance":"900"}`)+
+		line("2026-10-16T07:30:00Z", `{"has_credits":true,"unlimited":false,"balance":"880.25"}`)), 0o600)
+	if got := scanRollout(p).credits; got == nil || *got.Balance != 880.25 {
+		t.Fatalf("log credits = %+v", got)
+	}
+	for credits, want := range map[string]string{
+		`{"has_credits":false,"unlimited":false,"balance":null}`: "none",
+		`{"has_credits":true,"unlimited":true,"balance":null}`:   "unlimited",
+		`{"has_credits":true,"unlimited":false,"balance":"-3"}`:  "none",
+		`{"has_credits":true,"unlimited":false,"balance":12.5}`:  "12.5",
+	} {
+		_ = os.WriteFile(p, []byte(line("2026-10-16T07:00:00Z", credits)), 0o600)
+		got, c := "none", scanRollout(p).credits
+		switch {
+		case c != nil && c.Unlimited:
+			got = "unlimited"
+		case c != nil:
+			got = strconv.FormatFloat(*c.Balance, 'f', -1, 64)
+		}
+		if got != want {
+			t.Errorf("%s: got %s want %s", credits, got, want)
+		}
 	}
 }
 

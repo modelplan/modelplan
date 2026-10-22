@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
 type adviceText struct {
 	None, Tentative, Cards, Unknown   string
 	Exhausted, Wait, UseCard          string
+	OnCredits, OnUnlimited, CardToo   string
+	ReadingAge                        string
 	Tight, TightOut, Down, Stay       string
 	ModelFirst                        string
 	Better, BetterSame                string
@@ -31,6 +35,7 @@ type adviceText struct {
 var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
 	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
+	OnCredits: "继续用会扣点数，剩 %s", OnUnlimited: "继续用会扣点数（不限量）", CardToo: "；另有重置卡可用（需要你自己兑换）", ReadingAge: "（%s前的读数）",
 	Tight: "%s额度偏紧（剩 %s，%s后重置）", TightOut: "%s额度偏紧（剩 %s，按最近的用量约 %s后用完，%s后才重置）", Down: "降到 %s%s",
 	EffortFree: "这个套餐按请求次数计，降档不省额度；重活可以留到重置后", WaitOffpeak: "这个套餐按请求次数计，降档不省额度；%s后进入低倍率时段（%s → %s），不急的活可以等", Stay: "保持当前档，重活留给强模型",
 	ModelFirst: "换 %s %s%s，能力不降（这个任务确实需要当前模型的话就不换）；不换就%s",
@@ -54,6 +59,7 @@ var adviceZH = adviceText{
 var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
 	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
+	OnCredits: "further use draws on credits, %s left", OnUnlimited: "further use draws on credits (unlimited)", CardToo: "; a reset card is also available (redeem it yourself)", ReadingAge: " (read %s ago)",
 	Tight: "%s is tight (%s left, resets in %s)", TightOut: "%s is tight (%s left; at the recent rate it runs out in %s, before the reset in %s)", Down: "step down to %s%s",
 	EffortFree: "this plan counts requests, so a lower effort saves no quota; save heavy work for after the reset", WaitOffpeak: "this plan counts requests, so a lower effort saves no quota; the rate drops in %s (%s → %s), so work that can wait is cheaper then", Stay: "stay at this effort and keep the strong model for the hard parts",
 	ModelFirst: "switch to %s %s%s, which scores as high (unless this task needs the current model); otherwise %s",
@@ -166,6 +172,19 @@ func (s Style) AdviceLine(e advise.Event) string {
 		act := t.Wait
 		if st.Action == "use_card" {
 			act = t.UseCard
+		}
+		if c := e.Credits; c != nil {
+			if c.Balance != nil {
+				act = fmt.Sprintf(t.OnCredits, Thousands(*c.Balance))
+			} else {
+				act = t.OnUnlimited
+			}
+			if c.AgeMinutes != nil && *c.AgeMinutes >= int(quota.CreditsFresh/time.Minute) {
+				act += fmt.Sprintf(t.ReadingAge, s.dur(c.AgeMinutes))
+			}
+			if st.Action == "use_card" {
+				act += t.CardToo
+			}
 		}
 		return fmt.Sprintf(t.Exhausted, s.who(e), s.dur(e.InMinutes)) + sep + act
 	case advise.WindowTight:

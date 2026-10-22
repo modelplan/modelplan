@@ -237,6 +237,11 @@ type codexLimits struct {
 	Primary   *codexWindow `json:"primary"`
 	Secondary *codexWindow `json:"secondary"`
 	PlanType  string       `json:"plan_type"`
+	Credits   *struct {
+		Has       bool            `json:"has_credits"`
+		Unlimited bool            `json:"unlimited"`
+		Balance   json.RawMessage `json:"balance"`
+	} `json:"credits"`
 }
 
 const codexFiles = 8
@@ -329,7 +334,7 @@ func mergeCodex(rs []*rollout) *Account {
 	if newest == nil {
 		return nil
 	}
-	a := &Account{Source: "codex", Plan: newest.plan, ObservedAt: newest.observed, Windows: []Window{}}
+	a := &Account{Source: "codex", Plan: newest.plan, ObservedAt: newest.observed, Windows: []Window{}, Credits: newest.credits}
 	pos := map[string]int{}
 	for _, r := range append([]*rollout{newest}, rs...) {
 		if r.observed.IsZero() || (r.plan != "" && newest.plan != "" && r.plan != newest.plan) {
@@ -446,6 +451,7 @@ type rollout struct {
 	path, origin, plan, pool string
 	observed                 time.Time
 	harness                  *Harness
+	credits                  *Credits
 	windows                  map[string]Window
 	order                    []string
 }
@@ -551,6 +557,9 @@ func scanRollout(path string) *rollout {
 			r.pool = codexLimit(rl.LimitID, rl.LimitName) // the allowance this thread's latest turn drew from
 			if p := clip(rl.PlanType); p != "" {
 				r.plan = p
+			}
+			if c := rl.Credits; c != nil {
+				r.credits = creditsFrom(c.Has, c.Unlimited, c.Balance, ts) // the latest turn's say, none included
 			}
 			for _, cw := range []*codexWindow{rl.Primary, rl.Secondary} {
 				if cw == nil {
