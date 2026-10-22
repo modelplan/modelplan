@@ -56,6 +56,11 @@ type Snapshot struct {
 	PaceHistory history.PaceHistory `json:"paceHistory"`
 	// SessionRanking: the sessions with the most observed output tokens (perf.json).
 	SessionRanking speed.SessionRanking `json:"sessionRanking"`
+	// ProjectRanking: the same sessions summed per project (opaque references; labels only while
+	// ProjectLabels is on).
+	ProjectRanking speed.ProjectRanking `json:"projectRanking"`
+	// ProjectLabels: the user turned project labels on (`modelplan project-labels on`).
+	ProjectLabels bool `json:"projectLabels"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -100,6 +105,9 @@ type Session struct {
 	TokenRate    *speed.Rate `json:"tokenRate,omitempty"`
 	WorkloadRate *speed.Rate `json:"workloadRate,omitempty"`
 	Activity     *Activity   `json:"activity,omitempty"`
+	// ProjectRef: the project of the harness's most recently active session in the performance
+	// ledger (the session this entry describes when it is the recent one); null when unknown.
+	ProjectRef *string `json:"projectRef"`
 	// The quota verdict of the session's account, for the allowance it draws from.
 	Headroom string `json:"headroom"`
 	Deciding string `json:"deciding,omitempty"`
@@ -184,8 +192,10 @@ type Input struct {
 	// Boundaries: advise.Boundaries for the same input.
 	Boundaries []time.Time
 	Recording  bool
-	CLIVersion string
-	Now        time.Time
+	// ProjectLabels: project labels are on; while off, none is shown even if the ledger has one.
+	ProjectLabels bool
+	CLIVersion    string
+	Now           time.Time
 }
 
 const note = "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
@@ -211,10 +221,12 @@ func Build(in Input) Snapshot {
 	if in.Perf != nil {
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 	}
-	s.SessionRanking = speed.PerfView{Now: in.Now}.Ranking()
+	s.SessionRanking, s.ProjectRanking = speed.PerfView{Now: in.Now}.Ranking(), speed.PerfView{Now: in.Now}.Projects()
 	if in.Perf != nil {
-		s.SessionRanking = in.Perf.Ranking()
+		s.SessionRanking, s.ProjectRanking = in.Perf.Ranking(), in.Perf.Projects()
 	}
+	s.ProjectLabels = in.ProjectLabels
+	starRankings(&s, in.Digest, in.ProjectLabels)
 	s.PaceHistory = history.PaceView{OK: true, Recording: in.Recording, Now: in.Now}.History()
 	if in.Pace != nil {
 		s.PaceHistory = in.Pace.History()
@@ -238,6 +250,9 @@ func Build(in Input) Snapshot {
 				h := in.Report.Accounts[i].Harness
 				t, w := p.TokenRate(x.Source, h.Model, h.Effort, x.Speed), p.WorkloadRate(x.Source)
 				x.TokenRate, x.WorkloadRate, x.Activity = &t, &w, activity(x.Source, h, p, in.Now)
+				if ref := p.LatestProject(x.Source); ref != "" {
+					x.ProjectRef = &ref
+				}
 			}
 			s.Sessions = append(s.Sessions, x)
 		}
@@ -406,6 +421,44 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 		x.VsRecommended = dl
 	}
 	return x, true
+}
+
+// starRankings gives each ranked configuration its model's published ★ effort, and drops
+// project labels unless they are on.
+func starRankings(s *Snapshot, d *digest.Digest, labels bool) {
+	star := func(source string, cs []speed.SessionConfig) {
+		for i := range cs {
+			if d == nil || cs[i].Model == "" {
+				continue
+			}
+			m := d.Model(cs[i].Model)
+			for _, h := range []string{source, "codex", "claude-code"} { // a project's configurations span harnesses
+				if m == nil && h != "" {
+					m = d.Match(h, cs[i].Model)
+				}
+			}
+			if m == nil {
+				continue
+			}
+			if rec := m.Rec(); rec != nil && rec.Effort != "" {
+				e := rec.Effort
+				cs[i].RecommendedEffort = &e
+			}
+		}
+	}
+	for _, w := range []*speed.SessionWindow{&s.SessionRanking.Recent7d, &s.SessionRanking.Recent30d} {
+		for i := range w.Top {
+			star(w.Top[i].Source, w.Top[i].Configs)
+		}
+	}
+	for _, w := range []*speed.ProjectWindow{&s.ProjectRanking.Recent7d, &s.ProjectRanking.Recent30d} {
+		for i := range w.Top {
+			star("", w.Top[i].Configs)
+			if !labels {
+				w.Top[i].Label = nil
+			}
+		}
+	}
 }
 
 // speedOf: the speed mode the harness reports (Claude Code fast mode, Codex service tier).

@@ -53,7 +53,7 @@ const high = `{"model":"fixture-model","effort":"high"}`
 
 func observeCx(t *testing.T, cache string, now time.Time, rollouts ...string) {
 	t.Helper()
-	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, now); err != nil {
+	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, false, now); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -129,7 +129,7 @@ func TestPerfMixedClaudeTurn(t *testing.T) {
 		ccTool(5),
 		ccReply(9, "r2", "claude-opus-5-5", "low", "", 200, 1000, "end_turn", false),
 	)
-	if err := ObserveClaude(cache, p, false, t0.Add(time.Minute)); err != nil {
+	if err := ObserveClaude(cache, p, false, false, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	l, _ := LoadPerf(cache)
@@ -313,7 +313,7 @@ func TestSessionRanking(t *testing.T) {
 	writeLines(t, loose, append([]string{cx(0, "session_meta", `{"id":"x","source":{"subagent":"review"}}`)}, cxTurnLines(1, high, 30, req{7000, 20, 1})...)...)
 	sub := map[string]bool{sub1: true, sub2: true, loose: true}
 	now := t0.Add(5 * time.Minute)
-	if err := ObserveCodex(cache, []string{parent, other, sub1, sub2, loose}, func(p string) bool { return sub[p] }, now); err != nil {
+	if err := ObserveCodex(cache, []string{parent, other, sub1, sub2, loose}, func(p string) bool { return sub[p] }, false, now); err != nil {
 		t.Fatal(err)
 	}
 	r := view(t, cache, now).Ranking()
@@ -322,7 +322,7 @@ func TestSessionRanking(t *testing.T) {
 		t.Fatalf("ranking = %+v", r)
 	}
 	top := w.Top[0]
-	if top.Source != "codex" || top.ObservedOutputTokens != 3000 || top.Share != 0.75 || len(top.Ref) != 16 || top.Configs[0] != (SessionConfig{Model: "fixture-model", EffortStatus: "reported", Effort: "high", ObservedOutputTokens: 3000}) {
+	if top.Source != "codex" || top.ObservedOutputTokens != 3000 || top.Share != 0.75 || len(top.Ref) != 16 || top.Configs[0] != (SessionConfig{Model: "fixture-model", EffortStatus: "reported", Effort: "high", ObservedOutputTokens: 3000, Share: 1}) {
 		t.Errorf("top = %+v", top)
 	}
 	if w.Top[1].Configs[0].EffortStatus != "unreported" || w.Top[1].Share != 0.25 {

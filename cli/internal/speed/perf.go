@@ -33,18 +33,25 @@ type PerfLedger struct {
 	Rows          []PerfRow         `json:"rows"`
 	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
+
+	project func(cwd string) (ref, label string) // while observing: names a session's project
 }
 
 // PerfSession is one harness session (a Claude Code transcript, a Codex thread), known only by a
 // random reference. It holds no title, path or session id: Key is the log's file key, as the
 // cursors use, and never leaves this file.
 type PerfSession struct {
-	Ref     string       `json:"ref"`
-	Key     string       `json:"key"`
-	Source  string       `json:"source"`
-	FirstAt time.Time    `json:"firstAt"` // its first counted turn's start, to the minute
-	LastAt  time.Time    `json:"lastAt"`  // its newest sample's completion, to the minute
-	Days    []SessionDay `json:"days"`
+	Ref    string `json:"ref"`
+	Key    string `json:"key"`
+	Source string `json:"source"`
+	// ProjectRef: the opaque reference of the session's project (project.go), "" when its log
+	// records no working directory. ProjectLabel: the project folder's name, only while project
+	// labels are on.
+	ProjectRef   string       `json:"projectRef,omitempty"`
+	ProjectLabel string       `json:"projectLabel,omitempty"`
+	FirstAt      time.Time    `json:"firstAt"` // its first counted turn's start, to the minute
+	LastAt       time.Time    `json:"lastAt"`  // its newest sample's completion, to the minute
+	Days         []SessionDay `json:"days"`
 }
 
 // SessionDay: what one configuration of a session produced on one local day.
@@ -109,8 +116,8 @@ func LoadPerf(cache string) (l PerfLedger, ok bool) {
 }
 
 // observePerf: as observe, for perf.json. A new ledger is written even with nothing in it yet, so
-// that its Since holds.
-func observePerf(cache string, now time.Time, f func(*PerfLedger) bool) error {
+// that its Since holds. labels: project labels are on; while off, none is kept.
+func observePerf(cache string, now time.Time, labels bool, f func(*PerfLedger) bool) error {
 	if Off() {
 		return nil
 	}
@@ -130,7 +137,14 @@ func observePerf(cache string, now time.Time, f func(*PerfLedger) bool) error {
 	if l.Files == nil {
 		l.Files = map[string]Cursor{}
 	}
-	if !f(&l) && !created {
+	l.project = projector(cache, labels)
+	changed := false
+	for i := range l.Sessions {
+		if !labels && l.Sessions[i].ProjectLabel != "" {
+			l.Sessions[i].ProjectLabel, changed = "", true
+		}
+	}
+	if !f(&l) && !created && !changed {
 		return nil
 	}
 	b := l.prune(now)
@@ -166,6 +180,14 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	}
 	if start.Before(s.FirstAt) {
 		s.FirstAt = start
+	}
+	if t.cwd != "" && l.project != nil && (s.ProjectRef == "" || s.ProjectLabel == "") {
+		// The first working directory names the project; a label comes once labels are on.
+		if ref, label := l.project(t.cwd); s.ProjectRef == "" {
+			s.ProjectRef, s.ProjectLabel = ref, label
+		} else if ref == s.ProjectRef {
+			s.ProjectLabel = label
+		}
 	}
 	d := day(t.at)
 	for _, q := range t.all {
@@ -301,6 +323,20 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 	sort.SliceStable(sessions, func(i, j int) bool { return sessions[i].LastAt.Before(sessions[j].LastAt) })
 	if len(sessions) > maxSessions {
 		sessions = sessions[len(sessions)-maxSessions:]
+	}
+	// At most maxProjects projects: the ones last active longest ago lose their reference (their
+	// sessions stay). A reference lives only on its sessions, so it goes with the last of them.
+	seen := map[string]bool{}
+	for i := len(sessions) - 1; i >= 0; i-- {
+		x := &sessions[i]
+		if x.ProjectRef == "" {
+			continue
+		}
+		if !seen[x.ProjectRef] && len(seen) == maxProjects {
+			x.ProjectRef, x.ProjectLabel = "", ""
+			continue
+		}
+		seen[x.ProjectRef] = true
 	}
 	l.Sessions = sessions
 	for k, c := range l.Files {

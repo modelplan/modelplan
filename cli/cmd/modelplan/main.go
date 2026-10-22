@@ -62,6 +62,10 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
                                        quota, advice and measured speed (docs/personal-snapshot.md;
                                        --read-only writes, refreshes and starts nothing)
+  modelplan project-labels [status|on|off]
+                                       name projects by their folder in the snapshot's project
+                                       ranking; off (the default) keeps only opaque references,
+                                       and turning it off deletes the stored names
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
@@ -265,6 +269,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		return statusline(stdin, stdout, style, st, c, *harness, *modelFlag, *effortFlag, *preview)
 
+	case "project-labels":
+		return projectLabelsCmd(fs.Args(), stdout, stderr, st, c)
+
 	case "codexbar":
 		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
 
@@ -431,7 +438,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		if !preview {
 			quota.AttachRecent(st.Dir, &a)
 			_ = history.Observe(st.Dir, quota.Report{Accounts: []quota.Account{a}}, now)
-			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, true, now)
+			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, true, projectLabels(), now)
 		}
 		quota.Evaluate(&a, now)
 		acct = &a
@@ -568,7 +575,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	report := quota.Read(paths, now)
 	_ = history.Observe(st.Dir, report, now)
 	if harness == "claude-code" {
-		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, now)
+		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, projectLabels(), now)
 	} else {
 		observeCodexSpeed(st, now)
 	}
@@ -729,14 +736,56 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Recording: !history.Off(), Now: now},
 		Connections: connections.Diagnose(connections.Local(paths), report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
-		Recording: !history.Off(), CLIVersion: version, Now: now}))
+		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
 // runs by itself.
 func observeCodexSpeed(st *store.Store, now time.Time) {
 	home := quotaPaths(st).CodexHome
-	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, now)
+	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, projectLabels(), now)
+}
+
+// projectLabelsCmd shows or sets the project-label opt-in (the desktop asks on first open).
+func projectLabelsCmd(args []string, stdout, stderr io.Writer, st *store.Store, c common) int {
+	home, _ := os.UserHomeDir()
+	file := speed.ProjectLabelsFile(home)
+	sub := "status"
+	if len(args) > 0 {
+		sub = args[0]
+	}
+	switch sub {
+	case "on", "off":
+		if err := speed.SetProjectLabels(file, st.Dir, sub == "on"); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitErr
+		}
+	case "status":
+	default:
+		fmt.Fprintln(stderr, "usage: modelplan project-labels [status|on|off]")
+		return exitUsage
+	}
+	on := speed.ProjectLabels(file)
+	if c.json {
+		return printJSON(stdout, map[string]any{"projectLabels": on, "file": file})
+	}
+	switch {
+	case on && c.lang == "en":
+		fmt.Fprintln(stdout, "Project labels are on: the project ranking names projects by their folder.")
+	case on:
+		fmt.Fprintln(stdout, "项目名称已开启：项目排行按文件夹名称显示。")
+	case c.lang == "en":
+		fmt.Fprintln(stdout, "Project labels are off: projects are kept only as opaque references.")
+	default:
+		fmt.Fprintln(stdout, "项目名称已关闭：项目只以不透明的引用记录。")
+	}
+	return 0
+}
+
+// projectLabels: the user turned project labels on (`modelplan project-labels on`).
+func projectLabels() bool {
+	home, _ := os.UserHomeDir()
+	return speed.ProjectLabels(speed.ProjectLabelsFile(home))
 }
 
 func nonNilCycles(cs []history.Cycle) []history.Cycle {

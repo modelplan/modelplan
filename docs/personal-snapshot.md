@@ -34,6 +34,8 @@ It marks no advice as told. A client keeps its own notified keys.
 | `perfStats[]` | CLI 0.5.27+. The performance ledger per configuration (below) |
 | `daily[]` | CLI 0.5.27+. `{day, source, model, observedOutputTokens, observedRequests}` per local day of the last 30 (today included) and model, across efforts, speed modes and parsers. Days without rows are left out, not `0`: the ledger cannot tell no activity from no coverage. Days before the ledger started are absent |
 | `sessionRanking` | CLI 0.5.27+. The sessions with the most observed output tokens (below) |
+| `projectRanking` | CLI 0.5.29+. The same sessions summed per project (below) |
+| `projectLabels` | CLI 0.5.29+. Whether the user turned project labels on (`modelplan project-labels on`); off by default |
 | `paceHistory` | CLI 0.5.27+. How fast each window's percentage rose per cycle (below) |
 | `dailyCoverage` | CLI 0.5.27+. `{from, recording}`: the first day `daily[]` covers (the later of the ledger's start and 30 days ago; `null` without a ledger), for a label such as "observed on this machine since <from>" |
 | `recording` | Local quota history and speed measurement are on (`MODELPLAN_HISTORY` is not `off`) |
@@ -57,6 +59,7 @@ One entry per harness that reported a model (`claude-code`, `codex`):
 - `workloadRate` (CLI 0.5.27+): the one speed reading per engine. `{source, window: "recent7d", scope: "all-configurations", configCount, value, status, n, min, lastAt, freshness}`: the generation rate of all the harness's configurations in the recent 7 days, as the ratio of their summed eligible output tokens and generation time. It describes what this user's mix produced, unreported efforts included; it is not a plan's speed and moves when the mix changes;
 - `tokenRate` (CLI 0.5.27+): the same for the session's own configuration, `{configKey, window: "recent7d", value, status, n, min, lastAt, freshness}`. With `effortStatus: "unreported"` it is `unavailable` with `reason: "effort-unreported"`, since an unknown configuration is no proof of the same one. No other configuration stands in.
 
+- `projectRef` (CLI 0.5.29+): the project of the harness's most recently active session in the performance ledger, as in `projectRanking`; `null` when unknown. With `attribution: "recent-thread"` that is the session this entry describes.
 - `activity` (CLI 0.5.27+): `{status, lastSignalAt, basis, withinMinutes}`. `recent` when the harness's own timestamps show a turn started (Codex's turn context, `basis: "turn-started"`) or a request completed (`completed-request`, from the performance ledger) within `withinMinutes` (10); `quiet` when not since; `unknown` without such a timestamp. Claude Code's status line also renders while idle, so its time is not used. It never says a session is working now: a long turn shows only once a request in it completes.
 
 `value` is set only when `status` is `ok`.
@@ -98,9 +101,21 @@ CLI 0.5.27+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each wi
 - `ref`: a random reference made on this machine. Sessions carry no title, path or session id;
 - `source`, `firstAt` (the first counted turn's start) and `lastAt` (the newest sample's completion), to the minute;
 - `observedOutputTokens`, `observedRequests` and `share`: the session's part of the window's observed output tokens. That is a share of what this CLI saw in the logs it reads, not of any plan or allowance;
-- `configs[]`: `{model, effortStatus, effort, speed, observedOutputTokens}`, the largest first, at most three.
+- `projectRef` (CLI 0.5.29+): the session's project, as in `projectRanking`; `null` when its log records no working directory;
+- `configs[]`: `{model, effortStatus, effort, speed, observedOutputTokens, share, recommendedEffort}`, the largest first, at most three. `share` (CLI 0.5.29+) is the configuration's part of the session's output in the window; `recommendedEffort` (CLI 0.5.29+) is the published ★ effort of the model as a native key, absent when the publication has none.
 
 The sessions are kept in the performance ledger with the same `since`, 35 days and size limits; a session whose last day is older leaves it. Codex's own threads (subagents, reviews) are not read, so they are neither ranked nor counted, and never counted twice; Claude Code's sidechain requests are not counted either. Titles are not kept at all.
+
+## `projectRanking`
+
+CLI 0.5.29+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each window is `{projects, totalObservedOutputTokens, unattributedOutputTokens, top}`. `totalObservedOutputTokens` counts every session in the window; `unattributedOutputTokens` is the part from sessions whose log records no working directory. `top` holds the ten projects with the most observed output tokens:
+
+- `ref`: an opaque reference, a keyed hash of the project root with a random key kept beside the ledger (`observed/project-key`). It says nothing about the path and differs between machines. The root is the repository's git common directory when the session's working directory is inside a checkout or worktree that still exists when it is read, so all worktrees of one repository are one project; otherwise it is the working directory itself, also when that was removed before it was read. `.git` files are read; git is never run;
+- `label`: the project folder's name, only while `projectLabels` is on; `null` otherwise, and the desktop names projects by rank ("Project A / B / C"). Turning labels off (`modelplan project-labels off`) deletes the stored names; the references stay;
+- `sessions`, `lastAt`, `observedOutputTokens`, `observedRequests` and `share` (the project's part of `totalObservedOutputTokens`);
+- `configs[]`: as in `sessionRanking`, across the project's sessions.
+
+Sources: the Codex rollout's working directory (session meta and turn context) and the Claude Code transcript's. The first one a session records names its project. At most 500 projects are kept; the ones last active longest ago lose their reference first, and a reference goes with its last session. Neither the reference nor the label is meant for anything that leaves the machine; a future portable or synced form leaves both out.
 
 ## `paceHistory`
 
