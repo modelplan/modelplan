@@ -33,6 +33,8 @@ type PerfLedger struct {
 	Rows          []PerfRow         `json:"rows"`
 	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
+	// Stores: how far each agent database was read (sqlite.go).
+	Stores map[string]DBCursor `json:"stores,omitempty"`
 
 	project      func(cwd string) (ref, label string) // while observing: names a session's project
 	subscription string                               // while observing: the harness account's reference
@@ -358,6 +360,11 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 	for k, c := range l.Files {
 		if c.Seen < from {
 			delete(l.Files, k)
+		}
+	}
+	for k, c := range l.Stores {
+		if c.Day < from {
+			delete(l.Stores, k)
 		}
 	}
 	for {

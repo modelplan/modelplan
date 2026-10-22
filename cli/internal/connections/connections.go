@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // Level is one step of a connection. Status: yes | no | off (turned off by the user) | unknown
@@ -25,8 +26,8 @@ type Level struct {
 	Binding string `json:"binding,omitempty"`
 }
 
-// Connection is one agent or quota source. Support: full (sessions and quota) | quota-only |
-// detected-only (installed, nothing read yet).
+// Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
+// (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
 	ID            string `json:"id"`
 	Kind          string `json:"kind"` // agent | quota
@@ -142,13 +143,20 @@ func Diagnose(e Env, r quota.Report) []Connection {
 	cc.Quota = quotaLevel("claude-code")
 	out = append(out, cc)
 
-	// OpenCode: detected only; no session reader yet.
-	oc := Connection{ID: "opencode", Kind: "agent", Support: "detected-only",
+	// OpenCode V2 and ZCode: sessions from their own databases (speed's sqlite.go); their quota is
+	// the plan behind them (OpenCode Go, Z.ai), read as another plan.
+	ocdb, zcdb := speed.OpenCodeDB(e.Home), speed.ZCodeDB(e.Home)
+	oc := Connection{ID: "opencode", Kind: "agent", Support: "sessions-only",
 		Installed:     yesNo(e.onPath("opencode") || (e.Exists != nil && e.Exists(filepath.Join(dataHome(e.Home), "opencode"))), "not-found"),
-		History:       Level{Status: "no", Reason: "no-session-reader"},
+		History:       yesNo(e.Exists != nil && e.Exists(ocdb), "no-database"),
 		Authorization: Level{Status: "not-applicable"},
-		Quota:         Level{Status: "not-applicable", Reason: "see-codexbar:opencodego"}}
-	out = append(out, oc)
+		Quota:         Level{Status: "not-applicable", Reason: "see-opencodego"}}
+	zc := Connection{ID: "zcode", Kind: "agent", Support: "sessions-only",
+		Installed:     yesNo(e.onPath("zcode") || e.app("ZCode") || (e.Exists != nil && e.Exists(filepath.Join(e.Home, ".zcode"))), "not-found"),
+		History:       yesNo(e.Exists != nil && e.Exists(zcdb), "no-database"),
+		Authorization: Level{Status: "not-applicable"},
+		Quota:         Level{Status: "not-applicable", Reason: "see-zai"}}
+	out = append(out, oc, zc)
 
 	// Other plans' quota, natively or through CodexBar, each provider only when the user enabled
 	// it. The entry's id names the backend that serves it.

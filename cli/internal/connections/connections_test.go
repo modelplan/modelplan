@@ -19,7 +19,7 @@ func TestDiagnose(t *testing.T) {
 	dir := t.TempDir()
 	cb := filepath.Join(dir, "codexbar.json")
 	os.WriteFile(cb, []byte(`{"schemaVersion":1,"providers":["kiro","zai"]}`), 0o600)
-	paths := map[string]bool{"/home/u/.codex": true, "/bin/kiro-cli": true, "/home/u/.local/share/opencode": true}
+	paths := map[string]bool{"/home/u/.codex": true, "/bin/kiro-cli": true, "/home/u/.local/share/opencode": true, "/home/u/.local/share/opencode/opencode.db": true}
 	looked := []string{}
 	e := Env{Home: "/home/u", CodexHome: "/home/u/.codex", CodexBarFile: cb, Exists: func(p string) bool { looked = append(looked, p); return paths[p] }}
 	t.Setenv("XDG_DATA_HOME", "")
@@ -41,8 +41,11 @@ func TestDiagnose(t *testing.T) {
 	if cc.Installed.Status != "no" || cc.History.Status != "no" || cc.History.Reason != "missing" || cc.Authorization.Status != "not-applicable" || cc.Quota.Status != "no" {
 		t.Errorf("claude-code = %+v", cc)
 	}
-	if oc.Installed.Status != "yes" || oc.History.Reason != "no-session-reader" || oc.Support != "detected-only" {
+	if oc.Installed.Status != "yes" || oc.History.Status != "yes" || oc.Support != "sessions-only" {
 		t.Errorf("opencode = %+v", oc)
+	}
+	if zc := got["zcode"]; zc.Installed.Status != "no" || zc.History.Reason != "no-database" || zc.Quota.Reason != "see-zai" {
+		t.Errorf("zcode = %+v", zc)
 	}
 	if kiro.Installed.Status != "yes" || kiro.Support != "quota-only" || kiro.Authorization.Via != "codexbar" || kiro.Quota.Status != "yes" {
 		t.Errorf("kiro = %+v", kiro)

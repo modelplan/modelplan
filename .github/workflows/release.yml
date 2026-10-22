@@ -29,6 +29,7 @@ jobs:
             CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
               -ldflags "-s -w -X main.version=${VERSION#v}" \
               -o "/tmp/$out/modelplan$ext" ./cmd/modelplan
+            cp ../LICENSE THIRD-PARTY-NOTICES.md "/tmp/$out/"
             if [ "$os" = windows ]; then (cd /tmp && zip -qr "$GITHUB_WORKSPACE/dist/$out.zip" "$out")
             else tar -C /tmp -czf "../dist/$out.tar.gz" "$out"; fi
           done
