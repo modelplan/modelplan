@@ -2,6 +2,27 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.30, Codex plugin 0.15.22 and Claude Code plugin 0.7.21 (2026-10-22)
+
+- Other plans can be read natively, without CodexBar.
+  - `modelplan connect zai` reads Z.ai / GLM Coding Plan with the API key in `Z_AI_API_KEY`. Add `--region bigmodel-cn` for open.bigmodel.cn.
+  - `modelplan connect opencodego` reads OpenCode Go with `OPENCODE_API_KEY`.
+  - Each key is sent only to its vendor's usage endpoint and never stored.
+  - The readers are ported from CodexBar (MIT).
+  - Copilot, Cursor and Kiro stay on CodexBar.
+- `~/.config/modelplan/connections.json` (optional) chooses `native`, `codexbar-compat` or off per provider.
+  - Existing `codexbar.json` settings keep working.
+  - Nothing falls back silently from one backend to the other.
+  - `modelplan connections` shows the effective choice. `MODELPLAN_NATIVE=off` stops native readers.
+- Subscriptions are told apart automatically, as random local references. Sources:
+  - Codex's own `account/read`;
+  - the account and organization ids in Claude Code's `.claude.json` (no e-mail, names or tokens);
+  - CodexBar's account id;
+  - a native reader's key.
+  - Accounts, sessions and both rankings in the desktop snapshot carry the reference. `subscriptions[]` lists them for a scope selector.
+  - The identity itself is never stored. `MODELPLAN_IDENTITY=off` turns this off.
+- Both plugins pin CLI v0.5.30.
+
 ## CLI v0.5.29, Codex plugin 0.15.21 and Claude Code plugin 0.7.20 (2026-10-22)
 
 - When a Codex plan window is used up and the account has usage credits, the hint says further use draws on them and gives the balance, for example `Codex 每周额度已用完，5天5时后重置：继续用会扣点数，剩 73,172`. A reading older than 15 minutes shows its age. Reset cards are still named.
