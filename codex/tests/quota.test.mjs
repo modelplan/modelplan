@@ -43,6 +43,17 @@ test('GPT Reserve shows as its own allowance and names the pool the headroom is 
   assert.match(renderQuota(q, 'zh'), /→ Reserve · 额度已用完/);
 });
 
+test('usage credits show their balance and turn the used-up verdict into drawing on them', () => {
+  const q = pickCodex(structuredClone(expected));
+  assert.match(renderQuota(q, 'en'), /◇ credits 1,250\n/);
+  q.account.headroom = 'exhausted'; q.account.credits = { balance: 73172.5, ageMinutes: 40 };
+  const text = renderQuota(q, 'zh');
+  assert.match(text, /◇ 点数 73,172 · 40分前读取/);
+  assert.match(text, /→ 额度已用完：继续用会扣点数/);
+  delete q.account.credits;
+  assert.match(renderQuota(q, 'en'), /→ Exhausted: wait for the reset or use another plan/);
+});
+
 test('advice comes only from the CLI, keeps Codex events and drops anything malformed', async () => {
   const out = { schemaVersion: 1, events: [
     { type: 'reset_soon_with_surplus', severity: 'info', source: 'codex', text: { zh: 'Codex 5小时还剩 80%', en: 'Codex 5h window has 80% left' } },

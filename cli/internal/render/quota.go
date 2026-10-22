@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
@@ -16,6 +18,7 @@ type quotaText struct {
 	Day, Hour, Min                                            string
 	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
 	Left, WeekNarrow, RunsOutNarrow                           string // status line: "剩65%", the narrow week label, "≈35分"
+	Credits, Unlimited, ReadAgo, OnCredits                    string // usage credits: "点数 73,172", "不限量", "3分前读取"
 }
 
 var quotaZH = quotaText{
@@ -28,6 +31,7 @@ var quotaZH = quotaText{
 	Day:      "天", Hour: "时", Min: "分",
 	RunsOut: "按最近的用量约 %s后用完", RunsOutShort: "≈%s用完",
 	Left: "剩%s", WeekNarrow: "周", RunsOutNarrow: "≈%s",
+	Credits: "点数", Unlimited: "不限量", ReadAgo: "%s前读取", OnCredits: "额度已用完：继续用会扣点数",
 }
 
 var quotaEN = quotaText{
@@ -40,6 +44,7 @@ var quotaEN = quotaText{
 	Day:      "d", Hour: "h", Min: "m",
 	RunsOut: "at the recent rate, used up in %s", RunsOutShort: "out ~%s",
 	Left: "%s left", WeekNarrow: "wk", RunsOutNarrow: "~%s",
+	Credits: "credits", Unlimited: "unlimited", ReadAgo: "read %s ago", OnCredits: "Exhausted: further use draws on credits",
 }
 
 func (s Style) qt() quotaText {
@@ -143,12 +148,40 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 				fmt.Fprintf(w, "  %s %d × %s\n", s.c(gold, "◆"), *c.Count, q.Kinds[c.Kind])
 			}
 		}
+		if c := a.Credits; c != nil {
+			bal := q.Unlimited
+			if c.Balance != nil {
+				bal = Thousands(*c.Balance)
+			}
+			line := fmt.Sprintf("  %s %s %s", s.c(gold, "◇"), q.Credits, s.c(hi, bal))
+			if c.AgeMinutes != nil && *c.AgeMinutes >= int(quota.CreditsFresh/time.Minute) {
+				line += s.c(dim, " · "+fmt.Sprintf(q.ReadAgo, q.Dur(*c.AgeMinutes)))
+			}
+			fmt.Fprintln(w, line)
+		}
 		verdict := q.Headroom[a.Headroom]
+		if a.Headroom == "exhausted" && a.Credits != nil {
+			verdict = q.OnCredits
+		}
 		if a.Pool != "" {
 			verdict = LimitName(a.Pool) + " · " + verdict // the allowance the verdict is about
 		}
 		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), verdict))
 	}
+}
+
+// Thousands: a balance with digit grouping, whole units rounded down ("73,172").
+func Thousands(v float64) string {
+	n := int64(math.Floor(v))
+	d := strconv.FormatInt(n, 10)
+	var b strings.Builder
+	for i, r := range d {
+		if i > 0 && (len(d)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // sourceName: the harness, "manual", or a provider read through CodexBar ("Cursor · CodexBar").

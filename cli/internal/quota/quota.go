@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -82,6 +84,35 @@ type Card struct {
 	ExpiresAt *time.Time `json:"expiresAt"`
 }
 
+// Credits: the balance as the harness reported it, without account ids. Balance is nil when
+// the harness sent none (unlimited, or an older reader).
+type Credits struct {
+	Unlimited  bool      `json:"unlimited,omitempty"`
+	Balance    *float64  `json:"balance,omitempty"`
+	ObservedAt time.Time `json:"observedAt"`
+	AgeMinutes *int      `json:"ageMinutes,omitempty"`
+}
+
+// CreditsFresh: a balance read this recently is quoted without its age.
+const CreditsFresh = 15 * time.Minute
+
+// creditsFrom: has, unlimited and balance as sent (a decimal string, a number or null). Nil
+// when the account has no credits.
+func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Credits {
+	if !has && !unlimited {
+		return nil
+	}
+	c := &Credits{Unlimited: unlimited, ObservedAt: at.UTC()}
+	raw := strings.Trim(strings.TrimSpace(string(balance)), `"`)
+	if v, err := strconv.ParseFloat(raw, 64); err == nil && v >= 0 && v < 1e12 {
+		c.Balance = &v
+	}
+	if c.Balance == nil && !unlimited {
+		return nil // credits with no figure tell the user nothing they can check
+	}
+	return c
+}
+
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
 	Source     string    `json:"source"` // claude-code | codex | user | codexbar:<provider>
@@ -92,9 +123,12 @@ type Account struct {
 	Harness    *Harness  `json:"harness,omitempty"`
 	Windows    []Window  `json:"windows"`
 	Cards      []Card    `json:"cards,omitempty"`
-	Via        string    `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs; codexbar: read by CodexBar
-	Headroom   string    `json:"headroom"`      // spend | normal | conserve | exhausted | unknown
-	Deciding   string    `json:"deciding,omitempty"`
+	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on
+	// once a plan window is used up. Unlike cards they restore no window.
+	Credits  *Credits `json:"credits,omitempty"`
+	Via      string   `json:"via,omitempty"` // codex-account: windows from Codex's account reading, not only the logs; codexbar: read by CodexBar
+	Headroom string   `json:"headroom"`      // spend | normal | conserve | exhausted | unknown
+	Deciding string   `json:"deciding,omitempty"`
 	// Pool: the allowance the session draws from when the account keeps more than one. Codex
 	// meters some models from their own allowance under another limit id (GPT Reserve is a weekly
 	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
@@ -177,6 +211,10 @@ func Evaluate(a *Account, now time.Time) {
 		}
 	}
 	a.Headroom, a.Deciding = headroom(pool)
+	if c := a.Credits; c != nil {
+		age := int(math.Max(0, now.Sub(c.ObservedAt).Minutes()))
+		c.AgeMinutes = &age
+	}
 }
 
 // Boundaries: the instants at which Evaluate gives the account other verdicts from the same
@@ -187,6 +225,9 @@ func Boundaries(a *Account) []time.Time {
 	var out []time.Time
 	if !a.ObservedAt.IsZero() {
 		out = append(out, a.ObservedAt.Add(staleAfter))
+	}
+	if c := a.Credits; c != nil {
+		out = append(out, c.ObservedAt.Add(CreditsFresh))
 	}
 	for i := range a.Windows {
 		w := &a.Windows[i]

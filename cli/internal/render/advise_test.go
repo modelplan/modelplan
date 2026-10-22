@@ -10,6 +10,14 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
+func TestThousands(t *testing.T) {
+	for v, want := range map[float64]string{0: "0", 999.9: "999", 1000: "1,000", 73172.5: "73,172", 1234567: "1,234,567"} {
+		if got := Thousands(v); got != want {
+			t.Errorf("Thousands(%v) = %s, want %s", v, got, want)
+		}
+	}
+}
+
 func TestAdviceLines(t *testing.T) {
 	f := func(v float64) *float64 { return &v }
 	n := func(v int) *int { return &v }
@@ -51,6 +59,17 @@ func TestAdviceLines(t *testing.T) {
 			Suggest: &advise.Step{Action: "better_model", ModelName: "GPT-6.1 Sol", Label: "Med", Recommended: true, Kind: "equivalent", AbilityDelta: f(-0.2), CostRatio: f(0.18)}},
 			"Codex 在用 GPT-6 Astra ★Med：GPT-6.1 Sol ★Med 能力相当、成本省得多（-0.2分 ×0.18）。按综合分，这个任务确实需要当前模型的话就不换",
 			"Codex is on GPT-6 Astra ★Med: GPT-6.1 Sol ★Med scores about the same for much less (-0.2 pts ×0.18). By overall score; keep the current model if this task needs it"},
+		{advise.Event{Type: advise.WindowExhausted, Source: "codex", Window: "weekly", InMinutes: n(7500), Suggest: &advise.Step{Action: "use_card"},
+			Credits: &quota.Credits{Balance: f(73172.5), AgeMinutes: n(3)}},
+			"Codex 每周额度已用完，5天5时后重置：继续用会扣点数，剩 73,172；另有重置卡可用（需要你自己兑换）",
+			"Codex week window used up, resets in 5d5h: further use draws on credits, 73,172 left; a reset card is also available (redeem it yourself)"},
+		{advise.Event{Type: advise.WindowExhausted, Source: "codex", Window: "five_hour", InMinutes: n(90), Suggest: &advise.Step{Action: "wait"},
+			Credits: &quota.Credits{Balance: f(980), AgeMinutes: n(40)}},
+			"Codex 5小时额度已用完，1时30分后重置：继续用会扣点数，剩 980（40分前的读数）",
+			"Codex 5h window used up, resets in 1h30m: further use draws on credits, 980 left (read 40m ago)"},
+		{advise.Event{Type: advise.WindowExhausted, Source: "codex", Window: "weekly", InMinutes: n(7500), Suggest: &advise.Step{Action: "wait"}, Credits: &quota.Credits{Unlimited: true}},
+			"Codex 每周额度已用完，5天5时后重置：继续用会扣点数（不限量）",
+			"Codex week window used up, resets in 5d5h: further use draws on credits (unlimited)"},
 	}
 	for _, c := range cases {
 		if got := (Style{T: ZH}).AdviceLine(c.e); got != c.zh {

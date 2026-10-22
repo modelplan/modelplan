@@ -273,6 +273,7 @@ func revision(in Input) string {
 		Harness                             *quota.Harness
 		Windows                             []window
 		Cards                               []quota.Card
+		Credits                             *quota.Credits `json:",omitempty"`
 	}
 	var v struct {
 		Accounts    []account
@@ -288,6 +289,9 @@ func revision(in Input) string {
 	}
 	for _, a := range in.Report.Accounts {
 		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards}
+		if c := a.Credits; c != nil {
+			x.Credits = &quota.Credits{Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: c.ObservedAt.UTC()} // not its age
+		}
 		for _, w := range a.Windows {
 			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: w.UsedPercent, UsedUSD: w.UsedUSD, LimitUSD: w.LimitUSD,
 				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
