@@ -2,6 +2,18 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
+## CLI v0.5.29, Codex plugin 0.15.21 and Claude Code plugin 0.7.20 (2026-10-22)
+
+- When a Codex plan window is used up and the account has usage credits, the hint says further use draws on them and gives the balance, for example `Codex 每周额度已用完，5天5时后重置：继续用会扣点数，剩 73,172`. A reading older than 15 minutes shows its age. Reset cards are still named.
+  - `modelplan quota`, the Codex dashboard and the desktop snapshot show the balance (`accounts[].credits`).
+  - It is read from the same Codex logs and account reading as the windows. The task-start brief still gives the agent no quota or credit figures.
+- The desktop snapshot ranks projects (`projectRanking`) by observed output tokens over 7 and 30 days.
+  - Projects are opaque references: a keyed hash of the repository, so worktrees of one repository are one project.
+  - Folder names are stored only after `modelplan project-labels on`. Turning them off deletes them.
+  - Ranked configurations now carry their share and the published ★ effort.
+- CodexBar CLI v0.77.0 is pinned.
+- Both plugins pin CLI v0.5.29.
+
 ## CLI v0.5.28, Codex plugin 0.15.20 and Claude Code plugin 0.7.19 (2026-10-21)
 
 - The task-start brief no longer gives the agent quota figures: no remaining share, reset time or headroom verdict. You see those in the quota hints. Figures given once per thread went stale and the agent repeated them.
