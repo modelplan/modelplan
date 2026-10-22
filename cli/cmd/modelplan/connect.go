@@ -122,9 +122,9 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 	}
 	if len(rows) == 0 {
 		if c.lang == "en" {
-			fmt.Fprintln(stdout, "No other plan is connected. `modelplan connect zai` reads Z.ai / GLM with the key in Z_AI_API_KEY.")
+			fmt.Fprintln(stdout, "No other plan is connected. `modelplan connect zai` reads Z.ai / GLM with the key in Z_AI_API_KEY; `modelplan connect opencodego` reads OpenCode Go with OPENCODE_API_KEY.")
 		} else {
-			fmt.Fprintln(stdout, "没有连接其他套餐。`modelplan connect zai` 用 Z_AI_API_KEY 里的 key 读取 Z.ai / GLM。")
+			fmt.Fprintln(stdout, "没有连接其他套餐。`modelplan connect zai` 用 Z_AI_API_KEY 里的 key 读取 Z.ai / GLM；`modelplan connect opencodego` 用 OPENCODE_API_KEY 读取 OpenCode Go。")
 		}
 		return 0
 	}
