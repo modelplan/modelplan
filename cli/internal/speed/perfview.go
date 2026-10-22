@@ -11,8 +11,12 @@ import (
 // recent 7 and 30 local calendar days, per day and model, and one reading per engine. Every
 // figure is a ratio of sums or a quantile of merged histograms; no rate or median is averaged.
 type PerfView struct {
-	Ledger    PerfLedger
-	OK        bool // false: the ledger is there but unreadable
+	Ledger PerfLedger
+	OK     bool // false: the ledger is there but unreadable
+	// Long: the long-term daily ledger (daily-long.json). LongOK false: it was not given or cannot
+	// be read; dailyLong then holds what perf.json does.
+	Long      LongLedger
+	LongOK    bool
 	Recording bool
 	Now       time.Time
 }
@@ -308,43 +312,14 @@ func tps(tokens, ms int64) float64 {
 // Daily: per local day of the last 30 and model, summed from the ledger's rows. Days without rows
 // are left out, not zero: the ledger cannot tell no activity from no coverage.
 func (v PerfView) Daily() []Daily {
-	out := []Daily{}
 	if !v.OK {
-		return out
+		return []Daily{}
 	}
 	from := windowFrom(v.Now, 30)
 	if d := day(v.Ledger.Since); d > from {
 		from = d // the legacy ledger is never mixed in
 	}
-	by := map[[3]string]*Daily{}
-	var keys [][3]string
-	for i := range v.Ledger.Rows {
-		r := &v.Ledger.Rows[i]
-		if r.Day < from {
-			continue
-		}
-		k := [3]string{r.Day, r.Source, r.Model}
-		d := by[k]
-		if d == nil {
-			d = &Daily{Day: r.Day, Source: r.Source, Model: r.Model}
-			by[k] = d
-			keys = append(keys, k)
-		}
-		d.ObservedOutputTokens += r.ObservedOutputTokens
-		d.ObservedRequests += r.ObservedRequests
-	}
-	sort.Slice(keys, func(i, j int) bool {
-		for x := range keys[i] {
-			if keys[i][x] != keys[j][x] {
-				return keys[i][x] < keys[j][x]
-			}
-		}
-		return false
-	})
-	for _, k := range keys {
-		out = append(out, *by[k])
-	}
-	return out
+	return rollup(v.Ledger.Rows, from)
 }
 
 func (v PerfView) Coverage() DailyCoverage {
@@ -358,6 +333,60 @@ func (v PerfView) Coverage() DailyCoverage {
 	}
 	c.From = &from
 	return c
+}
+
+// DailyLong: as Daily, per local day of the last LongDays, from daily-long.json together with what
+// perf.json holds now (the larger figures of the two, as the ledger itself keeps them). Without a
+// usable daily-long.json it is what perf.json holds: the days it keeps whole.
+func (v PerfView) DailyLong() []Daily {
+	from, ok := v.longFrom()
+	if !ok {
+		return []Daily{}
+	}
+	var out []Daily
+	if v.longUsable() {
+		for _, r := range v.Long.Rows {
+			if r.Day >= from {
+				out = append(out, r)
+			}
+		}
+	}
+	out, _ = mergeDaily(out, rollup(v.Ledger.Rows, from), from)
+	if out == nil {
+		return []Daily{}
+	}
+	sortDaily(out)
+	return out
+}
+
+// LongCoverage: the first day dailyLong covers and whether recording is on.
+func (v PerfView) LongCoverage() DailyCoverage {
+	c := DailyCoverage{Recording: v.Recording}
+	if from, ok := v.longFrom(); ok {
+		c.From = &from
+	}
+	return c
+}
+
+func (v PerfView) longUsable() bool { return v.LongOK && !v.Long.Since.IsZero() }
+
+// longFrom: the latest of LongDays ago and where the ledgers' coverage starts: daily-long.json's
+// since (or the day after its last size trim), else perf.json's since and the days it keeps whole.
+// None while perf.json cannot be read (nothing is recorded then) or neither ledger has started.
+func (v PerfView) longFrom() (string, bool) {
+	if !v.OK {
+		return "", false
+	}
+	var start string
+	switch {
+	case v.longUsable():
+		start = v.Long.from()
+	case !v.Ledger.Since.IsZero():
+		start = max(day(v.Ledger.Since), day(v.Now.Add(-PerfKeep)))
+	default:
+		return "", false
+	}
+	return max(start, windowFrom(v.Now, LongDays)), true
 }
 
 func parserOf(source string) string {
@@ -442,9 +471,9 @@ func (v PerfView) WorkloadRate(source string) Rate {
 }
 
 // Boundaries: when the clock alone changes the view: each configuration's newest sample turning a
-// day and a week old, and local midnight, which moves the calendar windows.
+// day and a week old, and local midnight, which moves the calendar windows (dailyLong's too).
 func (v PerfView) Boundaries() []time.Time {
-	if !v.OK || len(v.Ledger.Rows) == 0 {
+	if !v.OK || len(v.Ledger.Rows) == 0 && (!v.longUsable() || len(v.Long.Rows) == 0) {
 		return nil
 	}
 	l := v.Now.Local()

@@ -112,6 +112,19 @@ export interface Measured {
 
 export interface SourceStatus { source: string; status: string; reason?: string }
 
+// One local day of one model: what the CLI saw in the logs it reads, across efforts and speed
+// modes (daily[], dailyLong[]). A day without a row is not a day without use: it is left out.
+export interface DailyTotal {
+  day: string; // local date, YYYY-MM-DD
+  source: string;
+  model: string;
+  observedOutputTokens: number;
+  observedRequests: number;
+}
+
+// The first day a daily list covers (null before any ledger) and whether recording is on.
+export interface DailyCoverage { from: string | null; recording: boolean }
+
 export interface Snapshot {
   schemaVersion: number;
   kind: string;
@@ -130,6 +143,11 @@ export interface Snapshot {
   sources: SourceStatus[];
   events: AdviceEvent[];
   measured: Measured[];
+  daily: DailyTotal[]; // the last 30 days (CLI 0.5.27+; [] before)
+  dailyCoverage?: DailyCoverage;
+  dailyLong: DailyTotal[]; // the last 371 days, for a year-long heatmap (CLI 0.5.32+; [] before)
+  dailyLongCoverage?: DailyCoverage;
+  projectLabels?: boolean; // project folder names are on (the default since CLI 0.5.32)
   recording: boolean;
   note: string;
 }
@@ -142,7 +160,7 @@ export function parseSnapshot(raw: unknown): Snapshot {
   const s = v as Snapshot;
   if (s.kind !== KIND) throw Error('snapshot_kind');
   if (!Number.isInteger(s.schemaVersion) || s.schemaVersion < 1) throw Error('snapshot_version');
-  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured'] as const) {
+  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured', 'daily', 'dailyLong'] as const) {
     if (!Array.isArray(s[k])) (s as unknown as Record<string, unknown>)[k] = [];
   }
   for (const a of s.accounts) if (!Array.isArray(a.windows)) a.windows = [];

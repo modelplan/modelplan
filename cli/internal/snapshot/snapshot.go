@@ -51,6 +51,10 @@ type Snapshot struct {
 	PerfStats     []speed.PerfStat    `json:"perfStats"`
 	Daily         []speed.Daily       `json:"daily"`
 	DailyCoverage speed.DailyCoverage `json:"dailyCoverage"`
+	// DailyLong and DailyLongCoverage: the same per-day totals for a year, from daily-long.json
+	// (perf.json's days rolled up and kept for 371 days).
+	DailyLong         []speed.Daily       `json:"dailyLong"`
+	DailyLongCoverage speed.DailyCoverage `json:"dailyLongCoverage"`
 	// PaceHistory: how fast each window's percentage rose per cycle (pace.json), beside the quota
 	// history behind `modelplan history`. Percentage points, never tokens.
 	PaceHistory history.PaceHistory `json:"paceHistory"`
@@ -59,7 +63,8 @@ type Snapshot struct {
 	// ProjectRanking: the same sessions summed per project (opaque references; labels only while
 	// ProjectLabels is on).
 	ProjectRanking speed.ProjectRanking `json:"projectRanking"`
-	// ProjectLabels: the user turned project labels on (`modelplan project-labels on`).
+	// ProjectLabels: project labels are on, as they are unless the user turned them off
+	// (`modelplan project-labels off`).
 	ProjectLabels bool `json:"projectLabels"`
 	// Subscriptions: every subscription the accounts were bound to, with the accounts that read
 	// it, for a scope selector. References are random and local; they name no account.
@@ -223,8 +228,10 @@ func Build(in Input) Snapshot {
 		s.Measured = []speed.Stat{}
 	}
 	s.PerfStats, s.Daily, s.DailyCoverage = []speed.PerfStat{}, []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
+	s.DailyLong, s.DailyLongCoverage = []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
 	if in.Perf != nil {
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
+		s.DailyLong, s.DailyLongCoverage = in.Perf.DailyLong(), in.Perf.LongCoverage()
 	}
 	for i := range s.Connections {
 		if c := &s.Connections[i]; in.Perf != nil && c.Kind == "agent" && c.History.Status == "yes" && c.History.At == nil {
@@ -308,6 +315,8 @@ func revision(in Input) string {
 		Ledger      []speed.Row
 		Perf        *speed.PerfLedger
 		PerfOK      bool
+		Long        *speed.LongLedger `json:",omitempty"`
+		LongOK      bool              `json:",omitempty"`
 		Pace        *history.PaceLedger
 		PaceOK      bool
 		Connections []connections.Connection
@@ -330,6 +339,9 @@ func revision(in Input) string {
 		l := in.Perf.Ledger
 		l.Files = nil // how far the logs were read is no observation
 		v.Perf, v.PerfOK = &l, in.Perf.OK
+		if in.Perf.LongOK {
+			v.Long, v.LongOK = &in.Perf.Long, true
+		}
 	}
 	if in.Pace != nil {
 		v.Pace, v.PaceOK = &in.Pace.Ledger, in.Pace.OK

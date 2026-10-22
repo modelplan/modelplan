@@ -183,3 +183,47 @@ func TestSessionSubscription(t *testing.T) {
 		t.Fatalf("top = %+v", top)
 	}
 }
+
+// Labels are on unless the user turned them off; turning them off deletes the stored ones.
+func TestProjectLabelsDefault(t *testing.T) {
+	cache, home := t.TempDir(), t.TempDir()
+	file := ProjectLabelsFile(home)
+	if !ProjectLabels(file) {
+		t.Fatal("no choice made: on")
+	}
+	os.MkdirAll(filepath.Dir(file), 0o700)
+	for content, want := range map[string]bool{`{"schemaVersion":1}`: true, `{"projectLabels":false}`: false, `{"projectLabels":true}`: true, `not json`: false, `{"projectLabels":"no"}`: false} {
+		os.WriteFile(file, []byte(content), 0o600)
+		if ProjectLabels(file) != want {
+			t.Errorf("%s: labels on = %v", content, !want)
+		}
+	}
+	os.Remove(file)
+	os.Mkdir(file, 0o700) // not a file: the choice is unknown, so off
+	if ProjectLabels(file) {
+		t.Error("an unreadable choice is off")
+	}
+	os.Remove(file)
+
+	seedPerf(t, cache, t0)
+	l, _ := LoadPerf(cache)
+	l.Sessions = []PerfSession{{Ref: "r", Key: "k", Source: "codex", ProjectRef: "p", ProjectLabel: "acme", FirstAt: t0, LastAt: t0,
+		Days: []SessionDay{{Day: "2026-10-17", Model: "m", EffortStatus: "unreported", ObservedRequests: 1, ObservedOutputTokens: 1}}}}
+	b, _ := json.Marshal(l)
+	os.WriteFile(PerfPath(cache), b, 0o600)
+	if err := SetProjectLabels(file, cache, false); err != nil || ProjectLabels(file) {
+		t.Fatal("turned off", err)
+	}
+	if b, _ := os.ReadFile(PerfPath(cache)); bytes.Contains(b, []byte("acme")) || !bytes.Contains(b, []byte(`"projectRef":"p"`)) {
+		t.Fatalf("turning labels off deletes the labels and keeps the references: %s", b)
+	}
+	if b, _ := os.ReadFile(file); !bytes.Contains(b, []byte(`"projectLabels": false`)) {
+		t.Fatalf("the choice is stored: %s", b)
+	}
+	if !ProjectLabels(ProjectLabelsFile(t.TempDir())) || ProjectLabels(file) {
+		t.Fatal("the stored off stays off; another user without a choice is on")
+	}
+	if err := SetProjectLabels(file, cache, true); err != nil || !ProjectLabels(file) {
+		t.Fatal("turned on again", err)
+	}
+}

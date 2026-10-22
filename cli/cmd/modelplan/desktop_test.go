@@ -125,6 +125,20 @@ func TestDesktopReadOnlyWritesNothing(t *testing.T) {
 	if len(started) == 0 {
 		t.Error("the default desktop starts its background sync")
 	}
+	// It also starts both ledgers behind daily[] and dailyLong[], which the snapshot then covers.
+	for _, f := range []string{"perf.json", "daily-long.json"} {
+		if _, err := os.Stat(filepath.Join(root, "cache", "observed", f)); err != nil {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+	var out bytes.Buffer
+	run([]string{"desktop", "--json", "--read-only"}, nil, &out, io.Discard)
+	var s map[string]any
+	_ = json.Unmarshal(out.Bytes(), &s)
+	c, _ := s["dailyLongCoverage"].(map[string]any)
+	if _, ok := s["dailyLong"].([]any); !ok || c["from"] != now.Local().Format("2006-01-02") || c["recording"] != true {
+		t.Errorf("dailyLong = %v, coverage = %v", s["dailyLong"], c)
+	}
 }
 
 func TestDesktopReadOnlyCreatesNoCache(t *testing.T) {
@@ -155,18 +169,31 @@ func TestProjectLabelsCommand(t *testing.T) {
 		_ = json.Unmarshal(out.Bytes(), &v)
 		return v["projectLabels"]
 	}
-	if state() != false || state("on") != true || state() != true {
+	snapshot := func() map[string]any {
+		var out bytes.Buffer
+		run([]string{"desktop", "--json", "--read-only"}, nil, &out, io.Discard)
+		var s map[string]any
+		_ = json.Unmarshal(out.Bytes(), &s)
+		return s
+	}
+	// On by default: no choice is stored, and asking does not store one.
+	if s := snapshot(); s["projectLabels"] != true || s["projectRanking"] == nil || state() != true {
+		t.Fatalf("default: snapshot projectLabels = %v", s["projectLabels"])
+	}
+	if _, err := os.Stat(filepath.Join(root, "home", ".config", "modelplan", "project-labels.json")); !os.IsNotExist(err) {
+		t.Fatalf("status stored a choice: %v", err)
+	}
+	// An explicit off is kept.
+	if state("off") != false || state() != false || snapshot()["projectLabels"] != false {
+		t.Fatal("off is remembered")
+	}
+	if state("on") != true || state() != true || snapshot()["projectLabels"] != true {
 		t.Fatal("on is remembered")
 	}
-	var out bytes.Buffer
-	run([]string{"desktop", "--json", "--read-only"}, nil, &out, io.Discard)
-	var s map[string]any
-	_ = json.Unmarshal(out.Bytes(), &s)
-	if s["projectLabels"] != true || s["projectRanking"] == nil {
-		t.Fatalf("snapshot projectLabels = %v", s["projectLabels"])
-	}
-	if state("off") != false {
-		t.Fatal("off")
+	var text bytes.Buffer
+	run([]string{"project-labels", "--lang", "en"}, nil, &text, io.Discard)
+	if !strings.Contains(text.String(), "stay on this machine") {
+		t.Errorf("status = %q", text.String())
 	}
 	if code := run([]string{"project-labels", "maybe"}, nil, io.Discard, io.Discard); code != exitUsage {
 		t.Fatal("unknown subcommand is a usage error")
