@@ -11,13 +11,24 @@ This license covers the "Official Visuals":
 - every file under `desktop/official-visuals/`, except the historical MIT material described in section 7, and
 - any other file marked `SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0`.
 
-The Official Visuals are the distinctive appearance of the official Model Plan desktop apps. They include:
+The Official Visuals are the distinctive appearance of the official Model Plan apps and website. They include:
 
 - graphics, images and textures;
 - 3D models, materials and shader code;
 - animation and motion code;
 - styles, and the layout and drawing code of the dock, the cockpit and the entrance animation;
 - the brand marks used in them.
+
+As expressed in these files, this covers:
+
+- the ignition button and its charge, countdown and ignition animation;
+- the dock of engine nozzles;
+- the cockpit's instruments and controls, as drawn and animated;
+- the entrance animation;
+- the 3D launch field scene and its models;
+- the website's launch-pad visuals, once they are added here.
+
+This license does not claim ideas, methods of operation or metaphors as such. It covers their expression in these files.
 
 Model Plan claims these rights only to the extent they exist under applicable law.
 
