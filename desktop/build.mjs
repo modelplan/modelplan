@@ -1,4 +1,6 @@
-// Community build by default. A private official visual package is an explicit, isolated input.
+// Community build by default. The official edition is an explicit choice: --official assembles the
+// reserved visuals in desktop/official-visuals/ (LicenseRef-ModelPlan-Visuals-1.0), and
+// --visual-package <dir> assembles an external package that lies outside this checkout.
 import { build } from "esbuild";
 import {
   copyFile,
@@ -15,18 +17,41 @@ import { fileURLToPath } from "node:url";
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
 const dist = here("app/dist/");
 const args = process.argv.slice(2);
-if (args.length && (args.length !== 2 || args[0] !== "--visual-package"))
-  throw Error("usage: node build.mjs [--visual-package /private/package]");
-const visual = args.length ? await realpath(resolve(args[1])) : null;
-if (
-  visual &&
-  process.env.GITHUB_ACTIONS === "true" &&
-  process.env.GITHUB_REPOSITORY === "modelplan/modelplan"
-)
-  throw Error("private_visuals_forbidden_in_public_ci");
+const usage =
+  "usage: node build.mjs [--official | --visual-package /path/to/package]";
+const official = args.length === 1 && args[0] === "--official";
+const external = args.length === 2 && args[0] === "--visual-package";
+if (args.length && !official && !external) throw Error(usage);
 const publicRoot = await realpath(here("../"));
-if (visual && !relative(publicRoot, visual).startsWith(".." + sep))
-  throw Error("official_visuals_must_be_outside_public_checkout");
+let visual = null;
+if (official) {
+  // Only this branch reads the reserved folder; the community build never does.
+  const reserved = here("official-visuals");
+  const s = await lstat(reserved);
+  visual = await realpath(reserved);
+  if (
+    !s.isDirectory() ||
+    s.isSymbolicLink() ||
+    relative(publicRoot, visual) !== "desktop" + sep + "official-visuals"
+  )
+    throw Error("official_visuals_must_be_desktop_official_visuals");
+} else if (external) {
+  visual = await realpath(resolve(args[1]));
+  if (
+    process.env.GITHUB_ACTIONS === "true" &&
+    process.env.GITHUB_REPOSITORY === "modelplan/modelplan"
+  )
+    throw Error("external_visual_package_forbidden_in_public_ci");
+  if (!relative(publicRoot, visual).startsWith(".." + sep))
+    throw Error("external_visual_package_must_be_outside_public_checkout");
+}
+for (const f of visual
+  ? ["theme.css", "logo.svg", "LICENSE.md", "branding.json"]
+  : []) {
+  const s = await lstat(resolve(visual, f));
+  if (!s.isFile() || s.isSymbolicLink() || s.size > 1024 * 1024)
+    throw Error("invalid_visual_package");
+}
 const branding = visual
   ? JSON.parse(await readFile(resolve(visual, "branding.json"), "utf8"))
   : {
@@ -42,11 +67,8 @@ if (
   typeof branding.licenseNotice !== "string"
 )
   throw Error("invalid_visual_branding");
-for (const f of visual ? ["theme.css", "logo.svg", "LICENSE.md"] : []) {
-  const s = await lstat(resolve(visual, f));
-  if (!s.isFile() || s.isSymbolicLink() || s.size > 1024 * 1024)
-    throw Error("invalid_visual_package");
-}
+if (official && branding.edition !== "official")
+  throw Error("official_visuals_must_declare_official_edition");
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 const logo = visual
@@ -61,7 +83,14 @@ await build({
   minify: true,
   nodePaths: [here("node_modules")],
   loader: { ".svg": "text" },
-  define: { __MP_BRANDING__: JSON.stringify({ ...branding, logo }) },
+  define: {
+    __MP_BRANDING__: JSON.stringify({
+      name: branding.name,
+      edition: branding.edition,
+      licenseNotice: branding.licenseNotice,
+      logo,
+    }),
+  },
   legalComments: "eof",
   logLevel: "warning",
 });

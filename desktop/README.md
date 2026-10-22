@@ -64,14 +64,21 @@ app/src/        TypeScript front end, shared with future mobile apps
   views/        Now, Quota, Effort, Settings (2D)
 src-tauri/      Rust: tray item, popover, window, the CLI command
 scripts/        fetch-cli.mjs: the pinned CLI as a sidecar
+official-visuals/  the official appearance (reserved license, not MIT; --official only)
 ```
 
 The figures come from the CLI and the publication. The UI only shapes them: it derives no advice of its own.
 
 ## Licence and trademarks
 
-The code here is MIT, like the rest of this repository. The fonts are under the SIL Open Font License (`codex/ui/fonts`). "Model Plan", the Model Plan logo and the app icon are trademarks of the Model Plan project. Forks must use their own name and icon.
+The code here is MIT, like the rest of this repository, except `official-visuals/`, which is under the [Model Plan Official Visuals License 1.0](official-visuals/LICENSE.md). The fonts are under the SIL Open Font License (`codex/ui/fonts`). "Model Plan", the Model Plan logo and the app icon are trademarks of the Model Plan project. Forks must use their own name and icon.
 
 ## Community and official appearance
 
-The public default is the complete MIT community edition, with neutral styling and a generic mark. Official distinctive visual additions are assembled from an explicitly supplied private package outside this checkout; they are not part of this repository's MIT grant. See [source policy](../docs/source-policy.md) and [licensing map](../LICENSING.md). Historical MIT visual portions retain their grants. Rebuild from a full checkout including `reader/`; a sparse plugin install runs its existing bundled runtime without rebuilding.
+The default build is the complete MIT community edition, with neutral styling and a generic mark; it never reads `official-visuals/`. The official edition is built from the same checkout:
+
+```sh
+npm run build:official   # node build.mjs --official: theme, logo and branding from official-visuals/, license as VISUAL-LICENSE.md
+```
+
+The official visuals in `official-visuals/` are not part of this repository's MIT grant: you may read them and build the official app for your own use, but forks and redistributed builds must ship the community edition. `node build.mjs --visual-package <dir>` still assembles an external package that lies outside this checkout. See [source policy](../docs/source-policy.md) and [licensing map](../LICENSING.md). Historical MIT visual portions retain their grants. Rebuild from a full checkout including `reader/`; a sparse plugin install runs its existing bundled runtime without rebuilding.

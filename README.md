@@ -227,4 +227,4 @@ If Model Plan saves you quota or money, a ⭐ helps others find it.
 
 ## License
 
-Code: [MIT](LICENSE). Open data: [per-file licenses](data/LICENSE), crediting Model Plan; the new original-data publication uses CC BY-SA 4.0, historical CC BY 4.0 grants remain valid, and third-party figures keep their sources' terms. Official visual additions and branding are separate: [licensing map](LICENSING.md). Model Plan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.
+Code: [MIT](LICENSE). Open data: [per-file licenses](data/LICENSE), crediting Model Plan; the new original-data publication uses CC BY-SA 4.0, historical CC BY 4.0 grants remain valid, and third-party figures keep their sources' terms. The official desktop visuals in [`desktop/official-visuals/`](desktop/official-visuals/) are under their own [reserved license](desktop/official-visuals/LICENSE.md), not MIT; branding is separate too: [licensing map](LICENSING.md). Model Plan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.

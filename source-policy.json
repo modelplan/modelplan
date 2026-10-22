@@ -6,7 +6,6 @@
     "server/",
     "deploy/",
     "ops-worker/",
-    "official-visuals/",
     "private/",
     "source-caches/",
     "desktop/app/dist/",
@@ -40,5 +39,26 @@
     "docs/assets/statusline-en.png": "3015290d71ca4d2966a4f441ee24ca9e7852d26c24f110a70ca3f10462a18afb",
     "docs/assets/statusline-zh.png": "d1ec1b137dacefc8977a58b33b587aaeee3bddf19a919648ad8812e7e6f0e68b"
   },
-  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong in the private package."
+  "reservedVisuals": {
+    "prefix": "desktop/official-visuals/",
+    "license": "LicenseRef-ModelPlan-Visuals-1.0",
+    "licenseFile": "desktop/official-visuals/LICENSE.md",
+    "licenseText": "LICENSES/LicenseRef-ModelPlan-Visuals-1.0.txt",
+    "binaries": {},
+    "historicalMit": {
+      "desktop/official-visuals/HISTORICAL-MIT.txt": "cab1ffcc0d3ed95f6736bc1f31b74f6a0ccdb1458deedc2f6e9a3532630d2a4f",
+      "desktop/official-visuals/icons/128x128.png": "f12ce2d3b16a6d4d768faea8f089af7481db4af25038e13b07d5818517b78317",
+      "desktop/official-visuals/icons/128x128@2x.png": "2dbc790885f334af2de80e7d3a1a06c5cc8dbcfc346c508e96c10e82317cdbd4",
+      "desktop/official-visuals/icons/32x32.png": "0d2618466783c5c069966c18867007f1f22e8c4f16ab1faf8188e390fc0fc0de",
+      "desktop/official-visuals/icons/icon.icns": "0711ce14413f6e0797dc897c0cd913dbb810a55a7e722ebbb918cfa30dd44c92",
+      "desktop/official-visuals/icons/icon.png": "06f46b37877ce515ce452ce2be2bbb88a83c7fbc0f97760b5ce2c9e1edc2c358",
+      "desktop/official-visuals/icons/source/app-icon.svg": "e083eefe9acc04031e7316f484f8d02528b3b1e719a9e058b962d4019a8a3b2e",
+      "desktop/official-visuals/icons/source/tray.svg": "059022c2131e77323b5fa511cd2d788cd870086672bdf37d5a062847a5ae34cc",
+      "desktop/official-visuals/icons/tray.png": "3f5fe5791e23d272a58983de77808c16dd48e2e623729070e9b3ff392c37b620",
+      "desktop/official-visuals/logo.svg": "496544dc8192dea29d783c3e2e3ad2779f74ff710bea00c0476137d2cffbb70b",
+      "desktop/official-visuals/theme.css": "2727f72a72bb89272be87ec2d1fd543863d5ed6156f19980a6a2d565c72b7860"
+    },
+    "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256."
+  },
+  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix."
 }
