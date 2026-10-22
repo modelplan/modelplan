@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.32, Codex plugin 0.15.24 and Claude Code plugin 0.7.23 (2026-10-22)
+
 - The CLI, the publication reader and the Codex plugin now skip manifest component kinds they do not know, instead of rejecting the whole publication. This lets the producer add page-sized slices (modelplans.ai #544) without breaking installed clients.
   - Unknown kinds still need a well-formed name and reference (hash, size, schema version), and are never downloaded.
   - The seven base kinds and `client` remain required. A manifest may list at most 32 kinds.
@@ -17,6 +19,7 @@ These ship with the next CLI release; its pin PR gives them a version heading.
   - A stored choice is kept, so a user who turned labels off stays off.
   - `modelplan project-labels off` still deletes the stored names.
   - The names stay on this machine and are never synced or uploaded.
+- Both plugins pin CLI v0.5.32.
 
 ## CLI v0.5.31, Codex plugin 0.15.23 and Claude Code plugin 0.7.22 (2026-10-22)
 
