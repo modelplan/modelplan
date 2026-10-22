@@ -34,7 +34,16 @@ type PerfLedger struct {
 	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
 
-	project func(cwd string) (ref, label string) // while observing: names a session's project
+	project      func(cwd string) (ref, label string) // while observing: names a session's project
+	subscription string                               // while observing: the harness account's reference
+}
+
+// Ingest: what the caller knows while the ledger reads new turns. Labels: project labels are on
+// (while off, none is kept). Subscription: the reference of the account the harness is signed in
+// to now (quota's identity.go), "" when unknown.
+type Ingest struct {
+	Labels       bool
+	Subscription string
 }
 
 // PerfSession is one harness session (a Claude Code transcript, a Codex thread), known only by a
@@ -47,11 +56,14 @@ type PerfSession struct {
 	// ProjectRef: the opaque reference of the session's project (project.go), "" when its log
 	// records no working directory. ProjectLabel: the project folder's name, only while project
 	// labels are on.
-	ProjectRef   string       `json:"projectRef,omitempty"`
-	ProjectLabel string       `json:"projectLabel,omitempty"`
-	FirstAt      time.Time    `json:"firstAt"` // its first counted turn's start, to the minute
-	LastAt       time.Time    `json:"lastAt"`  // its newest sample's completion, to the minute
-	Days         []SessionDay `json:"days"`
+	ProjectRef   string `json:"projectRef,omitempty"`
+	ProjectLabel string `json:"projectLabel,omitempty"`
+	// SubscriptionRef: the account the harness was signed in to when the session's first turn
+	// with a known one was read; "" when unknown.
+	SubscriptionRef string       `json:"subscriptionRef,omitempty"`
+	FirstAt         time.Time    `json:"firstAt"` // its first counted turn's start, to the minute
+	LastAt          time.Time    `json:"lastAt"`  // its newest sample's completion, to the minute
+	Days            []SessionDay `json:"days"`
 }
 
 // SessionDay: what one configuration of a session produced on one local day.
@@ -116,8 +128,9 @@ func LoadPerf(cache string) (l PerfLedger, ok bool) {
 }
 
 // observePerf: as observe, for perf.json. A new ledger is written even with nothing in it yet, so
-// that its Since holds. labels: project labels are on; while off, none is kept.
-func observePerf(cache string, now time.Time, labels bool, f func(*PerfLedger) bool) error {
+// that its Since holds.
+func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) bool) error {
+	labels := in.Labels
 	if Off() {
 		return nil
 	}
@@ -137,7 +150,7 @@ func observePerf(cache string, now time.Time, labels bool, f func(*PerfLedger) b
 	if l.Files == nil {
 		l.Files = map[string]Cursor{}
 	}
-	l.project = projector(cache, labels)
+	l.project, l.subscription = projector(cache, labels), in.Subscription
 	changed := false
 	for i := range l.Sessions {
 		if !labels && l.Sessions[i].ProjectLabel != "" {
@@ -180,6 +193,9 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	}
 	if start.Before(s.FirstAt) {
 		s.FirstAt = start
+	}
+	if s.SubscriptionRef == "" {
+		s.SubscriptionRef = l.subscription
 	}
 	if t.cwd != "" && l.project != nil && (s.ProjectRef == "" || s.ProjectLabel == "") {
 		// The first working directory names the project; a label comes once labels are on.

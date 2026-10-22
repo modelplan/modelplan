@@ -64,6 +64,16 @@ type ccSnapshot struct {
 	SessionKey string `json:"sessionKey,omitempty"`
 	// Recent: earlier readings per window kind from the last hour, for the recent rate of use.
 	Recent map[string][]Sample `json:"recent,omitempty"`
+	// Identity: the subscription of the account Claude Code is signed in to (identity.go), with
+	// the size and time of the file it came from, so the file is read again only when it changes.
+	Identity *ccIdentity `json:"identity,omitempty"`
+}
+
+type ccIdentity struct {
+	Ref        string    `json:"subscriptionRef"`
+	FileSize   int64     `json:"fileSize"`
+	FileTime   time.Time `json:"fileTime"`
+	ObservedAt time.Time `json:"observedAt"`
 }
 
 // SessionKey is the one-way key for a Claude Code session id ("" for none).
@@ -115,14 +125,19 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	}
 	snap := ccSnapshot{SchemaVersion: 1, Source: "claude-code-statusline", ObservedAt: a.ObservedAt, Harness: *a.Harness, Windows: a.Windows, SessionKey: SessionKey(in.SessionID)}
 	p := snapshotPath(cache)
+	var prev *ccSnapshot
 	if old, err := os.ReadFile(p); err == nil {
-		var prev ccSnapshot
-		if json.Unmarshal(old, &prev) == nil && prev.SchemaVersion == 1 {
-			if now.Sub(prev.ObservedAt) < time.Minute && bytes.Equal(content(prev), content(snap)) {
-				return nil
-			}
-			snap.Recent = keepRecent(prev, snap.Windows)
+		var x ccSnapshot
+		if json.Unmarshal(old, &x) == nil && x.SchemaVersion == 1 {
+			prev = &x
 		}
+	}
+	snap.Identity = claudeIdentity(cache, prev, now)
+	if prev != nil {
+		if now.Sub(prev.ObservedAt) < time.Minute && bytes.Equal(content(*prev), content(snap)) {
+			return nil
+		}
+		snap.Recent = keepRecent(*prev, snap.Windows)
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
@@ -208,6 +223,9 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 	}
 	if a.Windows == nil {
 		a.Windows = []Window{}
+	}
+	if id := s.Identity; id != nil && id.Ref != "" && !IdentityOff() {
+		a.Subscription = &Binding{Ref: id.Ref, Status: "verified", Basis: "claude-config", ObservedAt: id.ObservedAt}
 	}
 	st.Status = "ok"
 	if len(a.Windows) == 0 {

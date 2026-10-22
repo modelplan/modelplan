@@ -352,6 +352,11 @@ type codexbarEntry struct {
 	Plan       string    `json:"plan,omitempty"`
 	ObservedAt time.Time `json:"observedAt"`
 	Windows    []Window  `json:"windows,omitempty"`
+	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
+	// native reader, the API key; neither is kept.
+	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+
+	identity string
 }
 
 type codexbarSnap struct {
@@ -435,6 +440,9 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 	for _, prov := range enabled {
 		out, err := runCodexBar(ctx, bin, prov)
 		e := parseCodexBar(out, prov, home, now)
+		if e.identity != "" && !IdentityOff() {
+			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
+		}
 		if e.Status == "error" && e.Error == "" && err != nil {
 			e.Error = clean(err.Error(), home)
 		}
@@ -522,8 +530,12 @@ type cbPayload struct {
 			Window *cbWindow `json:"window"`
 		} `json:"extraRateWindows"`
 		DataConfidence string `json:"dataConfidence"`
-		UpdatedAt      string `json:"updatedAt"`
-		LoginMethod    string `json:"loginMethod"`
+		Identity       *struct {
+			AccountID    string `json:"accountID"`
+			AccountEmail string `json:"accountEmail"`
+		} `json:"identity"`
+		UpdatedAt   string `json:"updatedAt"`
+		LoginMethod string `json:"loginMethod"`
 	} `json:"usage"`
 	Labels *struct {
 		Primary   string `json:"primary"`
@@ -570,6 +582,12 @@ func parseCodexBar(out []byte, provider, home string, now time.Time) codexbarEnt
 		e.Status = "estimated"
 		return e
 	}
+	if id := u.Identity; id != nil {
+		e.identity = id.AccountID
+		if e.identity == "" {
+			e.identity = strings.ToLower(id.AccountEmail)
+		}
+	}
 	if m := label(u.LoginMethod); m != "" && !strings.Contains(m, "@") {
 		e.Plan = m
 	}
@@ -593,6 +611,13 @@ func parseCodexBar(out []byte, provider, home string, now time.Time) codexbarEnt
 	}
 	e.Status = "ok"
 	return e
+}
+
+func (e codexbarEntry) binding(basis string) *Binding {
+	if e.SubscriptionRef == "" || IdentityOff() {
+		return nil
+	}
+	return &Binding{Ref: e.SubscriptionRef, Status: "verified", Basis: basis, ObservedAt: e.ObservedAt}
 }
 
 func cbWindowOf(w *cbWindow, label string, observed time.Time) (Window, bool) {
@@ -675,7 +700,7 @@ func applyCodexBar(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
 			st.Status = "ok"
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...), Via: "codexbar"})
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...), Via: "codexbar", Subscription: e.binding("codexbar")})
 		}
 		r.Sources = append(r.Sources, st)
 	}

@@ -48,6 +48,8 @@ type accountSnap struct {
 	// the answer carried the field at all (older Codex versions leave it out).
 	Usage     *Credits `json:"usageCredits,omitempty"`
 	UsageRead bool     `json:"usageRead,omitempty"`
+	// SubscriptionRef: the account's reference (identity.go); the identity itself is not kept.
+	SubscriptionRef string `json:"subscriptionRef,omitempty"`
 }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
@@ -134,7 +136,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if err != nil {
 		return errors.Join(err, save(cache, &accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: short(err.Error())}))
 	}
-	return save(cache, snapFrom(resp, now))
+	s := snapFrom(resp, now)
+	if resp.identity != "" {
+		s.SubscriptionRef = assignSubscription(cache, "codex-account", resp.identity, now)
+	}
+	return save(cache, s)
 }
 
 // short keeps an error message to one line of at most 160 bytes.
@@ -192,6 +198,7 @@ type rlSnapshot struct {
 type rlResponse struct {
 	RateLimits           *rlSnapshot            `json:"rateLimits"`
 	RateLimitsByLimitID  map[string]*rlSnapshot `json:"rateLimitsByLimitId"`
+	identity             string                 // from account/read; never cached
 	RateLimitResetCredit *struct {
 		AvailableCount int64 `json:"availableCount"`
 		Credits        []struct {
@@ -260,7 +267,32 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return nil, err
 	}
+	if IdentityOff() {
+		return &r, nil
+	}
+	// Which account the meters belong to: account/read, without refreshing the login. A failure
+	// leaves the reading without a subscription.
+	if send(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "account/read", "params": map[string]any{"refreshToken": false}}) == nil {
+		if raw, err := wait(3); err == nil {
+			r.identity = codexIdentity(raw)
+		}
+	}
 	return &r, nil
+}
+
+// codexIdentity: the signed-in ChatGPT account (its e-mail, as Codex reports it), "" for an API
+// key login or none.
+func codexIdentity(raw json.RawMessage) string {
+	var a struct {
+		Account *struct {
+			Type  string `json:"type"`
+			Email string `json:"email"`
+		} `json:"account"`
+	}
+	if json.Unmarshal(raw, &a) != nil || a.Account == nil || a.Account.Type == "apiKey" {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(a.Account.Email))
 }
 
 func snapFrom(r *rlResponse, now time.Time) *accountSnap {
@@ -374,6 +406,9 @@ func applyAccount(r *Report, cache string, now time.Time) {
 		a.ObservedAt = s.ObservedAt
 	}
 	a.Via = "codex-account"
+	if s.SubscriptionRef != "" && !IdentityOff() {
+		a.Subscription = &Binding{Ref: s.SubscriptionRef, Status: "verified", Basis: "codex-account", ObservedAt: s.ObservedAt}
+	}
 	if s.UsageRead && (a.Credits == nil || !s.ObservedAt.Before(a.Credits.ObservedAt)) {
 		a.Credits = s.Usage // the newer say wins, "none" included
 	}

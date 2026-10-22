@@ -476,7 +476,8 @@ type SessionConfig struct {
 type RankedSession struct {
 	Ref                  string          `json:"ref"`
 	Source               string          `json:"source"`
-	ProjectRef           *string         `json:"projectRef"` // null when the log records no working directory
+	ProjectRef           *string         `json:"projectRef"`      // null when the log records no working directory
+	SubscriptionRef      *string         `json:"subscriptionRef"` // null when unknown
 	FirstAt              time.Time       `json:"firstAt"`
 	LastAt               time.Time       `json:"lastAt"`
 	ObservedOutputTokens int64           `json:"observedOutputTokens"`
@@ -512,7 +513,7 @@ func (v PerfView) rank(from string) SessionWindow {
 	}
 	var all []RankedSession
 	for _, s := range v.Ledger.Sessions {
-		r := RankedSession{Ref: s.Ref, Source: s.Source, ProjectRef: refOrNil(s.ProjectRef), FirstAt: s.FirstAt, LastAt: s.LastAt}
+		r := RankedSession{Ref: s.Ref, Source: s.Source, ProjectRef: refOrNil(s.ProjectRef), SubscriptionRef: refOrNil(s.SubscriptionRef), FirstAt: s.FirstAt, LastAt: s.LastAt}
 		var c configSums
 		for _, d := range s.Days {
 			if d.Day >= from {
@@ -543,6 +544,15 @@ func (v PerfView) rank(from string) SessionWindow {
 		w.Top = append(w.Top, all[i])
 	}
 	return w
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
 }
 
 func refOrNil(ref string) *string {
@@ -594,9 +604,11 @@ func (c *configSums) top() []SessionConfig {
 // Label is the project folder's name, only while project labels are on; the desktop otherwise
 // names projects by their rank.
 type RankedProject struct {
-	Ref                  string          `json:"ref"`
-	Label                *string         `json:"label"`
-	Sessions             int             `json:"sessions"` // with observed output in the window
+	Ref      string  `json:"ref"`
+	Label    *string `json:"label"`
+	Sessions int     `json:"sessions"` // with observed output in the window
+	// SubscriptionRefs: the subscriptions its sessions ran under, as far as known, sorted.
+	SubscriptionRefs     []string        `json:"subscriptionRefs"`
 	LastAt               time.Time       `json:"lastAt"`
 	ObservedOutputTokens int64           `json:"observedOutputTokens"`
 	ObservedRequests     int             `json:"observedRequests"`
@@ -662,6 +674,9 @@ func (v PerfView) projects(from string) ProjectWindow {
 			order = append(order, s.ProjectRef)
 		}
 		a.p.Sessions++
+		if s.SubscriptionRef != "" && !contains(a.p.SubscriptionRefs, s.SubscriptionRef) {
+			a.p.SubscriptionRefs = append(a.p.SubscriptionRefs, s.SubscriptionRef)
+		}
 		a.p.ObservedOutputTokens += out
 		a.p.ObservedRequests += reqs
 		if s.LastAt.After(a.p.LastAt) {
@@ -681,6 +696,10 @@ func (v PerfView) projects(from string) ProjectWindow {
 	for _, k := range order {
 		a := by[k]
 		a.p.Configs = a.c.top()
+		if a.p.SubscriptionRefs == nil {
+			a.p.SubscriptionRefs = []string{}
+		}
+		sort.Strings(a.p.SubscriptionRefs)
 		all = append(all, a.p)
 	}
 	sort.SliceStable(all, func(i, j int) bool {

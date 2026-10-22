@@ -3,7 +3,8 @@
 // `modelplan statusline` records, the user-maintained local.json and, for providers the user
 // enabled, CodexBar's reading (codexbar.go) or a native reader's (quota_native.go: the vendor's
 // usage endpoint, with an API key the user keeps in an environment variable, sent only to that
-// vendor). It never opens credential files, and nothing it reads leaves the machine.
+// vendor). It never opens credential files, and nothing it reads leaves the machine. Which account a
+// meter belongs to is kept only as a random local reference (identity.go).
 package quota
 
 import (
@@ -124,6 +125,8 @@ type Account struct {
 	Harness    *Harness  `json:"harness,omitempty"`
 	Windows    []Window  `json:"windows"`
 	Cards      []Card    `json:"cards,omitempty"`
+	// Subscription: the account the windows belong to, when a reader saw it (identity.go).
+	Subscription *Binding `json:"subscription,omitempty"`
 	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on
 	// once a plan window is used up. Unlike cards they restore no window.
 	Credits  *Credits `json:"credits,omitempty"`

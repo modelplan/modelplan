@@ -54,7 +54,7 @@ func TestProjectRanking(t *testing.T) {
 	os.RemoveAll(gone)
 	seedPerf(t, cache, t0.Add(-time.Minute))
 	now := t0.Add(5 * time.Minute)
-	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, false, now); err != nil {
+	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, Ingest{}, now); err != nil {
 		t.Fatal(err)
 	}
 	v := view(t, cache, now)
@@ -102,7 +102,7 @@ func TestProjectRanking(t *testing.T) {
 		t.Fatal("labels on", err)
 	}
 	writeLines(t, rollouts[1], cxTurnLines(100, fmt.Sprintf(`{"model":"fixture-model","effort":"high","cwd":%q}`, worktree), 30, req{200, 20, 1})...)
-	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, true, now.Add(10*time.Minute)); err != nil {
+	if err := ObserveCodex(cache, rollouts, func(string) bool { return false }, Ingest{Labels: true}, now.Add(10*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	if l := view(t, cache, now.Add(10*time.Minute)).Projects().Recent7d.Top[0].Label; l == nil || *l != "acme" {
@@ -133,7 +133,7 @@ func TestClaudeSessionProject(t *testing.T) {
 	p := filepath.Join(dir, "s.jsonl")
 	prompt := strings.Replace(ccPrompt(0), `"type":"user"`, fmt.Sprintf(`"cwd":%q,"type":"user"`, filepath.Join(repo, "src")), 1)
 	writeLines(t, p, prompt, ccReply(10, "r1", "claude-fixture", "high", "", 900, 0, "end_turn", false))
-	if err := ObserveClaude(cache, p, false, false, t0.Add(time.Minute)); err != nil {
+	if err := ObserveClaude(cache, p, false, Ingest{}, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	w := view(t, cache, t0.Add(time.Minute)).Projects().Recent7d
@@ -161,5 +161,25 @@ func TestProjectCap(t *testing.T) {
 	}
 	if n != maxProjects || len(l.Sessions) != maxProjects+3 || l.Sessions[0].ProjectRef != "" || l.Sessions[len(l.Sessions)-1].ProjectRef == "" {
 		t.Fatalf("projects kept = %d of %d", n, len(l.Sessions))
+	}
+}
+
+func TestSessionSubscription(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	p := filepath.Join(dir, "rollout-s.jsonl")
+	writeLines(t, p, cxTurnLines(0, high, 30, req{500, 20, 1})...)
+	if err := ObserveCodex(cache, []string{p}, func(string) bool { return false }, Ingest{Subscription: "1111aaaa2222bbbb"}, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// A later turn read under another account keeps the session's first subscription.
+	writeLines(t, p, cxTurnLines(100, high, 30, req{500, 20, 1})...)
+	if err := ObserveCodex(cache, []string{p}, func(string) bool { return false }, Ingest{Subscription: "3333cccc4444dddd"}, t0.Add(5*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	top := view(t, cache, t0.Add(5*time.Minute)).Ranking().Recent7d.Top
+	if len(top) != 1 || top[0].SubscriptionRef == nil || *top[0].SubscriptionRef != "1111aaaa2222bbbb" || top[0].ObservedOutputTokens != 1000 {
+		t.Fatalf("top = %+v", top)
 	}
 }

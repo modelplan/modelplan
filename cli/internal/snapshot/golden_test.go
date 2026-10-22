@@ -39,7 +39,8 @@ func golden() Snapshot {
 	off, fast := false, 1.5
 	r := quota.Report{SchemaVersion: 1, EvaluatedAt: now, Accounts: []quota.Account{
 		{Source: "claude-code", ObservedAt: seen, Headroom: "conserve", Deciding: "five_hour",
-			Harness: &quota.Harness{Model: "claude-opus-5-5", Effort: "high", FastMode: &off, Version: "2.3.1", ObservedAt: &seen, Attribution: "current-thread"},
+			Subscription: &quota.Binding{Ref: "9b1e44d07a2c3f58", Status: "verified", Basis: "claude-config", ObservedAt: seen},
+			Harness:      &quota.Harness{Model: "claude-opus-5-5", Effort: "high", FastMode: &off, Version: "2.3.1", ObservedAt: &seen, Attribution: "current-thread"},
 			Windows: []quota.Window{
 				{Kind: "five_hour", UsedPercent: f(88), WindowMinutes: 300, ResetsAt: at(95), ResetMode: "fixed", ObservedAt: seen, RemainingPercent: f(12), ResetsInMinutes: n(95),
 					ElapsedPercent: f(68), ProjectedPercent: f(129), AgeMinutes: n(2), RecentPercentPerHour: f(20.6), RunsOutInMinutes: n(35), Pace: "tight"},
@@ -94,7 +95,7 @@ func golden() Snapshot {
 			ObservedRequests: 3, ObservedOutputTokens: 1800, EligibleRequests: 3, EligibleOutputTokens: 1800, GenMs: 9000, Turns: 1, TurnMs: 60000, TurnOutputTokens: 1800,
 			TTFTMs: speed.Hist{"76": 3}, TurnMsHist: speed.Hist{"115": 1}, TurnTokensHist: speed.Hist{"78": 1}, LastAt: &last},
 	}, Sessions: []speed.PerfSession{
-		{Ref: "5c1e0d2a9b7f4e31", Key: "k1", Source: "claude-code", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", ProjectLabel: "label-while-off", FirstAt: now.Add(-26 * time.Hour), LastAt: last, Days: []speed.SessionDay{
+		{Ref: "5c1e0d2a9b7f4e31", Key: "k1", Source: "claude-code", SubscriptionRef: "9b1e44d07a2c3f58", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", ProjectLabel: "label-while-off", FirstAt: now.Add(-26 * time.Hour), LastAt: last, Days: []speed.SessionDay{
 			{Day: "2026-10-17", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 30, ObservedOutputTokens: 21000},
 			{Day: "2026-10-18", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 12, ObservedOutputTokens: 9000}}},
 		{Ref: "a83f6c0e12d94b70", Key: "k2", Source: "codex", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", FirstAt: now.Add(-2 * time.Hour), LastAt: last, Days: []speed.SessionDay{

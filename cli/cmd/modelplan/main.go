@@ -452,7 +452,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		if !preview {
 			quota.AttachRecent(st.Dir, &a)
 			_ = history.Observe(st.Dir, quota.Report{Accounts: []quota.Account{a}}, now)
-			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, true, projectLabels(), now)
+			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, true, speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}, now)
 		}
 		quota.Evaluate(&a, now)
 		acct = &a
@@ -589,7 +589,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	report := quota.Read(paths, now)
 	_ = history.Observe(st.Dir, report, now)
 	if harness == "claude-code" {
-		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, projectLabels(), now)
+		_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}, now)
 	} else {
 		observeCodexSpeed(st, now)
 	}
@@ -760,7 +760,8 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 // runs by itself.
 func observeCodexSpeed(st *store.Store, now time.Time) {
 	home := quotaPaths(st).CodexHome
-	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") }, projectLabels(), now)
+	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
+		speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
 }
 
 // projectLabelsCmd shows or sets the project-label opt-in (the desktop asks on first open).
