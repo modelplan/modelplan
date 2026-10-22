@@ -16,6 +16,7 @@ type ccLine struct {
 	IsMeta      bool     `json:"isMeta"`
 	IsCompact   bool     `json:"isCompactSummary"`
 	RequestID   string   `json:"requestId"`
+	Cwd         string   `json:"cwd"`
 	Effort      string   `json:"effort"`
 	ThinkingMs  *float64 `json:"thinkingDurationMs"`
 	Message     struct {
@@ -45,6 +46,7 @@ type ccTurn struct {
 	ended    bool // the last reply ended the turn (end_turn)
 	reqs     []ccRequest
 	trigger  time.Time // when the prompt or latest tool result was written
+	cwd      string
 }
 
 type claudeParser struct {
@@ -92,7 +94,7 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 			return
 		}
 		p.close()
-		p.cur = &ccTurn{off: off, at: ts, trigger: ts}
+		p.cur = &ccTurn{off: off, at: ts, trigger: ts, cwd: l.Cwd}
 	case "assistant":
 		t := p.cur
 		u := l.Message.Usage
@@ -118,6 +120,9 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 			}
 		}
 		t.last, t.ended = ts, l.Message.StopReason == "end_turn"
+		if t.cwd == "" {
+			t.cwd = l.Cwd
+		}
 	}
 }
 
@@ -127,7 +132,7 @@ func (p *claudeParser) close() {
 	if t == nil || len(t.reqs) == 0 {
 		return
 	}
-	out := turn{cfg: t.reqs[len(t.reqs)-1].cfg, at: t.at, dur: t.last.Sub(t.at)}
+	out := turn{cfg: t.reqs[len(t.reqs)-1].cfg, at: t.at, dur: t.last.Sub(t.at), cwd: t.cwd}
 	for _, q := range t.reqs {
 		r := request{out: q.out, cfg: q.cfg, end: q.end}
 		if !q.first.IsZero() && q.end.After(q.first) {

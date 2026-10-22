@@ -22,6 +22,7 @@ type cxTurn struct {
 	reqs  []request
 	out   int64
 	skip  bool
+	cwd   string
 	start time.Time // the current request's
 	first int64     // its first token, unix ms; 0 unknown
 	used  bool      // its usage was counted
@@ -29,6 +30,7 @@ type cxTurn struct {
 
 type codexParser struct {
 	cur  *cxTurn
+	cwd  string // the session's, from its session_meta
 	done []turn
 }
 
@@ -51,7 +53,16 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 	t := p.cur
 	switch {
 	case event == "task_started" || event == "turn_started":
-		p.cur = &cxTurn{off: off, at: ts, start: ts}
+		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd}
+	case kind == "session_meta":
+		var c struct {
+			Payload struct {
+				Cwd string `json:"cwd"`
+			} `json:"payload"`
+		}
+		if json.Unmarshal(b, &c) == nil {
+			p.cwd = c.Payload.Cwd
+		}
 	case t == nil:
 		return
 	case kind == "turn_context":
@@ -60,6 +71,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 				Model       string `json:"model"`
 				Effort      string `json:"effort"`
 				ServiceTier string `json:"service_tier"`
+				Cwd         string `json:"cwd"`
 				Mode        struct {
 					Settings struct {
 						Effort string `json:"reasoning_effort"`
@@ -74,6 +86,9 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			}
 			t.cfg = config{clip(c.Payload.Model), clip(e), speedMode(clip(c.Payload.ServiceTier))}
 			t.skip = c.Payload.Model == "codex-auto-review"
+			if c.Payload.Cwd != "" {
+				t.cwd = c.Payload.Cwd
+			}
 		}
 	case event == "user_message" || event == "function_call_output" || event == "custom_tool_call_output":
 		t.start, t.first, t.used = ts, 0, false
@@ -150,7 +165,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			r.cfg = t.cfg
 			all[i] = r
 		}
-		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all})
+		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all, cwd: t.cwd})
 	case event == "turn_aborted":
 		p.cur = nil
 	}

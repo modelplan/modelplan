@@ -140,3 +140,35 @@ func TestDesktopReadOnlyCreatesNoCache(t *testing.T) {
 		t.Errorf("read-only created the cache: %v", err)
 	}
 }
+
+func TestProjectLabelsCommand(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	state := func(args ...string) any {
+		var out bytes.Buffer
+		if code := run(append([]string{"project-labels", "--json"}, args...), nil, &out, io.Discard); code != 0 {
+			t.Fatalf("project-labels %v: exit %d", args, code)
+		}
+		var v map[string]any
+		_ = json.Unmarshal(out.Bytes(), &v)
+		return v["projectLabels"]
+	}
+	if state() != false || state("on") != true || state() != true {
+		t.Fatal("on is remembered")
+	}
+	var out bytes.Buffer
+	run([]string{"desktop", "--json", "--read-only"}, nil, &out, io.Discard)
+	var s map[string]any
+	_ = json.Unmarshal(out.Bytes(), &s)
+	if s["projectLabels"] != true || s["projectRanking"] == nil {
+		t.Fatalf("snapshot projectLabels = %v", s["projectLabels"])
+	}
+	if state("off") != false {
+		t.Fatal("off")
+	}
+	if code := run([]string{"project-labels", "maybe"}, nil, io.Discard, io.Discard); code != exitUsage {
+		t.Fatal("unknown subcommand is a usage error")
+	}
+}

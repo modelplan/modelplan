@@ -464,6 +464,11 @@ type SessionConfig struct {
 	Effort               string `json:"effort"`
 	Speed                string `json:"speed"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
+	// Share: of the session's or project's observed output in the window.
+	Share float64 `json:"share"`
+	// RecommendedEffort: the published ★ effort of the model, when the publication has one (the
+	// snapshot fills it in).
+	RecommendedEffort *string `json:"recommendedEffort,omitempty"`
 }
 
 // RankedSession is one session in a ranking. Share is its part of the observed output tokens of
@@ -471,6 +476,7 @@ type SessionConfig struct {
 type RankedSession struct {
 	Ref                  string          `json:"ref"`
 	Source               string          `json:"source"`
+	ProjectRef           *string         `json:"projectRef"` // null when the log records no working directory
 	FirstAt              time.Time       `json:"firstAt"`
 	LastAt               time.Time       `json:"lastAt"`
 	ObservedOutputTokens int64           `json:"observedOutputTokens"`
@@ -506,32 +512,19 @@ func (v PerfView) rank(from string) SessionWindow {
 	}
 	var all []RankedSession
 	for _, s := range v.Ledger.Sessions {
-		r := RankedSession{Ref: s.Ref, Source: s.Source, FirstAt: s.FirstAt, LastAt: s.LastAt, Configs: []SessionConfig{}}
-		by := map[[4]string]*SessionConfig{}
-		var keys [][4]string
+		r := RankedSession{Ref: s.Ref, Source: s.Source, ProjectRef: refOrNil(s.ProjectRef), FirstAt: s.FirstAt, LastAt: s.LastAt}
+		var c configSums
 		for _, d := range s.Days {
-			if d.Day < from {
-				continue
+			if d.Day >= from {
+				r.ObservedOutputTokens += d.ObservedOutputTokens
+				r.ObservedRequests += d.ObservedRequests
+				c.add(d)
 			}
-			r.ObservedOutputTokens += d.ObservedOutputTokens
-			r.ObservedRequests += d.ObservedRequests
-			k := [4]string{d.Model, d.EffortStatus, d.Effort, d.Speed}
-			if by[k] == nil {
-				by[k] = &SessionConfig{Model: d.Model, EffortStatus: d.EffortStatus, Effort: d.Effort, Speed: d.Speed}
-				keys = append(keys, k)
-			}
-			by[k].ObservedOutputTokens += d.ObservedOutputTokens
 		}
 		if r.ObservedOutputTokens == 0 {
 			continue
 		}
-		for _, k := range keys {
-			r.Configs = append(r.Configs, *by[k])
-		}
-		sort.SliceStable(r.Configs, func(i, j int) bool { return r.Configs[i].ObservedOutputTokens > r.Configs[j].ObservedOutputTokens })
-		if len(r.Configs) > 3 {
-			r.Configs = r.Configs[:3]
-		}
+		r.Configs = c.top()
 		w.TotalObservedOutputTokens += r.ObservedOutputTokens
 		all = append(all, r)
 	}
@@ -550,6 +543,176 @@ func (v PerfView) rank(from string) SessionWindow {
 		w.Top = append(w.Top, all[i])
 	}
 	return w
+}
+
+func refOrNil(ref string) *string {
+	if ref == "" {
+		return nil
+	}
+	return &ref
+}
+
+// configSums adds up observed output per configuration, in first-seen order.
+type configSums struct {
+	by   map[[4]string]*SessionConfig
+	keys [][4]string
+}
+
+func (c *configSums) add(d SessionDay) {
+	if c.by == nil {
+		c.by = map[[4]string]*SessionConfig{}
+	}
+	k := [4]string{d.Model, d.EffortStatus, d.Effort, d.Speed}
+	if c.by[k] == nil {
+		c.by[k] = &SessionConfig{Model: d.Model, EffortStatus: d.EffortStatus, Effort: d.Effort, Speed: d.Speed}
+		c.keys = append(c.keys, k)
+	}
+	c.by[k].ObservedOutputTokens += d.ObservedOutputTokens
+}
+
+// top: the three largest configurations, each with its share of the whole.
+func (c *configSums) top() []SessionConfig {
+	out := []SessionConfig{}
+	var total int64
+	for _, k := range c.keys {
+		out = append(out, *c.by[k])
+		total += c.by[k].ObservedOutputTokens
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ObservedOutputTokens > out[j].ObservedOutputTokens })
+	if len(out) > 3 {
+		out = out[:3]
+	}
+	for i := range out {
+		if total > 0 {
+			out[i].Share = math.Round(float64(out[i].ObservedOutputTokens)/float64(total)*1000) / 1000
+		}
+	}
+	return out
+}
+
+// RankedProject is one project in a ranking: the sessions under one project reference, summed.
+// Label is the project folder's name, only while project labels are on; the desktop otherwise
+// names projects by their rank.
+type RankedProject struct {
+	Ref                  string          `json:"ref"`
+	Label                *string         `json:"label"`
+	Sessions             int             `json:"sessions"` // with observed output in the window
+	LastAt               time.Time       `json:"lastAt"`
+	ObservedOutputTokens int64           `json:"observedOutputTokens"`
+	ObservedRequests     int             `json:"observedRequests"`
+	Share                float64         `json:"share"`
+	Configs              []SessionConfig `json:"configs"` // the largest first, at most 3
+}
+
+type ProjectWindow struct {
+	Projects int `json:"projects"` // with observed output in the window
+	// TotalObservedOutputTokens: of every session in the window, with or without a project;
+	// UnattributedOutputTokens: the part from sessions whose log records no working directory.
+	TotalObservedOutputTokens int64           `json:"totalObservedOutputTokens"`
+	UnattributedOutputTokens  int64           `json:"unattributedOutputTokens"`
+	Top                       []RankedProject `json:"top"`
+}
+
+// ProjectRanking: the projects whose sessions produced the most observed output tokens, over the
+// recent 7 and 30 local days.
+type ProjectRanking struct {
+	Measure   string        `json:"measure"` // observed-output-tokens
+	Recent7d  ProjectWindow `json:"recent7d"`
+	Recent30d ProjectWindow `json:"recent30d"`
+}
+
+const rankedProjects = 10
+
+func (v PerfView) Projects() ProjectRanking {
+	return ProjectRanking{Measure: "observed-output-tokens", Recent7d: v.projects(windowFrom(v.Now, 7)), Recent30d: v.projects(windowFrom(v.Now, 30))}
+}
+
+func (v PerfView) projects(from string) ProjectWindow {
+	w := ProjectWindow{Top: []RankedProject{}}
+	if !v.OK {
+		return w
+	}
+	type acc struct {
+		p RankedProject
+		c configSums
+	}
+	by := map[string]*acc{}
+	var order []string
+	for _, s := range v.Ledger.Sessions {
+		var out int64
+		var reqs int
+		for _, d := range s.Days {
+			if d.Day >= from {
+				out += d.ObservedOutputTokens
+				reqs += d.ObservedRequests
+			}
+		}
+		if out == 0 {
+			continue
+		}
+		w.TotalObservedOutputTokens += out
+		if s.ProjectRef == "" {
+			w.UnattributedOutputTokens += out
+			continue
+		}
+		a := by[s.ProjectRef]
+		if a == nil {
+			a = &acc{p: RankedProject{Ref: s.ProjectRef}}
+			by[s.ProjectRef] = a
+			order = append(order, s.ProjectRef)
+		}
+		a.p.Sessions++
+		a.p.ObservedOutputTokens += out
+		a.p.ObservedRequests += reqs
+		if s.LastAt.After(a.p.LastAt) {
+			a.p.LastAt = s.LastAt
+		}
+		if s.ProjectLabel != "" && a.p.Label == nil {
+			l := s.ProjectLabel
+			a.p.Label = &l
+		}
+		for _, d := range s.Days {
+			if d.Day >= from {
+				a.c.add(d)
+			}
+		}
+	}
+	all := make([]RankedProject, 0, len(order))
+	for _, k := range order {
+		a := by[k]
+		a.p.Configs = a.c.top()
+		all = append(all, a.p)
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ObservedOutputTokens != all[j].ObservedOutputTokens {
+			return all[i].ObservedOutputTokens > all[j].ObservedOutputTokens
+		}
+		return all[i].LastAt.After(all[j].LastAt)
+	})
+	w.Projects = len(all)
+	for i := range all {
+		if i == rankedProjects {
+			break
+		}
+		all[i].Share = math.Round(float64(all[i].ObservedOutputTokens)/float64(w.TotalObservedOutputTokens)*1000) / 1000
+		w.Top = append(w.Top, all[i])
+	}
+	return w
+}
+
+// LatestProject: the project of the harness's most recently active session, "" when unknown.
+func (v PerfView) LatestProject(source string) string {
+	var pick *PerfSession
+	for i := range v.Ledger.Sessions {
+		s := &v.Ledger.Sessions[i]
+		if s.Source == source && (pick == nil || s.LastAt.After(pick.LastAt)) {
+			pick = s
+		}
+	}
+	if pick == nil {
+		return ""
+	}
+	return pick.ProjectRef
 }
 
 // LastCompleted: when the harness's newest counted request or turn completed (to the minute);
