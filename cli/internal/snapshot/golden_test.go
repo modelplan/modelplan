@@ -19,7 +19,8 @@ import (
 
 var update = flag.Bool("update", false, "rewrite testdata/snapshot.json")
 
-func n(v int) *int { return &v }
+func n(v int) *int       { return &v }
+func i64(v int64) *int64 { return &v }
 
 // golden is a full snapshot: two harness sessions (one on a tight window, one on Codex Fast with a
 // Reserve allowance), a CodexBar account, the advice a desktop client notifies about and measured
@@ -108,6 +109,10 @@ func golden() Snapshot {
 		{Ref: "a83f6c0e12d94b70", Key: "k2", Source: "codex", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", FirstAt: now.Add(-2 * time.Hour), LastAt: last, Days: []speed.SessionDay{
 			{Day: "2026-10-18", Model: "gpt-6-astra", EffortStatus: "reported", Effort: "medium", Speed: "fast", ObservedRequests: 3, ObservedOutputTokens: 1800}}},
 	}}}
+	// Additive v1 examples: known and unknown token kinds, hourly activity and a live session.
+	perf.Ledger.Rows[1].TokenKinds = speed.TokenKinds{InputTokens: i64(12000), CacheReadTokens: i64(90000), CacheWriteTokens: i64(3000)}
+	perf.Ledger.Hourly = []speed.Hourly{{TokenKinds: speed.TokenKinds{InputTokens: i64(12000), CacheReadTokens: i64(90000), CacheWriteTokens: i64(3000)}, Hour: "2026-10-18T08:00:00Z", Source: "claude-code", Model: "claude-opus-5-5", ObservedOutputTokens: 9000, ObservedRequests: 12}}
+	perf.Ledger.Live = []speed.LiveRecord{{Key: "private-fixture-key", Ref: "5c1e0d2a9b7f4e31", Source: "claude-code", Model: "claude-opus-5-5", Effort: "high", StartedAt: now.Add(-time.Minute), LastAt: now.Add(-10 * time.Second), Running: true}}
 	// The pace ledger: two closed Claude Code five-hour cycles and the open one.
 	cyc := func(reset time.Duration, from, to float64, span time.Duration, drops int) history.PaceCycle {
 		r := now.Add(reset)

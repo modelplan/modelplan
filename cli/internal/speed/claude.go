@@ -24,8 +24,11 @@ type ccLine struct {
 		StopReason string          `json:"stop_reason"`
 		Content    json.RawMessage `json:"content"`
 		Usage      *struct {
-			Output int64  `json:"output_tokens"`
-			Speed  string `json:"speed"`
+			Output     int64  `json:"output_tokens"`
+			Input      *int64 `json:"input_tokens"`
+			CacheRead  *int64 `json:"cache_read_input_tokens"`
+			CacheWrite *int64 `json:"cache_creation_input_tokens"`
+			Speed      string `json:"speed"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -34,6 +37,7 @@ type ccLine struct {
 // answers was written; its first token arrives when its thinking started (the thinking block's
 // time minus its duration), unknown without thinking; it ends with its last block.
 type ccRequest struct {
+	TokenKinds
 	id                string
 	cfg               config
 	start, first, end time.Time
@@ -50,9 +54,11 @@ type ccTurn struct {
 }
 
 type claudeParser struct {
-	now  time.Time
-	cur  *ccTurn
-	done []turn
+	now        time.Time
+	cur        *ccTurn
+	done       []turn
+	sidechains bool
+	probe      liveProbe
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -75,7 +81,7 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		return
 	}
 	var l ccLine
-	if json.Unmarshal(b, &l) != nil || l.IsSidechain {
+	if json.Unmarshal(b, &l) != nil || (l.IsSidechain && !p.sidechains) {
 		return
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)
@@ -110,6 +116,7 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		if ts.After(q.end) {
 			q.end = ts
 		}
+		q.TokenKinds.enrich(TokenKinds{InputTokens: u.Input, CacheReadTokens: u.CacheRead, CacheWriteTokens: u.CacheWrite})
 		if u.Output > q.out {
 			q.out = u.Output
 		}
@@ -132,9 +139,16 @@ func (p *claudeParser) close() {
 	if t == nil || len(t.reqs) == 0 {
 		return
 	}
+	p.done = append(p.done, ccAsTurn(t))
+}
+
+func ccAsTurn(t *ccTurn) turn {
+	if len(t.reqs) == 0 {
+		return turn{at: t.at, cwd: t.cwd}
+	}
 	out := turn{cfg: t.reqs[len(t.reqs)-1].cfg, at: t.at, dur: t.last.Sub(t.at), cwd: t.cwd}
 	for _, q := range t.reqs {
-		r := request{out: q.out, cfg: q.cfg, end: q.end}
+		r := request{TokenKinds: q.TokenKinds, out: q.out, cfg: q.cfg, end: q.end}
 		if !q.first.IsZero() && q.end.After(q.first) {
 			r.gen = q.end.Sub(q.first)
 			if !q.start.IsZero() && !q.first.Before(q.start) {
@@ -149,10 +163,11 @@ func (p *claudeParser) close() {
 			out.mixed = true
 		}
 	}
-	p.done = append(p.done, out)
+	return out
 }
 
 func (p *claudeParser) finish() ([]turn, int64) {
+	p.probe = p.liveProbe()
 	if t := p.cur; t != nil {
 		if !t.ended && p.now.Sub(later(t.last, t.at)) > idleDrop {
 			p.cur = nil // interrupted long ago: its time says nothing

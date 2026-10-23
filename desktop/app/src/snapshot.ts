@@ -114,7 +114,31 @@ export interface SourceStatus { source: string; status: string; reason?: string 
 
 // One local day of one model: what the CLI saw in the logs it reads, across efforts and speed
 // modes (daily[], dailyLong[]). A day without a row is not a day without use: it is left out.
-export interface DailyTotal {
+export interface TokenKinds {
+  inputTokens?: number | null; // uncached input; null means not recorded for every request
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
+}
+export interface GenerationRate {
+  window: string; value: number | null; n: number; min: number; status: string;
+  reason?: string; source?: string; scope?: string; lastAt?: string | null;
+}
+export interface LiveSession {
+  ref: string; source: string; model: string; effort: string; effortStatus: string; speed: string;
+  projectRef: string | null; subscriptionRef: string | null;
+  startedAt: string; lastAt: string; status: 'running' | 'idle'; rate: GenerationRate;
+}
+export interface PerfSums extends TokenKinds {
+  observedRequests: number; observedOutputTokens: number; eligibleRequests: number;
+  eligibleOutputTokens: number; genMs: number;
+}
+export interface PerfWindow { sums: PerfSums; metrics: Record<string, { value: number | null; status: string; n: number; min: number; reason?: string }> }
+export interface PerfStat { source: string; model: string; windows: { today?: PerfWindow; recent7d: PerfWindow; recent30d: PerfWindow } }
+export interface TodayTotal { source: string; sums: PerfSums }
+export interface HourlyTotal extends TokenKinds {
+  hour: string; source: string; model: string; observedOutputTokens: number; observedRequests: number;
+}
+export interface DailyTotal extends TokenKinds {
   day: string; // local date, YYYY-MM-DD
   source: string;
   model: string;
@@ -143,6 +167,10 @@ export interface Snapshot {
   sources: SourceStatus[];
   events: AdviceEvent[];
   measured: Measured[];
+  liveSessions?: LiveSession[];
+  todayTotals?: TodayTotal[];
+  hourly?: HourlyTotal[];
+  perfStats?: PerfStat[];
   daily: DailyTotal[]; // the last 30 days (CLI 0.5.27+; [] before)
   dailyCoverage?: DailyCoverage;
   dailyLong: DailyTotal[]; // the last 371 days, for a year-long heatmap (CLI 0.5.32+; [] before)
@@ -160,7 +188,7 @@ export function parseSnapshot(raw: unknown): Snapshot {
   const s = v as Snapshot;
   if (s.kind !== KIND) throw Error('snapshot_kind');
   if (!Number.isInteger(s.schemaVersion) || s.schemaVersion < 1) throw Error('snapshot_version');
-  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured', 'daily', 'dailyLong'] as const) {
+  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured', 'daily', 'dailyLong', 'liveSessions', 'todayTotals', 'hourly', 'perfStats'] as const) {
     if (!Array.isArray(s[k])) (s as unknown as Record<string, unknown>)[k] = [];
   }
   for (const a of s.accounts) if (!Array.isArray(a.windows)) a.windows = [];

@@ -6,6 +6,17 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Personal snapshot v1 adds local-day `perfStats[].windows.today`, per-source `todayTotals[]`,
+  recent `liveSessions[]` with a 60-second generation rate, and two-day `hourly[]` buckets.
+- Input, cache-read and cache-write tokens are nullable in performance/daily/hourly sums. Codex
+  inclusive input is normalized without double-counting its usage notice; old unknown data stays null.
+- Separate local subagent logs can appear as independent live sessions. SQLite agents keep their
+  no-first-token limitation; no new account call, upload or content collection is added.
+- History-off stops new recording; read-only projection preserves it. The snapshot docs describe
+  timing boundaries, DST, sample gates and bounded retention. Desktop parser types accept the additions.
+- Complete the existing macOS CLI dependency notices for go-isatty and go-strftime (no dependency change).
+
+
 ## CLI v0.5.32, Codex plugin 0.15.24 and Claude Code plugin 0.7.23 (2026-10-22)
 
 - The CLI, the publication reader and the Codex plugin now skip manifest component kinds they do not know, instead of rejecting the whole publication. This lets the producer add page-sized slices (modelplans.ai #544) without breaking installed clients.

@@ -29,9 +29,12 @@ type cxTurn struct {
 }
 
 type codexParser struct {
-	cur  *cxTurn
-	cwd  string // the session's, from its session_meta
-	done []turn
+	cur      *cxTurn
+	cwd      string // the session's, from its session_meta
+	done     []turn
+	total    *cxUsage
+	probe    liveProbe
+	liveOnly bool
 }
 
 func newCodex() *codexParser { return &codexParser{} }
@@ -111,28 +114,39 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		var c struct {
 			Payload struct {
 				Info *struct {
-					Last *struct {
-						Output int64 `json:"output_tokens"`
-					} `json:"last_token_usage"`
+					Last  *cxUsage `json:"last_token_usage"`
+					Total *cxUsage `json:"total_token_usage"`
 				} `json:"info"`
-				Usage *struct {
-					Output int64 `json:"output_tokens"`
-				} `json:"usage"`
+				Usage *cxUsage `json:"usage"`
 			} `json:"payload"`
 		}
-		if t.used || json.Unmarshal(b, &c) != nil {
+		if json.Unmarshal(b, &c) != nil {
 			return
 		}
-		var out int64 = -1
-		if c.Payload.Info != nil && c.Payload.Info.Last != nil {
-			out = c.Payload.Info.Last.Output
-		} else if c.Payload.Usage != nil {
-			out = c.Payload.Usage.Output
+		var usage *cxUsage
+		if c.Payload.Info != nil {
+			usage = c.Payload.Info.Last
+			if usage == nil {
+				usage = usageDelta(c.Payload.Info.Total, p.total)
+			}
+			if c.Payload.Info.Total != nil {
+				p.total = c.Payload.Info.Total
+			}
+		} else {
+			usage = c.Payload.Usage
 		}
-		if out < 0 {
-			return // a rate-limit notice without usage
+		if usage == nil || usage.Output == nil || *usage.Output < 0 {
+			return
 		}
-		r := request{out: out, end: ts}
+		if t.used {
+			// The token_count notice may add cache fields to the preceding usage record.
+			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *usage.Output {
+				t.reqs[n-1].TokenKinds.enrich(usage.kinds())
+			}
+			return
+		}
+		out := *usage.Output
+		r := request{TokenKinds: usage.kinds(), out: out, end: ts}
 		if t.first > 0 {
 			first := time.UnixMilli(t.first)
 			if ts.After(first) {
@@ -153,7 +167,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			} `json:"payload"`
 		}
 		p.cur = nil
-		if json.Unmarshal(b, &c) != nil || (c.Payload.Error != nil && string(*c.Payload.Error) != "null") || t.skip {
+		if json.Unmarshal(b, &c) != nil || (c.Payload.Error != nil && string(*c.Payload.Error) != "null") || (t.skip && !p.liveOnly) {
 			return
 		}
 		dur := ts.Sub(t.at)
@@ -172,6 +186,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 }
 
 func (p *codexParser) finish() ([]turn, int64) {
+	p.probe = p.liveProbe()
 	if p.cur != nil {
 		return p.done, p.cur.off // read the unfinished turn again next time
 	}

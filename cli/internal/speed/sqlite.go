@@ -53,7 +53,8 @@ type dbRow struct {
 	model      string
 	start, end int64 // unix ms; end 0 while running
 	out        int64
-	cwd        string
+	TokenKinds
+	cwd string
 }
 
 // openRO opens an existing database for reading only.
@@ -114,23 +115,36 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 	since := l.Since.UnixMilli()
 	look := dbLookback.Milliseconds()
 	var pending []int64
+	liveSeen := map[string]bool{}
 	for _, r := range rows {
 		if r.rowid > c.RowID {
 			c.RowID = r.rowid
 		}
-		if r.start <= 0 || r.start < since {
+		if r.start <= 0 {
 			continue
 		}
 		if c.Mark > 0 && r.start < c.Mark-look {
 			continue // history copied into a new row
 		}
+		id := hashID(r.key)
+		_, already := c.Seen[id]
+		if !already && !liveSeen[id] {
+			l.liveDB(source, r, now)
+		}
+		liveSeen[id] = true
 		if r.end <= 0 {
 			if len(pending) < maxPending && now.UnixMilli()-r.start < look {
 				pending = append(pending, r.rowid)
 			}
 			continue
 		}
-		id := hashID(r.key)
+		if r.start < since {
+			c.Seen[id] = r.start
+			if r.start > c.Mark {
+				c.Mark = r.start
+			}
+			continue
+		}
 		if _, done := c.Seen[id]; done {
 			continue
 		}
@@ -156,7 +170,7 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 func (l *PerfLedger) addDBRow(source, parser string, r dbRow) {
 	at, end := time.UnixMilli(r.start), time.UnixMilli(r.end)
 	cfg := config{model: clip(r.model)}
-	q := request{out: max(r.out, 0), cfg: cfg, end: end}
+	q := request{TokenKinds: r.TokenKinds, out: max(r.out, 0), cfg: cfg, end: end}
 	t := turn{cfg: cfg, at: at, dur: max(end.Sub(at), 0), out: q.out, all: []request{q}, cwd: r.cwd}
 	l.add(source, parser, t)
 	if r.session != "" {
@@ -181,3 +195,28 @@ func envPath(k string) string {
 }
 
 func itoa64(v int64) string { return strconv.FormatInt(v, 10) }
+
+func (l *PerfLedger) liveDB(source string, r dbRow, now time.Time) {
+	if r.session == "" {
+		return
+	}
+	at := time.UnixMilli(r.start)
+	last := at
+	if r.end > 0 {
+		last = time.UnixMilli(r.end)
+	}
+	cfg := config{model: clip(r.model)}
+	q := request{TokenKinds: r.TokenKinds, out: max(r.out, 0), cfg: cfg, end: last}
+	var qs []request
+	if r.end > 0 {
+		qs = []request{q}
+	}
+	l.setLive(fileKey(source+":"+r.session), source, liveProbe{cfg: cfg, start: at, last: last, running: r.end <= 0, requests: qs, cwd: r.cwd}, "", now)
+}
+func nullCount(n sql.NullInt64) *int64 {
+	if !n.Valid || n.Int64 < 0 {
+		return nil
+	}
+	x := n.Int64
+	return &x
+}

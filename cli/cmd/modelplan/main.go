@@ -745,6 +745,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		_ = history.Observe(st.Dir, report, now)
 		observeCodexSpeed(st, now)
 		observeAgents(st, now)
+		observeLiveSessions(st, paths, report, now)
 	}
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
@@ -760,6 +761,25 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		Connections: connections.Diagnose(connections.Local(paths), report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
+}
+
+// observeLiveSessions never queries accounts; it only reuses local bindings already read above.
+func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report, now time.Time) {
+	if speed.Off() {
+		return
+	}
+	home, _ := os.UserHomeDir()
+	claude := os.Getenv("CLAUDE_CONFIG_DIR")
+	if claude == "" {
+		claude = filepath.Join(home, ".claude")
+	}
+	refs := map[string]string{}
+	for _, a := range report.Accounts {
+		if a.Subscription != nil {
+			refs[a.Source] = a.Subscription.Ref
+		}
+	}
+	_ = speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex

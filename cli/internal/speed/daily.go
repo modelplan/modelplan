@@ -145,6 +145,9 @@ func rollup(rows []PerfRow, from string) []Daily {
 			j, by[k] = len(out), len(out)
 			out = append(out, Daily{Day: r.Day, Source: r.Source, Model: r.Model})
 		}
+		if r.ObservedRequests > 0 {
+			out[j].TokenKinds.add(r.TokenKinds, out[j].ObservedRequests == 0)
+		}
 		out[j].ObservedOutputTokens += r.ObservedOutputTokens
 		out[j].ObservedRequests += r.ObservedRequests
 	}
@@ -173,6 +176,22 @@ func mergeDaily(dst, src []Daily, from string) ([]Daily, bool) {
 			continue
 		}
 		x := &dst[i]
+		// A roll-up must cover every stored request before it can fill unknown token kinds.
+		if r.ObservedRequests >= x.ObservedRequests && r.ObservedOutputTokens >= x.ObservedOutputTokens {
+			for _, pair := range [][2]**int64{{&x.InputTokens, &r.InputTokens}, {&x.CacheReadTokens, &r.CacheReadTokens}, {&x.CacheWriteTokens, &r.CacheWriteTokens}} {
+				dst, src := pair[0], *pair[1]
+				if src == nil {
+					if r.ObservedRequests > x.ObservedRequests && *dst != nil {
+						*dst = nil
+						changed = true
+					}
+				} else if *dst == nil || **dst < *src {
+					n := *src
+					*dst = &n
+					changed = true
+				}
+			}
+		}
 		if r.ObservedOutputTokens > x.ObservedOutputTokens {
 			x.ObservedOutputTokens, changed = r.ObservedOutputTokens, true
 		}
