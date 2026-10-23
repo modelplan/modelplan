@@ -23,7 +23,10 @@ func (l *PerfLedger) addHourly(source string, q request) {
 		return
 	}
 	t := q.end.Local()
-	h := t.Add(-time.Duration(t.Minute())*time.Minute - time.Duration(t.Second())*time.Second - time.Duration(t.Nanosecond())).Format(time.RFC3339)
+	// Use the observed offset explicitly: a DST transition may be only 30 minutes.
+	// Subtracting wall-clock minutes across that transition can produce a :30 bucket.
+	_, offset := t.Zone()
+	h := time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, time.FixedZone("", offset)).Format(time.RFC3339)
 	i := 0
 	for i < len(l.Hourly) {
 		x := l.Hourly[i]

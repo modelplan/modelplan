@@ -310,3 +310,21 @@ func TestLiveRetentionAndFileBudget(t *testing.T) {
 		t.Fatal("expired local live state kept")
 	}
 }
+
+func TestHourlyHalfHourDST(t *testing.T) {
+	old := time.Local
+	t.Cleanup(func() { time.Local = old })
+	loc, e := time.LoadLocation("Australia/Lord_Howe")
+	if e != nil {
+		t.Fatal(e)
+	}
+	time.Local = loc
+	l := PerfLedger{}
+	for _, s := range []string{"2026-04-05T01:45:00+11:00", "2026-04-05T01:45:00+10:30"} {
+		at, _ := time.Parse(time.RFC3339, s)
+		l.addHourly("codex", request{cfg: config{model: "m"}, end: at})
+	}
+	if len(l.Hourly) != 2 || l.Hourly[0].Hour != "2026-04-05T01:00:00+11:00" || l.Hourly[1].Hour != "2026-04-05T01:00:00+10:30" {
+		t.Fatalf("half-hour fold %+v", l.Hourly)
+	}
+}
