@@ -328,3 +328,16 @@ func TestHourlyHalfHourDST(t *testing.T) {
 		t.Fatalf("half-hour fold %+v", l.Hourly)
 	}
 }
+
+func TestClaudeToolSignalKeepsSessionLive(t *testing.T) {
+	utc(t)
+	cache, dir := t.TempDir(), t.TempDir()
+	seedPerf(t, cache, t0.Add(-time.Minute))
+	p := filepath.Join(dir, "tool.jsonl")
+	writeLines(t, p, ccPrompt(0), ccReply(2, "r", "m", "high", "", 100, 1000, "tool_use", false), ccTool(290))
+	ObserveClaude(cache, p, false, Ingest{}, t0.Add(310*time.Second))
+	live := view(t, cache, t0.Add(310*time.Second)).LiveSessions()
+	if len(live) != 1 || live[0].Status != "running" || !live[0].LastAt.Equal(t0.Add(290*time.Second)) {
+		t.Fatalf("tool signal %+v", live)
+	}
+}

@@ -52,6 +52,7 @@ type ccTurn struct {
 	reqs     []ccRequest
 	trigger  time.Time // when the prompt or latest tool result was written
 	cwd      string
+	signalAt time.Time // latest live signal, separate from completed-turn timing
 }
 
 type claudeParser struct {
@@ -96,11 +97,13 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		if toolResult(l.Message.Content) {
 			if p.cur != nil {
 				p.cur.trigger = ts
+				p.cur.signalAt = ts
+				p.cur.ended = false
 			}
 			return
 		}
 		p.close()
-		p.cur = &ccTurn{off: off, at: ts, trigger: ts, cwd: l.Cwd}
+		p.cur = &ccTurn{off: off, at: ts, trigger: ts, cwd: l.Cwd, signalAt: ts}
 	case "assistant":
 		t := p.cur
 		u := l.Message.Usage
@@ -126,6 +129,7 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 				q.first = first
 			}
 		}
+		t.signalAt = ts
 		t.last, t.ended = ts, l.Message.StopReason == "end_turn"
 		if t.cwd == "" {
 			t.cwd = l.Cwd
@@ -223,7 +227,7 @@ func claudeRequest(q ccRequest) request {
 func (p *claudeParser) signals() []sessionSignal {
 	out := completedSignals(p.done)
 	if t := p.cur; t != nil {
-		x := sessionSignal{start: t.at, last: later(t.last, t.at), running: !t.ended, cwd: t.cwd}
+		x := sessionSignal{start: t.at, last: later(t.signalAt, later(t.last, t.at)), running: !t.ended, cwd: t.cwd}
 		for _, q := range t.reqs {
 			x.cfg = q.cfg
 			x.reqs = append(x.reqs, claudeRequest(q))
