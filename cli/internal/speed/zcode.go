@@ -28,8 +28,16 @@ func readZCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 	if hasColumns(db, "session", "id", "directory") {
 		join, dir = " LEFT JOIN session s ON s.id = mu.session_id", "COALESCE(s.directory, '')"
 	}
+	kinds := []string{}
+	for _, name := range []string{"input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"} {
+		expr := "NULL"
+		if hasColumns(db, "model_usage", name) {
+			expr = "mu." + name
+		}
+		kinds = append(kinds, expr)
+	}
 	q := `SELECT mu.rowid, CAST(mu.id AS TEXT), COALESCE(mu.session_id, ''), COALESCE(mu.model_id, ''),
-		COALESCE(mu.started_at, 0), COALESCE(mu.completed_at, 0), COALESCE(mu.output_tokens, 0), ` + dir + `
+		COALESCE(mu.started_at, 0), COALESCE(mu.completed_at, 0), COALESCE(mu.output_tokens, 0), ` + dir + `, ` + strings.Join(kinds, ",") + `
 		FROM model_usage mu` + join + ` WHERE mu.rowid > ?` + inRowIDs("mu.rowid", pending) + ` ORDER BY mu.rowid LIMIT ` + itoa64(dbBatch)
 	rows, err := db.Query(q, after)
 	if err != nil {
@@ -40,9 +48,11 @@ func readZCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 	for rows.Next() {
 		var r dbRow
 		var id string
-		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &r.cwd) != nil {
+		var input, read, write sql.NullInt64
+		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &r.cwd, &input, &read, &write) != nil {
 			continue
 		}
+		r.TokenKinds = TokenKinds{InputTokens: nullCount(input), CacheReadTokens: nullCount(read), CacheWriteTokens: nullCount(write)}
 		r.key = "zcode:" + id
 		out = append(out, r)
 	}

@@ -53,8 +53,9 @@ func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 		CAST(COALESCE(json_extract(m.data, '$.time.completed'), 0) AS INTEGER),
 		CAST(COALESCE(json_extract(m.data, '$.tokens.output'), 0) AS INTEGER) + CAST(COALESCE(json_extract(m.data, '$.tokens.reasoning'), 0) AS INTEGER),
 		COALESCE(json_extract(m.data, '$.tokens'), ''),
-		` + dir + `
-		FROM session_message m` + join + ` WHERE m.type = 'assistant' AND (m.rowid > ?` + inRowIDs("m.rowid", pending) + `) ORDER BY m.rowid LIMIT ` + itoa64(dbBatch)
+		` + dir + `,
+        json_extract(m.data, '$.tokens.input'), json_extract(m.data, '$.tokens.cache.read'), json_extract(m.data, '$.tokens.cache.write')
+        FROM session_message m` + join + ` WHERE m.type = 'assistant' AND (m.rowid > ?` + inRowIDs("m.rowid", pending) + `) ORDER BY m.rowid LIMIT ` + itoa64(dbBatch)
 	rows, err := db.Query(q, after)
 	if err != nil {
 		return nil, err
@@ -64,9 +65,11 @@ func readOpenCode(db *sql.DB, after int64, pending []int64) ([]dbRow, error) {
 	for rows.Next() {
 		var r dbRow
 		var id, tokens string
-		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &tokens, &r.cwd) != nil {
+		var input, read, write sql.NullInt64
+		if rows.Scan(&r.rowid, &id, &r.session, &r.model, &r.start, &r.end, &r.out, &tokens, &r.cwd, &input, &read, &write) != nil {
 			continue
 		}
+		r.TokenKinds = TokenKinds{InputTokens: nullCount(input), CacheReadTokens: nullCount(read), CacheWriteTokens: nullCount(write)}
 		r.key = "opencode:" + id
 		if id == "" {
 			r.key = "opencode~" + itoa64(r.start) + "|" + r.model + "|" + tokens

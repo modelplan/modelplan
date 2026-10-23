@@ -186,3 +186,124 @@ The events of `modelplan advise --json` (types, `suggest`, `alternative`, `curre
 ## Privacy
 
 The snapshot holds no prompts, replies, tool output, credentials, file paths, session ids or account identities: subscriptions appear only as random local references. With project labels on (the default since CLI 0.5.32), `projectRanking` names each project by its folder's name, not its path; `modelplan project-labels off` removes the names. It carries window meters, the harness's model, effort and speed mode, and the measured figures. A Claude Code session on a custom endpoint also carries that endpoint's scheme, host and path (`ANTHROPIC_BASE_URL` without query or credentials), as `modelplan quota --json` does. Anything that sends it off the machine, such as a future mobile sync, must encrypt it end to end.
+
+## CLI 0.5.33: today's speed, token kinds, live sessions and hours
+
+These are additive schema-v1 fields. Older snapshots and ledger rows remain readable. Upgrade all local CLI/plugin writers before relying on these fields: an older writer can discard fields it does not know when rewriting the schema-v1 ledger. All new
+observations come from local timestamps and token usage, never message text, account endpoints or
+uploads. `MODELPLAN_HISTORY=off` stops their recording too. `--read-only` only projects the saved
+ledger and does not discover or record new sessions.
+
+### Today and token kinds
+
+`perfStats[].windows.today` has the same `sums`, `hist` and `metrics` shape and sample gates as
+`recent7d`, restricted to the current local calendar day. It follows the existing performance
+ledger's **turn-start day** attribution; a turn spanning midnight remains assigned to its start day.
+`todayTotals[]` supplies `{source, sums}` across configurations for that day. Generation speed is
+`sum(eligibleOutputTokens) / (sum(genMs) / 1000)`, never an average of configuration speeds. Preserve
+`eligibleRequests` and the normal five-sample display gate; zero eligible time does not mean 0 t/s.
+
+`subscriptions[].sources` can join a source to an already known subscription. These source-wide
+sums are **not historically subscription-attributed**: if more than one subscription maps to a
+source, do not duplicate its sum into each subscription or claim the historic account is known.
+No account reading is requested to fill that gap.
+
+The following nullable fields are in performance ledger rows, window sums, `daily[]`, `dailyLong[]`
+and `hourly[]`:
+
+| Field | Meaning |
+|---|---|
+| `inputTokens` | Input excluding cache reads, as reported/normalized below |
+| `cacheReadTokens` | Cache-read input tokens |
+| `cacheWriteTokens` | Cache-write input tokens when reported |
+
+A missing field in an old row becomes `null`, not zero. An aggregate is known only if **every
+counted request** supplied that field; newer partial samples never masquerade as a complete old
+sum. Explicit recorded zero is kept. The desktop's cache-hit ratio is
+`cacheReadTokens / (inputTokens + cacheReadTokens)` only when both operands are known and the
+denominator is positive. Cache writes are diagnostic and not added again to this formula.
+
+- Claude Code: `usage.input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`;
+  repeated blocks of one request use their largest reported counters, not their sum.
+- Codex: `last_token_usage` is preferred; `total_token_usage` is differenced only after a prior
+  total exists, and a reset is not a negative request. Its `input_tokens` includes
+  `cached_input_tokens`, which is subtracted for `inputTokens`; if that cached count is absent,
+  uncached input remains unknown. Newer `cache_write_input_tokens` is optional. A preceding
+  `token_usage_record` and its `token_count` notice are one request; the notice can fill missing
+  kinds without double-counting. These fields follow the [official protocol](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs)
+  and are exercised only with synthetic parser fixtures, never a user's logs.
+- OpenCode V2: `tokens.input`, `tokens.cache.read`, `tokens.cache.write`; output still includes
+  `tokens.reasoning` as before. Missing JSON values are unknown.
+- ZCode: `input_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens` when those
+  columns exist. Missing columns/NULL values are unknown. The databases stay read-only.
+
+### `liveSessions[]`
+
+The entries with a local log/database signal in the last **five minutes**, independent of the
+legacy one-per-harness `sessions[]`. A signal exactly five minutes old is expired. Fields:
+
+```json
+{
+  "ref": "7b540e218d963fac", "source": "claude-code", "model": "fixture-model",
+  "effort": "high", "effortStatus": "reported", "speed": "",
+  "projectRef": null, "subscriptionRef": null,
+  "startedAt": "2026-10-23T09:00:00Z", "lastAt": "2026-10-23T09:00:40Z",
+  "status": "running",
+  "rate": {"source":"claude-code","window":"60s","scope":"session","value":null,
+           "status":"insufficient","n":2,"min":5,"reason":"too-few-samples","lastAt":"2026-10-23T09:00:40Z"}
+}
+```
+
+This example is synthetic. `ref` is a random local reference, not a harness session ID.
+`startedAt` is the earliest observed start (or existing ledger's first start); it need not be the
+harness's creation instant. `lastAt` is an actual log signal, never the poll's time. `running` means
+an unfinished logged turn/request; `idle` means its latest observed work completed. No operating
+system process or server request liveness is inferred. A long silent operation can leave the
+five-minute observed set without proving it stopped. Unknown effort is `""` / `unreported`, never ★.
+
+The `rate` uses eligible completed requests of the **current configuration**, whose completions
+are in `(now-60s, now]`, including requests in a still-open turn. Five samples are required. With
+fewer it is `insufficient` / `too-few-samples`; observations with no eligible generation are
+`unavailable` / `no-eligible-generation`. No other session or configuration supplies a fallback.
+`validUntil` includes sample expiry and the five-minute session expiry, even if dataRevision stays
+unchanged. Merely reading live data never adds historical token counts.
+
+Normal `desktop --json` discovers the newest 64 regular JSONL files modified within five minutes
+under Claude's configured `projects/` and Codex's `sessions/`, without following symlinks. Discovery
+visits at most 20,000 entries per root and parsing reads at most a 256-KiB tail per file. This is a
+bounded observation set, not a claim to inventory all running processes. A tail missing its model
+context cannot produce a fabricated configuration. Pending SQLite reads follow the existing batch
+and 30-second bounds. Live state is kept in perf.json for five minutes, with at most 64 entries and
+256 recent request samples per entry, with a 512-KiB live-state cap inside its existing 2-MiB bound; oldest entries leave first.
+
+| Harness | Concurrent/subagent behavior and limits |
+|---|---|
+| Claude Code | Separate transcripts are separate entries; `subagents/*.jsonl` may carry `isSidechain`. Inline sidechain lines in the parent remain excluded, so they are not folded into its rate. Without an observed prompt/model context the entry may be unavailable. Generation still needs the thinking-start proxy. |
+| Codex | Separate rollout files, including subagent/review origins, are independent live entries. The historical ledger's existing background-thread exclusions are unchanged. Missing first-token timestamps mean no generation rate. |
+| OpenCode V2 | Sessions with their own new/pending database requests are separate entries. Copied fork history does not become new activity. Only request start/end is available, so generation rate remains unavailable. |
+| ZCode | Each database session is separate. A pending request is running; completed is idle. Without first-token evidence there is no generation rate. |
+
+### `hourly[]`
+
+`{hour, source, model, observedOutputTokens, observedRequests, inputTokens, cacheReadTokens,
+cacheWriteTokens}` for **today and yesterday** in local time. `hour` is an ISO hour with its UTC
+offset, e.g. `2026-11-01T01:00:00-04:00` and `2026-11-01T01:00:00-05:00` are two distinct hours.
+Only finished requests count, by their **completion hour**; nothing is split or estimated across
+hours. This differs from daily/performance turn-start attribution for work spanning midnight.
+Unfinished turns appear in live data before the existing historical parser commits them.
+
+At most 48 buckets per source/model, 2,048 buckets overall and 512 KiB are kept, never beyond those two
+local days. A 25-hour DST day plus another day can exceed 48: oldest buckets are omitted, not
+merged or represented as zero. A missing hour means no observation, not verified inactivity.
+The same limits apply during read-only projection even before another ledger write.
+
+### 中文摘要
+
+新增字段保持 schema v1：`perfStats[].windows.today` 和 `todayTotals[]` 给出今日合格输出量、
+生成毫秒数及请求数；先相加再相除，不平均各配置的速度。它们沿用原账本的回合开始日期。
+`liveSessions[]` 表示最近 5 分钟有本地信号的会话，速度只看最近 60 秒、至少 5 个合格样本；
+独立子会话不并入父会话。`hourly[]` 按请求完成小时记账，只保留今天、昨天，每来源与模型最多
+48 桶，夏令时重复小时由时区偏移区分。跨午夜的小时统计与原来的按回合开始日期统计可能不同。
+输入、缓存读取、缓存写入缺失时为 `null`，不是零；缓存命中率仅在字段已知时按
+`cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
+只读模式不写文件、不发现新会话，也不请求账号端点。

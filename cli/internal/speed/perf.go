@@ -31,6 +31,8 @@ const (
 type PerfLedger struct {
 	SchemaVersion int               `json:"schemaVersion"`
 	Since         time.Time         `json:"since"` // UTC, when the file was created
+	Hourly        []Hourly          `json:"hourly,omitempty"`
+	Live          []LiveRecord      `json:"live,omitempty"`
 	Rows          []PerfRow         `json:"rows"`
 	Sessions      []PerfSession     `json:"sessions,omitempty"`
 	Files         map[string]Cursor `json:"files,omitempty"`
@@ -82,6 +84,7 @@ type SessionDay struct {
 
 // PerfRow is one local day of one configuration, as one parser read it.
 type PerfRow struct {
+	TokenKinds
 	Day          string `json:"day"` // local date of the turns' start, YYYY-MM-DD
 	Source       string `json:"source"`
 	Model        string `json:"model"`
@@ -195,7 +198,14 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	}
 	start := t.at.UTC().Truncate(time.Minute)
 	if s == nil {
-		l.Sessions = append(l.Sessions, PerfSession{Ref: newRef(), Key: key, Source: source, FirstAt: start, LastAt: start})
+		ref := newRef()
+		for _, r := range l.Live {
+			if r.Key == key && r.Source == source {
+				ref = r.Ref
+				break
+			}
+		}
+		l.Sessions = append(l.Sessions, PerfSession{Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
 		s = &l.Sessions[len(l.Sessions)-1]
 	}
 	if start.Before(s.FirstAt) {
@@ -260,8 +270,10 @@ func (l *PerfLedger) add(source, parser string, t turn) {
 			continue
 		}
 		r := l.row(d, source, parser, q.cfg)
+		r.TokenKinds.add(q.TokenKinds, r.ObservedRequests == 0)
 		r.ObservedRequests++
 		r.ObservedOutputTokens += q.out
+		l.addHourly(source, q, t.at)
 		if q.ttft > 0 && q.ttft <= maxTTFT {
 			r.TTFTMs = r.TTFTMs.add(float64(q.ttft.Milliseconds()))
 		}
@@ -319,6 +331,8 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 // prune keeps PerfKeep, at most maxRows rows and maxFile bytes (dropping the oldest days first),
 // and returns the file's content.
 func (l *PerfLedger) prune(now time.Time) []byte {
+	l.pruneLive(now)
+	l.pruneHourly(now)
 	from := day(now.Add(-PerfKeep))
 	kept := l.Rows[:0]
 	for _, r := range l.Rows {

@@ -54,7 +54,7 @@ func TestDailyLongFromLogs(t *testing.T) {
 		t.Errorf("top-level fields %v", k)
 	}
 	for _, r := range raw["rows"].([]any) {
-		if k := keys(r.(map[string]any)); fmt.Sprint(k) != "[day model observedOutputTokens observedRequests source]" {
+		if k := keys(r.(map[string]any)); fmt.Sprint(k) != "[cacheReadTokens cacheWriteTokens day inputTokens model observedOutputTokens observedRequests source]" {
 			t.Errorf("row fields %v", k)
 		}
 	}

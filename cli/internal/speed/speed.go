@@ -63,6 +63,7 @@ type Cursor struct {
 type config struct{ model, effort, speed string }
 
 type request struct {
+	TokenKinds
 	out       int64
 	gen, ttft time.Duration // 0 when unknown
 	cfg       config        // Claude Code: the request's own; Codex: the turn's

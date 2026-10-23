@@ -50,10 +50,14 @@ func basisOf(parser string) Basis {
 	if parser == ParserClaude {
 		t.First, t.End = "thinking-start", "last-block-logged"
 	}
+	if parser == ParserOpenCode || parser == ParserZCode {
+		t = Timing{Start: "request-started", First: "unavailable", End: "request-completed", Quality: "harness-db-end-to-end"}
+	}
 	return Basis{TokenBasis: "harness-reported-output", Timing: t, Quantile: quantileName}
 }
 
 type PerfSums struct {
+	TokenKinds
 	ObservedRequests         int   `json:"observedRequests"`
 	ObservedOutputTokens     int64 `json:"observedOutputTokens"`
 	EligibleRequests         int   `json:"eligibleRequests"`
@@ -66,6 +70,9 @@ type PerfSums struct {
 }
 
 func (s *PerfSums) add(r *PerfRow) {
+	if r.ObservedRequests > 0 {
+		s.TokenKinds.add(r.TokenKinds, s.ObservedRequests == 0)
+	}
 	s.ObservedRequests += r.ObservedRequests
 	s.ObservedOutputTokens += r.ObservedOutputTokens
 	s.EligibleRequests += r.EligibleRequests
@@ -115,6 +122,7 @@ type PerfWindow struct {
 }
 
 type PerfWindows struct {
+	Today     PerfWindow `json:"today"`
 	Recent7d  PerfWindow `json:"recent7d"`
 	Recent30d PerfWindow `json:"recent30d"`
 }
@@ -140,6 +148,7 @@ type PerfStat struct {
 // Daily is one local day of one model: what the parsers saw, across efforts, speed modes and
 // parsers. It covers only the logs this CLI reads, not the account's consumption.
 type Daily struct {
+	TokenKinds
 	Day                  string `json:"day"`
 	Source               string `json:"source"`
 	Model                string `json:"model"`
@@ -211,7 +220,7 @@ func (v PerfView) Stats() []PerfStat {
 		return out
 	}
 	from7, from30 := windowFrom(v.Now, 7), windowFrom(v.Now, 30)
-	type both struct{ all, w7, w30 acc }
+	type both struct{ all, today, w7, w30 acc }
 	by := map[statKey]*both{}
 	var keys []statKey
 	for i := range v.Ledger.Rows {
@@ -224,6 +233,9 @@ func (v PerfView) Stats() []PerfStat {
 			keys = append(keys, k)
 		}
 		b.all.add(r)
+		if r.Day == day(v.Now) {
+			b.today.add(r)
+		}
 		if r.Day >= from30 {
 			b.w30.add(r)
 		}
@@ -247,7 +259,7 @@ func (v PerfView) Stats() []PerfStat {
 		}
 		out = append(out, PerfStat{Source: k.source, Model: k.model, EffortStatus: k.effortStatus, Effort: k.effort, Speed: k.speed, Parser: k.parser,
 			Eligibility: k.eligibility, Basis: basisOf(k.parser), Attribution: "unattributed", Since: v.Ledger.Since, LastAt: b.all.lastAt,
-			Freshness: v.freshness(b.all.lastAt), Windows: PerfWindows{Recent7d: v.window(&b.w7, b.all.lastAt), Recent30d: v.window(&b.w30, b.all.lastAt)}})
+			Freshness: v.freshness(b.all.lastAt), Windows: PerfWindows{Today: v.window(&b.today, b.today.lastAt), Recent7d: v.window(&b.w7, b.all.lastAt), Recent30d: v.window(&b.w30, b.all.lastAt)}})
 	}
 	return out
 }
@@ -473,11 +485,20 @@ func (v PerfView) WorkloadRate(source string) Rate {
 // Boundaries: when the clock alone changes the view: each configuration's newest sample turning a
 // day and a week old, and local midnight, which moves the calendar windows (dailyLong's too).
 func (v PerfView) Boundaries() []time.Time {
-	if !v.OK || len(v.Ledger.Rows) == 0 && (!v.longUsable() || len(v.Long.Rows) == 0) {
+	if !v.OK {
 		return nil
 	}
 	l := v.Now.Local()
-	out := []time.Time{time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local)}
+	out := []time.Time{}
+	if len(v.Ledger.Rows) > 0 || len(v.Ledger.Hourly) > 0 || (v.longUsable() && len(v.Long.Rows) > 0) {
+		out = append(out, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, time.Local))
+	}
+	for _, r := range v.Ledger.Live {
+		out = append(out, r.LastAt.Add(LiveWithin))
+		for _, s := range r.Samples {
+			out = append(out, s.At.Add(LiveRateWindow))
+		}
+	}
 	for i := range v.Ledger.Rows {
 		if t := v.Ledger.Rows[i].LastAt; t != nil {
 			out = append(out, t.Add(fresh), t.Add(staleAfter))
