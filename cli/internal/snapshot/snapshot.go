@@ -48,6 +48,9 @@ type Snapshot struct {
 	Measured    []speed.Stat             `json:"measured"`
 	// PerfStats, Daily and DailyCoverage come from the performance ledger (perf.json), which runs
 	// beside the one behind Measured and is never mixed with it.
+	LiveSessions  []speed.LiveSession `json:"liveSessions"`
+	TodayTotals   []speed.TodayTotal  `json:"todayTotals"`
+	Hourly        []speed.Hourly      `json:"hourly"`
 	PerfStats     []speed.PerfStat    `json:"perfStats"`
 	Daily         []speed.Daily       `json:"daily"`
 	DailyCoverage speed.DailyCoverage `json:"dailyCoverage"`
@@ -227,9 +230,11 @@ func Build(in Input) Snapshot {
 	if s.Measured == nil {
 		s.Measured = []speed.Stat{}
 	}
+	s.LiveSessions, s.TodayTotals, s.Hourly = []speed.LiveSession{}, []speed.TodayTotal{}, []speed.Hourly{}
 	s.PerfStats, s.Daily, s.DailyCoverage = []speed.PerfStat{}, []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
 	s.DailyLong, s.DailyLongCoverage = []speed.Daily{}, speed.DailyCoverage{Recording: in.Recording}
 	if in.Perf != nil {
+		s.LiveSessions, s.TodayTotals, s.Hourly = in.Perf.LiveSessions(), in.Perf.TodayTotals(), in.Perf.Hourly()
 		s.PerfStats, s.Daily, s.DailyCoverage = in.Perf.Stats(), in.Perf.Daily(), in.Perf.Coverage()
 		s.DailyLong, s.DailyLongCoverage = in.Perf.DailyLong(), in.Perf.LongCoverage()
 	}

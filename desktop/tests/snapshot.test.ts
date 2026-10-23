@@ -23,7 +23,7 @@ test('the golden snapshot carries a year of daily totals beside the 30 days', ()
   const s = golden();
   assert.deepEqual(s.dailyLongCoverage, { from: '2026-04-20', recording: true });
   assert.equal(s.dailyLong[0].day, '2026-05-04');
-  assert.ok(s.dailyLong.every(d => d.day >= s.dailyLongCoverage!.from! && Object.keys(d).sort().join() === 'day,model,observedOutputTokens,observedRequests,source'));
+  assert.ok(s.dailyLong.every(d => d.day >= s.dailyLongCoverage!.from! && Object.keys(d).sort().join() === 'cacheReadTokens,cacheWriteTokens,day,inputTokens,model,observedOutputTokens,observedRequests,source'));
   // Where the two overlap they agree.
   for (const d of s.daily) assert.deepEqual(s.dailyLong.find(x => x.day === d.day && x.source === d.source && x.model === d.model), d);
 });
@@ -35,4 +35,17 @@ test('a pool keeps its own windows; an account without one keeps all', () => {
   assert.deepEqual(codex.windows.map(w => inPool(reserve, w)), [false, false, true]);
   const none = { ...codex, pool: 'reserve', windows: codex.windows.slice(0, 2) };
   assert.deepEqual(none.windows.map(w => inPool(none, w)), [true, true]);
+});
+
+
+test('cockpit data is additive and keeps unknown token kinds distinct from zero', () => {
+  const old = parseSnapshot({ kind: 'modelplan.personal-snapshot', schemaVersion: 1 });
+  assert.deepEqual([old.todayTotals, old.liveSessions, old.hourly, old.perfStats], [[], [], [], []]);
+  const s = golden();
+  assert.equal(s.liveSessions?.[0].status, 'running');
+  assert.equal(s.liveSessions?.[0].rate.window, '60s');
+  assert.equal(s.liveSessions?.[0].rate.reason, 'too-few-samples');
+  assert.equal(s.perfStats?.[0].windows.today?.sums.inputTokens, 3000);
+  assert.equal(s.perfStats?.[0].windows.recent7d.sums.inputTokens, null);
+  assert.equal(s.hourly?.[0].cacheReadTokens, 9000);
 });

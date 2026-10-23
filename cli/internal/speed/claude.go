@@ -24,8 +24,11 @@ type ccLine struct {
 		StopReason string          `json:"stop_reason"`
 		Content    json.RawMessage `json:"content"`
 		Usage      *struct {
-			Output int64  `json:"output_tokens"`
-			Speed  string `json:"speed"`
+			Output     int64  `json:"output_tokens"`
+			Input      *int64 `json:"input_tokens"`
+			CacheRead  *int64 `json:"cache_read_input_tokens"`
+			CacheWrite *int64 `json:"cache_creation_input_tokens"`
+			Speed      string `json:"speed"`
 		} `json:"usage"`
 	} `json:"message"`
 }
@@ -34,10 +37,12 @@ type ccLine struct {
 // answers was written; its first token arrives when its thinking started (the thinking block's
 // time minus its duration), unknown without thinking; it ends with its last block.
 type ccRequest struct {
-	id                string
-	cfg               config
-	start, first, end time.Time
-	out               int64
+	id                           string
+	cfg                          config
+	start, first, end            time.Time
+	out                          int64
+	input, cacheRead, cacheWrite *int64
+	key                          string
 }
 
 type ccTurn struct {
@@ -50,9 +55,10 @@ type ccTurn struct {
 }
 
 type claudeParser struct {
-	now  time.Time
-	cur  *ccTurn
-	done []turn
+	now       time.Time
+	cur       *ccTurn
+	done      []turn
+	sidechain bool // a separate subagent file, never inline parent copies
 }
 
 // idleDone: a turn whose last reply ended it and nothing followed for this long is finished, even
@@ -75,7 +81,7 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		return
 	}
 	var l ccLine
-	if json.Unmarshal(b, &l) != nil || l.IsSidechain {
+	if json.Unmarshal(b, &l) != nil || (l.IsSidechain && !p.sidechain) {
 		return
 	}
 	ts, err := time.Parse(time.RFC3339Nano, l.Timestamp)
@@ -103,13 +109,14 @@ func (p *claudeParser) line(off, end int64, b []byte) {
 		}
 		n := len(t.reqs)
 		if n == 0 || t.reqs[n-1].id != l.RequestID || l.RequestID == "" {
-			t.reqs = append(t.reqs, ccRequest{id: l.RequestID, start: t.trigger, cfg: config{l.Message.Model, l.Effort, speedMode(u.Speed)}})
+			t.reqs = append(t.reqs, ccRequest{id: l.RequestID, key: itoa64(off), start: t.trigger, cfg: config{l.Message.Model, l.Effort, speedMode(u.Speed)}})
 			n++
 		}
 		q := &t.reqs[n-1]
 		if ts.After(q.end) {
 			q.end = ts
 		}
+		q.input, q.cacheRead, q.cacheWrite = maxToken(q.input, u.Input), maxToken(q.cacheRead, u.CacheRead), maxToken(q.cacheWrite, u.CacheWrite)
 		if u.Output > q.out {
 			q.out = u.Output
 		}
@@ -134,13 +141,7 @@ func (p *claudeParser) close() {
 	}
 	out := turn{cfg: t.reqs[len(t.reqs)-1].cfg, at: t.at, dur: t.last.Sub(t.at), cwd: t.cwd}
 	for _, q := range t.reqs {
-		r := request{out: q.out, cfg: q.cfg, end: q.end}
-		if !q.first.IsZero() && q.end.After(q.first) {
-			r.gen = q.end.Sub(q.first)
-			if !q.start.IsZero() && !q.first.Before(q.start) {
-				r.ttft = q.first.Sub(q.start)
-			}
-		}
+		r := claudeRequest(q)
 		out.out += q.out
 		out.all = append(out.all, r)
 		if q.cfg == out.cfg {
@@ -206,4 +207,28 @@ func later(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+func claudeRequest(q ccRequest) request {
+	r := request{out: q.out, cfg: q.cfg, end: q.end, key: q.key, input: q.input, cacheRead: q.cacheRead, cacheWrite: q.cacheWrite}
+	if !q.first.IsZero() && q.end.After(q.first) {
+		r.gen = q.end.Sub(q.first)
+		if !q.start.IsZero() && !q.first.Before(q.start) {
+			r.ttft = q.first.Sub(q.start)
+		}
+	}
+	return r
+}
+
+func (p *claudeParser) signals() []sessionSignal {
+	out := completedSignals(p.done)
+	if t := p.cur; t != nil {
+		x := sessionSignal{start: t.at, last: later(t.last, t.at), running: !t.ended, cwd: t.cwd}
+		for _, q := range t.reqs {
+			x.cfg = q.cfg
+			x.reqs = append(x.reqs, claudeRequest(q))
+		}
+		out = append(out, x)
+	}
+	return out
 }

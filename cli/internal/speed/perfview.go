@@ -22,6 +22,7 @@ type PerfView struct {
 }
 
 const (
+	Today        = "today"
 	Recent7d     = "recent7d"
 	Recent30d    = "recent30d"
 	fresh        = 24 * time.Hour
@@ -54,18 +55,26 @@ func basisOf(parser string) Basis {
 }
 
 type PerfSums struct {
-	ObservedRequests         int   `json:"observedRequests"`
-	ObservedOutputTokens     int64 `json:"observedOutputTokens"`
-	EligibleRequests         int   `json:"eligibleRequests"`
-	EligibleOutputTokens     int64 `json:"eligibleOutputTokens"`
-	GenMs                    int64 `json:"genMs"`
-	Turns                    int   `json:"turns"`
-	TurnMs                   int64 `json:"turnMs"`
-	TurnOutputTokens         int64 `json:"turnOutputTokens"`
-	MixedConfigTurnsExcluded int   `json:"mixedConfigTurnsExcluded"`
+	ObservedRequests         int    `json:"observedRequests"`
+	ObservedOutputTokens     int64  `json:"observedOutputTokens"`
+	InputTokens              *int64 `json:"inputTokens"`
+	CacheReadTokens          *int64 `json:"cacheReadTokens"`
+	CacheWriteTokens         *int64 `json:"cacheWriteTokens"`
+	EligibleRequests         int    `json:"eligibleRequests"`
+	EligibleOutputTokens     int64  `json:"eligibleOutputTokens"`
+	GenMs                    int64  `json:"genMs"`
+	Turns                    int    `json:"turns"`
+	TurnMs                   int64  `json:"turnMs"`
+	TurnOutputTokens         int64  `json:"turnOutputTokens"`
+	MixedConfigTurnsExcluded int    `json:"mixedConfigTurnsExcluded"`
 }
 
 func (s *PerfSums) add(r *PerfRow) {
+	if r.ObservedRequests > 0 {
+		s.InputTokens = sumToken(s.InputTokens, r.InputTokens, s.ObservedRequests)
+		s.CacheReadTokens = sumToken(s.CacheReadTokens, r.CacheReadTokens, s.ObservedRequests)
+		s.CacheWriteTokens = sumToken(s.CacheWriteTokens, r.CacheWriteTokens, s.ObservedRequests)
+	}
 	s.ObservedRequests += r.ObservedRequests
 	s.ObservedOutputTokens += r.ObservedOutputTokens
 	s.EligibleRequests += r.EligibleRequests
@@ -115,6 +124,7 @@ type PerfWindow struct {
 }
 
 type PerfWindows struct {
+	Today     PerfWindow `json:"today"`
 	Recent7d  PerfWindow `json:"recent7d"`
 	Recent30d PerfWindow `json:"recent30d"`
 }
@@ -145,6 +155,9 @@ type Daily struct {
 	Model                string `json:"model"`
 	ObservedOutputTokens int64  `json:"observedOutputTokens"`
 	ObservedRequests     int    `json:"observedRequests"`
+	InputTokens          *int64 `json:"inputTokens"`
+	CacheReadTokens      *int64 `json:"cacheReadTokens"`
+	CacheWriteTokens     *int64 `json:"cacheWriteTokens"`
 }
 
 // DailyCoverage: the first day daily[] covers (the later of the ledger's start and 30 days ago;
@@ -211,7 +224,7 @@ func (v PerfView) Stats() []PerfStat {
 		return out
 	}
 	from7, from30 := windowFrom(v.Now, 7), windowFrom(v.Now, 30)
-	type both struct{ all, w7, w30 acc }
+	type both struct{ all, today, w7, w30 acc }
 	by := map[statKey]*both{}
 	var keys []statKey
 	for i := range v.Ledger.Rows {
@@ -224,6 +237,9 @@ func (v PerfView) Stats() []PerfStat {
 			keys = append(keys, k)
 		}
 		b.all.add(r)
+		if r.Day == day(v.Now) {
+			b.today.add(r)
+		}
 		if r.Day >= from30 {
 			b.w30.add(r)
 		}
@@ -247,7 +263,7 @@ func (v PerfView) Stats() []PerfStat {
 		}
 		out = append(out, PerfStat{Source: k.source, Model: k.model, EffortStatus: k.effortStatus, Effort: k.effort, Speed: k.speed, Parser: k.parser,
 			Eligibility: k.eligibility, Basis: basisOf(k.parser), Attribution: "unattributed", Since: v.Ledger.Since, LastAt: b.all.lastAt,
-			Freshness: v.freshness(b.all.lastAt), Windows: PerfWindows{Recent7d: v.window(&b.w7, b.all.lastAt), Recent30d: v.window(&b.w30, b.all.lastAt)}})
+			Freshness: v.freshness(b.all.lastAt), Windows: PerfWindows{Today: v.window(&b.today, b.today.lastAt), Recent7d: v.window(&b.w7, b.all.lastAt), Recent30d: v.window(&b.w30, b.all.lastAt)}})
 	}
 	return out
 }
@@ -473,7 +489,7 @@ func (v PerfView) WorkloadRate(source string) Rate {
 // Boundaries: when the clock alone changes the view: each configuration's newest sample turning a
 // day and a week old, and local midnight, which moves the calendar windows (dailyLong's too).
 func (v PerfView) Boundaries() []time.Time {
-	if !v.OK || len(v.Ledger.Rows) == 0 && (!v.longUsable() || len(v.Long.Rows) == 0) {
+	if !v.OK || len(v.Ledger.Rows) == 0 && len(v.Ledger.Live) == 0 && len(v.Ledger.Hourly) == 0 && (!v.longUsable() || len(v.Long.Rows) == 0) {
 		return nil
 	}
 	l := v.Now.Local()
@@ -481,6 +497,12 @@ func (v PerfView) Boundaries() []time.Time {
 	for i := range v.Ledger.Rows {
 		if t := v.Ledger.Rows[i].LastAt; t != nil {
 			out = append(out, t.Add(fresh), t.Add(staleAfter))
+		}
+	}
+	for _, x := range v.Ledger.Live {
+		out = append(out, x.LastAt.Add(LiveWithin+time.Nanosecond))
+		for _, q := range x.Samples {
+			out = append(out, q.End.Add(time.Minute+time.Nanosecond))
 		}
 	}
 	return out

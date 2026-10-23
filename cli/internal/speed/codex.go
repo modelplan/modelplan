@@ -29,9 +29,14 @@ type cxTurn struct {
 }
 
 type codexParser struct {
-	cur  *cxTurn
-	cwd  string // the session's, from its session_meta
-	done []turn
+	cur        *cxTurn
+	cwd        string // the session's, from its session_meta
+	done       []turn
+	liveOnly   bool
+	total      *cxUsage
+	checkpoint *cxUsage
+	terminal   []sessionSignal
+	last       time.Time
 }
 
 func newCodex() *codexParser { return &codexParser{} }
@@ -50,9 +55,13 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		return
 	}
 	kind, event := string(m[2]), string(m[3])
+	if ts.After(p.last) {
+		p.last = ts
+	}
 	t := p.cur
 	switch {
 	case event == "task_started" || event == "turn_started":
+		p.checkpoint = p.total
 		p.cur = &cxTurn{off: off, at: ts, start: ts, cwd: p.cwd}
 	case kind == "session_meta":
 		var c struct {
@@ -111,28 +120,50 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		var c struct {
 			Payload struct {
 				Info *struct {
-					Last *struct {
-						Output int64 `json:"output_tokens"`
-					} `json:"last_token_usage"`
+					Last  *cxUsage `json:"last_token_usage"`
+					Total *cxUsage `json:"total_token_usage"`
 				} `json:"info"`
-				Usage *struct {
-					Output int64 `json:"output_tokens"`
-				} `json:"usage"`
+				Usage *cxUsage `json:"usage"`
 			} `json:"payload"`
 		}
-		if t.used || json.Unmarshal(b, &c) != nil {
+		if json.Unmarshal(b, &c) != nil {
 			return
 		}
-		var out int64 = -1
-		if c.Payload.Info != nil && c.Payload.Info.Last != nil {
-			out = c.Payload.Info.Last.Output
-		} else if c.Payload.Usage != nil {
-			out = c.Payload.Usage.Output
+		u := c.Payload.Usage
+		if c.Payload.Info != nil {
+			if c.Payload.Info.Last != nil {
+				u = c.Payload.Info.Last
+			} else if c.Payload.Info.Total != nil && p.total != nil {
+				u = usageDelta(c.Payload.Info.Total, p.total)
+			}
+			if c.Payload.Info.Total != nil {
+				p.total = c.Payload.Info.Total
+			}
 		}
-		if out < 0 {
-			return // a rate-limit notice without usage
+		if u == nil || u.Output == nil || *u.Output < 0 {
+			return
 		}
-		r := request{out: out, end: ts}
+		if t.used {
+			// A token_count can enrich the usage record of the same response without another count.
+			if n := len(t.reqs); n > 0 && t.reqs[n-1].out == *u.Output {
+				q := &t.reqs[n-1]
+				if q.input == nil {
+					q.input = uncachedInput(u.Input, u.Cached)
+				}
+				if q.cacheRead == nil {
+					q.cacheRead = validToken(u.Cached)
+				}
+				if q.cacheWrite == nil {
+					q.cacheWrite = validToken(u.CacheWrite)
+				}
+			}
+			return
+		}
+		out := *u.Output
+		// Codex input_tokens includes cached_input_tokens; publish uncached input apart.
+		input := uncachedInput(u.Input, u.Cached)
+		r := request{out: out, end: ts, key: itoa64(off), input: input, cacheRead: validToken(u.Cached), cacheWrite: validToken(u.CacheWrite)}
+
 		if t.first > 0 {
 			first := time.UnixMilli(t.first)
 			if ts.After(first) {
@@ -153,6 +184,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 			} `json:"payload"`
 		}
 		p.cur = nil
+		p.terminal = append(p.terminal, codexSignal(t, ts, false))
 		if json.Unmarshal(b, &c) != nil || (c.Payload.Error != nil && string(*c.Payload.Error) != "null") || t.skip {
 			return
 		}
@@ -167,6 +199,7 @@ func (p *codexParser) line(off, _ int64, b []byte) {
 		}
 		p.done = append(p.done, turn{cfg: t.cfg, at: t.at, dur: dur, out: t.out, reqs: t.reqs, all: all, cwd: t.cwd})
 	case event == "turn_aborted":
+		p.terminal = append(p.terminal, codexSignal(t, ts, false))
 		p.cur = nil
 	}
 }
@@ -183,4 +216,33 @@ func clip(s string) string {
 		return ""
 	}
 	return s
+}
+
+// These names mirror token_count's synthetic rollout fixtures. Missing counts stay unknown.
+type cxUsage struct {
+	Input      *int64 `json:"input_tokens"`
+	Cached     *int64 `json:"cached_input_tokens"`
+	CacheWrite *int64 `json:"cache_write_input_tokens"`
+	Output     *int64 `json:"output_tokens"`
+}
+
+func usageDelta(a, b *cxUsage) *cxUsage {
+	return &cxUsage{Input: tokenDelta(a.Input, b.Input), Cached: tokenDelta(a.Cached, b.Cached), CacheWrite: tokenDelta(a.CacheWrite, b.CacheWrite), Output: tokenDelta(a.Output, b.Output)}
+}
+func (p *codexParser) signals() []sessionSignal {
+	out := append([]sessionSignal{}, p.terminal...)
+	if t := p.cur; t != nil {
+		x := codexSignal(t, p.last, true)
+		out = append(out, x)
+	}
+	return out
+}
+
+func codexSignal(t *cxTurn, last time.Time, running bool) sessionSignal {
+	x := sessionSignal{start: t.at, last: last, running: running, cfg: t.cfg, cwd: t.cwd}
+	for _, q := range t.reqs {
+		q.cfg = t.cfg
+		x.reqs = append(x.reqs, q)
+	}
+	return x
 }

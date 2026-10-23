@@ -78,7 +78,7 @@ One entry per configuration with a row in the last 30 days:
 - `basis`: `tokenBasis: "harness-reported-output"` (believed to include hidden reasoning for both harnesses, not yet confirmed), `timing: {start, first, end, quality: "harness-log-proxy"}` and `quantile: "log1.1-centre-lower"`. Codex: the input logged, the item's `started_at_ms`, the usage record logged. Claude Code: the input logged, the thinking block's time minus its duration, the last block logged. They are the times the harness logged, a proxy for the model's own;
 - `attribution: "unattributed"`: the samples belong to the harness, not to a verified subscription;
 - `since`, `lastAt` (when the newest sample completed, to the minute) and `freshness`: `fresh` within 24 hours, `aging` within 7 days, else `stale`. A recent `lastAt` does not make the figures recent, and a completed request does not mean a session is working now;
-- `windows.recent7d` and `windows.recent30d`: the rows of the last 7 or 30 local calendar days, today included. Not a current or last-24-hour rate. Each has:
+- `windows.today` (CLI 0.5.33+, the current local day), `windows.recent7d` and `windows.recent30d`: the rows of the last 7 or 30 local calendar days, today included. Not a current or last-24-hour rate. Each has:
   - `sums`: `observedRequests` and `observedOutputTokens` (every request the parser saw in a finished turn of the logs this CLI reads, counted once: Codex rollouts it scans, Claude Code transcripts seen through the status line; not the account's consumption), `eligibleRequests`, `eligibleOutputTokens`, `genMs` (requests with a known first token, at least 20 output tokens, 0.2 s to 30 min of generation and at most 3,000 tok/s), `turns`, `turnMs`, `turnOutputTokens` and `mixedConfigTurnsExcluded` (Claude Code turns whose requests ran under more than one configuration; their requests count under their own);
   - `hist`: `ttftMs`, `turnMsHist`, `turnTokensHist`, each `{scheme: "log1.1/v1", unit, counts}`. Bucket `k` ≥ 1 holds [1.1^k, 1.1^(k+1)), bucket `0` everything below 1.1. Histograms merge by adding counts, only with the same scheme and unit;
   - `metrics`: `generationTps` (Σ eligible output tokens ÷ Σ generation seconds), `ttftMs` (the merged histogram's estimate: the lowest bucket whose count reaches half, at its geometric centre; within about 5% of the lower median, never exact) and `wholeTurnTps` (Σ turn output tokens ÷ Σ turn seconds, tools included; for expanded views). Each is `{value, status, n, min, reason}` with `min` 5. `status`: `ok`, `insufficient` (fewer than `min`), `stale` (newest sample older than 7 days), `unavailable` (`no-first-token`: the source gives none, such as Claude Code without thinking; or `ledger-unreadable`), `off` (recording is off).
@@ -87,12 +87,122 @@ Rates are always ratios of sums and quantiles always come from merged histograms
 
 Display rules for clients: one number per engine, `workloadRate.value`, labelled with its window and scope ("62 t/s · 7 days · all configurations"); shown only when `ok`, dimmed when `aging`, hidden when `stale`, and not drawn at all otherwise (never `0`, never the legacy `measured[]`). `tokenRate` and the `perfStats[]` entries go in hover or expanded views. Nothing in this version is any subscription's speed.
 
+## Cockpit additions (CLI 0.5.33, schema v1)
+
+All fields below are additive. Older clients can ignore them; newer clients must accept their
+absence. This change reads only local harness logs/databases, never account endpoints, and
+never sends anything. Existing quota readers are unchanged. All timestamps are harness log
+proxies, not server performance telemetry.
+
+### Today's speed and `todayTotals[]`
+
+`perfStats[].windows.today` has the same `sums`, `hist` and `metrics` as `recent7d`, for the
+current **local calendar day**, using the existing completed-turn start-day attribution. A turn
+spanning midnight therefore belongs to its start day; this is not a rolling 24-hour window.
+`todayTotals[]` gives those rows summed per `source`, across configurations:
+
+```json
+{"source":"codex","attribution":"unattributed","sums":{"observedRequests":8,
+ "observedOutputTokens":2600,"inputTokens":1200,"cacheReadTokens":4800,"cacheWriteTokens":null,
+ "eligibleRequests":5,"eligibleOutputTokens":2500,"genMs":50000,"turns":2,
+ "turnMs":80000,"turnOutputTokens":2600,"mixedConfigTurnsExcluded":0},
+ "generationTps":{"value":50,"status":"ok","n":5,"min":5}}
+```
+
+To combine sources for one subscription, use `subscriptions[].sources`, add eligible output
+and generation milliseconds, and divide once: `1000 * Σ eligibleOutputTokens / Σ genMs`.
+Apply the same minimum of five eligible requests and hide the value when recording is off.
+Never average source rates. These are **source workload totals**, not verified account usage.
+If one source maps to multiple subscriptions, switched accounts during the day, or has unknown
+binding, keep its totals unattributed rather than copying them to each account. An opaque
+subscription reference alone does not establish historical attribution. In particular, ZCode
+and OpenCode sources have no subscription binding from these database readers.
+
+### Token kinds
+
+`inputTokens`, `cacheReadTokens` and `cacheWriteTokens` are nullable numeric sums beside output
+in performance rows, window sums, `daily[]`, `dailyLong[]` and `hourly[]`:
+
+- Claude Code: `usage.input_tokens` (uncached), `cache_read_input_tokens`,
+  `cache_creation_input_tokens`; repeated blocks of a request are coalesced, not added twice.
+- Codex: `input_tokens` includes `cached_input_tokens`, so uncached input is their difference.
+  Read from `payload.info.last_token_usage` or `payload.usage`, with cumulative
+  `payload.info.total_token_usage` deltas as fallback. A cumulative-only first record without a
+  baseline is not guessed; the baseline is retained at the committed cursor across reads.
+  Counter resets and absent/invalid fields stay unknown. Newer logs may also provide
+  `cache_write_input_tokens`; older ones leave cache writes unknown. Output already includes
+  reasoning; do not add `reasoning_output_tokens` a second time. Field names are verified by
+  the synthetic `speed/testdata/*-token-kinds.jsonl` fixtures and the
+  [official Codex protocol](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs).
+- OpenCode and ZCode: the existing reader does not yet extract input/cache kinds; these fields
+  stay unknown, not zero. Existing output/reasoning counting is unchanged.
+
+Desktop cache hit rate is `cacheReadTokens / (inputTokens + cacheReadTokens)`; show no percentage
+if either kind is unknown or the denominator is zero. Cache writes are not in this denominator.
+A sum stays `null` when any contributing request/old row did not record that kind. `0` means an
+observed zero. No backfill of historical logs is performed.
+
+### `liveSessions[]`
+
+One entry per separately observed local session whose last **log signal** is at most five
+minutes old, including a turn not yet finished. `startedAt` is the earliest start retained for
+that session's current live record; after expiry/restart it can begin at the next observed turn.
+`lastAt` is the last signal's timestamp. Both retain seconds for the 60-second gauge. Neither
+is a process-liveness guarantee; a silent/crashed session expires after five minutes.
+
+```json
+{"ref":"local-random-ref","source":"codex","model":"fixture-model","effort":"high",
+ "effortStatus":"reported","speed":"fast","projectRef":null,"subscriptionRef":null,
+ "startedAt":"2026-10-23T09:00:00Z","lastAt":"2026-10-23T09:00:25Z","status":"running",
+ "rate":{"source":"codex","window":"60s","scope":"session-configuration","value":null,
+ "status":"insufficient","n":2,"min":5,"reason":"too-few-samples",
+ "lastAt":"2026-10-23T09:00:24Z"}}
+```
+
+`status` is `running` after a start/request/tool signal without a completion, or `idle` after
+completion/abort. `effortStatus` is `reported` or `unreported`; empty `speed` means standard.
+`rate` reuses `speed.Rate`: eligible requests **completed** in the last 60 seconds under the
+session's latest model/effort/speed, tokens divided by their summed generation time. Concurrent
+sessions stay separate; rates are never added. Five samples are required; fewer yield
+`insufficient` / `too-few-samples`. Observed requests without first-token timing yield
+`unavailable` / `no-first-token`. No sample means no displayed speed, never a fake zero.
+Provisional samples do not enter completed-turn totals until completion; rereads replace them
+by local offset rather than counting twice. Window expiry is included in `validUntil`.
+
+Coverage and bounds:
+
+| Harness | Session signal and separation | Limitations |
+| --- | --- | --- |
+| Codex | Scans up to 256 most recent rollouts, separate subagent/review files are independent live entries; start, completion and abort signals | Completed-turn historical totals/rankings retain their existing exclusion of background threads. Logs outside this bounded discovery set are not claimed as covered. |
+| Claude Code | Current transcript supplied by its status-line/hook; associated `<parent>/subagents/*.jsonl` files (up to 256) are separate sessions, including sidechain records there | Other parent sessions appear when their own hooks ingest them. Inline sidechain copies without a distinct file remain excluded. An `end_turn` reply is immediately idle for live display; history still waits for the existing 30-second finish rule. |
+| OpenCode V2 | Local database session id becomes a hashed key/random reference; pending assistant rows show running and completed rows idle | At most every 30 seconds, batches of 5,000; copied fork messages remain deduplicated for history. No first-token time, reliable effort/speed mode, or account binding. |
+| ZCode | Same pending/completed database mechanism; session ids are never exported | Same polling/timing/effort/binding limits. |
+
+Live state stays in `perf.json`, with at most 256 sessions and 128 recent samples each, expiring
+outside 5 minutes / 60 seconds on the next write. The ledger's existing 2 MiB size guard still
+applies; oldest live records go before historical rows when size pressure requires it.
+`MODELPLAN_HISTORY=off` records nothing new and returns no live entries. No new account reader,
+credential access, daemon, upload, model switch or CodexBar dependency is introduced.
+
+### `hourly[]`
+
+Nonempty buckets for **today and yesterday**, by completion hour, `source` and `model`:
+`{hour, source, model, observedOutputTokens, observedRequests, inputTokens, cacheReadTokens,
+cacheWriteTokens}`. `hour` is ISO 8601 with the **local UTC offset**, e.g.
+`2026-11-01T01:00:00-04:00` and `2026-11-01T01:00:00-05:00` are distinct during a DST fold.
+Missing spring-forward hours are not invented. Whole completed requests go in their completion
+hour; they are not spread over their duration. Therefore a midnight-spanning turn can differ
+from `daily[]`'s start-day total. At most the newest **48 buckets per source/model** are kept;
+on a 49-hour fall-back pair of days, the oldest hour is dropped. No older hours are retained
+on subsequent writes or exposed by a later read. Changing the local time zone does not rewrite
+already recorded hour labels. An empty list means no observed coverage, not zero use.
+
 ## `dailyLong[]`
 
 CLI 0.5.32+. The rows of `daily[]` (`{day, source, model, observedOutputTokens, observedRequests}`, per local day, source and model, across efforts, speed modes and parsers) for the last 371 local days, today included: 53 weeks, for a year-long heatmap. They come from `observed/daily-long.json`. Each time the CLI writes `perf.json`, it rolls that ledger's days up into this file, which keeps them after `perf.json` lets them go at 35 days.
 
 - It counts nothing `perf.json` did not: the same logs and databases, read the same way, from the same `since`. Per day, source and model it keeps the larger of its stored figure and the current one, so reading a log again never counts a request twice. Where its days overlap `daily[]`, the figures are the same.
-- It holds only days, sources, model names and the two sums. It has no prompts, replies, titles, paths, projects, sessions, subscriptions or ids.
+- It holds only days, sources, model names and numeric sums (including nullable token kinds since CLI 0.5.33). It has no prompts, replies, titles, paths, projects, sessions, subscriptions or ids.
 - It stays below 1 MiB, about 0.3 MB for a year of a few models a day. If a year does not fit, the oldest days go first, each day whole, and coverage starts after them.
 - `MODELPLAN_HISTORY=off` stops it together with `perf.json`; deleting the file clears it. An unreadable file is never overwritten.
 
@@ -135,7 +245,7 @@ CLI 0.5.27+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each wi
 - `subscriptionRef` (CLI 0.5.30+): the subscription the harness was signed in to when the session's first turn with a known one was read; `null` when unknown;
 - `configs[]`: `{model, effortStatus, effort, speed, observedOutputTokens, share, recommendedEffort}`, the largest first, at most three. `share` (CLI 0.5.29+) is the configuration's part of the session's output in the window; `recommendedEffort` (CLI 0.5.29+) is the published ★ effort of the model as a native key, absent when the publication has none.
 
-The sessions are kept in the performance ledger with the same `since`, 35 days and size limits; a session whose last day is older leaves it. Codex's own threads (subagents, reviews) are not read, so they are neither ranked nor counted, and never counted twice; Claude Code's sidechain requests are not counted either. Titles are not kept at all.
+The sessions are kept in the performance ledger with the same `since`, 35 days and size limits; a session whose last day is older leaves it. Codex's own threads (subagents, reviews) remain excluded from completed-turn totals and rankings, but appear separately in `liveSessions` since CLI 0.5.33. Claude Code inline sidechain copies stay excluded; separately stored subagent transcripts associated with the current transcript are read as their own sessions since CLI 0.5.33. Titles are not kept at all.
 
 ## Subscriptions
 

@@ -663,6 +663,94 @@
       "turnOutputTokens": null
     }
   ],
+  "liveSessions": [
+    {
+      "ref": "5c1e0d2a9b7f4e31",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "effortStatus": "reported",
+      "speed": "",
+      "projectRef": "3f0c9a7d51e24b68a0c4e9d2b7f1a385",
+      "subscriptionRef": "9b1e44d07a2c3f58",
+      "startedAt": "2026-10-18T08:59:00Z",
+      "lastAt": "2026-10-18T08:59:50Z",
+      "status": "running",
+      "rate": {
+        "source": "claude-code",
+        "window": "60s",
+        "scope": "session-configuration",
+        "value": null,
+        "status": "insufficient",
+        "n": 1,
+        "min": 5,
+        "reason": "too-few-samples",
+        "lastAt": "2026-10-18T08:59:50Z"
+      }
+    }
+  ],
+  "todayTotals": [
+    {
+      "source": "claude-code",
+      "attribution": "unattributed",
+      "sums": {
+        "observedRequests": 12,
+        "observedOutputTokens": 9000,
+        "inputTokens": 3000,
+        "cacheReadTokens": 9000,
+        "cacheWriteTokens": 100,
+        "eligibleRequests": 3,
+        "eligibleOutputTokens": 2600,
+        "genMs": 22000,
+        "turns": 2,
+        "turnMs": 200000,
+        "turnOutputTokens": 6400,
+        "mixedConfigTurnsExcluded": 1
+      },
+      "generationTps": {
+        "value": null,
+        "status": "insufficient",
+        "n": 3,
+        "min": 5
+      }
+    },
+    {
+      "source": "codex",
+      "attribution": "unattributed",
+      "sums": {
+        "observedRequests": 3,
+        "observedOutputTokens": 1800,
+        "inputTokens": null,
+        "cacheReadTokens": null,
+        "cacheWriteTokens": null,
+        "eligibleRequests": 3,
+        "eligibleOutputTokens": 1800,
+        "genMs": 9000,
+        "turns": 1,
+        "turnMs": 60000,
+        "turnOutputTokens": 1800,
+        "mixedConfigTurnsExcluded": 0
+      },
+      "generationTps": {
+        "value": null,
+        "status": "insufficient",
+        "n": 3,
+        "min": 5
+      }
+    }
+  ],
+  "hourly": [
+    {
+      "hour": "2026-10-18T08:00:00Z",
+      "source": "claude-code",
+      "model": "claude-opus-5-5",
+      "observedOutputTokens": 9000,
+      "observedRequests": 12,
+      "inputTokens": 3000,
+      "cacheReadTokens": 9000,
+      "cacheWriteTokens": 100
+    }
+  ],
   "perfStats": [
     {
       "source": "claude-code",
@@ -687,10 +775,71 @@
       "lastAt": "2026-10-18T08:20:00Z",
       "freshness": "fresh",
       "windows": {
+        "today": {
+          "sums": {
+            "observedRequests": 12,
+            "observedOutputTokens": 9000,
+            "inputTokens": 3000,
+            "cacheReadTokens": 9000,
+            "cacheWriteTokens": 100,
+            "eligibleRequests": 3,
+            "eligibleOutputTokens": 2600,
+            "genMs": 22000,
+            "turns": 2,
+            "turnMs": 200000,
+            "turnOutputTokens": 6400,
+            "mixedConfigTurnsExcluded": 1
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "134": 2
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "87": 2
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 2,
+              "min": 5
+            }
+          }
+        },
         "recent7d": {
           "sums": {
             "observedRequests": 42,
             "observedOutputTokens": 30000,
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
             "eligibleRequests": 9,
             "eligibleOutputTokens": 7400,
             "genMs": 62000,
@@ -753,6 +902,9 @@
           "sums": {
             "observedRequests": 42,
             "observedOutputTokens": 30000,
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
             "eligibleRequests": 9,
             "eligibleOutputTokens": 7400,
             "genMs": 62000,
@@ -836,10 +988,72 @@
       "lastAt": "2026-10-18T08:20:00Z",
       "freshness": "fresh",
       "windows": {
+        "today": {
+          "sums": {
+            "observedRequests": 3,
+            "observedOutputTokens": 1800,
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "eligibleRequests": 3,
+            "eligibleOutputTokens": 1800,
+            "genMs": 9000,
+            "turns": 1,
+            "turnMs": 60000,
+            "turnOutputTokens": 1800,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "76": 3
+              }
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {
+                "115": 1
+              }
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {
+                "78": 1
+              }
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "insufficient",
+              "n": 3,
+              "min": 5
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 1,
+              "min": 5
+            }
+          }
+        },
         "recent7d": {
           "sums": {
             "observedRequests": 3,
             "observedOutputTokens": 1800,
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
             "eligibleRequests": 3,
             "eligibleOutputTokens": 1800,
             "genMs": 9000,
@@ -896,6 +1110,9 @@
           "sums": {
             "observedRequests": 3,
             "observedOutputTokens": 1800,
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
             "eligibleRequests": 3,
             "eligibleOutputTokens": 1800,
             "genMs": 9000,
@@ -957,21 +1174,30 @@
       "source": "claude-code",
       "model": "claude-opus-5-5",
       "observedOutputTokens": 21000,
-      "observedRequests": 30
+      "observedRequests": 30,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     },
     {
       "day": "2026-10-18",
       "source": "claude-code",
       "model": "claude-opus-5-5",
       "observedOutputTokens": 9000,
-      "observedRequests": 12
+      "observedRequests": 12,
+      "inputTokens": 3000,
+      "cacheReadTokens": 9000,
+      "cacheWriteTokens": 100
     },
     {
       "day": "2026-10-18",
       "source": "codex",
       "model": "gpt-6-astra",
       "observedOutputTokens": 1800,
-      "observedRequests": 3
+      "observedRequests": 3,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     }
   ],
   "dailyCoverage": {
@@ -984,35 +1210,50 @@
       "source": "claude-code",
       "model": "claude-opus-5-5",
       "observedOutputTokens": 52000,
-      "observedRequests": 61
+      "observedRequests": 61,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     },
     {
       "day": "2026-09-15",
       "source": "codex",
       "model": "gpt-6-astra",
       "observedOutputTokens": 8000,
-      "observedRequests": 12
+      "observedRequests": 12,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     },
     {
       "day": "2026-10-17",
       "source": "claude-code",
       "model": "claude-opus-5-5",
       "observedOutputTokens": 21000,
-      "observedRequests": 30
+      "observedRequests": 30,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     },
     {
       "day": "2026-10-18",
       "source": "claude-code",
       "model": "claude-opus-5-5",
       "observedOutputTokens": 9000,
-      "observedRequests": 12
+      "observedRequests": 12,
+      "inputTokens": 3000,
+      "cacheReadTokens": 9000,
+      "cacheWriteTokens": 100
     },
     {
       "day": "2026-10-18",
       "source": "codex",
       "model": "gpt-6-astra",
       "observedOutputTokens": 1800,
-      "observedRequests": 3
+      "observedRequests": 3,
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null
     }
   ],
   "dailyLongCoverage": {
@@ -1315,6 +1556,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:2c7f7e06ee816741ac12b916b9edb011",
-  "validUntil": "2026-10-18T09:08:00Z"
+  "dataRevision": "sha256:e7e4ab3922eda24cf22b8916319014ac",
+  "validUntil": "2026-10-18T09:00:50.000000001Z"
 }

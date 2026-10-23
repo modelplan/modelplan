@@ -766,7 +766,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 // runs by itself.
 func observeCodexSpeed(st *store.Store, now time.Time) {
 	home := quotaPaths(st).CodexHome
-	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
+	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 256), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
 		speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
 }
 

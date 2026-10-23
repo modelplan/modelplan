@@ -36,6 +36,8 @@ type PerfLedger struct {
 	Files         map[string]Cursor `json:"files,omitempty"`
 	// Stores: how far each agent database was read (sqlite.go).
 	Stores map[string]DBCursor `json:"stores,omitempty"`
+	Live   []LiveRecord        `json:"live,omitempty"`
+	Hourly []Hourly            `json:"hourly,omitempty"`
 
 	project      func(cwd string) (ref, label string) // while observing: names a session's project
 	subscription string                               // while observing: the harness account's reference
@@ -91,8 +93,11 @@ type PerfRow struct {
 	Parser       string `json:"parser"`
 	Eligibility  string `json:"eligibility"`
 	// Every request the parser saw in a finished turn, counted once, eligible or not.
-	ObservedRequests     int   `json:"observedRequests"`
-	ObservedOutputTokens int64 `json:"observedOutputTokens"`
+	ObservedRequests     int    `json:"observedRequests"`
+	ObservedOutputTokens int64  `json:"observedOutputTokens"`
+	InputTokens          *int64 `json:"inputTokens"`
+	CacheReadTokens      *int64 `json:"cacheReadTokens"`
+	CacheWriteTokens     *int64 `json:"cacheWriteTokens"`
 	// The requests that pass Eligibility: the basis of the generation rate.
 	EligibleRequests     int   `json:"eligibleRequests"`
 	EligibleOutputTokens int64 `json:"eligibleOutputTokens"`
@@ -172,8 +177,23 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 }
 
 func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) bool {
-	done, changed := scanLog(l.Files, path, p, now)
+	if cp, ok := p.(*codexParser); ok {
+		cp.total = l.Files[fileKey(path)].CodexTotal
+		cp.checkpoint = cp.total
+	}
+	done, changed := scanLog(l.Files, path, &liveParser{parser: p, ledger: l, key: fileKey(path), source: source, now: now}, now)
+	if cp, ok := p.(*codexParser); ok {
+		c := l.Files[fileKey(path)]
+		c.CodexTotal = cp.total
+		if cp.cur != nil {
+			c.CodexTotal = cp.checkpoint
+		}
+		l.Files[fileKey(path)] = c
+	}
 	for _, t := range done {
+		if cp, ok := p.(*codexParser); ok && cp.liveOnly {
+			continue
+		}
 		l.add(source, parser, t)
 		l.addSession(fileKey(path), source, t)
 	}
@@ -195,7 +215,14 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	}
 	start := t.at.UTC().Truncate(time.Minute)
 	if s == nil {
-		l.Sessions = append(l.Sessions, PerfSession{Ref: newRef(), Key: key, Source: source, FirstAt: start, LastAt: start})
+		ref := newRef()
+		for _, r := range l.Live {
+			if r.Key == key && r.Source == source {
+				ref = r.Ref
+				break
+			}
+		}
+		l.Sessions = append(l.Sessions, PerfSession{Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
 		s = &l.Sessions[len(l.Sessions)-1]
 	}
 	if start.Before(s.FirstAt) {
@@ -260,6 +287,10 @@ func (l *PerfLedger) add(source, parser string, t turn) {
 			continue
 		}
 		r := l.row(d, source, parser, q.cfg)
+		r.InputTokens = sumToken(r.InputTokens, q.input, r.ObservedRequests)
+		r.CacheReadTokens = sumToken(r.CacheReadTokens, q.cacheRead, r.ObservedRequests)
+		r.CacheWriteTokens = sumToken(r.CacheWriteTokens, q.cacheWrite, r.ObservedRequests)
+		l.addHourly(source, q)
 		r.ObservedRequests++
 		r.ObservedOutputTokens += q.out
 		if q.ttft > 0 && q.ttft <= maxTTFT {
@@ -319,6 +350,8 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 // prune keeps PerfKeep, at most maxRows rows and maxFile bytes (dropping the oldest days first),
 // and returns the file's content.
 func (l *PerfLedger) prune(now time.Time) []byte {
+	l.pruneLive(now)
+	l.pruneHourly(now)
 	from := day(now.Add(-PerfKeep))
 	kept := l.Rows[:0]
 	for _, r := range l.Rows {
@@ -374,8 +407,16 @@ func (l *PerfLedger) prune(now time.Time) []byte {
 	}
 	for {
 		b, _ := json.Marshal(l)
-		if len(b) < maxFile || (len(l.Rows) == 0 && len(l.Sessions) == 0) {
+		if len(b) < maxFile || (len(l.Rows) == 0 && len(l.Sessions) == 0 && len(l.Live) == 0 && len(l.Hourly) == 0) {
 			return append(b, '\n')
+		}
+		if len(l.Live) > 0 {
+			l.Live = l.Live[1:]
+			continue
+		}
+		if len(l.Hourly) > 0 {
+			l.Hourly = l.Hourly[1:]
+			continue
 		}
 		l.Rows = l.Rows[len(l.Rows)/10:]
 		l.Sessions = l.Sessions[len(l.Sessions)/10:]

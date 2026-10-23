@@ -6,6 +6,13 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Personal snapshot schema v1 gains today's generation-speed window and per-source sums,
+  recent live sessions with separate 60-second rates, and today/yesterday hourly token buckets.
+- Claude Code and Codex input/cache token kinds are recorded beside output where available;
+  old or unsupported counts remain unknown. Codex cached input is separated from uncached input.
+- Local-only recording and `MODELPLAN_HISTORY=off` remain in effect; no new account endpoints
+  or uploads. See `docs/personal-snapshot.md` for session coverage, timing and attribution limits.
+
 ## CLI v0.5.32, Codex plugin 0.15.24 and Claude Code plugin 0.7.23 (2026-10-22)
 
 - The CLI, the publication reader and the Codex plugin now skip manifest component kinds they do not know, instead of rejecting the whole publication. This lets the producer add page-sized slices (modelplans.ai #544) without breaking installed clients.

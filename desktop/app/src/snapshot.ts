@@ -114,7 +114,13 @@ export interface SourceStatus { source: string; status: string; reason?: string 
 
 // One local day of one model: what the CLI saw in the logs it reads, across efforts and speed
 // modes (daily[], dailyLong[]). A day without a row is not a day without use: it is left out.
-export interface DailyTotal {
+export interface TokenKinds {
+  inputTokens?: number | null; // uncached input; absent/null before recording this kind
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
+}
+
+export interface DailyTotal extends TokenKinds {
   day: string; // local date, YYYY-MM-DD
   source: string;
   model: string;
@@ -124,6 +130,76 @@ export interface DailyTotal {
 
 // The first day a daily list covers (null before any ledger) and whether recording is on.
 export interface DailyCoverage { from: string | null; recording: boolean }
+
+// Additive cockpit data (CLI 0.5.33+); older snapshots may omit every new field.
+export interface Rate {
+  window: string;
+  value: number | null;
+  status: string;
+  n: number;
+  min: number;
+  reason?: string;
+  lastAt: string | null;
+  source?: string;
+  scope?: string;
+}
+export interface PerfSums extends TokenKinds {
+  observedRequests: number;
+  observedOutputTokens: number;
+  eligibleRequests: number;
+  eligibleOutputTokens: number;
+  genMs: number;
+  turns: number;
+  turnMs: number;
+  turnOutputTokens: number;
+  mixedConfigTurnsExcluded: number;
+}
+export interface Metric { value: number | null; status: string; n: number; min: number; reason?: string }
+export interface PerfWindow {
+  sums: PerfSums;
+  metrics: { generationTps: Metric; ttftMs: Metric; wholeTurnTps: Metric };
+}
+export interface PerfStat {
+  source: string;
+  model: string;
+  effortStatus: string;
+  effort: string;
+  speed: string;
+  windows: { today?: PerfWindow; recent7d: PerfWindow; recent30d: PerfWindow };
+}
+export interface TodayTotal {
+  source: string;
+  attribution: string;
+  sums: PerfSums;
+  generationTps: Metric;
+}
+export interface LiveSession {
+  ref: string;
+  source: string;
+  model: string;
+  effort: string;
+  effortStatus: string;
+  speed: string;
+  projectRef: string | null;
+  subscriptionRef: string | null;
+  startedAt: string;
+  lastAt: string;
+  status: 'running' | 'idle';
+  rate: Rate;
+}
+export interface HourlyTotal extends TokenKinds {
+  hour: string; // ISO local hour with UTC offset; DST's repeated hour stays distinct
+  source: string;
+  model: string;
+  observedOutputTokens: number;
+  observedRequests: number;
+}
+export interface Subscription {
+  subscriptionRef: string;
+  sources: string[];
+  basis: string;
+  observedAt: string;
+}
 
 export interface Snapshot {
   schemaVersion: number;
@@ -138,6 +214,11 @@ export interface Snapshot {
     stale: boolean;
     lastError?: string;
   } | null;
+  perfStats?: PerfStat[];
+  todayTotals?: TodayTotal[];
+  liveSessions?: LiveSession[];
+  hourly?: HourlyTotal[];
+  subscriptions?: Subscription[];
   sessions: Session[];
   accounts: Account[];
   sources: SourceStatus[];
@@ -160,7 +241,7 @@ export function parseSnapshot(raw: unknown): Snapshot {
   const s = v as Snapshot;
   if (s.kind !== KIND) throw Error('snapshot_kind');
   if (!Number.isInteger(s.schemaVersion) || s.schemaVersion < 1) throw Error('snapshot_version');
-  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured', 'daily', 'dailyLong'] as const) {
+  for (const k of ['sessions', 'accounts', 'sources', 'events', 'measured', 'daily', 'dailyLong', 'perfStats', 'todayTotals', 'liveSessions', 'hourly'] as const) {
     if (!Array.isArray(s[k])) (s as unknown as Record<string, unknown>)[k] = [];
   }
   for (const a of s.accounts) if (!Array.isArray(a.windows)) a.windows = [];

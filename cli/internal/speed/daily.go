@@ -145,6 +145,11 @@ func rollup(rows []PerfRow, from string) []Daily {
 			j, by[k] = len(out), len(out)
 			out = append(out, Daily{Day: r.Day, Source: r.Source, Model: r.Model})
 		}
+		if r.ObservedRequests > 0 {
+			out[j].InputTokens = sumToken(out[j].InputTokens, r.InputTokens, out[j].ObservedRequests)
+			out[j].CacheReadTokens = sumToken(out[j].CacheReadTokens, r.CacheReadTokens, out[j].ObservedRequests)
+			out[j].CacheWriteTokens = sumToken(out[j].CacheWriteTokens, r.CacheWriteTokens, out[j].ObservedRequests)
+		}
 		out[j].ObservedOutputTokens += r.ObservedOutputTokens
 		out[j].ObservedRequests += r.ObservedRequests
 	}
@@ -173,6 +178,14 @@ func mergeDaily(dst, src []Daily, from string) ([]Daily, bool) {
 			continue
 		}
 		x := &dst[i]
+		if r.ObservedRequests >= x.ObservedRequests {
+			for _, pair := range [][2]**int64{{&x.InputTokens, &r.InputTokens}, {&x.CacheReadTokens, &r.CacheReadTokens}, {&x.CacheWriteTokens, &r.CacheWriteTokens}} {
+				if !equalToken(*pair[0], *pair[1]) {
+					*pair[0] = *pair[1]
+					changed = true
+				}
+			}
+		}
 		if r.ObservedOutputTokens > x.ObservedOutputTokens {
 			x.ObservedOutputTokens, changed = r.ObservedOutputTokens, true
 		}

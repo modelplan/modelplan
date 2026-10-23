@@ -124,6 +124,15 @@ func (l *PerfLedger) scanDB(path, source, parser string, now time.Time, read fun
 		if c.Mark > 0 && r.start < c.Mark-look {
 			continue // history copied into a new row
 		}
+		cfg := config{model: clip(r.model)}
+		end := time.UnixMilli(r.end)
+		if r.end <= 0 {
+			end = time.UnixMilli(r.start)
+		}
+		q := request{out: max(r.out, 0), cfg: cfg, end: end, key: hashID(r.key)}
+		if r.session != "" {
+			l.signal(fileKey(source+":"+r.session), source, sessionSignal{start: time.UnixMilli(r.start), last: end, cfg: cfg, running: r.end <= 0, cwd: r.cwd, reqs: completedDBRequest(r.end, q)}, now)
+		}
 		if r.end <= 0 {
 			if len(pending) < maxPending && now.UnixMilli()-r.start < look {
 				pending = append(pending, r.rowid)
@@ -181,3 +190,10 @@ func envPath(k string) string {
 }
 
 func itoa64(v int64) string { return strconv.FormatInt(v, 10) }
+
+func completedDBRequest(end int64, q request) []request {
+	if end <= 0 {
+		return nil
+	}
+	return []request{q}
+}

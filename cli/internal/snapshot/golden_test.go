@@ -96,12 +96,12 @@ func golden() Snapshot {
 			ObservedRequests: 30, ObservedOutputTokens: 21000, EligibleRequests: 6, EligibleOutputTokens: 4800, GenMs: 40000, Turns: 4, TurnMs: 380000, TurnOutputTokens: 15000,
 			TTFTMs: ttft, TurnMsHist: speed.Hist{"133": 2, "135": 2}, TurnTokensHist: speed.Hist{"86": 2, "88": 2}, LastAt: &last},
 		{Day: "2026-10-18", Source: "claude-code", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", Parser: speed.ParserClaude, Eligibility: speed.EligibilityV1,
-			ObservedRequests: 12, ObservedOutputTokens: 9000, EligibleRequests: 3, EligibleOutputTokens: 2600, GenMs: 22000, Turns: 2, TurnMs: 200000, TurnOutputTokens: 6400,
+			InputTokens: ptrTokens(3000), CacheReadTokens: ptrTokens(9000), CacheWriteTokens: ptrTokens(100), ObservedRequests: 12, ObservedOutputTokens: 9000, EligibleRequests: 3, EligibleOutputTokens: 2600, GenMs: 22000, Turns: 2, TurnMs: 200000, TurnOutputTokens: 6400,
 			MixedConfigTurnsExcluded: 1, TurnMsHist: speed.Hist{"134": 2}, TurnTokensHist: speed.Hist{"87": 2}, LastAt: &last},
 		{Day: "2026-10-18", Source: "codex", Model: "gpt-6-astra", EffortStatus: "reported", Effort: "medium", Speed: "fast", Parser: speed.ParserCodex, Eligibility: speed.EligibilityV1,
 			ObservedRequests: 3, ObservedOutputTokens: 1800, EligibleRequests: 3, EligibleOutputTokens: 1800, GenMs: 9000, Turns: 1, TurnMs: 60000, TurnOutputTokens: 1800,
 			TTFTMs: speed.Hist{"76": 3}, TurnMsHist: speed.Hist{"115": 1}, TurnTokensHist: speed.Hist{"78": 1}, LastAt: &last},
-	}, Sessions: []speed.PerfSession{
+	}, Hourly: []speed.Hourly{{Hour: "2026-10-18T08:00:00Z", Source: "claude-code", Model: "claude-opus-5-5", ObservedRequests: 12, ObservedOutputTokens: 9000, InputTokens: ptrTokens(3000), CacheReadTokens: ptrTokens(9000), CacheWriteTokens: ptrTokens(100)}}, Live: []speed.LiveRecord{{Ref: "5c1e0d2a9b7f4e31", Key: "k1", Source: "claude-code", Model: "claude-opus-5-5", Effort: "high", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", SubscriptionRef: "9b1e44d07a2c3f58", StartedAt: now.Add(-time.Minute), LastAt: now.Add(-10 * time.Second), Running: true, Samples: []speed.LiveSample{{Key: "local-offset", End: now.Add(-10 * time.Second), Model: "claude-opus-5-5", Effort: "high", Out: 600, GenMs: 5000, Eligible: true}}}}, Sessions: []speed.PerfSession{
 		{Ref: "5c1e0d2a9b7f4e31", Key: "k1", Source: "claude-code", SubscriptionRef: "9b1e44d07a2c3f58", ProjectRef: "3f0c9a7d51e24b68a0c4e9d2b7f1a385", ProjectLabel: "label-while-off", FirstAt: now.Add(-26 * time.Hour), LastAt: last, Days: []speed.SessionDay{
 			{Day: "2026-10-17", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 30, ObservedOutputTokens: 21000},
 			{Day: "2026-10-18", Model: "claude-opus-5-5", EffortStatus: "reported", Effort: "high", ObservedRequests: 12, ObservedOutputTokens: 9000}}},
@@ -151,3 +151,5 @@ func TestGoldenSnapshot(t *testing.T) {
 		t.Errorf("testdata/snapshot.json is out of date (go test ./internal/snapshot -update):\n%s", got)
 	}
 }
+
+func ptrTokens(n int64) *int64 { return &n }

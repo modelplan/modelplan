@@ -63,6 +63,9 @@ func TestZCodeDatabase(t *testing.T) {
 	if d := v.Daily(); len(d) != 1 || d[0].Source != "zcode" || d[0].Model != "GLM-5.2" || d[0].ObservedOutputTokens != 300 || d[0].ObservedRequests != 1 {
 		t.Fatalf("daily = %+v", d)
 	}
+	if live := v.LiveSessions(); len(live) != 1 || live[0].Status != "running" || live[0].EffortStatus != "unreported" || live[0].SubscriptionRef != nil || live[0].Rate.Value != nil {
+		t.Fatalf("ZCode live %+v", live)
+	}
 	// The running request finishes; it counts once, and nothing counts twice on a re-read.
 	exec(t, db, `UPDATE model_usage SET completed_at = ?, output_tokens = 500 WHERE id = 'r2'`, ms(t0.Add(50*time.Second)))
 	for _, at := range []time.Duration{2 * time.Minute, 3 * time.Minute} {
@@ -113,6 +116,9 @@ func TestOpenCodeDatabase(t *testing.T) {
 	msg("row-2", "ses-a", "msg-2", t0.Add(10*time.Second), false, 0, 0)
 	if err := ObserveOpenCode(cache, home, Ingest{}, t0.Add(time.Minute)); err != nil {
 		t.Fatal(err)
+	}
+	if live := view(t, cache, t0.Add(time.Minute)).LiveSessions(); len(live) != 1 || live[0].Status != "running" || live[0].Rate.Value != nil {
+		t.Fatalf("OpenCode live %+v", live)
 	}
 	// msg-2 finishes; a fork copies msg-1 into another session; neither the copy nor a re-read
 	// counts twice.

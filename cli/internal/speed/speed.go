@@ -54,19 +54,22 @@ type Row struct {
 
 // Cursor is how far a log has been read: up to the end of its last finished turn.
 type Cursor struct {
-	Offset int64  `json:"offset"`
-	Seen   string `json:"seen"`           // local date of the last read
-	Skip   bool   `json:"skip,omitempty"` // a thread Codex runs by itself
+	Offset     int64    `json:"offset"`
+	Seen       string   `json:"seen"` // local date of the last read
+	CodexTotal *cxUsage `json:"codexTotal,omitempty"`
+	Skip       bool     `json:"skip,omitempty"` // a thread Codex runs by itself
 }
 
 // A sample is either one request or one finished turn of one configuration.
 type config struct{ model, effort, speed string }
 
 type request struct {
-	out       int64
-	gen, ttft time.Duration // 0 when unknown
-	cfg       config        // Claude Code: the request's own; Codex: the turn's
-	end       time.Time     // when its last output was logged
+	out                          int64
+	input, cacheRead, cacheWrite *int64
+	key                          string        // local deduplication key; never a harness id
+	gen, ttft                    time.Duration // 0 when unknown
+	cfg                          config        // Claude Code: the request's own; Codex: the turn's
+	end                          time.Time     // when its last output was logged
 }
 
 type turn struct {
@@ -138,7 +141,7 @@ func ObserveClaude(cache, transcript string, often bool, in Ingest, now time.Tim
 	}
 	err := observe(cache, now, func(l *Ledger) bool { return l.scan(transcript, "claude-code", newClaude(now), now) })
 	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return l.scan(transcript, "claude-code", ParserClaude, newClaude(now), now)
+		return l.scanClaudeFamily(transcript, now)
 	}))
 }
 
@@ -151,7 +154,13 @@ func ObserveCodex(cache string, rollouts []string, background func(string) bool,
 		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", newCodex(), now) })
 	})
 	return errors.Join(err, observePerf(cache, now, in, func(l *PerfLedger) bool {
-		return scanCodex(l.Files, rollouts, background, now, func(p string) bool { return l.scan(p, "codex", ParserCodex, newCodex(), now) })
+		changed := false
+		for _, path := range rollouts {
+			p := newCodex()
+			p.liveOnly = background(path)
+			changed = l.scan(path, "codex", ParserCodex, p, now) || changed
+		}
+		return changed
 	}))
 }
 

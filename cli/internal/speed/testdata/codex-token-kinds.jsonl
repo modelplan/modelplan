@@ -1,0 +1,7 @@
+{"timestamp":"2026-10-17T09:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"id-canary"}}
+{"timestamp":"2026-10-17T09:00:00.100Z","type":"turn_context","payload":{"model":"fixture-model","effort":"high","cwd":"/private/path-canary"}}
+{"timestamp":"2026-10-17T09:00:01.000Z","type":"response_item","payload":{"type":"message","content":[{"text":"prompt-canary"}]}}
+{"timestamp":"2026-10-17T09:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":1000,"cached_input_tokens":800,"output_tokens":100,"reasoning_output_tokens":40,"total_tokens":1100},"total_token_usage":{"input_tokens":5000,"cached_input_tokens":4000,"output_tokens":500,"reasoning_output_tokens":200,"total_tokens":5500}}}}
+{"timestamp":"2026-10-17T09:00:04.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"id-canary","output":"reply-canary"}}
+{"timestamp":"2026-10-17T09:00:06.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":6200,"cached_input_tokens":4900,"output_tokens":650,"reasoning_output_tokens":260,"total_tokens":6850}}}}
+{"timestamp":"2026-10-17T09:00:07.000Z","type":"event_msg","payload":{"type":"task_complete"}}
