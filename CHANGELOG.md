@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.33, Codex plugin 0.15.25 and Claude Code plugin 0.7.24 (2026-10-23)
+
 - Personal snapshot v1 adds local-day `perfStats[].windows.today`, per-source `todayTotals[]`,
   recent `liveSessions[]` with a 60-second generation rate, and two-day `hourly[]` buckets.
 - Input, cache-read and cache-write tokens are nullable in performance/daily/hourly sums. Codex
@@ -16,6 +18,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
   timing boundaries, DST, sample gates and bounded retention. Desktop parser types accept the additions.
 - Complete the existing macOS CLI dependency notices for go-isatty and go-strftime (no dependency change).
 
+
+- Both plugins pin CLI v0.5.33.
 
 ## CLI v0.5.32, Codex plugin 0.15.24 and Claude Code plugin 0.7.23 (2026-10-22)
 
