@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -117,8 +119,16 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 		}
 		rows = append(rows, w)
 	}
+	home, _ := os.UserHomeDir()
+	local := localusage.GeminiStatus(home, time.Now())
 	if c.json {
-		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows})
+		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localUsage": []localusage.Report{local}})
+	}
+	fmt.Fprintf(stdout, "gemini local · %s · %s\n", local.Status, strings.Join(local.ReadPaths, ", "))
+	if c.lang == "en" {
+		fmt.Fprintln(stdout, "  No host called; credentials are never read, printed or stored. Enable: modelplan usage gemini enable")
+	} else {
+		fmt.Fprintln(stdout, "  不访问任何主机，不读取、打印或保存凭据。启用：modelplan usage gemini enable")
 	}
 	if len(rows) == 0 {
 		if c.lang == "en" {

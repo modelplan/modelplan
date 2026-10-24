@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -40,10 +41,13 @@ type Connection struct {
 	Authorization Level  `json:"authorization"`
 	Quota         Level  `json:"quota"`
 	Support       string `json:"support"`
+
+	LocalUsage *localusage.Report `json:"localUsage,omitempty"`
 }
 
 // Env is where to look; tests replace Exists.
 type Env struct {
+	Gemini                                         *localusage.Report
 	Home, CodexHome, CodexBarFile, ConnectionsFile string
 	Exists                                         func(path string) bool
 }
@@ -218,6 +222,22 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		out = append(out, c)
 	}
+	gemini := e.Gemini
+	if gemini == nil {
+		status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
+		gemini = &status
+	}
+	gc := Connection{ID: "gemini", Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath("gemini"), "not-found"),
+		Authorization: Level{Status: "off", Reason: gemini.Reason, Via: "local-usage.json"}, History: Level{Status: "off"},
+		Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: gemini}
+	if gemini.Enabled && gemini.Status != "off" {
+		gc.Authorization.Status = "yes"
+		gc.History = Level{Status: "unknown", Reason: gemini.Reason}
+		if len(gemini.Rows) > 0 {
+			gc.History = Level{Status: "yes", At: gemini.LastObservedAt, Reason: gemini.Reason}
+		}
+	}
+	out = append(out, gc)
 	return out
 }
 

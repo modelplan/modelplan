@@ -16,6 +16,9 @@ It marks no advice as told. A client keeps its own notified keys.
 
 `cli/internal/snapshot/testdata/snapshot.json` is a complete example, kept in step with the CLI by its tests (`go test ./internal/snapshot -update` rewrites it). The desktop app's tests read it, so a change that breaks a client fails there.
 
+`localUsage[]` is an additive, optional local accounting view. Gemini is off until `modelplan usage gemini enable`. Its rows group native token counters by local day and model; sessions expose only keyed references and timestamps. Counters are nullable, `coverage` identifies bounded/skipped history, and `scope` distinguishes this from account quota. No credential or network access is involved. These values do not enter existing quota accounts, speed estimates or the performance ledger's daily totals. Source paths, an empty `hosts` list and privacy text are also present in Gemini connection diagnostics. Snapshot revisions exclude each report's evaluation clock; enabled local usage adds a local-midnight refresh boundary.
+
+
 ## Top level
 
 | Field | Meaning |

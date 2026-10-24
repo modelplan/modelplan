@@ -20,6 +20,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
@@ -75,6 +76,9 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        name projects by their folder in the snapshot's project
                                        ranking: on by default, the names stay on this machine;
                                        off keeps only opaque references and deletes the stored names
+  modelplan usage gemini [enable|disable|status]
+                                       opt-in local Gemini tokens/model/history (no account quota);
+                                       MODELPLAN_GEMINI_HOME selects its local data root
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
@@ -256,6 +260,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		style.Advice(stdout, es)
 		return 0
+
+	case "usage":
+		return usageCmd(fs.Args(), stdout, stderr, c)
 
 	case "history":
 		l := history.Load(st.Dir)
@@ -756,9 +763,13 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	perf, ok := speed.LoadPerf(st.Dir)
 	long, longOK := speed.LoadLong(st.Dir)
 	pace, paceOK := history.LoadPace(st.Dir)
-	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
+	home, _ := os.UserHomeDir()
+	localUsage := localusage.ReadGemini(home, now)
+	connectionEnv := connections.Local(paths)
+	connectionEnv.Gemini = &localUsage
+	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage}, Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
-		Connections: connections.Diagnose(connections.Local(paths), report),
+		Connections: connections.Diagnose(connectionEnv, report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
 }
