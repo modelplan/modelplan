@@ -19,7 +19,8 @@ type State struct {
 	Seen          map[string]time.Time `json:"seen"`
 	Armed         []Armed              `json:"armed"`
 	// Briefs: per thread, what the last task-start brief was judged against.
-	Briefs  map[string]BriefMark `json:"briefs,omitempty"`
+	Briefs  map[string]BriefMark    `json:"briefs,omitempty"`
+	Quotas  map[string]QuotaSession `json:"quotas,omitempty"`
 	changed bool
 }
 
@@ -75,6 +76,7 @@ func Load(cache string) *State {
 			s.Seen = on.Seen
 		}
 		s.Briefs = on.Briefs
+		s.Quotas = on.Quotas
 		s.Armed = on.Armed
 	}
 	return s
@@ -99,6 +101,31 @@ func (s *State) Save(cache string, now time.Time) error {
 			}
 			s.Briefs[k] = b
 		}
+	}
+	for k, q := range disk.Quotas {
+		if s.Quotas == nil {
+			s.Quotas = map[string]QuotaSession{}
+		}
+		local, ok := s.Quotas[k]
+		if !ok {
+			s.Quotas[k] = q
+			continue
+		}
+		if local.Windows == nil {
+			local.Windows = map[string]QuotaMark{}
+		}
+		for window, mark := range q.Windows {
+			if own, exists := local.Windows[window]; !exists {
+				local.Windows[window] = mark
+			} else if mark.Recovered && !own.Recovered {
+				own.Recovered = true
+				local.Windows[window] = own
+			}
+		}
+		if q.At.After(local.At) {
+			local.At = q.At
+		}
+		s.Quotas[k] = local
 	}
 	keys := map[string]bool{}
 	for _, a := range s.Armed {
@@ -147,6 +174,11 @@ func (s *State) prune(now time.Time) {
 			delete(s.Briefs, k)
 		}
 	}
+	for k, q := range s.Quotas {
+		if now.Sub(q.At) > seenFor {
+			delete(s.Quotas, k)
+		}
+	}
 	kept := s.Armed[:0]
 	for _, a := range s.Armed {
 		if now.Sub(a.ResetAt) <= a.lasts() {
@@ -184,7 +216,7 @@ const (
 // BriefDue says which task-start brief a thread needs ("" none) and records it: the full brief
 // on its first prompt, and one line for a model it was not briefed on (read only on a later
 // prompt, or switched to). A model it was briefed on earlier is still in context. Effort and
-// quota changes are the user's to see (status line, hook notices), not a reason to brief again.
+// quota changes do not repeat the brief; QuotaNotices handles the model's factual thresholds.
 func (s *State) BriefDue(thread, model string, now time.Time) string {
 	if thread == "" {
 		return ""
