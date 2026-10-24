@@ -6,6 +6,55 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.36, Codex plugin 0.15.28 and Claude Code plugin 0.7.27 (2026-10-24)
+
+- Claude Code and Codex prompt hooks give the model one factual line when the harness's
+  5-hour or weekly quota falls below 15% remaining, and one after that window resets
+  with more than 50% remaining. Each low/reset line fires at most once per window per thread.
+- These lines use the hook's English/Chinese setting and show only the window, remaining
+  percentage and time to reset. Unknown or stale readings never trigger them; quota is read
+  from the local cache without waiting on the network. Existing advice stays in the user's
+  `systemMessage`, separate from the model's `additionalContext`.
+- `MODELPLAN_TASK_BRIEF=off` disables the quota lines along with the task-start brief.
+  Session state is stored beside the brief state with the same eight-day expiry and cleanup.
+- Both plugins pin CLI v0.5.36 and its published archive checksums.
+
+## CLI v0.5.35, Codex plugin 0.15.27 and Claude Code plugin 0.7.26 (2026-10-24)
+
+- Cursor personal-plan quota is opt-in with `modelplan connect cursor`. It reads only
+  `cursorAuth/accessToken` from the editor's `User/globalStorage/state.vscdb`, read-only,
+  including existing WAL state: `~/Library/Application Support/Cursor/` on macOS,
+  absolute `$XDG_CONFIG_HOME/Cursor/` or `~/.config/Cursor/` on Linux, `%APPDATA%/Cursor/` on Windows.
+  It calls private dashboard JSON on `cursor.com` (`/api/usage-summary`,
+  `/api/dashboard/get-plan-info`, legacy `/api/usage?user=...`) and, for unified plans,
+  `api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`. Included requests,
+  monthly/weekly pools, usage-based spend and reset dates stay distinct. Tokens are never
+  refreshed, rewritten, copied or stored; expired, sealed or opaque sign-ins remain unknown.
+  `modelplan connect cursor --backend codexbar` explicitly selects the existing fallback.
+- MiniMax plan quota is opt-in with `modelplan connect minimax --region international|china`.
+  It reads only `MINIMAX_CODING_API_KEY` (or `--key-env NAME`) and calls
+  `GET /v1/token_plan/remains` on `api.minimax.io` (default) or `api.minimaxi.com`.
+  The same-host legacy `/v1/api/openplatform/coding_plan/remains` is tried only after
+  endpoint/auth rejection; no cross-region retry occurs. The current route is documented on
+  `www.minimax.io`; API subdomains, response schema and the legacy route are compatibility
+  interfaces. Remaining percentages take precedence over legacy remaining counters; missing,
+  inactive, unfamiliar or expired values stay unknown. No credential files, browser sessions,
+  refresh, inference or API cash balance are used, and keys are never printed or stored.
+- Both quota readers remain off until connected. `modelplan disconnect <provider>` or
+  `MODELPLAN_NATIVE=off` stops reads. Connections and desktop diagnostics disclose the source
+  path or environment variable, called hosts and endpoint documentation status; snapshot v1
+  adds diagnostics without changing existing quota meanings. Identity references use local keyed hashes.
+- `modelplan publication --json [--offline]` returns one public-only object with
+  `schemaVersion: 1`, `publicationId`, nullable `publishedAt`, `units`, `models[]`, `lineups[]`
+  and `speedTiers[]`. `lineups` is an array, unlike `lineup --json`'s developer-keyed object.
+  Published order, unknown `null` values and speed qualifiers are preserved; no ranking is inferred.
+  Online it anonymously refreshes verified public data; `--offline` re-verifies the cache without
+  network requests or writes. It reads no account data, credentials, quotas or personal history.
+- Validation uses handwritten synthetic fixtures and local test servers. Live accounts,
+  endpoint acceptance and all platform/region/plan combinations were not verified; no real
+  vendor credentials or quota endpoints were used during testing.
+- Both plugins pin CLI v0.5.35 and its published archive checksums.
+
 ## CLI v0.5.34, Codex plugin 0.15.26 and Claude Code plugin 0.7.25 (2026-10-23)
 
 - Quota windows become unknown (`--`) once their reset passes without a fresh reading.
