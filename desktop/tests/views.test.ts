@@ -102,3 +102,13 @@ test("community entry uses an explicit build-time branding interface", async () 
   );
   assert.ok(!main.includes("kit/logo.svg"));
 });
+
+test("Quota: expired readings stay unknown, including older snapshots with a used value", () => {
+  for (const usedPercent of [80, null]) {
+    const s = golden();
+    s.accounts = [{ ...s.accounts[0], windows: [{ ...s.accounts[0].windows[0], usedPercent, remainingPercent: null, pace: 'reset_passed', unknownReason: 'reset_passed' }] }];
+    const html = renderQuota(s, 'en', at);
+    assert.match(html, /awaiting reading/);
+    assert.doesNotMatch(html, /% left|role="meter"/);
+  }
+});

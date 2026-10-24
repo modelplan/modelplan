@@ -307,3 +307,5 @@ The same limits apply during read-only projection even before another ledger wri
 输入、缓存读取、缓存写入缺失时为 `null`，不是零；缓存命中率仅在字段已知时按
 `cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
 只读模式不写文件、不发现新会话，也不请求账号端点。
+
+At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` and `remainingPercent` are null/absent until a new-cycle reading arrives. `pace: "reset_passed"` and the additive `unknownReason: "reset_passed"` explain the unknown allowance. Render it as `—`, never a refill or the previous cycle’s percentage. Snapshot `dataRevision` still identifies the original observation; the clock crossing a reset alone does not change it.

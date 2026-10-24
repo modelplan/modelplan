@@ -192,3 +192,20 @@ class ClaudeSubscription(unittest.TestCase):
             self.assertNotIn("subscription", quota.read_claude_code(str(d))[0][0])
         finally:
             shutil.rmtree(d)
+
+
+class ResetFreshness(unittest.TestCase):
+    def test_before_reset_expired_and_refreshed(self):
+        reset = NOW + dt.timedelta(minutes=1)
+        w = quota.window("monthly", 80, reset, NOW)
+        quota.eval_window(w, NOW)
+        self.assertEqual(20, w["remainingPercent"])
+        for at in (reset, reset + dt.timedelta(seconds=1)):
+            quota.eval_window(w, at)
+            self.assertIsNone(w["usedPercent"])
+            self.assertIsNone(w["remainingPercent"])
+            self.assertEqual("reset_passed", w["unknownReason"])
+        w = quota.window("monthly", 5, reset + dt.timedelta(days=30), reset)
+        quota.eval_window(w, reset + dt.timedelta(seconds=1))
+        self.assertEqual(95, w["remainingPercent"])
+        self.assertNotIn("unknownReason", w)
