@@ -75,26 +75,25 @@ Only the standard library is used. The module requires Go ≥ 1.24.
 
 Statusline defaults to `--harness claude-code`. For Codex, pass `--harness codex` and its exact native model ID. IDs are resolved only through the publication's reviewed, harness-specific mappings; display names and family names are not fallback identities. `未核对型号` / `id not reviewed` means this incoming ID is not reviewed for that harness, even if the model itself is in the catalogue. Sync once after a mapping update; the statusline remains cache-only.
 
-### Qwen Code local usage exports
+### Qwen Code local history (opt-in)
 
-In Qwen Code, use `/stats export daily 2026-10-22 --format json` or `/stats export monthly 2026-10 --format json`. Then explicitly select that exported file:
+Run `modelplan usage qwen enable`, then `modelplan usage qwen [--json]`. Once enabled, existing local session history is read automatically. `modelplan usage qwen disable`, `MODELPLAN_QWEN=off` or `MODELPLAN_HISTORY=off` stops it. An absolute `MODELPLAN_QWEN_HOME` selects a different history root. No export step or cloud plan login is needed.
 
-```sh
-modelplan qwen-usage --export /path/to/qwen-token-usage-day-2026-10-22.json
-export MODELPLAN_QWEN_USAGE_EXPORT=/path/to/qwen-exports
-modelplan qwen-usage --json
-modelplan connections --json
-modelplan desktop --read-only --offline
-unset MODELPLAN_QWEN_USAGE_EXPORT
-```
+This reuses the [Gemini reader in PR #121](https://github.com/modelplan/modelplan/pull/121): one consent/HMAC store (`~/.config/modelplan/local-usage.json`), bounded discovery, safe file reads, message deduplication, unknown-preserving sums, local-day/model history, opaque session references and partial-coverage reporting. Gemini and Qwen opt-ins are independent. No Qwen executable, credentials/settings/OAuth files or network host are accessed. Prompts, replies, thoughts text, tool payloads and raw identifiers never enter output or storage. Only modelplan's own consent/HMAC file is written; source files and local history are never rewritten or cached.
 
-Off by default. `--export` authorizes one command; `MODELPLAN_QWEN_USAGE_EXPORT` selects a file or directory for `qwen-usage`, connections diagnostics and the desktop snapshot. A directory reads only `qwen-token-usage-*.json` (at most 64 exports, 1 MiB each, no recursion or symlink files). No Qwen command is run, no credentials or conversation files are opened, no host is called, and exports are never rewritten or cached. Diagnostics show the setting and selected path. No account identity is read or stored.
+Current Qwen writes `~/.qwen/projects/<project>/chats/<sessionId>.jsonl` records with `uuid`, `type: assistant`, `usageMetadata` and model/timestamp metadata. The reader also accepts Gemini-style Qwen snapshots/JSONL under `~/.qwen/tmp/*/chats/` and legacy `~/.qwen/*/chats/`. Reads stay within direct `chats` files (`*.jsonl`, legacy `session-*.json`), without arbitrary recursive scanning. Symlinks are refused. Limits match Gemini: 35 local days, 20,000 directory entries, 256 files, 8 MiB/file, 32 MiB read and 50,000 unique messages. Deleted/cloud-only/subdirectory histories cannot be reconstructed; incomplete/unsupported files produce partial coverage.
 
-Each calendar day/month has model token totals and the export timestamp. The newest export of the same bucket replaces older copies; day and month buckets stay separate and must not be added together. Missing/invalid token counts remain `null` (`--` in text), including absent cache fields. Exports older than 24 hours are marked stale; their historical counts remain historical, without estimating current use. Input/cache and output/thought buckets retain Qwen's definitions and may overlap. Remaining quota is always unknown; this does not read Qwen Cloud, Alibaba Coding Plan, or Moonshot plans. The existing speed and daily ledgers are unchanged.
+Native prompt/cached and candidate/thought counters retain their meanings and may overlap: do not add them. Missing/invalid counters and sums containing them stay `null` / `--`, including absent cache/thought fields. Copied/forked UUIDs count once; session totals, user/tool records, edits and rewinds do not invent extra usage or refunds. No remaining quota, subscription debit, API-price cost or generation speed is inferred. Connections disclose exact patterns, privacy and an empty host list. Desktop schema v1 adds Qwen to #121's `localUsage[]`; quota, speed and daily-ledger fields retain their meanings.
 
-Source contract: Qwen's [official stats commands](https://qwenlm.github.io/qwen-code-docs/en/users/features/commands/) and first-party [`TokenUsageSummary` / JSON export](https://github.com/QwenLM/qwen-code/blob/5a0be334326566bec502a0cfcaf35c11557247d3/packages/core/src/services/tokenUsageService.ts). The report's older `~/.qwen/stats/` location is not assumed to have a stable storage schema: use the version's own JSON export. Raw `usage_record.jsonl`, session logs, CSV and unrecognized versions are unsupported. This is original Go code based on that export contract, without copying Qwen or monitor implementation code. Tests use hand-written synthetic exports; real installations/accounts were not accessed.
+First-party source reviewed (Apache-2.0): [ChatRecord and recordAssistantTurn](https://github.com/QwenLM/qwen-code/blob/5a0be334326566bec502a0cfcaf35c11557247d3/packages/core/src/services/chatRecordingService.ts), [Storage.getProjectDir](https://github.com/QwenLM/qwen-code/blob/5a0be334326566bec502a0cfcaf35c11557247d3/packages/core/src/config/storage.ts). The implementation and fixtures are original Go/handwritten JSON; no Qwen code was copied. The record service's older tmp-path comment is superseded by its actual `getProjectDir()` call; the reader supports both layouts. Live installations and future schemas remain unverified.
 
-Qwen Code 本地用量默认关闭。在 Qwen Code 中用 `/stats export daily 2026-10-22 --format json` 或 `/stats export monthly 2026-10 --format json` 导出，再用 `modelplan qwen-usage --export 路径` 单次读取。设置 `MODELPLAN_QWEN_USAGE_EXPORT` 为文件或目录后，命令、连接诊断与桌面快照都会读取；取消该环境变量即可关闭。目录仅读取 `qwen-token-usage-*.json`，不递归，不读取符号链接文件，最多 64 个文件，每个 1 MiB。不运行 Qwen、不读取凭据或会话、不联网、不缓存或改写导出文件，也不读取或存储账号身份。诊断显示设置名称与路径。相同日/月桶仅保留最新导出；日与月不可叠加，超过 24 小时标记过期，历史数据不代表当前用量。缺失字段为 `null`/`--`，不推断剩余额度、速度或云套餐额度。旧版 `~/.qwen/stats/` 和原始日志不直接读取，请使用相应版本的 JSON 导出。
+Qwen Code 默认关闭。`modelplan usage qwen enable` 后自动读取本机已有聊天记录，`modelplan usage qwen --json` 查看；`disable`、`MODELPLAN_QWEN=off` 或 `MODELPLAN_HISTORY=off` 停止读取。可用绝对路径 `MODELPLAN_QWEN_HOME` 指定记录根目录，不需要手动导出或云账号。与 Gemini 共用 #121 的同意设置、带密钥哈希身份、安全扫描、去重、可空求和和时间/模型汇总，但独立启用。读取 `.qwen/projects/*/chats/*.jsonl` 及旧版 tmp/根目录布局，保留原生 token 定义，不叠加重叠计数。缺失为 `null`/`--`；只统计有界本机历史，不推断额度、费用或速度。凭据/设置/OAuth 不读取，不运行 Qwen 或联网；提问、回复、思考正文、工具内容与原始标识不输出或存储，不改写源文件。桌面仅新增 `localUsage` 的 Qwen 条目，不改变原有额度或速度字段。
+
+#### Optional JSON exports
+
+The existing `modelplan qwen-usage --export PATH` and `MODELPLAN_QWEN_USAGE_EXPORT` remain an independent optional view for Qwen's own aggregated JSON exports (`/stats export daily|monthly --format json`). A directory reads only `qwen-token-usage-*.json`, at most 64 files of 1 MiB each. It never enables session reads, calls a host, rewrites exports or merges them into session accounting. Re-exporting replaces the same calendar bucket; overlapping day/month exports stay separate. `qwenUsage` remains an optional snapshot field for this view only. Unset the variable to stop it. [Export contract](https://github.com/QwenLM/qwen-code/blob/5a0be334326566bec502a0cfcaf35c11557247d3/packages/core/src/services/tokenUsageService.ts).
+
+原有 `qwen-usage --export PATH` 和 `MODELPLAN_QWEN_USAGE_EXPORT` 仅作为可选聚合导出视图保留，不是自动读取所必需，不会启用会话读取或把导出与会话重复相加。取消环境变量即可停止；可选快照字段 `qwenUsage` 仍只表示导出。
 
 ### Gemini CLI local history (opt-in)
 

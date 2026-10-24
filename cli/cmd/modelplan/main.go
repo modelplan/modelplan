@@ -77,8 +77,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        ranking: on by default, the names stay on this machine;
                                        off keeps only opaque references and deletes the stored names
   modelplan qwen-usage --export PATH  optional aggregated Qwen JSON export (local only)
-  modelplan usage gemini [enable|disable|status]
-                                       opt-in local Gemini tokens/model/history (no account quota);
+  modelplan usage <gemini|qwen> [enable|disable|status]
+                                       opt-in local Gemini/Qwen tokens/model/history (no account quota);
                                        MODELPLAN_GEMINI_HOME selects its local data root
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
@@ -769,9 +769,11 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	pace, paceOK := history.LoadPace(st.Dir)
 	home, _ := os.UserHomeDir()
 	localUsage := localusage.ReadGemini(home, now)
+	qwenLocal := localusage.ReadQwen(home, now)
 	connectionEnv := connections.Local(paths)
 	connectionEnv.Gemini = &localUsage
-	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage}, Report: report, Digest: d, State: ps, Events: es,
+	connectionEnv.Qwen = &qwenLocal
+	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 		QwenUsage:   qwenSnapshot(now),
 		Connections: connections.Diagnose(connectionEnv, report),

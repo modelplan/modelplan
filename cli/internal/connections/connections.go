@@ -48,6 +48,7 @@ type Connection struct {
 // Env is where to look; tests replace Exists.
 type Env struct {
 	Gemini                                         *localusage.Report
+	Qwen                                           *localusage.Report
 	Home, CodexHome, CodexBarFile, ConnectionsFile string
 	Exists                                         func(path string) bool
 }
@@ -218,22 +219,28 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		out = append(out, c)
 	}
-	gemini := e.Gemini
-	if gemini == nil {
-		status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
-		gemini = &status
-	}
-	gc := Connection{ID: "gemini", Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath("gemini"), "not-found"),
-		Authorization: Level{Status: "off", Reason: gemini.Reason, Via: "local-usage.json"}, History: Level{Status: "off"},
-		Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: gemini}
-	if gemini.Enabled && gemini.Status != "off" {
-		gc.Authorization.Status = "yes"
-		gc.History = Level{Status: "unknown", Reason: gemini.Reason}
-		if len(gemini.Rows) > 0 {
-			gc.History = Level{Status: "yes", At: gemini.LastObservedAt, Reason: gemini.Reason}
+	for _, source := range []string{"gemini", "qwen"} {
+		usage, name := e.Gemini, "gemini"
+		if source == "qwen" {
+			usage, name = e.Qwen, "qwen"
 		}
+		if usage == nil {
+			status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
+			if source == "qwen" {
+				status = localusage.QwenStatus(e.Home, r.EvaluatedAt)
+			}
+			usage = &status
+		}
+		c := Connection{ID: source, Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath(name), "not-found"), Authorization: Level{Status: "off", Reason: usage.Reason, Via: "local-usage.json"}, History: Level{Status: "off"}, Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: usage}
+		if usage.Enabled && usage.Status != "off" {
+			c.Authorization.Status = "yes"
+			c.History = Level{Status: "unknown", Reason: usage.Reason}
+			if len(usage.Rows) > 0 {
+				c.History = Level{Status: "yes", At: usage.LastObservedAt, Reason: usage.Reason}
+			}
+		}
+		out = append(out, c)
 	}
-	out = append(out, gc)
 	if qwenusage.Configured() != "" {
 		out = append(out, Qwen())
 	}

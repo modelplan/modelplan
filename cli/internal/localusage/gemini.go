@@ -31,6 +31,7 @@ const (
 type setting struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Enabled       bool   `json:"gemini"`
+	Qwen          bool   `json:"qwen,omitempty"`
 	Key           string `json:"identityKey"`
 }
 
@@ -46,7 +47,9 @@ func GeminiHome(home string) string {
 
 // SetGemini records explicit consent and an independent local HMAC key. It touches no
 // Gemini files; the key protects session/message references, not an account credential.
-func SetGemini(home string, on bool) error {
+func SetGemini(home string, on bool) error { return setSource(home, "gemini", on) }
+
+func setSource(home, source string, on bool) error {
 	path := SettingsPath(home)
 	s, err := loadSetting(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -59,7 +62,12 @@ func SetGemini(home string, on bool) error {
 		}
 		s.Key = hex.EncodeToString(b)
 	}
-	s.SchemaVersion, s.Enabled = 1, on
+	s.SchemaVersion = 1
+	if source == "qwen" {
+		s.Qwen = on
+	} else {
+		s.Enabled = on
+	}
 	b, _ := json.MarshalIndent(s, "", "  ")
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -91,7 +99,7 @@ func loadSetting(path string) (setting, error) {
 	if json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
 		return s, errors.New("invalid schema")
 	}
-	if s.Enabled {
+	if s.Enabled || s.Qwen {
 		key, err := hex.DecodeString(s.Key)
 		if err != nil || len(key) != 32 {
 			return s, errors.New("invalid identity key")
@@ -152,12 +160,17 @@ type Report struct {
 }
 
 // GeminiStatus reads only modelplan's own consent setting, never Gemini data.
-func GeminiStatus(home string, now time.Time) Report {
-	root := GeminiHome(home)
-	r := Report{Source: "gemini", Status: "off", Reason: "not-enabled", EvaluatedAt: now.UTC(),
-		ReadPaths: []string{filepath.Join(root, "tmp", "*", "chats", "session-*.{json,jsonl}"), filepath.Join(root, "*", "chats", "session-*.{json,jsonl}")},
+func GeminiStatus(home string, now time.Time) Report { return sourceStatus(home, now, geminiTool) }
+
+func sourceStatus(home string, now time.Time, tool historyTool) Report {
+	root := tool.home(home)
+	r := Report{Source: tool.source, Status: "off", Reason: "not-enabled", EvaluatedAt: now.UTC(),
+		ReadPaths: tool.paths(root),
 		Hosts:     []string{}, Privacy: "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
 		Scope: "available-local-history; input includes cached tokens; output excludes thoughts; no account quota", HistoryDays: HistoryDays, Rows: []Row{}, Sessions: []Session{}}
+	if tool.source == "qwen" {
+		r.Scope = "available-local-history; native prompt/cached and candidate/thought counters may overlap; no account quota"
+	}
 	s, err := loadSetting(SettingsPath(home))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -165,11 +178,11 @@ func GeminiStatus(home string, now time.Time) Report {
 		}
 		return r
 	}
-	if !s.Enabled {
+	if (tool.source == "gemini" && !s.Enabled) || (tool.source == "qwen" && !s.Qwen) {
 		return r
 	}
 	r.Enabled = true
-	if os.Getenv("MODELPLAN_HISTORY") == "off" || os.Getenv("MODELPLAN_GEMINI") == "off" {
+	if os.Getenv("MODELPLAN_HISTORY") == "off" || os.Getenv(tool.stopEnv) == "off" {
 		r.Reason = "disabled-by-environment"
 		return r
 	}
@@ -193,9 +206,12 @@ type message struct {
 	Tokens    *tokens `json:"tokens"`
 }
 type record struct {
-	Session  string    `json:"sessionId"`
-	Project  string    `json:"projectHash"`
-	Messages []message `json:"messages"`
+	UUID          string      `json:"uuid"`
+	CWD           string      `json:"cwd"`
+	UsageMetadata *qwenTokens `json:"usageMetadata"`
+	Session       string      `json:"sessionId"`
+	Project       string      `json:"projectHash"`
+	Messages      []message   `json:"messages"`
 	message
 	Set *struct {
 		Session  string    `json:"sessionId"`
@@ -217,8 +233,10 @@ type candidate struct {
 // ReadGemini recomputes bounded recent history without a token cache. JSON snapshots,
 // JSONL full-message records and legacy $set.messages checkpoints are deduplicated by
 // message id across files/forks/resumes. Conversation edits/rewinds do not refund usage.
-func ReadGemini(home string, now time.Time) Report {
-	r := GeminiStatus(home, now)
+func ReadGemini(home string, now time.Time) Report { return readHistory(home, now, geminiTool) }
+
+func readHistory(home string, now time.Time, tool historyTool) Report {
+	r := sourceStatus(home, now, tool)
 	if r.Status != "unknown" {
 		return r
 	} // no Gemini path is opened before opt-in
@@ -230,10 +248,13 @@ func ReadGemini(home string, now time.Time) Report {
 	key, _ := hex.DecodeString(s.Key)
 	ref := func(kind, id string) string {
 		h := hmac.New(sha256.New, key)
+		if tool.source == "qwen" {
+			kind = "qwen:" + kind
+		}
 		_, _ = h.Write([]byte(kind + "\x00" + id))
 		return hex.EncodeToString(h.Sum(nil)[:16])
 	}
-	files, err := discover(GeminiHome(home), &r.Coverage)
+	files, err := discover(tool.home(home), &r.Coverage, tool)
 	if err != nil {
 		r.Status, r.Reason = "unavailable", "history-root-unavailable-or-unsafe"
 		return r
@@ -263,7 +284,7 @@ func ReadGemini(home string, now time.Time) Report {
 			r.Coverage.FilesSkipped++
 			continue
 		}
-		records, err := parseRecords(b, strings.HasSuffix(f.path, ".jsonl"))
+		records, err := tool.parse(b, strings.HasSuffix(f.path, ".jsonl"))
 		if err != nil {
 			r.Coverage.FilesSkipped++
 			continue
@@ -293,7 +314,7 @@ func ReadGemini(home string, now time.Time) Report {
 		r.Coverage.FilesRead++
 		latest := map[string]message{}
 		accept := func(m message) {
-			if m.ID != "" && m.Type == "gemini" {
+			if m.ID != "" && m.Type == tool.messageType {
 				old, ok := latest[m.ID]
 				if !ok || m.Tokens != nil || old.Tokens == nil {
 					latest[m.ID] = m
@@ -471,7 +492,7 @@ func parseRecords(b []byte, jsonl bool) ([]record, error) {
 
 // Discovery traverses only known project/chats layouts, never oauth_creds.json,
 // settings, telemetry, Antigravity or arbitrary descendants. Symlinks are refused.
-func discover(root string, c *Coverage) ([]candidate, error) {
+func discover(root string, c *Coverage, tool historyTool) ([]candidate, error) {
 	if err := safePath(root, true); err != nil {
 		return nil, err
 	}
@@ -501,7 +522,8 @@ func discover(root string, c *Coverage) ([]candidate, error) {
 		return entries, nil
 	}
 	out := []candidate{}
-	for _, base := range []string{filepath.Join(root, "tmp"), root} {
+	for _, sub := range tool.bases {
+		base := filepath.Join(root, sub)
 		dirs, err := list(base)
 		if err != nil {
 			continue
@@ -516,7 +538,7 @@ func discover(root string, c *Coverage) ([]candidate, error) {
 			}
 			for _, entry := range entries {
 				name := entry.Name()
-				if !strings.HasPrefix(name, "session-") || (!strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".jsonl")) {
+				if !tool.filename(name) {
 					continue
 				}
 				c.FilesSeen++

@@ -351,6 +351,14 @@ func revision(in Input) string {
 		}
 		v.Accounts = append(v.Accounts, x)
 	}
+	if in.QwenUsage != nil {
+		q := *in.QwenUsage
+		q.Periods = append([]qwenusage.Period(nil), q.Periods...)
+		for i := range q.Periods {
+			q.Periods[i].Stale = false
+		}
+		v.QwenUsage = &q
+	}
 	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
 	for _, c := range in.Connections {
 		if c.LocalUsage != nil {
