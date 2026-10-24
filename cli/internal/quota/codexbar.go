@@ -345,15 +345,16 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
-	Region     string    `json:"region,omitempty"`
-	KeyEnv     string    `json:"keyEnv,omitempty"`
-	Provider   string    `json:"provider"`
-	Source     string    `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
-	Status     string    `json:"status"`           // ok | estimated | error
-	Error      string    `json:"error,omitempty"`
-	Plan       string    `json:"plan,omitempty"`
-	ObservedAt time.Time `json:"observedAt"`
-	Windows    []Window  `json:"windows,omitempty"`
+	CursorState string    `json:"cursorState,omitempty"`
+	Region      string    `json:"region,omitempty"`
+	KeyEnv      string    `json:"keyEnv,omitempty"`
+	Provider    string    `json:"provider"`
+	Source      string    `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
+	Status      string    `json:"status"`           // ok | estimated | error
+	Error       string    `json:"error,omitempty"`
+	Plan        string    `json:"plan,omitempty"`
+	ObservedAt  time.Time `json:"observedAt"`
+	Windows     []Window  `json:"windows,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`

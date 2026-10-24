@@ -3,7 +3,8 @@
 // `modelplan statusline` records, the user-maintained local.json and, for providers the user
 // enabled, CodexBar's reading (codexbar.go) or a native reader's (quota_native.go: the vendor's
 // usage endpoint, with an API key the user keeps in an environment variable, sent only to that
-// vendor). It never opens credential files, and nothing it reads leaves the machine. Which account a
+// vendor). Cursor optionally reuses its editor sign-in read-only for private dashboard
+// requests; credentials are never cached. Which account a
 // meter belongs to is kept only as a random local reference (identity.go).
 package quota
 

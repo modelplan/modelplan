@@ -154,6 +154,13 @@ func Selections(p Paths) ([]Selection, error) {
 			} else if x.KeyEnv == "" {
 				x.KeyEnv = n.KeyEnv
 			}
+			if x.Provider == "cursor" {
+				home, _ := os.UserHomeDir()
+				x.Read = CursorReadPath(home) + " (ItemTable cursorAuth/accessToken only; read-only, including existing WAL)"
+				x.Host, x.Hosts = "https://cursor.com", []string{"https://cursor.com", "https://api2.cursor.sh"}
+				x.EndpointNotice = CursorEndpointNotice
+				x.SecretPolicy = "No credential refresh, rewrite, copy, keychain or browser access. Only sanitized quota and keyed-hash identity references are stored."
+			}
 			if x.Provider == "kimi" {
 				x.Host = KimiHost(x.Region)
 				x.EndpointNotice = KimiEndpointNotice
