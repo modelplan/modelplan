@@ -42,6 +42,7 @@ var nativeReaders = map[string]*nativeReader{
 	"zai":        zaiReader,
 	"opencodego": opencodegoReader,
 	"kiro":       kiroReader,
+	"copilot":    copilotReader,
 }
 
 // NativeReader: the provider has a native reader, with its regions and default key variable.
@@ -123,6 +124,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		key := os.Getenv(x.KeyEnv)
 		e := nativeReaders[x.Provider].Fetch(ctx, nativeClient, x.Region, key, now)
 		e.Provider, e.Source = x.Provider, "api"
+		if x.Provider == "copilot" {
+			e.Source = "runtime"
+		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, "api-key:"+x.Provider, key, now) // a key is one subscription
 		}

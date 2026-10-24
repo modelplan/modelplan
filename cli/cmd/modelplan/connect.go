@@ -146,6 +146,9 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 				line += " (" + w.Reading.Reason + ")"
 			}
 		}
+		if w.Read != "" {
+			line += "\n  read: " + w.Read + "\n  hosts: " + strings.Join(w.Hosts, ", ") + "\n  " + w.SecretPolicy
+		}
 		fmt.Fprintln(stdout, line)
 	}
 	return 0

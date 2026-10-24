@@ -299,6 +299,7 @@ func Build(in Input) Snapshot {
 // from them (remaining minutes, elapsed and projected shares, pace, staleness, events).
 func revision(in Input) string {
 	type window struct {
+		Requests                *quota.RequestUsage `json:",omitempty"`
 		Kind, Limit, ResetMode  string
 		Used, UsedUSD, LimitUSD *float64
 		Minutes                 int
@@ -335,7 +336,7 @@ func revision(in Input) string {
 		}
 		for _, w := range a.Windows {
 			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: w.UsedPercent, UsedUSD: w.UsedUSD, LimitUSD: w.LimitUSD,
-				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
+				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC(), Requests: w.ObservedRequests()})
 		}
 		v.Accounts = append(v.Accounts, x)
 	}
