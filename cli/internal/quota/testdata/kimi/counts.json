@@ -1,0 +1,1 @@
+{"usage":{"limit":"1000","used":"240","remaining":"760","resetTime":"2026-10-29T00:00:00Z"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":100,"remaining":60,"resetTime":"2026-10-23T14:00:00Z"}}],"user":{"membership":{"level":"LEVEL_BASIC"},"email":"synthetic@example.invalid"}}

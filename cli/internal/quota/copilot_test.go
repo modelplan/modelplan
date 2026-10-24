@@ -17,6 +17,7 @@ import (
 const copilotQuota = `{"quotaSnapshots":{"premium_interactions":{"usedRequests":75,"entitlementRequests":300,"remainingPercentage":75,"resetDate":"2026-11-01T00:00:00Z"},"chat":{"entitlementRequests":-1}}}`
 
 func TestCopilotHelperProcess(t *testing.T) {
+	isolateHome(t)
 	if os.Getenv("MODELPLAN_TEST_COPILOT_HELPER") != "1" {
 		return
 	}
@@ -73,6 +74,7 @@ func fakeCopilot(t *testing.T) (string, string) {
 }
 
 func TestCopilotRuntimeOptInAndCache(t *testing.T) {
+	isolateHome(t)
 	bin, log := fakeCopilot(t)
 	t.Setenv("MODELPLAN_COPILOT", bin)
 	p := nativePaths(t)
@@ -133,6 +135,7 @@ func TestCopilotRuntimeOptInAndCache(t *testing.T) {
 }
 
 func TestCopilotPartialQuota(t *testing.T) {
+	isolateHome(t)
 	for _, tc := range []struct {
 		raw  string
 		used *float64
@@ -164,6 +167,7 @@ func copilotFrame(raw string) string {
 	return fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(raw), raw)
 }
 func TestCopilotProtocolFailuresAndLegacy(t *testing.T) {
+	isolateHome(t)
 	for _, raw := range []string{
 		"Content-Length: 999999999\r\n\r\n", "Content-Length: -1\r\n\r\n", "\r\n", "Content-Length: 5\r\n\r\nx",
 		copilotFrame(`{"id":1,"result":{"protocolVersion":999}}`),
@@ -185,6 +189,7 @@ func TestCopilotProtocolFailuresAndLegacy(t *testing.T) {
 }
 
 func TestCopilotMissingRuntimeAndResetCounts(t *testing.T) {
+	isolateHome(t)
 	t.Setenv("MODELPLAN_COPILOT", filepath.Join(t.TempDir(), "missing"))
 	if e := fetchCopilot(context.Background(), nil, "local", "", now); e.Status != "error" || !strings.Contains(e.Error, "--backend codexbar") {
 		t.Fatalf("%+v", e)

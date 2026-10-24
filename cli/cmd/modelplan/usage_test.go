@@ -15,6 +15,7 @@ import (
 )
 
 func TestGeminiUsageAndReadOnlySnapshot(t *testing.T) {
+	isolateHome(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("MODELPLAN_CACHE", filepath.Join(home, "cache"))

@@ -32,6 +32,7 @@ const (
 // variable ("" for a reader that asks the agent's own CLI, which keeps the sign-in) and the fetch,
 // which returns a cache entry (Status ok or error, never the key).
 type nativeReader struct {
+	Name    string
 	Regions []string
 	KeyEnv  string
 	Fetch   func(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry
@@ -40,6 +41,7 @@ type nativeReader struct {
 // nativeReaders: the registry. A provider without one stays on CodexBar.
 var nativeReaders = map[string]*nativeReader{
 	"zai":        zaiReader,
+	"kimi":       kimiReader,
 	"opencodego": opencodegoReader,
 	"kiro":       kiroReader,
 	"copilot":    copilotReader,
@@ -97,7 +99,7 @@ func NativeDue(p Paths, now time.Time) bool {
 		if ok && e.Status != "ok" {
 			wait = nativeRetryAfter
 		}
-		if !ok || now.Sub(s.ObservedAt) >= wait {
+		if !ok || (x.Provider == "kimi" && !kimiCacheMatches(p.Cache, x, e)) || now.Sub(s.ObservedAt) >= wait {
 			return true
 		}
 	}
@@ -124,11 +126,14 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		key := os.Getenv(x.KeyEnv)
 		e := nativeReaders[x.Provider].Fetch(ctx, nativeClient, x.Region, key, now)
 		e.Provider, e.Source = x.Provider, "api"
+		if x.Provider == "kimi" {
+			e.Region, e.KeyEnv = x.Region, x.KeyEnv
+		}
 		if x.Provider == "copilot" {
 			e.Source = "runtime"
 		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
-			e.SubscriptionRef = assignSubscription(p.Cache, "api-key:"+x.Provider, key, now) // a key is one subscription
+			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
 		}
 		if e.Error != "" {
 			e.Error = clean(e.Error, home)
@@ -204,10 +209,14 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"
 		case x.Blocked == "native-off":
 			st.Status, st.Reason = "missing", "native readers are off (MODELPLAN_NATIVE)"
-		case x.Blocked == "no-key" && !ok:
+		case x.Blocked == "no-key" && (!ok || x.Provider == "kimi"):
 			st.Status, st.Reason = "missing", x.KeyEnv+" is not set where modelplan runs"
+		case x.Provider == "kimi" && ok && !kimiCacheMatches(p.Cache, x, e):
+			st.Status, st.Reason = "missing", "the selected Kimi key or region changed; refresh required"
 		case !ok:
 			st.Status, st.Reason = "missing", "not read yet"
+		case x.Provider == "kimi" && now.Sub(e.ObservedAt) > staleAfter:
+			st.Status, st.Reason = "stale", "Kimi reading older than 60 minutes"
 		case now.Sub(e.ObservedAt) > nativeKeep || e.ObservedAt.After(now.Add(5*time.Minute)):
 			st.Status, st.Reason = "stale", "last reading older than 6 hours"
 		case e.Status != "ok":
@@ -216,8 +225,26 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
 			st.Status = "ok"
-			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: append([]Window(nil), e.Windows...), Via: "native", Subscription: e.binding("api-key")})
+			windows := append([]Window(nil), e.Windows...)
+			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding("api-key")})
 		}
 		r.Sources = append(r.Sources, st)
 	}
+}
+
+func nativeIdentityBasis(x Selection) string {
+	if x.Provider == "kimi" {
+		return "api-key:kimi:" + x.Region
+	}
+	return "api-key:" + x.Provider
+}
+func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
+	if e.Region != x.Region || e.KeyEnv != x.KeyEnv {
+		return false
+	}
+	if e.Status != "ok" || IdentityOff() {
+		return true
+	}
+	ref := lookupSubscription(cache, nativeIdentityBasis(x), os.Getenv(x.KeyEnv))
+	return ref != "" && ref == e.SubscriptionRef
 }

@@ -311,4 +311,6 @@ The same limits apply during read-only projection even before another ledger wri
 `cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
 只读模式不写文件、不发现新会话，也不请求账号端点。
 
+Kimi's quota connection adds optional `quotaAccess` diagnostics (selected environment variable, fixed regional `host`, backend/block state and `endpointNotice`). It identifies the undocumented `GET /coding/v1/usages` compatibility route and that the key is never printed/stored. Kimi windows continue using existing schema-v1 quota fields; no snapshot field is renamed. 连接新增可选 `quotaAccess`，披露变量名、地区主机、启用状态与未公开文档端点说明；不打印或存储 key，原有 v1 字段保持不变。
+
 At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` and `remainingPercent` are null/absent until a new-cycle reading arrives. `pace: "reset_passed"` and the additive `unknownReason: "reset_passed"` explain the unknown allowance. Render it as `—`, never a refill or the previous cycle’s percentage. Snapshot `dataRevision` still identifies the original observation; the clock crossing a reset alone does not change it.

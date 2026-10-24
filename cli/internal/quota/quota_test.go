@@ -58,6 +58,7 @@ func fixture(t *testing.T) Paths {
 }
 
 func TestReadMatchesSharedExpectation(t *testing.T) {
+	isolateHome(t)
 	p := fixture(t)
 	got := marshal(Read(p, now))
 	if *update {
@@ -86,6 +87,7 @@ func TestReadMatchesSharedExpectation(t *testing.T) {
 }
 
 func TestSnapshotIsRewrittenOnlyWhenItChanges(t *testing.T) {
+	isolateHome(t)
 	p := fixture(t)
 	before, _ := os.ReadFile(snapshotPath(p.Cache))
 	b, _ := os.ReadFile("testdata/claude-code-statusline.json")
@@ -105,6 +107,7 @@ func TestSnapshotIsRewrittenOnlyWhenItChanges(t *testing.T) {
 }
 
 func TestClaudeCodeSnapshotNamesWhoseSessionItIs(t *testing.T) {
+	isolateHome(t)
 	p := fixture(t)
 	attr := func(session string) string {
 		p.ClaudeSession = session
@@ -121,6 +124,7 @@ func TestClaudeCodeSnapshotNamesWhoseSessionItIs(t *testing.T) {
 }
 
 func TestMissingSourcesAreReportedNotInvented(t *testing.T) {
+	isolateHome(t)
 	dir := t.TempDir()
 	r := Read(Paths{Cache: dir, CodexHome: filepath.Join(dir, "codex"), LocalFile: filepath.Join(dir, "local.json")}, now)
 	if len(r.Accounts) != 0 {
@@ -139,6 +143,7 @@ func TestMissingSourcesAreReportedNotInvented(t *testing.T) {
 }
 
 func TestHeadroom(t *testing.T) {
+	isolateHome(t)
 	f := func(v float64) *float64 { return &v }
 	at := func(m int) *time.Time { x := now.Add(time.Duration(m) * time.Minute); return &x }
 	for _, tc := range []struct {
@@ -182,6 +187,7 @@ func threadsFixture(t *testing.T) string {
 }
 
 func TestCodexThreadsKeepTheirOwnModel(t *testing.T) {
+	isolateHome(t)
 	home := threadsFixture(t)
 	got := marshal(Read(Paths{CodexHome: home}, now))
 	if *update {
@@ -224,6 +230,7 @@ func TestCodexThreadsKeepTheirOwnModel(t *testing.T) {
 // The pace rules are shared with the Skill's Python reader; testdata/pace-cases.json is the
 // contract both run (skills/model-plan/evals/test_quota.py).
 func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
+	isolateHome(t)
 	b, err := os.ReadFile("testdata/pace-cases.json")
 	if err != nil {
 		t.Fatal(err)
@@ -276,6 +283,7 @@ func TestPaceCasesSharedWithThePythonReader(t *testing.T) {
 }
 
 func TestDeclaredGenerationAndRecordedEndpoint(t *testing.T) {
+	isolateHome(t)
 	dir := t.TempDir()
 	local := filepath.Join(dir, "local.json")
 	os.WriteFile(local, []byte(`{"schemaVersion":1,"plans":[{"planId":"zhipu-global-pro","generation":"legacy-v2"},{"planId":"kiro-pro"}]}`), 0o600)
@@ -299,6 +307,7 @@ func TestDeclaredGenerationAndRecordedEndpoint(t *testing.T) {
 }
 
 func TestDeclarePlanKeepsTheRestOfLocalJSON(t *testing.T) {
+	isolateHome(t)
 	dir := t.TempDir()
 	local := filepath.Join(dir, "cfg", "local.json")
 	if err := DeclarePlan(local, "zhipu-global-pro", "legacy-v2", false); err != nil {
@@ -343,6 +352,7 @@ func deref[T any](p *T) any {
 // The status line keeps the last hour of readings in the snapshot, so a burst shows as a recent
 // rate and a run-out time; a new cycle starts the history again.
 func TestClaudeCodeSnapshotKeepsTheRecentRate(t *testing.T) {
+	isolateHome(t)
 	cache := t.TempDir()
 	reset := now.Add(200 * time.Minute).Unix()
 	rec := func(used float64, at time.Time, resetAt int64) {
@@ -378,6 +388,7 @@ func TestClaudeCodeSnapshotKeepsTheRecentRate(t *testing.T) {
 
 // Every adapter passes through Evaluate, including bridge and native cache readings.
 func TestResetFreshnessAcrossSources(t *testing.T) {
+	isolateHome(t)
 	for _, source := range []string{"claude-code", "codex", "user", "codexbar:copilot", "codexbar:cursor", "native:kiro", "native:zai", "native:opencodego"} {
 		t.Run(source, func(t *testing.T) {
 			reset := now.Add(time.Minute)
