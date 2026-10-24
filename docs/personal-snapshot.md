@@ -307,3 +307,5 @@ The same limits apply during read-only projection even before another ledger wri
 输入、缓存读取、缓存写入缺失时为 `null`，不是零；缓存命中率仅在字段已知时按
 `cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
 只读模式不写文件、不发现新会话，也不请求账号端点。
+
+`localUsage[]` is an additive, optional local accounting view. Gemini is off until `modelplan usage gemini enable`. Its rows group native token counters by local day and model; sessions expose only keyed references and timestamps. Counters are nullable, `coverage` identifies bounded/skipped history, and `scope` distinguishes this from account quota. No credential or network access is involved. These values do not enter existing quota accounts, speed estimates or the performance ledger's daily totals. Source paths, an empty `hosts` list and privacy text are also present in Gemini connection diagnostics. Snapshot revisions exclude each report's evaluation clock; enabled local usage adds a local-midnight refresh boundary.

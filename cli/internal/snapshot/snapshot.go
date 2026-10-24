@@ -17,6 +17,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -33,10 +34,11 @@ const (
 )
 
 type Snapshot struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Kind          string    `json:"kind"`
-	GeneratedAt   time.Time `json:"generatedAt"`
-	CLIVersion    string    `json:"cliVersion"`
+	LocalUsage    []localusage.Report `json:"localUsage,omitempty"`
+	SchemaVersion int                 `json:"schemaVersion"`
+	Kind          string              `json:"kind"`
+	GeneratedAt   time.Time           `json:"generatedAt"`
+	CLIVersion    string              `json:"cliVersion"`
 	// Publication: the verified publication the figures come from; nil before the first sync.
 	Publication *Publication         `json:"publication"`
 	Sessions    []Session            `json:"sessions"`
@@ -190,11 +192,12 @@ type Event struct {
 }
 
 type Input struct {
-	Report   quota.Report
-	Digest   *digest.Digest
-	State    store.State
-	Events   []advise.Event // from advise.Derive with the advice state
-	Measured []speed.Stat
+	LocalUsage []localusage.Report
+	Report     quota.Report
+	Digest     *digest.Digest
+	State      store.State
+	Events     []advise.Event // from advise.Derive with the advice state
+	Measured   []speed.Stat
 	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
 	Ledger      []speed.Row
 	Connections []connections.Connection
@@ -214,7 +217,7 @@ type Input struct {
 const note = "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
 
 func Build(in Input) Snapshot {
-	s := Snapshot{SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
+	s := Snapshot{LocalUsage: in.LocalUsage, SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
 		Sessions: []Session{}, Accounts: in.Report.Accounts, Sources: in.Report.Sources, Events: []Event{}, Measured: in.Measured,
 		Recording: in.Recording, Note: note}
 	if s.Accounts == nil {
@@ -315,6 +318,7 @@ func revision(in Input) string {
 		Subscription                        *quota.Binding `json:",omitempty"`
 	}
 	var v struct {
+		LocalUsage  []localusage.Report `json:",omitempty"`
 		Accounts    []account
 		Sources     []quota.SourceStatus
 		Ledger      []speed.Row
@@ -328,6 +332,10 @@ func revision(in Input) string {
 		Publication string
 		Recording   bool
 	}
+	for _, usage := range in.LocalUsage {
+		usage.EvaluatedAt = time.Time{}
+		v.LocalUsage = append(v.LocalUsage, usage)
+	}
 	for _, a := range in.Report.Accounts {
 		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards, Subscription: a.Subscription}
 		if c := a.Credits; c != nil {
@@ -339,7 +347,15 @@ func revision(in Input) string {
 		}
 		v.Accounts = append(v.Accounts, x)
 	}
-	v.Sources, v.Ledger, v.Recording, v.Connections = in.Report.Sources, in.Ledger, in.Recording, in.Connections
+	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
+	for _, c := range in.Connections {
+		if c.LocalUsage != nil {
+			u := *c.LocalUsage
+			u.EvaluatedAt = time.Time{}
+			c.LocalUsage = &u
+		}
+		v.Connections = append(v.Connections, c)
+	}
 	if in.Perf != nil {
 		l := in.Perf.Ledger
 		l.Files = nil // how far the logs were read is no observation
@@ -377,6 +393,13 @@ func validUntil(in Input, s Snapshot) *time.Time {
 	}
 	if in.Perf != nil {
 		ts = append(ts, in.Perf.Boundaries()...)
+	}
+	for _, usage := range in.LocalUsage {
+		if usage.Enabled {
+			l := in.Now.Local()
+			ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, l.Location()))
+			break
+		}
 	}
 	for _, x := range s.Sessions {
 		if x.Activity != nil && x.Activity.LastSignalAt != nil {
