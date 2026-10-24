@@ -3,6 +3,7 @@ package testenv
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -21,6 +22,13 @@ var shared struct {
 // each setting and t.TempDir removes the home even when a test fails.
 func IsolateHome(t *testing.T) {
 	t.Helper()
+	// Go's test-only telemetry override prevents subprocess counter/report writers
+	// from racing with TempDir cleanup. Never alter the user's Go telemetry mode.
+	telemetry := t.TempDir()
+	if err := os.WriteFile(filepath.Join(telemetry, "mode"), []byte("off\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_TELEMETRY_DIR", telemetry)
 	shared.Do(func() {
 		var b []byte
 		b, shared.err = exec.Command("go", "env", "-json", "GOMODCACHE", "GOCACHE", "GOPATH").Output()
