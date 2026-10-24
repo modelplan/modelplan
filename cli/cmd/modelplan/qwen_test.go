@@ -10,6 +10,7 @@ import (
 )
 
 func TestQwenUsageCLI(t *testing.T) {
+	isolateHome(t)
 	root := t.TempDir()
 	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
