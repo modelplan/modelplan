@@ -31,6 +31,9 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
+	Read          string   `json:"read,omitempty"`
+	Hosts         []string `json:"hosts,omitempty"`
+	SecretPolicy  string   `json:"secretPolicy,omitempty"`
 	Reads         []string `json:"reads,omitempty"`
 	Network       string   `json:"network,omitempty"`
 	Privacy       string   `json:"privacy,omitempty"`
@@ -193,6 +196,10 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			c.Quota = Level{Status: "off", Binding: "unknown"}
 		case on && x.Backend == quota.BackendNative:
 			c.ID = "native:" + p
+			if p == "copilot" {
+				c.Installed = yesNo(e.onPath("copilot"), "not-found")
+			}
+			c.Read, c.Hosts, c.SecretPolicy = x.Read, x.Hosts, x.SecretPolicy
 			switch x.Blocked {
 			case "native-off":
 				c.Authorization = Level{Status: "off", Reason: "MODELPLAN_NATIVE"}

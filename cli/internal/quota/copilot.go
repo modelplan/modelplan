@@ -1,0 +1,216 @@
+package quota
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// Independently implemented from the official Copilot SDK's documented server RPC and
+// wire contract (github/copilot-sdk, 538675843887643ce471c874a3a9870ebda3f6f4).
+// Authentication stays with the installed runtime. No session, turn, login, token import,
+// credential-file read/write, or inferred entitlement is needed.
+var copilotReader = &nativeReader{Regions: []string{"local"}, Fetch: fetchCopilot}
+
+var copilotBin = func() string {
+	if p := os.Getenv("MODELPLAN_COPILOT"); p != "" && filepath.IsAbs(p) {
+		return p
+	}
+	p, _ := exec.LookPath("copilot")
+	return p
+}
+
+const copilotFallback = "; use modelplan connect copilot --backend codexbar for the separately configured bridge"
+
+func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Time) codexbarEntry {
+	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	bin := copilotBin()
+	if bin == "" {
+		e.Error = "Copilot runtime not found" + copilotFallback
+		return e
+	}
+	raw, err := askCopilot(ctx, bin)
+	if err != nil {
+		e.Error = err.Error() + copilotFallback
+		return e
+	}
+	return parseCopilot(raw, now)
+}
+
+func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
+	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--headless", "--no-auto-update", "--stdio")
+	cmd.Stderr = io.Discard
+	cmd.WaitDelay = time.Second
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, errors.New("Copilot input unavailable")
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, errors.New("Copilot output unavailable")
+	}
+	if cmd.Start() != nil {
+		return nil, errors.New("Copilot runtime did not start")
+	}
+	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+	raw, err := copilotQuotaRPC(out, in)
+	if ctx.Err() != nil {
+		return nil, errors.New("Copilot quota read timed out")
+	}
+	return raw, err
+}
+
+// Copilot uses Content-Length frames, not newline-delimited JSON. The allowlist here is
+// deliberately tiny: the protocol handshake (or legacy ping), then account.getQuota.
+func copilotQuotaRPC(out io.Reader, in io.Writer) (json.RawMessage, error) {
+	r := bufio.NewReader(io.LimitReader(out, 4*nativeMaxBody))
+	call := func(id int, method string) (json.RawMessage, int, error) {
+		body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": map[string]any{}})
+		if _, err := fmt.Fprintf(in, "Content-Length: %d\r\n\r\n%s", len(body), body); err != nil {
+			return nil, 0, errors.New("Copilot request failed")
+		}
+		for n := 0; n < 32; n++ {
+			raw, err := readCopilotFrame(r)
+			if err != nil {
+				return nil, 0, err
+			}
+			var m struct {
+				ID     *int            `json:"id"`
+				Result json.RawMessage `json:"result"`
+				Error  *struct {
+					Code int `json:"code"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(raw, &m) != nil {
+				return nil, 0, errors.New("unreadable Copilot reply")
+			}
+			if m.ID == nil || *m.ID != id {
+				continue
+			}
+			if m.Error != nil {
+				return nil, m.Error.Code, errors.New("Copilot quota RPC unavailable (runtime capability or sign-in)")
+			}
+			if len(m.Result) == 0 || string(m.Result) == "null" {
+				return nil, 0, errors.New("empty Copilot reply")
+			}
+			return m.Result, 0, nil
+		}
+		return nil, 0, errors.New("too many Copilot messages")
+	}
+	handshake, code, err := call(1, "connect")
+	if code == -32601 {
+		handshake, _, err = call(2, "ping")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var protocol struct {
+		Version int `json:"protocolVersion"`
+	}
+	if json.Unmarshal(handshake, &protocol) != nil || protocol.Version != 3 {
+		return nil, errors.New("unsupported Copilot runtime protocol (expected 3)")
+	}
+	raw, _, err := call(3, "account.getQuota")
+	return raw, err
+}
+
+func readCopilotFrame(r *bufio.Reader) ([]byte, error) {
+	length, headers := -1, 0
+	for {
+		line, err := r.ReadString('\n')
+		headers += len(line)
+		if err != nil || headers > 8192 {
+			return nil, errors.New("invalid Copilot frame header")
+		}
+		if line == "\r\n" || line == "\n" {
+			break
+		}
+		name, value, ok := strings.Cut(strings.TrimSpace(line), ":")
+		if ok && strings.EqualFold(name, "Content-Length") {
+			if length != -1 {
+				return nil, errors.New("duplicate Copilot frame length")
+			}
+			length, err = strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || length <= 0 || length > nativeMaxBody {
+				return nil, errors.New("invalid Copilot frame length")
+			}
+		}
+	}
+	if length <= 0 {
+		return nil, errors.New("missing Copilot frame length")
+	}
+	body := make([]byte, length)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return nil, errors.New("cut-off Copilot reply")
+	}
+	return body, nil
+}
+
+func parseCopilot(raw json.RawMessage, now time.Time) codexbarEntry {
+	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	var r struct {
+		Snapshots map[string]*struct {
+			Used      *int64   `json:"usedRequests"`
+			Limit     *int64   `json:"entitlementRequests"`
+			Remaining *float64 `json:"remainingPercentage"`
+			Reset     string   `json:"resetDate"`
+			Unlimited bool     `json:"isUnlimitedEntitlement"`
+		} `json:"quotaSnapshots"`
+	}
+	if json.Unmarshal(raw, &r) != nil {
+		e.Error = "unreadable Copilot quota reply"
+		return e
+	}
+	q := r.Snapshots["premium_interactions"]
+	if q == nil {
+		e.Error = "Copilot premium-request quota unavailable"
+		return e
+	}
+	w := Window{Kind: "monthly", Limit: "premium_interactions", ResetMode: "fixed", ObservedAt: now.UTC()}
+	// A missing field is unknown. Zero entitlement is not 100% remaining; -1 is unlimited.
+	if q.Used != nil && *q.Used >= 0 {
+		w.Requests = &RequestUsage{Used: q.Used}
+	}
+	if q.Limit != nil && *q.Limit > 0 && !q.Unlimited {
+		if w.Requests == nil {
+			w.Requests = &RequestUsage{}
+		}
+		w.Requests.Limit = q.Limit
+		if p := finite(q.Remaining, 0, 100); p != nil {
+			used := 100 - *p
+			w.UsedPercent = &used
+		} else if w.Requests.Used != nil {
+			used := float64(*q.Used) / float64(*q.Limit) * 100
+			w.UsedPercent = &used
+		}
+	} else if q.Unlimited || (q.Limit != nil && *q.Limit == -1) {
+		if w.Requests == nil {
+			w.Requests = &RequestUsage{}
+		}
+		w.Requests.Unlimited = true
+	}
+	if t, err := time.Parse(time.RFC3339, q.Reset); err == nil {
+		t = t.UTC()
+		w.ResetsAt = &t
+	}
+	if w.UsedPercent == nil {
+		if w.Requests == nil {
+			w.Requests = &RequestUsage{}
+		}
+		w.Requests.Reason = "missing_entitlement_or_usage"
+	}
+	e.Status, e.Windows = "ok", []Window{w}
+	return e
+}

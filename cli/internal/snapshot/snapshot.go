@@ -335,6 +335,13 @@ func revision(in Input) string {
 		Connections []connections.Connection
 		Publication string
 		Recording   bool
+
+		RequestReadings []struct {
+			Source, Kind, Limit string
+			Minutes             int
+			ObservedAt          time.Time
+			Requests            *quota.RequestUsage
+		} `json:",omitempty"`
 	}
 	for _, usage := range in.LocalUsage {
 		usage.EvaluatedAt = time.Time{}
@@ -346,7 +353,8 @@ func revision(in Input) string {
 			x.Credits = &quota.Credits{Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: c.ObservedAt.UTC()} // not its age
 		}
 		for _, w := range a.Windows {
-			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: w.UsedPercent, UsedUSD: w.UsedUSD, LimitUSD: w.LimitUSD,
+			used, usd := w.ObservedUsage()
+			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: used, UsedUSD: usd, LimitUSD: w.LimitUSD,
 				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
 		}
 		v.Accounts = append(v.Accounts, x)
@@ -381,6 +389,18 @@ func revision(in Input) string {
 	}
 	if in.Digest != nil {
 		v.Publication = in.State.PublicationID
+	}
+	for _, a := range in.Report.Accounts {
+		for _, w := range a.Windows {
+			if requests := w.ObservedRequests(); requests != nil {
+				v.RequestReadings = append(v.RequestReadings, struct {
+					Source, Kind, Limit string
+					Minutes             int
+					ObservedAt          time.Time
+					Requests            *quota.RequestUsage
+				}{a.Source, w.Kind, w.Limit, w.WindowMinutes, w.ObservedAt, requests})
+			}
+		}
 	}
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)

@@ -95,3 +95,19 @@ func TestDiagnose(t *testing.T) {
 		t.Errorf("json = %s", b)
 	}
 }
+
+func TestCopilotRuntimeDisclosure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "connections.json")
+	if err := quota.SetConnection(path, quota.QuotaSource{Provider: "copilot", Backend: quota.BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range Diagnose(Env{ConnectionsFile: path}, quota.Report{}) {
+		if c.ID == "native:copilot" {
+			if c.Authorization.Via != "agent-owned-reader" || !strings.Contains(c.Read, "account.getQuota") || len(c.Hosts) == 0 || !strings.Contains(c.SecretPolicy, "never printed or stored") {
+				t.Fatalf("%+v", c)
+			}
+			return
+		}
+	}
+	t.Fatal("Copilot diagnostics missing")
+}
