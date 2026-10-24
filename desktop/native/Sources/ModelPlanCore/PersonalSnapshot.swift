@@ -409,4 +409,3 @@ public struct PaceHistory: Decodable, Sendable {
     public let gapLimitMinutes: [String:Double]?
     public let groups: [PaceGroup]?
 }
-
