@@ -10,6 +10,7 @@ import (
 )
 
 func TestClaudeCodeSubscription(t *testing.T) {
+	isolateHome(t)
 	home, cache := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	cfg := filepath.Join(home, ".claude.json")
@@ -79,6 +80,7 @@ func TestClaudeCodeSubscription(t *testing.T) {
 }
 
 func TestSubscriptionsMap(t *testing.T) {
+	isolateHome(t)
 	cache := t.TempDir()
 	now := time.Now()
 	a := assignSubscription(cache, "api-key:zai", "key-one", now)
@@ -106,6 +108,7 @@ func TestSubscriptionsMap(t *testing.T) {
 }
 
 func TestNativeAndCodexBarSubscriptions(t *testing.T) {
+	isolateHome(t)
 	_, done := zaiServer(t)
 	defer done()
 	p := nativePaths(t)

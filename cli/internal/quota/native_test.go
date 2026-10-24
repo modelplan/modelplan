@@ -27,6 +27,7 @@ func zaiParse(t *testing.T, body string) codexbarEntry {
 // The payload shapes of CodexBar's ZaiPlugin tests: five-hour and weekly token windows plus the
 // monthly MCP marker.
 func TestParseZai(t *testing.T) {
+	isolateHome(t)
 	five, week, mcp := zaiNow.Add(3*time.Hour).UnixMilli(), zaiNow.Add(4*24*time.Hour).UnixMilli(), zaiNow.Add(20*24*time.Hour).UnixMilli()
 	e := zaiParse(t, `{"code":200,"success":true,"data":{"level":"pro","limits":[
 		{"type":"TIME_LIMIT","unit":5,"number":1,"percentage":22,"nextResetTime":`+itoa64(mcp)+`},
@@ -90,6 +91,7 @@ func nativePaths(t *testing.T) Paths {
 }
 
 func TestNativeZaiRefresh(t *testing.T) {
+	isolateHome(t)
 	seen, done := zaiServer(t)
 	defer done()
 	p := nativePaths(t)
@@ -140,6 +142,7 @@ func TestNativeZaiRefresh(t *testing.T) {
 }
 
 func TestSelections(t *testing.T) {
+	isolateHome(t)
 	p := nativePaths(t)
 	t.Setenv("Z_AI_API_KEY", "")
 	if err := SetCodexBarEnabled(p.CodexBarFile, []string{"cursor", "zai", "kiro"}); err != nil {
@@ -207,6 +210,7 @@ func TestSelections(t *testing.T) {
 }
 
 func TestParseOpenCodeGo(t *testing.T) {
+	isolateHome(t)
 	parse := func(body string) codexbarEntry {
 		t.Helper()
 		var r map[string]any
@@ -240,6 +244,7 @@ func TestParseOpenCodeGo(t *testing.T) {
 }
 
 func TestNativeOpenCodeGoRefresh(t *testing.T) {
+	isolateHome(t)
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.URL.Path+" "+r.Header.Get("Authorization"))

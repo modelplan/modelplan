@@ -9,6 +9,7 @@ import (
 
 // THIRD-PARTY-NOTICES.md ships with the binary; every module linked into it needs its entry.
 func TestThirdPartyNoticesCoverTheBinary(t *testing.T) {
+	isolateHome(t)
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{if .Module}}{{.Module.Path}} {{.Module.Version}}{{end}}", ".").Output()
 	if err != nil {
 		t.Skip("go list unavailable:", err)
