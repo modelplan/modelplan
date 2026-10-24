@@ -490,6 +490,37 @@
       "support": "quota-only"
     },
     {
+      "quotaAccess": {
+        "host": "https://api.kimi.com",
+        "endpointNotice": "Undocumented compatibility endpoint: GET /coding/v1/usages. Only the selected environment key is read; its value is never printed or stored. No Kimi credentials are refreshed or rewritten.",
+        "provider": "kimi",
+        "name": "Kimi Code",
+        "backend": "off",
+        "origin": "",
+        "region": "china",
+        "keyEnv": "KIMI_CODE_API_KEY",
+        "keySet": false
+      },
+      "id": "native:kimi",
+      "kind": "quota",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "off",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "off",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
       "id": "gemini",
       "kind": "agent",
       "installed": {
@@ -1635,6 +1666,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:f29cb1aea1b1ecdbfdc0c410c28687d9",
+  "dataRevision": "sha256:1efc040d49d0360805079936ba73da1a",
   "validUntil": "2026-10-18T09:04:50Z"
 }

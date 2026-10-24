@@ -230,3 +230,19 @@ func claudeAccount(file string) (string, error) {
 	}
 	return "", errors.New("no account")
 }
+
+// lookupSubscription checks a cached binding without creating or updating it.
+func lookupSubscription(cache, basis, identity string) string {
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	var m subscriptionMap
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 {
+		return ""
+	}
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 || strings.TrimSpace(identity) == "" {
+		return ""
+	}
+	h := hmac.New(sha256.New, key)
+	h.Write([]byte(basis + "\x00" + strings.TrimSpace(identity)))
+	return m.Refs[hex.EncodeToString(h.Sum(nil))].Ref
+}

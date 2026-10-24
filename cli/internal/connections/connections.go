@@ -31,19 +31,20 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
-	Read          string   `json:"read,omitempty"`
-	Hosts         []string `json:"hosts,omitempty"`
-	SecretPolicy  string   `json:"secretPolicy,omitempty"`
-	Reads         []string `json:"reads,omitempty"`
-	Network       string   `json:"network,omitempty"`
-	Privacy       string   `json:"privacy,omitempty"`
-	ID            string   `json:"id"`
-	Kind          string   `json:"kind"` // agent | quota
-	Installed     Level    `json:"installed"`
-	History       Level    `json:"history"`
-	Authorization Level    `json:"authorization"`
-	Quota         Level    `json:"quota"`
-	Support       string   `json:"support"`
+	QuotaAccess   *quota.Selection `json:"quotaAccess,omitempty"`
+	Read          string           `json:"read,omitempty"`
+	Hosts         []string         `json:"hosts,omitempty"`
+	SecretPolicy  string           `json:"secretPolicy,omitempty"`
+	Reads         []string         `json:"reads,omitempty"`
+	Network       string           `json:"network,omitempty"`
+	Privacy       string           `json:"privacy,omitempty"`
+	ID            string           `json:"id"`
+	Kind          string           `json:"kind"` // agent | quota
+	Installed     Level            `json:"installed"`
+	History       Level            `json:"history"`
+	Authorization Level            `json:"authorization"`
+	Quota         Level            `json:"quota"`
+	Support       string           `json:"support"`
 
 	LocalUsage *localusage.Report `json:"localUsage,omitempty"`
 }
@@ -183,10 +184,19 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		"opencodego": yesNo(e.onPath("opencode"), "not-found"),
 		"copilot":    {Status: "not-applicable"},
 		"zai":        {Status: "not-applicable"},
+		"kimi":       {Status: "not-applicable"},
 	}
-	for _, p := range []string{"copilot", "cursor", "kiro", "opencodego", "zai"} {
+	for _, p := range []string{"copilot", "cursor", "kiro", "opencodego", "zai", "kimi"} {
 		c := Connection{ID: "codexbar:" + p, Kind: "quota", Support: "quota-only", Installed: installed[p], History: Level{Status: "not-applicable", Reason: "quota-only"}}
 		x, on := sel[p]
+		if p == "kimi" {
+			c.ID = "native:kimi"
+			access := x
+			if !on || x.Backend == quota.BackendOff {
+				access = quota.Selection{Provider: "kimi", Name: "Kimi Code", Backend: quota.BackendOff, Region: "china", KeyEnv: "KIMI_CODE_API_KEY", Host: quota.KimiHost("china"), EndpointNotice: quota.KimiEndpointNotice}
+			}
+			c.QuotaAccess = &access
+		}
 		switch {
 		case err != nil:
 			c.Authorization = Level{Status: "no", Reason: "connections-invalid"}
@@ -214,6 +224,9 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				}
 			}
 			c.Quota = quotaLevel(c.ID)
+		case p == "kimi" && !on:
+			c.Authorization = Level{Status: "off", Reason: "not-enabled"}
+			c.Quota = Level{Status: "off", Binding: "unknown"}
 		case quota.CodexBarOff():
 			c.Authorization = Level{Status: "off", Reason: "MODELPLAN_CODEXBAR"}
 			c.Quota = Level{Status: "off", Binding: "unknown"}
