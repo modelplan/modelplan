@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import Darwin
+import CryptoKit
 import ModelPlanCore
 
 struct CheckFailure: Error { let message: String }
@@ -152,6 +153,7 @@ actor FakeCLI: CLITransport {
         try require(!NativeWindowRole.dock.canBecomeKeyOnExplicitEntry && NativeWindowRole.settings.canBecomeMain && !NativeWindowRole.cockpit.canBecomeMain, "window role policy")
         passed("app-owned preferences and native window role policy")
         count += try await additionalChecks()
+        count += try await lifecycleChecks()
         print("\(count) contract groups passed; synthetic, no visual/minimum-runtime/performance claim")
     }
 }
@@ -181,6 +183,17 @@ func processChecks() async throws {
     let args = try await argsTransport.execute(.desktop)
     let argv = try JSONDecoder().decode([String].self, from: args.stdout)
     try require(argv == ["desktop","--json","--read-only"] && args.warning && args.stderrTruncated, "fixed readonly args/stderr cap")
+    let bundle = dir.appendingPathComponent("Synthetic.app"), helpers = bundle.appendingPathComponent("Contents/Helpers"), resources = bundle.appendingPathComponent("Contents/Resources")
+    try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    let bundledHelper = helpers.appendingPathComponent("modelplan"), pin = resources.appendingPathComponent("modelplan.sha256")
+    try FileManager.default.copyItem(at: exe, to: bundledHelper)
+    try Data(String(repeating: "0", count: 64).utf8).write(to: pin)
+    do { _ = try await BundledCLI(bundle: bundle).execute(.desktop); throw CheckFailure(message: "wrong helper pin accepted") } catch TransportError.launchFailed {}
+    let digest = SHA256.hash(data: try Data(contentsOf: bundledHelper)).map { String(format:"%02x",$0) }.joined()
+    try Data(digest.utf8).write(to: pin)
+    let bundledArgs = try await BundledCLI(bundle: bundle, environment: ["MODE":"args"]).execute(.desktop)
+    try require(try JSONDecoder().decode([String].self, from: bundledArgs.stdout) == CLICommand.desktop.arguments, "pinned bundled helper fixed arguments")
     do { _ = try await ProcessCLITransport(executable: exe, environment: ["MODE":"cap"]).execute(.desktop); throw CheckFailure(message: "cap accepted") } catch TransportError.outputLimit {}
     let slow = ProcessCLITransport(executable: exe, environment: ["MODE":"slow"], timeoutOverride: 0.15)
     let start = ContinuousClock.now

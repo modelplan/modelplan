@@ -35,9 +35,14 @@ import ModelPlanCore
             stack.bottomAnchor.constraint(lessThanOrEqualTo:view.bottomAnchor,constant:-20)])
     }
     func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
-        guard let snapshot else { status.stringValue = "Not connected"; detail.stringValue = ""; return }
+        guard let snapshot else {
+            status.stringValue = diagnostics.personal == "not-loaded" ? "Reading local snapshot…" : "Local data unavailable"
+            detail.stringValue = "Read-only access only. No reader or permission is enabled here."
+            return
+        }
         status.stringValue = snapshot.presentation.actionable ? "Read-only snapshot" : "Unavailable or stale"
         detail.stringValue = "\(snapshot.presentation.quotas.count) quota windows · \(snapshot.presentation.live.filter(\.working).count) recently working sessions"
         if snapshot.publication == nil { detail.stringValue += "\nPublished recommendations unavailable" }
+        if diagnostics.publicationWarning { detail.stringValue += "\nUsing dated, last-good public data" }
     }
 }

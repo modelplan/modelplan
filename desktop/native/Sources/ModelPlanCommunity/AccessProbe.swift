@@ -15,18 +15,20 @@ struct ProbeReceipt: Codable {
     let readOnlyArguments: [String]
 }
 enum AccessProbe {
-    static func run(home: URL, result: URL) async {
-        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan")
-        let environment = ["HOME":home.path, "CODEX_HOME":home.appendingPathComponent("codex").path,
+    static func environment(home: URL) -> [String: String] {
+        ["HOME":home.path, "CODEX_HOME":home.appendingPathComponent("codex").path,
             "CLAUDE_CONFIG_DIR":home.appendingPathComponent("claude").path,
             "MODELPLAN_CACHE":home.appendingPathComponent("cache").path,
             "XDG_CONFIG_HOME":home.appendingPathComponent("config").path,
             "XDG_DATA_HOME":home.appendingPathComponent("data").path,
             "PATH":"/usr/bin:/bin", "NO_COLOR":"1"]
+    }
+    static func run(home: URL, result: URL) async {
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan")
         var outcome = "unavailable", count = 0, remaining: [Double] = []
         var cliVersion: String?
         do {
-            let response = try await ProcessCLITransport(executable: helper, environment: environment).execute(.desktop)
+            let response = try await BundledCLI(bundle: Bundle.main.bundleURL, environment: environment(home: home)).execute(.desktop)
             if response.exitCode == 0 {
                 let snapshot = try FeedDecoder.personal(response.stdout)
                 cliVersion = snapshot.cliVersion

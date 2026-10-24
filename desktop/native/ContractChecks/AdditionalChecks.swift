@@ -128,5 +128,14 @@ import ModelPlanCore
     try require(retaining.view()?.presentation.quotas.first?.remaining == 0, "valid personal recovery")
     await retaining.stopAndWait()
     pass("B04 failed personal read preserves historical truth and recovers")
+    let noPublicationMetadata = try modified(data) { $0["publication"] = NSNull() }
+    let newlyAvailable = FakeCLI(noPublicationMetadata, publicData)
+    let joining = SnapshotStore(transport: newlyAvailable, time: FakeTime(now), automaticTimers: false)
+    joining.start(); try await settle(joining)
+    let calls = (await newlyAvailable.stats()).0
+    try require(calls.filter { $0 == .desktop }.count == 2 && calls.count == 4,
+        "new public availability with absent personal metadata gets exactly one targeted reread")
+    await joining.stopAndWait()
+    pass("B04 public availability with absent metadata gets one bounded personal reread")
     return count
 }

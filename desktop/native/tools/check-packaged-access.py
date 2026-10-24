@@ -33,7 +33,7 @@ def tree(root):
     return result
 
 
-receipt = {'schemaVersion': 1, 'cases': [], 'toolchainAcceptance': 'pending-full-Xcode', 'intelRuntimeTested': False}
+receipt = {'schemaVersion': 1, 'cases': [], 'toolchainAcceptance': 'separate-build-receipt-required', 'intelRuntimeTested': False}
 for binary in [exe, helper]:
     archs = run(['/usr/bin/lipo', '-archs', binary])
     assert archs.returncode == 0 and set(archs.stdout.decode().split()) == {'arm64', 'x86_64'}
@@ -118,4 +118,4 @@ with tempfile.TemporaryDirectory(prefix='modelplan-access-proof-') as temporary:
 (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 print('PASS packaged universal app/helper signatures and synthetic observed/unavailable/Unix-denied read-only access')
 print('PASS actual CLI v0.5.35 and publication offline exit3 with no stdout or fixture writes')
-print('Supplemental CLT-built access evidence; full Xcode tools, physical error UI and minimum-runtime gates are pending')
+print('Access evidence only; consult the separate toolchain, native-surface and runtime receipts')

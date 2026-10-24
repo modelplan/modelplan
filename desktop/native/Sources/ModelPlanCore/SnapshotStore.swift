@@ -53,7 +53,7 @@ public struct StoreDiagnostics: Sendable {
     public func start() { guard suspended else { return }; resume() }
     public func refresh() {
         guard !suspended else { return }
-        enqueue(.desktop); enqueue(.publication); kick()
+        enqueue(.desktop); enqueue(.publicationOffline); enqueue(.publication); kick()
     }
     /// Sleep/lock/user switch/display removal use this transaction; ordinary app deactivation does not.
     public func suspend() {
@@ -70,7 +70,11 @@ public struct StoreDiagnostics: Sendable {
         enqueue(.desktop); enqueue(.publicationOffline); enqueue(.publication)
         onChange?(); kick()
     }
-    public func clockOrTimeZoneChanged() { tick() }
+    public func clockOrTimeZoneChanged() {
+        // A forward jump while suspended must retire evidence before a later backward jump.
+        _ = view()
+        tick()
+    }
     public func tick() {
         guard !suspended else { return }
         _ = view()
@@ -139,8 +143,10 @@ public struct StoreDiagnostics: Sendable {
         arm()
     }
     private func reconcileIDs() {
-        guard let publicID = publication?.publicationId, let personalID = personal?.publication?.publicationId, publicID != personalID else { retriedJoin = nil; return }
-        let pair = personalID + "|" + publicID
+        guard let publicID = publication?.publicationId else { retriedJoin = nil; return }
+        let personalID = personal?.publication?.publicationId
+        guard publicID != personalID else { retriedJoin = nil; return }
+        let pair = (personalID ?? "<unavailable>") + "|" + publicID
         if retriedJoin != pair { retriedJoin = pair; enqueue(.desktop) }
     }
     private func arm() {

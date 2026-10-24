@@ -11,5 +11,6 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .target(name: "ModelPlanShell", dependencies: ["ModelPlanCore"]),
     .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanCore", "ModelPlanShell"]),
     .executableTarget(name: "ModelPlanRunLoopChecks", dependencies: ["ModelPlanCore"], path: "RunLoopChecks"),
+    .executableTarget(name: "ModelPlanShellChecks", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "ShellChecks"),
     .executableTarget(name: "ModelPlanContractChecks", dependencies: ["ModelPlanCore"], path: "ContractChecks", resources: [.copy("Fixtures")]),
 ])

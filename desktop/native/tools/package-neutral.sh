@@ -48,6 +48,7 @@ PLIST
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
+shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 codesign --force --sign - --options runtime "$app"
 codesign --verify --deep --strict "$app"
 printf '%s\n' "$app"
