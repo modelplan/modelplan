@@ -32,6 +32,7 @@ func TestMiniMaxSchemasAndUnknowns(t *testing.T) {
 		`{}`, `[]`, `{"model_remains":[]}`, `{"data":null}`, `{"base_resp":{}}`,
 		`{"base_resp":{"status_code":1002,"status_msg":"synthetic secret"},"model_remains":[{"model_name":"general","current_interval_remaining_percent":0}]}`,
 		`{"model_remains":[{"model_name":"video","current_interval_remaining_percent":0}]}`,
+		`{"model_remains":[{"model_name":"general","current_interval_status":99,"current_interval_remaining_percent":100}]}`,
 		`{"model_remains":[{"model_name":"general","current_interval_status":3,"current_interval_remaining_percent":100,"current_weekly_status":0,"current_weekly_remaining_percent":0}]}`,
 	} {
 		e, _ := parseMiniMax([]byte(raw), minimaxNow)

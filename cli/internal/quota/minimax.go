@@ -156,7 +156,7 @@ func parseMiniMax(b []byte, now time.Time) (codexbarEntry, bool) {
 		}{{"current_interval_", "start_time", "end_time", 300}, {"current_weekly_", "weekly_start_time", "weekly_end_time", 10080}} {
 			status := kimiNumber(row[period.prefix+"status"], true)
 			// Explicit inactive/no-entitlement markers never manufacture a full tank.
-			if status != nil && (*status == 0 || *status == 3) {
+			if status != nil && *status != 1 && *status != 2 {
 				continue
 			}
 			if raw, ok := row[period.prefix+"status"]; ok && status == nil && string(raw) != "null" {
