@@ -188,9 +188,9 @@ func TestSelections(t *testing.T) {
 	}
 	t.Setenv("MODELPLAN_CODEXBAR", "")
 
-	// A provider without a native reader set to native reads nothing; CodexBar does not step in.
+	// Selecting Cursor native explicitly supersedes the legacy bridge.
 	os.WriteFile(p.ConnectionsFile, []byte(`{"schemaVersion":1,"quotaSources":[{"provider":"cursor","backend":"native","enabled":true}]}`), 0o600)
-	if c := sel()["cursor"]; c.Blocked != "no-native-reader" || strings.Join(CodexBarActive(p), ",") != "kiro,zai" {
+	if c := sel()["cursor"]; c.Blocked != "" || strings.Join(CodexBarActive(p), ",") != "kiro,zai" {
 		t.Fatalf("cursor = %+v, codexbar = %v", c, CodexBarActive(p))
 	}
 	// An unusable file stops every provider it might decide, legacy ones included.

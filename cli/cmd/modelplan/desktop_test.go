@@ -236,8 +236,8 @@ func TestConnectCommands(t *testing.T) {
 	if len(started) == 0 || strings.Join(started[0], " ") != "connections refresh --quiet" {
 		t.Fatalf("started = %v", started)
 	}
-	if code := run([]string{"connect", "cursor"}, nil, io.Discard, io.Discard); code != exitUsage {
-		t.Fatal("cursor has no native reader")
+	if code := run([]string{"connect", "cursor"}, nil, io.Discard, io.Discard); code != 0 {
+		t.Fatal("cursor native connect failed")
 	}
 	if code := run([]string{"connect", "cursor", "--backend", "codexbar"}, nil, io.Discard, io.Discard); code != 0 {
 		t.Fatal("cursor through CodexBar")

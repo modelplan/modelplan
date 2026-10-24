@@ -188,7 +188,7 @@ The events of `modelplan advise --json` (types, `suggest`, `alternative`, `curre
 
 ## Privacy
 
-The snapshot holds no prompts, replies, tool output, credentials, file paths, session ids or account identities: subscriptions appear only as random local references. With project labels on (the default since CLI 0.5.32), `projectRanking` names each project by its folder's name, not its path; `modelplan project-labels off` removes the names. It carries window meters, the harness's model, effort and speed mode, and the measured figures. A Claude Code session on a custom endpoint also carries that endpoint's scheme, host and path (`ANTHROPIC_BASE_URL` without query or credentials), as `modelplan quota --json` does. Anything that sends it off the machine, such as a future mobile sync, must encrypt it end to end.
+Connection diagnostics may disclose opted-in source file paths. The snapshot holds no prompts, replies, tool output, credentials, session ids or account identities: subscriptions appear only as random local references. With project labels on (the default since CLI 0.5.32), `projectRanking` names each project by its folder's name, not its path; `modelplan project-labels off` removes the names. It carries window meters, the harness's model, effort and speed mode, and the measured figures. A Claude Code session on a custom endpoint also carries that endpoint's scheme, host and path (`ANTHROPIC_BASE_URL` without query or credentials), as `modelplan quota --json` does. Anything that sends it off the machine, such as a future mobile sync, must encrypt it end to end.
 
 ## CLI 0.5.33: today's speed, token kinds, live sessions and hours
 
@@ -325,3 +325,7 @@ Qwen automatic local history shares #121's `localUsage[]` shape (`source: qwen`)
 Kimi's quota connection adds optional `quotaAccess` diagnostics (selected environment variable, fixed regional `host`, backend/block state and `endpointNotice`). It identifies the undocumented `GET /coding/v1/usages` compatibility route and that the key is never printed/stored. Kimi windows continue using existing schema-v1 quota fields; no snapshot field is renamed. 连接新增可选 `quotaAccess`，披露变量名、地区主机、启用状态与未公开文档端点说明；不打印或存储 key，原有 v1 字段保持不变。
 
 At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` and `remainingPercent` are null/absent until a new-cycle reading arrives. `pace: "reset_passed"` and the additive `unknownReason: "reset_passed"` explain the unknown allowance. Render it as `—`, never a refill or the previous cycle’s percentage. Snapshot `dataRevision` still identifies the original observation; the clock crossing a reset alone does not change it.
+
+### Cursor opt-in diagnostics
+
+A connected native Cursor entry adds `quotaAccess` (the existing selection shape), including the exact SQLite source path, `cursor.com` / `api2.cursor.sh` hosts, and the undocumented endpoint notice. Authorization uses `via: "cursor-local-sign-in"`; only the collecting refresh opens that credential. A changed DB/WAL signature invalidates cached quota without reading credentials during diagnostics. The schema remains version 1; no credential or account ID is added. See [Cursor privacy and limits](cursor-native-quota.md).
