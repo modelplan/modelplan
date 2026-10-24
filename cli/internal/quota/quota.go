@@ -16,7 +16,34 @@ import (
 	"time"
 )
 
+// RequestUsage is the provider's request count, independent of token accounting.
+type RequestUsage struct {
+	Used      *int64 `json:"used"`
+	Limit     *int64 `json:"limit"`
+	Unlimited bool   `json:"unlimited,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // Window is one usage window as last observed, plus values derived at evaluation time.
+// ObservedRequests identifies the original reading even after a reset hides its counts.
+func (w *Window) ObservedRequests() *RequestUsage {
+	if w.Requests != nil {
+		return w.Requests
+	}
+	return w.observedRequests
+}
+
+func (w *Window) evalRequests(now time.Time) {
+	if w.Requests != nil {
+		w.observedRequests = w.Requests
+	}
+	if w.ResetsAt != nil && !now.Before(*w.ResetsAt) {
+		w.Requests = nil
+	} else if w.Requests == nil {
+		w.Requests = w.observedRequests
+	}
+}
+
 type Window struct {
 	Kind          string     `json:"kind"` // five_hour | weekly | monthly | spend | unknown
 	Limit         string     `json:"limit,omitempty"`
@@ -27,6 +54,9 @@ type Window struct {
 	ObservedAt    time.Time  `json:"observedAt"`
 	UsedUSD       *float64   `json:"usedUsd,omitempty"`
 	LimitUSD      *float64   `json:"limitUsd,omitempty"`
+
+	Requests         *RequestUsage `json:"requests,omitempty"`
+	observedRequests *RequestUsage
 
 	RemainingPercent *float64 `json:"remainingPercent"`
 	ResetsInMinutes  *int     `json:"resetsInMinutes"`
@@ -211,6 +241,7 @@ func Read(p Paths, now time.Time) Report {
 func Evaluate(a *Account, now time.Time) {
 	a.Stale = !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
 	for i := range a.Windows {
+		a.Windows[i].evalRequests(now)
 		evalWindow(&a.Windows[i], now)
 	}
 	var pool []Window

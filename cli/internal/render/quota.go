@@ -18,11 +18,13 @@ type quotaText struct {
 	Day, Hour, Min                                            string
 	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
 	Left, WeekNarrow, RunsOutNarrow                           string // status line: "剩65%", the narrow week label, "≈35分"
+	Requests                                                  string
 	Credits, Unlimited, ReadAgo, OnCredits                    string // usage credits: "点数 73,172", "不限量", "3分前读取"
 }
 
 var quotaZH = quotaText{
 	RecentThread: "最近本机会话，不一定是当前对话",
+	Requests:     "请求",
 	Title:        "额度", Observed: "观测于", Stale: "读数较旧", Reset: "重置", Remaining: "剩", Projected: "按当前速度重置时用到", None: "没有可读的本机额度。",
 	Kinds:    map[string]string{"five_hour": "5小时", "weekly": "每周", "monthly": "每月", "spend": "限额", "full": "完整", "unknown": "窗口"},
 	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "手填"},
@@ -36,6 +38,7 @@ var quotaZH = quotaText{
 
 var quotaEN = quotaText{
 	RecentThread: "latest local thread, may not be this one",
+	Requests:     "requests",
 	Title:        "Quota", Observed: "observed", Stale: "old reading", Reset: "resets", Remaining: "left", Projected: "at this pace, used by reset", None: "No local quota readings.",
 	Kinds:    map[string]string{"five_hour": "5h", "weekly": "week", "monthly": "month", "spend": "spend", "full": "full", "unknown": "window"},
 	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "manual"},
@@ -138,6 +141,19 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			}
 			if x.RunsOutInMinutes != nil {
 				line += s.c(warn, " · "+fmt.Sprintf(q.RunsOut, q.Dur(*x.RunsOutInMinutes)))
+			}
+			if r := x.Requests; r != nil {
+				used, limit := "—", "—"
+				if r.Used != nil {
+					used = strconv.FormatInt(*r.Used, 10)
+				}
+				if r.Limit != nil {
+					limit = strconv.FormatInt(*r.Limit, 10)
+				}
+				if r.Unlimited {
+					limit = q.Unlimited
+				}
+				line += fmt.Sprintf(" · %s %s / %s", q.Requests, used, limit)
 			}
 			fmt.Fprintln(w, line)
 		}
