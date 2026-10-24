@@ -15,6 +15,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/snapshot.json")
@@ -25,7 +26,8 @@ func i64(v int64) *int64 { return &v }
 // golden is a full snapshot: two harness sessions (one on a tight window, one on Codex Fast with a
 // Reserve allowance), a CodexBar account, the advice a desktop client notifies about and measured
 // speed from both ledgers. desktop/ reads testdata/snapshot.json, so the shell and the CLI share one contract.
-func golden() Snapshot {
+func golden(t *testing.T) Snapshot {
+	t.Helper()
 	e := func(k, l string, a, c, t float64) digest.Effort {
 		return digest.Effort{Effort: k, Label: l, Ability: f(a), Cost: f(c), Time: f(t), CostBasisID: "ref"}
 	}
@@ -123,7 +125,7 @@ func golden() Snapshot {
 	pace := &history.PaceView{OK: true, Recording: true, Now: now, Ledger: history.PaceLedger{SchemaVersion: 1, Since: now.Add(-3 * 24 * time.Hour), Cycles: []history.PaceCycle{
 		cyc(-10*time.Hour, 5, 65, 3*time.Hour, 0), cyc(-5*time.Hour+5*time.Minute, 0, 70, 3*time.Hour+30*time.Minute, 0), cyc(95*time.Minute, 30, 88, 2*time.Hour, 0)}}}
 	// Connections: Codex and Claude Code installed, Kiro's CLI on the path, CodexBar on for Z.ai.
-	cb := filepath.Join(os.TempDir(), "modelplan-golden-codexbar.json")
+	cb := filepath.Join(t.TempDir(), "codexbar.json")
 	_ = os.WriteFile(cb, []byte(`{"schemaVersion":1,"providers":["zai"]}`), 0o600)
 	found := map[string]bool{"/home/u/.codex": true, "/home/u/.claude": true, "/home/u/.local/bin/kiro-cli": true}
 	conns := connections.Diagnose(connections.Env{Home: "/home/u", CodexHome: "/home/u/.codex", CodexBarFile: cb, Exists: func(p string) bool { return found[p] }}, r)
@@ -132,13 +134,14 @@ func golden() Snapshot {
 }
 
 func TestGoldenSnapshot(t *testing.T) {
+	testenv.IsolateHome(t)
 	for _, k := range []string{"MODELPLAN_CODEXBAR", "MODELPLAN_CODEX_ACCOUNT", "XDG_DATA_HOME"} {
 		t.Setenv(k, "")
 	}
 	// The text gives clock times in the machine's zone; the golden file is in UTC.
 	defer func(l *time.Location) { time.Local = l }(time.Local)
 	time.Local = time.UTC
-	got, err := json.MarshalIndent(golden(), "", "  ")
+	got, err := json.MarshalIndent(golden(t), "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}

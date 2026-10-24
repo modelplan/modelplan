@@ -30,6 +30,8 @@ Most leaderboards compare every model at its **top** setting. But inside one mod
 
 `modelplan connect cursor` opts into native personal quota using Cursor’s local editor sign-in read-only. It calls private dashboard endpoints on `cursor.com` / `api2.cursor.sh`, never refreshes or stores credentials, and keeps unsupported sign-ins unknown. `--backend codexbar` explicitly selects the existing fallback. [Source paths and limitations](docs/cursor-native-quota.md).
 
+`modelplan connect minimax` opts into plan quota using `MINIMAX_CODING_API_KEY` (or `--key-env NAME`), with `--region international` (default) or `china`. It calls only the selected region, stores no key, and leaves unsupported quota unknown. [Endpoints and privacy](docs/minimax-quota.md).
+
 `modelplan connect copilot` opts in to monthly premium-request usage from the installed, signed-in Copilot runtime (`account.getQuota`), without starting a session or importing tokens. `modelplan disconnect copilot` disables it. If the runtime is missing or incompatible, explicitly choose the existing bridge with `modelplan connect copilot --backend codexbar`; its sign-in remains in CodexBar. `modelplan connections` discloses the runtime command, host boundary and credential handling.
 - **Plans and windows.** Coding plan prices and quotas by maker, model and price band; off-peak hours, peaks and public quota resets on a week calendar.
 - **In your tools.** One open-source Skill for any agent, plugins for Claude Code and Codex, and a single-binary CLI, all reading the same verified publication as the website.

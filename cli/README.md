@@ -158,3 +158,9 @@ JSON snapshots, JSONL full-message records and legacy `$set.messages` checkpoint
 `modelplan connect cursor` uses the editor SQLite sign-in read-only and private Cursor dashboard JSON. No refresh, copy, credential persistence, browser/keychain access or automatic backend fallback. Unsupported or expired credentials keep quota unknown. `modelplan connect cursor --backend codexbar` selects the existing bridge explicitly. [Paths, endpoints, privacy and limits](../docs/cursor-native-quota.md).
 
 `modelplan connect cursor` 只读编辑器 SQLite 登录状态，访问未公开仪表盘接口，不刷新、复制或保存凭据，不读取浏览器和钥匙串。不支持或过期时额度未知；`--backend codexbar` 显式选择已有桥接。[路径、接口与限制](../docs/cursor-native-quota.md)。
+
+## MiniMax plan quota (opt-in) / MiniMax 套餐额度（可选）
+
+`modelplan connect minimax` reads only `MINIMAX_CODING_API_KEY` (or `--key-env NAME`). `--region international` (default) uses `api.minimax.io`; `--region china` uses `api.minimaxi.com`. Current Token Plan JSON is primary, with legacy JSON fallback on the same host for endpoint/auth rejection. No cross-region probing, browser/config/token-file reads, refresh, credential storage, balance or inference. Missing entitlement and unsupported values stay unknown. Connections/desktop disclose the selected variable, host and documentation status. [Method, privacy and limitations](../docs/minimax-quota.md).
+
+`modelplan connect minimax` 仅读取 `MINIMAX_CODING_API_KEY` 或 `--key-env NAME` 指定变量。`--region international`（默认）/ `china` 分别调用国际/国内 API 主机，不跨地区尝试。优先读取 Token Plan JSON，仅在端点或授权拒绝时回退同主机旧接口。不读取浏览器或凭据文件，不刷新或保存 key，不调用余额、推理接口。缺失权益或无效值保持未知；诊断披露变量、主机及文档状态。[详情](../docs/minimax-quota.md)。

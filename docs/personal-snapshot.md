@@ -329,3 +329,7 @@ At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` 
 ### Cursor opt-in diagnostics
 
 A connected native Cursor entry adds `quotaAccess` (the existing selection shape), including the exact SQLite source path, `cursor.com` / `api2.cursor.sh` hosts, and the undocumented endpoint notice. Authorization uses `via: "cursor-local-sign-in"`; only the collecting refresh opens that credential. A changed DB/WAL signature invalidates cached quota without reading credentials during diagnostics. The schema remains version 1; no credential or account ID is added. See [Cursor privacy and limits](cursor-native-quota.md).
+
+### MiniMax opt-in diagnostics
+
+`native:minimax` is a quota-only connection, off by default. Its additive `quotaAccess` uses the existing selection shape: environment variable name, region/host, current and legacy route notices, and secret handling. Keys, vendor identities and raw errors are excluded; accounts use local keyed-hash bindings scoped by region. Reset/missing values remain unknown. Schema version stays 1. [Method and limits](minimax-quota.md).

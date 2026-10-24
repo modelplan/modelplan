@@ -87,7 +87,7 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 
 func providerIDs() []string {
 	var ids []string
-	ids = append(ids, "kimi")
+	ids = append(ids, "kimi", "minimax")
 	for id := range quota.CodexBarProviders {
 		ids = append(ids, id)
 	}

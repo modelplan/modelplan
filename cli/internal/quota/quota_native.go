@@ -44,6 +44,7 @@ var nativeReaders = map[string]*nativeReader{
 	"zai":        zaiReader,
 	"kimi":       kimiReader,
 	"cursor":     cursorReader,
+	"minimax":    minimaxReader,
 	"opencodego": opencodegoReader,
 	"kiro":       kiroReader,
 	"copilot":    copilotReader,
@@ -101,7 +102,7 @@ func NativeDue(p Paths, now time.Time) bool {
 		if ok && e.Status != "ok" {
 			wait = nativeRetryAfter
 		}
-		if !ok || (x.Provider == "cursor" && e.CursorState != cursorState()) || (x.Provider == "kimi" && !kimiCacheMatches(p.Cache, x, e)) || now.Sub(s.ObservedAt) >= wait {
+		if !ok || (x.Provider == "cursor" && e.CursorState != cursorState()) || (x.Provider == "minimax" && (e.Region != x.Region || e.KeyEnv != x.KeyEnv || (!IdentityOff() && !minimaxCacheMatches(p.Cache, x, e)))) || (x.Provider == "kimi" && !kimiCacheMatches(p.Cache, x, e)) || now.Sub(s.ObservedAt) >= wait {
 			return true
 		}
 	}
@@ -134,7 +135,7 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
 		e.Provider, e.Source = x.Provider, "api"
-		if x.Provider == "kimi" {
+		if x.Provider == "kimi" || x.Provider == "minimax" {
 			e.Region, e.KeyEnv = x.Region, x.KeyEnv
 		}
 		if x.Provider == "copilot" {
@@ -217,12 +218,14 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"
 		case x.Blocked == "native-off":
 			st.Status, st.Reason = "missing", "native readers are off (MODELPLAN_NATIVE)"
-		case x.Blocked == "no-key" && (!ok || x.Provider == "kimi"):
+		case x.Blocked == "no-key" && (!ok || x.Provider == "kimi" || x.Provider == "minimax"):
 			st.Status, st.Reason = "missing", x.KeyEnv+" is not set where modelplan runs"
 		case x.Provider == "kimi" && ok && !kimiCacheMatches(p.Cache, x, e):
 			st.Status, st.Reason = "missing", "the selected Kimi key or region changed; refresh required"
 		case x.Provider == "cursor" && ok && (e.CursorState == "" || e.CursorState != cursorState()):
 			st.Status, st.Reason = "missing", "Cursor sign-in state changed or is unavailable; refresh required"
+		case x.Provider == "minimax" && ok && !minimaxCacheMatches(p.Cache, x, e):
+			st.Status, st.Reason = "missing", "MiniMax key, region or identity setting changed; refresh required"
 		case !ok:
 			st.Status, st.Reason = "missing", "not read yet"
 		case x.Provider == "kimi" && now.Sub(e.ObservedAt) > staleAfter:
@@ -247,8 +250,8 @@ func applyNative(r *Report, p Paths, now time.Time) {
 }
 
 func nativeIdentityBasis(x Selection) string {
-	if x.Provider == "kimi" {
-		return "api-key:kimi:" + x.Region
+	if x.Provider == "kimi" || x.Provider == "minimax" {
+		return "api-key:" + x.Provider + ":" + x.Region
 	}
 	return "api-key:" + x.Provider
 }

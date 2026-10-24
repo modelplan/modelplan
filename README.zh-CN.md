@@ -30,6 +30,8 @@ Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Cl
 
 `modelplan connect cursor` 显式启用原生个人额度，只读 Cursor 编辑器登录状态，调用 `cursor.com` / `api2.cursor.sh` 的未公开仪表盘接口，不刷新或保存凭据。不支持的登录格式显示未知；`--backend codexbar` 显式选择已有回退。[路径与限制](docs/cursor-native-quota.md)。
 
+`modelplan connect minimax` 显式启用套餐额度，用 `MINIMAX_CODING_API_KEY` 或 `--key-env NAME` 供给 key，`--region international`（默认）或 `china` 选择地区。只调用所选地区，不保存 key，不支持的额度保持未知。[接口与隐私](docs/minimax-quota.md)。
+
 `modelplan connect copilot` 可选启用已登录的 Copilot 运行时，通过 `account.getQuota` 读取每月高级请求用量，不创建会话、不导入 token。`modelplan disconnect copilot` 关闭读取。运行时缺失或不兼容时，可显式选择现有桥接：`modelplan connect copilot --backend codexbar`，登录仍由 CodexBar 保管。`modelplan connections` 显示运行时命令、主机边界和凭据处理方式。
 - **套餐与时段：** 按厂商、模型、价位比较 Coding 套餐的价格和额度；优惠时段、高峰时段和官方额度重置放在周历上。
 - **在你的工具里：** 一个开源 Skill 适配各种 Agent，另有 Claude Code 和 Codex 插件、单文件命令行，和网站读同一份已核验的公开数据。
