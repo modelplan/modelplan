@@ -10,6 +10,7 @@ go build -o dist/modelplan ./cmd/modelplan
 ./dist/modelplan sync                 # verify and cache the current publication
 ./dist/modelplan lineup               # WHICH ENGINE for Anthropic and OpenAI
 ./dist/modelplan lineup --dev openai --json
+./dist/modelplan publication --json --offline  # public recommendations only
 ./dist/modelplan effort opus          # ladder relative to ★ recommended
 echo '{"model":{"id":"claude-opus-5-5"}}' | ./dist/modelplan statusline
 ./dist/modelplan statusline --harness codex --model gpt-6-astra --no-color
@@ -20,6 +21,36 @@ echo '{"model":{"id":"claude-opus-5-5"}}' | ./dist/modelplan statusline
 echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":39,"resets_at":2000000000}}}' \
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
+
+### Public publication JSON
+
+`modelplan publication --json [--offline]` returns one versioned public-only object:
+
+```json
+{
+  "schemaVersion": 1,
+  "publicationId": "<verified manifest publicationId>",
+  "publishedAt": "<manifest timestamp, or null when unknown>",
+  "units": {
+    "ability": "websiteAbility",
+    "cost": "usdPerReferenceTask",
+    "time": "taskTimeCrossModel"
+  },
+  "models": [],
+  "lineups": [],
+  "speedTiers": []
+}
+```
+
+The arrays contain the verified client digest's published entries in publication order, without filtering or ranking. `models[]` retains `id`, `name`, `developerId`, `recommended`, `harnessIds` and `efforts[]` (`effort`, `label`, `ability`, `cost`, `time` and published basis metadata). `lineups[]` retains each developer's published `frontier`, members and steps; it is an array, unlike `lineup --json`'s developer-keyed object. `speedTiers[]` retains `harness`, `models[].modelId`, `models[].speed.{ratio,qualifier}`, `billing[]`, eligibility, caveats and sources. Ratios keep their `up-to`, `approximate` or `unstated` qualifier: they describe token generation, never measured speed or task time. Eligibility does not establish a local entitlement. Unknown numeric values and model IDs stay `null`; missing speed tiers yield `[]`. No scores, ratios or rankings are inferred.
+
+The command reads no credentials, account data, quotas, sessions, local configuration or speed/history ledgers, and starts no account readers or background processes. Online it uses the same anonymous publication refresh as `models` and `lineup` (at most once per 10 minutes), retaining a verified last-good cache with a warning on stderr if refresh fails. `--offline` only re-verifies cached publication files: it makes no network requests and creates or changes no files. Missing or invalid cached data produces no JSON, a clear stderr error and exit code 3; `--json` is required (usage errors exit 2).
+
+A native host can pair this object with `modelplan desktop --json --read-only`. Require `schemaVersion: 1`, compatible `units` and an exact match between this `publicationId` and `snapshot.publication.publicationId` before joining their models. Keep views blank on an unavailable or mismatched publication; refresh the personal snapshot after the publication changes. A valid publication can be older when offline or after a failed refresh; its ID and timestamp describe that publication, not the current clock.
+
+`modelplan publication --json [--offline]` 仅返回经过校验的公开推荐：`schemaVersion: 1`、清单中的 `publicationId` / `publishedAt`、`units`、按发布顺序保留的 `models[]`、`lineups[]` 和 `speedTiers[]`。不读取凭据、账号、额度、会话、本地配置或速度/历史账本，不启动账号读取器或后台进程。在线沿用匿名刷新和已校验旧缓存；刷新失败在 stderr 提示。`--offline` 仅重新校验缓存，不联网、不创建或改写文件；无有效缓存时不输出 JSON，stderr 说明原因并退出 3。必须带 `--json`，用法错误退出 2。
+
+未知数值和型号 ID 保留 `null`，缺失速度档位为 `[]`；保留 `up-to` / `approximate` / `unstated` 限定，不将生成速度当作任务时间或实测保证，也不把适用套餐当作本地权益。客户端不补分数、不推算排名。与个人快照拼接前，必须检查版本、单位，以及 `publicationId` 与 `snapshot.publication.publicationId` 完全一致；缺失或不匹配时保持空白，公开发布更新后应重新获取个人快照。
 
 `advise` events: a window used up, tight (also early: half used and on pace to run out; or a recent burst that runs it out within three hours, with the time), reset soon with allowance left, an announced Codex reset, switch back after a reset (to the configuration in use before the hint, and Codex Fast off if it was turned on since), peak and off-peak rates, expiring cards and public resets. A tight window suggests a lower effort and, when there is one, a cheaper published model that scores at least as high (`alternative`). Multiples (×) are the published API cost of a reference task: they track plan usage roughly within one model and are only a guide across models.
 

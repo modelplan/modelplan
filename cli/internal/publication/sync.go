@@ -232,6 +232,9 @@ func Load(s *store.Store) (*digest.Digest, store.State, error) {
 	if m.PublicationID != st.PublicationID {
 		return nil, st, errors.New("cache: publication mismatch")
 	}
+	if st.Component != digest.ComponentClient || st.ComponentHash != m.Components[digest.ComponentClient].Hash {
+		return nil, st, errors.New("cache: client component mismatch")
+	}
 	if err = verify(m, b); err != nil {
 		return nil, st, err
 	}
@@ -239,7 +242,7 @@ func Load(s *store.Store) (*digest.Digest, store.State, error) {
 	if err != nil {
 		return nil, st, err
 	}
-	d.PublicationID, d.PublishedAt = st.PublicationID, st.PublishedAt
+	d.PublicationID, d.PublishedAt = m.PublicationID, m.PublishedAt
 	return d, st, nil
 }
 
