@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -29,18 +30,25 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
-	QuotaAccess   *quota.Selection `json:"quotaAccess,omitempty"`
-	ID            string           `json:"id"`
-	Kind          string           `json:"kind"` // agent | quota
-	Installed     Level            `json:"installed"`
-	History       Level            `json:"history"`
-	Authorization Level            `json:"authorization"`
-	Quota         Level            `json:"quota"`
-	Support       string           `json:"support"`
+	QuotaAccess  *quota.Selection `json:"quotaAccess,omitempty"`
+	Read         string           `json:"read,omitempty"`
+	Hosts        []string         `json:"hosts,omitempty"`
+	SecretPolicy string           `json:"secretPolicy,omitempty"`
+
+	ID            string `json:"id"`
+	Kind          string `json:"kind"` // agent | quota
+	Installed     Level  `json:"installed"`
+	History       Level  `json:"history"`
+	Authorization Level  `json:"authorization"`
+	Quota         Level  `json:"quota"`
+	Support       string `json:"support"`
+
+	LocalUsage *localusage.Report `json:"localUsage,omitempty"`
 }
 
 // Env is where to look; tests replace Exists.
 type Env struct {
+	Gemini                                         *localusage.Report
 	Home, CodexHome, CodexBarFile, ConnectionsFile string
 	Exists                                         func(path string) bool
 }
@@ -180,7 +188,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		if p == "kimi" {
 			c.ID = "native:kimi"
 			access := x
-			if !on {
+			if !on || x.Backend == quota.BackendOff {
 				access = quota.Selection{Provider: "kimi", Name: "Kimi Code", Backend: quota.BackendOff, Region: "china", KeyEnv: "KIMI_CODE_API_KEY", Host: quota.KimiHost("china"), EndpointNotice: quota.KimiEndpointNotice}
 			}
 			c.QuotaAccess = &access
@@ -194,6 +202,10 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			c.Quota = Level{Status: "off", Binding: "unknown"}
 		case on && x.Backend == quota.BackendNative:
 			c.ID = "native:" + p
+			if p == "copilot" {
+				c.Installed = yesNo(e.onPath("copilot"), "not-found")
+			}
+			c.Read, c.Hosts, c.SecretPolicy = x.Read, x.Hosts, x.SecretPolicy
 			switch x.Blocked {
 			case "native-off":
 				c.Authorization = Level{Status: "off", Reason: "MODELPLAN_NATIVE"}
@@ -223,6 +235,22 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		out = append(out, c)
 	}
+	gemini := e.Gemini
+	if gemini == nil {
+		status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
+		gemini = &status
+	}
+	gc := Connection{ID: "gemini", Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath("gemini"), "not-found"),
+		Authorization: Level{Status: "off", Reason: gemini.Reason, Via: "local-usage.json"}, History: Level{Status: "off"},
+		Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: gemini}
+	if gemini.Enabled && gemini.Status != "off" {
+		gc.Authorization.Status = "yes"
+		gc.History = Level{Status: "unknown", Reason: gemini.Reason}
+		if len(gemini.Rows) > 0 {
+			gc.History = Level{Status: "yes", At: gemini.LastObservedAt, Reason: gemini.Reason}
+		}
+	}
+	out = append(out, gc)
 	return out
 }
 

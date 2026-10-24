@@ -16,6 +16,9 @@ It marks no advice as told. A client keeps its own notified keys.
 
 `cli/internal/snapshot/testdata/snapshot.json` is a complete example, kept in step with the CLI by its tests (`go test ./internal/snapshot -update` rewrites it). The desktop app's tests read it, so a change that breaks a client fails there.
 
+`localUsage[]` is an additive, optional local accounting view. Gemini is off until `modelplan usage gemini enable`. Its rows group native token counters by local day and model; sessions expose only keyed references and timestamps. Counters are nullable, `coverage` identifies bounded/skipped history, and `scope` distinguishes this from account quota. No credential or network access is involved. These values do not enter existing quota accounts, speed estimates or the performance ledger's daily totals. Source paths, an empty `hosts` list and privacy text are also present in Gemini connection diagnostics. Snapshot revisions exclude each report's evaluation clock; enabled local usage adds a local-midnight refresh boundary.
+
+
 ## Top level
 
 | Field | Meaning |
@@ -309,3 +312,5 @@ The same limits apply during read-only projection even before another ledger wri
 只读模式不写文件、不发现新会话，也不请求账号端点。
 
 Kimi's quota connection adds optional `quotaAccess` diagnostics (selected environment variable, fixed regional `host`, backend/block state and `endpointNotice`). It identifies the undocumented `GET /coding/v1/usages` compatibility route and that the key is never printed/stored. Kimi windows continue using existing schema-v1 quota fields; no snapshot field is renamed. 连接新增可选 `quotaAccess`，披露变量名、地区主机、启用状态与未公开文档端点说明；不打印或存储 key，原有 v1 字段保持不变。
+
+At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` and `remainingPercent` are null/absent until a new-cycle reading arrives. `pace: "reset_passed"` and the additive `unknownReason: "reset_passed"` explain the unknown allowance. Render it as `—`, never a refill or the previous cycle’s percentage. Snapshot `dataRevision` still identifies the original observation; the clock crossing a reset alone does not change it.

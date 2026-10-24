@@ -44,6 +44,7 @@ var nativeReaders = map[string]*nativeReader{
 	"kimi":       kimiReader,
 	"opencodego": opencodegoReader,
 	"kiro":       kiroReader,
+	"copilot":    copilotReader,
 }
 
 // NativeReader: the provider has a native reader, with its regions and default key variable.
@@ -127,6 +128,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		e.Provider, e.Source = x.Provider, "api"
 		if x.Provider == "kimi" {
 			e.Region, e.KeyEnv = x.Region, x.KeyEnv
+		}
+		if x.Provider == "copilot" {
+			e.Source = "runtime"
 		}
 		if e.Status == "ok" && key != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, nativeIdentityBasis(x), key, now) // a key is one subscription
@@ -222,13 +226,6 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		default:
 			st.Status = "ok"
 			windows := append([]Window(nil), e.Windows...)
-			if x.Provider == "kimi" {
-				for i := range windows {
-					if windows[i].ResetsAt != nil && !windows[i].ResetsAt.After(now) {
-						windows[i].UsedPercent = nil
-					}
-				}
-			}
 			r.Accounts = append(r.Accounts, Account{Source: st.Source, Plan: e.Plan, ObservedAt: e.ObservedAt, Windows: windows, Via: "native", Subscription: e.binding("api-key")})
 		}
 		r.Sources = append(r.Sources, st)

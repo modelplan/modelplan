@@ -16,7 +16,34 @@ import (
 	"time"
 )
 
+// RequestUsage is the provider's request count, independent of token accounting.
+type RequestUsage struct {
+	Used      *int64 `json:"used"`
+	Limit     *int64 `json:"limit"`
+	Unlimited bool   `json:"unlimited,omitempty"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // Window is one usage window as last observed, plus values derived at evaluation time.
+// ObservedRequests identifies the original reading even after a reset hides its counts.
+func (w *Window) ObservedRequests() *RequestUsage {
+	if w.Requests != nil {
+		return w.Requests
+	}
+	return w.observedRequests
+}
+
+func (w *Window) evalRequests(now time.Time) {
+	if w.Requests != nil {
+		w.observedRequests = w.Requests
+	}
+	if w.ResetsAt != nil && !now.Before(*w.ResetsAt) {
+		w.Requests = nil
+	} else if w.Requests == nil {
+		w.Requests = w.observedRequests
+	}
+}
+
 type Window struct {
 	Kind          string     `json:"kind"` // five_hour | weekly | monthly | spend | unknown
 	Limit         string     `json:"limit,omitempty"`
@@ -28,6 +55,9 @@ type Window struct {
 	UsedUSD       *float64   `json:"usedUsd,omitempty"`
 	LimitUSD      *float64   `json:"limitUsd,omitempty"`
 
+	Requests         *RequestUsage `json:"requests,omitempty"`
+	observedRequests *RequestUsage
+
 	RemainingPercent *float64 `json:"remainingPercent"`
 	ResetsInMinutes  *int     `json:"resetsInMinutes"`
 	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
@@ -38,9 +68,12 @@ type Window struct {
 	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
 	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset.
 	RunsOutInMinutes *int   `json:"runsOutInMinutes"`
-	Pace             string `json:"pace"` // exhausted | tight | on_track | surplus | reset_passed | unknown
+	UnknownReason    string `json:"unknownReason,omitempty"` // reset_passed: awaiting a reading of the new cycle
+	Pace             string `json:"pace"`                    // exhausted | tight | on_track | surplus | reset_passed | unknown
 
-	recent []Sample // earlier readings of this window in its current cycle, oldest first
+	observedUsedPercent *float64 // retained only in memory for clock-independent snapshot revisions
+	observedUsedUSD     *float64
+	recent              []Sample // earlier readings of this window in its current cycle, oldest first
 }
 
 // Sample is one earlier reading of a window, kept to measure the recent rate of use.
@@ -208,6 +241,7 @@ func Read(p Paths, now time.Time) Report {
 func Evaluate(a *Account, now time.Time) {
 	a.Stale = !a.ObservedAt.IsZero() && now.Sub(a.ObservedAt) > staleAfter
 	for i := range a.Windows {
+		a.Windows[i].evalRequests(now)
 		evalWindow(&a.Windows[i], now)
 	}
 	var pool []Window
@@ -263,7 +297,20 @@ func Boundaries(a *Account) []time.Time {
 
 func round1(v float64) *float64 { x := math.Round(v*10) / 10; return &x }
 
+// ObservedUsage returns the original reading, including after evaluation hides an expired
+// cycle. It is for identifying observation changes, never for displaying current allowance.
+func (w *Window) ObservedUsage() (*float64, *float64) {
+	if w.UnknownReason == "reset_passed" {
+		return w.observedUsedPercent, w.observedUsedUSD
+	}
+	return w.UsedPercent, w.UsedUSD
+}
+
 func evalWindow(w *Window, now time.Time) {
+	if w.UnknownReason == "reset_passed" {
+		w.UsedPercent, w.UsedUSD = w.observedUsedPercent, w.observedUsedUSD
+	}
+	w.UnknownReason = ""
 	w.RemainingPercent, w.ResetsInMinutes, w.ElapsedPercent, w.ProjectedPercent, w.AgeMinutes = nil, nil, nil, nil, nil
 	w.RecentPercentPerHour, w.RunsOutInMinutes = nil, nil
 	if !w.ObservedAt.IsZero() {
@@ -274,6 +321,14 @@ func evalWindow(w *Window, now time.Time) {
 		w.WindowMinutes = defaultMinutes[w.Kind]
 	}
 	w.Pace = "unknown"
+	if w.ResetsAt != nil && !now.Before(*w.ResetsAt) {
+		// A passed boundary says nothing about the new cycle. Even a runtime returning an
+		// already expired reset cannot establish current allowance.
+		w.observedUsedPercent, w.observedUsedUSD = w.UsedPercent, w.UsedUSD
+		w.UsedPercent, w.UsedUSD = nil, nil
+		w.Pace, w.UnknownReason = "reset_passed", "reset_passed"
+		return
+	}
 	if w.UsedPercent == nil {
 		return
 	}
@@ -281,12 +336,6 @@ func evalWindow(w *Window, now time.Time) {
 	w.RemainingPercent = round1(math.Max(0, 100-used))
 	if w.ResetsAt != nil {
 		in := w.ResetsAt.Sub(now)
-		if in <= 0 {
-			// The meter was read before this reset; current usage is unknown (usually low again).
-			w.Pace = "reset_passed"
-			w.RemainingPercent = nil
-			return
-		}
 		m := int(math.Ceil(in.Minutes()))
 		w.ResetsInMinutes = &m
 	}

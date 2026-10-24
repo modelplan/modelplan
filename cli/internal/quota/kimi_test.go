@@ -118,6 +118,34 @@ func TestKimiOptInRegionsCacheAndPrivacy(t *testing.T) {
 			t.Fatal("secret/account leaked")
 		}
 	}
+	// Main's #117 freshness evaluator hides an expired current value while
+	// retaining the original observation for snapshot revision/history.
+	cached := loadNative(p.Cache)
+	reset := kimiNow.Add(time.Minute)
+	cached.Providers[0].Windows[0].ResetsAt = &reset
+	encoded, _ := json.Marshal(cached)
+	if err := os.WriteFile(nativePath(p.Cache), encoded, 0600); err != nil {
+		t.Fatal(err)
+	}
+	report := Read(p, kimiNow.Add(2*time.Minute))
+	found := false
+	for _, a := range report.Accounts {
+		if a.Source == "native:kimi" {
+			for i := range a.Windows {
+				w := &a.Windows[i]
+				if w.Kind == "five_hour" {
+					used, _ := w.ObservedUsage()
+					if w.UsedPercent != nil || w.RemainingPercent != nil || w.UnknownReason != "reset_passed" || used == nil || *used != 12.5 {
+						t.Fatalf("reset freshness lost original reading: %+v", w)
+					}
+					found = true
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing Kimi reset window")
+	}
 	t.Setenv("KIMI_CODE_API_KEY", "new-synthetic-key")
 	if !NativeDue(p, kimiNow) {
 		t.Fatal("key change did not invalidate cache")

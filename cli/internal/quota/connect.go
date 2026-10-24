@@ -50,7 +50,10 @@ type Selection struct {
 	Region         string `json:"region,omitempty"`
 	KeyEnv         string `json:"keyEnv,omitempty"`
 	// KeySet: the variable is set and not empty in this process's environment.
-	KeySet bool `json:"keySet"`
+	KeySet       bool     `json:"keySet"`
+	Read         string   `json:"read,omitempty"`
+	Hosts        []string `json:"hosts,omitempty"`
+	SecretPolicy string   `json:"secretPolicy,omitempty"`
 	// Blocked: why the selected backend does not run: codexbar-off, native-off, no-native-reader,
 	// no-key.
 	Blocked string `json:"blocked,omitempty"`
@@ -133,6 +136,11 @@ func Selections(p Paths) ([]Selection, error) {
 				x.Blocked = "codexbar-off"
 			}
 		case BackendNative:
+			if x.Provider == "copilot" {
+				x.Read = "copilot --headless --no-auto-update --stdio: account.getQuota; Copilot-managed sign-in, no credential file opened by modelplan (MODELPLAN_COPILOT selects executable)"
+				x.Hosts = []string{"none from modelplan; Copilot runtime: api.github.com (enterprise host follows runtime configuration)"}
+				x.SecretPolicy = "Credentials are never printed or stored by modelplan; only sanitized quota is cached. No identity is collected."
+			}
 			n := nativeReaders[x.Provider]
 			if n == nil {
 				x.Blocked = "no-native-reader"

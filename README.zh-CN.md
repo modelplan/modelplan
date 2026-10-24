@@ -23,7 +23,12 @@ Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Cl
 - **★ 推荐档：** 给每个模型算出最值的档位，并且明确告诉你再升一档能多拿几分（`+4.8`）、要多花几倍（`×1.37`）。
 - **推荐档下的榜单：** 每个模型都按自己的 ★ 推荐档上榜，也就是你实际会用的配置；能力旁边同时列出单个参考编程任务的成本和耗时，被超越的模型（更贵又不更强）会直接标出来；你正好在用这样的模型时，命令行会提醒一次该换哪个：Fable 5.1 → Opus 5.5（能力 +2.5 分，成本 ×0.52），GPT-6 Astra → GPT-6.1 Sol（能力相当，成本 ×0.18）。
 - **结合你的额度：** Skill 和命令行读取本机 Claude Code、Codex 的 5 小时和每周额度（只在本机读，不上传）。命令行还会只读打开 ZCode 和 OpenCode（V2）的本地数据库，按天、会话和项目统计 token。命令行还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history`），以后据此按你自己的使用情况建议默认档位；还会实测你自己在各模型、档位和 Fast 下的速度：输出 tok/s、首字延迟、每轮耗时和 token，并和 ★ 推荐档对比（`modelplan effort`、`modelplan history` 查看；只读日志里的时间戳和 token 数）。快重置还剩很多？升一档，或开 Codex Fast。额度紧，或最近用得猛、3 小时内就会用完？守住 ★ 或降一档，并告诉你大约多久用完。重置之后，提醒你一次换回之前用的模型和档位（Codex 开了 Fast 也会提醒关掉）。
+
+- **Gemini CLI 本机用量（可选）：** `modelplan usage gemini enable` 启用只读统计 Gemini 自己的本机聊天历史，按模型、日期和会话显示 token。用 `modelplan usage gemini` 查看，`disable` 关闭。不读取凭据或远程额度，不访问任何主机；缺失计数显示为 `--`。
+
 - **其他套餐（可选）：** `modelplan connect zai` 用你放在 `Z_AI_API_KEY` 里的 API key 原生读取 Z.ai / GLM Coding Plan 的用量（国内站加 `--region bigmodel-cn`），`modelplan connect opencodego` 用 `OPENCODE_API_KEY` 读取 OpenCode Go，`modelplan connect kiro` 通过 Kiro 自己的命令行读取（`kiro-cli acp`，不发送任何提问，登录由 Kiro 保管）。key 只发给对应厂商的用量接口，不会保存；`modelplan connections` 显示每个套餐由哪个读取器负责。其余的用 `modelplan codexbar enable cursor zai` 通过开源的 [CodexBar](https://github.com/steipete/CodexBar) 命令行读取 Copilot、Cursor、Z.ai / GLM、Kiro、OpenCode Go 的用量，按锁定版本下载并校验（仅 macOS 和 Linux）。登录和 key 由 CodexBar 保管，本客户端只留百分比和重置时间。用 `modelplan declare zhipu-global-pro legacy-v2` 说明是哪个套餐在付费，建议就按它的计量方式给：按次计的套餐不会建议降档，而是提示下一个低倍率时段。
+
+`modelplan connect copilot` 可选启用已登录的 Copilot 运行时，通过 `account.getQuota` 读取每月高级请求用量，不创建会话、不导入 token。`modelplan disconnect copilot` 关闭读取。运行时缺失或不兼容时，可显式选择现有桥接：`modelplan connect copilot --backend codexbar`，登录仍由 CodexBar 保管。`modelplan connections` 显示运行时命令、主机边界和凭据处理方式。
 - **套餐与时段：** 按厂商、模型、价位比较 Coding 套餐的价格和额度；优惠时段、高峰时段和官方额度重置放在周历上。
 - **在你的工具里：** 一个开源 Skill 适配各种 Agent，另有 Claude Code 和 Codex 插件、单文件命令行，和网站读同一份已核验的公开数据。
 

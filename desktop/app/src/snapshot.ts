@@ -10,6 +10,7 @@ export interface QuotaWindow {
   kind: string; // five_hour | weekly | monthly | spend | unknown
   limit?: string; // an allowance kept apart from the main one (Codex: reserve)
   usedPercent: number | null;
+  unknownReason?: string;
   windowMinutes?: number;
   resetsAt: string | null;
   observedAt: string;
