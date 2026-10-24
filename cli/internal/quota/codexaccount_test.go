@@ -45,6 +45,7 @@ done
 }
 
 func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
+	isolateHome(t)
 	cache := t.TempDir()
 	bin, log := fakeCodex(t, acctResponse)
 	if !AccountDue(cache, acctNow) {
@@ -87,6 +88,7 @@ func TestRefreshReadsTheAccountWithoutIdsAndNeverConsumes(t *testing.T) {
 }
 
 func TestFailedRefreshWaitsLongerAndOffMeansOff(t *testing.T) {
+	isolateHome(t)
 	cache := t.TempDir()
 	if err := RefreshCodexAccount(context.Background(), cache, "", acctNow); err != nil {
 		t.Fatal(err)
@@ -101,6 +103,7 @@ func TestFailedRefreshWaitsLongerAndOffMeansOff(t *testing.T) {
 }
 
 func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
+	isolateHome(t)
 	var resp rlResponse
 	if err := json.Unmarshal([]byte(acctResponse), &resp); err != nil {
 		t.Fatal(err)
@@ -137,6 +140,7 @@ func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
 }
 
 func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
+	isolateHome(t)
 	withCredits := strings.Replace(acctResponse, `"planType":"pro",`, `"planType":"pro","credits":{"hasCredits":true,"unlimited":false,"balance":"73172.5"},`, 1)
 	var resp rlResponse
 	if err := json.Unmarshal([]byte(withCredits), &resp); err != nil {
@@ -210,6 +214,7 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 }
 
 func TestCreditsWithoutDetailsAreCounted(t *testing.T) {
+	isolateHome(t)
 	cards := creditCards(3, nil)
 	if len(cards) != 1 || *cards[0].Count != 3 || cards[0].ExpiresAt != nil {
 		t.Fatalf("cards = %+v", cards)

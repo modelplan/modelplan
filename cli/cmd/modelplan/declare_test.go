@@ -8,6 +8,7 @@ import (
 )
 
 func TestDeclareNoticeNamesOnlyWhatTheEndpointCanBill(t *testing.T) {
+	isolateHome(t)
 	m := &digest.Model{ID: "glm", Name: "GLM-5.3"}
 	plans := []digest.MeteredPlan{{PlanID: "opencode-go"}, {PlanID: "zhipu-cn-pro", Generation: "legacy-v2"},
 		{PlanID: "zhipu-global-pro", Generation: "credits-2026"}, {PlanID: "zhipu-global-pro", Generation: "legacy-v2"}}

@@ -44,6 +44,7 @@ func tree(t *testing.T, root string) map[string]string {
 }
 
 func TestDesktopReadOnlyWritesNothing(t *testing.T) {
+	isolateHome(t)
 	root := t.TempDir()
 	codex := filepath.Join(root, "codex")
 	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
@@ -142,6 +143,7 @@ func TestDesktopReadOnlyWritesNothing(t *testing.T) {
 }
 
 func TestDesktopReadOnlyCreatesNoCache(t *testing.T) {
+	isolateHome(t)
 	root := t.TempDir()
 	cache := filepath.Join(root, "cache")
 	t.Setenv("MODELPLAN_CACHE", cache)
@@ -156,6 +158,7 @@ func TestDesktopReadOnlyCreatesNoCache(t *testing.T) {
 }
 
 func TestProjectLabelsCommand(t *testing.T) {
+	isolateHome(t)
 	root := t.TempDir()
 	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
 	t.Setenv("HOME", filepath.Join(root, "home"))
@@ -201,6 +204,7 @@ func TestProjectLabelsCommand(t *testing.T) {
 }
 
 func TestConnectCommands(t *testing.T) {
+	isolateHome(t)
 	root := t.TempDir()
 	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
 	t.Setenv("HOME", filepath.Join(root, "home"))

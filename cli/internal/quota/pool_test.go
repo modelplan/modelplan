@@ -44,6 +44,7 @@ func poolHome(t *testing.T, mainLast bool) string {
 }
 
 func TestReserveIsItsOwnPool(t *testing.T) {
+	isolateHome(t)
 	for _, c := range []struct {
 		mainLast           bool
 		pool, room, decide string
@@ -71,6 +72,7 @@ func TestReserveIsItsOwnPool(t *testing.T) {
 }
 
 func TestAccountReadingKeepsReserveApart(t *testing.T) {
+	isolateHome(t)
 	var resp rlResponse
 	raw := `{"rateLimitsByLimitId":{
  "codex":{"limitId":"codex","planType":"plus","primary":{"usedPercent":20,"windowDurationMins":300,"resetsAt":1792148400},"secondary":{"usedPercent":30,"windowDurationMins":10080,"resetsAt":1792649570}},

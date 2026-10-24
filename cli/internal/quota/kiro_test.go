@@ -37,6 +37,7 @@ done
 }
 
 func TestKiroUsageOverACP(t *testing.T) {
+	isolateHome(t)
 	bin, log := fakeKiro(t, kiroUsage)
 	t.Setenv("MODELPLAN_KIRO", bin)
 	p := nativePaths(t)
@@ -74,6 +75,7 @@ func TestKiroUsageOverACP(t *testing.T) {
 }
 
 func TestParseKiroFailures(t *testing.T) {
+	isolateHome(t)
 	now := time.Now()
 	for raw, want := range map[string]string{
 		`{"success":false,"message":"User is not authenticated"}`:                   "Kiro CLI is signed out (kiro-cli login)",

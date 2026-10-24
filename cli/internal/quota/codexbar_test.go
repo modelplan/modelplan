@@ -51,6 +51,7 @@ func cbPaths(t *testing.T, providers ...string) Paths {
 }
 
 func TestCodexBarReadsEnabledProvidersWithoutIdentities(t *testing.T) {
+	isolateHome(t)
 	p := cbPaths(t, "zai", "cursor", "opencodego", "copilot", "kiro")
 	bin, log := fakeCodexBar(t)
 	if !CodexBarDue(p, cbNow) {
@@ -114,6 +115,7 @@ func TestCodexBarReadsEnabledProvidersWithoutIdentities(t *testing.T) {
 }
 
 func TestCodexBarFutureReadingsAreClampedToTheRun(t *testing.T) {
+	isolateHome(t)
 	e := parseCodexBar([]byte(`[{"provider":"zai","source":"api","usage":{"primary":{"usedPercent":150,"windowMinutes":300},"updatedAt":"2027-01-01T00:00:00Z"}}]`), "zai", "", cbNow)
 	if e.Status != "ok" || !e.ObservedAt.Equal(cbNow) || *e.Windows[0].UsedPercent != 100 {
 		t.Fatalf("entry = %+v", e)
@@ -121,6 +123,7 @@ func TestCodexBarFutureReadingsAreClampedToTheRun(t *testing.T) {
 }
 
 func TestCodexBarOnlyTheRequestedProviderCounts(t *testing.T) {
+	isolateHome(t)
 	p := cbPaths(t, "copilot")
 	bin, _ := fakeCodexBar(t)
 	e := parseCodexBar([]byte(`[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":5,"windowMinutes":300}}}]`), "copilot", "", cbNow)
@@ -136,6 +139,7 @@ func TestCodexBarOnlyTheRequestedProviderCounts(t *testing.T) {
 }
 
 func TestCodexBarOffAndUnknownProviders(t *testing.T) {
+	isolateHome(t)
 	p := cbPaths(t)
 	if err := SetCodexBarEnabled(p.CodexBarFile, []string{"cursor", "claude"}); err == nil {
 		t.Fatal("claude is read by this client itself, never through CodexBar")
@@ -151,6 +155,7 @@ func TestCodexBarOffAndUnknownProviders(t *testing.T) {
 }
 
 func TestCodexBarMissingBinaryIsRecorded(t *testing.T) {
+	isolateHome(t)
 	p := cbPaths(t, "cursor")
 	if err := RefreshCodexBar(context.Background(), p, "", cbNow); err != nil {
 		t.Fatal(err)
@@ -192,6 +197,7 @@ func tarball(t *testing.T, files map[string]string, link bool) []byte {
 }
 
 func TestFetchCodexBarChecksTheSumAndStaysInItsDirectory(t *testing.T) {
+	isolateHome(t)
 	plat := runtime.GOOS + "/" + runtime.GOARCH
 	old, had := codexbarPin[plat]
 	t.Cleanup(func() {
@@ -247,6 +253,7 @@ func TestFetchCodexBarChecksTheSumAndStaysInItsDirectory(t *testing.T) {
 }
 
 func TestCleanDropsPathsAddressesAndTokens(t *testing.T) {
+	isolateHome(t)
 	got := clean("open /Users/jane/Library/x and /home/bob/.config failed for jane@corp.io with abcd0123efgh4567ijkl8901mnop2345", "/Users/jane")
 	if strings.Contains(got, "jane") || strings.Contains(got, "bob") || strings.Contains(got, "abcd0123") {
 		t.Fatalf("clean = %q", got)
@@ -257,6 +264,7 @@ func TestCleanDropsPathsAddressesAndTokens(t *testing.T) {
 // provider this client reads still parses (without credentials each is an error record).
 // Run by the codexbar-pin workflow before a new pin is proposed.
 func TestLiveCodexBarContract(t *testing.T) {
+	isolateHome(t)
 	if os.Getenv("MODELPLAN_CODEXBAR_LIVE") != "1" {
 		t.Skip("set MODELPLAN_CODEXBAR_LIVE=1")
 	}
@@ -281,6 +289,7 @@ func TestLiveCodexBarContract(t *testing.T) {
 }
 
 func TestPinnedCodexBarIsFetchedEvenWithAUserCopy(t *testing.T) {
+	isolateHome(t)
 	if _, ok := codexbarPin[runtime.GOOS+"/"+runtime.GOARCH]; !ok {
 		t.Skip("no pinned build for this platform")
 	}
