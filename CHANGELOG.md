@@ -6,6 +6,37 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.34, Codex plugin 0.15.26 and Claude Code plugin 0.7.25 (2026-10-23)
+
+- Quota windows become unknown (`--`) once their reset passes without a fresh reading.
+  CLI readers, the Python Skill and desktop snapshots withhold the old percentage and explain why.
+- Copilot premium-request quota is opt-in with `modelplan connect copilot`: the signed-in
+  runtime's `account.getQuota` returns monthly used/limit/reset without a session or inference.
+  Copilot owns GitHub access (normally `api.github.com`); modelplan imports no token and makes no
+  direct vendor HTTP call. `MODELPLAN_COPILOT` can select the executable; the explicit
+  `--backend codexbar` option keeps the existing bridge available as a fallback.
+- Gemini local tokens/model/day/session history is opt-in with `modelplan usage gemini enable`.
+  It reads `~/.gemini/tmp/*/chats/session-*.{json,jsonl}` and the legacy root layout; an absolute
+  `MODELPLAN_GEMINI_HOME` overrides the root. `disable`, `MODELPLAN_GEMINI=off` or
+  `MODELPLAN_HISTORY=off` stops it. No executable, credential file, host or remote quota is read/called.
+- Kimi Code plan quota is opt-in with `modelplan connect kimi --region china|international`.
+  It reads only `KIMI_CODE_API_KEY` (or `--key-env NAME`) and calls the undocumented compatibility
+  `GET /coding/v1/usages` on `api.kimi.com` or `api.kimi.ai`. The key is never printed/stored;
+  no OAuth, cookies, credential files, inference or Moonshot balance is used.
+- Qwen local tokens/model/day/session history is opt-in with `modelplan usage qwen enable`.
+  It reads `~/.qwen/projects/*/chats/*.jsonl` and legacy tmp/root chat layouts;
+  `MODELPLAN_QWEN_HOME` overrides the root. `disable`, `MODELPLAN_QWEN=off` or
+  `MODELPLAN_HISTORY=off` stops it. No executable, credential file or host is accessed.
+  Optional `qwen-usage --export PATH` / `MODELPLAN_QWEN_USAGE_EXPORT` reads local aggregate JSON
+  exports separately, without enabling or double-counting session history.
+- `modelplan connections` discloses each source and host boundary. New sources are off by default;
+  `modelplan disconnect <provider>` or `MODELPLAN_NATIVE=off` stops native quota reads.
+  Local Gemini/Qwen history preserves unknown counters, deduplicates records and reports bounded
+  coverage; desktop schema v1 adds fields without changing existing quota/speed meanings.
+- Validation uses synthetic fixtures. Live accounts, endpoint acceptance and future tool schemas
+  were not verified; no real account data or vendor quota endpoints were accessed during testing.
+- Both plugins pin CLI v0.5.34 and its published archive checksums.
+
 ## CLI v0.5.33, Codex plugin 0.15.25 and Claude Code plugin 0.7.24 (2026-10-23)
 
 - Personal snapshot v1 adds local-day `perfStats[].windows.today`, per-source `todayTotals[]`,
