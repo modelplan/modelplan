@@ -27,15 +27,23 @@ public enum MetricMath {
         guard !sum.overflow, sum.partialValue > 0 else { return nil }
         return Double(cacheRead) / Double(sum.partialValue)
     }
-    /// Current binding is not historical ownership. Never duplicates source-wide totals across accounts.
-    public static func todayRate(_ snapshot: PersonalSnapshot, subscription: String) -> Double? {
-        let bindings = snapshot.subscriptions ?? []
-        guard let own = bindings.first(where: { $0.subscriptionRef == subscription }), let sources = own.sources, !sources.isEmpty,
-              sources.allSatisfy({ source in Set(bindings.filter { $0.sources?.contains(source) == true }.map(\.subscriptionRef)).count == 1 }) else { return nil }
-        let rows = (snapshot.todayTotals ?? []).filter { sources.contains($0.source) }
-        guard Set(rows.map(\.source)) == Set(sources) else { return nil }
-        return generationRate(rows.map(\.sums))
+    /// Source-wide history is never promoted to historical subscription ownership.
+    public static func sourceWideTodayRate(_ snapshot: PersonalSnapshot, sources: [String]) -> SourceWideGenerationRate? {
+        let sourceSet = Set(sources)
+        guard !sourceSet.isEmpty else { return nil }
+        let rows = (snapshot.todayTotals ?? []).filter { sourceSet.contains($0.source) }
+        guard Set(rows.map(\.source)) == sourceSet, rows.count == sourceSet.count,
+              let value = generationRate(rows.map(\.sums)) else { return nil }
+        return SourceWideGenerationRate(value: value, sources: sourceSet.sorted())
     }
+
+}
+
+public struct SourceWideGenerationRate: Sendable {
+    public let value: Double
+    public let sources: [String]
+    public let scope = "source-wide-today"
+    public let subscriptionAttribution = "unattributed"
 }
 
 public struct QuotaReading: Sendable {
