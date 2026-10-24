@@ -101,6 +101,9 @@ func (s QuotaSource) check() error {
 	if s.Backend == BackendCodexBar && s.Provider == "kimi" {
 		return fmt.Errorf("connections.json: Kimi uses only the native environment-key reader")
 	}
+	if s.Backend == BackendCodexBar && s.Provider == "minimax" {
+		return fmt.Errorf("connections.json: MiniMax uses only the native environment-key reader")
+	}
 	if s.KeyEnv != "" && !envName.MatchString(s.KeyEnv) {
 		return fmt.Errorf("connections.json: %s: keyEnv is not an environment variable name", s.Provider)
 	}
@@ -157,6 +160,13 @@ func Selections(p Paths) ([]Selection, error) {
 			if x.Provider == "kimi" {
 				x.Host = KimiHost(x.Region)
 				x.EndpointNotice = KimiEndpointNotice
+			}
+			if x.Provider == "minimax" {
+				x.Host = MiniMaxHost(x.Region)
+				x.Hosts = []string{x.Host}
+				x.EndpointNotice = MiniMaxEndpointNotice
+				x.Read = "env:" + x.KeyEnv
+				x.SecretPolicy = "Key is never printed, stored or copied; no credential files, browser sessions, refresh or cross-region requests. Only sanitized quota and keyed-hash references are cached."
 			}
 			if x.KeyEnv != "" {
 				x.KeySet = os.Getenv(x.KeyEnv) != "" // only whether it is there; the value stays in the environment

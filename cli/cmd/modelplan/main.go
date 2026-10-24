@@ -59,6 +59,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        native readers ask the vendor with an API key from an
                                        environment variable (zai: Z_AI_API_KEY, opencodego:
                                        OPENCODE_API_KEY; kimi: KIMI_CODE_API_KEY, --region china|international;
+                                       minimax: MINIMAX_CODING_API_KEY, --region international|china;
                                        kiro asks kiro-cli); the key is never
                                        stored. Providers without one stay on CodexBar
   modelplan codexbar [status|enable <provider…>|disable [provider…]|fetch|refresh]

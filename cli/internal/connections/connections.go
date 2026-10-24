@@ -185,10 +185,19 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		"copilot":    {Status: "not-applicable"},
 		"zai":        {Status: "not-applicable"},
 		"kimi":       {Status: "not-applicable"},
+		"minimax":    {Status: "not-applicable"},
 	}
-	for _, p := range []string{"copilot", "cursor", "kiro", "opencodego", "zai", "kimi"} {
+	for _, p := range []string{"copilot", "cursor", "kiro", "opencodego", "zai", "kimi", "minimax"} {
 		c := Connection{ID: "codexbar:" + p, Kind: "quota", Support: "quota-only", Installed: installed[p], History: Level{Status: "not-applicable", Reason: "quota-only"}}
 		x, on := sel[p]
+		if p == "minimax" {
+			c.ID = "native:minimax"
+			access := x
+			if !on || x.Backend == quota.BackendOff {
+				access = quota.Selection{Provider: "minimax", Name: "MiniMax", Backend: quota.BackendOff, Region: "international", KeyEnv: "MINIMAX_CODING_API_KEY", Host: quota.MiniMaxHost("international"), EndpointNotice: quota.MiniMaxEndpointNotice, Read: "env:MINIMAX_CODING_API_KEY", Hosts: []string{quota.MiniMaxHost("international")}}
+			}
+			c.QuotaAccess = &access
+		}
 		if p == "kimi" {
 			c.ID = "native:kimi"
 			access := x
@@ -210,6 +219,9 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				c.Installed = yesNo(e.onPath("copilot"), "not-found")
 			}
 			c.Read, c.Hosts, c.SecretPolicy = x.Read, x.Hosts, x.SecretPolicy
+			if p == "minimax" {
+				c.QuotaAccess = &x
+			}
 			switch x.Blocked {
 			case "native-off":
 				c.Authorization = Level{Status: "off", Reason: "MODELPLAN_NATIVE"}
@@ -224,7 +236,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				}
 			}
 			c.Quota = quotaLevel(c.ID)
-		case p == "kimi" && !on:
+		case (p == "kimi" || p == "minimax") && !on:
 			c.Authorization = Level{Status: "off", Reason: "not-enabled"}
 			c.Quota = Level{Status: "off", Binding: "unknown"}
 		case quota.CodexBarOff():

@@ -521,6 +521,41 @@
       "support": "quota-only"
     },
     {
+      "quotaAccess": {
+        "host": "https://api.minimax.io",
+        "endpointNotice": "GET /v1/token_plan/remains is documented on www.minimax.io; API subdomains and response schema are compatibility interfaces. Same-host legacy GET /v1/api/openplatform/coding_plan/remains is undocumented. No cross-region retry.",
+        "provider": "minimax",
+        "name": "MiniMax",
+        "backend": "off",
+        "origin": "",
+        "region": "international",
+        "keyEnv": "MINIMAX_CODING_API_KEY",
+        "keySet": false,
+        "read": "env:MINIMAX_CODING_API_KEY",
+        "hosts": [
+          "https://api.minimax.io"
+        ]
+      },
+      "id": "native:minimax",
+      "kind": "quota",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "status": "not-applicable",
+        "reason": "quota-only"
+      },
+      "authorization": {
+        "status": "off",
+        "reason": "not-enabled"
+      },
+      "quota": {
+        "status": "off",
+        "binding": "unknown"
+      },
+      "support": "quota-only"
+    },
+    {
       "id": "gemini",
       "kind": "agent",
       "installed": {
@@ -1666,6 +1701,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:1efc040d49d0360805079936ba73da1a",
+  "dataRevision": "sha256:3ef5799a6916d8d5a9a892d12c135ffa",
   "validUntil": "2026-10-18T09:04:50Z"
 }

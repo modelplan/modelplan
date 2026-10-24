@@ -325,3 +325,7 @@ Qwen automatic local history shares #121's `localUsage[]` shape (`source: qwen`)
 Kimi's quota connection adds optional `quotaAccess` diagnostics (selected environment variable, fixed regional `host`, backend/block state and `endpointNotice`). It identifies the undocumented `GET /coding/v1/usages` compatibility route and that the key is never printed/stored. Kimi windows continue using existing schema-v1 quota fields; no snapshot field is renamed. 连接新增可选 `quotaAccess`，披露变量名、地区主机、启用状态与未公开文档端点说明；不打印或存储 key，原有 v1 字段保持不变。
 
 At or after a quota window’s `resetsAt`, its current `usedPercent`, `usedUsd` and `remainingPercent` are null/absent until a new-cycle reading arrives. `pace: "reset_passed"` and the additive `unknownReason: "reset_passed"` explain the unknown allowance. Render it as `—`, never a refill or the previous cycle’s percentage. Snapshot `dataRevision` still identifies the original observation; the clock crossing a reset alone does not change it.
+
+### MiniMax opt-in diagnostics
+
+`native:minimax` is a quota-only connection, off by default. Its additive `quotaAccess` uses the existing selection shape: environment variable name, region/host, current and legacy route notices, and secret handling. Keys, vendor identities and raw errors are excluded; accounts use local keyed-hash bindings scoped by region. Reset/missing values remain unknown. Schema version stays 1. [Method and limits](minimax-quota.md).

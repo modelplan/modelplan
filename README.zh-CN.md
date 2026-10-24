@@ -28,6 +28,8 @@ Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Cl
 
 - **其他套餐（可选）：** `modelplan connect zai` 用你放在 `Z_AI_API_KEY` 里的 API key 原生读取 Z.ai / GLM Coding Plan 的用量（国内站加 `--region bigmodel-cn`），`modelplan connect opencodego` 用 `OPENCODE_API_KEY` 读取 OpenCode Go，`modelplan connect kiro` 通过 Kiro 自己的命令行读取（`kiro-cli acp`，不发送任何提问，登录由 Kiro 保管）。key 只发给对应厂商的用量接口，不会保存；`modelplan connections` 显示每个套餐由哪个读取器负责。其余的用 `modelplan codexbar enable cursor zai` 通过开源的 [CodexBar](https://github.com/steipete/CodexBar) 命令行读取 Copilot、Cursor、Z.ai / GLM、Kiro、OpenCode Go 的用量，按锁定版本下载并校验（仅 macOS 和 Linux）。登录和 key 由 CodexBar 保管，本客户端只留百分比和重置时间。用 `modelplan declare zhipu-global-pro legacy-v2` 说明是哪个套餐在付费，建议就按它的计量方式给：按次计的套餐不会建议降档，而是提示下一个低倍率时段。
 
+`modelplan connect minimax` 显式启用套餐额度，用 `MINIMAX_CODING_API_KEY` 或 `--key-env NAME` 供给 key，`--region international`（默认）或 `china` 选择地区。只调用所选地区，不保存 key，不支持的额度保持未知。[接口与隐私](docs/minimax-quota.md)。
+
 `modelplan connect copilot` 可选启用已登录的 Copilot 运行时，通过 `account.getQuota` 读取每月高级请求用量，不创建会话、不导入 token。`modelplan disconnect copilot` 关闭读取。运行时缺失或不兼容时，可显式选择现有桥接：`modelplan connect copilot --backend codexbar`，登录仍由 CodexBar 保管。`modelplan connections` 显示运行时命令、主机边界和凭据处理方式。
 - **套餐与时段：** 按厂商、模型、价位比较 Coding 套餐的价格和额度；优惠时段、高峰时段和官方额度重置放在周历上。
 - **在你的工具里：** 一个开源 Skill 适配各种 Agent，另有 Claude Code 和 Codex 插件、单文件命令行，和网站读同一份已核验的公开数据。
