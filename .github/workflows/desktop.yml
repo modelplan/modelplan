@@ -87,3 +87,31 @@ jobs:
           name: Model-Plan-Community-macOS-arm64-unsigned
           path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 14
+
+  native:
+    name: native (${{ matrix.os }})
+    # Standard free hosted images, their default Xcode; no signing or secrets.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record OS and available toolchain
+        run: |
+          sw_vers
+          xcode-select --print-path
+          xcodebuild -version
+          swift --version
+      - name: Build the neutral app and all native checks
+        run: swift build --package-path desktop/native --jobs 2
+      - name: Native contract suite
+        run: swift run --package-path desktop/native --skip-build ModelPlanContractChecks
+      - name: Common-run-loop deadline check
+        run: swift run --package-path desktop/native --skip-build ModelPlanRunLoopChecks
+      - name: AppKit lifecycle and neutral surface checks
+        run: swift run --package-path desktop/native --skip-build ModelPlanShellChecks
+      - name: Synthetic fixture integrity
+        run: python3 desktop/native/tools/check-fixture-manifests.py

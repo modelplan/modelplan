@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "kind": "modelplan.personal-snapshot",
+  "generatedAt": "2026-10-20T21:05:00Z",
+  "validUntil": "2026-10-20T21:06:00Z",
+  "dataRevision": "synthetic-unchanged",
+  "recording": true,
+  "publication": {
+    "publicationId": "synthetic-publication-1",
+    "publishedAt": "2026-10-20T20:00:00Z"
+  },
+  "accounts": [
+    {
+      "source": "synthetic-0",
+      "observedAt": "2026-10-20T21:05:00Z",
+      "stale": false,
+      "subscription": {
+        "subscriptionRef": "sub-0",
+        "status": "verified"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "remainingPercent": 0,
+          "observedAt": "2026-10-20T21:05:00Z",
+          "resetsAt": "2026-10-20T21:05:30Z",
+          "windowMinutes": 300
+        },
+        {
+          "kind": "weekly",
+          "remainingPercent": null,
+          "observedAt": "2026-10-20T21:05:00Z",
+          "resetsAt": null
+        }
+      ]
+    },
+    {
+      "source": "synthetic-0",
+      "observedAt": "2026-10-20T21:05:00Z",
+      "stale": false,
+      "subscription": {
+        "subscriptionRef": "sub-1",
+        "status": "verified"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "remainingPercent": 80,
+          "observedAt": "2026-10-20T21:05:00Z",
+          "resetsAt": "2026-10-20T21:05:30Z",
+          "windowMinutes": 300
+        },
+        {
+          "kind": "weekly",
+          "remainingPercent": null,
+          "observedAt": "2026-10-20T21:05:00Z",
+          "resetsAt": null
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "source": "synthetic-0",
+      "status": "ok"
+    },
+    {
+      "source": "synthetic-1",
+      "status": "ok"
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscriptionRef": "sub-0",
+      "sources": [
+        "synthetic-0"
+      ]
+    },
+    {
+      "subscriptionRef": "sub-1",
+      "sources": [
+        "synthetic-0"
+      ]
+    }
+  ],
+  "sessions": [
+    {
+      "source": "synthetic-0",
+      "model": {
+        "harnessId": "native-z"
+      },
+      "effort": {
+        "key": "medium"
+      },
+      "effortStatus": "reported"
+    },
+    {
+      "source": "synthetic-1",
+      "model": {
+        "harnessId": "native-z"
+      },
+      "effort": {
+        "key": "medium"
+      },
+      "effortStatus": "reported"
+    }
+  ],
+  "liveSessions": [
+    {
+      "ref": "session-0",
+      "source": "synthetic-0",
+      "model": "native-z",
+      "effort": "medium",
+      "effortStatus": "reported",
+      "status": "running",
+      "lastAt": "2026-10-20T21:04:59Z",
+      "rate": {
+        "status": "ok",
+        "value": 42,
+        "n": 5,
+        "min": 5,
+        "window": "60s",
+        "scope": "session",
+        "lastAt": "2026-10-20T21:04:59Z"
+      }
+    },
+    {
+      "ref": "session-1",
+      "source": "synthetic-0",
+      "model": "native-z",
+      "effort": "medium",
+      "effortStatus": "reported",
+      "status": "running",
+      "lastAt": "2026-10-20T21:04:59Z",
+      "rate": {
+        "status": "ok",
+        "value": 42,
+        "n": 5,
+        "min": 5,
+        "window": "60s",
+        "scope": "session",
+        "lastAt": "2026-10-20T21:04:59Z"
+      }
+    }
+  ],
+  "todayTotals": [
+    {
+      "source": "synthetic-0",
+      "sums": {
+        "eligibleRequests": 5,
+        "eligibleOutputTokens": 1000,
+        "genMs": 10000
+      }
+    }
+  ]
+}
