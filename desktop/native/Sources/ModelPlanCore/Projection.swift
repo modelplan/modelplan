@@ -28,9 +28,10 @@ public enum MetricMath {
         return Double(cacheRead) / Double(sum.partialValue)
     }
     /// Source-wide history is never promoted to historical subscription ownership.
-    public static func sourceWideTodayRate(_ snapshot: PersonalSnapshot, sources: [String]) -> SourceWideGenerationRate? {
-        let sourceSet = Set(sources)
-        guard !sourceSet.isEmpty else { return nil }
+    public static func sourceWideTodayRate(_ snapshot: PersonalSnapshot, source: String) -> SourceWideGenerationRate? {
+        // todayTotals has no cross-source parser/eligibility proof; keep this statistic to one source.
+        let sourceSet: Set<String> = [source]
+        guard !source.isEmpty else { return nil }
         let rows = (snapshot.todayTotals ?? []).filter { sourceSet.contains($0.source) }
         guard Set(rows.map(\.source)) == sourceSet, rows.count == sourceSet.count,
               let value = generationRate(rows.map(\.sums)) else { return nil }

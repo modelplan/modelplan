@@ -61,7 +61,7 @@ actor FakeCLI: CLITransport {
         try require(unknown.quotas.first?.remaining == nil && unknown.current.first?.effort == nil && unknown.live.first?.rate == nil, "unknown not fabricated")
         let duplicate = try FeedDecoder.personal(fixture("duplicate-bindings"))
         try require(project(duplicate, now).live.allSatisfy { !$0.working && $0.rate == nil }, "ambiguous source lights neither")
-        let sourceWide = MetricMath.sourceWideTodayRate(duplicate, sources:["synthetic-0","synthetic-0"])
+        let sourceWide = MetricMath.sourceWideTodayRate(duplicate, source:"synthetic-0")
         try require(sourceWide?.value == 100 && sourceWide?.sources.count == 1 && sourceWide?.subscriptionAttribution == "unattributed", "source history stays source-wide and is counted once")
         passed("F03/F05 unknown effort, sample gate and ambiguous source")
 
