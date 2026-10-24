@@ -1,0 +1,11 @@
+{
+  "calm-4": "Cases/F01-calm-4/personal",
+  "working-6": "Cases/F01-working-6/personal",
+  "unknown-stale": "Cases/F03-unknown-stale/personal",
+  "duplicate-bindings": "Cases/F05-duplicate-bindings/personal",
+  "dst": "Cases/F19-DST-offsets/personal",
+  "upstream-personal": "Cases/public-golden/personal",
+  "calm-4-idle": "Cases/F01-calm-4-idle/personal",
+  "calm-4-working-1": "Cases/F01-calm-4-working-1/personal",
+  "publication": "publication"
+}
