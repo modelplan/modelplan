@@ -59,12 +59,12 @@ func TestGeminiUsageAndReadOnlySnapshot(t *testing.T) {
 		t.Fatal(out.String())
 	}
 	cfg := read("connections", "--json")
-	if len(cfg["localUsage"].([]any)) != 1 {
+	if len(cfg["localUsage"].([]any)) != 2 {
 		t.Fatal(cfg)
 	}
 	before := tree(t, home)
 	s := read("desktop", "--read-only", "--json")
-	if len(s["localUsage"].([]any)) != 1 || len(s["accounts"].([]any)) != 0 {
+	if len(s["localUsage"].([]any)) != 2 || len(s["accounts"].([]any)) != 0 {
 		t.Fatal("local history turned into quota")
 	}
 	if !reflect.DeepEqual(before, tree(t, home)) {

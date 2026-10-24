@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
@@ -30,18 +31,20 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
-	QuotaAccess  *quota.Selection `json:"quotaAccess,omitempty"`
-	Read         string           `json:"read,omitempty"`
-	Hosts        []string         `json:"hosts,omitempty"`
-	SecretPolicy string           `json:"secretPolicy,omitempty"`
-
-	ID            string `json:"id"`
-	Kind          string `json:"kind"` // agent | quota
-	Installed     Level  `json:"installed"`
-	History       Level  `json:"history"`
-	Authorization Level  `json:"authorization"`
-	Quota         Level  `json:"quota"`
-	Support       string `json:"support"`
+	QuotaAccess   *quota.Selection `json:"quotaAccess,omitempty"`
+	Read          string           `json:"read,omitempty"`
+	Hosts         []string         `json:"hosts,omitempty"`
+	SecretPolicy  string           `json:"secretPolicy,omitempty"`
+	Reads         []string         `json:"reads,omitempty"`
+	Network       string           `json:"network,omitempty"`
+	Privacy       string           `json:"privacy,omitempty"`
+	ID            string           `json:"id"`
+	Kind          string           `json:"kind"` // agent | quota
+	Installed     Level            `json:"installed"`
+	History       Level            `json:"history"`
+	Authorization Level            `json:"authorization"`
+	Quota         Level            `json:"quota"`
+	Support       string           `json:"support"`
 
 	LocalUsage *localusage.Report `json:"localUsage,omitempty"`
 }
@@ -49,6 +52,7 @@ type Connection struct {
 // Env is where to look; tests replace Exists.
 type Env struct {
 	Gemini                                         *localusage.Report
+	Qwen                                           *localusage.Report
 	Home, CodexHome, CodexBarFile, ConnectionsFile string
 	Exists                                         func(path string) bool
 }
@@ -235,22 +239,31 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		out = append(out, c)
 	}
-	gemini := e.Gemini
-	if gemini == nil {
-		status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
-		gemini = &status
-	}
-	gc := Connection{ID: "gemini", Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath("gemini"), "not-found"),
-		Authorization: Level{Status: "off", Reason: gemini.Reason, Via: "local-usage.json"}, History: Level{Status: "off"},
-		Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: gemini}
-	if gemini.Enabled && gemini.Status != "off" {
-		gc.Authorization.Status = "yes"
-		gc.History = Level{Status: "unknown", Reason: gemini.Reason}
-		if len(gemini.Rows) > 0 {
-			gc.History = Level{Status: "yes", At: gemini.LastObservedAt, Reason: gemini.Reason}
+	for _, source := range []string{"gemini", "qwen"} {
+		usage, name := e.Gemini, "gemini"
+		if source == "qwen" {
+			usage, name = e.Qwen, "qwen"
 		}
+		if usage == nil {
+			status := localusage.GeminiStatus(e.Home, r.EvaluatedAt)
+			if source == "qwen" {
+				status = localusage.QwenStatus(e.Home, r.EvaluatedAt)
+			}
+			usage = &status
+		}
+		c := Connection{ID: source, Kind: "agent", Support: "sessions-only", Installed: yesNo(e.onPath(name), "not-found"), Authorization: Level{Status: "off", Reason: usage.Reason, Via: "local-usage.json"}, History: Level{Status: "off"}, Quota: Level{Status: "not-applicable", Reason: "local-only-no-remote-quota"}, LocalUsage: usage}
+		if usage.Enabled && usage.Status != "off" {
+			c.Authorization.Status = "yes"
+			c.History = Level{Status: "unknown", Reason: usage.Reason}
+			if len(usage.Rows) > 0 {
+				c.History = Level{Status: "yes", At: usage.LastObservedAt, Reason: usage.Reason}
+			}
+		}
+		out = append(out, c)
 	}
-	out = append(out, gc)
+	if qwenusage.Configured() != "" {
+		out = append(out, Qwen())
+	}
 	return out
 }
 
@@ -259,4 +272,22 @@ func dataHome(home string) string {
 		return d
 	}
 	return filepath.Join(home, ".local", "share")
+}
+
+// Qwen describes the explicitly selected aggregate export. No runtime discovery.
+func Qwen() Connection {
+	c := Connection{ID: "qwen-code", Kind: "agent", Support: "usage-only", Installed: Level{Status: "unknown"},
+		History: Level{Status: "off", Reason: "not-enabled"}, Authorization: Level{Status: "off", Reason: qwenusage.ExportEnv},
+		Quota: Level{Status: "not-applicable", Reason: "local-usage-only"}, Reads: []string{"env:" + qwenusage.ExportEnv},
+		Network: "none", Privacy: "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten."}
+	if p := qwenusage.Configured(); p != "" {
+		c.Reads = append(c.Reads, p)
+		c.Authorization = Level{Status: "yes", Via: "user-selected-export"}
+		r := qwenusage.Read(p, time.Now())
+		c.History = Level{Status: "no", Reason: r.Status}
+		if r.Status == "ok" || r.Status == "partial" {
+			c.History.Status = "yes"
+		}
+	}
+	return c
 }

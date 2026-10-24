@@ -565,6 +565,53 @@
         "rows": [],
         "sessions": []
       }
+    },
+    {
+      "id": "qwen",
+      "kind": "agent",
+      "installed": {
+        "status": "no",
+        "reason": "not-found"
+      },
+      "history": {
+        "status": "off"
+      },
+      "authorization": {
+        "status": "off",
+        "reason": "not-enabled",
+        "via": "local-usage.json"
+      },
+      "quota": {
+        "status": "not-applicable",
+        "reason": "local-only-no-remote-quota"
+      },
+      "support": "sessions-only",
+      "localUsage": {
+        "source": "qwen",
+        "enabled": false,
+        "status": "off",
+        "reason": "not-enabled",
+        "evaluatedAt": "2026-10-18T09:00:00Z",
+        "lastObservedAt": null,
+        "readPaths": [
+          "/home/u/.qwen/projects/*/chats/{*.jsonl,session-*.json}",
+          "/home/u/.qwen/tmp/*/chats/{*.jsonl,session-*.json}",
+          "/home/u/.qwen/*/chats/{*.jsonl,session-*.json}"
+        ],
+        "hosts": [],
+        "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+        "scope": "available-local-history; native prompt/cached and candidate/thought counters may overlap; no account quota",
+        "historyDays": 35,
+        "coverage": {
+          "filesSeen": 0,
+          "filesRead": 0,
+          "filesSkipped": 0,
+          "messagesWithoutTokens": 0,
+          "truncated": false
+        },
+        "rows": [],
+        "sessions": []
+      }
     }
   ],
   "events": [
@@ -1619,6 +1666,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:d02d76ab787cdfaa50999d6ee4f1884e",
+  "dataRevision": "sha256:1efc040d49d0360805079936ba73da1a",
   "validUntil": "2026-10-18T09:04:50Z"
 }

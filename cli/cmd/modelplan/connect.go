@@ -3,14 +3,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"io"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/connections"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -123,14 +125,16 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 	}
 	home, _ := os.UserHomeDir()
 	local := localusage.GeminiStatus(home, time.Now())
+	qwen := localusage.QwenStatus(home, time.Now())
 	if c.json {
-		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localUsage": []localusage.Report{local}})
+		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localUsage": []localusage.Report{local, qwen}, "localSources": exportSources()})
 	}
 	fmt.Fprintf(stdout, "gemini local · %s · %s\n", local.Status, strings.Join(local.ReadPaths, ", "))
+	fmt.Fprintf(stdout, "qwen local · %s · %s\n", qwen.Status, strings.Join(qwen.ReadPaths, ", "))
 	if c.lang == "en" {
-		fmt.Fprintln(stdout, "  No host called; credentials are never read, printed or stored. Enable: modelplan usage gemini enable")
+		fmt.Fprintln(stdout, "  No host called; credentials are never read, printed or stored. Enable: modelplan usage <gemini|qwen> enable")
 	} else {
-		fmt.Fprintln(stdout, "  不访问任何主机，不读取、打印或保存凭据。启用：modelplan usage gemini enable")
+		fmt.Fprintln(stdout, "  不访问任何主机，不读取、打印或保存凭据。启用：modelplan usage <gemini|qwen> enable")
 	}
 	if len(rows) == 0 {
 		if c.lang == "en" {
@@ -170,4 +174,11 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 		fmt.Fprintln(stdout, line)
 	}
 	return 0
+}
+
+func exportSources() []connections.Connection {
+	if qwenusage.Configured() != "" {
+		return []connections.Connection{connections.Qwen()}
+	}
+	return []connections.Connection{}
 }
