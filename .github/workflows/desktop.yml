@@ -90,16 +90,38 @@ jobs:
 
   native:
     name: native (${{ matrix.os }})
-    # Standard free hosted images, their default Xcode; no signing or secrets.
+    # Standard free hosted images, newest installed Xcode; no signing or secrets.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         os: [macos-14, macos-latest]
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
-      - name: Record OS and available toolchain
+      - name: Select the newest installed Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          python3 - <<'PYCODE'
+          import plistlib
+          import re
+          import subprocess
+          from pathlib import Path
+
+          candidates = []
+          for app in Path("/Applications").glob("Xcode*.app"):
+              with (app / "Contents/Info.plist").open("rb") as metadata:
+                  version = plistlib.load(metadata)["CFBundleShortVersionString"]
+              print(f"{app}: Xcode {version}", flush=True)
+              candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
+          if not candidates:
+              raise SystemExit("No installed Xcode found")
+          selected = max(candidates)[1] + "/Contents/Developer"
+          subprocess.run(["sudo", "xcode-select", "--switch", selected], check=True)
+          PYCODE
+      - name: Record OS and selected toolchain
         run: |
           sw_vers
           xcode-select --print-path
@@ -107,11 +129,67 @@ jobs:
           swift --version
       - name: Build the neutral app and all native checks
         run: swift build --package-path desktop/native --jobs 2
+      - name: Archive latest-Xcode binaries for macOS 14 runtime checks
+        if: matrix.os == 'macos-latest'
+        run: |
+          native_bin_dir=$(swift build --package-path desktop/native --show-bin-path)
+          native_artifact_dir="$RUNNER_TEMP/native-runtime"
+          mkdir -p "$native_artifact_dir"
+          for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks; do
+            cp "$native_bin_dir/$native_binary" "$native_artifact_dir/"
+            xcrun vtool -show-build "$native_bin_dir/$native_binary"
+            otool -L "$native_bin_dir/$native_binary"
+          done
+          cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"
+          cd "$native_artifact_dir"
+          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks > SHA256SUMS
+          # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
+          tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'macos-latest'
+        with:
+          name: native-latest-xcode-macos14-runtime
+          path: ${{ runner.temp }}/native-runtime.tar.gz
+          if-no-files-found: error
+          retention-days: 3
       - name: Native contract suite
         run: swift run --package-path desktop/native --skip-build ModelPlanContractChecks
       - name: Common-run-loop deadline check
         run: swift run --package-path desktop/native --skip-build ModelPlanRunLoopChecks
       - name: AppKit lifecycle and neutral surface checks
         run: swift run --package-path desktop/native --skip-build ModelPlanShellChecks
+      - name: Synthetic fixture integrity
+        run: python3 desktop/native/tools/check-fixture-manifests.py
+
+  native-runtime:
+    name: native runtime (macos-14, latest-Xcode binaries)
+    needs: native
+    # Still exercise latest-Xcode binaries if the older image cannot build them.
+    if: ${{ !cancelled() }}
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-latest-xcode-macos14-runtime
+          path: ${{ runner.temp }}/native-runtime-download
+      - name: Verify macOS 14 host and unpack the original binaries
+        run: |
+          sw_vers
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 14
+          test "$(uname -m)" = arm64
+          mkdir -p "$RUNNER_TEMP/native-runtime"
+          tar -xzf "$RUNNER_TEMP/native-runtime-download/native-runtime.tar.gz" -C "$RUNNER_TEMP/native-runtime"
+          cd "$RUNNER_TEMP/native-runtime"
+          shasum -a 256 --check SHA256SUMS
+          file ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks
+      # Execute the transferred binaries directly: no Swift invocation or rebuild.
+      - name: Native contract suite on macOS 14
+        run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractChecks"'
+      - name: Common-run-loop deadline check on macOS 14
+        run: '"$RUNNER_TEMP/native-runtime/ModelPlanRunLoopChecks"'
+      - name: AppKit lifecycle and neutral surface checks on macOS 14
+        run: '"$RUNNER_TEMP/native-runtime/ModelPlanShellChecks"'
       - name: Synthetic fixture integrity
         run: python3 desktop/native/tools/check-fixture-manifests.py
