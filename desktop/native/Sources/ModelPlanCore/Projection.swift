@@ -78,6 +78,7 @@ public struct ExpiryLedger: Sendable {
 
 public struct PersonalProjection: Sendable {
     public let actionable: Bool
+    public let unavailableReason: String?
     public let quotas: [QuotaReading]
     public let current: [CurrentConfiguration]
     public let live: [LiveReading]
@@ -86,7 +87,8 @@ public struct PersonalProjection: Sendable {
 
     public static func evaluate(_ snapshot: PersonalSnapshot, now: Date, ledger: inout ExpiryLedger) -> Self {
         ledger.begin()
-        let expired = snapshot.validUntil == nil || ledger.expired("snapshot|" + snapshot.generatedAt.raw, deadline: snapshot.validUntil?.date, now: now)
+        let previouslyExpired = ledger.expired("snapshot|" + snapshot.generatedAt.raw, deadline: snapshot.validUntil?.date, now: now)
+        let expired = !snapshot.validUntilReported || previouslyExpired
         let accounts = snapshot.accounts ?? []
         var deadlines = [snapshot.validUntil?.date].compactMap { $0 }.filter { $0 > now }
         let quotas = accounts.flatMap { account in (account.windows ?? []).map { window -> QuotaReading in
@@ -128,7 +130,7 @@ public struct PersonalProjection: Sendable {
             return !expired && !old
         }
         ledger.end()
-        return Self(actionable: !expired, quotas: quotas, current: current, live: live, events: events, nextDeadline: deadlines.min())
+        return Self(actionable: !expired, unavailableReason: expired ? (!snapshot.validUntilReported ? "unknown-lifetime" : "personal-expired") : nil, quotas: quotas, current: current, live: live, events: events, nextDeadline: deadlines.min())
     }
 }
 
@@ -149,7 +151,7 @@ public struct JoinedSnapshot: Sendable {
 
     public static func make(personal: PersonalSnapshot, presentation: PersonalProjection, publication: PublicPublication?, publicUsable: Bool = true) -> Self {
         var reason: String?
-        if !presentation.actionable { reason = "personal-expired" }
+        if !presentation.actionable { reason = presentation.unavailableReason ?? "personal-unavailable" }
         else if !publicUsable || publication == nil { reason = "publication-unavailable" }
         else if personal.publication?.publicationId == nil || personal.publication?.publicationId != publication?.publicationId { reason = "publication-mismatch" }
         else if publication?.supportedUnits != true { reason = "unsupported-units" }

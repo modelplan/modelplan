@@ -30,8 +30,46 @@ public struct PersonalSnapshot: Decodable, Sendable {
     public let projectLabels: Bool?
     public let paceHistory: PaceHistory?
     public let measured: [JSONValue]?
+    public let qwenUsage: JSONValue?
     public let localUsage: [JSONValue]?
     public let note: String?
+    public let validUntilReported: Bool
+    private enum CodingKeys: String, CodingKey { case schemaVersion, kind, generatedAt, cliVersion, dataRevision, validUntil, recording, publication, accounts, subscriptions, sessions, liveSessions, sources, connections, events, todayTotals, perfStats, daily, dailyLong, hourly, dailyCoverage, dailyLongCoverage, sessionRanking, projectRanking, projectLabels, paceHistory, measured, qwenUsage, localUsage, note }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        validUntilReported = c.contains(.validUntil)
+        schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        kind = try c.decode(String.self, forKey: .kind)
+        generatedAt = try c.decode(WireInstant.self, forKey: .generatedAt)
+        cliVersion = try c.decodeIfPresent(String.self, forKey: .cliVersion)
+        dataRevision = try c.decodeIfPresent(String.self, forKey: .dataRevision)
+        validUntil = try c.decodeIfPresent(WireInstant.self, forKey: .validUntil)
+        recording = try c.decodeIfPresent(Bool.self, forKey: .recording)
+        publication = try c.decodeIfPresent(PersonalPublication.self, forKey: .publication)
+        accounts = try c.decodeIfPresent([QuotaAccount].self, forKey: .accounts)
+        subscriptions = try c.decodeIfPresent([SubscriptionBinding].self, forKey: .subscriptions)
+        sessions = try c.decodeIfPresent([HarnessSession].self, forKey: .sessions)
+        liveSessions = try c.decodeIfPresent([LiveSession].self, forKey: .liveSessions)
+        sources = try c.decodeIfPresent([SourceStatus].self, forKey: .sources)
+        connections = try c.decodeIfPresent([ConnectionStatus].self, forKey: .connections)
+        events = try c.decodeIfPresent([AdviceEvent].self, forKey: .events)
+        todayTotals = try c.decodeIfPresent([TodayTotal].self, forKey: .todayTotals)
+        perfStats = try c.decodeIfPresent([PerformanceRow].self, forKey: .perfStats)
+        daily = try c.decodeIfPresent([DailyBucket].self, forKey: .daily)
+        dailyLong = try c.decodeIfPresent([DailyBucket].self, forKey: .dailyLong)
+        hourly = try c.decodeIfPresent([HourlyBucket].self, forKey: .hourly)
+        dailyCoverage = try c.decodeIfPresent(Coverage.self, forKey: .dailyCoverage)
+        dailyLongCoverage = try c.decodeIfPresent(Coverage.self, forKey: .dailyLongCoverage)
+        sessionRanking = try c.decodeIfPresent(SessionRanking.self, forKey: .sessionRanking)
+        projectRanking = try c.decodeIfPresent(ProjectRanking.self, forKey: .projectRanking)
+        projectLabels = try c.decodeIfPresent(Bool.self, forKey: .projectLabels)
+        paceHistory = try c.decodeIfPresent(PaceHistory.self, forKey: .paceHistory)
+        measured = try c.decodeIfPresent([JSONValue].self, forKey: .measured)
+        qwenUsage = try c.decodeIfPresent(JSONValue.self, forKey: .qwenUsage)
+        localUsage = try c.decodeIfPresent([JSONValue].self, forKey: .localUsage)
+        note = try c.decodeIfPresent(String.self, forKey: .note)
+    }
+
 }
 
 public struct PersonalPublication: Decodable, Sendable {
@@ -58,6 +96,8 @@ public struct AccountBinding: Decodable, Sendable {
 }
 
 public struct QuotaAccount: Decodable, Sendable {
+    public let generation: String?
+    public let pool: String?
     public let source: String
     public let plan: String?
     public let observedAt: WireInstant?
@@ -73,7 +113,18 @@ public struct QuotaAccount: Decodable, Sendable {
     public let via: String?
 }
 
+public struct RequestUsage: Decodable, Sendable {
+    public let used: Int64?
+    public let limit: Int64?
+    public let unlimited: Bool?
+    public let reason: String?
+}
+
 public struct QuotaWindow: Decodable, Sendable {
+    public let usedUsd: Double?
+    public let limitUsd: Double?
+    public let requests: RequestUsage?
+    public let unknownReason: String?
     public let kind: String
     public let limit: String?
     public let usedPercent: Double?
@@ -93,6 +144,7 @@ public struct QuotaWindow: Decodable, Sendable {
 }
 
 public struct ResetCard: Decodable, Sendable {
+    public let kind: String?
     public let count: UInt64?
     public let expiresAt: WireInstant?
     public let source: String?
@@ -101,6 +153,7 @@ public struct ResetCard: Decodable, Sendable {
 }
 
 public struct UsageCredits: Decodable, Sendable {
+    public let ageMinutes: Double?
     public let balance: Double?
     public let unlimited: Bool?
     public let observedAt: WireInstant?
@@ -149,6 +202,10 @@ public struct EffortReference: Decodable, Sendable {
 }
 
 public struct HarnessSession: Decodable, Sendable {
+    public let origin: String?
+    public let headroom: String?
+    public let deciding: String?
+    public let pool: String?
     public let source: String
     public let observedAt: WireInstant?
     public let attribution: String?

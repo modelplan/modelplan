@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "F01-calm-4-idle",
+  "seed": 7,
+  "frozenUTC": "2026-10-20T21:05:00Z",
+  "timeZone": "America/Los_Angeles",
+  "inputs": {
+    "personal.json": "b9f62ca8f4bae25e3a059da1c87a7e0ae081f29ba4406aa5fcffcc9fd3d2d941",
+    "publication.json": "d6dcdd7392fe406b6f77524318b0b89722eaa8f53ecfcd80b0606b91d3d1f073",
+    "expected.json": "5eda463073365ba5f51b997f48d75ab5dbb7321a9f52b95c2944c20a0fd9943f"
+  },
+  "actions": [
+    {
+      "wallOffsetSeconds": 0
+    },
+    {
+      "wallOffsetSeconds": 31
+    },
+    {
+      "wallOffsetSeconds": 61
+    },
+    {
+      "wallOffsetSeconds": -100
+    }
+  ],
+  "visualChecks": {
+    "applicable": false,
+    "reason": "B01-B04 data-only fixtures; no official visual/input acceptance",
+    "locales": [
+      "en",
+      "zh-Hans"
+    ],
+    "plannedBackingScales": [
+      1,
+      2
+    ]
+  }
+}

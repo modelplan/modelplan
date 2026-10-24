@@ -46,6 +46,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
+cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 codesign --force --sign - --options runtime "$app"
 codesign --verify --deep --strict "$app"

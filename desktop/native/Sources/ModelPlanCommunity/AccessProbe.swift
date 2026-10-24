@@ -9,6 +9,7 @@ struct ProbeReceipt: Codable {
     let launchedFromApp: Bool
     let helperBundled: Bool
     let outcome: String
+    let cliVersion: String?
     let quotaWindows: Int
     let remaining: [Double]
     let readOnlyArguments: [String]
@@ -23,10 +24,12 @@ enum AccessProbe {
             "XDG_DATA_HOME":home.appendingPathComponent("data").path,
             "PATH":"/usr/bin:/bin", "NO_COLOR":"1"]
         var outcome = "unavailable", count = 0, remaining: [Double] = []
+        var cliVersion: String?
         do {
             let response = try await ProcessCLITransport(executable: helper, environment: environment).execute(.desktop)
             if response.exitCode == 0 {
                 let snapshot = try FeedDecoder.personal(response.stdout)
+                cliVersion = snapshot.cliVersion
                 let windows = (snapshot.accounts ?? []).flatMap { $0.windows ?? [] }
                 count = windows.count; remaining = windows.compactMap(\.remainingPercent)
                 outcome = remaining.isEmpty ? "unavailable" : "observed"
@@ -34,7 +37,7 @@ enum AccessProbe {
         } catch { outcome = "helper-unavailable" }
         let receipt = ProbeReceipt(launchedFromApp: Bundle.main.bundleURL.pathExtension == "app",
             helperBundled: FileManager.default.isExecutableFile(atPath: helper.path), outcome: outcome,
-            quotaWindows: count, remaining: remaining, readOnlyArguments: CLICommand.desktop.arguments)
+            cliVersion: cliVersion, quotaWindows: count, remaining: remaining, readOnlyArguments: CLICommand.desktop.arguments)
         if let encoded = try? JSONEncoder().encode(receipt) { try? encoded.write(to: result, options: .atomic) }
     }
 }

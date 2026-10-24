@@ -16,11 +16,12 @@ import Foundation
 }
 
 public struct StoreDiagnostics: Sendable {
+    public init() {}
     public var personal: String? = "not-loaded"
     public var publication: String? = "not-loaded"
     public var publicationWarning = false
-    public var publicationCheckedAt: Date?
-    public var publicationLastGoodAt: Date?
+    public var publicationReadAt: Date?
+    public var publicationLastGoodReadAt: Date?
     public var childRunning = false
 }
 
@@ -82,7 +83,7 @@ public struct StoreDiagnostics: Sendable {
         if let deadline = knownDeadline, deadline <= time.wall { expiryRefreshNeeded = true }
         var projection = PersonalProjection.evaluate(personal, now: time.wall, ledger: &ledger)
         knownDeadline = projection.nextDeadline
-        if !personalUsable { projection = projection.stale() }
+        if suspended || !personalUsable { projection = projection.stale(reason: suspended ? "suspended" : "personal-read-unavailable") }
         return JoinedSnapshot.make(personal: personal, presentation: projection, publication: publication, publicUsable: publicUsable)
     }
     /// Test/termination hook: cancellation is complete only after this returns.
@@ -114,8 +115,8 @@ public struct StoreDiagnostics: Sendable {
                     self.publication = value; self.publicUsable = true
                     self.diagnostics.publication = value.supportedUnits ? nil : "unsupported-units"
                     self.diagnostics.publicationWarning = result.warning
-                    self.diagnostics.publicationCheckedAt = self.time.wall
-                    if !result.warning { self.diagnostics.publicationLastGoodAt = self.time.wall }
+                    self.diagnostics.publicationReadAt = self.time.wall
+                    if !result.warning { self.diagnostics.publicationLastGoodReadAt = self.time.wall }
                 }
             } catch {
                 if let self, token == self.generation, !self.suspended {
@@ -138,17 +139,21 @@ public struct StoreDiagnostics: Sendable {
         arm()
     }
     private func reconcileIDs() {
-        guard let publicID = publication?.publicationId, let personalID = personal?.publication?.publicationId, publicID != personalID else { return }
+        guard let publicID = publication?.publicationId, let personalID = personal?.publication?.publicationId, publicID != personalID else { retriedJoin = nil; return }
         let pair = personalID + "|" + publicID
         if retriedJoin != pair { retriedJoin = pair; enqueue(.desktop) }
     }
     private func arm() {
         timer?.invalidate(); timer = nil
         guard automaticTimers, !suspended else { return }
-        var delay = max(0.05, min(desktopDue, publicationDue) - time.elapsed)
-        if let deadline = view()?.presentation.nextDeadline { delay = min(delay, max(0.01, deadline.timeIntervalSince(time.wall))) }
-        // A queued read already covers an elapsed deadline. Avoid timer spin during a slow child.
-        if worker != nil { delay = max(delay, 0.25) }
+        // Pending work owns past cadence deadlines; completion re-arms them. Never poll a slow child.
+        var delays = [desktopDue - time.elapsed, publicationDue - time.elapsed].filter { $0 > 0 && $0.isFinite }
+        if let deadline = view()?.presentation.nextDeadline {
+            let delay = deadline.timeIntervalSince(time.wall)
+            if delay > 0 { delays.append(delay) }
+        }
+        guard let next = delays.min() else { return }
+        let delay = max(0.01, next)
         let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -157,9 +162,9 @@ public struct StoreDiagnostics: Sendable {
 }
 
 extension PersonalProjection {
-    func stale() -> Self {
-        Self(actionable: false, quotas: quotas.map { QuotaReading(source: $0.source, subscription: $0.subscription, kind: $0.kind,
-             remaining: nil, historicalRemaining: $0.historicalRemaining, reason: "personal-read-unavailable", observedAt: $0.observedAt) },
+    func stale(reason: String) -> Self {
+        Self(actionable: false, unavailableReason: reason, quotas: quotas.map { QuotaReading(source: $0.source, subscription: $0.subscription, kind: $0.kind,
+             remaining: nil, historicalRemaining: $0.historicalRemaining, reason: reason, observedAt: $0.observedAt) },
              current: current.map { CurrentConfiguration(source: $0.source, harnessModel: $0.harnessModel, effort: nil) },
              live: live.map { LiveReading(ref: $0.ref, subscription: $0.subscription, working: false, rate: nil) }, events: [], nextDeadline: nextDeadline)
     }

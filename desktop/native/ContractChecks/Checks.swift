@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import Darwin
 import ModelPlanCore
 
 struct CheckFailure: Error { let message: String }
 func require(_ condition: Bool, _ message: String) throws { if !condition { throw CheckFailure(message: message) } }
-func fixture(_ name: String) throws -> Data { try Data(contentsOf: Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures")!) }
+func fixture(_ name: String) throws -> Data {
+    let indexURL = Bundle.module.url(forResource: "index", withExtension: "json", subdirectory: "Fixtures")!
+    let index = try JSONDecoder().decode([String:String].self, from: Data(contentsOf:indexURL))
+    return try Data(contentsOf:indexURL.deletingLastPathComponent().appendingPathComponent(index[name]! + ".json"))
+}
 func modified(_ original: Data, _ change: (inout [String:Any]) -> Void) throws -> Data {
     var json = try JSONSerialization.jsonObject(with: original) as! [String:Any]; change(&json)
     return try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
@@ -27,6 +32,8 @@ actor FakeCLI: CLITransport {
         if offline && command != .desktop { return CommandResult(exitCode: 3, stdout: Data()) }
         return CommandResult(exitCode: 0, stdout: command == .desktop ? personal : publication, warning: warning)
     }
+    func setPersonal(_ data: Data) { personal = data }
+    func setPublication(_ data: Data) { publication = data }
     func stats() -> ([CLICommand], Int) { (calls, peak) }
 }
 @MainActor func settle(_ store: SnapshotStore) async throws {
@@ -45,7 +52,7 @@ actor FakeCLI: CLITransport {
         try require(personal.accounts?.count == 4, "F01 four subscriptions")
         let p = project(personal, now)
         try require(p.quotas.first?.remaining == 0 && p.quotas[1].remaining == nil, "F03 zero versus null")
-        try require(p.live.filter(\.working).count == 4 && p.live.allSatisfy { $0.rate == 42 }, "F01 own live rates")
+        try require(p.live.filter(\.working).count == 2 && p.live.allSatisfy { $0.rate == 42 }, "F01 own live rates")
         let six = try FeedDecoder.personal(fixture("working-6"))
         try require(Set(project(six, now).live.compactMap(\.subscription)).count == 6, "F01 six distinct subscriptions")
         passed("F01/F03 personal golden, four/six IDs, zero/null, own rates")
@@ -143,6 +150,7 @@ actor FakeCLI: CLITransport {
         try FileManager.default.removeItem(at: prefURL.deletingLastPathComponent())
         try require(!NativeWindowRole.dock.canBecomeKeyOnExplicitEntry && NativeWindowRole.settings.canBecomeMain && !NativeWindowRole.cockpit.canBecomeMain, "window role policy")
         passed("app-owned preferences and native window role policy")
+        count += try await additionalChecks()
         print("\(count) contract groups passed; synthetic, no visual/minimum-runtime/performance claim")
     }
 }
@@ -156,6 +164,8 @@ func processChecks() async throws {
     #!/usr/bin/python3
     import json,os,sys,time,signal
     mode=os.environ.get('MODE','args')
+    if os.environ.get('PIDFILE'):
+        with open(os.environ['PIDFILE'],'w') as f: f.write(str(os.getpid()))
     if mode=='cap':
         sys.stdout.buffer.write(b' '*(8*1024*1024+1)); sys.stdout.flush()
     elif mode=='slow':
@@ -175,10 +185,19 @@ func processChecks() async throws {
     let start = ContinuousClock.now
     do { _ = try await slow.execute(.desktop); throw CheckFailure(message: "timeout accepted") } catch TransportError.timeout {}
     try require(start.duration(to: .now) < .seconds(2), "bounded kill/reap")
-    let cancelling = ProcessCLITransport(executable: exe, environment: ["MODE":"slow"])
+    let pidFile = dir.appendingPathComponent("owned-child.pid")
+    let cancelling = ProcessCLITransport(executable: exe, environment: ["MODE":"slow","PIDFILE":pidFile.path])
     let task = Task { try await cancelling.execute(.desktop) }
-    try await Task.sleep(nanoseconds: 100_000_000); task.cancel()
+    let launchedAt = ContinuousClock.now
+    while !FileManager.default.fileExists(atPath:pidFile.path) && launchedAt.duration(to:.now) < .seconds(2) {
+        try await Task.sleep(nanoseconds:5_000_000)
+    }
+    do { _ = try await cancelling.execute(.desktop); throw CheckFailure(message:"overlapping command accepted") } catch TransportError.busy {}
+    task.cancel()
     do { _ = try await task.value; throw CheckFailure(message: "cancel accepted") } catch TransportError.cancelled {}
+    if FileManager.default.fileExists(atPath:pidFile.path), let pid = Int32(try String(contentsOf:pidFile)) {
+        try require(kill(pid,0) == -1 && errno == ESRCH, "cancel returned before owned child was reaped")
+    } else { throw CheckFailure(message:"synthetic child did not report its PID") }
     let retry = Task { try await cancelling.execute(.desktop) }; try await Task.sleep(nanoseconds: 30_000_000); retry.cancel()
     do { _ = try await retry.value; throw CheckFailure(message: "cancel accepted") } catch TransportError.cancelled {}
     do { _ = try await ProcessCLITransport(executable: dir.appendingPathComponent("absent")).execute(.publication); throw CheckFailure(message: "missing executable accepted") } catch TransportError.launchFailed {}

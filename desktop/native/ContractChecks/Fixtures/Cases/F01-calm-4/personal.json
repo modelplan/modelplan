@@ -236,7 +236,7 @@
       "model": "native-z",
       "effort": "medium",
       "effortStatus": "reported",
-      "status": "running",
+      "status": "recent",
       "lastAt": "2026-10-20T21:04:59Z",
       "rate": {
         "status": "ok",
@@ -254,7 +254,7 @@
       "model": "native-z",
       "effort": "medium",
       "effortStatus": "reported",
-      "status": "running",
+      "status": "recent",
       "lastAt": "2026-10-20T21:04:59Z",
       "rate": {
         "status": "ok",

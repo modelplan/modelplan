@@ -10,7 +10,7 @@ public struct WireInstant: Codable, Hashable, Sendable {
     public let raw: String
     public let date: Date
     public init(_ raw: String) throws {
-        guard let date = InstantParser.parse(raw) else { throw FeedError.malformed("timestamp") }
+        guard raw.utf8.count <= 64, raw.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"#, options: .regularExpression) != nil, let date = InstantParser.parse(raw) else { throw FeedError.malformed("timestamp") }
         self.raw = raw; self.date = date
     }
     public init(from decoder: Decoder) throws { try self.init(decoder.singleValueContainer().decode(String.self)) }
@@ -57,13 +57,34 @@ public enum FeedDecoder {
     private static func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
         guard data.count <= maximumBytes else { throw FeedError.tooLarge }
         let decoder = JSONDecoder()
-        // Validate even unknown additive fields; ignore them in typed projections, never malformed numbers.
-        let tree = try decoder.decode(JSONValue.self, from: data); try tree.checkDepth()
+        // Bound nesting without materialising unknown extension arrays in a second object graph.
+        // JSONDecoder still validates JSON syntax, including skipped additive fields.
+        var depth = 0, inString = false, escaped = false
+        for byte in data {
+            if inString {
+                if escaped { escaped = false }
+                else if byte == 92 { escaped = true }
+                else if byte == 34 { inString = false }
+            } else if byte == 34 { inString = true }
+            else if byte == 91 || byte == 123 { depth += 1; if depth > 64 { throw FeedError.invalidJSON } }
+            else if byte == 93 || byte == 125 { depth -= 1; if depth < 0 { throw FeedError.invalidJSON } }
+        }
+        guard depth == 0, !inString else { throw FeedError.invalidJSON }
         return try decoder.decode(type, from: data)
     }
     public static func personal(_ data: Data) throws -> PersonalSnapshot {
         let value = try decode(PersonalSnapshot.self, data)
         guard value.schemaVersion == 1, value.kind == "modelplan.personal-snapshot" else { throw FeedError.unsupportedSchema }
+        guard (value.accounts ?? []).allSatisfy({ !$0.source.isEmpty }),
+              (value.sessions ?? []).allSatisfy({ !$0.source.isEmpty }),
+              (value.liveSessions ?? []).allSatisfy({ !$0.ref.isEmpty && !$0.source.isEmpty }),
+              (value.subscriptions ?? []).allSatisfy({ !$0.subscriptionRef.isEmpty }) else { throw FeedError.invalidIdentity }
+        for window in (value.accounts ?? []).flatMap({ $0.windows ?? [] }) {
+            if let remaining = window.remainingPercent, !(0...100).contains(remaining) { throw FeedError.malformed("remaining-percent") }
+        }
+        for session in value.liveSessions ?? [] {
+            if let rate = session.rate?.value, rate < 0 { throw FeedError.malformed("generation-rate") }
+        }
         return value
     }
     public static func publication(_ data: Data) throws -> PublicPublication {
@@ -71,6 +92,10 @@ public enum FeedDecoder {
         guard value.schemaVersion == 1 else { throw FeedError.unsupportedSchema }
         guard !value.publicationId.isEmpty else { throw FeedError.invalidIdentity }
         guard Set(value.models.map(\.id)).count == value.models.count, value.models.allSatisfy({ !$0.id.isEmpty }) else { throw FeedError.invalidIdentity }
+        for model in value.models {
+            let keys = (model.efforts ?? []).map(\.effort)
+            guard Set(keys).count == keys.count, keys.allSatisfy({ !$0.isEmpty }) else { throw FeedError.invalidIdentity }
+        }
         return value
     }
 }
