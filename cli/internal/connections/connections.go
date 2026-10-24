@@ -30,14 +30,15 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
-	ID            string             `json:"id"`
-	Kind          string             `json:"kind"` // agent | quota
-	Installed     Level              `json:"installed"`
-	History       Level              `json:"history"`
-	Authorization Level              `json:"authorization"`
-	Quota         Level              `json:"quota"`
-	Support       string             `json:"support"`
-	LocalUsage    *localusage.Report `json:"localUsage,omitempty"`
+	ID            string `json:"id"`
+	Kind          string `json:"kind"` // agent | quota
+	Installed     Level  `json:"installed"`
+	History       Level  `json:"history"`
+	Authorization Level  `json:"authorization"`
+	Quota         Level  `json:"quota"`
+	Support       string `json:"support"`
+
+	LocalUsage *localusage.Report `json:"localUsage,omitempty"`
 }
 
 // Env is where to look; tests replace Exists.
