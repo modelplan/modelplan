@@ -541,6 +541,12 @@ def eval_window(w, now):
         if DEFAULT_MINUTES.get(w["kind"]):
             w["windowMinutes"] = DEFAULT_MINUTES[w["kind"]]
     w["pace"] = "unknown"
+    w.pop("unknownReason", None)
+    if w.get("resetsAt") and w["resetsAt"] <= now:
+        w["usedPercent"] = None
+        w.pop("usedUsd", None)
+        w["pace"], w["unknownReason"] = "reset_passed", "reset_passed"
+        return
     used = w.get("usedPercent")
     if used is None:
         return
@@ -548,9 +554,6 @@ def eval_window(w, now):
     left = None
     if w.get("resetsAt"):
         secs = (w["resetsAt"] - now).total_seconds()
-        if secs <= 0:
-            w["pace"], w["remainingPercent"] = "reset_passed", None
-            return
         left = math.ceil(secs / 60)
         w["resetsInMinutes"] = left
     if used >= 100:
