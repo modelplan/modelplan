@@ -29,6 +29,12 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
 
 The same command, and `modelplan effort <model>` for one model, also show **your measured speed** per configuration (model, effort, speed mode) over the last 28 days: output tokens per second of generation, the median time to the first token, and the median turn time and output tokens per turn, each effort against ★ in standard mode (beside the published time multiple) and a speed mode's rate against the same effort in Standard (beside the published speed-up). The CLI reads them from the current Claude Code session's transcript (`transcript_path`, given to the status line and hooks) and the recent Codex rollouts: only timestamps, output token counts, model, effort and speed mode; never prompts, replies, tool input or output; no paths or ids are stored. A figure needs 5 samples. They are kept per day in `observed/speed.json`. Since CLI 0.5.27 the same readings also go into a second ledger, `observed/perf.json` (35 days, counted only from when it was created), behind the desktop snapshot's `perfStats[]` and `daily[]` (see [docs/personal-snapshot.md](../docs/personal-snapshot.md)). Since CLI 0.5.32 its days are also rolled up per day, source and model into `observed/daily-long.json` (371 days, below 1 MiB; only days, model names, output tokens and requests), behind `dailyLong[]`. `MODELPLAN_HISTORY=off` stops all three; deleting a file clears it. While recording is off the logs are not marked as read, so a later run with recording on can still pick up what was written meanwhile, within the usual read limits. `--json` adds `measured[]` (`source`, `model`, `effort`, `speed`, `days`, `requests`, `turns`, `outputTokensPerSecond`, `ttftSeconds`, `turnSeconds`, `turnOutputTokens`).
 
+### Kimi Code plan-key quota
+
+`modelplan connect kimi` reports an unsupported source without reading a key or sending a request. The coverage research did not verify a documented plan-key quota endpoint for either international or China accounts, so this change implements no account reader. Kimi Code is distinct from Moonshot API balance. See [the documented-only boundary and official runtime alternative](../docs/kimi-code-quota.md).
+
+`modelplan connect kimi` 会说明尚不支持，不读取 key 或发送请求。研究未核实国际/国内套餐 key 额度端点的公开文档，因此此改动不实现账号读取，也不以 Moonshot API 余额代替 Kimi Code 额度。详见[文档边界与官方本地服务替代方案](../docs/kimi-code-quota.md)。
+
 ### Other plans through CodexBar
 
 `modelplan codexbar enable cursor zai` reads the usage of plans whose meters sit behind the vendor's own sign-in: `copilot`, `cursor`, `kiro`, `opencodego` and `zai`. It does this through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Claude Code and Codex are never read this way; this client reads them itself.
@@ -74,9 +80,3 @@ WHICH ENGINE 选哪台 · Anthropic · 各模型都在 ★推荐档 · 成本以
 Only the standard library is used. The module requires Go ≥ 1.24.
 
 Statusline defaults to `--harness claude-code`. For Codex, pass `--harness codex` and its exact native model ID. IDs are resolved only through the publication's reviewed, harness-specific mappings; display names and family names are not fallback identities. `未核对型号` / `id not reviewed` means this incoming ID is not reviewed for that harness, even if the model itself is in the catalogue. Sync once after a mapping update; the statusline remains cache-only.
-
-### Kimi Code plan-key quota
-
-`modelplan connect kimi` reports an unsupported source without reading a key or sending a request. The coverage research did not verify a documented plan-key quota endpoint for either international or China accounts, so this change implements no account reader. Kimi Code is distinct from Moonshot API balance. See [the documented-only boundary and official runtime alternative](../docs/kimi-code-quota.md).
-
-`modelplan connect kimi` 会说明尚不支持，不读取 key 或发送请求。研究未核实国际/国内套餐 key 额度端点的公开文档，因此此改动不实现账号读取，也不以 Moonshot API 余额代替 Kimi Code 额度。详见[文档边界与官方本地服务替代方案](../docs/kimi-code-quota.md)。
