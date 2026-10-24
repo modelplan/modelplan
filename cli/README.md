@@ -74,3 +74,24 @@ WHICH ENGINE 选哪台 · Anthropic · 各模型都在 ★推荐档 · 成本以
 Only the standard library is used. The module requires Go ≥ 1.24.
 
 Statusline defaults to `--harness claude-code`. For Codex, pass `--harness codex` and its exact native model ID. IDs are resolved only through the publication's reviewed, harness-specific mappings; display names and family names are not fallback identities. `未核对型号` / `id not reviewed` means this incoming ID is not reviewed for that harness, even if the model itself is in the catalogue. Sync once after a mapping update; the statusline remains cache-only.
+
+### Qwen Code local usage exports
+
+In Qwen Code, use `/stats export daily 2026-10-22 --format json` or `/stats export monthly 2026-10 --format json`. Then explicitly select that exported file:
+
+```sh
+modelplan qwen-usage --export /path/to/qwen-token-usage-day-2026-10-22.json
+export MODELPLAN_QWEN_USAGE_EXPORT=/path/to/qwen-exports
+modelplan qwen-usage --json
+modelplan connections --json
+modelplan desktop --read-only --offline
+unset MODELPLAN_QWEN_USAGE_EXPORT
+```
+
+Off by default. `--export` authorizes one command; `MODELPLAN_QWEN_USAGE_EXPORT` selects a file or directory for `qwen-usage`, connections diagnostics and the desktop snapshot. A directory reads only `qwen-token-usage-*.json` (at most 64 exports, 1 MiB each, no recursion or symlink files). No Qwen command is run, no credentials or conversation files are opened, no host is called, and exports are never rewritten or cached. Diagnostics show the setting and selected path. No account identity is read or stored.
+
+Each calendar day/month has model token totals and the export timestamp. The newest export of the same bucket replaces older copies; day and month buckets stay separate and must not be added together. Missing/invalid token counts remain `null` (`--` in text), including absent cache fields. Exports older than 24 hours are marked stale; their historical counts remain historical, without estimating current use. Input/cache and output/thought buckets retain Qwen's definitions and may overlap. Remaining quota is always unknown; this does not read Qwen Cloud, Alibaba Coding Plan, or Moonshot plans. The existing speed and daily ledgers are unchanged.
+
+Source contract: Qwen's [official stats commands](https://qwenlm.github.io/qwen-code-docs/en/users/features/commands/) and first-party [`TokenUsageSummary` / JSON export](https://github.com/QwenLM/qwen-code/blob/5a0be334326566bec502a0cfcaf35c11557247d3/packages/core/src/services/tokenUsageService.ts). The report's older `~/.qwen/stats/` location is not assumed to have a stable storage schema: use the version's own JSON export. Raw `usage_record.jsonl`, session logs, CSV and unrecognized versions are unsupported. This is original Go code based on that export contract, without copying Qwen or monitor implementation code. Tests use hand-written synthetic exports; real installations/accounts were not accessed.
+
+Qwen Code 本地用量默认关闭。在 Qwen Code 中用 `/stats export daily 2026-10-22 --format json` 或 `/stats export monthly 2026-10 --format json` 导出，再用 `modelplan qwen-usage --export 路径` 单次读取。设置 `MODELPLAN_QWEN_USAGE_EXPORT` 为文件或目录后，命令、连接诊断与桌面快照都会读取；取消该环境变量即可关闭。目录仅读取 `qwen-token-usage-*.json`，不递归，不读取符号链接文件，最多 64 个文件，每个 1 MiB。不运行 Qwen、不读取凭据或会话、不联网、不缓存或改写导出文件，也不读取或存储账号身份。诊断显示设置名称与路径。相同日/月桶仅保留最新导出；日与月不可叠加，超过 24 小时标记过期，历史数据不代表当前用量。缺失字段为 `null`/`--`，不推断剩余额度、速度或云套餐额度。旧版 `~/.qwen/stats/` 和原始日志不直接读取，请使用相应版本的 JSON 导出。

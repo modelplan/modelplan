@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -118,7 +119,13 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 		rows = append(rows, w)
 	}
 	if c.json {
-		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows})
+		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localSources": []connections.Connection{connections.Qwen()}})
+	}
+	q := connections.Qwen()
+	if c.lang == "en" {
+		fmt.Fprintf(stdout, "Qwen Code: %s · reads %s · network: %s\n%s\n", q.Authorization.Status, strings.Join(q.Reads, ", "), q.Network, q.Privacy)
+	} else {
+		fmt.Fprintf(stdout, "Qwen Code：%s · 读取 %s · 不联网\n仅聚合 token 与模型名；不读取或存储凭据、提示、回复和账号身份，不改写导出文件。\n", q.Authorization.Status, strings.Join(q.Reads, ", "))
 	}
 	if len(rows) == 0 {
 		if c.lang == "en" {

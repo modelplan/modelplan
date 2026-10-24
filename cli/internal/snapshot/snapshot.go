@@ -18,6 +18,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -33,10 +34,11 @@ const (
 )
 
 type Snapshot struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Kind          string    `json:"kind"`
-	GeneratedAt   time.Time `json:"generatedAt"`
-	CLIVersion    string    `json:"cliVersion"`
+	QwenUsage     *qwenusage.Report `json:"qwenUsage,omitempty"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Kind          string            `json:"kind"`
+	GeneratedAt   time.Time         `json:"generatedAt"`
+	CLIVersion    string            `json:"cliVersion"`
 	// Publication: the verified publication the figures come from; nil before the first sync.
 	Publication *Publication         `json:"publication"`
 	Sessions    []Session            `json:"sessions"`
@@ -190,11 +192,12 @@ type Event struct {
 }
 
 type Input struct {
-	Report   quota.Report
-	Digest   *digest.Digest
-	State    store.State
-	Events   []advise.Event // from advise.Derive with the advice state
-	Measured []speed.Stat
+	QwenUsage *qwenusage.Report
+	Report    quota.Report
+	Digest    *digest.Digest
+	State     store.State
+	Events    []advise.Event // from advise.Derive with the advice state
+	Measured  []speed.Stat
 	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
 	Ledger      []speed.Row
 	Connections []connections.Connection
@@ -216,7 +219,7 @@ const note = "Built on this machine from what the harnesses write locally; never
 func Build(in Input) Snapshot {
 	s := Snapshot{SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
 		Sessions: []Session{}, Accounts: in.Report.Accounts, Sources: in.Report.Sources, Events: []Event{}, Measured: in.Measured,
-		Recording: in.Recording, Note: note}
+		Recording: in.Recording, Note: note, QwenUsage: in.QwenUsage}
 	if s.Accounts == nil {
 		s.Accounts = []quota.Account{}
 	}
@@ -315,6 +318,7 @@ func revision(in Input) string {
 		Subscription                        *quota.Binding `json:",omitempty"`
 	}
 	var v struct {
+		QwenUsage   *qwenusage.Report `json:",omitempty"`
 		Accounts    []account
 		Sources     []quota.SourceStatus
 		Ledger      []speed.Row
@@ -338,6 +342,14 @@ func revision(in Input) string {
 				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
 		}
 		v.Accounts = append(v.Accounts, x)
+	}
+	if in.QwenUsage != nil {
+		q := *in.QwenUsage
+		q.Periods = append([]qwenusage.Period(nil), q.Periods...)
+		for i := range q.Periods {
+			q.Periods[i].Stale = false
+		}
+		v.QwenUsage = &q
 	}
 	v.Sources, v.Ledger, v.Recording, v.Connections = in.Report.Sources, in.Ledger, in.Recording, in.Connections
 	if in.Perf != nil {
@@ -365,6 +377,11 @@ func revision(in Input) string {
 func validUntil(in Input, s Snapshot) *time.Time {
 	now := in.Now.UTC()
 	ts := append([]time.Time(nil), in.Boundaries...)
+	if in.QwenUsage != nil {
+		for _, p := range in.QwenUsage.Periods {
+			ts = append(ts, p.GeneratedAt.Add(24*time.Hour))
+		}
+	}
 	for i := range in.Report.Accounts {
 		a := &in.Report.Accounts[i]
 		ts = append(ts, quota.Boundaries(a)...)

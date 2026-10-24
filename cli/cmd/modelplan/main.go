@@ -67,6 +67,8 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
+  modelplan qwen-usage --export PATH  Qwen Code aggregated JSON export (file or directory), local only;
+                                       MODELPLAN_QWEN_USAGE_EXPORT selects it for desktop/connections
   modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
                                        quota, advice, measured speed and a year of tokens per day
                                        (docs/personal-snapshot.md; --read-only writes, refreshes
@@ -150,6 +152,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	backend := fs.String("backend", "native", "connect: native (this client's own reader) or codexbar")
 	region := fs.String("region", "", "connect: the provider's region (zai: global or bigmodel-cn)")
 	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
+	qwenExport := fs.String("export", "", "qwen-usage: Qwen Code JSON export file or directory (explicit opt-in)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -256,6 +259,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		style.Advice(stdout, es)
 		return 0
+
+	case "qwen-usage":
+		return qwenUsageCmd(stdout, c, *qwenExport)
 
 	case "history":
 		l := history.Load(st.Dir)
@@ -758,6 +764,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	pace, paceOK := history.LoadPace(st.Dir)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
+		QwenUsage:   qwenSnapshot(now),
 		Connections: connections.Diagnose(connections.Local(paths), report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
@@ -889,7 +896,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

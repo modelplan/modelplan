@@ -307,3 +307,11 @@ The same limits apply during read-only projection even before another ledger wri
 输入、缓存读取、缓存写入缺失时为 `null`，不是零；缓存命中率仅在字段已知时按
 `cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
 只读模式不写文件、不发现新会话，也不请求账号端点。
+
+### Optional Qwen Code aggregate exports
+
+When `MODELPLAN_QWEN_USAGE_EXPORT` selects a Qwen Code JSON export file or directory, schema v1 adds optional `qwenUsage: {source, status, reason?, periods[]}`. Each period has `period` (`day`/`month`), `value` (calendar date/month), `generatedAt`, `stale`, `totals`, and `models[]`. Totals expose nullable `requests`, `inputTokens`, `outputTokens`, `cachedTokens`, `thoughtsTokens`, and `totalTokens`; each model also has `model`. Original token definitions may overlap. Periods can overlap and are never summed together. Staleness is measured from export creation (24 hours), never a subscription reset; historical data remains historical.
+
+The field is absent when disabled. It does not add quota accounts or modify `daily`, `dailyLong`, sessions or measured speed. Its content participates in `dataRevision` while clock-derived staleness does not; `validUntil` includes the next staleness boundary. Connections add a `qwen-code` row (`support: usage-only`) and optional `reads`, `network`, `privacy` disclosures. `modelplan connections --json` adds `localSources` while retaining the existing `connections` array. Unknown remaining quota is never inferred from tokens. See [CLI usage and privacy details](../cli/README.md#qwen-code-local-usage-exports).
+
+设置 `MODELPLAN_QWEN_USAGE_EXPORT` 后，v1 快照可新增 `qwenUsage`，保留日/月聚合、模型、可空 token 数与导出时间；不改变现有额度、会话或速度字段。未启用时省略，剩余额度始终未知。连接诊断新增读取路径、无联网及隐私说明；导出过期不会把历史计数变成当前用量。

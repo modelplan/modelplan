@@ -488,6 +488,31 @@
         "binding": "unknown"
       },
       "support": "quota-only"
+    },
+    {
+      "reads": [
+        "env:MODELPLAN_QWEN_USAGE_EXPORT"
+      ],
+      "network": "none",
+      "privacy": "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten.",
+      "id": "qwen-code",
+      "kind": "agent",
+      "installed": {
+        "status": "unknown"
+      },
+      "history": {
+        "status": "off",
+        "reason": "not-enabled"
+      },
+      "authorization": {
+        "status": "off",
+        "reason": "MODELPLAN_QWEN_USAGE_EXPORT"
+      },
+      "quota": {
+        "status": "not-applicable",
+        "reason": "local-usage-only"
+      },
+      "support": "usage-only"
     }
   ],
   "events": [
@@ -1542,6 +1567,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:fb9e0158c6b62823dca146f60f4661b2",
+  "dataRevision": "sha256:b2b3d30451fe565bd72bb13b0b8f03f1",
   "validUntil": "2026-10-18T09:04:50Z"
 }

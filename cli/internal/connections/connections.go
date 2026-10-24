@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
@@ -29,13 +30,16 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
-	ID            string `json:"id"`
-	Kind          string `json:"kind"` // agent | quota
-	Installed     Level  `json:"installed"`
-	History       Level  `json:"history"`
-	Authorization Level  `json:"authorization"`
-	Quota         Level  `json:"quota"`
-	Support       string `json:"support"`
+	Reads         []string `json:"reads,omitempty"`
+	Network       string   `json:"network,omitempty"`
+	Privacy       string   `json:"privacy,omitempty"`
+	ID            string   `json:"id"`
+	Kind          string   `json:"kind"` // agent | quota
+	Installed     Level    `json:"installed"`
+	History       Level    `json:"history"`
+	Authorization Level    `json:"authorization"`
+	Quota         Level    `json:"quota"`
+	Support       string   `json:"support"`
 }
 
 // Env is where to look; tests replace Exists.
@@ -210,6 +214,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		out = append(out, c)
 	}
+	out = append(out, Qwen())
 	return out
 }
 
@@ -218,4 +223,22 @@ func dataHome(home string) string {
 		return d
 	}
 	return filepath.Join(home, ".local", "share")
+}
+
+// Qwen describes the explicitly selected aggregate export. No runtime discovery.
+func Qwen() Connection {
+	c := Connection{ID: "qwen-code", Kind: "agent", Support: "usage-only", Installed: Level{Status: "unknown"},
+		History: Level{Status: "off", Reason: "not-enabled"}, Authorization: Level{Status: "off", Reason: qwenusage.ExportEnv},
+		Quota: Level{Status: "not-applicable", Reason: "local-usage-only"}, Reads: []string{"env:" + qwenusage.ExportEnv},
+		Network: "none", Privacy: "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten."}
+	if p := qwenusage.Configured(); p != "" {
+		c.Reads = append(c.Reads, p)
+		c.Authorization = Level{Status: "yes", Via: "user-selected-export"}
+		r := qwenusage.Read(p, time.Now())
+		c.History = Level{Status: "no", Reason: r.Status}
+		if r.Status == "ok" || r.Status == "partial" {
+			c.History.Status = "yes"
+		}
+	}
+	return c
 }
