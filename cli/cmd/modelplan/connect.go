@@ -25,14 +25,7 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 			return exitUsage
 		}
 		prov := strings.ToLower(args[0])
-		if cmd == "connect" && prov == "kimi" {
-			if c.lang == "en" {
-				fmt.Fprintln(stderr, "connect: Kimi Code API-key quota is unsupported: no documented plan-key quota endpoint was verified. No key was read or request sent. See docs/kimi-code-quota.md.")
-			} else {
-				fmt.Fprintln(stderr, "connect：Kimi Code 的 API key 额度读取尚不支持：未核实有文档的套餐 key 额度端点。没有读取 key 或发送请求。参见 docs/kimi-code-quota.md。")
-			}
-			return exitUsage
-		}
+
 		s := quota.QuotaSource{Provider: prov, Backend: quota.BackendNative, Enabled: cmd == "connect", Region: region, KeyEnv: keyEnv}
 		switch {
 		case cmd == "disconnect":
@@ -90,6 +83,7 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 
 func providerIDs() []string {
 	var ids []string
+	ids = append(ids, "kimi")
 	for id := range quota.CodexBarProviders {
 		ids = append(ids, id)
 	}
@@ -144,6 +138,12 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 				set = "set"
 			}
 			line += fmt.Sprintf(" · %s · %s %s", w.Region, w.KeyEnv, set)
+		}
+		if w.Host != "" {
+			line += " · " + w.Host + " · " + w.EndpointNotice
+		}
+		if w.Provider == "kimi" && w.Blocked == "no-key" {
+			line += " · No key was read or request sent. Kimi quota is unknown; see docs/kimi-code-quota.md."
 		}
 		if w.Blocked != "" {
 			line += " · blocked: " + w.Blocked

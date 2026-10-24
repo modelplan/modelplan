@@ -307,3 +307,5 @@ The same limits apply during read-only projection even before another ledger wri
 输入、缓存读取、缓存写入缺失时为 `null`，不是零；缓存命中率仅在字段已知时按
 `cacheRead / (input + cacheRead)` 计算。所有新增记录只在本机，关闭历史开关会停止记录；
 只读模式不写文件、不发现新会话，也不请求账号端点。
+
+Kimi's quota connection adds optional `quotaAccess` diagnostics (selected environment variable, fixed regional `host`, backend/block state and `endpointNotice`). It identifies the undocumented `GET /coding/v1/usages` compatibility route and that the key is never printed/stored. Kimi windows continue using existing schema-v1 quota fields; no snapshot field is renamed. 连接新增可选 `quotaAccess`，披露变量名、地区主机、启用状态与未公开文档端点说明；不打印或存储 key，原有 v1 字段保持不变。

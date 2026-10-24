@@ -31,9 +31,9 @@ The same command, and `modelplan effort <model>` for one model, also show **your
 
 ### Kimi Code plan-key quota
 
-`modelplan connect kimi` reports an unsupported source without reading a key or sending a request. The coverage research did not verify a documented plan-key quota endpoint for either international or China accounts, so this change implements no account reader. Kimi Code is distinct from Moonshot API balance. See [the documented-only boundary and official runtime alternative](../docs/kimi-code-quota.md).
+`modelplan connect kimi --region china` (default) or `--region international` opts into the undocumented compatibility `GET /coding/v1/usages` endpoint on `api.kimi.com` or `api.kimi.ai`. Only `KIMI_CODE_API_KEY` (or `--key-env NAME`) is read; no credential files, OAuth, cookies, inference or Moonshot balance. Connections disclose the variable/host and undocumented status; a missing key keeps quota unknown and sends nothing. The key is never printed or stored. Disconnect or `MODELPLAN_NATIVE=off` stops reads. Native cache/backoff and keyed-hash regional bindings apply. [Contract, privacy, limits and MIT source references](../docs/kimi-code-quota.md).
 
-`modelplan connect kimi` 会说明尚不支持，不读取 key 或发送请求。研究未核实国际/国内套餐 key 额度端点的公开文档，因此此改动不实现账号读取，也不以 Moonshot API 余额代替 Kimi Code 额度。详见[文档边界与官方本地服务替代方案](../docs/kimi-code-quota.md)。
+`modelplan connect kimi --region china` 或 `--region international` 显式启用未公开文档的兼容额度端点，分别仅调用 `api.kimi.com` / `api.kimi.ai`。只读取 `KIMI_CODE_API_KEY` 或 `--key-env NAME` 指定的环境变量，诊断披露变量名、主机与文档状态；未设置 key 不发送请求，额度保持未知。不读取凭据/OAuth/浏览器，不调用推理或 Moonshot 余额，key 不打印、不落盘。沿用原生缓存、退避和按地区区分的带密钥哈希身份。[详情](../docs/kimi-code-quota.md)。
 
 ### Other plans through CodexBar
 

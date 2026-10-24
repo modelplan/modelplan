@@ -3,34 +3,38 @@ package main
 import (
 	"bytes"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestKimiDocumentedOnlyBoundary(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("HOME", root)
-	t.Setenv("MODELPLAN_CACHE", filepath.Join(root, "cache"))
-	t.Setenv("KIMI_API_KEY", "synthetic-key-must-not-be-printed")
+func TestKimiConnectionConsentAndDisclosures(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("KIMI_CODE_API_KEY", "")
+	t.Setenv("SYNTHETIC_KIMI_KEY", "")
 	old := startDetached
 	defer func() { startDetached = old }()
-	startDetached = func(...string) error { t.Fatal("unsupported connection started a process"); return nil }
-	for _, args := range [][]string{
-		{"connect", "kimi", "--lang", "en"},
-		{"connect", "kimi", "--backend", "codexbar", "--lang", "en"},
-		{"connect", "kimi", "--region", "global", "--key-env", "KIMI_API_KEY", "--lang", "en"},
-		{"connect", "kimi", "--region", "china", "--lang", "zh"},
-	} {
-		var errOut bytes.Buffer
-		code := run(args, nil, io.Discard, &errOut)
-		if code != exitUsage || !strings.Contains(errOut.String(), "docs/kimi-code-quota.md") || strings.Contains(errOut.String(), "synthetic-key") {
-			t.Fatalf("%v: %d %s", args, code, errOut.String())
+	startDetached = func(...string) error { t.Fatal("offline connection started process"); return nil }
+	var out bytes.Buffer
+	if code := run([]string{"connect", "kimi", "--offline", "--region", "international", "--key-env", "SYNTHETIC_KIMI_KEY", "--lang", "en"}, nil, &out, &out); code != 0 {
+		t.Fatal(code, out.String())
+	}
+	for _, want := range []string{"SYNTHETIC_KIMI_KEY", "https://api.kimi.ai", "Undocumented", "No key was read or request sent", "docs/kimi-code-quota.md"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %s: %s", want, out.String())
 		}
 	}
-	// No enabled provider/secret is persisted, even when the supplied variable exists.
-	if _, err := os.Stat(filepath.Join(root, ".config", "modelplan", "connections.json")); !os.IsNotExist(err) {
-		t.Fatalf("created a connection: %v", err)
+	t.Setenv("SYNTHETIC_KIMI_KEY", "synthetic-secret-must-not-print")
+	out.Reset()
+	if code := run([]string{"connections", "--json", "--offline"}, nil, &out, &out); code != 0 {
+		t.Fatal(code, out.String())
+	}
+	if strings.Contains(out.String(), "synthetic-secret-must-not-print") || !strings.Contains(out.String(), "endpointNotice") {
+		t.Fatal(out.String())
+	}
+	if code := run([]string{"connect", "kimi", "--backend", "codexbar", "--offline"}, nil, io.Discard, io.Discard); code != exitUsage {
+		t.Fatal("credential backend accepted", code)
+	}
+	if code := run([]string{"disconnect", "kimi", "--offline"}, nil, io.Discard, io.Discard); code != 0 {
+		t.Fatal(code)
 	}
 }

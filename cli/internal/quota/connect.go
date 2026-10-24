@@ -41,12 +41,14 @@ type connectionsFile struct {
 
 // Selection is the effective choice for one provider.
 type Selection struct {
-	Provider string `json:"provider"`
-	Name     string `json:"name"`
-	Backend  string `json:"backend"` // native | codexbar-compat | off
-	Origin   string `json:"origin"`  // connections.json | codexbar.json
-	Region   string `json:"region,omitempty"`
-	KeyEnv   string `json:"keyEnv,omitempty"`
+	Host           string `json:"host,omitempty"`
+	EndpointNotice string `json:"endpointNotice,omitempty"`
+	Provider       string `json:"provider"`
+	Name           string `json:"name"`
+	Backend        string `json:"backend"` // native | codexbar-compat | off
+	Origin         string `json:"origin"`  // connections.json | codexbar.json
+	Region         string `json:"region,omitempty"`
+	KeyEnv         string `json:"keyEnv,omitempty"`
 	// KeySet: the variable is set and not empty in this process's environment.
 	KeySet bool `json:"keySet"`
 	// Blocked: why the selected backend does not run: codexbar-off, native-off, no-native-reader,
@@ -87,11 +89,14 @@ func LoadConnections(file string) ([]QuotaSource, error) {
 }
 
 func (s QuotaSource) check() error {
-	if _, ok := CodexBarProviders[s.Provider]; !ok {
+	if ProviderName(s.Provider) == "" {
 		return fmt.Errorf("connections.json: unknown provider %q", s.Provider)
 	}
 	if s.Backend != BackendNative && s.Backend != BackendCodexBar {
 		return fmt.Errorf("connections.json: %s: backend must be native or codexbar-compat", s.Provider)
+	}
+	if s.Backend == BackendCodexBar && s.Provider == "kimi" {
+		return fmt.Errorf("connections.json: Kimi uses only the native environment-key reader")
 	}
 	if s.KeyEnv != "" && !envName.MatchString(s.KeyEnv) {
 		return fmt.Errorf("connections.json: %s: keyEnv is not an environment variable name", s.Provider)
@@ -121,7 +126,7 @@ func Selections(p Paths) ([]Selection, error) {
 	}
 	out := make([]Selection, 0, len(by))
 	for _, x := range by {
-		x.Name = CodexBarProviders[x.Provider].Name
+		x.Name = ProviderName(x.Provider)
 		switch x.Backend {
 		case BackendCodexBar:
 			if codexbarOff() {
@@ -140,6 +145,10 @@ func Selections(p Paths) ([]Selection, error) {
 				x.KeyEnv = "" // the agent's own CLI keeps the sign-in
 			} else if x.KeyEnv == "" {
 				x.KeyEnv = n.KeyEnv
+			}
+			if x.Provider == "kimi" {
+				x.Host = KimiHost(x.Region)
+				x.EndpointNotice = KimiEndpointNotice
 			}
 			if x.KeyEnv != "" {
 				x.KeySet = os.Getenv(x.KeyEnv) != "" // only whether it is there; the value stays in the environment
@@ -226,4 +235,11 @@ func SetConnection(file string, s QuotaSource) error {
 func nativeOff() bool {
 	v := strings.ToLower(os.Getenv("MODELPLAN_NATIVE"))
 	return v == "off" || v == "0" || v == "false"
+}
+
+func ProviderName(provider string) string {
+	if n := nativeReaders[provider]; n != nil && n.Name != "" {
+		return n.Name
+	}
+	return CodexBarProviders[provider].Name
 }
