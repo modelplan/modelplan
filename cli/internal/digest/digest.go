@@ -103,6 +103,7 @@ type MultiplierHorizon struct {
 	Selection string `json:"selection"`
 }
 type Digest struct {
+	publication       publicationFields
 	PublicationID     string             `json:"publicationId"`
 	ProjectionVersion string             `json:"projectionVersion,omitempty"`
 	Multipliers       []MultiplierWindow `json:"multipliers"`
@@ -192,9 +193,9 @@ func Parse(component string, b []byte) (*Digest, error) {
 		return nil, fmt.Errorf("unsupported component %q; client digest required", component)
 	}
 	var raw struct {
-		SchemaVersion int     `json:"schemaVersion"`
-		Kind          string  `json:"kind"`
-		Data          *Digest `json:"data"`
+		SchemaVersion int             `json:"schemaVersion"`
+		Kind          string          `json:"kind"`
+		Data          json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return nil, err
@@ -202,7 +203,10 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if raw.SchemaVersion != 1 || raw.Kind != ComponentClient || raw.Data == nil {
 		return nil, errors.New("client: unsupported schema")
 	}
-	d := raw.Data
+	var d Digest
+	if err := json.Unmarshal(raw.Data, &d); err != nil {
+		return nil, err
+	}
 	if d.Units.Ability != "websiteAbility" || d.Units.Cost != "usdPerReferenceTask" || d.Units.Time != "taskTimeCrossModel" || d.Models == nil || d.Lineups == nil || d.Resets == nil || d.Windows == nil {
 		return nil, errors.New("client: unsupported units or missing arrays")
 	}
@@ -243,6 +247,9 @@ func Parse(component string, b []byte) (*Digest, error) {
 	if d.PlanMetering != nil && !validMetering(d.PlanMetering) {
 		d.PlanMetering = nil
 	}
+	if err := json.Unmarshal(raw.Data, &d.publication); err != nil {
+		return nil, err
+	}
 	d.Source = ComponentClient
-	return d, nil
+	return &d, nil
 }

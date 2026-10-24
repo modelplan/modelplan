@@ -219,7 +219,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				c.Installed = yesNo(e.onPath("copilot"), "not-found")
 			}
 			c.Read, c.Hosts, c.SecretPolicy = x.Read, x.Hosts, x.SecretPolicy
-			if p == "minimax" {
+			if p == "cursor" || p == "minimax" {
 				c.QuotaAccess = &x
 			}
 			switch x.Blocked {
@@ -231,7 +231,9 @@ func Diagnose(e Env, r quota.Report) []Connection {
 				c.Authorization = Level{Status: "no", Reason: "key-env-unset", Via: "env:" + x.KeyEnv}
 			case "":
 				c.Authorization = Level{Status: "yes", Via: "env:" + x.KeyEnv}
-				if x.KeyEnv == "" {
+				if p == "cursor" {
+					c.Authorization.Via = "cursor-local-sign-in"
+				} else if x.KeyEnv == "" {
 					c.Authorization.Via = "agent-owned-reader" // the agent's own CLI keeps the sign-in (Kiro)
 				}
 			}

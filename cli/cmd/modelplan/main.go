@@ -49,6 +49,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
   modelplan effort [model]             one model's effort ladder (default: Claude Code's current model),
                                        with your own measured speed per effort when there is some
   modelplan models [--dev openai]      models with ★ effort, ability and cost
+  modelplan publication --json         verified public models, lineups and speed tiers; no personal data
   modelplan quota                      your own usage windows: this machine's logs, and Codex's own
                                        account reading (--refresh-account asks it now; at most every
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
@@ -58,7 +59,7 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        which reader serves each other plan (connections.json):
                                        native readers ask the vendor with an API key from an
                                        environment variable (zai: Z_AI_API_KEY, opencodego:
-                                       OPENCODE_API_KEY; kimi: KIMI_CODE_API_KEY, --region china|international;
+                                       OPENCODE_API_KEY; cursor: read-only editor sign-in; kimi: KIMI_CODE_API_KEY, --region china|international;
                                        minimax: MINIMAX_CODING_API_KEY, --region international|china;
                                        kiro asks kiro-cli); the key is never
                                        stored. Providers without one stay on CodexBar
@@ -163,8 +164,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
+	if cmd == "publication" && (!c.json || fs.NArg() != 0) {
+		fmt.Fprintln(stderr, "usage: modelplan publication --json [--offline]")
+		return exitUsage
+	}
+
 	open := store.Open
-	if cmd == "desktop" && *readOnly {
+	if (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
 		open = store.Locate // creates nothing
 	}
 	st, err := open()
@@ -326,6 +332,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return code
 	}
 	switch cmd {
+	case "publication":
+		return printJSON(stdout, d.Publication())
 	case "lineup":
 		devs := []string{*dev}
 		if *dev == "" {
