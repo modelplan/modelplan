@@ -25,34 +25,6 @@ type RequestUsage struct {
 }
 
 // Window is one usage window as last observed, plus values derived at evaluation time.
-type Window struct {
-	Requests      *RequestUsage `json:"requests,omitempty"`
-	Kind          string        `json:"kind"` // five_hour | weekly | monthly | spend | unknown
-	Limit         string        `json:"limit,omitempty"`
-	UsedPercent   *float64      `json:"usedPercent"`
-	WindowMinutes int           `json:"windowMinutes,omitempty"`
-	ResetsAt      *time.Time    `json:"resetsAt"`
-	ResetMode     string        `json:"resetMode,omitempty"` // fixed | rolling | unknown; harness windows are fixed
-	ObservedAt    time.Time     `json:"observedAt"`
-	UsedUSD       *float64      `json:"usedUsd,omitempty"`
-	LimitUSD      *float64      `json:"limitUsd,omitempty"`
-
-	RemainingPercent *float64 `json:"remainingPercent"`
-	ResetsInMinutes  *int     `json:"resetsInMinutes"`
-	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
-	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
-	AgeMinutes       *int     `json:"ageMinutes"`
-	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
-	// at least 10), in percentage points per hour; nil without enough fresh readings.
-	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
-	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset.
-	RunsOutInMinutes *int   `json:"runsOutInMinutes"`
-	Pace             string `json:"pace"` // exhausted | tight | on_track | surplus | reset_passed | unknown
-
-	observedRequests *RequestUsage
-	recent           []Sample // earlier readings of this window in its current cycle, oldest first
-}
-
 // ObservedRequests identifies the original reading even after a reset hides its counts.
 func (w *Window) ObservedRequests() *RequestUsage {
 	if w.Requests != nil {
@@ -70,6 +42,35 @@ func (w *Window) evalRequests(now time.Time) {
 	} else if w.Requests == nil {
 		w.Requests = w.observedRequests
 	}
+}
+
+type Window struct {
+	Kind          string     `json:"kind"` // five_hour | weekly | monthly | spend | unknown
+	Limit         string     `json:"limit,omitempty"`
+	UsedPercent   *float64   `json:"usedPercent"`
+	WindowMinutes int        `json:"windowMinutes,omitempty"`
+	ResetsAt      *time.Time `json:"resetsAt"`
+	ResetMode     string     `json:"resetMode,omitempty"` // fixed | rolling | unknown; harness windows are fixed
+	ObservedAt    time.Time  `json:"observedAt"`
+	UsedUSD       *float64   `json:"usedUsd,omitempty"`
+	LimitUSD      *float64   `json:"limitUsd,omitempty"`
+
+	Requests         *RequestUsage `json:"requests,omitempty"`
+	observedRequests *RequestUsage
+
+	RemainingPercent *float64 `json:"remainingPercent"`
+	ResetsInMinutes  *int     `json:"resetsInMinutes"`
+	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
+	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
+	AgeMinutes       *int     `json:"ageMinutes"`
+	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
+	// at least 10), in percentage points per hour; nil without enough fresh readings.
+	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
+	// RunsOutInMinutes: when the window is used up at that rate, only when that comes before its reset.
+	RunsOutInMinutes *int   `json:"runsOutInMinutes"`
+	Pace             string `json:"pace"` // exhausted | tight | on_track | surplus | reset_passed | unknown
+
+	recent []Sample // earlier readings of this window in its current cycle, oldest first
 }
 
 // Sample is one earlier reading of a window, kept to measure the recent rate of use.

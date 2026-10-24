@@ -59,6 +59,15 @@ WHICH ENGINE 选哪台 · Anthropic · 各模型都在 ★推荐档 · 成本以
 ▲ Opus 5 ★Med │ 能力 46.5 │ 成本 ×11 vs Haiku 5.5 │ ≈ Sonnet 5.5 但更贵
 ```
 
+### Copilot monthly premium requests (opt-in)
+
+`modelplan connect copilot` selects the native reader; `modelplan disconnect copilot` turns it off. The installed `copilot` executable is resolved on PATH, or by the absolute path in `MODELPLAN_COPILOT`. It runs `--headless --no-auto-update --stdio`, negotiates protocol 3 and calls server-scoped `account.getQuota` with empty parameters. It reuses Copilot-managed authentication, starts no session or inference, reads no credential file itself, and collects no identity. Credentials are never printed or stored by modelplan. Copilot itself owns its GitHub requests (normally `api.github.com`, with enterprise host selection owned by the runtime); modelplan makes no direct vendor HTTP request. `modelplan connections` / desktop connection diagnostics include this boundary.
+
+Only `premium_interactions` becomes a monthly window. JSON adds `windows[].requests` with nullable `used` / `limit`, `unlimited` and an optional reason; text shows the counts. No entitlement is guessed from a plan name, missing fields, zero limits or unlimited entitlements. Counts expire at the supplied reset. Sanitized quota follows the existing 10-minute native cache, 30-minute error retry and 6-hour cache ceiling. `MODELPLAN_NATIVE=off` stops it. If the runtime is absent, signed out or incompatible, the reason points to the explicit compatibility fallback: `modelplan connect copilot --backend codexbar`. No bridge is silently enabled and modelplan never harvests GitHub tokens.
+
+Wire/schema reference: [official Copilot SDK usage and billing](https://github.com/github/copilot-sdk/blob/538675843887643ce471c874a3a9870ebda3f6f4/docs/features/usage-and-billing.md). The wrapper and fixtures are independently written; no external implementation or new dependency is included. Live account acceptance and enterprise host behavior are unverified.
+
+
 ## Layout
 
 | Package | Role |
@@ -74,11 +83,3 @@ WHICH ENGINE 选哪台 · Anthropic · 各模型都在 ★推荐档 · 成本以
 Only the standard library is used. The module requires Go ≥ 1.24.
 
 Statusline defaults to `--harness claude-code`. For Codex, pass `--harness codex` and its exact native model ID. IDs are resolved only through the publication's reviewed, harness-specific mappings; display names and family names are not fallback identities. `未核对型号` / `id not reviewed` means this incoming ID is not reviewed for that harness, even if the model itself is in the catalogue. Sync once after a mapping update; the statusline remains cache-only.
-
-### Copilot monthly premium requests (opt-in)
-
-`modelplan connect copilot` selects the native reader; `modelplan disconnect copilot` turns it off. The installed `copilot` executable is resolved on PATH, or by the absolute path in `MODELPLAN_COPILOT`. It runs `--headless --no-auto-update --stdio`, negotiates protocol 3 and calls server-scoped `account.getQuota` with empty parameters. It reuses Copilot-managed authentication, starts no session or inference, reads no credential file itself, and collects no identity. Credentials are never printed or stored by modelplan. Copilot itself owns its GitHub requests (normally `api.github.com`, with enterprise host selection owned by the runtime); modelplan makes no direct vendor HTTP request. `modelplan connections` / desktop connection diagnostics include this boundary.
-
-Only `premium_interactions` becomes a monthly window. JSON adds `windows[].requests` with nullable `used` / `limit`, `unlimited` and an optional reason; text shows the counts. No entitlement is guessed from a plan name, missing fields, zero limits or unlimited entitlements. Counts expire at the supplied reset. Sanitized quota follows the existing 10-minute native cache, 30-minute error retry and 6-hour cache ceiling. `MODELPLAN_NATIVE=off` stops it. If the runtime is absent, signed out or incompatible, the reason points to the explicit compatibility fallback: `modelplan connect copilot --backend codexbar`. No bridge is silently enabled and modelplan never harvests GitHub tokens.
-
-Wire/schema reference: [official Copilot SDK usage and billing](https://github.com/github/copilot-sdk/blob/538675843887643ce471c874a3a9870ebda3f6f4/docs/features/usage-and-billing.md). The wrapper and fixtures are independently written; no external implementation or new dependency is included. Live account acceptance and enterprise host behavior are unverified.
