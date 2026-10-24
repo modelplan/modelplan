@@ -562,10 +562,14 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 // adviseHook is a UserPromptSubmit hook for Claude Code or Codex (both accept the same
 // output). What the user decides on (quota hints, once per event; the question which plan pays
 // for another vendor's model) is shown to the user as the hook's systemMessage and never reaches
-// the model. The model gets only the task-start brief: once per thread, plus one line for a model
-// the thread was not briefed on. A plugin may pass its own setup notice (system, context) so the
+// the model. The model gets the task-start brief, a ladder for a new model, and one factual
+// notice per low/reset quota window per thread. A plugin may pass its setup notice so the
 // hook prints one object. It never fails the prompt and never waits on the network.
 func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string) int {
+	return adviseHookAt(stdin, stdout, style, st, client, c, harness, system, notice, time.Now())
+}
+
+func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string, now time.Time) int {
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
@@ -577,7 +581,6 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		TranscriptPath string `json:"transcript_path"` // Claude Code: read for local speed measurement
 	}
 	_ = json.Unmarshal(b, &in)
-	now := time.Now()
 	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
 	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
 	// brief, and a sync that does not finish in time goes on in the background for the next
@@ -688,6 +691,9 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 					parts = append(parts, l)
 				}
 			}
+		}
+		for _, fact := range state.QuotaNotices(in.SessionID, acct, now) {
+			parts = append(parts, style.QuotaNotice(fact))
 		}
 	}
 	if len(parts) > 0 || len(shown) > 0 {

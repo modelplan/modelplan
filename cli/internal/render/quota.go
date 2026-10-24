@@ -8,8 +8,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
+
+// QuotaNotice is a single factual line for the prompt hook's model context.
+func (s Style) QuotaNotice(n advise.QuotaNotice) string {
+	q := s.qt()
+	if s.T == EN {
+		label := map[string]string{"five_hour": "5-hour quota", "weekly": "Weekly quota"}[n.Window]
+		if n.Reset {
+			label = map[string]string{"five_hour": "5-hour window reset", "weekly": "Weekly window reset"}[n.Window]
+		}
+		return fmt.Sprintf("%s: %g%% left, resets in %s.", label, n.Remaining, q.Dur(n.ResetsIn))
+	}
+	label := map[string]string{"five_hour": "5小时额度", "weekly": "每周额度"}[n.Window]
+	if n.Reset {
+		label = map[string]string{"five_hour": "5小时窗口已重置", "weekly": "每周窗口已重置"}[n.Window]
+	}
+	return fmt.Sprintf("%s：剩余%g%%，%s后重置。", label, n.Remaining, q.Dur(n.ResetsIn))
+}
 
 type quotaText struct {
 	RecentThread                                              string // Codex model/effort read from the newest interactive thread, not necessarily this one
