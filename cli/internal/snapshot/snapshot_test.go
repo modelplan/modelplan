@@ -115,7 +115,7 @@ func TestRevisionAndValidUntil(t *testing.T) {
 	}
 	c := clocked(now.Add(31*time.Minute), 40)
 	w := c.Accounts[0].Windows[0]
-	if c.DataRevision != a.DataRevision || w.Pace != "reset_passed" || w.RemainingPercent != nil {
+	if c.DataRevision != a.DataRevision || w.Pace != "reset_passed" || w.RemainingPercent != nil || w.UsedPercent != nil || w.UnknownReason != "reset_passed" {
 		t.Errorf("past the reset: same revision, allowance unknown until read again: %s %+v", c.DataRevision, w)
 	}
 	if c.ValidUntil == nil || !c.ValidUntil.Equal(now.Add(58*time.Minute)) {

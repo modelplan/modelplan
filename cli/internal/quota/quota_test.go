@@ -375,3 +375,34 @@ func TestClaudeCodeSnapshotKeepsTheRecentRate(t *testing.T) {
 		t.Fatalf("previous cycle kept:\n%s", snap)
 	}
 }
+
+// Every adapter passes through Evaluate, including bridge and native cache readings.
+func TestResetFreshnessAcrossSources(t *testing.T) {
+	for _, source := range []string{"claude-code", "codex", "user", "codexbar:copilot", "codexbar:cursor", "native:kiro", "native:zai", "native:opencodego"} {
+		t.Run(source, func(t *testing.T) {
+			reset := now.Add(time.Minute)
+			a := Account{Source: source, ObservedAt: now, Windows: []Window{{Kind: "monthly", UsedPercent: ptr(80.0), UsedUSD: ptr(8.0), ResetsAt: &reset, ObservedAt: now}}}
+			Evaluate(&a, reset.Add(-time.Nanosecond))
+			if w := a.Windows[0]; w.UsedPercent == nil || w.RemainingPercent == nil || *w.RemainingPercent != 20 || w.UnknownReason != "" {
+				t.Fatalf("before reset: %+v", w)
+			}
+			for _, at := range []time.Time{reset, reset.Add(time.Second), reset.Add(time.Minute)} {
+				Evaluate(&a, at)
+				w := a.Windows[0]
+				if w.UsedPercent != nil || w.UsedUSD != nil || w.RemainingPercent != nil || w.ProjectedPercent != nil || w.RecentPercentPerHour != nil || w.RunsOutInMinutes != nil || w.UnknownReason != "reset_passed" || a.Headroom != "unknown" {
+					t.Fatalf("expired: %+v", w)
+				}
+				b, _ := json.Marshal(w)
+				if !bytes.Contains(b, []byte(`"usedPercent":null`)) || !bytes.Contains(b, []byte(`"unknownReason":"reset_passed"`)) {
+					t.Fatal(string(b))
+				}
+			}
+			next := reset.Add(30 * 24 * time.Hour)
+			a.Windows[0] = Window{Kind: "monthly", UsedPercent: ptr(5.0), ResetsAt: &next, ObservedAt: reset.Add(time.Second)}
+			Evaluate(&a, reset.Add(time.Minute))
+			if w := a.Windows[0]; w.UsedPercent == nil || *w.RemainingPercent != 95 || w.UnknownReason != "" {
+				t.Fatalf("refreshed: %+v", w)
+			}
+		})
+	}
+}

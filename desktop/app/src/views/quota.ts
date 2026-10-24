@@ -28,7 +28,7 @@ ${a.windows.map(w => meter(a, w, lang)).join('')}</article>`;
 function meter(a: Account, w: QuotaWindow, lang: Lang): string {
   const t = words(lang);
   const label = [t.kinds[w.kind] ?? w.kind, limitName(w.limit)].filter(Boolean).join(' ');
-  if (w.usedPercent == null) return `<div class="meter dim"><span class="k">${esc(label)}</span><span class="v">—</span></div>`;
+  if (w.usedPercent == null || w.pace === 'reset_passed') return `<div class="meter dim"><span class="k">${esc(label)}</span><span class="v">—</span><span class="n">${esc(w.unknownReason === 'reset_passed' || w.pace === 'reset_passed' ? (t.pace.reset_passed ?? w.unknownReason ?? '') : '')}</span></div>`;
   const left = Math.max(0, Math.min(100, 100 - w.usedPercent));
   const tone = toneOf(left, w.pace);
   const notes: string[] = [];

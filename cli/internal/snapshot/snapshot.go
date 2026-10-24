@@ -334,7 +334,8 @@ func revision(in Input) string {
 			x.Credits = &quota.Credits{Unlimited: c.Unlimited, Balance: c.Balance, ObservedAt: c.ObservedAt.UTC()} // not its age
 		}
 		for _, w := range a.Windows {
-			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: w.UsedPercent, UsedUSD: w.UsedUSD, LimitUSD: w.LimitUSD,
+			used, usd := w.ObservedUsage()
+			x.Windows = append(x.Windows, window{Kind: w.Kind, Limit: w.Limit, ResetMode: w.ResetMode, Used: used, UsedUSD: usd, LimitUSD: w.LimitUSD,
 				Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt, ObservedAt: w.ObservedAt.UTC()})
 		}
 		v.Accounts = append(v.Accounts, x)

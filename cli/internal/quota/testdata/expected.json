@@ -143,7 +143,7 @@
       "windows": [
         {
           "kind": "weekly",
-          "usedPercent": 20,
+          "usedPercent": null,
           "windowMinutes": 10080,
           "resetsAt": "2026-10-13T10:00:00Z",
           "resetMode": "unknown",
@@ -155,6 +155,7 @@
           "ageMinutes": 2940,
           "recentPercentPerHour": null,
           "runsOutInMinutes": null,
+          "unknownReason": "reset_passed",
           "pace": "reset_passed"
         }
       ],
