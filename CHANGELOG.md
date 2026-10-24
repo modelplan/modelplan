@@ -6,6 +6,19 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.36, Codex plugin 0.15.28 and Claude Code plugin 0.7.27 (2026-10-24)
+
+- Claude Code and Codex prompt hooks give the model one factual line when the harness's
+  5-hour or weekly quota falls below 15% remaining, and one after that window resets
+  with more than 50% remaining. Each low/reset line fires at most once per window per thread.
+- These lines use the hook's English/Chinese setting and show only the window, remaining
+  percentage and time to reset. Unknown or stale readings never trigger them; quota is read
+  from the local cache without waiting on the network. Existing advice stays in the user's
+  `systemMessage`, separate from the model's `additionalContext`.
+- `MODELPLAN_TASK_BRIEF=off` disables the quota lines along with the task-start brief.
+  Session state is stored beside the brief state with the same eight-day expiry and cleanup.
+- Both plugins pin CLI v0.5.36 and its published archive checksums.
+
 ## CLI v0.5.35, Codex plugin 0.15.27 and Claude Code plugin 0.7.26 (2026-10-24)
 
 - Cursor personal-plan quota is opt-in with `modelplan connect cursor`. It reads only
