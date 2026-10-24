@@ -74,3 +74,9 @@ WHICH ENGINE 选哪台 · Anthropic · 各模型都在 ★推荐档 · 成本以
 Only the standard library is used. The module requires Go ≥ 1.24.
 
 Statusline defaults to `--harness claude-code`. For Codex, pass `--harness codex` and its exact native model ID. IDs are resolved only through the publication's reviewed, harness-specific mappings; display names and family names are not fallback identities. `未核对型号` / `id not reviewed` means this incoming ID is not reviewed for that harness, even if the model itself is in the catalogue. Sync once after a mapping update; the statusline remains cache-only.
+
+### Kimi Code plan-key quota
+
+`modelplan connect kimi` reports an unsupported source without reading a key or sending a request. The coverage research did not verify a documented plan-key quota endpoint for either international or China accounts, so this change implements no account reader. Kimi Code is distinct from Moonshot API balance. See [the documented-only boundary and official runtime alternative](../docs/kimi-code-quota.md).
+
+`modelplan connect kimi` 会说明尚不支持，不读取 key 或发送请求。研究未核实国际/国内套餐 key 额度端点的公开文档，因此此改动不实现账号读取，也不以 Moonshot API 余额代替 Kimi Code 额度。详见[文档边界与官方本地服务替代方案](../docs/kimi-code-quota.md)。
