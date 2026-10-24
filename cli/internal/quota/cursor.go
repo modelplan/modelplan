@@ -182,15 +182,10 @@ func collectCursor(ctx context.Context, c *http.Client, cache string, now time.T
 	}
 	// Plan classification must succeed before monthly and weekly usage can be mixed.
 	_ = cursorJSON(ctx, c, "POST", cursorHost+"/api/dashboard/get-plan-info", session, false, &plan)
-	var p struct {
-		IsMerged *bool `json:"isMerged"`
-	}
-	if json.Unmarshal(plan, &p) != nil {
-		p.IsMerged = nil
-	}
-	if p.IsMerged != nil && *p.IsMerged {
+	merged := cursorMerged(plan)
+	if merged != nil && *merged {
 		_ = cursorJSON(ctx, c, "POST", cursorRPCHost+"/aiserver.v1.DashboardService/GetCurrentPeriodUsage", session, true, &usage)
-	} else if p.IsMerged != nil {
+	} else if merged != nil {
 		_ = cursorJSON(ctx, c, "GET", cursorHost+"/api/usage?user="+url.QueryEscape(session.user), session, false, &requests)
 	}
 	parsed := parseCursor(summary, plan, usage, requests, now)
@@ -268,6 +263,8 @@ func parseCursor(summary, plan, usage, requests []byte, now time.Time) codexbarE
 	}
 	if json.Unmarshal(plan, &p) != nil {
 		p.Merged = nil
+	} else {
+		p.Merged = cursorMerged(plan)
 	}
 	// Plan names are deliberately from a fixed set, not arbitrary account text.
 	for _, name := range []string{p.Info.Name, s.Membership} {
@@ -392,4 +389,33 @@ func cursorUSD(b json.RawMessage) *float64 {
 	}
 	v := *n / 100
 	return &v
+}
+
+// Dashboard RPC JSON can omit proto3 false values. An explicit period supplies
+// the classification; an absent/unrecognized plan never defaults to monthly.
+func cursorMerged(raw []byte) *bool {
+	var p struct {
+		Merged *bool `json:"isMerged"`
+		Info   struct {
+			Period string `json:"includedUsagePeriod"`
+		} `json:"planInfo"`
+	}
+	if json.Unmarshal(raw, &p) != nil {
+		return nil
+	}
+	if p.Merged != nil {
+		if !*p.Merged && p.Info.Period == "INCLUDED_USAGE_PERIOD_WEEKLY" {
+			return nil
+		}
+		return p.Merged
+	}
+	switch p.Info.Period {
+	case "INCLUDED_USAGE_PERIOD_WEEKLY":
+		v := true
+		return &v
+	case "INCLUDED_USAGE_PERIOD_MONTHLY":
+		v := false
+		return &v
+	}
+	return nil
 }

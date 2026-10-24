@@ -252,7 +252,7 @@ func TestCursorUnifiedRPCAndResponseBounds(t *testing.T) {
 			}
 			w.Write([]byte(`{"individualUsage":{"plan":{"totalPercentUsed":0}}}`))
 		case "/api/dashboard/get-plan-info":
-			w.Write([]byte(`{"isMerged":true,"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_WEEKLY","includedUsageResetsAt":1793448000000}}`))
+			w.Write([]byte(`{"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_WEEKLY","includedUsageResetsAt":1793448000000}}`))
 		case "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
 			rpcHits++
 			if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer "+token || r.Header.Get("Cookie") != "" {
@@ -297,5 +297,29 @@ func TestCursorUnifiedRPCAndResponseBounds(t *testing.T) {
 	cancel()
 	if e := collectCursor(ctx, srv.Client(), cache, cursorNow); e.Status != "error" {
 		t.Fatal("cancellation ignored")
+	}
+}
+
+func TestCursorOmittedPlanFlagRequiresExplicitPeriod(t *testing.T) {
+	for _, tc := range []struct {
+		raw           string
+		known, weekly bool
+	}{
+		{`{"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_MONTHLY"}}`, true, false},
+		{`{"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_WEEKLY"}}`, true, true},
+		{`{}`, false, false}, {`{"planInfo":{}}`, false, false},
+		{`{"planInfo":{"includedUsagePeriod":"NEW_UNKNOWN_PERIOD"}}`, false, false},
+		{`{"isMerged":false,"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_WEEKLY"}}`, false, false},
+	} {
+		got := cursorMerged([]byte(tc.raw))
+		if (got != nil) != tc.known || (got != nil && *got != tc.weekly) {
+			t.Fatal("plan classified without evidence", tc.raw)
+		}
+	}
+	summary := []byte(`{"individualUsage":{"plan":{"totalPercentUsed":37}}}`)
+	plan := []byte(`{"planInfo":{"includedUsagePeriod":"INCLUDED_USAGE_PERIOD_MONTHLY"}}`)
+	e := parseCursor(summary, plan, nil, nil, cursorNow)
+	if len(e.Windows) != 1 || e.Windows[0].Kind != "monthly" || *e.Windows[0].UsedPercent != 37 {
+		t.Fatal("omitted false lost monthly usage")
 	}
 }
