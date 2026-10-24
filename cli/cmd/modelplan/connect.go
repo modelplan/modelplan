@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/connections"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -118,14 +121,16 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 		}
 		rows = append(rows, w)
 	}
+	home, _ := os.UserHomeDir()
+	local := localusage.GeminiStatus(home, time.Now())
 	if c.json {
-		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localSources": []connections.Connection{connections.Qwen()}})
+		return printJSON(stdout, map[string]any{"file": p.ConnectionsFile, "connections": rows, "localUsage": []localusage.Report{local}, "localSources": exportSources()})
 	}
-	q := connections.Qwen()
+	fmt.Fprintf(stdout, "gemini local · %s · %s\n", local.Status, strings.Join(local.ReadPaths, ", "))
 	if c.lang == "en" {
-		fmt.Fprintf(stdout, "Qwen Code: %s · reads %s · network: %s\n%s\n", q.Authorization.Status, strings.Join(q.Reads, ", "), q.Network, q.Privacy)
+		fmt.Fprintln(stdout, "  No host called; credentials are never read, printed or stored. Enable: modelplan usage gemini enable")
 	} else {
-		fmt.Fprintf(stdout, "Qwen Code：%s · 读取 %s · 不联网\n仅聚合 token 与模型名；不读取或存储凭据、提示、回复和账号身份，不改写导出文件。\n", q.Authorization.Status, strings.Join(q.Reads, ", "))
+		fmt.Fprintln(stdout, "  不访问任何主机，不读取、打印或保存凭据。启用：modelplan usage gemini enable")
 	}
 	if len(rows) == 0 {
 		if c.lang == "en" {
@@ -156,4 +161,11 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 		fmt.Fprintln(stdout, line)
 	}
 	return 0
+}
+
+func exportSources() []connections.Connection {
+	if qwenusage.Configured() != "" {
+		return []connections.Connection{connections.Qwen()}
+	}
+	return []connections.Connection{}
 }

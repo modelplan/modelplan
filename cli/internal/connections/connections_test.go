@@ -8,8 +8,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
+
+func TestGeminiLocalConsentDiagnostics(t *testing.T) {
+	home := t.TempDir()
+	find := func() Connection {
+		t.Helper()
+		for _, c := range Diagnose(Env{Home: home}, quota.Report{}) {
+			if c.ID == "gemini" {
+				return c
+			}
+		}
+		t.Fatal("missing Gemini diagnostics")
+		return Connection{}
+	}
+	if c := find(); c.Authorization.Status != "off" || c.Quota.Status != "not-applicable" || c.LocalUsage == nil || len(c.LocalUsage.Hosts) != 0 || len(c.LocalUsage.ReadPaths) != 2 {
+		t.Fatalf("%+v", c)
+	}
+	if err := localusage.SetGemini(home, true); err != nil {
+		t.Fatal(err)
+	}
+	if c := find(); c.Authorization.Status != "yes" || c.History.Status != "unknown" {
+		t.Fatalf("%+v", c)
+	}
+}
 
 func TestDiagnose(t *testing.T) {
 	for _, k := range []string{"MODELPLAN_CODEXBAR", "MODELPLAN_CODEX_ACCOUNT"} {

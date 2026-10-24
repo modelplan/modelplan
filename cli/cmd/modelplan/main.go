@@ -20,6 +20,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/render"
@@ -67,8 +68,6 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        switch back after it, peak hours, cards, public resets
                                        (--hook claude-code|codex: prompt hook; hints shown to the
                                        user once, a task-start brief for the model per thread)
-  modelplan qwen-usage --export PATH  Qwen Code aggregated JSON export (file or directory), local only;
-                                       MODELPLAN_QWEN_USAGE_EXPORT selects it for desktop/connections
   modelplan desktop                    the personal snapshot for the desktop app (JSON): sessions,
                                        quota, advice, measured speed and a year of tokens per day
                                        (docs/personal-snapshot.md; --read-only writes, refreshes
@@ -77,6 +76,10 @@ const usage = `modelplan — Model Plan thin client (read-only, anonymous)
                                        name projects by their folder in the snapshot's project
                                        ranking: on by default, the names stay on this machine;
                                        off keeps only opaque references and deletes the stored names
+  modelplan qwen-usage --export PATH  optional aggregated Qwen JSON export (local only)
+  modelplan usage gemini [enable|disable|status]
+                                       opt-in local Gemini tokens/model/history (no account quota);
+                                       MODELPLAN_GEMINI_HOME selects its local data root
   modelplan history                    how much of each window you used and under which model and
                                        effort, and your measured speed (output tok/s, first token,
                                        turn time and tokens) per configuration, recorded on this
@@ -152,7 +155,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	backend := fs.String("backend", "native", "connect: native (this client's own reader) or codexbar")
 	region := fs.String("region", "", "connect: the provider's region (zai: global or bigmodel-cn)")
 	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
-	qwenExport := fs.String("export", "", "qwen-usage: Qwen Code JSON export file or directory (explicit opt-in)")
+	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -262,6 +265,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	case "qwen-usage":
 		return qwenUsageCmd(stdout, c, *qwenExport)
+	case "usage":
+		return usageCmd(fs.Args(), stdout, stderr, c)
 
 	case "history":
 		l := history.Load(st.Dir)
@@ -762,10 +767,14 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	perf, ok := speed.LoadPerf(st.Dir)
 	long, longOK := speed.LoadLong(st.Dir)
 	pace, paceOK := history.LoadPace(st.Dir)
-	return printJSON(stdout, snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, Events: es,
+	home, _ := os.UserHomeDir()
+	localUsage := localusage.ReadGemini(home, now)
+	connectionEnv := connections.Local(paths)
+	connectionEnv.Gemini = &localUsage
+	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage}, Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 		QwenUsage:   qwenSnapshot(now),
-		Connections: connections.Diagnose(connections.Local(paths), report),
+		Connections: connections.Diagnose(connectionEnv, report),
 		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
 }

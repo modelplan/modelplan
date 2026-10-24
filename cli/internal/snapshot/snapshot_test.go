@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -152,5 +154,25 @@ func TestActivity(t *testing.T) {
 	empty := Build(Input{Report: quota.Report{Accounts: []quota.Account{{Source: "claude-code", Harness: &quota.Harness{Model: "x"}}}}, Perf: &speed.PerfView{OK: true, Now: now}, Now: now})
 	if a := empty.Sessions[0].Activity; a.Status != "unknown" || a.LastSignalAt != nil {
 		t.Errorf("no timestamp: %+v", a)
+	}
+}
+
+func TestLocalUsageSnapshotRevision(t *testing.T) {
+	u := localusage.Report{Source: "gemini", Enabled: true, Status: "ok", EvaluatedAt: now, Rows: []localusage.Row{{Day: "2026-10-18", Model: "gemini-test", Messages: 1}}}
+	build := func(u localusage.Report, at time.Time) Snapshot {
+		return Build(Input{LocalUsage: []localusage.Report{u}, Connections: []connections.Connection{{ID: "gemini", LocalUsage: &u}}, Now: at})
+	}
+	a := build(u, now)
+	u.EvaluatedAt = now.Add(time.Minute)
+	b := build(u, now.Add(time.Minute))
+	if a.DataRevision != b.DataRevision || len(b.LocalUsage) != 1 {
+		t.Fatal("evaluation clock changed observation revision")
+	}
+	if a.ValidUntil == nil || a.ValidUntil.Day() != now.AddDate(0, 0, 1).Day() {
+		t.Fatalf("midnight refresh missing: %v", a.ValidUntil)
+	}
+	u.Rows = []localusage.Row{{Day: "2026-10-18", Model: "gemini-test", Messages: 2}}
+	if build(u, now).DataRevision == a.DataRevision {
+		t.Fatal("new Gemini usage did not change revision")
 	}
 }

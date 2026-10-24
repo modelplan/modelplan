@@ -490,29 +490,50 @@
       "support": "quota-only"
     },
     {
-      "reads": [
-        "env:MODELPLAN_QWEN_USAGE_EXPORT"
-      ],
-      "network": "none",
-      "privacy": "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten.",
-      "id": "qwen-code",
+      "id": "gemini",
       "kind": "agent",
       "installed": {
-        "status": "unknown"
+        "status": "no",
+        "reason": "not-found"
       },
       "history": {
-        "status": "off",
-        "reason": "not-enabled"
+        "status": "off"
       },
       "authorization": {
         "status": "off",
-        "reason": "MODELPLAN_QWEN_USAGE_EXPORT"
+        "reason": "not-enabled",
+        "via": "local-usage.json"
       },
       "quota": {
         "status": "not-applicable",
-        "reason": "local-usage-only"
+        "reason": "local-only-no-remote-quota"
       },
-      "support": "usage-only"
+      "support": "sessions-only",
+      "localUsage": {
+        "source": "gemini",
+        "enabled": false,
+        "status": "off",
+        "reason": "not-enabled",
+        "evaluatedAt": "2026-10-18T09:00:00Z",
+        "lastObservedAt": null,
+        "readPaths": [
+          "/home/u/.gemini/tmp/*/chats/session-*.{json,jsonl}",
+          "/home/u/.gemini/*/chats/session-*.{json,jsonl}"
+        ],
+        "hosts": [],
+        "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+        "scope": "available-local-history; input includes cached tokens; output excludes thoughts; no account quota",
+        "historyDays": 35,
+        "coverage": {
+          "filesSeen": 0,
+          "filesRead": 0,
+          "filesSkipped": 0,
+          "messagesWithoutTokens": 0,
+          "truncated": false
+        },
+        "rows": [],
+        "sessions": []
+      }
     }
   ],
   "events": [
@@ -1567,6 +1588,6 @@
   ],
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
-  "dataRevision": "sha256:b2b3d30451fe565bd72bb13b0b8f03f1",
+  "dataRevision": "sha256:ebc3e2b90b040d34f8c18feecff6dd77",
   "validUntil": "2026-10-18T09:04:50Z"
 }
