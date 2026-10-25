@@ -625,8 +625,8 @@ var member = z3.object({
   dominatedBy: z3.object({ id: text3, kind: z3.enum(["equivalent", "weaker"]) }).strict().nullable()
 }).strict();
 var clientDigestSchema = z3.object({
-  // Readers accept later client-v1.x projections: they only add top-level fields, which
-  // `.loose()` below keeps. The producer is held exact by the publication replay check.
+  // Additive fields are optional for historical publications. The producer is held
+  // exact by the publication replay check.
   projectionVersion: z3.string().regex(/^client-v1\.[1-9]\d*$/).optional(),
   multipliers: z3.array(clientMultiplierSchema).optional(),
   // client-v1.2 (#347): Fast / Ultrafast and their billing multipliers per harness.
@@ -643,6 +643,7 @@ var clientDigestSchema = z3.object({
   }).strict(),
   builtAt: date,
   aliasRevision: text3,
+  selectionRevision: text3.optional(),
   developers: z3.array(
     z3.object({ id: text3, name: text3, color: text3, region: text3.nullable() }).strict()
   ),
@@ -652,6 +653,10 @@ var clientDigestSchema = z3.object({
       name: text3,
       developerId: text3,
       current: z3.boolean(),
+      // Published selection results only; the reader never derives a ranking.
+      lineageId: text3.nullable().optional(),
+      lineageStatus: z3.enum(["current", "older", "preview", "retired"]).nullable().optional(),
+      defaultSelected: z3.boolean().nullable().optional(),
       recommended: text3.nullable(),
       // ADR 0033; optional so digests published before it still validate.
       recommendationBasis: z3.enum(["balanced", "single-configuration", "assumed-highest"]).nullable().optional(),
