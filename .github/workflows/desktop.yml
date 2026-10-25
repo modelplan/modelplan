@@ -140,6 +140,8 @@ jobs:
         run: swift build --package-path desktop/native --jobs 2
       - name: Native lane XCTest suites (instruments, cockpit shell and field)
         run: swift test --package-path desktop/native --jobs 2
+      - name: Settings model unit tests (no UI or system authorization)
+        run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
       - name: Field bridge protocol checks (synthetic page adapter)
         run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
       - name: Dock native resource and instrument checks (neutral inputs)
