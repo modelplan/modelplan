@@ -4,6 +4,8 @@ import Foundation
 // CLI schema 1 wire values; nullable/missing fields remain unknown.
 public struct PersonalSnapshot: Decodable, Sendable {
     public let schemaVersion: Int
+    public let contractVersion: Int?
+    public let capabilities: [String: ContractCapability]?
     public let kind: String
     public let generatedAt: WireInstant
     public let cliVersion: String?
@@ -34,11 +36,13 @@ public struct PersonalSnapshot: Decodable, Sendable {
     public let localUsage: [JSONValue]?
     public let note: String?
     public let validUntilReported: Bool
-    private enum CodingKeys: String, CodingKey { case schemaVersion, kind, generatedAt, cliVersion, dataRevision, validUntil, recording, publication, accounts, subscriptions, sessions, liveSessions, sources, connections, events, todayTotals, perfStats, daily, dailyLong, hourly, dailyCoverage, dailyLongCoverage, sessionRanking, projectRanking, projectLabels, paceHistory, measured, qwenUsage, localUsage, note }
+    private enum CodingKeys: String, CodingKey { case schemaVersion, contractVersion, capabilities, kind, generatedAt, cliVersion, dataRevision, validUntil, recording, publication, accounts, subscriptions, sessions, liveSessions, sources, connections, events, todayTotals, perfStats, daily, dailyLong, hourly, dailyCoverage, dailyLongCoverage, sessionRanking, projectRanking, projectLabels, paceHistory, measured, qwenUsage, localUsage, note }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         validUntilReported = c.contains(.validUntil)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
+        contractVersion = try c.decodeIfPresent(Int.self, forKey: .contractVersion)
+        capabilities = try c.decodeIfPresent([String: ContractCapability].self, forKey: .capabilities)
         kind = try c.decode(String.self, forKey: .kind)
         generatedAt = try c.decode(WireInstant.self, forKey: .generatedAt)
         cliVersion = try c.decodeIfPresent(String.self, forKey: .cliVersion)

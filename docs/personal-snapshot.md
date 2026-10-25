@@ -333,3 +333,9 @@ A connected native Cursor entry adds `quotaAccess` (the existing selection shape
 ### MiniMax opt-in diagnostics
 
 `native:minimax` is a quota-only connection, off by default. Its additive `quotaAccess` uses the existing selection shape: environment variable name, region/host, current and legacy route notices, and secret handling. Keys, vendor identities and raw errors are excluded; accounts use local keyed-hash bindings scoped by region. Reset/missing values remain unknown. Schema version stays 1. [Method and limits](minimax-quota.md).
+
+## Frozen desktop contract v1
+
+Both `desktop --json --read-only` and `publication --json` now include additive `contractVersion: 1` and `capabilities` metadata. The existing `schemaVersion`, fields and command behavior are retained. See [the contract schemas and compatibility policy](../schema/README.md) and [independent synthetic goldens](../testdata/contract-v1/README.md).
+
+The flattened publication also carries verified public reset announcements/confirmations, scoped calendar windows and quota multipliers, their horizon, and validated published plan-metering metadata. These are published results, not personal refill evidence or entitlement. Missing optional metadata remains null. Capabilities explicitly identify unavailable credit history, exact reset-drop provenance and model-selection metadata rather than inventing data for the UI.

@@ -4,12 +4,19 @@ import Foundation
 // CLI schema 1 wire values; nullable/missing fields remain unknown.
 public struct PublicPublication: Decodable, Sendable {
     public let schemaVersion: Int
+    public let contractVersion: Int?
+    public let capabilities: [String: ContractCapability]?
     public let publicationId: String
     public let publishedAt: WireInstant?
     public let units: PublicationUnits
     public let models: [PublishedModel]
     public let lineups: [PublishedLineup]
     public let speedTiers: [SpeedTier]?
+    public let resets: [JSONValue]?
+    public let windows: [JSONValue]?
+    public let multipliers: [JSONValue]?
+    public let multiplierHorizon: JSONValue?
+    public let planMetering: JSONValue?
 }
 
 public struct PublicationUnits: Decodable, Sendable {

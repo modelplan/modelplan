@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
+public struct ContractCapability: Decodable, Sendable {
+    public let status: String
+    public let reason: String?
+}
+
 public enum FeedError: Error, Equatable, Sendable {
     case tooLarge, invalidJSON, unsupportedSchema, unsupportedUnits, invalidIdentity, malformed(String)
 }
@@ -74,6 +79,7 @@ public enum FeedDecoder {
     }
     public static func personal(_ data: Data) throws -> PersonalSnapshot {
         let value = try decode(PersonalSnapshot.self, data)
+        guard value.contractVersion == nil || value.contractVersion == 1 else { throw FeedError.unsupportedSchema }
         guard value.schemaVersion == 1, value.kind == "modelplan.personal-snapshot" else { throw FeedError.unsupportedSchema }
         guard (value.accounts ?? []).allSatisfy({ !$0.source.isEmpty }),
               (value.sessions ?? []).allSatisfy({ !$0.source.isEmpty }),
@@ -89,6 +95,7 @@ public enum FeedDecoder {
     }
     public static func publication(_ data: Data) throws -> PublicPublication {
         let value = try decode(PublicPublication.self, data)
+        guard value.contractVersion == nil || value.contractVersion == 1 else { throw FeedError.unsupportedSchema }
         guard value.schemaVersion == 1 else { throw FeedError.unsupportedSchema }
         guard !value.publicationId.isEmpty else { throw FeedError.invalidIdentity }
         guard Set(value.models.map(\.id)).count == value.models.count, value.models.allSatisfy({ !$0.id.isEmpty }) else { throw FeedError.invalidIdentity }

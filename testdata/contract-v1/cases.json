@@ -1,0 +1,278 @@
+{
+  "contractVersion": 1,
+  "cases": [
+    {
+      "id": "F01",
+      "description": "four subscriptions, two attributed working sessions",
+      "coverage": "data",
+      "desktop": "F01-desktop.json",
+      "publication": "F01-publication.json"
+    },
+    {
+      "id": "F01-idle",
+      "description": "four subscriptions, no working sessions",
+      "coverage": "data",
+      "desktop": "F01-idle-desktop.json",
+      "publication": "F01-idle-publication.json"
+    },
+    {
+      "id": "F01-one-working",
+      "description": "four subscriptions, one working session",
+      "coverage": "data",
+      "desktop": "F01-one-working-desktop.json",
+      "publication": "F01-one-working-publication.json"
+    },
+    {
+      "id": "F01-six-working",
+      "description": "six distinct subscriptions, six working sessions",
+      "coverage": "data",
+      "desktop": "F01-six-working-desktop.json",
+      "publication": "F01-six-working-publication.json"
+    },
+    {
+      "id": "F02",
+      "description": "critical known zero with observed credits and threshold boundaries",
+      "coverage": "data",
+      "desktop": "F02-desktop.json",
+      "publication": "F02-publication.json"
+    },
+    {
+      "id": "F03",
+      "description": "unknown/stale values and passed reset; no invented fresh quota",
+      "coverage": "data",
+      "desktop": "F03-desktop.json",
+      "publication": "F03-publication.json"
+    },
+    {
+      "id": "F03-recording-off",
+      "description": "recording off with empty local history",
+      "coverage": "data",
+      "desktop": "F03-recording-off-desktop.json",
+      "publication": "F03-recording-off-publication.json"
+    },
+    {
+      "id": "F04-00",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-00-desktop.json",
+      "publication": "F04-00-publication.json"
+    },
+    {
+      "id": "F04-01",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-01-desktop.json",
+      "publication": "F04-01-publication.json"
+    },
+    {
+      "id": "F04-02",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-02-desktop.json",
+      "publication": "F04-02-publication.json"
+    },
+    {
+      "id": "F04-04",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-04-desktop.json",
+      "publication": "F04-04-publication.json"
+    },
+    {
+      "id": "F04-06",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-06-desktop.json",
+      "publication": "F04-06-publication.json"
+    },
+    {
+      "id": "F04-07",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-07-desktop.json",
+      "publication": "F04-07-publication.json"
+    },
+    {
+      "id": "F04-10",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-10-desktop.json",
+      "publication": "F04-10-publication.json"
+    },
+    {
+      "id": "F04-13",
+      "description": "stable subscription IDs for pagination; layout remains UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F04-13-desktop.json",
+      "publication": "F04-13-publication.json"
+    },
+    {
+      "id": "F05",
+      "description": "duplicate source bindings do not prove historical account ownership",
+      "coverage": "data",
+      "desktop": "F05-desktop.json",
+      "publication": "F05-publication.json"
+    },
+    {
+      "id": "F06",
+      "description": "current differs from star; single setting and nullable scores",
+      "coverage": "data",
+      "desktop": "F06-desktop.json",
+      "publication": "F06-publication.json"
+    },
+    {
+      "id": "F06-many-efforts",
+      "description": "more than five published native efforts",
+      "coverage": "data",
+      "desktop": "F06-many-efforts-desktop.json",
+      "publication": "F06-many-efforts-publication.json"
+    },
+    {
+      "id": "F07",
+      "description": "fast compatibility and up-to qualifier; trial is UI-owned",
+      "coverage": "data-prerequisites",
+      "desktop": "F07-desktop.json",
+      "publication": "F07-publication.json"
+    },
+    {
+      "id": "F08",
+      "description": "0/1/2/6/unknown reserve counts, 30h/48h expiry and MCP extra",
+      "coverage": "data",
+      "desktop": "F08-desktop.json",
+      "publication": "F08-publication.json"
+    },
+    {
+      "id": "F09",
+      "description": "unequal generation durations, observed zero and missing hour",
+      "coverage": "data",
+      "desktop": "F09-desktop.json",
+      "publication": "F09-publication.json"
+    },
+    {
+      "id": "F10",
+      "description": "371 daily rows, observed retention coverage",
+      "coverage": "data",
+      "desktop": "F10-desktop.json",
+      "publication": "F10-publication.json"
+    },
+    {
+      "id": "F10-short",
+      "description": "short coverage does not invent older heatmap values",
+      "coverage": "data",
+      "desktop": "F10-short-desktop.json",
+      "publication": "F10-short-publication.json"
+    },
+    {
+      "id": "F11",
+      "description": "ten observed quota cycles; ambiguous meter drop is not redemption",
+      "coverage": "data",
+      "desktop": "F11-desktop.json",
+      "publication": "F11-publication.json"
+    },
+    {
+      "id": "F12",
+      "description": "six live sessions with project attribution and completed ranking",
+      "coverage": "data",
+      "desktop": "F12-desktop.json",
+      "publication": "F12-publication.json"
+    },
+    {
+      "id": "F12-labels-off",
+      "description": "opaque project refs retained; project labels hidden",
+      "coverage": "data",
+      "desktop": "F12-labels-off-desktop.json",
+      "publication": "F12-labels-off-publication.json"
+    },
+    {
+      "id": "F13",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F13-desktop.json",
+      "publication": "F13-publication.json"
+    },
+    {
+      "id": "F14",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F14-desktop.json",
+      "publication": "F14-publication.json"
+    },
+    {
+      "id": "F15",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F15-desktop.json",
+      "publication": "F15-publication.json"
+    },
+    {
+      "id": "F16",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F16-desktop.json",
+      "publication": "F16-publication.json"
+    },
+    {
+      "id": "F17",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F17-desktop.json",
+      "publication": "F17-publication.json"
+    },
+    {
+      "id": "F20",
+      "description": "native UI/lifecycle scenario: command data prerequisites only",
+      "coverage": "data-prerequisites",
+      "desktop": "F20-desktop.json",
+      "publication": "F20-publication.json"
+    },
+    {
+      "id": "F18",
+      "description": "mismatching publication IDs; personal quotas stay independent",
+      "coverage": "data",
+      "desktop": "F18-desktop.json",
+      "publication": "F18-publication.json"
+    },
+    {
+      "id": "F19",
+      "description": "offset-distinct repeated hour and spring transition",
+      "coverage": "data",
+      "desktop": "F19-desktop.json",
+      "publication": "F19-publication.json"
+    },
+    {
+      "id": "F19-spring",
+      "description": "23-hour local day and omitted nonexistent hour",
+      "coverage": "data",
+      "desktop": "F19-spring-desktop.json",
+      "publication": "F19-spring-publication.json"
+    },
+    {
+      "id": "F07-unsupported-fast",
+      "description": "a published fast tier does not apply to an unmatched model",
+      "coverage": "data",
+      "desktop": "F07-unsupported-fast-desktop.json",
+      "publication": "F07-unsupported-fast-publication.json"
+    },
+    {
+      "id": "F03-insufficient-rate",
+      "description": "four observed requests do not produce a session generation rate",
+      "coverage": "data",
+      "desktop": "F03-insufficient-rate-desktop.json",
+      "publication": "F03-insufficient-rate-publication.json"
+    },
+    {
+      "id": "F08-fable",
+      "description": "reported extra model quota remains a labelled window, not an inferred entitlement",
+      "coverage": "data",
+      "desktop": "F08-fable-desktop.json",
+      "publication": "F08-fable-publication.json"
+    },
+    {
+      "id": "F19-quarter-hour",
+      "description": "offset-bearing completion hour in a quarter-hour zone",
+      "coverage": "data",
+      "desktop": "F19-quarter-hour-desktop.json",
+      "publication": "F19-quarter-hour-publication.json"
+    }
+  ]
+}
