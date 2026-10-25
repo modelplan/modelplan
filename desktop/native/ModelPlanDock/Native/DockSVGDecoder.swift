@@ -28,17 +28,32 @@ final class DockSVGShapeValidator: NSObject,XMLParserDelegate {
     func parser(_ parser:XMLParser,foundExternalEntityDeclarationWithName:String,publicID:String?,systemID:String?){valid=false;parser.abortParsing()}
     func parser(_ parser:XMLParser,foundInternalEntityDeclarationWithName:String,value:String?){valid=false;parser.abortParsing()}
 }
-@MainActor enum DockStaticSVG {
-    static func size(_ data:Data)throws->CGSize {
+/// Instrumentation SPI lets the neutral executable cover the raw decoder, not a supported product API.
+@_spi(DockResourceChecks) @MainActor public enum DockStaticSVG {
+    public static func pixelSize(_ size:CGSize,maximumPixelSize:Int)throws->(width:Int,height:Int) {
+        // Normalise before multiplication: maxPixel / a subnormal source dimension can overflow.
+        guard (1...4096).contains(maximumPixelSize),size.width.isNormal,size.height.isNormal,
+            size.width>0,size.height>0,size.width<=4096,size.height<=4096 else{throw DockArtworkError.invalidManifest}
+        let longest=max(size.width,size.height)
+        let width=ceil((size.width/longest)*CGFloat(maximumPixelSize))
+        let height=ceil((size.height/longest)*CGFloat(maximumPixelSize))
+        guard width.isFinite,height.isFinite,width>=1,height>=1,
+            width<=CGFloat(maximumPixelSize),height<=CGFloat(maximumPixelSize) else{throw DockArtworkError.invalidManifest}
+        return (Int(width),Int(height)) // Only bounded finite values reach integer conversion.
+    }
+    public static func size(_ data:Data)throws->CGSize {
         guard data.count<=1_048_576,let text=String(data:data,encoding:.utf8),!text.lowercased().contains("<!doctype"),!text.lowercased().contains("<!entity") else{throw DockArtworkError.invalidManifest}
         let validator=DockSVGShapeValidator(),parser=XMLParser(data:data)
         parser.shouldResolveExternalEntities=false;parser.externalEntityResolvingPolicy = .never;parser.delegate=validator
-        guard parser.parse(),validator.valid else{throw DockArtworkError.invalidManifest};return validator.size
+        guard parser.parse(),validator.valid else{throw DockArtworkError.invalidManifest}
+        _=try pixelSize(validator.size,maximumPixelSize:1);return validator.size
     }
-    static func image(_ data:Data,size:CGSize,maximumPixelSize:Int)throws->CGImage {
-        let ratio=CGFloat(maximumPixelSize)/max(size.width,size.height)
-        let width=max(1,Int(ceil(size.width*ratio))),height=max(1,Int(ceil(size.height*ratio)))
+    public static func image(_ data:Data,size:CGSize,maximumPixelSize:Int)throws->CGImage {
+        let parsed=try Self.size(data)
+        guard parsed==size else{throw DockArtworkError.invalidManifest}
+        let pixels=try pixelSize(size,maximumPixelSize:maximumPixelSize),width=pixels.width,height=pixels.height
         guard width<=4096,height<=4096,let image=NSImage(data:data),
+            image.size.width.isNormal,image.size.height.isNormal,image.size.width>0,image.size.height>0,
             let context=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,
                 space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else{throw DockArtworkError.invalidManifest}
         NSGraphicsContext.saveGraphicsState();defer{NSGraphicsContext.restoreGraphicsState()}

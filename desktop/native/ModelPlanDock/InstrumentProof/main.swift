@@ -7,7 +7,7 @@ import CryptoKit
 import ImageIO
 import ModelPlanPrimitives
 #if canImport(ModelPlanDock)
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 #endif
 
 @MainActor final class SyntheticDockFrameProvider:EffectFrameProvider {
@@ -51,6 +51,45 @@ struct NativeFailure:Error {let message:String}
     let vectors=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["vector":svgFile]))
     let vector=try vectors.image("vector",maximumPixelSize:64)
     try require(vector.width==64 && vector.height==64,"native SVG raster uses explicit physical dimensions")
+    let normalisedTiny=try DockStaticSVG.pixelSize(CGSize(width:1e-200,height:1e-200),maximumPixelSize:64)
+    try require(normalisedTiny.width==64 && normalisedTiny.height==64,"tiny normal dimensions normalise without reciprocal overflow")
+    let thin=try DockStaticSVG.pixelSize(CGSize(width:1e-200,height:4096),maximumPixelSize:4096)
+    try require(thin.width==1 && thin.height==4096,"extreme normal aspect remains a bounded one-pixel axis")
+    for (index,dimensions) in [(0.0,32.0),(32,0),(-1,32),(32,-1),(Double.nan,32),(32,Double.nan),(Double.infinity,32),(32,Double.infinity),(1e-320,1e-320),(1e-320,4096),(4096,1e-320),(4097,32),(32,4097)].enumerated() {
+        let (w,h)=dimensions
+        let data=Data("<svg xmlns='http://www.w3.org/2000/svg' width='\(w)' height='\(h)' viewBox='0 0 1 1'><rect width='1' height='1'/></svg>".utf8)
+        let name="invalid-size-\(index).svg";try data.write(to:root.appendingPathComponent(name))
+        let entry=DockResourceFile(path:name,sha256:SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined(),bytes:data.count)
+        let bounded=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["invalid":entry]))
+        do{_=try bounded.image("invalid",maximumPixelSize:64);throw NativeFailure(message:"invalid SVG size reached store rasterisation")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+        do{_=try DockStaticSVG.image(data,size:CGSize(width:w,height:h),maximumPixelSize:64);throw NativeFailure(message:"invalid SVG size reached direct rasterisation")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+    }
+    for (index,dimensions) in [(1e-200,1e-200),(1e-200,4096.0)].enumerated() {
+        let (w,h)=dimensions,data=Data("<svg xmlns='http://www.w3.org/2000/svg' width='\(w)' height='\(h)' viewBox='0 0 1 1'><rect width='1' height='1'/></svg>".utf8)
+        let name="tiny-normal-\(index).svg";try data.write(to:root.appendingPathComponent(name))
+        let spec=DockResourceFile(path:name,sha256:SHA256.hash(data:data).map{String(format:"%02x",$0)}.joined(),bytes:data.count)
+        let source=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["tiny":spec]))
+        let expected=try DockStaticSVG.pixelSize(CGSize(width:w,height:h),maximumPixelSize:64)
+        do{let image=try source.image("tiny",maximumPixelSize:64);try require(image.width==expected.width && image.height==expected.height,"store tiny-normal raster remains bounded")}
+        catch DockArtworkError.invalidManifest{checks+=1} // An unsupported AppKit representation is a safe typed rejection.
+        do{let image=try DockStaticSVG.image(data,size:CGSize(width:w,height:h),maximumPixelSize:64);try require(image.width==expected.width && image.height==expected.height,"direct tiny-normal raster remains bounded")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+    }
+    for maxPixels in [0,-1,4097,Int.max] {
+        do{_=try DockStaticSVG.pixelSize(CGSize(width:32,height:32),maximumPixelSize:maxPixels);throw NativeFailure(message:"unbounded pixel request admitted")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+        do{_=try DockStaticSVG.image(svg,size:CGSize(width:32,height:32),maximumPixelSize:maxPixels);throw NativeFailure(message:"direct unbounded pixel request admitted")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+    }
+    let wide=Data("<svg xmlns='http://www.w3.org/2000/svg' width='4096' height='1' viewBox='0 0 4096 1'><rect width='4096' height='1' fill='#888888'/></svg>".utf8)
+    try wide.write(to:root.appendingPathComponent("boundary.svg"))
+    let wideSpec=DockResourceFile(path:"boundary.svg",sha256:SHA256.hash(data:wide).map{String(format:"%02x",$0)}.joined(),bytes:wide.count)
+    let wideStore=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["wide":wideSpec]))
+    let storedWide=try wideStore.image("wide",maximumPixelSize:4096),directWide=try DockStaticSVG.image(wide,size:CGSize(width:4096,height:1),maximumPixelSize:4096)
+    try require(storedWide.width==4096 && storedWide.height==1,"store accepts exact4096 boundary without unsafe allocation")
+    try require(directWide.width==4096 && directWide.height==1,"direct decoder uses same exact4096 bounded dimensions")
     let unsafe=Data("<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><image href='https://example.invalid/x.png'/></svg>".utf8)
     let unsafeURL=root.appendingPathComponent("external.svg");try unsafe.write(to:unsafeURL)
     let unsafeFile=DockResourceFile(path:"external.svg",sha256:SHA256.hash(data:unsafe).map{String(format:"%02x",$0)}.joined(),bytes:unsafe.count)
