@@ -32,6 +32,31 @@ public enum ModelSelection {
             selectionRevision: publication.selectionRevision, models: models, issues: issues)
     }
 
+    /// All combines the complete explicit public fleet with ordinarily verified recent older models.
+    /// Non-All remains ordinary selection; this composition does not relax its eligibility checks.
+    public static func selectPublicFleet(_ input: SelectionInput,
+                                         defaultPublication: SelectionPublication? = nil) -> SharedModelSelection {
+        let normal = select(input)
+        guard input.scope == .all, let publication = input.publication else { return normal }
+        let catalogue: SelectionPublication
+        if let original = defaultPublication, original.publicationID == publication.publicationID,
+           original.selectionRevision == publication.selectionRevision {
+            catalogue = original
+        } else { catalogue = publication }
+        let defaults = publicDefaults(publication: catalogue, scope: input.scope)
+        let defaultIDs = Set(defaults.orderedIDs)
+        let conflictingIDs = Set(defaults.issues.filter { $0.reason == .conflictingModelID }.compactMap(\.modelID))
+        var models: [SelectedModel] = [], seen: Set<String> = []
+        for model in normal.models where !conflictingIDs.contains(model.id) && (defaultIDs.contains(model.id) || model.isOlder) {
+            if seen.insert(model.id).inserted { models.append(model) }
+        }
+        for model in defaults.models where seen.insert(model.id).inserted { models.append(model) }
+        var issues = normal.issues
+        for issue in defaults.issues where !issues.contains(issue) { issues.append(issue) }
+        return SharedModelSelection(scope: input.scope, publicationID: defaults.publicationID,
+            selectionRevision: defaults.selectionRevision, models: models, issues: issues)
+    }
+
     public static func select(_ input: SelectionInput) -> SharedModelSelection {
         var issues: [SelectionIssue] = []
         func result(_ models: [SelectedModel] = []) -> SharedModelSelection {
