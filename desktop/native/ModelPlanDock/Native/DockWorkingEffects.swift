@@ -20,6 +20,7 @@ public enum DockEffectCompositing: Sendable {case sourceOver, screen}
         guard Set(readings.map(\.subscriptionID)).count==readings.count else{throw DockLogicError.invalidCatalogue}
         stop();pool.purgeUnleased();unavailableIDs=[]
         view.onVisualReset={[weak self] in self?.stop()}
+        if compositing == .screen && !view.layerUsesCoreImageFilters {view.layerUsesCoreImageFilters=true}
         let rows=Dictionary(uniqueKeysWithValues:readings.map{($0.subscriptionID,$0)})
         CATransaction.begin();CATransaction.setDisableActions(true);defer{CATransaction.commit()}
         for station in skin.stations {
@@ -34,7 +35,7 @@ public enum DockEffectCompositing: Sendable {case sourceOver, screen}
             if compositing == .screen {
                 // macOS public Core Image compositing API; no undocumented CAFilter name.
                 guard let filter=CIFilter(name:"CIScreenBlendMode") else{effect.stop();unavailableIDs.insert(id);continue}
-                view.layerUsesCoreImageFilters=true;effect.layer.compositingFilter=filter
+                effect.layer.compositingFilter=filter
             }
             parent.addSublayer(effect.layer);consumers[id]=effect
         }
