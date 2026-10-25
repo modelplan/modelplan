@@ -100,6 +100,18 @@ public struct AliasDraft: Equatable, Sendable {
 }
 
 public enum LoginServiceState: String, Sendable { case notRegistered, enabled, requiresApproval, unavailable }
+/// Saved user intent and current system observation are independent facts.
+public struct LoginSetting: Equatable, Sendable {
+    public static let title = SettingsText("Open at login", "登录时自动打开")
+    public let requestedEnabled: Bool
+    public let observedState: LoginServiceState
+    public init(preferences: SettingsPreferences, capabilities: SettingsCapabilities) {
+        self.init(requestedEnabled: preferences.openAtLogin, observedState: capabilities.login)
+    }
+    init(requestedEnabled: Bool, observedState: LoginServiceState) {
+        self.requestedEnabled = requestedEnabled; self.observedState = observedState
+    }
+}
 public enum SettingsActionRequest: Equatable, Sendable {
     case setLoginEnabled(Bool), clearAppCache, resetHelpHints
 }
