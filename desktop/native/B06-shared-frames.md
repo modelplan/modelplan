@@ -10,7 +10,7 @@ MainActor EffectFrameProvider exposes identifier/revision and draw(pose:request:
 
 Providers retain only verified **encoded** resources or paths. They must not retain contexts, decoded frame arrays or CA image copies. If using ImageIO, decode at the requested pixel bound without a retained image-source cache, draw one temporary frame, then release it. Do not use a separate artwork store's decoded-image cache for jet frames. Temporary bounded codec scratch and Core Animation/GPU/server storage are not a second atlas cache; their cost still belongs in whole-process/helper resource measurements. The 4 MB counter is the pool's conservative cache/reservation bound, not a claim that all graphics process memory is 4 MB.
 
-EffectFrameRequest(profile:points:magnification:variant:) uses ceil(points x profile.scale x magnification) source pixels. Native scales are 1/2; magnification is finite 1...4 and affects sampling only. The host still owns the actual geometry transform. L64 at 2x and 1.5 sampling uses 192x192 frames, not an upscaled 52-point source. Three such RGBA variants occupy 3,981,312 bytes in total and can serve six distinct consumers by shared counted leases.
+EffectFrameRequest(profile:points:magnification:variant:) uses ceil(points x profile.scale x magnification) source pixels. Native scales are 1/2; magnification is finite 1...4 and affects sampling only. The host owns frame/position and the actual geometry transform. Use target sampling density for a hover transition, not an interpolated per-display-frame request; reconfigure on semantic/profile/target changes, never as a redraw loop. L64 at 2x and 1.5 sampling uses 192x192 frames, not an upscaled 52-point source. Three such RGBA variants occupy 3,981,312 bytes in total and can serve six distinct consumers by shared counted leases.
 
 SteppedImageEffect(pool:) owns a CALayer. configure(request:provider:working:) first stops the old sequence and lease. Successful working sequences use nine discrete CA contents steps per second, with ten key-time boundaries. There is no application redraw timer. RGBA is displayed unchanged, with no gradient/triangle mask. Reduce Motion keeps frame zero static; seekForCapture selects a static phase without cloning an atlas. The consumer exposes isAvailable/isAnimating/frameCount; it does not export a decoded image array.
 
@@ -18,7 +18,7 @@ On refusal, isAvailable is false and the layer stays empty/hidden; the host may 
 
 ## Native target
 
-The ModelPlanDock target now covers the module directory, depends on Core/Primitives, and excludes independent proof/check/script paths. This includes future Native Swift source without copying it into another module. Register each standalone instrument probe separately after its entry is publicly committed; a library must not accidentally compile a proof's main.swift.
+The ModelPlanDock target now covers the module directory, depends on Core/Primitives, and excludes independent proof/check/script paths. This includes future Native Swift source without copying it into another module. ModelPlanDockInstrumentChecks registers the publicly committed InstrumentProof separately; a library must not accidentally compile its main.swift. CI supplies only an owned output directory, omitting the optional private font parameter. Both native jobs and the transferred macOS 14 runtime execute its neutral mode.
 
 ## Checks
 
