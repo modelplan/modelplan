@@ -72,7 +72,7 @@ public struct SubscriptionRowValue: Equatable, Sendable {
 }
 public enum SettingsRowValue: Equatable, Sendable {
     case choice(String, options: [String]), toggle(Bool), text(String), subscriptions([SubscriptionRowValue])
-    case action(SettingsActionRequest?), link(URL), notices([SettingsLicenseNotice])
+    case action(SettingsActionRequest?), link(URL), notices([SettingsLicenseNotice]), login(LoginSetting)
 }
 public struct SettingsRow: Equatable, Sendable {
     public let key: SettingKey
@@ -114,7 +114,7 @@ public enum SettingsCatalogue {
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
         .init(.order,"Subscription order","订阅顺序","One shared order for the dock and cockpit; hidden entries remain editable.","挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
-        .init(.login,"Open at login","登录时打开","Reflect the observed login service; changes require a system adapter.","反映实际登录服务状态；更改由系统适配器执行。"),
+        .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Save your choice; system registration status is shown separately.","保存自动打开的选择；系统注册状态单独显示。"),
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧张百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","开舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Toggle dock shortcut","显示隐藏挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
@@ -187,7 +187,7 @@ public enum SettingsCatalogue {
         case .captureHiding: return .unsupportedCaptureHiding
         case .retention, .clearCLI: return .cliOwned
         case .source, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .licenses: return .readOnly
-        case .login: return c.capabilities.login == .unavailable ? .serviceUnavailable : .available
+        case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
         default: return .available
         }
@@ -217,7 +217,7 @@ public enum SettingsCatalogue {
         case .captureHiding: return .text("unsupported")
         case .activeDisplay: return .toggle(p.followActiveDisplay)
         case .order: return perSub { $0.id }
-        case .login: return .text(c.capabilities.login.rawValue)
+        case .login: return .login(LoginSetting(preferences: p, capabilities: c.capabilities))
         case .menuDisplay: return choices(p.menuDisplay)
         case .openShortcut: return .text(shortcut(p.openShortcut))
         case .dockShortcut: return .text(shortcut(p.dockShortcut))

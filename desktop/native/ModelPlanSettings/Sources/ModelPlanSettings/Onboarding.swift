@@ -132,3 +132,14 @@ public struct TutorialGesture: Sendable {
         lastTime = time; return true
     }
 }
+
+/// First-run choice data independent of the provisional page/step definition. Never calls a service.
+public struct OnboardingOptions: Equatable, Sendable {
+    public var openAtLogin: Bool
+    public init(preferences: SettingsPreferences) { openAtLogin = preferences.openAtLogin }
+    public func loginSetting(capabilities: SettingsCapabilities) -> LoginSetting {
+        .init(requestedEnabled: openAtLogin, observedState: capabilities.login)
+    }
+    /// Apply only this choice inside SettingsStore.update; never overwrite other preferences/progress.
+    public func apply(to preferences: inout SettingsPreferences) { preferences.openAtLogin = openAtLogin }
+}
