@@ -98,15 +98,23 @@ public struct SelectionAssembly: Sendable {
                 subscriptions = [.init(id:id,availability:.available,offeredModelIDs:candidates)]
             } else { fallback = true }
         }
-        var shared = ModelSelection.select(.init(scope:scope,publication:publication,
-            subscriptions:subscriptions,usage:[],windowUsage:windowUsage,now:now))
-        if shared.models.isEmpty || publication.selectionRevision?.isEmpty != false || fallback {
+        let input = SelectionInput(scope:scope,publication:publication,
+            subscriptions:subscriptions,usage:[],windowUsage:windowUsage,now:now)
+        var shared: SharedModelSelection
+        switch scope {
+        case .all: shared = ModelSelection.selectPublicFleet(input)
+        case .subscription: shared = ModelSelection.select(input)
+        }
+        if shared.models.isEmpty || (scope != .all && fallback) {
             shared = ModelSelection.publicDefaults(publication:publication,scope:scope)
             fallback = true
         }
-        let notice = fallback ? defaultNote : nil
+        let hasCatalogDefaults = shared.models.contains { $0.origin == .publishedDefaultFallback }
+        let notice = fallback || hasCatalogDefaults ? defaultNote : nil
+        // Revision/metric limits gate exact comparisons, not known catalog membership or labels.
+        let catalogMode = fallback || hasCatalogDefaults || publication.selectionRevision?.isEmpty != false || !source.supportedUnits
         var labels: [String: String] = [:]
-        if !fallback, case .subscription = scope {
+        if case .subscription = scope {
             for id in shared.orderedIDs {
                 labels[id] = toolIDs.contains(id) ? toolNote : actualIDs.contains(id) ? usedNote : nil
             }
@@ -118,9 +126,9 @@ public struct SelectionAssembly: Sendable {
             selectionRevision:source.selectionRevision),scope:instrumentScope,orderedModelIDs:shared.orderedIDs,
             selectedModelID:selectedID.flatMap { shared.orderedIDs.contains($0) ? $0 : nil },
             unavailableReason:noModels ? "public-default-unavailable" : nil,recentUseAtByModel:[:],
-            publicDefaultFallback:fallback,selectionNotice:notice,modelAvailabilityNotes:labels)
+            publicDefaultFallback:catalogMode,selectionNotice:notice,modelAvailabilityNotes:labels)
         return .init(mappingIssues:mapped.issues,shared:shared,instruments:injected,models:Self.instrumentModels(source),
-            unavailableReason:noModels ? "public-default-unavailable" : nil,publicDefaultFallback:fallback,
+            unavailableReason:noModels ? "public-default-unavailable" : nil,publicDefaultFallback:catalogMode,
             selectionNotice:notice,modelAvailabilityNotes:labels,sessionEvidence:evidence,emptyStateMessage:noModels ? noData : "",language:language)
     }
 

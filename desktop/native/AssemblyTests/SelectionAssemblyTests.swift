@@ -144,6 +144,30 @@ final class SelectionAssemblyTests: XCTestCase {
         var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
         XCTAssertEqual(r.sessionEvidence.count,1);XCTAssertEqual(r.sessionEvidence.first?.ownership,.explicitSubscription)
     }
+    func testAllKeepsEveryExplicitDefaultWhenOnlySomeLineageMetadataIsMissing() throws {
+        let f=try feeds([model("complete"),model("missing-lineage",lineage:false),model("old",status:"older",selected:false)],
+            sessions:[session("native-old",owner:"s")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["complete","missing-lineage","old"])
+        XCTAssertEqual(Set(r.effortPage?.models.map(\.id) ?? []),Set(r.shared.orderedIDs))
+    }
+    func testKnownToolAndUseFactsSurviveMissingRevisionWithoutFabricatingOne() throws {
+        let f=try feeds([model("tool"),model("used",sources:[]),model("old",status:"older",selected:false)],
+            sessions:[session("used",owner:"s"),session("native-old",owner:"s")],revision:nil)
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["tool","used","old"])
+        XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
+        XCTAssertEqual(r.modelAvailabilityNotes["used"],"实际用过")
+        XCTAssertTrue(r.publicDefaultFallback);XCTAssertNil(r.instruments?.publication.selectionRevision)
+        XCTAssertEqual(Set(r.effortPage?.models.map(\.id) ?? []),Set(r.shared.orderedIDs))
+    }
+    func testKnownLabelsRemainWhenDatedPublicFeedRequiresGlobalFallback() throws {
+        let f=try feeds([model("tool"),model("used",sources:[])],sessions:[session("used",owner:"s")],lastGood:true)
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertEqual(r.selectionNotice,"按公开默认")
+        XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
+        XCTAssertEqual(r.modelAvailabilityNotes["used"],"实际用过")
+    }
     @MainActor func testRuntimeUsesPublicStoreEvenWhenPersonalReadIsUnavailable() async throws {
         let clock = SelectionClock(wall:now)
         let store = SnapshotStore(transport:PublicationOnlyTransport(data:try publicationData([model("default")])),
