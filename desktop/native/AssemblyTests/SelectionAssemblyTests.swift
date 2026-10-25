@@ -7,115 +7,125 @@ import ModelPlanInstruments
 @testable import ModelPlanAssembly
 
 final class SelectionAssemblyTests: XCTestCase {
-    let now = Date(timeIntervalSince1970: 1_700_000_000)
-    func joined(models: [[String: Any]], members: [[String: Any]] = [], revision: String? = "r",
-                expiry: TimeInterval = 300, matches: Bool = true) throws -> JoinedSnapshot {
-        var wire: [String: Any] = ["schemaVersion": 1, "publicationId": "p", "units": ["ability":"websiteAbility", "cost":"usdPerReferenceTask", "time":"taskTimeCrossModel"], "models": models,
-            "lineups": [["developerId":"dev", "members":members]]]
-        if let revision { wire["selectionRevision"] = revision }
-        let pub = try JSONDecoder().decode(PublicPublication.self, from: JSONSerialization.data(withJSONObject: wire))
-        let personal: [String: Any] = ["schemaVersion":1, "kind":"desktop", "generatedAt":ISO8601DateFormatter().string(from:now),
-            "validUntil":ISO8601DateFormatter().string(from:now.addingTimeInterval(expiry)),
-            "publication":["publicationId":matches ? "p":"other"],
-            "subscriptions":[["subscriptionRef":"s", "sources":["codex"]]],
-            "sessions":[["source":"codex", "model":["id":"x"], "observedAt":ISO8601DateFormatter().string(from:now)]]]
-        let snapshot = try JSONDecoder().decode(PersonalSnapshot.self, from: JSONSerialization.data(withJSONObject: personal))
-        var ledger = ExpiryLedger()
-        return .make(personal:snapshot, presentation:.evaluate(snapshot, now:now, ledger:&ledger), publication:pub)
+    let now = Date(timeIntervalSince1970:1_700_000_000)
+    func model(_ id:String,status:String?="current",selected:Bool?=true,sources:[String]=["codex"],lineage:Bool=true) -> [String:Any] {
+        var m:[String:Any] = ["id":id,"developerId":"dev","name":id,
+            "harnessIds":Dictionary(uniqueKeysWithValues:sources.map { ($0,["native-"+id]) })]
+        if let status { m["lineageStatus"]=status };if let selected { m["defaultSelected"]=selected }
+        if lineage { m["lineageId"]="line-"+id };return m
     }
-    func model(_ id: String, status: String? = "current", selected: Bool? = true) -> [String: Any] {
-        var row: [String: Any] = ["id":id, "developerId":"dev", "lineageId":"line-"+id]
-        if let status { row["lineageStatus"] = status }
-        if let selected { row["defaultSelected"] = selected }
-        return row
+    func publicationData(_ models:[[String:Any]],revision:String?="r",members:[[String:Any]]=[]) throws -> Data {
+        var p:[String:Any] = ["schemaVersion":1,"publicationId":"p",
+            "units":["ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"],
+            "models":models,"lineups":[["developerId":"dev","members":members]]]
+        if let revision { p["selectionRevision"]=revision };return try JSONSerialization.data(withJSONObject:p)
     }
-    func offering(_ ids: Set<String>?, freshness: InstrumentFreshness = .fresh) -> SubscriptionSelectionEvidence {
-        .init(.init(id:"s", availability:.available, offeredModelIDs:ids), evidence:.init(observedAt:now, validUntil:now.addingTimeInterval(300), freshness:freshness))
+    func binding(_ id:String,_ source:String="codex") -> [String:Any] { ["subscriptionRef":id,"sources":[source]] }
+    func session(_ model:String,owner:String?=nil,source:String="codex",tokens:Int=5) -> [String:Any] {
+        var s:[String:Any] = ["ref":"session-"+model,"source":source,
+            "lastAt":ISO8601DateFormatter().string(from:now.addingTimeInterval(-60)),
+            "configs":[["model":model,"observedOutputTokens":tokens]]]
+        if let owner { s["subscriptionRef"]=owner };return s
     }
-    func use(_ id: String, age: TimeInterval = 1, attribution: UsageAttribution = .verifiedSubscription) -> AttributedSelectionUsage {
-        .init(.init(modelID:id, subscriptionID:"s", usedAt:now.addingTimeInterval(-age)), attribution:attribution,
-              evidence:.init(observedAt:now, validUntil:now.addingTimeInterval(300)))
-    }
-    func testPublishedOrderIsInjectedOnceWithSameCapsAndStableHighlight() throws {
-        let ids=(0..<13).map { "m"+String($0) };let source=try joined(models:ids.map { model($0) }, members:[["id":"m4", "tags":["strongest"]]])
-        var assembly=SelectionAssembly()
-        let r=assembly.evaluate(joined:source, scope:.all, subscriptions:[offering(Set(ids))], usage:[use("m7")], selectedID:"m12", now:now)
-        XCTAssertEqual(Array(r.shared.orderedIDs.prefix(2)), ["m7","m4"])
-        XCTAssertEqual(r.shared.fieldIDs.count,10);XCTAssertEqual(r.shared.chartIDs.count,6);XCTAssertEqual(r.shared.rowIDs.count,3)
-        XCTAssertEqual(r.instruments?.orderedModelIDs,r.shared.orderedIDs);XCTAssertEqual(r.instruments?.selectedModelID,"m12")
-        XCTAssertEqual(r.instruments?.recentUseAtByModel["m7"],now.addingTimeInterval(-1))
-        XCTAssertNil(r.unavailableReason)
-        let models = ids.map { InstrumentModel(id:$0, name:$0, efforts:[], recommended:nil, current:nil) }
-        let page = EffortPagePresentation(models:models, selection:r.instruments, scope:.all,
-            publication:.init(publicationID:"p",selectionRevision:"r"), publicationUsable:true)
-        XCTAssertEqual(page.orderedModelIDs,r.shared.orderedIDs)
-        XCTAssertEqual(page.selectedModelID,"m12");XCTAssertNil(page.unavailableReason)
-    }
-    func testRecentOlderSurvivesBothScopesWithoutPromotingFalseToRetirement() throws {
-        let source=try joined(models:[model("old",status:"older",selected:false),model("new")]);var a=SelectionAssembly()
-        for scope in [SelectionScope.all,.subscription("s")] {
-            let r=a.evaluate(joined:source,scope:scope,subscriptions:[offering(["old","new"])],usage:[use("old")],now:now)
-            XCTAssertEqual(r.shared.orderedIDs,["old","new"]);XCTAssertTrue(r.shared.models[0].isOlder)
-            XCTAssertEqual(r.shared.models[0].model.defaultSelected,false);XCTAssertEqual(r.instruments?.orderedModelIDs,r.shared.orderedIDs)
+    func feeds(_ models:[[String:Any]],bindings:[[String:Any]]?=nil,sessions:[[String:Any]]=[],
+               personal:Bool=true,usable:Bool=true,revision:String?="r",expiry:TimeInterval=300,
+               members:[[String:Any]]=[],lastGood:Bool=false) throws -> ModelSelectionFeeds {
+        let pub=try FeedDecoder.publication(publicationData(models,revision:revision,members:members))
+        var snapshot:PersonalSnapshot?
+        if personal {
+            let value:[String:Any] = ["schemaVersion":1,"kind":"modelplan.personal-snapshot",
+                "generatedAt":ISO8601DateFormatter().string(from:now),
+                "validUntil":ISO8601DateFormatter().string(from:now.addingTimeInterval(expiry)),
+                "publication":["publicationId":"p"],"subscriptions":bindings ?? [binding("s")],
+                "sessionRanking":["measure":"observed-output-tokens","recent7d":["top":sessions]]]
+            snapshot=try FeedDecoder.personal(JSONSerialization.data(withJSONObject:value))
         }
+        return .init(publication:pub,personal:snapshot,personalUsable:usable,publicIsLastGood:lastGood)
     }
-    func testBindingsCurrentConfigurationAndMissingOfferingsDoNotInventSelectionOrUsage() throws {
-        let source=try joined(models:[model("x"),model("old",status:"older")]);var a=SelectionAssembly()
-        for subs in [[],[offering(nil)],[offering(["x"],freshness:.stale)]] {
-            let r=a.evaluate(joined:source,scope:.all,subscriptions:subs,usage:[],now:now)
-            XCTAssertTrue(r.shared.orderedIDs.isEmpty);XCTAssertNotNil(r.unavailableReason)
-        }
-        let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["x","old"])],usage:[use("old",attribution:.sourceWideCurrentBinding)],now:now)
-        XCTAssertEqual(r.shared.orderedIDs,["x"])
+    func testAllUsesPublicDefaultsWithoutEntitlementAndOnlyAddsRecentOlder() throws {
+        let f=try feeds([model("default"),model("not-global",selected:false),model("old",status:"older",selected:false),model("preview",status:"preview")],
+            sessions:[session("native-old",owner:"s"),session("native-not-global",owner:"s")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["default","old"])
+        XCTAssertTrue(r.shared.models.first { $0.id=="old" }?.isOlder == true)
+        XCTAssertTrue(r.instruments?.recentUseAtByModel.isEmpty == true) // Window membership is not an exact model timestamp.
     }
-    func testExpiryLatchesAcrossRetainedJoinAndClockRollback() throws {
-        let source=try joined(models:[model("x")],expiry:10);var a=SelectionAssembly()
-        let offer=SubscriptionSelectionEvidence(.init(id:"s",availability:.available,offeredModelIDs:["x"]),evidence:.init(observedAt:now))
-        XCTAssertEqual(a.evaluate(joined:source,scope:.all,subscriptions:[offer],usage:[],now:now).shared.orderedIDs,["x"])
-        for time in [now.addingTimeInterval(10),now] {
-            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offer],usage:[],now:time)
-            XCTAssertTrue(r.shared.orderedIDs.isEmpty);XCTAssertNotNil(r.unavailableReason)
-        }
+    func testSingleUsesHarnessCompatibilityPlusActualUseAndLabelsNoEntitlement() throws {
+        let f=try feeds([model("global",sources:["other"]),model("tool",selected:false),model("observed",selected:false,sources:[])],
+            sessions:[session("observed",owner:"s")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["tool","observed"])
+        XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
+        XCTAssertEqual(r.modelAvailabilityNotes["observed"],"实际用过")
+        XCTAssertFalse(r.publicDefaultFallback);XCTAssertEqual(r.effortPage?.orderedModelIDs,r.shared.orderedIDs)
+        XCTAssertEqual(r.effortPage?.modelAvailabilityNotes,r.modelAvailabilityNotes)
     }
-    func testJoinMismatchAndMissingRevisionCannotBecomeTrustedInstrumentSelection() throws {
+    func testExplicitOwnershipWinsEvenWhenSourceHasTwoSubscriptions() throws {
+        let f=try feeds([model("default"),model("old",status:"older",selected:false)],bindings:[binding("s"),binding("t")],sessions:[session("native-old",owner:"s")])
+        var a=SelectionAssembly();let yes=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertTrue(yes.shared.orderedIDs.contains("old"));XCTAssertEqual(yes.sessionEvidence.first?.ownership,.explicitSubscription)
+        let no=a.evaluate(feeds:f,scope:.subscription("t"),now:now);XCTAssertFalse(no.shared.orderedIDs.contains("old"))
+        XCTAssertTrue(no.shared.orderedIDs.contains("default"))
+    }
+    func testUniqueSourceOwnershipIsMarkedAsFallbackNotExactOwnership() throws {
+        let f=try feeds([model("default"),model("old",status:"older",selected:false)],sessions:[session("native-old")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertTrue(r.shared.orderedIDs.contains("old"));XCTAssertEqual(r.sessionEvidence.first?.ownership,.uniqueSource)
+        XCTAssertTrue(r.instruments?.recentUseAtByModel.isEmpty == true)
+    }
+    func testAmbiguityOnlyDisablesOlderExceptionAndPreservesToolChoices() throws {
+        let f=try feeds([model("global",sources:["other"]),model("tool",selected:false),model("old",status:"older",selected:false)],
+            bindings:[binding("s"),binding("t")],sessions:[session("native-old")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["tool"]);XCTAssertFalse(r.publicDefaultFallback)
+        XCTAssertTrue(r.sessionEvidence.isEmpty);XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
+    }
+    func testMissingPersonalAndUnknownScopeUseVisiblePublicDefaults() throws {
+        let f=try feeds([model("default"),model("hidden",selected:false)],personal:false)
         var a=SelectionAssembly()
-        for source in [try joined(models:[model("x")],matches:false),try joined(models:[model("x")],revision:nil)] {
-            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["x"])],usage:[],now:now)
-            XCTAssertNotNil(r.unavailableReason)
-            if let injected=r.instruments { XCTAssertNotNil(injected.unavailableReason) }
+        for scope in [SelectionScope.all,.subscription("unknown")] {
+            let r=a.evaluate(feeds:f,scope:scope,now:now)
+            XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertEqual(r.selectionNotice,"按公开默认")
+            XCTAssertEqual(r.effortPage?.models.map(\.id),["default"])
+            XCTAssertEqual(r.effortPage?.selectionNotice,"按公开默认")
         }
     }
-    func testNullableFlagsAreNotInferredFromCurrentNamesScoresOrPicks() throws {
-        var row=model("x",status:nil,selected:nil);row["current"]=true;row["name"]="Newest";row["ability"]=100
-        let source=try joined(models:[row],members:[["id":"x","tags":["strongest"]]]);var a=SelectionAssembly()
-        let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["x"])],usage:[use("x")],now:now)
-        XCTAssertTrue(r.shared.orderedIDs.isEmpty);XCTAssertTrue(r.shared.issues.contains { $0.reason == .unknownLineageStatus })
+    func testMissingRevisionUsesRealPublicIdentityAndDoesNotClearCatalog() throws {
+        let f=try feeds([model("default",lineage:false)],personal:false,revision:nil)
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,language:.english,now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertNil(r.instruments?.publication.selectionRevision)
+        XCTAssertEqual(r.selectionNotice,"Public defaults");XCTAssertEqual(r.effortPage?.models.map(\.id),["default"])
     }
-    func testExplicitDominanceAndConflictingContextsAreNotRecomputed() throws {
-        let source=try joined(models:[model("tail"),model("regular"),model("ambiguous")],members:[
-            ["id":"tail","tags":["strongest"],"dominatedBy":["id":"regular","kind":"equivalent"]],
-            ["id":"ambiguous","dominatedBy":["id":"regular","kind":"weaker"]], ["id":"ambiguous"]]);var a=SelectionAssembly()
-        let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["tail","regular","ambiguous"])],usage:[],now:now)
-        XCTAssertEqual(r.shared.orderedIDs,["regular","tail"]);XCTAssertEqual(r.shared.models.last?.model.placement,.pricierTwin)
-        XCTAssertTrue(r.shared.issues.contains { $0.modelID == "ambiguous" && $0.reason == .conflictingModelID })
-    }
-    func testUnreadableDominanceIsQuarantinedInsteadOfPromotedThroughPick() throws {
-        let invalid: [Any] = [["id":"regular","kind":"future-kind"], ["kind":"weaker"],
-                              ["id":"regular"], "unexpected", [1,2], true]
-        for value in invalid {
-            let source=try joined(models:[model("bad"),model("regular")],members:[
-                ["id":"bad","tags":["strongest"],"dominatedBy":value]])
-            var a=SelectionAssembly()
-            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["bad","regular"])],usage:[],now:now)
-            XCTAssertEqual(r.shared.orderedIDs,["regular"])
-            XCTAssertEqual(r.mappingIssues.map(\.modelID),["bad"])
-            XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
-        }
-        for row: [String:Any] in [["id":"bad","tags":["strongest"]], ["id":"bad","tags":["strongest"],"dominatedBy":NSNull()]] {
-            let source=try joined(models:[model("bad")],members:[row]);var a=SelectionAssembly()
-            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["bad"])],usage:[],now:now)
-            XCTAssertEqual(r.shared.orderedIDs,["bad"]);XCTAssertTrue(r.mappingIssues.isEmpty)
+    func testExpiredPersonalCannotResurrectOlderUsageAfterClockRollbackButDefaultsStayVisible() throws {
+        let f=try feeds([model("default"),model("old",status:"older",selected:false)],sessions:[session("native-old",owner:"s")],expiry:10)
+        var a=SelectionAssembly();XCTAssertTrue(a.evaluate(feeds:f,scope:.all,now:now).shared.orderedIDs.contains("old"))
+        for time in [now.addingTimeInterval(10),now] {
+            let r=a.evaluate(feeds:f,scope:.all,now:time);XCTAssertEqual(r.shared.orderedIDs,["default"])
+            XCTAssertEqual(r.selectionNotice,"按公开默认")
         }
     }
-
+    func testUnknownAliasesAndZeroUseDoNotCreateOlderExceptions() throws {
+        let f=try feeds([model("default"),model("old",status:"older",selected:false)],
+            sessions:[session("unknown",owner:"s"),session("native-old",owner:"s",tokens:0)])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertTrue(r.sessionEvidence.isEmpty)
+    }
+    func testNoPublicationHasExplicitMessageRatherThanInventedModelOrBlankPage() {
+        var a=SelectionAssembly();let r=a.evaluate(feeds:.init(publication:nil,personal:nil,personalUsable:false),scope:.all,now:now)
+        XCTAssertTrue(r.shared.orderedIDs.isEmpty);XCTAssertFalse(r.emptyStateMessage.isEmpty)
+        XCTAssertEqual(r.selectionNotice,"按公开默认");XCTAssertNil(r.instruments)
+    }
+    func testPublishedFleetCapsAndHighlightShareOneOrder() throws {
+        let ids=(0..<13).map { "m"+String($0) };let f=try feeds(ids.map { model($0) },personal:false)
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,selectedID:"m12",now:now)
+        XCTAssertEqual(r.shared.orderedIDs,ids);XCTAssertEqual(r.shared.fieldIDs,Array(ids.prefix(10)))
+        XCTAssertEqual(r.shared.chartIDs,Array(ids.prefix(6)));XCTAssertEqual(r.shared.rowIDs,Array(ids.prefix(3)))
+        XCTAssertEqual(r.instruments?.orderedModelIDs,ids);XCTAssertEqual(r.effortPage?.selectedModelID,"m12")
+    }
+    func testUnreadableDominanceStillCannotBePromotedByFallback() throws {
+        let f=try feeds([model("bad"),model("default")],personal:false,
+            members:[["id":"bad","tags":["strongest"],"dominatedBy":["id":"default","kind":"future"]]])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
+    }
 }
