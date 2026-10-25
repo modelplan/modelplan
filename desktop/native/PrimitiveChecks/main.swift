@@ -18,6 +18,11 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         if CommandLine.arguments.contains("--native-menu") { try nativeMenuCheck(); return }
         if CommandLine.arguments.contains("--live-image-cadence") { try liveCadenceCheck(imageFrames: true); return }
         if CommandLine.arguments.contains("--live-cadence") { try liveCadenceCheck(); return }
+        if CommandLine.arguments.contains("--caution-recurrence") {
+            do { try cautionRecurrenceChecks(); print("PASS acknowledged severity recurrence regression") }
+            catch { fputs("FAIL caution recurrence: \(error)\n", stderr); exit(1) }
+            return
+        }
         NSApplication.shared.setActivationPolicy(.prohibited)
         let amber = CautionCondition(id: "a", severity: .amber), red = CautionCondition(id: "a", severity: .red)
         var state = CautionState(); state.update([amber], now: 0, reduceMotion: false)
@@ -29,6 +34,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         state.update([], now: 20, reduceMotion: false); try check(state.mode == .off, "clear")
         state.update([amber], now: 24, reduceMotion: false); try check(state.deadline == 34, "recurrence")
         state.validate(now: 25, reduceMotion: true); try check(state.mode == .steadyUnacknowledged && state.deadline == nil, "reduce motion")
+        try cautionRecurrenceChecks()
         print("PASS F16 caution stable identities, press/worsening/timeout/clear/recurrence/reduced motion")
 
         try pooledImageChecks()
@@ -309,4 +315,40 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     try check(retainedLayer.contents == nil && retainedLayer.animationKeys()?.isEmpty != false, "deinit released budget before CA references")
     pool.purgeUnleased(); try check(pool.decodedBytes == 0, "orphan atlas remained pinned")
     print("PASS reentrant source reservation and conservative MainActor teardown of surviving layers")
+}
+
+
+func cautionRecurrenceChecks() throws {
+    let amber = CautionCondition(id: "same-episode", severity: .amber)
+    let red = CautionCondition(id: "same-episode", severity: .red)
+    let other = CautionCondition(id: "other-episode", severity: .red)
+    for reduced in [false, true] {
+        var state = CautionState()
+        state.update([red, other], now: 0, reduceMotion: reduced)
+        state.press()
+        state.update([amber, other], now: 1, reduceMotion: reduced)
+        try check(state.mode == .acknowledged, "improvement must preserve acknowledgement")
+        state.update([red, other], now: 2, reduceMotion: reduced)
+        let expected: CautionState.Mode = reduced ? .steadyUnacknowledged : .blinking
+        try check(state.mode == expected, "worsening must be unacknowledged again")
+        let deadline = state.deadline
+        state.update([red, other], now: 3, reduceMotion: reduced)
+        try check(state.mode == expected && state.deadline == deadline,
+                  "old red acknowledgement cancelled or restarted worsening episode")
+        if !reduced {
+            try check(deadline == 12, "worsening deadline")
+            state.validate(now: 12, reduceMotion: false)
+            state.update([red, other], now: 13, reduceMotion: false)
+            try check(state.mode == .steadyUnacknowledged, "timeout must not revive an old acknowledgement")
+        }
+        state.update([other], now: 14, reduceMotion: reduced)
+        try check(state.mode == .acknowledged, "worsening must not erase another episode's acknowledgement")
+        state.update([red, other], now: 15, reduceMotion: reduced)
+        try check(state.mode == expected, "removed episode returning is new")
+        state.press()
+        state.update([red, other], now: 16, reduceMotion: reduced)
+        try check(state.mode == .acknowledged && state.deadline == nil, "new press must acknowledge the current episode")
+        state.update([], now: 17, reduceMotion: reduced)
+        try check(state.mode == .off, "all clear")
+    }
 }
