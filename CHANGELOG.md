@@ -6,6 +6,17 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.39, Codex plugin 0.15.31 and Claude Code plugin 0.7.30 (2026-10-25)
+
+- A weekly default-effort suggestion from the user's own local quota history. After three
+  comparable finished weekly cycles, `modelplan history` and the hooks' user-facing message may
+  suggest one published effort step up (often well under the limit) or down (often at the
+  limit), with the published reference-cost ratio. Nothing leaves the machine; the agent never
+  sees it.
+- `modelplan history --effort-suggestion dismiss|off|on`, and `MODELPLAN_EFFORT_SUGGESTION=off`.
+- `desktop --json` adds an optional `effortSuggestion` (contract version stays 1).
+- Both plugins pin CLI v0.5.39 and its published archive checksums.
+
 ## CLI v0.5.38, Codex plugin 0.15.30 and Claude Code plugin 0.7.29 (2026-10-25)
 
 - `modelplan publication --json` passes through the published lineage selection results:
