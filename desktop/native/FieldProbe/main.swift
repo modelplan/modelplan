@@ -17,6 +17,7 @@ import ImageIO
     var events: [[String: Any]] = [], cycle = 0, captured = false, settingsOpen = false
     var timer: Timer?, closeTimer: Timer?, occlusionTimer: Timer?
     var pressureReleased = false
+    var watchdogOnly = false
     func emit(_ name: String, _ data: [String: Any] = [:]) {
         var d = data; d["event"] = name; d["seconds"] = Double(started.duration(to: .now).components.seconds) + Double(started.duration(to: .now).components.attoseconds)/1e18
         d["cycle"] = cycle; events.append(d)
@@ -29,19 +30,26 @@ import ImageIO
         let args = CommandLine.arguments
         func value(_ key: String) -> String? { args.firstIndex(of:key).flatMap { $0+1 < args.count ? args[$0+1] : nil } }
         guard let r = value("--resources"), let o = value("--output") else { NSApp.terminate(nil); return }
+        watchdogOnly = args.contains("--watchdog")
         root = URL(fileURLWithPath:r); out = URL(fileURLWithPath:o)
         try? FileManager.default.createDirectory(at:out, withIntermediateDirectories:true)
         NSApp.setActivationPolicy(.accessory)
         window = NSWindow(contentRect:NSRect(x:120,y:120,width:800,height:500),styleMask:[.titled,.closable],backing:.buffered,defer:false)
         window.title = "ModelPlan — B05a field resource probe"; window.isReleasedWhenClosed = false; window.delegate = self
+        if watchdogOnly { window.level = .floating }
         window.contentView = NSView(frame:window.contentLayoutRect); window.orderFront(nil)
         field.onEvent = { [weak self] kind,d in
             guard let self else { return }; self.emit(kind,d)
+            if self.watchdogOnly && kind == "released" {
+                self.emit("closed", ["watchdog": (d["reason"] as? String) == "idle-watchdog"])
+                self.later(31) { self.emit("finished"); NSApp.terminate(nil) }
+            }
             if kind == "settled", !self.captured {
                 self.captured = true
                 self.field.capture(to:self.out.appendingPathComponent("still.png")) { ok in self.emit("capture",["passed":ok,"decodedBytes":self.field.decodedStillBytes]) }
                 self.later(3) { self.field.send("stats") }
-                self.later(4) { self.field.dispose(reason:"cycle-close"); self.emit("closed") ; self.later(self.cycle == 1 ? 181 : 31) { self.nextCycle() } }
+                if self.watchdogOnly { self.later(165) { self.field.send("stats") } }
+                else { self.later(4) { self.field.dispose(reason:"cycle-close"); self.emit("closed") ; self.later(self.cycle == 1 ? 181 : 31) { self.nextCycle() } } }
             }
         }
         if value("--verify-still") == "yes" {

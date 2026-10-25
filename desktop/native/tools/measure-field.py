@@ -3,6 +3,7 @@
 import pathlib,subprocess,time,ctypes,json,os,hashlib,argparse,shutil
 parser=argparse.ArgumentParser(description='B05a own-app + positively associated WebKit resource proof')
 parser.add_argument('app');parser.add_argument('resources');parser.add_argument('output')
+parser.add_argument('--watchdog',action='store_true');parser.add_argument('--simulate-pressure',action='store_true')
 args=parser.parse_args()
 root=pathlib.Path(args.output).resolve();root.mkdir(parents=True,exist_ok=False)
 app=pathlib.Path(args.app).resolve();exe=app/'Contents/MacOS/ModelPlanFieldProbe'
@@ -23,7 +24,7 @@ def helpers():
 lib.responsibility_get_pid_responsible_for_pid.argtypes=[ctypes.c_int];lib.responsibility_get_pid_responsible_for_pid.restype=ctypes.c_int
 known={};rows=[]
 
-subprocess.run(['open','-n','-a',str(app),'--args','--resources',str(resources),'--output',str(root)],check=True)
+subprocess.run(['open','-n','-a',str(app),'--args','--resources',str(resources),'--output',str(root)]+(['--watchdog'] if args.watchdog else []),check=True)
 pid=None
 for _ in range(100):
  for line in subprocess.check_output(['ps','-axo','pid,command'],text=True).splitlines():
@@ -43,7 +44,7 @@ class Running:
   while self.poll() is None and time.monotonic()<until:time.sleep(.1)
 child=Running(pid)
 idle=subprocess.Popen(['caffeinate','-d','-i','-t','1100','-w',str(child.pid)])
-start=time.monotonic()
+start=time.monotonic();pressure_attempted=False
 try:
  while child.poll() is None and time.monotonic()-start<1010:
   now=time.monotonic()-start
@@ -52,6 +53,12 @@ try:
   native=usage(child.pid);aux=[dict(u,kind=n.split('.')[-1]) for p,n in known.items() if (u:=usage(p)) is not None]
   rows.append({'seconds':now,'native':native,'helpers':aux,'aggregateBytes':native['bytes']+sum(v['bytes'] for v in aux)})
   (root/'samples.json').write_text(json.dumps({'schemaVersion':1,'nativePID':child.pid,'nativeResponsiblePID':lib.responsibility_get_pid_responsible_for_pid(child.pid),'helperAttribution':'responsibility_get_pid_responsible_for_pid equals the separately launched application PID','executableSHA256':hashlib.sha256(exe.read_bytes()).hexdigest(),'rows':rows}))
+  if args.simulate_pressure and not pressure_attempted and (root/'events.json').exists():
+   events=json.loads((root/'events.json').read_text())
+   if any(e['event']=='capture' and e.get('passed') for e in events) and not any(e['event']=='released' for e in events):
+    pressure_attempted=True
+    result=subprocess.run(['memory_pressure','-S','-l','warn','-s','1'],capture_output=True,text=True,timeout=10)
+    (root/'pressure.json').write_text(json.dumps({'attemptedWhileFieldOpen':True,'mode':'simulated warning, no allocation, one second','returnCode':result.returncode,'denied':result.returncode!=0,'stderr':result.stderr},indent=2))
   time.sleep(1)
  if child.poll() is None:child.terminate()
  child.wait(timeout=10)
