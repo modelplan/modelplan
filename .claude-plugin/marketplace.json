@@ -1,9 +1,9 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "modelplan",
-  "description": "Model Plan for Claude Code: choose models and efforts from Model Plan's verified public data.",
+  "description": "ModelPlan for Claude Code: choose models and efforts from ModelPlan's verified public data.",
   "owner": {
-    "name": "Model Plan",
+    "name": "ModelPlan",
     "url": "https://modelplan.ai"
   },
   "plugins": [

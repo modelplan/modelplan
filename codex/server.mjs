@@ -96,7 +96,7 @@ export function makeServer() {
       content: [{ type: "text", text: ok ? `modelplan CLI ${install.version} ready: ${install.path}` : `modelplan CLI not fetched (${install.status}${install.reason ? ": " + install.reason : ""}).` }] };
   });
   entry("open_model_panel", "Effort & quota", "Open the ModelPlan effort and quota panel beside this conversation.", "thread", "thread");
-  entry("open_model_board", "Model Plan", "Open the ModelPlan board from the sidebar.", "global", "global");
+  entry("open_model_board", "ModelPlan", "Open the ModelPlan board from the sidebar.", "global", "global");
   return s;
 }
 

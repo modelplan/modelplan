@@ -1,7 +1,7 @@
 [package]
 name = "modelplan-desktop"
 version = "0.1.1"
-description = "Model Plan menu bar app"
+description = "ModelPlan menu bar app"
 edition = "2021"
 rust-version = "1.90"
 license = "MIT"

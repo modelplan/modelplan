@@ -53,4 +53,4 @@ createServer(async (req, res) => {
   } catch (e) {
     res.writeHead(500).end(String(e?.message ?? e));
   }
-}).listen(port, '127.0.0.1', () => console.log(`Model Plan desktop UI: http://127.0.0.1:${port}/ (?fixture=1 for the golden snapshot)`));
+}).listen(port, '127.0.0.1', () => console.log(`ModelPlan desktop UI: http://127.0.0.1:${port}/ (?fixture=1 for the golden snapshot)`));

@@ -1,10 +1,10 @@
-# Model Plan Codex 插件
+# ModelPlan Codex 插件
 
 在 Codex 桌面端用紧凑看板比较 GPT 模型和推理档位；Codex CLI 返回相同口径的文字。[English](README.md)
 
 ## 安装
 
-需要支持 `codex plugin` 命令的 Codex。运行依赖和字体已经打包，无需 npm 安装、API Key 或 Model Plan 账号。
+需要支持 `codex plugin` 命令的 Codex。运行依赖和字体已经打包，无需 npm 安装、API Key 或 ModelPlan 账号。
 
 ```sh
 codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
@@ -13,13 +13,13 @@ codex plugin add modelplan-codex@modelplan
 
 1. **添加插件源。** Codex 会克隆本仓库。两个 `--sparse` 路径只检出 marketplace 文件和本插件，约 2 MB，不下载文档和媒体文件。下载过程、进度输出和重试由 Codex 自己控制，网络慢时可能长时间没有输出。失败时重新执行同一条命令即可；成功后再次执行只会提示已添加。若中断留下了不完整的源，先执行 `codex plugin marketplace remove modelplan` 再重新添加。
 2. **安装插件。** Codex 把插件复制到它的插件缓存；重复执行会重新安装同一版本。
-3. **检查安装**（可选）：在 Codex 里说“检查 Model Plan 插件安装”，或自己运行检查。已安装的版本号可用 `codex plugin list` 查看：
+3. **检查安装**（可选）：在 Codex 里说“检查 ModelPlan 插件安装”，或自己运行检查。已安装的版本号可用 `codex plugin list` 查看：
 
    ```sh
    node ~/.codex/plugins/cache/modelplan/modelplan-codex/<版本>/doctor.cjs --lang zh
    ```
 
-然后输入“打开 Model Plan 看板”。建议在新任务中使用；已打开的任务也可能已经加载插件。也可以调用 `model-dashboard` 技能。在对话里请求时，看板以紧凑卡片显示在对话内。想让它常驻在聊天右侧，请在对话的侧边面板中打开 **Effort & quota**：这个入口由你手动打开，工具调用打不开它，每个对话各有一份。侧栏中的 **Model Plan** 会单独打开看板。Codex CLI 显示相同口径的文字比较。
+然后输入“打开 ModelPlan 看板”。建议在新任务中使用；已打开的任务也可能已经加载插件。也可以调用 `model-dashboard` 技能。在对话里请求时，看板以紧凑卡片显示在对话内。想让它常驻在聊天右侧，请在对话的侧边面板中打开 **Effort & quota**：这个入口由你手动打开，工具调用打不开它，每个对话各有一份。侧栏中的 **ModelPlan** 会单独打开看板。Codex CLI 显示相同口径的文字比较。
 
 ### 安装检查
 
@@ -92,11 +92,11 @@ codex plugin marketplace remove modelplan
 - **速度模式**（⚡ Fast、⚡⚡ Ultrafast）：能力不变。成本格改为“额度”，是套餐额度消耗的估算值，等于 API 参考任务成本倍率乘以该模式公布的套餐额度倍率；它只在同一模型内成立，比较基准是本模型 ★ 推荐档的标准模式。任务耗时和网站一样，按公布的生成提速折算，并标为估算：只有生成变快，工具、网络和测试不会变快，实际省时更少；没有公布提速时按标准模式显示。生成速度单独列出：Codex Fast 标“约快 1.5 倍”，Ultrafast 标“最多快 N 倍”的上限，没有公布时标为未公布。每个速度模式都附上积分倍率、可用套餐和官方说明链接。读数、迷你图和详情图始终处于同一模式。
 - 公开 Codex 重置公告，保留来源、范围和时间精度，它们不是你自己的额度读数。
 
-使用与 [Model Plan](https://modelplan.ai/effort) 相同的核验发布数据，不在客户端重新打分、不调用模型推理、不购买套餐、不切换当前会话模型。缓存、读取失败和保留上一份快照的状态会明确显示。模型名单是已评估的 GPT 集合，不是宿主选项的完整清单。
+使用与 [ModelPlan](https://modelplan.ai/effort) 相同的核验发布数据，不在客户端重新打分、不调用模型推理、不购买套餐、不切换当前会话模型。缓存、读取失败和保留上一份快照的状态会明确显示。模型名单是已评估的 GPT 集合，不是宿主选项的完整清单。
 
 ## 开发与内部传输
 
-`mcp.json` 配置内部 stdio 传输，提供 `open_model_dashboard`（对话内卡片）、`get_model_dashboard`（文字和数据），以及由用户打开的入口 `open_model_panel`（对话侧边面板）和 `open_model_board`（侧栏）。每个工具只声明一个入口，每个位置一个界面资源；Codex 运行 `launch.cjs`，由它在兼容的 Node 上启动已打包的 `server.bundle.mjs`。界面内嵌样式和字体，不依赖第三方浏览器请求。正常使用仅读取 Model Plan 公开发布端点；本地缓存只存公共数据，不收集遥测或凭证。
+`mcp.json` 配置内部 stdio 传输，提供 `open_model_dashboard`（对话内卡片）、`get_model_dashboard`（文字和数据），以及由用户打开的入口 `open_model_panel`（对话侧边面板）和 `open_model_board`（侧栏）。每个工具只声明一个入口，每个位置一个界面资源；Codex 运行 `launch.cjs`，由它在兼容的 Node 上启动已打包的 `server.bundle.mjs`。界面内嵌样式和字体，不依赖第三方浏览器请求。正常使用仅读取 ModelPlan 公开发布端点；本地缓存只存公共数据，不收集遥测或凭证。
 
 ```sh
 cd codex

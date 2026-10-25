@@ -1,9 +1,9 @@
 <div align="center">
 
-<a href="https://modelplan.ai"><img src="docs/assets/banner.jpg" alt="Model Plan: which coding model, at which effort, on which plan" width="100%"></a>
+<a href="https://modelplan.ai"><img src="docs/assets/banner.jpg" alt="ModelPlan: which coding model, at which effort, on which plan" width="100%"></a>
 
 **Which AI coding model should you use, at which reasoning effort, and is one more step up worth it?**<br>
-Model Plan answers from live, checkable public data, on the web and inside Claude Code, Codex and your terminal.
+ModelPlan answers from live, checkable public data, on the web and inside Claude Code, Codex and your terminal.
 
 [![Release](https://img.shields.io/github/v/release/modelplan/modelplan?style=flat-square&color=df604c&label=release)](https://github.com/modelplan/modelplan/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/modelplan/modelplan/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/modelplan/modelplan/actions/workflows/ci.yml)
@@ -16,7 +16,7 @@ Model Plan answers from live, checkable public data, on the web and inside Claud
 
 </div>
 
-## Why Model Plan
+## Why ModelPlan
 
 Most leaderboards compare every model at its **top** setting. But inside one model, going from Low to Max often costs several times more and takes several times longer, for a few points of ability. What you actually run is a model *at an effort*.
 
@@ -66,7 +66,7 @@ codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
 codex plugin add modelplan-codex@modelplan
 ```
 
-Ask Codex to *"Open the Model Plan dashboard"*. Needs Node.js 22+, found automatically when Codex has one. Setup check, optional CLI and uninstall: [more](codex/)
+Ask Codex to *"Open the ModelPlan dashboard"*. Needs Node.js 22+, found automatically when Codex has one. Setup check, optional CLI and uninstall: [more](codex/)
 
 </details>
 
@@ -122,7 +122,7 @@ Move the throttle and see ability, cost and task time for every native effort; s
 
 **Codex dashboard**: GPT models at their ★ effort, the effort curves with a ⚡ switch, your Codex quota and public reset notices.
 
-<img src="docs/assets/codex-en.jpg" alt="Model Plan dashboard in Codex">
+<img src="docs/assets/codex-en.jpg" alt="ModelPlan dashboard in Codex">
 
 </td>
 </tr>
@@ -134,7 +134,7 @@ Move the throttle and see ability, cost and task time for every native effort; s
 
 ## Not just another leaderboard
 
-| | Typical leaderboard | Model Plan |
+| | Typical leaderboard | ModelPlan |
 | --- | --- | --- |
 | Setting compared | each model's top setting | each model's ★ recommended effort, plus every other effort |
 | Cost | price per million tokens | cost of one reference coding task, at every effort |
@@ -148,7 +148,7 @@ Move the throttle and see ability, cost and task time for every native effort; s
 
 ```mermaid
 flowchart LR
-  S["Public sources<br/>benchmarks · vendor pages · plan pages · news"] --> P["Model Plan publication<br/>verified, content-hashed, rebuilt every few hours"]
+  S["Public sources<br/>benchmarks · vendor pages · plan pages · news"] --> P["ModelPlan publication<br/>verified, content-hashed, rebuilt every few hours"]
   P --> W["modelplan.ai"]
   P --> A["Read-only API<br/>/v1/client · llms.txt"]
   A --> K["Skill"]
@@ -159,7 +159,7 @@ flowchart LR
   Q --> K
 ```
 
-Every client reads only Model Plan's verified public publication and the quota files your harness already writes locally. Rankings, verdicts and multipliers come from the publication; clients never compute their own. Formulas and sources: [METHODOLOGY.md](METHODOLOGY.md).
+Every client reads only ModelPlan's verified public publication and the quota files your harness already writes locally. Rankings, verdicts and multipliers come from the publication; clients never compute their own. Formulas and sources: [METHODOLOGY.md](METHODOLOGY.md).
 
 **Principles:** open source (MIT) · read-only · anonymous, no account, no telemetry · quota is read on your machine only · it never switches your model or effort for you.
 
@@ -218,7 +218,7 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 
 | | Directory | What it is |
 | --- | --- | --- |
-| **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
+| **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
 | Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session |
 | Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
 | Desktop app (preview) | [`desktop/`](desktop/) | A macOS menu bar app: the quota left and the current hint in the menu bar, a popover with your sessions, quota and effort curves, and a notification once per piece of advice. Unsigned builds for now |
@@ -230,10 +230,10 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 
 Wrong price, quota, effort or news item? [Report a data problem](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml); the **Report** links on modelplan.ai fill in the page and item for you. Bugs, ideas and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).
 
-If Model Plan saves you quota or money, a ⭐ helps others find it.
+If ModelPlan saves you quota or money, a ⭐ helps others find it.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=modelplan/modelplan&type=Date)](https://star-history.com/#modelplan/modelplan&Date)
 
 ## License
 
-Code: [MIT](LICENSE). Open data: [per-file licenses](data/LICENSE), crediting Model Plan; the new original-data publication uses CC BY-SA 4.0, historical CC BY 4.0 grants remain valid, and third-party figures keep their sources' terms. The official desktop visuals in [`desktop/official-visuals/`](desktop/official-visuals/) are under their own [reserved license](desktop/official-visuals/LICENSE.md), not MIT; branding is separate too: [licensing map](LICENSING.md). Model Plan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.
+Code: [MIT](LICENSE). Open data: [per-file licenses](data/LICENSE), crediting ModelPlan; the new original-data publication uses CC BY-SA 4.0, historical CC BY 4.0 grants remain valid, and third-party figures keep their sources' terms. The official desktop visuals in [`desktop/official-visuals/`](desktop/official-visuals/) are under their own [reserved license](desktop/official-visuals/LICENSE.md), not MIT; branding is separate too: [licensing map](LICENSING.md). ModelPlan is independent and not affiliated with any model vendor; vendor names and marks belong to their owners.

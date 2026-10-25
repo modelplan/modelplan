@@ -21,7 +21,7 @@ import ModelPlanCore
     private let status = NSTextField(labelWithString: "Not connected")
     private let detail = NSTextField(wrappingLabelWithString: "")
     init() {
-        let title = NSTextField(labelWithString:"Model Plan Community")
+        let title = NSTextField(labelWithString:"ModelPlan Community")
         title.font = .systemFont(ofSize:18, weight:.semibold)
         let intel = NSTextField(wrappingLabelWithString:"Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter")
         intel.font = .systemFont(ofSize:11); intel.textColor = .secondaryLabelColor

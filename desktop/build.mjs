@@ -55,7 +55,7 @@ for (const f of visual
 const branding = visual
   ? JSON.parse(await readFile(resolve(visual, "branding.json"), "utf8"))
   : {
-      name: "Model Plan Community",
+      name: "ModelPlan Community",
       edition: "community",
       licenseNotice:
         "MIT community code. Branding is not an endorsement grant.",

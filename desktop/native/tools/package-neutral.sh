@@ -24,7 +24,7 @@ for architecture in arm64 x86_64; do
     mkdir "$output_dir/cli-$architecture"
     tar -xzf "$archive_dir/$archive" -C "$output_dir/cli-$architecture"
 done
-app="$output_dir/Model Plan Community.app"
+app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/release/ModelPlanCommunity" \
     "$output_dir/build-x86_64/x86_64-apple-macosx/release/ModelPlanCommunity" -output "$app/Contents/MacOS/ModelPlanCommunity"
@@ -33,7 +33,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleName</key><string>Model Plan Community</string>
+<key>CFBundleName</key><string>ModelPlan Community</string>
+<key>CFBundleDisplayName</key><string>ModelPlan Community</string>
 <key>CFBundleIdentifier</key><string>org.modelplan.community.swift.scaffold</string>
 <key>CFBundleExecutable</key><string>ModelPlanCommunity</string>
 <key>CFBundlePackageType</key><string>APPL</string>

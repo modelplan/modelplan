@@ -1,4 +1,4 @@
-// Mirrors Model Plan's open data into data/. The data is edited upstream; this repo gets an exact,
+// Mirrors ModelPlan's open data into data/. The data is edited upstream; this repo gets an exact,
 // checked copy of the allowlisted files (https://modelplan.ai/open-data.json), one pull request per change.
 //   node scripts/data-sync.mjs [url|file] [--summary out.md]   write data/ from the export
 //   node scripts/data-sync.mjs --check                          data/ matches data/manifest.json (CI)
@@ -116,7 +116,7 @@ export async function sync(source = SOURCE) {
 
 export function summary({ version, previous, changes }) {
   return [
-    `Open data from Model Plan ${version}${previous ? ` (was ${previous})` : ""}, mirrored from [modelplan.ai/open-data.json](${SOURCE}).`,
+    `Open data from ModelPlan ${version}${previous ? ` (was ${previous})` : ""}, mirrored from [modelplan.ai/open-data.json](${SOURCE}).`,
     "",
     "| File | Change |",
     "| --- | --- |",
@@ -143,11 +143,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   if (args[0] === "--check") {
     const m = await check();
-    console.log(m.version ? `data/ matches the mirror of Model Plan ${m.version} (${m.files.length} files)` : "data/ has not been synced yet");
+    console.log(m.version ? `data/ matches the mirror of ModelPlan ${m.version} (${m.files.length} files)` : "data/ has not been synced yet");
   } else {
     const at = args.indexOf("--summary"), out = at >= 0 ? args.splice(at, 2)[1] : null;
     const result = await sync(args[0] ?? SOURCE);
     if (out) await writeFile(out, summary(result));
-    console.log(`${result.changes.length} file${result.changes.length === 1 ? "" : "s"} changed (Model Plan ${result.version})`);
+    console.log(`${result.changes.length} file${result.changes.length === 1 ? "" : "s"} changed (ModelPlan ${result.version})`);
   }
 }

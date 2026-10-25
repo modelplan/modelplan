@@ -183,7 +183,7 @@ async function host(row) {
   const callable = installed && st('mcp') === 'ok' && (st('data') === 'ok' || st('data') === 'warn');
   const summary = {
     installed, toolsCallable: callable, panelShown: 'unverified',
-    panelNote: T('面板是否实际显示只能在 Codex 桌面端确认：新任务中输入“打开 Model Plan 看板”看对话内卡片；在对话侧边面板打开“Effort & quota”看右侧面板。面板底部“数据与依据”里的“显示：”一行是宿主报告的模式和宽度。', 'Whether the panel actually renders can only be confirmed in the Codex desktop app: ask "Open the ModelPlan model dashboard" for the in-chat card, and open "Effort & quota" from the conversation side panel for the panel beside the chat. The "Display:" line under Data & basis shows the mode and widths the host reported.'),
+    panelNote: T('面板是否实际显示只能在 Codex 桌面端确认：新任务中输入“打开 ModelPlan 看板”看对话内卡片；在对话侧边面板打开“Effort & quota”看右侧面板。面板底部“数据与依据”里的“显示：”一行是宿主报告的模式和宽度。', 'Whether the panel actually renders can only be confirmed in the Codex desktop app: ask "Open the ModelPlan model dashboard" for the in-chat card, and open "Effort & quota" from the conversation side panel for the panel beside the chat. The "Display:" line under Data & basis shows the mode and widths the host reported.'),
   };
   if (flag('--json')) { process.stdout.write(JSON.stringify({ pluginVersion: version, summary, checks }, null, 2) + '\n'); }
   else {

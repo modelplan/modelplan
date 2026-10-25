@@ -1,4 +1,4 @@
-# Model Plan reference
+# ModelPlan reference
 
 Read the lookup section for every query. Read time-of-use or personal state only when that branch matters. All examples use public IDs; substitute IDs discovered from the response, not guessed family aliases.
 
@@ -44,7 +44,7 @@ Use one publication for joined numbers. Supplementary requests should match `pub
 | `data.units`                             | `ability=websiteAbility`, `cost=usdPerReferenceTask`, `time=taskTimeCrossModel`                      |
 | `models[].id`, `developerId`, `name`     | Exact model-version identity and研发厂商; not a plan/channel                                         |
 | `current`                                | Published current selection; not a guarantee of account entitlement                                  |
-| `recommended`                            | Model Plan native ★ effort ID, or null; no model-specific fallback invented by the Skill             |
+| `recommended`                            | ModelPlan native ★ effort ID, or null; no model-specific fallback invented by the Skill             |
 | `harnessIds`, `harnessEvidence`          | Reviewed exact aliases, qualification and required endpoint conditions; not proof of personal access |
 | `efforts[].effort`, `label`, `available` | Native measured/available configuration in this view; do not invent missing efforts                  |
 | `ability`, `abilityBasis`                | Published points; not a percentage success rate. Never use `abilityIndex` instead                    |
@@ -53,7 +53,7 @@ Use one publication for joined numbers. Supplementary requests should match `pub
 
 The Go CLI uses the same model keys; its `cost` is USD, not the old unitless expense index. Null is unknown; real zero remains zero. A zero-cost configuration cannot define a cost ratio. For effort comparisons, show each configuration's own ability/cost. Compute simple differences/ratios only with a shared basis and positive denominator; identify the baseline, and do not modify ★. Compare time only with compatible source, cohort and boundary; an estimated ratio remains estimated. Do not turn a benchmark time into a promised completion deadline.
 
-★ and lineup tags are Model Plan's published advisory policy, not the vendor's official effort default or a task-fit guarantee.
+★ and lineup tags are ModelPlan's published advisory policy, not the vendor's official effort default or a task-fit guarantee.
 
 `lineups[]`: `developerId`, `costBasisId`, `method`, `tie`, `baseline`, `frontier`, `steps`, `members`.
 
@@ -145,7 +145,7 @@ Measured speed (CLI 0.5.23+, not in the Skill reader): `modelplan history --json
 
 How the user turns readings on, when they ask or when it would change the advice:
 
-- **Claude Code**: install the Model Plan plugin and run `/modelplan:statusline` (or set `"statusLine": {"type": "command", "command": "<full path>/modelplan statusline"}`; the full path, because Claude Code may run it with a shorter PATH). A user who keeps their own status line can record without displaying: `input=$(cat); printf %s "$input" | <full path>/modelplan statusline --record-only` at the top of their script. To show the user a sample line, use `statusline --preview` (CLI 0.5.6+), which records nothing.
+- **Claude Code**: install the ModelPlan plugin and run `/modelplan:statusline` (or set `"statusLine": {"type": "command", "command": "<full path>/modelplan statusline"}`; the full path, because Claude Code may run it with a shorter PATH). A user who keeps their own status line can record without displaying: `input=$(cat); printf %s "$input" | <full path>/modelplan statusline --record-only` at the top of their script. To show the user a sample line, use `statusline --preview` (CLI 0.5.6+), which records nothing.
 - **Codex**: nothing to set up. Readings appear after the first turn of a ChatGPT-login session.
 - **Other plans**: create `~/.config/modelplan/local.json` with the schema below. Do not create or overwrite it unless asked.
 

@@ -1,10 +1,10 @@
-# Model Plan for Codex
+# ModelPlan for Codex
 
 A compact, read-only GPT effort dashboard for Codex desktop, with a text fallback for Codex CLI. [中文](README.zh-CN.md)
 
 ## Install
 
-You need a Codex version with `codex plugin` commands. Runtime dependencies and fonts are bundled: no npm install, API key or Model Plan account.
+You need a Codex version with `codex plugin` commands. Runtime dependencies and fonts are bundled: no npm install, API key or ModelPlan account.
 
 ```sh
 codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
@@ -13,13 +13,13 @@ codex plugin add modelplan-codex@modelplan
 
 1. **Add the source.** Codex clones this repository. The two `--sparse` paths check out only the marketplace file and this plugin, about 2 MB instead of the whole repository with its docs and media. The download, its progress output and retries are Codex's own; on a slow connection it can be quiet for a while. If it fails, run the same command again. Running it again after success only reports that the marketplace is already added. If an interrupted attempt left a broken source, run `codex plugin marketplace remove modelplan` and add it again.
 2. **Install the plugin.** Codex copies it into its plugin cache. Running it again reinstalls the same version.
-3. **Check the setup** (optional): ask Codex *"Check the Model Plan plugin setup"*, or run the check yourself. `codex plugin list` shows the installed version:
+3. **Check the setup** (optional): ask Codex *"Check the ModelPlan plugin setup"*, or run the check yourself. `codex plugin list` shows the installed version:
 
    ```sh
    node ~/.codex/plugins/cache/modelplan/modelplan-codex/<version>/doctor.cjs
    ```
 
-Then ask **"Open the Model Plan dashboard"**. A new task is the reliable place to start; a task that was already open may pick the plugin up as well. You can also invoke the `model-dashboard` skill. Asked in the chat, the dashboard appears as a compact card in the conversation. To keep it beside the chat, open **Effort & quota** from the conversation's side panel: that thread entry is opened by you, not by a tool call, and each conversation gets its own copy. **Model Plan** in the sidebar opens the board on its own. Codex CLI shows the same published comparison as text.
+Then ask **"Open the ModelPlan dashboard"**. A new task is the reliable place to start; a task that was already open may pick the plugin up as well. You can also invoke the `model-dashboard` skill. Asked in the chat, the dashboard appears as a compact card in the conversation. To keep it beside the chat, open **Effort & quota** from the conversation's side panel: that thread entry is opened by you, not by a tool call, and each conversation gets its own copy. **ModelPlan** in the sidebar opens the board on its own. Codex CLI shows the same published comparison as text.
 
 ### Setup check
 
@@ -92,11 +92,11 @@ The content is at most 420 px wide wherever it appears, including borders and pa
 - **Speed tiers** (⚡ Fast, ⚡⚡ Ultrafast): ability does not change. Cost becomes *Quota*, an estimate of plan-quota use: the reference-task cost multiple times the tier's published included-usage multiple, valid within one model and relative to its ★ effort in standard mode. Task time, as on the website, divides by the published generation speed-up and is marked as an estimate: only generation gets faster, not tools, network or tests, so the real saving is smaller. Without a stated speed-up it stays as in standard mode. Generation speed is listed separately: "about ×1.5" (Codex Fast), an "up to" ceiling (Ultrafast), or not stated. Credit multiples, plan eligibility and the official source link are shown with each tier. The readout and both curves always show the same mode.
 - Public Codex reset notices with source, scope and stated time precision. They are not your own meter.
 
-The dashboard reads the same verified client publication as [Model Plan](https://modelplan.ai/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.
+The dashboard reads the same verified client publication as [ModelPlan](https://modelplan.ai/effort). It does not rank locally, call model inference, buy a plan or change the active model. Cached, unavailable and last-good states stay explicit. The roster is the published evaluated GPT set, not the host's complete picker.
 
 ## Transport and development
 
-`mcp.json` configures an internal stdio transport for `open_model_dashboard` (the in-chat card), `get_model_dashboard` (text and data), and the user-opened entries `open_model_panel` (thread side panel) and `open_model_board` (sidebar), one entrypoint per tool and one UI resource per surface. Codex runs `launch.cjs`, which starts `server.bundle.mjs` on a compatible Node (see above). The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts Model Plan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
+`mcp.json` configures an internal stdio transport for `open_model_dashboard` (the in-chat card), `get_model_dashboard` (text and data), and the user-opened entries `open_model_panel` (thread side panel) and `open_model_board` (sidebar), one entrypoint per tool and one UI resource per surface. Codex runs `launch.cjs`, which starts `server.bundle.mjs` on a compatible Node (see above). The app resource includes its styles and fonts without third-party browser requests. Normal usage contacts ModelPlan's public publication endpoint; the local cache contains public data only. No telemetry or credentials are collected.
 
 ```sh
 cd codex

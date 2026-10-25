@@ -1,6 +1,6 @@
 {
   "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
-  "name": "Model Plan",
+  "name": "ModelPlan",
   "edition": "official",
   "licenseNotice": "Mixed license: MIT client core; official visual additions separately reserved. Historical MIT portions retain their original grant."
 }

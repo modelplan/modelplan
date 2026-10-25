@@ -1,5 +1,5 @@
 name: data-sync
-# Hourly: mirror Model Plan's open data (https://modelplan.ai/open-data.json) into data/.
+# Hourly: mirror ModelPlan's open data (https://modelplan.ai/open-data.json) into data/.
 # Each change becomes a pull request listing what changed, merged once the export checks out.
 on:
   schedule:
@@ -36,8 +36,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
           git add -A data
-          git commit -q -m "Data: Model Plan $version"
+          git commit -q -m "Data: ModelPlan $version"
           git push -q origin "$branch"
-          url=$(gh pr create --base main --head "$branch" --title "Data: Model Plan $version" --body-file "$RUNNER_TEMP/body.md" --label data)
+          url=$(gh pr create --base main --head "$branch" --title "Data: ModelPlan $version" --body-file "$RUNNER_TEMP/body.md" --label data)
           gh pr merge "$url" --squash --delete-branch
           echo "merged $url" >> "$GITHUB_STEP_SUMMARY"

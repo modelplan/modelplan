@@ -22,10 +22,10 @@ func TestStatuslineReviewedIdentityAndLocalizedUnknown(t *testing.T) {
 			for _, tc := range []struct {
 				name, harness, id, display, want string
 			}{
-				{"unreviewed-version", "claude-code", "claude-opus-5", "Opus 5", "Model Plan · " + lang.unknown + " Opus 5"},
-				{"raw-id", "claude-code", "claude-future", "", "Model Plan · " + lang.unknown + " claude-future"},
-				{"human-name", "claude-code", "", "Claude Fable 5.1", "Model Plan · " + lang.unknown + " Claude Fable 5.1"},
-				{"wrong-harness", "claude-code", "gpt-6-astra", "GPT-6 Astra", "Model Plan · " + lang.unknown + " GPT-6 Astra"},
+				{"unreviewed-version", "claude-code", "claude-opus-5", "Opus 5", "ModelPlan · " + lang.unknown + " Opus 5"},
+				{"raw-id", "claude-code", "claude-future", "", "ModelPlan · " + lang.unknown + " claude-future"},
+				{"human-name", "claude-code", "", "Claude Fable 5.1", "ModelPlan · " + lang.unknown + " Claude Fable 5.1"},
+				{"wrong-harness", "claude-code", "gpt-6-astra", "GPT-6 Astra", "ModelPlan · " + lang.unknown + " GPT-6 Astra"},
 				{"fable-native", "claude-code", "claude-fable-5-1", "Claude Fable 5.1", "Fable 5.1 ★Med"},
 				{"astra-native", "codex", "gpt-6-astra", "GPT-6 Astra", "GPT-6 Astra ★Med"},
 			} {
@@ -40,7 +40,7 @@ func TestStatuslineReviewedIdentityAndLocalizedUnknown(t *testing.T) {
 					}
 				})
 			}
-			if got := s.Statusline(nil, nil, "", false, "", false); got != "▲ Model Plan" {
+			if got := s.Statusline(nil, nil, "", false, "", false); got != "▲ ModelPlan" {
 				t.Fatalf("missing model id should not claim an unreviewed id: %q", got)
 			}
 		})

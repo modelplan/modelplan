@@ -3,7 +3,7 @@
   "version": "0.15.28",
   "description": "Read-only Codex GPT console: recommended efforts, your own quota and reset countdown (read locally), and public reset notices. Needs Node.js 22 or newer; finds one automatically when Codex has it. Fetches its pinned modelplan CLI release (SHA-256 pinned in the plugin) into ~/.cache/modelplan-cli; changes nothing else.",
   "author": {
-    "name": "Model Plan",
+    "name": "ModelPlan",
     "url": "https://github.com/modelplan/modelplan"
   },
   "homepage": "https://modelplan.ai/effort",
@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "ModelPlan · Codex",
     "shortDescription": "GPT efforts, your quota & resets.",
-    "developerName": "ModelPlans",
+    "developerName": "ModelPlan",
     "category": "Productivity",
     "capabilities": [
       "Read"

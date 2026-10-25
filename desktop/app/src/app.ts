@@ -32,7 +32,7 @@ export function startApp(
   root: HTMLElement,
   platform: Platform,
   logo: string,
-  brandName = "Model Plan Community",
+  brandName = "ModelPlan Community",
 ) {
   const state: AppState = {
     tab: "now",
@@ -187,7 +187,7 @@ ${state.error && s ? `<p class="error">${esc(state.error)}</p>` : ""}
     else if (el.dataset.action === "test-notify") {
       const t = words(lang());
       const ok = await platform.notify({
-        title: "Model Plan",
+        title: "ModelPlan",
         body: t.notify.testBody,
       });
       state.notifyNote = ok ? "" : t.notify.denied;

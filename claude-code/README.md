@@ -1,7 +1,7 @@
-# Model Plan × Claude Code
+# ModelPlan × Claude Code
 
-把 Model Plan 已核验的公开数据和你自己的额度带进 Claude Code：用哪个模型、开哪一档、每升一档多几分贵几倍，以及额度快重置时该不该升档。只读、只给建议，不会替你切换模型、档位或 fast。
-Model Plan's verified public data plus your own quota inside Claude Code. Read-only and advisory.
+把 ModelPlan 已核验的公开数据和你自己的额度带进 Claude Code：用哪个模型、开哪一档、每升一档多几分贵几倍，以及额度快重置时该不该升档。只读、只给建议，不会替你切换模型、档位或 fast。
+ModelPlan's verified public data plus your own quota inside Claude Code. Read-only and advisory.
 
 | 功能 Piece | 作用 What it does |
 | --- | --- |
@@ -33,8 +33,8 @@ Model Plan's verified public data plus your own quota inside Claude Code. Read-o
 - 不在 ★ 推荐档时，档位高于推荐用黄色、低于推荐用蓝色，括号里是 ★ 推荐档。
 - 终端不到 100 列（Claude Code 传入的 `COLUMNS`）时自动收成短的一行：不显示能力分，每周只显示剩余百分比。
 
-- 档位和 fast 状态来自 Claude Code 本身；★ 是 Model Plan 的推荐档。
-- 额度：Claude Code 只把 5 小时 / 7 天用量传给状态栏（Pro / Max 订阅）。Model Plan 状态栏把这几个数字存进本机缓存，`/modelplan:plan` 和 Skill 才读得到。不上传任何东西。
+- 档位和 fast 状态来自 Claude Code 本身；★ 是 ModelPlan 的推荐档。
+- 额度：Claude Code 只把 5 小时 / 7 天用量传给状态栏（Pro / Max 订阅）。ModelPlan 状态栏把这几个数字存进本机缓存，`/modelplan:plan` 和 Skill 才读得到。不上传任何东西。
 - 额度记录：状态栏和钩子运行时，CLI 还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history` 查看，保留 5 小时周期 28 天、每周周期 12 周；`MODELPLAN_HISTORY=off` 停止记录）。以后据此按你自己的几周用量建议默认档位。同时开多个会话时，用量算在最近刷新状态栏的那个会话的档位上。
 - 实测速度：状态栏和钩子运行时，CLI 还会读当前会话记录里的时间戳和 token 数（不读对话内容），按模型、档位和 Fast 统计输出 tok/s、首字延迟、每轮耗时和 token；`/modelplan:effort` 和 `modelplan history` 里显示，和 ★ 推荐档对比。每份记录只存本机，同样由 `MODELPLAN_HISTORY=off` 关闭。
 - `↑`：这个窗口重置前大概率用不完，升档不浪费。注意 Claude Code 的 fast 模式扣的是 usage credits（另付费），不占订阅额度，额度富余不是开 fast 的理由。`↓`：按当前速度会提前用完，保持 ★ 或降一档。`≈2时20分用完`：按最近 10–45 分钟的用量，这个窗口约 2 小时 20 分钟后用完，早于重置（只在 3 小时内会用完时显示，同时算作偏紧）。
@@ -42,7 +42,7 @@ Model Plan's verified public data plus your own quota inside Claude Code. Read-o
 - 状态栏只读本地缓存，从不等网络。
 - 想看完整提示：`modelplan advise`。
 
-The status line shows the live effort and fast mode Claude Code reports, Model Plan's ★ effort, and your 5-hour / 7-day usage with time to reset. It saves those numbers in the local Model Plan cache so `/modelplan:plan` and the Skill can plan around them. Nothing leaves your machine.
+The status line shows the live effort and fast mode Claude Code reports, ModelPlan's ★ effort, and your 5-hour / 7-day usage with time to reset. It saves those numbers in the local ModelPlan cache so `/modelplan:plan` and the Skill can plan around them. Nothing leaves your machine.
 
 ## 安装 Install
 

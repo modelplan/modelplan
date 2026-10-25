@@ -66,6 +66,6 @@ const heads: Record<Lang, Record<string, string>> = {
 
 // title: "Claude Code · 额度偏紧 ↓★Med ×0.73".
 function title(e: AdviceEvent, lang: Lang): string {
-  const who = e.source === 'public' || e.source === 'user' ? 'Model Plan' : sourceName(lang, e.source);
+  const who = e.source === 'public' || e.source === 'user' ? 'ModelPlan' : sourceName(lang, e.source);
   return [who + ' · ' + (heads[lang][e.type] ?? e.type), e.short?.[lang]].filter(Boolean).join(' ');
 }

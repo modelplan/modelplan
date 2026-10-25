@@ -1,8 +1,8 @@
-# Model Plan Official Visuals License 1.0
+# ModelPlan Official Visuals License 1.0
 
 SPDX identifier: `LicenseRef-ModelPlan-Visuals-1.0`
 
-Copyright (c) 2026 Model Plan. All rights reserved.
+Copyright (c) 2026 ModelPlan. All rights reserved.
 
 ## 1. What this covers
 
@@ -11,7 +11,7 @@ This license covers the "Official Visuals":
 - every file under `desktop/official-visuals/`, except the historical MIT material described in section 7, and
 - any other file marked `SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0`.
 
-The Official Visuals are the distinctive appearance of the official Model Plan apps and website. They include:
+The Official Visuals are the distinctive appearance of the official ModelPlan apps and website. They include:
 
 - graphics, images and textures;
 - 3D models, materials and shader code;
@@ -30,14 +30,14 @@ As expressed in these files, this covers:
 
 This license does not claim ideas, methods of operation or metaphors as such. It covers their expression in these files.
 
-Model Plan claims these rights only to the extent they exist under applicable law.
+ModelPlan claims these rights only to the extent they exist under applicable law.
 
 ## 2. What you may do
 
 You may:
 
 1. read and study the Official Visuals in this repository;
-2. build and run the official Model Plan app from an unmodified copy of this repository, for your own use;
+2. build and run the official ModelPlan app from an unmodified copy of this repository, for your own use;
 3. make the temporary copies that 1 and 2 need;
 4. show screenshots and short excerpts for review, reporting, teaching or documentation, as `TRADEMARKS.md` and the law allow.
 
@@ -47,7 +47,7 @@ You may not:
 
 - copy, modify, adapt, translate, distribute, sublicense or sell the Official Visuals, a substantial part of them, or a work derived from them;
 - include them in any other product, fork, build, theme, service or website;
-- use them to make software that imitates the appearance of the official Model Plan app;
+- use them to make software that imitates the appearance of the official ModelPlan app;
 - use them to train, fine-tune or prompt a model to reproduce them;
 - remove or change this notice or the copyright notices.
 
@@ -58,11 +58,11 @@ A fork or redistributed build must use the community edition, which `node deskto
 A fork or redistributed build must not:
 
 - include the Official Visuals; or
-- present itself as the official Model Plan app (see `TRADEMARKS.md`).
+- present itself as the official ModelPlan app (see `TRADEMARKS.md`).
 
 ## 5. Contributions
 
-The Model Plan maintainers change the Official Visuals. Outside changes to these files are accepted only under a separate written agreement that gives Model Plan the rights it needs.
+The ModelPlan maintainers change the Official Visuals. Outside changes to these files are accepted only under a separate written agreement that gives ModelPlan the rights it needs.
 
 ## 6. No other rights
 
@@ -85,4 +85,4 @@ Your rights under this license end automatically if you breach it. Copies you ma
 
 ## 9. No warranty
 
-The Official Visuals are provided "as is", without warranty of any kind. To the extent the law allows, Model Plan is not liable for any damages arising from them.
+The Official Visuals are provided "as is", without warranty of any kind. To the extent the law allows, ModelPlan is not liable for any damages arising from them.

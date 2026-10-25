@@ -1,4 +1,4 @@
-// Command modelplan is the Model Plan thin client: a read-only view of the verified
+// Command modelplan is the ModelPlan thin client: a read-only view of the verified
 // public publication, cached locally and shared with the Claude Code mods and Codex plugin.
 package main
 
@@ -43,7 +43,7 @@ const (
 	firstSyncWait   = 3500 * time.Millisecond // hook timeouts are 5 s
 )
 
-const usage = `modelplan — Model Plan thin client (read-only, anonymous)
+const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 
   modelplan lineup [--dev anthropic]   WHICH ENGINE: a developer's models at ★ recommended effort
   modelplan effort [model]             one model's effort ladder (default: Claude Code's current model),

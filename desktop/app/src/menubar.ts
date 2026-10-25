@@ -19,7 +19,7 @@ export function focus(s: Snapshot, prefer = 'auto'): Session | undefined {
 
 export function menuBar(s: Snapshot, lang: Lang, prefer = 'auto'): MenuBar {
   const x = focus(s, prefer);
-  const tooltip = s.sessions.map(y => line(s, y, lang)).join('\n') || 'Model Plan';
+  const tooltip = s.sessions.map(y => line(s, y, lang)).join('\n') || 'ModelPlan';
   if (!x) return { title: '', tooltip };
   const a = accountOf(s, x);
   const parts = a ? meters(a, lang) : [];

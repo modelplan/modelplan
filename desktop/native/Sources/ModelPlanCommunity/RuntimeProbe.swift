@@ -51,7 +51,7 @@ private func milliseconds(_ duration: Duration) -> Double {
     func start() {
         originalFrontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 210), styleMask: [.titled], backing: .buffered, defer: false)
-        panel.title = "Model Plan — synthetic read-only check"; panel.contentView = surface.view
+        panel.title = "ModelPlan — synthetic read-only check"; panel.contentView = surface.view
         panel.isReleasedWhenClosed = false; panel.center(); window = panel
         runtime.store.onChange = { [weak self] in self?.render() }
         runtime.lifecycle.onPresentationChange = { [weak self] allowed in

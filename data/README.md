@@ -1,11 +1,11 @@
-# Model Plan open data
+# ModelPlan open data
 
 The reviewed data behind [modelplan.ai](https://modelplan.ai): coding plan tiers, prices and quota metering, which models each plan includes, peak and off-peak calendars, model identities and lineages, speed claims and the recommended-effort policies. 中文说明见下方。
 
 - **Mirror, one way.** The data is edited and reviewed against official sources upstream; every change arrives here as a pull request from the `data-sync` workflow, so this directory's history is the public change log. Edits made here directly are overwritten. Something wrong or missing? [Report a data problem](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml).
-- **Exact copies.** [`manifest.json`](manifest.json) lists every file with its SHA-256 and the Model Plan release it came from; `node scripts/data-sync.mjs --check` verifies them. One key is removed before publishing: `fetchUrl`, an internal fetch route (the official page stays in `url`).
+- **Exact copies.** [`manifest.json`](manifest.json) lists every file with its SHA-256 and the ModelPlan release it came from; `node scripts/data-sync.mjs --check` verifies them. One key is removed before publishing: `fetchUrl`, an internal fetch route (the official page stays in `url`).
 - **Live data.** The same data, combined with live observations, is served by the read-only API ([OpenAPI](https://modelplan.ai/openapi.json)) and read by the clients in this repo.
-- **License.** Per-file SPDX identifiers in `manifest.json` are authoritative. The new original-data publication uses [CC BY-SA 4.0](LICENSE), with attribution to "Model Plan (https://modelplan.ai)" and applicable ShareAlike duties. Earlier CC BY 4.0 grants remain valid; commercial reuse remains permitted. `real-api-pricing/` is third-party material under its own MIT license. Benchmark figures derived from Artificial Analysis are not in this directory; through the API they keep Artificial Analysis's terms.
+- **License.** Per-file SPDX identifiers in `manifest.json` are authoritative. The new original-data publication uses [CC BY-SA 4.0](LICENSE), with attribution to "ModelPlan (https://modelplan.ai)" and applicable ShareAlike duties. Earlier CC BY 4.0 grants remain valid; commercial reuse remains permitted. `real-api-pricing/` is third-party material under its own MIT license. Benchmark figures derived from Artificial Analysis are not in this directory; through the API they keep Artificial Analysis's terms.
 
 <!-- files:start -->
 | File | What it holds | License |

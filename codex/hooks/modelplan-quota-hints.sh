@@ -31,8 +31,8 @@ fetch_notice() {
   [ -n "$why" ] || return 1
   [ -f "$state/notice-fetch" ] && [ -n "$(find "$state/notice-fetch" -mtime -7 2>/dev/null)" ] && return 1
   : > "$state/notice-fetch" 2>/dev/null
-  out "ModelPlan：没能下载插件配套的 modelplan CLI $min（$why），额度提醒和任务开始简报暂不可用。打开 Model Plan 看板点“重试”。
-ModelPlan: could not fetch the plugin's modelplan CLI $min ($why), so quota hints and the task-start brief are off. Open the Model Plan dashboard and click Retry."
+  out "ModelPlan：没能下载插件配套的 modelplan CLI $min（$why），额度提醒和任务开始简报暂不可用。打开 ModelPlan 看板点“重试”。
+ModelPlan: could not fetch the plugin's modelplan CLI $min ($why), so quota hints and the task-start brief are off. Open the ModelPlan dashboard and click Retry."
 }
 cli=$(sh "$here/find-cli.sh" "$min")
 if [ -z "$cli" ]; then

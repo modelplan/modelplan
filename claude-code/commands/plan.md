@@ -4,11 +4,11 @@ argument-hint: "[what you are about to do]"
 allowed-tools: Bash(sh:*)
 ---
 
-Your quota, read on this machine (from the Model Plan status line's last snapshot):
+Your quota, read on this machine (from the ModelPlan status line's last snapshot):
 
 !`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" quota --no-color 2>&1`
 
-What Model Plan would flag now (step up before a reset, step down, switch back after one, peak hours, cards):
+What ModelPlan would flag now (step up before a reset, step down, switch back after one, peak hours, cards):
 
 !`sh "${CLAUDE_PLUGIN_ROOT}/hooks/run-cli.sh" advise --no-color 2>&1`
 
