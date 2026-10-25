@@ -1,0 +1,3366 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. Frozen required fields/types; additive extensions allowed. A breaking change requires a new contract version and schema.",
+  "$defs": {
+    "advise-Public": {
+      "additionalProperties": true,
+      "properties": {
+        "eventType": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "when": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "provider",
+        "eventType",
+        "status"
+      ],
+      "type": "object"
+    },
+    "advise-Rate": {
+      "additionalProperties": true,
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "from",
+        "to",
+        "status"
+      ],
+      "type": "object"
+    },
+    "advise-Speed": {
+      "additionalProperties": true,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "qualifier": {
+          "type": "string"
+        },
+        "quotaRatio": {
+          "type": "number"
+        },
+        "speedRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tier",
+        "label",
+        "quotaRatio",
+        "speedRatio",
+        "qualifier"
+      ],
+      "type": "object"
+    },
+    "advise-Step": {
+      "additionalProperties": true,
+      "properties": {
+        "abilityDelta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "type": "string"
+        },
+        "inMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "modelChange": {
+          "type": "boolean"
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "rateFrom": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rateTo": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recommended": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    },
+    "connections-Connection": {
+      "additionalProperties": true,
+      "properties": {
+        "authorization": {
+          "$ref": "#/$defs/connections-Level"
+        },
+        "history": {
+          "$ref": "#/$defs/connections-Level"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "installed": {
+          "$ref": "#/$defs/connections-Level"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "localUsage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/localusage-Report"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "type": "string"
+        },
+        "privacy": {
+          "type": "string"
+        },
+        "quota": {
+          "$ref": "#/$defs/connections-Level"
+        },
+        "quotaAccess": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Selection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "read": {
+          "type": "string"
+        },
+        "reads": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "secretPolicy": {
+          "type": "string"
+        },
+        "support": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "installed",
+        "history",
+        "authorization",
+        "quota",
+        "support"
+      ],
+      "type": "object"
+    },
+    "connections-Level": {
+      "additionalProperties": true,
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "binding": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "desktopcontract-Capability": {
+      "additionalProperties": true,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "source-dependent",
+            "publication-dependent",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "history-PaceCycleView": {
+      "additionalProperties": true,
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "drops": {
+          "type": "integer"
+        },
+        "firstObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "firstUsed": {
+          "type": "number"
+        },
+        "gapCount": {
+          "type": "integer"
+        },
+        "gapPoints": {
+          "type": "number"
+        },
+        "hadDrop": {
+          "type": "boolean"
+        },
+        "lastObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "lastUsed": {
+          "type": "number"
+        },
+        "maxGapMinutes": {
+          "type": "integer"
+        },
+        "points": {
+          "type": "number"
+        },
+        "readings": {
+          "type": "integer"
+        },
+        "resetsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "spanMinutes": {
+          "type": "integer"
+        },
+        "spent": {
+          "items": {
+            "$ref": "#/$defs/history-Share"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "spentBasis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resetsAt",
+        "closed",
+        "firstObservedAt",
+        "firstUsed",
+        "lastObservedAt",
+        "lastUsed",
+        "readings",
+        "spanMinutes",
+        "coverage",
+        "gapCount",
+        "maxGapMinutes",
+        "drops",
+        "hadDrop",
+        "points",
+        "gapPoints",
+        "spent",
+        "spentBasis"
+      ],
+      "type": "object"
+    },
+    "history-PaceGroup": {
+      "additionalProperties": true,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "closedCycles": {
+          "type": "integer"
+        },
+        "cycles": {
+          "items": {
+            "$ref": "#/$defs/history-PaceCycleView"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "string"
+        },
+        "min": {
+          "type": "integer"
+        },
+        "observedIntervalRatePerHour": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "validCycles": {
+          "type": "integer"
+        },
+        "windowMinutes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "kind",
+        "attribution",
+        "closedCycles",
+        "validCycles",
+        "observedIntervalRatePerHour",
+        "status",
+        "min",
+        "cycles"
+      ],
+      "type": "object"
+    },
+    "history-PaceHistory": {
+      "additionalProperties": true,
+      "properties": {
+        "gapLimitMinutes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/history-PaceGroup"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "status",
+        "gapLimitMinutes",
+        "groups"
+      ],
+      "type": "object"
+    },
+    "history-Share": {
+      "additionalProperties": true,
+      "properties": {
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "points": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "type": "object"
+    },
+    "localusage-Coverage": {
+      "additionalProperties": true,
+      "properties": {
+        "filesRead": {
+          "type": "integer"
+        },
+        "filesSeen": {
+          "type": "integer"
+        },
+        "filesSkipped": {
+          "type": "integer"
+        },
+        "messagesWithoutTokens": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "filesSeen",
+        "filesRead",
+        "filesSkipped",
+        "messagesWithoutTokens",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "localusage-Report": {
+      "additionalProperties": true,
+      "properties": {
+        "coverage": {
+          "$ref": "#/$defs/localusage-Coverage"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "evaluatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "historyDays": {
+          "type": "integer"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "lastObservedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "privacy": {
+          "type": "string"
+        },
+        "readPaths": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/localusage-Row"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/localusage-Session"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "enabled",
+        "status",
+        "evaluatedAt",
+        "lastObservedAt",
+        "readPaths",
+        "hosts",
+        "privacy",
+        "scope",
+        "historyDays",
+        "coverage",
+        "rows",
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "localusage-Row": {
+      "additionalProperties": true,
+      "properties": {
+        "cachedTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "day": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "observedMessages": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thoughtTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "day",
+        "model",
+        "observedMessages",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "thoughtTokens",
+        "toolTokens",
+        "totalTokens"
+      ],
+      "type": "object"
+    },
+    "localusage-Session": {
+      "additionalProperties": true,
+      "properties": {
+        "cachedTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "firstAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "observedMessages": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "thoughtTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toolTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "firstAt",
+        "lastAt",
+        "observedMessages",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "thoughtTokens",
+        "toolTokens",
+        "totalTokens"
+      ],
+      "type": "object"
+    },
+    "quota-Account": {
+      "additionalProperties": true,
+      "properties": {
+        "cards": {
+          "items": {
+            "$ref": "#/$defs/quota-Card"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "credits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Credits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deciding": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string"
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Harness"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "headroom": {
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "subscription": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "via": {
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/quota-Window"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "observedAt",
+        "stale",
+        "windows",
+        "headroom"
+      ],
+      "type": "object"
+    },
+    "quota-Binding": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "status",
+        "basis",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "quota-Card": {
+      "additionalProperties": true,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "quota-Credits": {
+      "additionalProperties": true,
+      "properties": {
+        "ageMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "unlimited": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "quota-Harness": {
+      "additionalProperties": true,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "endpoint": {
+          "type": "string"
+        },
+        "fastMode": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "type": "string"
+        },
+        "serviceTier": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "quota-RequestUsage": {
+      "additionalProperties": true,
+      "properties": {
+        "limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "unlimited": {
+          "type": "boolean"
+        },
+        "used": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "used",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "quota-Selection": {
+      "additionalProperties": true,
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "blocked": {
+          "type": "string"
+        },
+        "endpointNotice": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "hosts": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "keyEnv": {
+          "type": "string"
+        },
+        "keySet": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "read": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "secretPolicy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "name",
+        "backend",
+        "origin",
+        "keySet"
+      ],
+      "type": "object"
+    },
+    "quota-SourceStatus": {
+      "additionalProperties": true,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "status"
+      ],
+      "type": "object"
+    },
+    "quota-Window": {
+      "additionalProperties": true,
+      "properties": {
+        "ageMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elapsedPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "string"
+        },
+        "limitUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "pace": {
+          "type": "string"
+        },
+        "projectedPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recentPercentPerHour": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remainingPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-RequestUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetMode": {
+          "type": "string"
+        },
+        "resetsAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetsInMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runsOutInMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unknownReason": {
+          "type": "string"
+        },
+        "usedPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usedUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windowMinutes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "usedPercent",
+        "resetsAt",
+        "observedAt",
+        "remainingPercent",
+        "resetsInMinutes",
+        "elapsedPercent",
+        "projectedPercent",
+        "ageMinutes",
+        "recentPercentPerHour",
+        "runsOutInMinutes",
+        "pace"
+      ],
+      "type": "object"
+    },
+    "qwenusage-Model": {
+      "additionalProperties": true,
+      "properties": {
+        "cachedTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thoughtsTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "requests",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "thoughtsTokens",
+        "totalTokens",
+        "model"
+      ],
+      "type": "object"
+    },
+    "qwenusage-Period": {
+      "additionalProperties": true,
+      "properties": {
+        "generatedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/qwenusage-Model"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "period": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "totals": {
+          "$ref": "#/$defs/qwenusage-Totals"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "period",
+        "value",
+        "generatedAt",
+        "stale",
+        "totals",
+        "models"
+      ],
+      "type": "object"
+    },
+    "qwenusage-Report": {
+      "additionalProperties": true,
+      "properties": {
+        "periods": {
+          "items": {
+            "$ref": "#/$defs/qwenusage-Period"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "status",
+        "periods"
+      ],
+      "type": "object"
+    },
+    "qwenusage-Totals": {
+      "additionalProperties": true,
+      "properties": {
+        "cachedTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thoughtsTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "requests",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "thoughtsTokens",
+        "totalTokens"
+      ],
+      "type": "object"
+    },
+    "snapshot-Activity": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "withinMinutes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "lastSignalAt",
+        "withinMinutes"
+      ],
+      "type": "object"
+    },
+    "snapshot-Delta": {
+      "additionalProperties": true,
+      "properties": {
+        "abilityDelta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "abilityDelta",
+        "costRatio"
+      ],
+      "type": "object"
+    },
+    "snapshot-EffortRef": {
+      "additionalProperties": true,
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "star": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "star"
+      ],
+      "type": "object"
+    },
+    "snapshot-Event": {
+      "additionalProperties": true,
+      "properties": {
+        "alternative": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Step"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "basis": {
+          "type": "string"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "credits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Credits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Step"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "type": "string"
+        },
+        "fast": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Speed"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fastOff": {
+          "type": "boolean"
+        },
+        "inMenuBar": {
+          "type": "boolean"
+        },
+        "inMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "public": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Public"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Rate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remainingPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runsOutInMinutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "severity": {
+          "type": "string"
+        },
+        "short": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "speed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Speed"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "suggest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/advise-Step"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "type": {
+          "type": "string"
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "key",
+        "severity",
+        "source",
+        "inMenuBar"
+      ],
+      "type": "object"
+    },
+    "snapshot-ModelRef": {
+      "additionalProperties": true,
+      "properties": {
+        "developerId": {
+          "type": "string"
+        },
+        "harnessId": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "harnessId"
+      ],
+      "type": "object"
+    },
+    "snapshot-Publication": {
+      "additionalProperties": true,
+      "properties": {
+        "checkedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastError": {
+          "type": "string"
+        },
+        "publicationId": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "publicationId",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "snapshot-Session": {
+      "additionalProperties": true,
+      "properties": {
+        "activity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/snapshot-Activity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attribution": {
+          "type": "string"
+        },
+        "deciding": {
+          "type": "string"
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/snapshot-EffortRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effortStatus": {
+          "type": "string"
+        },
+        "headroom": {
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/snapshot-ModelRef"
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origin": {
+          "type": "string"
+        },
+        "pool": {
+          "type": "string"
+        },
+        "projectRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recommended": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/snapshot-EffortRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "subscription": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-Binding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokenRate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speed-Rate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vsRecommended": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/snapshot-Delta"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workloadRate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speed-Rate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "stale",
+        "model",
+        "effort",
+        "effortStatus",
+        "recommended",
+        "vsRecommended",
+        "projectRef",
+        "subscription",
+        "headroom"
+      ],
+      "type": "object"
+    },
+    "snapshot-Subscription": {
+      "additionalProperties": true,
+      "properties": {
+        "basis": {
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "subscriptionRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "sources",
+        "basis",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "speed-Basis": {
+      "additionalProperties": true,
+      "properties": {
+        "quantile": {
+          "type": "string"
+        },
+        "timing": {
+          "$ref": "#/$defs/speed-Timing"
+        },
+        "tokenBasis": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenBasis",
+        "timing",
+        "quantile"
+      ],
+      "type": "object"
+    },
+    "speed-Daily": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "day": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "day",
+        "source",
+        "model",
+        "observedOutputTokens",
+        "observedRequests"
+      ],
+      "type": "object"
+    },
+    "speed-DailyCoverage": {
+      "additionalProperties": true,
+      "properties": {
+        "from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recording": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "recording"
+      ],
+      "type": "object"
+    },
+    "speed-HistOut": {
+      "additionalProperties": true,
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "scheme": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scheme",
+        "unit",
+        "counts"
+      ],
+      "type": "object"
+    },
+    "speed-Hourly": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hour": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "hour",
+        "source",
+        "model",
+        "observedOutputTokens",
+        "observedRequests"
+      ],
+      "type": "object"
+    },
+    "speed-LiveSession": {
+      "additionalProperties": true,
+      "properties": {
+        "effort": {
+          "type": "string"
+        },
+        "effortStatus": {
+          "type": "string"
+        },
+        "lastAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate": {
+          "$ref": "#/$defs/speed-Rate"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "string"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "source",
+        "model",
+        "effort",
+        "effortStatus",
+        "speed",
+        "projectRef",
+        "subscriptionRef",
+        "startedAt",
+        "lastAt",
+        "status",
+        "rate"
+      ],
+      "type": "object"
+    },
+    "speed-Metric": {
+      "additionalProperties": true,
+      "properties": {
+        "min": {
+          "type": "integer"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value",
+        "status",
+        "n",
+        "min"
+      ],
+      "type": "object"
+    },
+    "speed-PerfHists": {
+      "additionalProperties": true,
+      "properties": {
+        "ttftMs": {
+          "$ref": "#/$defs/speed-HistOut"
+        },
+        "turnMsHist": {
+          "$ref": "#/$defs/speed-HistOut"
+        },
+        "turnTokensHist": {
+          "$ref": "#/$defs/speed-HistOut"
+        }
+      },
+      "required": [
+        "ttftMs",
+        "turnMsHist",
+        "turnTokensHist"
+      ],
+      "type": "object"
+    },
+    "speed-PerfMetrics": {
+      "additionalProperties": true,
+      "properties": {
+        "generationTps": {
+          "$ref": "#/$defs/speed-Metric"
+        },
+        "ttftMs": {
+          "$ref": "#/$defs/speed-Metric"
+        },
+        "wholeTurnTps": {
+          "$ref": "#/$defs/speed-Metric"
+        }
+      },
+      "required": [
+        "generationTps",
+        "ttftMs",
+        "wholeTurnTps"
+      ],
+      "type": "object"
+    },
+    "speed-PerfStat": {
+      "additionalProperties": true,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "basis": {
+          "$ref": "#/$defs/speed-Basis"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "effortStatus": {
+          "type": "string"
+        },
+        "eligibility": {
+          "type": "string"
+        },
+        "freshness": {
+          "type": "string"
+        },
+        "lastAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "parser": {
+          "type": "string"
+        },
+        "since": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "string"
+        },
+        "windows": {
+          "$ref": "#/$defs/speed-PerfWindows"
+        }
+      },
+      "required": [
+        "source",
+        "model",
+        "effortStatus",
+        "effort",
+        "speed",
+        "parser",
+        "eligibility",
+        "basis",
+        "attribution",
+        "since",
+        "lastAt",
+        "freshness",
+        "windows"
+      ],
+      "type": "object"
+    },
+    "speed-PerfSums": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eligibleOutputTokens": {
+          "type": "integer"
+        },
+        "eligibleRequests": {
+          "type": "integer"
+        },
+        "genMs": {
+          "type": "integer"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mixedConfigTurnsExcluded": {
+          "type": "integer"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "turnMs": {
+          "type": "integer"
+        },
+        "turnOutputTokens": {
+          "type": "integer"
+        },
+        "turns": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "observedRequests",
+        "observedOutputTokens",
+        "eligibleRequests",
+        "eligibleOutputTokens",
+        "genMs",
+        "turns",
+        "turnMs",
+        "turnOutputTokens",
+        "mixedConfigTurnsExcluded"
+      ],
+      "type": "object"
+    },
+    "speed-PerfWindow": {
+      "additionalProperties": true,
+      "properties": {
+        "hist": {
+          "$ref": "#/$defs/speed-PerfHists"
+        },
+        "metrics": {
+          "$ref": "#/$defs/speed-PerfMetrics"
+        },
+        "sums": {
+          "$ref": "#/$defs/speed-PerfSums"
+        }
+      },
+      "required": [
+        "sums",
+        "hist",
+        "metrics"
+      ],
+      "type": "object"
+    },
+    "speed-PerfWindows": {
+      "additionalProperties": true,
+      "properties": {
+        "recent30d": {
+          "$ref": "#/$defs/speed-PerfWindow"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/speed-PerfWindow"
+        },
+        "today": {
+          "$ref": "#/$defs/speed-PerfWindow"
+        }
+      },
+      "required": [
+        "today",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "speed-ProjectRanking": {
+      "additionalProperties": true,
+      "properties": {
+        "measure": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/speed-ProjectWindow"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/speed-ProjectWindow"
+        }
+      },
+      "required": [
+        "measure",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "speed-ProjectWindow": {
+      "additionalProperties": true,
+      "properties": {
+        "projects": {
+          "type": "integer"
+        },
+        "top": {
+          "items": {
+            "$ref": "#/$defs/speed-RankedProject"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "totalObservedOutputTokens": {
+          "type": "integer"
+        },
+        "unattributedOutputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projects",
+        "totalObservedOutputTokens",
+        "unattributedOutputTokens",
+        "top"
+      ],
+      "type": "object"
+    },
+    "speed-RankedProject": {
+      "additionalProperties": true,
+      "properties": {
+        "configs": {
+          "items": {
+            "$ref": "#/$defs/speed-SessionConfig"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "sessions": {
+          "type": "integer"
+        },
+        "share": {
+          "type": "number"
+        },
+        "subscriptionRefs": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "label",
+        "sessions",
+        "subscriptionRefs",
+        "lastAt",
+        "observedOutputTokens",
+        "observedRequests",
+        "share",
+        "configs"
+      ],
+      "type": "object"
+    },
+    "speed-RankedSession": {
+      "additionalProperties": true,
+      "properties": {
+        "configs": {
+          "items": {
+            "$ref": "#/$defs/speed-SessionConfig"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "firstAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "lastAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "projectRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "share": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ref",
+        "source",
+        "projectRef",
+        "subscriptionRef",
+        "firstAt",
+        "lastAt",
+        "observedOutputTokens",
+        "observedRequests",
+        "share",
+        "configs"
+      ],
+      "type": "object"
+    },
+    "speed-Rate": {
+      "additionalProperties": true,
+      "properties": {
+        "configCount": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "configKey": {
+          "type": "string"
+        },
+        "freshness": {
+          "type": "string"
+        },
+        "lastAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "min": {
+          "type": "integer"
+        },
+        "n": {
+          "type": "integer"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "window",
+        "value",
+        "status",
+        "n",
+        "min",
+        "lastAt"
+      ],
+      "type": "object"
+    },
+    "speed-SessionConfig": {
+      "additionalProperties": true,
+      "properties": {
+        "effort": {
+          "type": "string"
+        },
+        "effortStatus": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "recommendedEffort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "share": {
+          "type": "number"
+        },
+        "speed": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "effortStatus",
+        "effort",
+        "speed",
+        "observedOutputTokens",
+        "share"
+      ],
+      "type": "object"
+    },
+    "speed-SessionRanking": {
+      "additionalProperties": true,
+      "properties": {
+        "measure": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/speed-SessionWindow"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/speed-SessionWindow"
+        }
+      },
+      "required": [
+        "measure",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "speed-SessionWindow": {
+      "additionalProperties": true,
+      "properties": {
+        "sessions": {
+          "type": "integer"
+        },
+        "top": {
+          "items": {
+            "$ref": "#/$defs/speed-RankedSession"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "totalObservedOutputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessions",
+        "totalObservedOutputTokens",
+        "top"
+      ],
+      "type": "object"
+    },
+    "speed-Stat": {
+      "additionalProperties": true,
+      "properties": {
+        "days": {
+          "type": "integer"
+        },
+        "effort": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "outputTokensPerSecond": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        },
+        "speed": {
+          "type": "string"
+        },
+        "ttftSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turnOutputTokens": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turnSeconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turns": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "model",
+        "days",
+        "requests",
+        "turns",
+        "outputTokensPerSecond",
+        "ttftSeconds",
+        "turnSeconds",
+        "turnOutputTokens"
+      ],
+      "type": "object"
+    },
+    "speed-Timing": {
+      "additionalProperties": true,
+      "properties": {
+        "end": {
+          "type": "string"
+        },
+        "first": {
+          "type": "string"
+        },
+        "quality": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "first",
+        "end",
+        "quality"
+      ],
+      "type": "object"
+    },
+    "speed-TodayTotal": {
+      "additionalProperties": true,
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "sums": {
+          "$ref": "#/$defs/speed-PerfSums"
+        }
+      },
+      "required": [
+        "source",
+        "sums"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://modelplan.ai/schema/desktop-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "accounts": {
+      "items": {
+        "$ref": "#/$defs/quota-Account"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/desktopcontract-Capability"
+      },
+      "required": [
+        "alerts",
+        "creditsBalance",
+        "creditsHistory",
+        "dailyLong",
+        "extraQuotaScopes",
+        "historyAttribution",
+        "observedUsage",
+        "projects",
+        "quotaCycles",
+        "quotaWindows",
+        "resetCards",
+        "resetDropProvenance",
+        "sessionRates60s"
+      ],
+      "type": "object"
+    },
+    "cliVersion": {
+      "type": "string"
+    },
+    "connections": {
+      "items": {
+        "$ref": "#/$defs/connections-Connection"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "contractVersion": {
+      "const": 1
+    },
+    "daily": {
+      "items": {
+        "$ref": "#/$defs/speed-Daily"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "dailyCoverage": {
+      "$ref": "#/$defs/speed-DailyCoverage"
+    },
+    "dailyLong": {
+      "items": {
+        "$ref": "#/$defs/speed-Daily"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "dailyLongCoverage": {
+      "$ref": "#/$defs/speed-DailyCoverage"
+    },
+    "dataRevision": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/snapshot-Event"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "generatedAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "hourly": {
+      "items": {
+        "$ref": "#/$defs/speed-Hourly"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "kind": {
+      "const": "modelplan.personal-snapshot"
+    },
+    "liveSessions": {
+      "items": {
+        "$ref": "#/$defs/speed-LiveSession"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "localUsage": {
+      "items": {
+        "$ref": "#/$defs/localusage-Report"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "measured": {
+      "items": {
+        "$ref": "#/$defs/speed-Stat"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "note": {
+      "type": "string"
+    },
+    "paceHistory": {
+      "$ref": "#/$defs/history-PaceHistory"
+    },
+    "perfStats": {
+      "items": {
+        "$ref": "#/$defs/speed-PerfStat"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "projectLabels": {
+      "type": "boolean"
+    },
+    "projectRanking": {
+      "$ref": "#/$defs/speed-ProjectRanking"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/snapshot-Publication"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "qwenUsage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/qwenusage-Report"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recording": {
+      "type": "boolean"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "sessionRanking": {
+      "$ref": "#/$defs/speed-SessionRanking"
+    },
+    "sessions": {
+      "items": {
+        "$ref": "#/$defs/snapshot-Session"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/quota-SourceStatus"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "subscriptions": {
+      "items": {
+        "$ref": "#/$defs/snapshot-Subscription"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "todayTotals": {
+      "items": {
+        "$ref": "#/$defs/speed-TodayTotal"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "validUntil": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "contractVersion",
+    "capabilities",
+    "schemaVersion",
+    "kind",
+    "generatedAt",
+    "cliVersion",
+    "publication",
+    "sessions",
+    "accounts",
+    "sources",
+    "connections",
+    "events",
+    "measured",
+    "liveSessions",
+    "todayTotals",
+    "hourly",
+    "perfStats",
+    "daily",
+    "dailyCoverage",
+    "dailyLong",
+    "dailyLongCoverage",
+    "paceHistory",
+    "sessionRanking",
+    "projectRanking",
+    "projectLabels",
+    "subscriptions",
+    "recording",
+    "note",
+    "dataRevision",
+    "validUntil"
+  ],
+  "title": "ModelPlan desktop contract v1",
+  "type": "object"
+}

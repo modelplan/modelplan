@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 	"github.com/modelplan/modelplan/cli/internal/connections"
+	"github.com/modelplan/modelplan/cli/internal/desktopcontract"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
@@ -35,12 +36,14 @@ const (
 )
 
 type Snapshot struct {
-	QwenUsage     *qwenusage.Report   `json:"qwenUsage,omitempty"`
-	LocalUsage    []localusage.Report `json:"localUsage,omitempty"`
-	SchemaVersion int                 `json:"schemaVersion"`
-	Kind          string              `json:"kind"`
-	GeneratedAt   time.Time           `json:"generatedAt"`
-	CLIVersion    string              `json:"cliVersion"`
+	ContractVersion int                                   `json:"contractVersion"`
+	Capabilities    map[string]desktopcontract.Capability `json:"capabilities"`
+	QwenUsage       *qwenusage.Report                     `json:"qwenUsage,omitempty"`
+	LocalUsage      []localusage.Report                   `json:"localUsage,omitempty"`
+	SchemaVersion   int                                   `json:"schemaVersion"`
+	Kind            string                                `json:"kind"`
+	GeneratedAt     time.Time                             `json:"generatedAt"`
+	CLIVersion      string                                `json:"cliVersion"`
 	// Publication: the verified publication the figures come from; nil before the first sync.
 	Publication *Publication         `json:"publication"`
 	Sessions    []Session            `json:"sessions"`
@@ -220,7 +223,7 @@ type Input struct {
 const note = "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
 
 func Build(in Input) Snapshot {
-	s := Snapshot{LocalUsage: in.LocalUsage, SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
+	s := Snapshot{ContractVersion: desktopcontract.Version, Capabilities: desktopcontract.PersonalCapabilities(), LocalUsage: in.LocalUsage, SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
 		Sessions: []Session{}, Accounts: in.Report.Accounts, Sources: in.Report.Sources, Events: []Event{}, Measured: in.Measured,
 		Recording: in.Recording, Note: note, QwenUsage: in.QwenUsage}
 	if s.Accounts == nil {

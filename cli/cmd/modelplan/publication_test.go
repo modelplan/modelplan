@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/desktopcontract"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -146,6 +147,8 @@ func TestPublicationPublicOnlyOnlineAndOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]json.RawMessage{
+		"contractVersion": json.RawMessage("1"), "capabilities": publicationJSON(t, desktopcontract.PublicationCapabilities()),
+		"resets": f.data["resets"], "windows": f.data["windows"], "multipliers": json.RawMessage("null"), "multiplierHorizon": json.RawMessage("null"), "planMetering": json.RawMessage("null"),
 		"schemaVersion": json.RawMessage("1"), "publicationId": publicationJSON(t, f.id),
 		"publishedAt": json.RawMessage(`"2026-10-24T12:00:00Z"`),
 		"units":       f.data["units"], "models": f.data["models"], "lineups": f.data["lineups"], "speedTiers": f.data["speedTiers"],

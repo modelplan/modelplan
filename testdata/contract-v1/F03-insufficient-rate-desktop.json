@@ -1,0 +1,633 @@
+{
+  "contractVersion": 1,
+  "capabilities": {
+    "alerts": {
+      "status": "supported"
+    },
+    "creditsBalance": {
+      "status": "source-dependent"
+    },
+    "creditsHistory": {
+      "status": "unavailable",
+      "reason": "no-supported-local-source"
+    },
+    "dailyLong": {
+      "status": "source-dependent",
+      "reason": "371-day-retention; coverage-is-observed-not-imputed"
+    },
+    "extraQuotaScopes": {
+      "status": "source-dependent",
+      "reason": "reported-limit-only; model/feature identity is not inferred"
+    },
+    "historyAttribution": {
+      "status": "supported",
+      "reason": "source-wide-unless-observed-session-subscriptionRef-proves-ownership"
+    },
+    "observedUsage": {
+      "status": "source-dependent"
+    },
+    "projects": {
+      "status": "source-dependent",
+      "reason": "opaque-local-refs; labels-respect-projectLabels"
+    },
+    "quotaCycles": {
+      "status": "source-dependent",
+      "reason": "source-plan-window-attribution; not-historical-account-ownership"
+    },
+    "quotaWindows": {
+      "status": "supported"
+    },
+    "resetCards": {
+      "status": "source-dependent"
+    },
+    "resetDropProvenance": {
+      "status": "unavailable",
+      "reason": "meter-drops-do-not-identify-redemption-or-correction"
+    },
+    "sessionRates60s": {
+      "status": "source-dependent"
+    }
+  },
+  "schemaVersion": 1,
+  "kind": "modelplan.personal-snapshot",
+  "generatedAt": "2026-10-20T21:05:00Z",
+  "cliVersion": "synthetic-v1",
+  "publication": {
+    "publicationId": "synthetic-contract-publication",
+    "publishedAt": "2026-10-20T20:00:00Z",
+    "checkedAt": "2026-10-20T21:04:00Z",
+    "verifiedAt": "2026-10-20T21:04:00Z",
+    "stale": false
+  },
+  "sessions": [
+    {
+      "source": "codex",
+      "observedAt": "2026-10-20T21:04:00Z",
+      "attribution": "recent-thread",
+      "stale": false,
+      "model": {
+        "harnessId": "native-z",
+        "id": "synthetic-z",
+        "name": "Synthetic Z",
+        "developerId": "synthetic-dev"
+      },
+      "effort": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "effortStatus": "reported",
+      "recommended": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "vsRecommended": null,
+      "tokenRate": {
+        "configKey": "codex|native-z|reported|medium||codex-rollout/1|gen-v1",
+        "window": "recent7d",
+        "value": 11,
+        "status": "ok",
+        "n": 10,
+        "min": 5,
+        "lastAt": "2026-10-20T21:04:00Z",
+        "freshness": "fresh"
+      },
+      "workloadRate": {
+        "source": "codex",
+        "window": "recent7d",
+        "scope": "all-configurations",
+        "configCount": 1,
+        "value": 11,
+        "status": "ok",
+        "n": 10,
+        "min": 5,
+        "lastAt": "2026-10-20T21:04:00Z",
+        "freshness": "fresh"
+      },
+      "activity": {
+        "status": "recent",
+        "lastSignalAt": "2026-10-20T21:04:00Z",
+        "basis": "completed-request",
+        "withinMinutes": 10
+      },
+      "projectRef": "synthetic-project",
+      "subscription": {
+        "subscriptionRef": "synthetic-sub-00",
+        "status": "verified",
+        "basis": "synthetic-binding",
+        "observedAt": "2026-10-20T21:04:00Z"
+      },
+      "headroom": "normal"
+    }
+  ],
+  "accounts": [
+    {
+      "source": "codex",
+      "plan": "synthetic-plan",
+      "observedAt": "2026-10-20T21:04:00Z",
+      "stale": false,
+      "harness": {
+        "model": "native-z",
+        "effort": "medium",
+        "observedAt": "2026-10-20T21:04:00Z",
+        "attribution": "recent-thread"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 60,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-20T23:35:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-20T21:04:00Z",
+          "remainingPercent": 40,
+          "resetsInMinutes": null,
+          "elapsedPercent": 50,
+          "projectedPercent": null,
+          "ageMinutes": 1,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 60,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-24T09:05:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-20T21:04:00Z",
+          "remainingPercent": 40,
+          "resetsInMinutes": null,
+          "elapsedPercent": 50,
+          "projectedPercent": null,
+          "ageMinutes": 1,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        }
+      ],
+      "subscription": {
+        "subscriptionRef": "synthetic-sub-00",
+        "status": "verified",
+        "basis": "synthetic-binding",
+        "observedAt": "2026-10-20T21:04:00Z"
+      },
+      "headroom": "normal"
+    }
+  ],
+  "sources": [
+    {
+      "source": "codex",
+      "status": "ok"
+    }
+  ],
+  "connections": [],
+  "events": [],
+  "measured": [],
+  "liveSessions": [
+    {
+      "ref": "synthetic-live-0",
+      "source": "codex",
+      "model": "native-z",
+      "effort": "medium",
+      "effortStatus": "reported",
+      "speed": "",
+      "projectRef": "synthetic-project",
+      "subscriptionRef": "synthetic-sub-00",
+      "startedAt": "2026-10-20T21:04:00Z",
+      "lastAt": "2026-10-20T21:04:59Z",
+      "status": "running",
+      "rate": {
+        "source": "codex",
+        "window": "60s",
+        "scope": "session",
+        "value": null,
+        "status": "insufficient",
+        "n": 4,
+        "min": 5,
+        "reason": "too-few-samples",
+        "lastAt": "2026-10-20T21:04:59Z"
+      }
+    }
+  ],
+  "todayTotals": [
+    {
+      "source": "codex",
+      "sums": {
+        "inputTokens": null,
+        "cacheReadTokens": null,
+        "cacheWriteTokens": null,
+        "observedRequests": 10,
+        "observedOutputTokens": 1000,
+        "eligibleRequests": 10,
+        "eligibleOutputTokens": 1000,
+        "genMs": 91000,
+        "turns": 0,
+        "turnMs": 0,
+        "turnOutputTokens": 0,
+        "mixedConfigTurnsExcluded": 0
+      }
+    }
+  ],
+  "hourly": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "hour": "2026-10-20T19:00:00Z",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 0,
+      "observedRequests": 0
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "hour": "2026-10-20T20:00:00Z",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "perfStats": [
+    {
+      "source": "codex",
+      "model": "native-z",
+      "effortStatus": "reported",
+      "effort": "medium",
+      "speed": "",
+      "parser": "codex-rollout/1",
+      "eligibility": "gen-v1",
+      "basis": {
+        "tokenBasis": "harness-reported-output",
+        "timing": {
+          "start": "input-logged",
+          "first": "item-started-at",
+          "end": "usage-logged",
+          "quality": "harness-log-proxy"
+        },
+        "quantile": "log1.1-centre-lower"
+      },
+      "attribution": "unattributed",
+      "since": "2026-09-20T21:05:00Z",
+      "lastAt": "2026-10-20T21:04:00Z",
+      "freshness": "fresh",
+      "windows": {
+        "today": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        },
+        "recent7d": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        },
+        "recent30d": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        }
+      }
+    }
+  ],
+  "daily": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "dailyCoverage": {
+    "from": "2026-09-21",
+    "recording": true
+  },
+  "dailyLong": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 200,
+      "observedRequests": 2
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "dailyLongCoverage": {
+    "from": "2025-10-15",
+    "recording": true
+  },
+  "paceHistory": {
+    "since": null,
+    "status": "ok",
+    "gapLimitMinutes": {
+      "five_hour": 60,
+      "monthly": 1440,
+      "weekly": 360
+    },
+    "groups": []
+  },
+  "sessionRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "sessions": 1,
+      "totalObservedOutputTokens": 1000,
+      "top": [
+        {
+          "ref": "synthetic-completed",
+          "source": "codex",
+          "projectRef": "synthetic-project",
+          "subscriptionRef": "synthetic-sub-00",
+          "firstAt": "2026-10-20T20:05:00Z",
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    "recent30d": {
+      "sessions": 1,
+      "totalObservedOutputTokens": 1000,
+      "top": [
+        {
+          "ref": "synthetic-completed",
+          "source": "codex",
+          "projectRef": "synthetic-project",
+          "subscriptionRef": "synthetic-sub-00",
+          "firstAt": "2026-10-20T20:05:00Z",
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "projectRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "projects": 1,
+      "totalObservedOutputTokens": 1000,
+      "unattributedOutputTokens": 0,
+      "top": [
+        {
+          "ref": "synthetic-project",
+          "label": "Synthetic project",
+          "sessions": 1,
+          "subscriptionRefs": [
+            "synthetic-sub-00"
+          ],
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    "recent30d": {
+      "projects": 1,
+      "totalObservedOutputTokens": 1000,
+      "unattributedOutputTokens": 0,
+      "top": [
+        {
+          "ref": "synthetic-project",
+          "label": "Synthetic project",
+          "sessions": 1,
+          "subscriptionRefs": [
+            "synthetic-sub-00"
+          ],
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "projectLabels": true,
+  "subscriptions": [
+    {
+      "subscriptionRef": "synthetic-sub-00",
+      "sources": [
+        "codex"
+      ],
+      "basis": "synthetic-binding",
+      "observedAt": "2026-10-20T21:04:00Z"
+    }
+  ],
+  "recording": true,
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
+  "dataRevision": "sha256:a02930e8819c1b84e41e2296aeccf01c",
+  "validUntil": "2026-10-20T21:05:56Z"
+}
