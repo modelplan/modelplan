@@ -58,7 +58,7 @@ final class CatalogueTests: XCTestCase {
         var c = context(); c.capabilities.login = .requiresApproval
         var rows = try SettingsCatalogue.rows(preferences: .init(), context: c)
         func row(_ key: SettingKey) throws -> SettingsRow { try XCTUnwrap(rows.first { $0.key == key }) }
-        XCTAssertEqual(try row(.login).value, .text("requiresApproval"))
+        XCTAssertEqual(try row(.login).value, .login(LoginSetting(preferences: .init(), capabilities: c.capabilities)))
         XCTAssertEqual(try row(.captureHiding).availability, .unsupportedCaptureHiding)
         XCTAssertEqual(try row(.clearCLI).availability, .cliOwned); XCTAssertEqual(try row(.clearCLI).value, .action(nil))
         XCTAssertEqual(try row(.retention).value, .text("sessions=35d; dailyTotals=371d; owner=CLI"))
@@ -67,7 +67,8 @@ final class CatalogueTests: XCTestCase {
         c.capabilities.appCacheClearAvailable = true; c.capabilities.login = .unavailable
         rows = try SettingsCatalogue.rows(preferences: .init(), context: c)
         XCTAssertEqual(try row(.clearAppCache).value, .action(.clearAppCache))
-        XCTAssertEqual(try row(.login).availability, .serviceUnavailable)
+        XCTAssertEqual(try row(.login).availability, .available)
+        XCTAssertEqual(try row(.login).value, .login(LoginSetting(preferences: .init(), capabilities: c.capabilities)))
         XCTAssertNil(c.capabilities.loginRequest(enabled: true))
         c.capabilities.login = .notRegistered
         XCTAssertEqual(c.capabilities.loginRequest(enabled: true), .setLoginEnabled(true))
