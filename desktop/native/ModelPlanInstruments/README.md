@@ -114,6 +114,23 @@ all output while opaque refs remain usable for navigation.
 New synthetic page/selection/navigation tests live only in this target's Tests.
 Canonical CLI schemas and `testdata/contract-v1` remain read-only.
 
+## Explicit public-default selection seam
+
+The selection seam additionally carries caller-localized `selectionNotice` and
+`modelAvailabilityNotes`, plus an explicit `publicDefaultFallback` flag (default
+false). Only that catalogue mode can omit a selection revision, with a known
+nonempty matching publication ID and the same scope. Known conflicting revisions
+still reject. `matchesExact` retains the strict original gate and rejects fallback
+mode; comparison metrics continue to require the existing publication-usability
+gate. No CLI revision is invented.
+
+Fallback pages preserve caller-provided ordered public IDs even when personal
+joining or ordinary exact-selection diagnostics are unavailable. They carry tool
+availability/actual-use explanations, never entitlement claims. Empty public data
+has a localized `emptyStateNotice`; no missing model is manufactured. The caller
+still owns selection/order and supplies public data explicitly. This seam adds no
+selection algorithm or view.
+
 ## On-demand help logic
 
 `FirstUseHintLedger` stores only the five app-owned boolean flags. Its Codable
