@@ -1,0 +1,260 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. Frozen required fields/types; additive extensions allowed. A breaking change requires a new contract version and schema.",
+  "$defs": {
+    "desktopcontract-Capability": {
+      "additionalProperties": true,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "supported",
+            "source-dependent",
+            "publication-dependent",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "digest-Units": {
+      "additionalProperties": true,
+      "properties": {
+        "ability": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ability",
+        "cost",
+        "time"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://modelplan.ai/schema/publication-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "capabilities": {
+      "additionalProperties": {
+        "$ref": "#/$defs/desktopcontract-Capability"
+      },
+      "required": [
+        "effortLadders",
+        "lineageSelection",
+        "planMetering",
+        "publicResets",
+        "scopedWindows",
+        "speedTiers",
+        "subscriptionOfferings"
+      ],
+      "type": "object"
+    },
+    "contractVersion": {
+      "const": 1
+    },
+    "lineups": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "models": {
+      "items": {
+        "additionalProperties": true,
+        "properties": {
+          "developerId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "efforts": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "ability": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "abilityBasis": {
+                  "type": "string"
+                },
+                "cost": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "costBasisId": {
+                  "type": "string"
+                },
+                "effort": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "time": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "timeBasis": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "timeEstimated": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "effort"
+              ],
+              "type": "object"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "harnessIds": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": "object"
+          },
+          "id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "recommended": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "developerId",
+          "harnessIds"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "multiplierHorizon": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "multipliers": {
+      "items": {
+        "type": "object"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "planMetering": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "publicationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "publishedAt": {
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "resets": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "speedTiers": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "units": {
+      "additionalProperties": true,
+      "properties": {
+        "ability": {
+          "const": "websiteAbility"
+        },
+        "cost": {
+          "const": "usdPerReferenceTask"
+        },
+        "time": {
+          "const": "taskTimeCrossModel"
+        }
+      },
+      "required": [
+        "ability",
+        "cost",
+        "time"
+      ],
+      "type": "object"
+    },
+    "windows": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "contractVersion",
+    "capabilities",
+    "schemaVersion",
+    "publicationId",
+    "publishedAt",
+    "units",
+    "models",
+    "lineups",
+    "speedTiers",
+    "resets",
+    "windows",
+    "multipliers",
+    "multiplierHorizon",
+    "planMetering"
+  ],
+  "title": "ModelPlan publication contract v1",
+  "type": "object"
+}

@@ -6,6 +6,20 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.37, Codex plugin 0.15.29 and Claude Code plugin 0.7.28 (2026-10-25)
+
+- Public display names now read "ModelPlan" in the CLI output, the plugins and the Skill.
+  Command, package and repository identifiers stay lowercase.
+- `modelplan desktop --json --read-only` and `modelplan publication --json` add
+  `contractVersion: 1` and a `capabilities` map (frozen desktop contract v1). Existing
+  fields and `schemaVersion` are unchanged. Schemas are in `schema/`, synthetic goldens in
+  `testdata/contract-v1/`.
+- `publication --json` also carries the verified public reset announcements and
+  confirmations, scoped windows, quota multipliers with their horizon, and plan metering.
+- Capabilities mark credit history, reset-drop provenance and model-lineage selection as
+  unavailable instead of inventing values.
+- Both plugins pin CLI v0.5.37 and its published archive checksums.
+
 ## CLI v0.5.36, Codex plugin 0.15.28 and Claude Code plugin 0.7.27 (2026-10-24)
 
 - Claude Code and Codex prompt hooks give the model one factual line when the harness's

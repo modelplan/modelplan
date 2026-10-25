@@ -1,0 +1,4298 @@
+{
+  "contractVersion": 1,
+  "capabilities": {
+    "alerts": {
+      "status": "supported"
+    },
+    "creditsBalance": {
+      "status": "source-dependent"
+    },
+    "creditsHistory": {
+      "status": "unavailable",
+      "reason": "no-supported-local-source"
+    },
+    "dailyLong": {
+      "status": "source-dependent",
+      "reason": "371-day-retention; coverage-is-observed-not-imputed"
+    },
+    "extraQuotaScopes": {
+      "status": "source-dependent",
+      "reason": "reported-limit-only; model/feature identity is not inferred"
+    },
+    "historyAttribution": {
+      "status": "supported",
+      "reason": "source-wide-unless-observed-session-subscriptionRef-proves-ownership"
+    },
+    "observedUsage": {
+      "status": "source-dependent"
+    },
+    "projects": {
+      "status": "source-dependent",
+      "reason": "opaque-local-refs; labels-respect-projectLabels"
+    },
+    "quotaCycles": {
+      "status": "source-dependent",
+      "reason": "source-plan-window-attribution; not-historical-account-ownership"
+    },
+    "quotaWindows": {
+      "status": "supported"
+    },
+    "resetCards": {
+      "status": "source-dependent"
+    },
+    "resetDropProvenance": {
+      "status": "unavailable",
+      "reason": "meter-drops-do-not-identify-redemption-or-correction"
+    },
+    "sessionRates60s": {
+      "status": "source-dependent"
+    }
+  },
+  "schemaVersion": 1,
+  "kind": "modelplan.personal-snapshot",
+  "generatedAt": "2026-10-20T21:05:00Z",
+  "cliVersion": "synthetic-v1",
+  "publication": {
+    "publicationId": "synthetic-contract-publication",
+    "publishedAt": "2026-10-20T20:00:00Z",
+    "checkedAt": "2026-10-20T21:04:00Z",
+    "verifiedAt": "2026-10-20T21:04:00Z",
+    "stale": false
+  },
+  "sessions": [
+    {
+      "source": "codex",
+      "observedAt": "2026-10-20T21:04:00Z",
+      "attribution": "recent-thread",
+      "stale": false,
+      "model": {
+        "harnessId": "native-z",
+        "id": "synthetic-z",
+        "name": "Synthetic Z",
+        "developerId": "synthetic-dev"
+      },
+      "effort": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "effortStatus": "reported",
+      "recommended": {
+        "key": "medium",
+        "label": "Med",
+        "star": true
+      },
+      "vsRecommended": null,
+      "tokenRate": {
+        "configKey": "codex|native-z|reported|medium||codex-rollout/1|gen-v1",
+        "window": "recent7d",
+        "value": 11,
+        "status": "ok",
+        "n": 10,
+        "min": 5,
+        "lastAt": "2026-10-20T21:04:00Z",
+        "freshness": "fresh"
+      },
+      "workloadRate": {
+        "source": "codex",
+        "window": "recent7d",
+        "scope": "all-configurations",
+        "configCount": 1,
+        "value": 11,
+        "status": "ok",
+        "n": 10,
+        "min": 5,
+        "lastAt": "2026-10-20T21:04:00Z",
+        "freshness": "fresh"
+      },
+      "activity": {
+        "status": "recent",
+        "lastSignalAt": "2026-10-20T21:04:00Z",
+        "basis": "completed-request",
+        "withinMinutes": 10
+      },
+      "projectRef": "synthetic-project",
+      "subscription": {
+        "subscriptionRef": "synthetic-sub-00",
+        "status": "verified",
+        "basis": "synthetic-binding",
+        "observedAt": "2026-10-20T21:04:00Z"
+      },
+      "headroom": "normal"
+    }
+  ],
+  "accounts": [
+    {
+      "source": "codex",
+      "plan": "synthetic-plan",
+      "observedAt": "2026-10-20T21:04:00Z",
+      "stale": false,
+      "harness": {
+        "model": "native-z",
+        "effort": "medium",
+        "observedAt": "2026-10-20T21:04:00Z",
+        "attribution": "recent-thread"
+      },
+      "windows": [
+        {
+          "kind": "five_hour",
+          "usedPercent": 60,
+          "windowMinutes": 300,
+          "resetsAt": "2026-10-20T23:35:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-20T21:04:00Z",
+          "remainingPercent": 40,
+          "resetsInMinutes": null,
+          "elapsedPercent": 50,
+          "projectedPercent": null,
+          "ageMinutes": 1,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        },
+        {
+          "kind": "weekly",
+          "usedPercent": 60,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-10-24T09:05:00Z",
+          "resetMode": "fixed",
+          "observedAt": "2026-10-20T21:04:00Z",
+          "remainingPercent": 40,
+          "resetsInMinutes": null,
+          "elapsedPercent": 50,
+          "projectedPercent": null,
+          "ageMinutes": 1,
+          "recentPercentPerHour": null,
+          "runsOutInMinutes": null,
+          "pace": "on_track"
+        }
+      ],
+      "subscription": {
+        "subscriptionRef": "synthetic-sub-00",
+        "status": "verified",
+        "basis": "synthetic-binding",
+        "observedAt": "2026-10-20T21:04:00Z"
+      },
+      "headroom": "normal"
+    }
+  ],
+  "sources": [
+    {
+      "source": "codex",
+      "status": "ok"
+    }
+  ],
+  "connections": [],
+  "events": [],
+  "measured": [],
+  "liveSessions": [],
+  "todayTotals": [
+    {
+      "source": "codex",
+      "sums": {
+        "inputTokens": null,
+        "cacheReadTokens": null,
+        "cacheWriteTokens": null,
+        "observedRequests": 10,
+        "observedOutputTokens": 1000,
+        "eligibleRequests": 10,
+        "eligibleOutputTokens": 1000,
+        "genMs": 91000,
+        "turns": 0,
+        "turnMs": 0,
+        "turnOutputTokens": 0,
+        "mixedConfigTurnsExcluded": 0
+      }
+    }
+  ],
+  "hourly": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "hour": "2026-10-20T19:00:00Z",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 0,
+      "observedRequests": 0
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "hour": "2026-10-20T20:00:00Z",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "perfStats": [
+    {
+      "source": "codex",
+      "model": "native-z",
+      "effortStatus": "reported",
+      "effort": "medium",
+      "speed": "",
+      "parser": "codex-rollout/1",
+      "eligibility": "gen-v1",
+      "basis": {
+        "tokenBasis": "harness-reported-output",
+        "timing": {
+          "start": "input-logged",
+          "first": "item-started-at",
+          "end": "usage-logged",
+          "quality": "harness-log-proxy"
+        },
+        "quantile": "log1.1-centre-lower"
+      },
+      "attribution": "unattributed",
+      "since": "2026-09-20T21:05:00Z",
+      "lastAt": "2026-10-20T21:04:00Z",
+      "freshness": "fresh",
+      "windows": {
+        "today": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        },
+        "recent7d": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        },
+        "recent30d": {
+          "sums": {
+            "inputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "observedRequests": 10,
+            "observedOutputTokens": 1000,
+            "eligibleRequests": 10,
+            "eligibleOutputTokens": 1000,
+            "genMs": 91000,
+            "turns": 0,
+            "turnMs": 0,
+            "turnOutputTokens": 0,
+            "mixedConfigTurnsExcluded": 0
+          },
+          "hist": {
+            "ttftMs": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnMsHist": {
+              "scheme": "log1.1/v1",
+              "unit": "ms",
+              "counts": {}
+            },
+            "turnTokensHist": {
+              "scheme": "log1.1/v1",
+              "unit": "tokens",
+              "counts": {}
+            }
+          },
+          "metrics": {
+            "generationTps": {
+              "value": 11,
+              "status": "ok",
+              "n": 10,
+              "min": 5
+            },
+            "ttftMs": {
+              "value": null,
+              "status": "unavailable",
+              "n": 0,
+              "min": 5,
+              "reason": "no-first-token"
+            },
+            "wholeTurnTps": {
+              "value": null,
+              "status": "insufficient",
+              "n": 0,
+              "min": 5
+            }
+          }
+        }
+      }
+    }
+  ],
+  "daily": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "dailyCoverage": {
+    "from": "2026-09-21",
+    "recording": true
+  },
+  "dailyLong": [
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 370,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 369,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 368,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 367,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 366,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 365,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 364,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 363,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 362,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 361,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 360,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 359,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 358,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 357,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 356,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 355,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-10-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 354,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 353,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 352,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 351,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 350,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 349,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 348,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 347,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 346,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 345,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 344,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 343,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 342,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 341,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 340,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 339,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 338,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 337,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 336,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 335,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 334,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 333,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 332,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 331,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 330,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 329,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 328,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 327,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 326,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 325,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-11-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 324,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 323,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 322,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 321,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 320,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 319,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 318,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 317,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 316,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 315,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 314,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 313,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 312,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 311,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 310,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 309,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 308,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 307,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 306,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 305,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 304,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 303,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 302,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 301,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 300,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 299,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 298,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 297,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 296,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 295,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 294,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2025-12-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 293,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 292,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 291,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 290,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 289,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 288,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 287,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 286,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 285,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 284,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 283,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 282,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 281,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 280,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 279,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 278,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 277,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 276,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 275,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 274,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 273,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 272,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 271,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 270,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 269,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 268,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 267,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 266,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 265,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 264,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 263,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-01-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 262,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 261,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 260,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 259,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 258,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 257,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 256,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 255,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 254,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 253,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 252,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 251,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 250,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 249,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 248,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 247,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 246,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 245,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 244,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 243,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 242,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 241,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 240,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 239,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 238,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 237,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 236,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 235,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-02-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 234,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 233,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 232,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 231,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 230,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 229,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 228,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 227,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 226,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 225,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 224,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 223,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 222,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 221,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 220,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 219,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 218,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 217,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 216,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 215,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 214,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 213,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 212,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 211,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 210,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 209,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 208,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 207,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 206,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 205,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 204,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-03-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 203,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 202,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 201,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 200,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 199,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 198,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 197,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 196,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 195,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 194,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 193,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 192,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 191,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 190,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 189,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 188,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 187,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 186,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 185,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 184,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 183,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 182,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 181,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 180,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 179,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 178,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 177,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 176,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 175,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 174,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-04-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 173,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 172,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 171,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 170,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 169,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 168,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 167,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 166,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 165,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 164,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 163,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 162,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 161,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 160,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 159,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 158,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 157,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 156,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 155,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 154,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 153,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 152,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 151,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 150,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 149,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 148,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 147,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 146,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 145,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 144,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 143,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-05-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 142,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 141,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 140,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 139,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 138,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 137,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 136,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 135,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 134,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 133,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 132,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 131,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 130,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 129,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 128,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 127,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 126,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 125,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 124,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 123,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 122,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 121,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 120,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 119,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 118,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 117,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 116,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 115,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 114,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 113,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-06-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 112,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 111,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 110,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 109,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 108,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 107,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 106,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 105,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 104,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 103,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 102,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 101,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 100,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 99,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 98,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 97,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 96,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 95,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 94,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 93,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 92,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 91,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 90,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 89,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 88,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 87,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 86,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 85,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 84,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 83,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 82,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-07-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 81,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 80,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 79,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 78,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 77,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 76,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 75,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 74,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 73,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 72,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 71,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 70,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 69,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 68,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 67,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 66,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 65,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 64,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 63,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 62,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 61,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 60,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 59,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 58,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 57,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 56,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 55,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 54,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 53,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 52,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 51,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-08-31",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 50,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 49,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 48,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 47,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 46,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 45,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 44,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 43,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 42,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 41,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 40,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 39,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 38,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 37,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 36,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 35,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 34,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 33,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 32,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 31,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 30,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-21",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 29,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-22",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 28,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-23",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 27,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-24",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 26,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-25",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 25,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-26",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 24,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-27",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 23,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-28",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 22,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-29",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 21,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-09-30",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 20,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-01",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 19,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-02",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 18,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-03",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 17,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-04",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 16,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-05",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 15,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-06",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 14,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-07",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 13,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-08",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 12,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-09",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 11,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-10",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 10,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-11",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 9,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-12",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 8,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-13",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 7,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-14",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 6,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-15",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 5,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-16",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 4,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-17",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 3,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-18",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 2,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-19",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1,
+      "observedRequests": 1
+    },
+    {
+      "inputTokens": null,
+      "cacheReadTokens": null,
+      "cacheWriteTokens": null,
+      "day": "2026-10-20",
+      "source": "codex",
+      "model": "native-z",
+      "observedOutputTokens": 1000,
+      "observedRequests": 10
+    }
+  ],
+  "dailyLongCoverage": {
+    "from": "2025-10-15",
+    "recording": true
+  },
+  "paceHistory": {
+    "since": null,
+    "status": "ok",
+    "gapLimitMinutes": {
+      "five_hour": 60,
+      "monthly": 1440,
+      "weekly": 360
+    },
+    "groups": []
+  },
+  "sessionRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "sessions": 1,
+      "totalObservedOutputTokens": 1000,
+      "top": [
+        {
+          "ref": "synthetic-completed",
+          "source": "codex",
+          "projectRef": "synthetic-project",
+          "subscriptionRef": "synthetic-sub-00",
+          "firstAt": "2026-10-20T20:05:00Z",
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    "recent30d": {
+      "sessions": 1,
+      "totalObservedOutputTokens": 1000,
+      "top": [
+        {
+          "ref": "synthetic-completed",
+          "source": "codex",
+          "projectRef": "synthetic-project",
+          "subscriptionRef": "synthetic-sub-00",
+          "firstAt": "2026-10-20T20:05:00Z",
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "projectRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "projects": 1,
+      "totalObservedOutputTokens": 1000,
+      "unattributedOutputTokens": 0,
+      "top": [
+        {
+          "ref": "synthetic-project",
+          "label": "Synthetic project",
+          "sessions": 1,
+          "subscriptionRefs": [
+            "synthetic-sub-00"
+          ],
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    "recent30d": {
+      "projects": 1,
+      "totalObservedOutputTokens": 1000,
+      "unattributedOutputTokens": 0,
+      "top": [
+        {
+          "ref": "synthetic-project",
+          "label": "Synthetic project",
+          "sessions": 1,
+          "subscriptionRefs": [
+            "synthetic-sub-00"
+          ],
+          "lastAt": "2026-10-20T20:55:00Z",
+          "observedOutputTokens": 1000,
+          "observedRequests": 10,
+          "share": 1,
+          "configs": [
+            {
+              "model": "native-z",
+              "effortStatus": "reported",
+              "effort": "medium",
+              "speed": "",
+              "observedOutputTokens": 1000,
+              "share": 1,
+              "recommendedEffort": "medium"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "projectLabels": true,
+  "subscriptions": [
+    {
+      "subscriptionRef": "synthetic-sub-00",
+      "sources": [
+        "codex"
+      ],
+      "basis": "synthetic-binding",
+      "observedAt": "2026-10-20T21:04:00Z"
+    }
+  ],
+  "recording": true,
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
+  "dataRevision": "sha256:2d63f7b167a1fa36ea9a4d6c1161e869",
+  "validUntil": "2026-10-20T21:14:00Z"
+}

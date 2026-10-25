@@ -18,7 +18,9 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .target(name: "ModelPlanPrimitives", dependencies: ["ModelPlanCore"]),
     .executableTarget(name: "ModelPlanPrimitiveProbe", dependencies: ["ModelPlanCore", "ModelPlanPrimitives"], path: "PrimitiveProbe"),
     .executableTarget(name: "ModelPlanPrimitiveChecks", dependencies: ["ModelPlanCore", "ModelPlanPrimitives"], path: "PrimitiveChecks"),
-    .target(name: "ModelPlanDock", path: "ModelPlanDock/Logic"),
+    .target(name: "ModelPlanDock", dependencies: ["ModelPlanCore", "ModelPlanPrimitives"], path: "ModelPlanDock",
+            exclude: ["WindowInputProof", "LogicChecks", "InstrumentProof", "README.md", "check-logic.sh"]),
+    .executableTarget(name: "ModelPlanDockInstrumentChecks", dependencies: ["ModelPlanDock"], path: "ModelPlanDock/InstrumentProof"),
     .executableTarget(name: "ModelPlanDockLogicChecks", dependencies: ["ModelPlanDock"], path: "ModelPlanDock/LogicChecks"),
     .target(name: "ModelPlanInstruments", path: "ModelPlanInstruments/Sources/ModelPlanInstruments"),
     .testTarget(name: "ModelPlanInstrumentsTests", dependencies: ["ModelPlanInstruments"],
@@ -33,5 +35,6 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanCore", "ModelPlanShell"]),
     .executableTarget(name: "ModelPlanRunLoopChecks", dependencies: ["ModelPlanCore"], path: "RunLoopChecks"),
     .executableTarget(name: "ModelPlanShellChecks", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "ShellChecks"),
+    .executableTarget(name: "ModelPlanContractV1Checks", dependencies: ["ModelPlanCore"], path: "ContractV1Checks"),
     .executableTarget(name: "ModelPlanContractChecks", dependencies: ["ModelPlanCore"], path: "ContractChecks", resources: [.copy("Fixtures")]),
 ])
