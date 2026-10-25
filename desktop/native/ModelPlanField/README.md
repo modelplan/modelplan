@@ -23,6 +23,10 @@ All elapsed deadlines use `ContinuousClock`, with one common-mode timer revalida
 | Fully occluded grace | 5 s |
 | Disposed acknowledgement | 250 ms diagnostic window; native detach never waits |
 
+Capture admission belongs to the entire physical chain, not just the logical request. The coordinator retains one work owner through native snapshot, PNG encoding, image preparation and accepted persistence. Configuration/hide/instance changes cancel the owned work and merge the next request; they do not release admission early or overwrite its task handle. A non-preemptible WK/ImageIO operation keeps that slot until its callback/task actually exits. Missing completion therefore fails closed rather than admitting another capture. Cancellation is propagated to the owned encoder and preparation tasks, with checks around non-preemptible image calls.
+
+An occlusion/restoration during an unfinished configuration sends the existing `setAppearance` envelope immediately, using that same configuration/request identity and only changing `paused`. The page updates pause without queuing another `apply`; the original settled deadline and latest desired public configuration remain intact. No bridge fields or public DTOs are added.
+
 Only one configuration is in flight; the desired configuration is a single replaceable value. Projection/appearance/viewport changes invalidate the pending capture. Generation and configuration/request identities reject duplicate, late and mismatched replies. Failures release and expose the still/explicit retry; no automatic remount loop exists.
 
 ## Protocol version 1

@@ -16,7 +16,8 @@ public enum FieldEffect: Equatable, Sendable {
 /// Only explicit enlarge/retry mounts; appearance, publication, focus and uncover never remount.
 public struct FieldLifecycle: Sendable {
     private struct ConfigurationRequest: Sendable {
-        let id: UUID, configuration: FieldConfiguration, paused: Bool
+        let id: UUID, configuration: FieldConfiguration
+        var paused: Bool
         let deadline: ContinuousClock.Instant
     }
     private struct CaptureRequest: Sendable {
@@ -34,6 +35,8 @@ public struct FieldLifecycle: Sendable {
     private var occlusionDeadline: ContinuousClock.Instant?
     private var request: ConfigurationRequest?
     private var capture: CaptureRequest?
+    private var capturePipelineKey: FieldCaptureKey?
+    private var captureNeeded = false
     private var applied: ConfigurationRequest?
     private var retired: (generation: UUID, requestId: UUID, deadline: ContinuousClock.Instant)?
     private var ready = false
@@ -54,17 +57,20 @@ public struct FieldLifecycle: Sendable {
     }
     public mutating func update(_ next: FieldConfiguration, now: ContinuousClock.Instant = .now) -> [FieldEffect] {
         var effects = advance(now: now)
-        if next != configuration { configuration = next; capture = nil }
+        if next != configuration { configuration = next; capture = nil; captureNeeded = false }
         effects += configureIfNeeded(now: now); return effects
     }
     public mutating func setVisibility(_ next: FieldVisibility, now: ContinuousClock.Instant = .now) -> [FieldEffect] {
-        var effects = advance(now: now); visibility = next
+        var effects = advance(now: now); let previous = visibility; visibility = next
         switch next {
         case .visible:
-            occlusionDeadline = nil; effects += configureIfNeeded(now: now)
+            occlusionDeadline = nil
+            effects += visibilityOverride(previous: previous)
+            effects += configureIfNeeded(now: now)
         case .occluded:
-            capture = nil
+            capture = nil; captureNeeded = false
             if generation != nil, occlusionDeadline == nil { occlusionDeadline = now.advanced(by: .seconds(5)) }
+            effects += visibilityOverride(previous: previous)
             effects += configureIfNeeded(now: now)
         case .orderedOut: effects += release(.orderedOut, now: now)
         case .collapsed: effects += release(.collapsed, now: now)
@@ -106,14 +112,15 @@ public struct FieldLifecycle: Sendable {
             guard let request, request.id == message.requestId else { return effects }
             applied = request; self.request = nil; phase = .live
             effects += configureIfNeeded(now: now)
-            if self.request == nil { effects += requestCapture(now: now) }
+            if self.request == nil { captureNeeded = true; effects += requestCapture(now: now) }
         case .interaction:
             guard visibility == .visible, message.interaction != nil else { return effects }
             watchdog = now.advanced(by: .seconds(180))
         case .captureResult:
             guard var capture, !capture.snapshotStarted, message.requestId == capture.key.requestId,
                   message.captureKey == capture.key, captureIsCurrent(capture.key) else { return effects }
-            capture.snapshotStarted = true; self.capture = capture; effects.append(.snapshot(capture.key))
+            capture.snapshotStarted = true; self.capture = capture
+            capturePipelineKey = capture.key; effects.append(.snapshot(capture.key))
         case .error: effects += release(.webError, now: now)
         case .disposed: break
         }
@@ -135,6 +142,15 @@ public struct FieldLifecycle: Sendable {
             .filter({ now >= $0.0 }).min(by: { $0.0 < $1.0 }) { return release(first.1, now: now) }
         return []
     }
+    // Physical ownership survives logical cancellation, hide and instance replacement.
+    // The coordinator calls this only after the native snapshot/codec chain actually exits.
+    mutating func capturePipelineRetired(_ key: FieldCaptureKey, now: ContinuousClock.Instant) -> [FieldEffect] {
+        guard capturePipelineKey == key else { return [] }
+        capturePipelineKey = nil
+        var effects = advance(now: now)
+        effects += requestCapture(now: now)
+        return effects
+    }
     private func captureIsCurrent(_ key: FieldCaptureKey) -> Bool {
         guard let capture, let applied else { return false }
         return capture.key == key && generation == key.generation && visibility == .visible &&
@@ -142,12 +158,23 @@ public struct FieldLifecycle: Sendable {
             key.configurationId == applied.id
     }
     private mutating func requestCapture(now: ContinuousClock.Instant) -> [FieldEffect] {
-        guard capture == nil, let generation, let applied, request == nil,
+        guard captureNeeded, capturePipelineKey == nil, capture == nil, let generation, let applied, request == nil,
               visibility == .visible, !applied.paused, applied.configuration == configuration else { return [] }
         let key = FieldCaptureKey(generation: generation, requestId: UUID(), configurationId: applied.id,
             appearance: configuration.appearance, viewport: configuration.viewport, projectionRevision: configuration.projection.revision)
+        captureNeeded = false
         capture = CaptureRequest(key: key, deadline: now.advanced(by: .seconds(2)))
         return [.send(FieldCommand(generation: generation, requestId: key.requestId, type: .capture, captureKey: key))]
+    }
+    private mutating func visibilityOverride(previous: FieldVisibility) -> [FieldEffect] {
+        guard previous != visibility, let generation, ready, var request else { return [] }
+        let paused = visibility == .occluded
+        guard request.paused != paused else { return [] }
+        request.paused = paused; self.request = request
+        // Same identity/configuration: visibility reaches the page immediately, without another
+        // configuration slot, another apply, or extending its existing settled deadline.
+        return [.send(FieldCommand(generation: generation, requestId: request.id, type: .setAppearance,
+                                   configuration: request.configuration, paused: paused))]
     }
     private mutating func configureIfNeeded(now: ContinuousClock.Instant) -> [FieldEffect] {
         guard let generation, ready, request == nil else { return [] }
@@ -160,7 +187,7 @@ public struct FieldLifecycle: Sendable {
                 applied.configuration.viewport != configuration.viewport || applied.paused != paused
             kind = projectionChanged && appearanceChanged ? .configure : projectionChanged ? .setPublicProjection : .setAppearance
         } else { kind = .configure }
-        let id = UUID(); capture = nil
+        let id = UUID(); capture = nil; captureNeeded = false
         request = ConfigurationRequest(id: id, configuration: configuration, paused: paused, deadline: now.advanced(by: .seconds(5)))
         return [.send(FieldCommand(generation: generation, requestId: id, type: kind, configuration: configuration, paused: paused))]
     }
@@ -169,7 +196,7 @@ public struct FieldLifecycle: Sendable {
         let command = FieldCommand(generation: generation, type: .dispose)
         retired = (generation, command.requestId, now.advanced(by: .milliseconds(250))); disposalAcknowledged = false
         self.generation = nil; ready = false; readyDeadline = nil; watchdog = nil
-        occlusionDeadline = nil; request = nil; capture = nil; applied = nil; lastRelease = reason
+        occlusionDeadline = nil; request = nil; capture = nil; captureNeeded = false; applied = nil; lastRelease = reason
         phase = [.readyTimeout, .settledTimeout, .captureTimeout, .navigation, .webProcessTerminated, .webError].contains(reason) ? .failed : .still
         return [.send(command), .release(generation)]
     }

@@ -8,6 +8,24 @@ import Foundation
     func invalidate()
 }
 
+// Internal optional cancellation seam; the public transport contract is unchanged.
+@MainActor protocol FieldSnapshotCancellation: AnyObject { func cancelSnapshot() }
+
+@MainActor private final class FieldCaptureWork {
+    let key: FieldCaptureKey
+    let transport: any FieldTransport
+    var cancelled = false, snapshotCompleted = false
+    var preparation: Task<PreparedFieldStill?, Never>?
+    var task: Task<Void, Never>?
+    init(key: FieldCaptureKey, transport: any FieldTransport) { self.key = key; self.transport = transport }
+    func cancel() {
+        guard !cancelled else { return }
+        cancelled = true
+        (transport as? any FieldSnapshotCancellation)?.cancelSnapshot()
+        preparation?.cancel(); task?.cancel()
+    }
+}
+
 /// Nonvisual orchestration. Product enlargement is opt-in after the integrated resource/runtime gate.
 /// Window visibility and workspace reasons are supplied by the native owner, not NSApp.isActive.
 @MainActor public final class FieldCoordinator {
@@ -20,7 +38,15 @@ import Foundation
     private let now: () -> ContinuousClock.Instant
     private var transport: (generation: UUID, value: any FieldTransport)?
     private var timer: Timer?
-    private var captureTask: Task<Void, Never>?
+    private var captureWork: FieldCaptureWork?
+    // Internal test seam models slow/non-preemptible ImageIO without allocating a real field.
+    var prepareImage: (Data) -> Task<PreparedFieldStill?, Never> = { data in
+        Task.detached(priority: .utility) {
+            guard !Task.isCancelled else { return nil }
+            let image = try? FieldPNG.prepare(data)
+            return Task.isCancelled ? nil : image
+        }
+    }
     public init(configuration: FieldConfiguration, cache: FieldStillCache, enlargementEnabled: Bool = false,
                 now: @escaping () -> ContinuousClock.Instant = { .now },
                 makeTransport: @escaping () -> any FieldTransport) {
@@ -42,6 +68,9 @@ import Foundation
         perform(state.receive(message, now: now()))
     }
     private func perform(_ effects: [FieldEffect]) {
+        if let work = captureWork, state.pendingCapture != work.key || state.generation != work.key.generation {
+            work.cancel() // Cancel, but retain ownership and handles until the chain returns.
+        }
         for effect in effects {
             switch effect {
             case .mount(let generation):
@@ -55,30 +84,45 @@ import Foundation
                 if transport?.generation == command.generation { transport?.value.send(command) }
             case .release(let generation):
                 if transport?.generation == generation {
-                    captureTask?.cancel(); captureTask = nil
+                    captureWork?.cancel()
                     transport?.value.invalidate(); transport = nil
                 }
             case .snapshot(let key):
-                guard transport?.generation == key.generation else { continue }
-                transport?.value.snapshot { [weak self] data in
-                    guard let self else { return }
-                    self.validateDeadlines()
-                    guard self.state.pendingCapture == key, self.state.generation == key.generation else { return }
-                    guard let data else { self.close(.webError); return }
-                    self.captureTask = Task { [weak self] in
-                        let prepared = await Task.detached(priority: .utility) { try? FieldPNG.prepare(data) }.value
-                        guard !Task.isCancelled, let self else { return }
-                        self.validateDeadlines()
-                        guard let prepared else { if self.state.pendingCapture == key { self.close(.webError) }; return }
-                        guard self.state.acceptCapture(key, now: self.now()) else { return }
-                        do { try await self.cache.store(prepared, key: key) } catch { if !Task.isCancelled { self.onCacheFailure?() } }
-                        guard !Task.isCancelled else { return }
-                        self.captureTask = nil; self.scheduleDeadline()
-                    }
-                }
+                guard captureWork == nil, let transport, transport.generation == key.generation else { continue }
+                let work = FieldCaptureWork(key: key, transport: transport.value)
+                captureWork = work
+                transport.value.snapshot { [weak self] data in self?.receivedSnapshot(data, work: work) }
             }
         }
         scheduleDeadline(); onChange?(state.phase)
+    }
+    private func receivedSnapshot(_ data: Data?, work: FieldCaptureWork) {
+        guard captureWork === work, !work.snapshotCompleted else { return }
+        work.snapshotCompleted = true
+        validateDeadlines()
+        guard !work.cancelled, state.pendingCapture == work.key, let data else {
+            if !work.cancelled, state.pendingCapture == work.key { close(.webError) }
+            retire(work); return
+        }
+        let preparation = prepareImage(data); work.preparation = preparation
+        work.task = Task { [weak self, work] in
+            let prepared = await preparation.value
+            defer { work.preparation = nil; work.task = nil }
+            guard let self else { return }
+            defer { self.retire(work) }
+            guard !work.cancelled, !Task.isCancelled else { return }
+            self.validateDeadlines()
+            guard !work.cancelled else { return }
+            guard let prepared else { if self.state.pendingCapture == work.key { self.close(.webError) }; return }
+            guard self.state.acceptCapture(work.key, now: self.now()) else { return }
+            do { try await self.cache.store(prepared, key: work.key) }
+            catch { if !work.cancelled, !Task.isCancelled { self.onCacheFailure?() } }
+        }
+    }
+    private func retire(_ work: FieldCaptureWork) {
+        guard captureWork === work else { return }
+        work.preparation = nil; work.task = nil; captureWork = nil
+        perform(state.capturePipelineRetired(work.key, now: now()))
     }
     private func scheduleDeadline() {
         timer?.invalidate(); timer = nil
@@ -90,5 +134,9 @@ import Foundation
         }
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
-    deinit { timer?.invalidate(); captureTask?.cancel() }
+    deinit {
+        timer?.invalidate()
+        let work = captureWork, retiredTransport = transport?.value
+        Task { @MainActor in work?.cancel(); retiredTransport?.invalidate() }
+    }
 }

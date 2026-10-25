@@ -3,6 +3,31 @@ import XCTest
 @testable import ModelPlanField
 
 final class FieldLifecycleTests: XCTestCase {
+    func testOcclusionImmediatelySendsPauseWhileConfigureIsOutstanding() throws {
+        var state = FieldLifecycle(configuration: try fixture())
+        _ = state.enlarge(now: at(0))
+        let initial = commands(state.receive(message(.ready, state.generation!), now: at(1)))[0]
+        let originalDeadline = state.nextDeadline
+        let pause = commands(state.setVisibility(.occluded, now: at(1.1)))
+        XCTAssertEqual(pause.count, 1, "Pause must not wait for settled")
+        XCTAssertEqual(pause.first?.type, .setAppearance)
+        XCTAssertEqual(pause.first?.requestId, initial.requestId)
+        XCTAssertEqual(pause.first?.paused, true)
+        let resume = commands(state.setVisibility(.visible, now: at(1.2)))
+        XCTAssertEqual(resume.count, 1)
+        XCTAssertEqual(resume.first?.requestId, initial.requestId)
+        XCTAssertEqual(resume.first?.paused, false)
+        XCTAssertEqual(state.nextDeadline, originalDeadline)
+        XCTAssertTrue(state.update(try fixture("public-r2"), now: at(1.3)).isEmpty)
+        let latestPause = commands(state.setVisibility(.occluded, now: at(1.4)))
+        XCTAssertEqual(latestPause.first?.configuration, initial.configuration)
+        XCTAssertEqual(state.nextDeadline, originalDeadline)
+        let latest = commands(state.receive(message(.settled, state.generation!, request: initial.requestId), now: at(2)))
+        XCTAssertEqual(latest.first?.configuration?.projection.revision, "public-r2")
+        XCTAssertEqual(latest.first?.paused, true)
+        XCTAssertFalse(latest.contains { $0.type == .capture })
+        XCTAssertTrue(state.receive(message(.settled, state.generation!, request: latest[0].requestId), now: at(3)).isEmpty)
+    }
     func testStartupUpdatesAndDuplicateEnlargeOwnOnlyOneInstance() throws {
         var state = FieldLifecycle(configuration: try fixture())
         XCTAssertEqual(state.phase, .still)

@@ -34,6 +34,7 @@ func startLive(_ state: inout FieldLifecycle, consumeCapture: Bool = true) -> (U
     if consumeCapture {
         _ = state.receive(message(.captureResult, generation, request: capture.requestId, key: capture), now: at(3))
         _ = state.acceptCapture(capture, now: at(3))
+        _ = state.capturePipelineRetired(capture, now: at(3))
     }
     return (generation, capture)
 }

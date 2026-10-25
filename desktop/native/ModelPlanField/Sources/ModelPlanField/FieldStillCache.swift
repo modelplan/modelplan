@@ -14,6 +14,7 @@ public struct PreparedFieldStill: @unchecked Sendable {
 public enum FieldPNG {
     public static let encodedLimit = 8 * 1024 * 1024
     public static func prepare(_ data: Data) throws -> PreparedFieldStill {
+        try Task.checkCancellation()
         guard data.count <= encodedLimit else { throw FieldImageError.oversized }
         let bytes = [UInt8](data.prefix(33))
         guard bytes.count == 33, Array(bytes[0..<8]) == [137,80,78,71,13,10,26,10],
@@ -24,6 +25,7 @@ public enum FieldPNG {
             throw FieldImageError.oversized
         }
         try validateChunks(data)
+        try Task.checkCancellation()
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               CGImageSourceGetCount(source) == 1, CGImageSourceGetStatus(source) == .statusComplete,
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -32,6 +34,7 @@ public enum FieldPNG {
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceShouldCacheImmediately: true
               ] as CFDictionary) else { throw FieldImageError.invalidPNG }
+        try Task.checkCancellation()
         return PreparedFieldStill(png: try encode(image), image: image)
     }
     private static let crcTable: [UInt32] = (0..<256).map { value in
@@ -46,6 +49,7 @@ public enum FieldPNG {
             }
             var offset = 8, sawPixels = false
             while offset < bytes.count {
+                try Task.checkCancellation()
                 guard bytes.count - offset >= 12 else { throw FieldImageError.invalidPNG }
                 let length = Int(uint(offset)), kind = uint(offset + 4)
                 guard length <= bytes.count - offset - 12 else { throw FieldImageError.invalidPNG }
@@ -64,6 +68,7 @@ public enum FieldPNG {
         }
     }
     public static func encode(_ image: CGImage) throws -> Data {
+        try Task.checkCancellation()
         guard image.width > 0, image.height > 0, image.width <= 2048, image.height <= 2048 else { throw FieldImageError.oversized }
         let buffer = NSMutableData()
         guard let target = CGImageDestinationCreateWithData(buffer, UTType.png.identifier as CFString, 1, nil) else {
@@ -71,6 +76,7 @@ public enum FieldPNG {
         }
         CGImageDestinationAddImage(target, image, nil)
         guard CGImageDestinationFinalize(target), buffer.length <= encodedLimit else { throw FieldImageError.oversized }
+        try Task.checkCancellation()
         return buffer as Data
     }
 }

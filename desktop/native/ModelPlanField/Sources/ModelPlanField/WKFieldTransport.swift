@@ -4,11 +4,12 @@ import WebKit
 import ImageIO
 
 /// Scoped transport only; no cockpit/window styling or official renderer is included.
-@MainActor public final class WKFieldTransport: NSObject, FieldTransport, WKNavigationDelegate, WKUIDelegate {
+@MainActor public final class WKFieldTransport: NSObject, FieldTransport, FieldSnapshotCancellation, WKNavigationDelegate, WKUIDelegate {
     public private(set) var view: WKWebView?
     private weak var host: NSView?
     private let root: URL
     private var generation: UUID?
+    private var snapshotRequest: FieldSnapshotRequest?
     private var receive: ((Data) -> Void)?
     private var failed: ((FieldReleaseReason) -> Void)?
     public init(resourceRoot: URL, host: NSView) {
@@ -39,33 +40,47 @@ import ImageIO
         }
     }
     public func snapshot(completion: @escaping (Data?) -> Void) {
-        guard let view, view.bounds.width > 0, view.bounds.height > 0,
+        guard snapshotRequest == nil, let view, view.bounds.width > 0, view.bounds.height > 0,
               view.window?.isVisible == true, view.window?.occlusionState.contains(.visible) == true else { completion(nil); return }
         let generation = generation
         let configuration = WKSnapshotConfiguration(); configuration.rect = view.bounds
         guard let width = FieldResourcePolicy.snapshotWidth(width: view.bounds.width, height: view.bounds.height,
             backingScale: view.window?.backingScaleFactor ?? 1) else { completion(nil); return }
         configuration.snapshotWidth = NSNumber(value: width)
-        view.takeSnapshot(with: configuration) { [weak self] image, error in
-            guard let self, self.generation == generation, error == nil, let image,
-                  let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { completion(nil); return }
-            let pixels = FieldPixels(image: cg)
-            Task {
-                let data = await Task.detached(priority: .utility) { try? FieldPNG.encode(pixels.image) }.value
-                guard self.generation == generation else { return }
-                completion(data)
+        let request = FieldSnapshotRequest(completion: completion)
+        snapshotRequest = request
+        view.takeSnapshot(with: configuration) { [weak self, request] image, error in
+            guard let self else { request.finish(nil); return }
+            guard !request.cancelled, self.generation == generation, error == nil, let image,
+                  let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                self.finishSnapshot(request, data: nil); return
             }
+            let pixels = FieldPixels(image: cg)
+            let started = request.startEncoding({ try? FieldPNG.encode(pixels.image) }) { [weak self, request] data in
+                guard let self else { request.finish(nil); return }
+                self.finishSnapshot(request, data: request.cancelled || self.generation != generation ? nil : data)
+            }
+            if !started { self.finishSnapshot(request, data: nil) }
         }
     }
+    func cancelSnapshot() { snapshotRequest?.cancel() }
+    private func finishSnapshot(_ request: FieldSnapshotRequest, data: Data?) {
+        guard snapshotRequest === request else { return }
+        snapshotRequest = nil
+        request.finish(data)
+    }
+
     public func invalidate() {
+        cancelSnapshot()
         generation = nil; receive = nil; failed = nil
         view?.stopLoading(); view?.configuration.userContentController.removeScriptMessageHandler(forName: "field")
         view?.navigationDelegate = nil; view?.uiDelegate = nil; view?.removeFromSuperview(); view = nil
     }
     deinit {
         // Explicit invalidation is synchronous. This fallback also detaches a view if its owner is dropped.
-        let retiredView = view
+        let retiredView = view, request = snapshotRequest
         DispatchQueue.main.async {
+            request?.cancel()
             retiredView?.stopLoading()
             retiredView?.configuration.userContentController.removeScriptMessageHandler(forName: "field")
             retiredView?.navigationDelegate = nil; retiredView?.uiDelegate = nil
@@ -91,6 +106,35 @@ import ImageIO
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed?(.webProcessTerminated) }
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed?(.navigation) }
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed?(.navigation) }
+}
+@MainActor final class FieldSnapshotRequest {
+    let completion: (Data?) -> Void
+    var cancelled = false, finished = false
+    var encoder: Task<Data?, Never>?
+    var waiter: Task<Void, Never>?
+    init(completion: @escaping (Data?) -> Void) { self.completion = completion }
+    @discardableResult
+    func startEncoding(_ encode: @escaping @Sendable () async -> Data?, completed: @escaping (Data?) -> Void) -> Bool {
+        guard encoder == nil, !cancelled, !finished else { return false }
+        let encoder = Task.detached(priority: .utility) {
+            guard !Task.isCancelled else { return nil as Data? }
+            let data = await encode()
+            return Task.isCancelled ? nil : data
+        }
+        self.encoder = encoder
+        waiter = Task {
+            let data = await encoder.value
+            self.encoder = nil; waiter = nil
+            completed(cancelled ? nil : data)
+        }
+        return true
+    }
+    func cancel() { cancelled = true; encoder?.cancel() }
+    func finish(_ data: Data?) {
+        guard !finished else { return }
+        finished = true; encoder = nil; waiter = nil
+        completion(cancelled ? nil : data)
+    }
 }
 private struct FieldPixels: @unchecked Sendable { let image: CGImage }
 private final class FieldMessageProxy: NSObject, WKScriptMessageHandler {

@@ -30,6 +30,10 @@ const captureKey = value => keys(value, ['generation', 'requestId', 'configurati
   [value.generation, value.requestId, value.configurationId].every(uuid) &&
   appearance(value.appearance) && viewport(value.viewport) && text(value.projectionRevision, 128);
 const equal = (a, b) => record(a) && record(b) && Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(key => a[key] === b[key]);
+const sameValue = (a, b) => a === b ||
+  (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => sameValue(value, b[index]))) ||
+  (record(a) && record(b) && Object.keys(a).length === Object.keys(b).length &&
+   Object.keys(a).every(key => Object.hasOwn(b, key) && sameValue(a[key], b[key])));
 const copy = value => JSON.parse(JSON.stringify(value));
 
 export function createFieldBridge({generation, post, scene}) {
@@ -37,12 +41,12 @@ export function createFieldBridge({generation, post, scene}) {
       typeof scene.setPaused !== 'function' || typeof scene.captureBarrier !== 'function' ||
       typeof scene.dispose !== 'function') throw new TypeError('Invalid field adapter');
   const cancellation = new AbortController();
-  let disposed = false, busy = false, pending = null, active = null, wanted = null;
+  let disposed = false, busy = false, pending = null, active = null, wanted = null, applying = null;
   let capturePending = false, capturedId = null, readySent = false;
   const emit = (type, values = {}) => post(JSON.stringify({version: 1, generation, type, ...values}));
   const fail = code => { if (!disposed) emit('error', {code}); };
   async function apply(message) {
-    busy = true;
+    busy = true; applying = message;
     try {
       await scene.apply(copy(message.configuration), {paused: message.paused, signal: cancellation.signal});
       if (!disposed) {
@@ -52,7 +56,7 @@ export function createFieldBridge({generation, post, scene}) {
       }
     } catch { fail('render'); }
     finally {
-      busy = false;
+      busy = false; applying = null;
       const next = pending; pending = null;
       if (next && !disposed) void apply(next);
     }
@@ -63,6 +67,14 @@ export function createFieldBridge({generation, post, scene}) {
     if (['configure', 'setPublicProjection', 'setAppearance'].includes(message.type)) {
       if (!keys(message, ['version', 'generation', 'requestId', 'type', 'configuration', 'paused']) ||
           !configuration(message.configuration) || typeof message.paused !== 'boolean') return false;
+      if (message.type === 'setAppearance' && applying && message.requestId === applying.requestId &&
+          sameValue(message.configuration, applying.configuration)) {
+        try { scene.setPaused(message.paused); } catch { fail('render'); return false; }
+        applying.paused = message.paused;
+        if (wanted) wanted.paused = message.paused;
+        if (pending) pending.paused = message.paused;
+        return true;
+      }
       // Pause immediately, even when a preceding bounded configuration render is outstanding.
       wanted = copy(message);
       try { scene.setPaused(message.paused); } catch { fail('render'); return false; }

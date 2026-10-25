@@ -142,3 +142,22 @@ test('renderer exceptions expose only bounded error codes', async () => {
   assert.deepEqual(fixture.events.at(-1), {version:1,generation,type:'error',code:'render'});
   assert.equal(JSON.stringify(fixture.events).includes('private'), false);
 });
+
+test('visibility overrides during an unfinished apply do not queue another apply', async () => {
+  let finish, applications = 0;
+  const fixture = setup({apply: () => {
+    applications++;
+    return applications === 1 ? new Promise(resolve => { finish = resolve; }) : Promise.resolve();
+  }});
+  fixture.bridge.receive(command('configure', 1, {configuration:configuration(), paused:false}));
+  fixture.bridge.receive(command('setAppearance', 1, {configuration:configuration(), paused:true}));
+  assert.equal(fixture.pauses.at(-1), true);
+  fixture.bridge.receive(command('setAppearance', 1, {configuration:configuration(), paused:false}));
+  assert.equal(fixture.pauses.at(-1), false);
+  finish(); await turn();
+  assert.equal(applications, 1);
+  assert.equal(fixture.events.filter(event => event.type === 'settled').length, 1);
+  assert.equal(fixture.bridge.receive(capture(fixture)), true);
+  await turn();
+  assert.equal(fixture.events.at(-1).type, 'captureResult');
+});
