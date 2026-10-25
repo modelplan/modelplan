@@ -68,13 +68,21 @@ public struct MainScreenNavigation: Sendable {
     }
     public mutating func reconcile(selection: InjectedModelSelection?, publication: SelectionPublication?) {
         guard let selection, selection.matches(publication, scope: scope) else {
-            back(); selectedModelID = nil; selectionPublication = nil; return
+            discardPublicationDependentView(); selectedModelID = nil; selectionPublication = nil; return
         }
-        if selectionPublication != publication { back() }
+        if selectionPublication != publication { discardPublicationDependentView() }
         if let content = sourced?.content, case .comparison(let id, _) = content, !selection.orderedModelIDs.contains(id) { back() }
         selectionPublication = publication
         if let selectedModelID, selection.orderedModelIDs.contains(selectedModelID) { return }
         selectedModelID = selection.selectedModelID.flatMap { selection.orderedModelIDs.contains($0) ? $0 : nil }
+    }
+    private mutating func discardPublicationDependentView() {
+        guard let content = sourced?.content else { return }
+        switch content {
+        case .comparison: back()
+        case .page(let target) where target.page == .effort: back()
+        case .page, .session, .alerts: break
+        }
     }
     public mutating func close() { back() }
 }

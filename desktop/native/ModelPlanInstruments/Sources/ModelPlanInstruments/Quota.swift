@@ -110,7 +110,12 @@ public struct ReservePresentation: Sendable {
 
     /// nil allowances means unreadable; [] means a known zero. Counts can represent grouped allowances.
     public init(allowances: [ResetAllowance]?, credits: Double?, drawingCredits: Bool, now: Date) {
-        let active = allowances?.filter { ($0.expiresAt.map { $0 > now } ?? true) && $0.count != 0 }
+        let active = allowances?.filter {
+            // An untrusted zero/expiry cannot prove an empty reserve. Keep the row so
+            // the aggregate stays unknown; only trusted readings may be discarded.
+            guard $0.evidence.usable(at: now) else { return true }
+            return ($0.expiresAt.map { $0 > now } ?? true) && $0.count != 0
+        }
         self.allowances = active
         var total: Int? = active == nil ? nil : 0
         for allowance in active ?? [] {
