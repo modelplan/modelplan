@@ -91,7 +91,7 @@ public struct SettingsPreferences: Codable, Sendable {
         case menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
         case notifications, subscriptions, subscriptionSettings, onboarding
     }
-    /// Missing v1 top-level choices adopt defaults; malformed present fields fail closed.
+    /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
     public init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -121,7 +121,7 @@ public struct SettingsPreferences: Codable, Sendable {
               subscriptions.hiddenIDs.count <= 1000, subscriptions.order.allSatisfy(validID),
               subscriptions.hiddenIDs.allSatisfy(validID), subscriptionSettings.allSatisfy({ id, value in
                   validID(id) && value.alias.count <= 128 && value.alias.utf8.count <= 1024 && !value.alias.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
-              }), onboarding.isValid else { throw SettingsError.invalidPreference }
+              }) else { throw SettingsError.invalidPreference }
     }
 }
 
@@ -136,10 +136,11 @@ private struct PreferenceEnvelope: Codable { let schemaVersion: Int; let prefere
 public actor SettingsStore {
     public static let maximumBytes = 256 * 1024
     private let url: URL
+    private let onboardingDefinition: OnboardingDefinition
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
-    public init(url: URL) throws {
-        self.url = url
+    public init(url: URL, onboardingDefinition: OnboardingDefinition = .provisional) throws {
+        self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {
             // Bound allocation before reading. A second bound detects growth during the read.
             let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
@@ -154,6 +155,7 @@ public actor SettingsStore {
             current = try JSONDecoder().decode(PreferenceEnvelope.self, from: data).preferences
             try current.validate()
         } else { current = SettingsPreferences() }
+        current.onboarding.reconcile(in: onboardingDefinition)
     }
     private struct SchemaHeader: Decodable { let schemaVersion: Int }
     public func snapshot() -> SettingsSnapshot { .init(revision: revision, preferences: current) }
@@ -161,7 +163,7 @@ public actor SettingsStore {
         _ edit: @Sendable (inout SettingsPreferences) throws -> Void) throws -> SettingsSnapshot {
         if let expectedRevision, expectedRevision != revision { throw SettingsError.staleRevision }
         var candidate = current
-        try edit(&candidate); try candidate.validate()
+        try edit(&candidate); candidate.onboarding.reconcile(in: onboardingDefinition); try candidate.validate()
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(PreferenceEnvelope(schemaVersion: 1, preferences: candidate))
         guard data.count <= Self.maximumBytes else { throw SettingsError.tooLarge }

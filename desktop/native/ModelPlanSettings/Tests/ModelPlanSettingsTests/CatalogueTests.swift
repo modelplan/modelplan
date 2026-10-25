@@ -16,7 +16,7 @@ final class CatalogueTests: XCTestCase {
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context())
         XCTAssertEqual(Set(rows.map(\.key)), Set(SettingKey.allCases))
         XCTAssertEqual(rows.count, SettingKey.allCases.count)
-        XCTAssertEqual(Set(rows.map(\.pane)), Set(SettingsPane.allCases))
+        XCTAssertEqual(Set(rows.map(\.paneID)), Set(SettingsPane.allCases.map(\.rawValue)))
         for row in rows {
             for text in [row.title.english, row.title.chinese, row.subtitle.english, row.subtitle.chinese] {
                 XCTAssertFalse(text.isEmpty); XCTAssertFalse(text.contains("\n"))
