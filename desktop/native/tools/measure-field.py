@@ -24,7 +24,7 @@ def helpers():
 lib.responsibility_get_pid_responsible_for_pid.argtypes=[ctypes.c_int];lib.responsibility_get_pid_responsible_for_pid.restype=ctypes.c_int
 known={};rows=[]
 
-subprocess.run(['open','-n','-a',str(app),'--args','--resources',str(resources),'--output',str(root)]+(['--watchdog'] if args.watchdog else []),check=True)
+subprocess.run(['open','-n','-a',str(app),'--args','--resources',str(resources),'--output',str(root)]+(['--watchdog','--quick','yes'] if args.watchdog else []),check=True)
 pid=None
 for _ in range(100):
  for line in subprocess.check_output(['ps','-axo','pid,command'],text=True).splitlines():
