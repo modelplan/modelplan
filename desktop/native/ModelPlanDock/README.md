@@ -28,3 +28,13 @@ bash desktop/native/ModelPlanDock/check-logic.sh "$HOME/mp/build/M1/logic" x86_6
 ```
 
 The script runs only the native host architecture. Intel can be cross-compiled on Apple silicon, but is not executed or accepted there. All builds target macOS 14 and keep their module cache in the supplied scratch path. No display, AX, IME or physical-input acceptance can be inferred from these unit tests. B06 visuals still require the coordinator's explicit freeze notice.
+
+## B06 native instrument foundation (visual acceptance still pending)
+
+`DockInstrumentModel` separates fixed shorter/longer quota arcs from the selected readout and its actual-duration reset fraction. Period-order hints are never used as observed durations. Time-point positions are supplied by the frozen appearance recipe and lit with `ceil(time × positions)`; unknown time omits the clock. Work identity uses a fresh verified subscription match and a separately reported working/output fact, never an aggregate throughput or a minimum-sample rate guess.
+
+`Native/` contains a generic static CoreGraphics/CoreText renderer and a constrained external resource reader. Neither includes official images, fonts, distinctive silhouette/geometry constants or palette data. Images are hashed and header-checked before decode; local paths cannot escape the supplied root. The counted LRU stores at most its configured decoded-byte budget. Font data must be genuine SFNT, and CoreText starts from the font's default CGFont rather than accidentally picking the first Thin named instance.
+
+`InstrumentProof/main.swift` is a separate synthetic executable entry. Argument 1 is an owned output directory; optional argument 2 points to external converted test fonts. Without argument 2 it needs no private assets. It exercises cache accounting/refusal, path/hash rejection, native raster dimensions and CoreText text. It opens no window and does not establish official pixels, effects or physical input acceptance. Shared target/CI registration belongs to the integration lane.
+
+The static renderer explicitly reports `effectsRendered=false`. Official repeating jets must use the shared counted provider/consumer seam; the static renderer does not substitute a triangle, bake a fake moving jet into a bitmap or keep a second decoded-frame cache. No B07/B08/Settings/entrance work is included.
