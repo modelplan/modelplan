@@ -36,7 +36,7 @@ func PublicationCapabilities() map[string]Capability {
 		"publicResets":          {Status: "publication-dependent"},
 		"scopedWindows":         {Status: "publication-dependent"},
 		"planMetering":          {Status: "publication-dependent", Reason: "published-metering-is-not-proof-of-entitlement"},
-		"lineageSelection":      {Status: "unavailable", Reason: "representatives-and-retirement-not-published-by-current-client-projection"},
+		"lineageSelection":      {Status: "publication-dependent", Reason: "published-selection-only; absent-or-null-flags-are-unknown"},
 		"subscriptionOfferings": {Status: "unavailable", Reason: "harness-aliases-and-metering-do-not-prove-model-entitlement"},
 	}
 }

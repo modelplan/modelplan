@@ -5,8 +5,8 @@
       "status": "supported"
     },
     "lineageSelection": {
-      "status": "unavailable",
-      "reason": "representatives-and-retirement-not-published-by-current-client-projection"
+      "status": "publication-dependent",
+      "reason": "published-selection-only; absent-or-null-flags-are-unknown"
     },
     "planMetering": {
       "status": "publication-dependent",

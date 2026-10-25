@@ -282,5 +282,43 @@ func Cases() ([]Case, error) {
 	add("F19-quarter-hour", "offset-bearing completion hour in a quarter-hour zone", "data", 1, 0, func(in *snapshot.Input, d *digest.Digest) {
 		in.Perf.Ledger.Hourly = []speed.Hourly{{Hour: "2026-10-21T02:00:00+05:45", Source: "codex", Model: "native-z", ObservedOutputTokens: 7, ObservedRequests: 1}}
 	})
+	for _, mode := range []string{"present", "absent", "partial"} {
+		add("F06-lineage-"+mode, "published lineage selection flags "+mode, "data", 1, 0, func(in *snapshot.Input, d *digest.Digest) {
+			var doc map[string]any
+			_ = json.Unmarshal([]byte(Client), &doc)
+			data := doc["data"].(map[string]any)
+			models := data["models"].([]any)
+			if mode == "present" {
+				data["selectionRevision"] = "synthetic-selection-v1"
+				for i, item := range models {
+					m := item.(map[string]any)
+					m["lineageId"], m["lineageStatus"], m["defaultSelected"] = "synthetic:line", "current", true
+					if i == 1 {
+						m["developerId"] = "synthetic-dev"
+						m["lineageStatus"], m["defaultSelected"] = "older", false
+					}
+				}
+				for _, status := range []string{"preview", "retired"} {
+					models = append(models, map[string]any{
+						"id": "synthetic-" + status, "name": "Synthetic " + status, "developerId": "synthetic-dev",
+						"recommended": "", "harnessIds": map[string]any{}, "efforts": []any{},
+						"lineageId": "synthetic:line", "lineageStatus": status, "defaultSelected": false,
+					})
+				}
+				data["models"] = models
+			} else if mode == "partial" {
+				first, second := models[0].(map[string]any), models[1].(map[string]any)
+				first["lineageId"], first["lineageStatus"], first["defaultSelected"] = nil, nil, false
+				second["lineageId"], second["defaultSelected"] = "synthetic:line", nil
+			}
+			raw, _ := json.Marshal(doc)
+			next, err := digest.Parse(digest.ComponentClient, raw)
+			if err != nil {
+				panic(err)
+			}
+			next.PublicationID, next.PublishedAt = d.PublicationID, d.PublishedAt
+			*d = *next
+		})
+	}
 	return out, nil
 }

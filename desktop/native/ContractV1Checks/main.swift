@@ -27,10 +27,31 @@ struct ScenarioIndex: Decodable {
             let publication = try FeedDecoder.publication(publicationData)
             try require(personal.contractVersion == 1 && publication.contractVersion == 1, "missing v1 handshake: \(entry.id)")
             try require(personal.capabilities?["creditsHistory"]?.status == "unavailable", "unknown credit history became supported")
-            try require(publication.capabilities?["lineageSelection"]?.status == "unavailable", "unpublished curation became supported")
+            try require(publication.capabilities?["lineageSelection"]?.status == "publication-dependent", "selection capability lost publication dependence")
             try require(publication.resets?.count == 2 && publication.windows?.count == 1, "public reset/window metadata lost")
             try require(publication.multipliers?.count == 1 && publication.multiplierHorizon != nil, "scoped public metadata lost")
             try require(publication.planMetering == .null || publication.planMetering == nil, "fixture invented plan metering")
+            if entry.id == "F06-lineage-present" {
+                try require(publication.selectionRevision == "synthetic-selection-v1", "selection revision lost")
+                let current = publication.models.first { $0.id == "synthetic-z" }!
+                let older = publication.models.first { $0.id == "synthetic-one" }!
+                try require(current.lineageId == "synthetic:line" && current.lineageStatus == "current" && current.defaultSelected == true, "current selection flags lost")
+                try require(older.lineageStatus == "older" && older.defaultSelected == false, "known false/older flags lost")
+                for status in ["preview", "retired"] {
+                    let model = publication.models.first { $0.id == "synthetic-\(status)" }!
+                    try require(model.lineageStatus == status && model.defaultSelected == false, "published status changed: \(status)")
+                }
+            }
+            if entry.id == "F06-lineage-absent" {
+                try require(publication.selectionRevision == nil, "absent revision invented")
+                try require(publication.models.allSatisfy { $0.lineageId == nil && $0.lineageStatus == nil && $0.defaultSelected == nil }, "absent selection flags invented")
+            }
+            if entry.id == "F06-lineage-partial" {
+                let first = publication.models[0], second = publication.models[1]
+                try require(publication.selectionRevision == nil && first.lineageId == nil && first.lineageStatus == nil, "null flags became known")
+                try require(first.defaultSelected == false && second.defaultSelected == nil, "false and unknown collapsed")
+                try require(second.lineageId == "synthetic:line" && second.lineageStatus == nil, "partial selection flags lost")
+            }
             if entry.id == "F02" {
                 try require(personal.accounts?.first?.windows?.first?.remainingPercent == 0, "known zero lost")
             }
