@@ -15,7 +15,7 @@ import ModelPlanCore
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
     public init(gate: LifecycleCoordinator, workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
                 local: NotificationCenter = .default, distributed: DistributedNotificationCenter = .default(),
-                displayIDs: @escaping @MainActor () -> Set<UInt32> = SystemEvents.currentDisplayIDs) {
+                displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() }) {
         self.gate = gate; self.workspace = workspace; self.local = local
         self.distributed = distributed; self.displayIDs = displayIDs
     }
