@@ -12,6 +12,7 @@ public struct PersonalSnapshot: Decodable, Sendable {
     public let dataRevision: String?
     public let validUntil: WireInstant?
     public let recording: Bool?
+    public let effortSuggestion: PersonalEffortSuggestion?
     public let publication: PersonalPublication?
     public let accounts: [QuotaAccount]?
     public let subscriptions: [SubscriptionBinding]?
@@ -36,7 +37,7 @@ public struct PersonalSnapshot: Decodable, Sendable {
     public let localUsage: [JSONValue]?
     public let note: String?
     public let validUntilReported: Bool
-    private enum CodingKeys: String, CodingKey { case schemaVersion, contractVersion, capabilities, kind, generatedAt, cliVersion, dataRevision, validUntil, recording, publication, accounts, subscriptions, sessions, liveSessions, sources, connections, events, todayTotals, perfStats, daily, dailyLong, hourly, dailyCoverage, dailyLongCoverage, sessionRanking, projectRanking, projectLabels, paceHistory, measured, qwenUsage, localUsage, note }
+    private enum CodingKeys: String, CodingKey { case schemaVersion, contractVersion, capabilities, kind, generatedAt, cliVersion, dataRevision, validUntil, recording, effortSuggestion, publication, accounts, subscriptions, sessions, liveSessions, sources, connections, events, todayTotals, perfStats, daily, dailyLong, hourly, dailyCoverage, dailyLongCoverage, sessionRanking, projectRanking, projectLabels, paceHistory, measured, qwenUsage, localUsage, note }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         validUntilReported = c.contains(.validUntil)
@@ -49,6 +50,7 @@ public struct PersonalSnapshot: Decodable, Sendable {
         dataRevision = try c.decodeIfPresent(String.self, forKey: .dataRevision)
         validUntil = try c.decodeIfPresent(WireInstant.self, forKey: .validUntil)
         recording = try c.decodeIfPresent(Bool.self, forKey: .recording)
+        effortSuggestion = try c.decodeIfPresent(PersonalEffortSuggestion.self, forKey: .effortSuggestion)
         publication = try c.decodeIfPresent(PersonalPublication.self, forKey: .publication)
         accounts = try c.decodeIfPresent([QuotaAccount].self, forKey: .accounts)
         subscriptions = try c.decodeIfPresent([SubscriptionBinding].self, forKey: .subscriptions)
@@ -74,6 +76,31 @@ public struct PersonalSnapshot: Decodable, Sendable {
         note = try c.decodeIfPresent(String.self, forKey: .note)
     }
 
+}
+
+// Personal local advice, never model context. Missing means unknown/suppressed.
+// costRatio compares published reference costs, not forecast quota consumption.
+public struct PersonalEffortSuggestion: Decodable, Sendable {
+    public let source: String
+    public let plan: String
+    public let modelId: String
+    public let modelName: String
+    public let direction: String
+    public let fromEffort: String
+    public let fromLabel: String
+    public let toEffort: String
+    public let toLabel: String
+    public let recommended: String
+    public let fast: Bool
+    public let cycles: Int
+    public let averageUsed: Double
+    public let hitLimitCycles: Int
+    public let costRatio: Double
+    public let costBasisId: String
+    public let publicationId: String
+    public let resetAt: WireInstant
+    public let expiresAt: WireInstant
+    public let message: String?
 }
 
 public struct PersonalPublication: Decodable, Sendable {
