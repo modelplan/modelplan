@@ -79,6 +79,8 @@ type Snapshot struct {
 	// Subscriptions: every subscription the accounts were bound to, with the accounts that read
 	// it, for a scope selector. References are random and local; they name no account.
 	Subscriptions []Subscription `json:"subscriptions"`
+	// EffortSuggestion: personal, local advice; absent when unknown or suppressed.
+	EffortSuggestion *history.EffortSuggestion `json:"effortSuggestion,omitempty"`
 	// Recording: the local quota history and speed measurement are on (MODELPLAN_HISTORY).
 	Recording bool   `json:"recording"`
 	Note      string `json:"note"`
@@ -216,8 +218,11 @@ type Input struct {
 	Recording  bool
 	// ProjectLabels: project labels are on; while off, none is shown even if the ledger has one.
 	ProjectLabels bool
-	CLIVersion    string
-	Now           time.Time
+	// EffortSuggestionRevision hashes observations/preferences without clock-derived text.
+	EffortSuggestion         *history.EffortSuggestion
+	EffortSuggestionRevision string
+	CLIVersion               string
+	Now                      time.Time
 }
 
 const note = "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves."
@@ -226,6 +231,9 @@ func Build(in Input) Snapshot {
 	s := Snapshot{ContractVersion: desktopcontract.Version, Capabilities: desktopcontract.PersonalCapabilities(), LocalUsage: in.LocalUsage, SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
 		Sessions: []Session{}, Accounts: in.Report.Accounts, Sources: in.Report.Sources, Events: []Event{}, Measured: in.Measured,
 		Recording: in.Recording, Note: note, QwenUsage: in.QwenUsage}
+	if in.Recording {
+		s.EffortSuggestion = in.EffortSuggestion
+	}
 	if s.Accounts == nil {
 		s.Accounts = []quota.Account{}
 	}
@@ -324,20 +332,21 @@ func revision(in Input) string {
 		Subscription                        *quota.Binding `json:",omitempty"`
 	}
 	var v struct {
-		QwenUsage   *qwenusage.Report   `json:",omitempty"`
-		LocalUsage  []localusage.Report `json:",omitempty"`
-		Accounts    []account
-		Sources     []quota.SourceStatus
-		Ledger      []speed.Row
-		Perf        *speed.PerfLedger
-		PerfOK      bool
-		Long        *speed.LongLedger `json:",omitempty"`
-		LongOK      bool              `json:",omitempty"`
-		Pace        *history.PaceLedger
-		PaceOK      bool
-		Connections []connections.Connection
-		Publication string
-		Recording   bool
+		QwenUsage        *qwenusage.Report   `json:",omitempty"`
+		LocalUsage       []localusage.Report `json:",omitempty"`
+		Accounts         []account
+		Sources          []quota.SourceStatus
+		Ledger           []speed.Row
+		Perf             *speed.PerfLedger
+		PerfOK           bool
+		Long             *speed.LongLedger `json:",omitempty"`
+		LongOK           bool              `json:",omitempty"`
+		Pace             *history.PaceLedger
+		PaceOK           bool
+		Connections      []connections.Connection
+		EffortSuggestion string `json:",omitempty"`
+		Publication      string
+		Recording        bool
 
 		RequestReadings []struct {
 			Source, Kind, Limit string
@@ -370,6 +379,7 @@ func revision(in Input) string {
 		}
 		v.QwenUsage = &q
 	}
+	v.EffortSuggestion = in.EffortSuggestionRevision
 	v.Sources, v.Ledger, v.Recording = in.Report.Sources, in.Ledger, in.Recording
 	for _, c := range in.Connections {
 		if c.LocalUsage != nil {

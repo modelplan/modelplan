@@ -11,6 +11,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/snapshot"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -318,6 +319,23 @@ func Cases() ([]Case, error) {
 			}
 			next.PublicationID, next.PublishedAt = d.PublicationID, d.PublishedAt
 			*d = *next
+		})
+	}
+	for _, mode := range []string{"up", "down", "absent"} {
+		add("F23-effort-suggestion-"+mode, "local quota-history effort suggestion: "+mode, "data", 0, 0, func(in *snapshot.Input, d *digest.Digest) {
+			effort, uses := "medium", []float64{40, 45, 50}
+			if mode == "down" {
+				effort, uses = "high", []float64{100, 95, 100}
+			}
+			if mode == "absent" {
+				uses = []float64{45, 50}
+			}
+			l := EffortLedger(Now, effort, false, uses...)
+			in.EffortSuggestion = history.SuggestEffort(l, d, Now)
+			if v := in.EffortSuggestion; v != nil {
+				v.Message = render.Style{T: render.EN}.EffortSuggestionLine(v)
+				in.Boundaries = append(in.Boundaries, v.ExpiresAt)
+			}
 		})
 	}
 	return out, nil
