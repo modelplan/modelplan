@@ -6,6 +6,15 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.38, Codex plugin 0.15.30 and Claude Code plugin 0.7.29 (2026-10-25)
+
+- `modelplan publication --json` passes through the published lineage selection results:
+  per-model `lineageId`, `lineageStatus` (`current`, `older`, `preview`, `retired`) and
+  `defaultSelected`, plus the publication's `selectionRevision`. Missing or null values mean
+  unknown. The `lineageSelection` capability is now `publication-dependent`; contract version stays 1.
+- The public reader accepts these optional fields.
+- Both plugins pin CLI v0.5.38 and its published archive checksums.
+
 ## CLI v0.5.37, Codex plugin 0.15.29 and Claude Code plugin 0.7.28 (2026-10-25)
 
 - Public display names now read "ModelPlan" in the CLI output, the plugins and the Skill.
