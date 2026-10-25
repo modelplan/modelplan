@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreText
 import XCTest
 @testable import ModelPlanInstruments
 
@@ -122,8 +123,44 @@ import XCTest
         XCTAssertTrue(p.columns[0]!.cells[0]!.notes[0].contains("等读数"))
     }
 
+    func testImageBudgetCountsResourcesAcrossNestedGroupsAndClips() async throws {
+        let provider = BudgetImageProvider()
+        let rect = CGRect(x: 0, y: 0, width: 20, height: 20)
+        func image(_ id: String) -> EngineDrawingCommand { .image(resourceID: id, rect: rect, opacity: 1) }
+        let repeated = EngineTableRecipe(size: rect.size, commands: [
+            .group(opacity: 1, commands: [image("a")]),
+            .clipped(rect: rect, radius: 0, commands: [image("a")]),
+        ], regions: [])
+        XCTAssertNoThrow(try EngineRecipeDrawing.raster(repeated, provider: provider, scale: 1))
+        let distinct = EngineTableRecipe(size: rect.size, commands: [
+            .group(opacity: 1, commands: [image("a")]),
+            .clipped(rect: rect, radius: 0, commands: [image("b")]),
+        ], regions: [])
+        XCTAssertThrowsError(try EngineRecipeDrawing.raster(distinct, provider: provider, scale: 1)) { error in
+            guard case EngineTableError.resourceBudget = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    func testPointAndDeviceGridsRemainDistinctAtRetinaScale() async throws {
+        let c = CGContext(data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        c.translateBy(x: 0, y: 100); c.scaleBy(x: 2, y: -2)
+        let rect = CGRect(x: 0.4, y: 0.25, width: 3.2, height: 5)
+        XCTAssertEqual(EngineRecipeDrawing.aligned(rect, to: .none, in: c), rect)
+        XCTAssertEqual(EngineRecipeDrawing.aligned(rect, to: .point, in: c), CGRect(x: 0, y: 0, width: 4, height: 5))
+        XCTAssertEqual(EngineRecipeDrawing.aligned(rect, to: .devicePixel, in: c), CGRect(x: 0.5, y: 0.5, width: 3, height: 5))
+    }
+
     private func key(_ text: String, code: UInt16) -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
                          context: nil, characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!
     }
+}
+
+@MainActor private final class BudgetImageProvider: EngineTableRecipeProvider {
+    private let bitmap = CGContext(data: nil, width: 2160, height: 1000, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+    func recipe(for presentation: EngineTablePresentation, size: CGSize) throws -> EngineTableRecipe { throw EngineTableError.invalidRecipe }
+    func font(_ request: EngineFontRequest) throws -> CTFont { try NeutralEngineTableRecipe().font(request) }
+    func image(_ resourceID: String) throws -> CGImage { bitmap }
 }

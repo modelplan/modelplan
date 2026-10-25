@@ -20,6 +20,7 @@ import CoreText
     private var dwell = HelpDwell(), dwellTimer: Timer?, helpPopover: NSPopover?
     private var tracking: NSTrackingArea?
     private var textLayers: [String: CALayer] = [:], previousText: [String: EngineTextCommand] = [:]
+    private let focusLayer = CAShapeLayer()
     private let elapsed: () -> Double
     fileprivate var keyboardModality = true
     public override var isFlipped: Bool { true }
@@ -32,6 +33,9 @@ import CoreText
         self.recipeProvider = recipeProvider ?? NeutralEngineTableRecipe(); self.elapsed = elapsed
         super.init(frame: frame)
         appearance = NSAppearance(named: .darkAqua); wantsLayer = true
+        layer?.masksToBounds = false
+        focusLayer.fillColor = nil; focusLayer.zPosition = 1
+        layer?.addSublayer(focusLayer)
         setAccessibilityElement(false); setAccessibilityIdentifier("engine.table")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -61,6 +65,7 @@ import CoreText
         presentation = candidate; recipe = next; renderError = nil
         synchronizeRegions(next.regions, previousOrder: oldOrder)
         try synchronizeTextLayers(next, initial: old == nil)
+        synchronizeFocusLayer()
         if let source = dwell.sourceID, !next.regions.contains(where: { $0.id == source }) { leaveHelp() }
         else if dwell.visibleSourceID != nil { showHelp() }
         displayRequests += 1; needsDisplay = true
@@ -76,12 +81,6 @@ import CoreText
         do {
             drawCount += 1
             glyphMetrics = try EngineRecipeDrawing.draw(recipe, in: c, provider: recipeProvider, includeTransitionText: false)
-            if keyboardModality, let focusID, let control = controls[focusID],
-               let style = control.region.focus ?? recipe.focusInk.map({ EngineFocusStyle(ink: $0, width: 1, outset: -1, radius: 0) }) {
-                c.setStrokeColor(style.ink.cgColor); c.setLineWidth(style.width)
-                let rect = control.frame.insetBy(dx: -style.outset, dy: -style.outset)
-                c.addPath(CGPath(roundedRect: rect, cornerWidth: style.radius, cornerHeight: style.radius, transform: nil)); c.strokePath()
-            }
         } catch { renderError = String(describing: error) }
     }
     public func rasterImage(scale: Int) throws -> CGImage {
@@ -112,6 +111,7 @@ import CoreText
     }
     public override func keyDown(with event: NSEvent) {
         keyboardModality = true
+        synchronizeFocusLayer()
         if event.keyCode == 48, let id = event.modifierFlags.contains(.shift) ? keyboardOrder.last : keyboardOrder.first {
             window?.makeFirstResponder(controls[id]); return
         }
@@ -162,6 +162,19 @@ import CoreText
             previousText[command.id] = command
         }
     }
+    private func synchronizeFocusLayer() {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        focusLayer.frame = bounds
+        guard keyboardModality, let focusID, let control = controls[focusID],
+              let style = control.region.focus ?? recipe?.focusInk.map({ EngineFocusStyle(ink: $0, width: 1, outset: -1, radius: 0) }) else {
+            focusLayer.path = nil; return
+        }
+        let rect = control.frame.insetBy(dx: -style.outset, dy: -style.outset)
+        focusLayer.strokeColor = style.ink.cgColor; focusLayer.lineWidth = style.width
+        focusLayer.path = CGPath(roundedRect: rect, cornerWidth: style.radius, cornerHeight: style.radius, transform: nil)
+    }
+    fileprivate func pointerModality() { keyboardModality = false; synchronizeFocusLayer() }
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         previousText.removeAll()
@@ -179,7 +192,7 @@ import CoreText
         self.tracking = tracking; addTrackingArea(tracking); super.updateTrackingAreas()
     }
     public override func mouseMoved(with event: NSEvent) {
-        keyboardModality = false
+        pointerModality()
         let point = convert(event.locationInWindow, from: nil)
         // Specific readouts/keys precede whole empty-bay regions in a provider's ordered list.
         guard let region = recipe?.regions.first(where: { $0.rect.contains(point) }) else { leaveHelp(); return }
@@ -188,6 +201,7 @@ import CoreText
     public override func mouseExited(with event: NSEvent) { leaveHelp() }
     fileprivate func focused(_ id: String?) {
         focusID = id
+        synchronizeFocusLayer()
         guard keyboardModality, let id else { leaveHelp(); return }
         dwell.enter(id, keyboardFocus: true, at: elapsed()); showHelp(); needsDisplay = true
     }
@@ -246,7 +260,7 @@ import CoreText
     override func becomeFirstResponder() -> Bool { owner?.focused(region.id); return true }
     override func resignFirstResponder() -> Bool { owner?.focused(nil); return true }
     override func mouseDown(with event: NSEvent) {
-        owner?.keyboardModality = false
+        owner?.pointerModality()
         if acceptsFirstResponder { window?.makeFirstResponder(self) }
         guard region.enabled, let intent = region.intent else { return }
         while let next = NSApp.nextEvent(matching: [.leftMouseUp, .leftMouseDragged], until: .distantFuture, inMode: .eventTracking, dequeue: true) {

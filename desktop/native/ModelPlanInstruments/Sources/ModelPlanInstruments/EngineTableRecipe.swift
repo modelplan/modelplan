@@ -15,6 +15,7 @@ public struct EngineInk: Equatable, Sendable {
     }
 }
 public enum EngineTextAlignment: Sendable { case left, center, right }
+public enum EngineRasterAlignment: Sendable { case none, devicePixel, point }
 public struct EngineFontRequest: Equatable, Sendable {
     public var resourceID: String?
     public var size: Double
@@ -53,12 +54,12 @@ public struct EngineFocusStyle: Equatable, Sendable {
 }
 /// General drawing operations. There are no official silhouettes, coordinates or font names in this schema.
 public enum EngineDrawingCommand: Equatable, Sendable {
-    case fill(rect: CGRect, radius: Double, ink: EngineInk, alignToPixels: Bool = false)
+    case fill(rect: CGRect, radius: Double, ink: EngineInk, alignment: EngineRasterAlignment = .none)
     case stroke(rect: CGRect, radius: Double, width: Double, ink: EngineInk)
-    case ellipse(rect: CGRect, ink: EngineInk, alignToPixels: Bool = false)
+    case ellipse(rect: CGRect, ink: EngineInk, alignment: EngineRasterAlignment = .none)
     case image(resourceID: String, rect: CGRect, opacity: Double)
     case text(EngineTextCommand)
-    case shadowedFill(rect: CGRect, radius: Double, ink: EngineInk, offset: CGSize, blur: Double, shadow: EngineInk, alignToPixels: Bool = false)
+    case shadowedFill(rect: CGRect, radius: Double, ink: EngineInk, offset: CGSize, blur: Double, shadow: EngineInk, alignment: EngineRasterAlignment = .none)
     indirect case group(opacity: Double, commands: [EngineDrawingCommand])
     indirect case clipped(rect: CGRect, radius: Double, commands: [EngineDrawingCommand])
 }
@@ -155,12 +156,24 @@ public struct EngineGlyphMetric: Sendable {
     public let clipped: Bool
 }
 @MainActor public enum EngineRecipeDrawing {
-    public static func alignedToDevicePixels(_ rect: CGRect, in context: CGContext) -> CGRect {
+    static func aligned(_ rect: CGRect, to alignment: EngineRasterAlignment, in context: CGContext) -> CGRect {
+        guard alignment != .none else { return rect }
+        let origin = context.convertToDeviceSpace(CGPoint.zero)
+        let axisX = context.convertToDeviceSpace(CGPoint(x: 1, y: 0))
+        let axisY = context.convertToDeviceSpace(CGPoint(x: 0, y: 1))
+        // Quartz's base device transform may differ from ctm (notably bitmap Y).
+        guard abs(axisX.y - origin.y) < 0.0001, abs(axisY.x - origin.x) < 0.0001 else { return rect }
+        let dx = axisX.x - origin.x, dy = axisY.y - origin.y
         let a = context.convertToDeviceSpace(rect.origin)
         let b = context.convertToDeviceSpace(CGPoint(x: rect.maxX, y: rect.maxY))
-        func snap(_ value: CGFloat, flipped: Bool) -> CGFloat { flipped ? ceil(value - 0.5) : floor(value + 0.5) }
-        let x0 = snap(a.x, flipped: context.ctm.a < 0), x1 = snap(b.x, flipped: context.ctm.a < 0)
-        let y0 = snap(a.y, flipped: context.ctm.d < 0), y1 = snap(b.y, flipped: context.ctm.d < 0)
+        func snap(_ value: CGFloat, step: CGFloat, flipped: Bool) -> CGFloat {
+            let unit = value / step
+            return (flipped ? ceil(unit - 0.5) : floor(unit + 0.5)) * step
+        }
+        let stepX = alignment == .point ? max(0.0001, abs(dx)) : 1
+        let stepY = alignment == .point ? max(0.0001, abs(dy)) : 1
+        let x0 = snap(a.x, step: stepX, flipped: dx < 0), x1 = snap(b.x, step: stepX, flipped: dx < 0)
+        let y0 = snap(a.y, step: stepY, flipped: dy < 0), y1 = snap(b.y, step: stepY, flipped: dy < 0)
         let device = CGRect(x: min(x0, x1), y: min(y0, y1), width: abs(x1-x0), height: abs(y1-y0))
         return context.convertToUserSpace(device)
     }
@@ -180,20 +193,26 @@ public struct EngineGlyphMetric: Sendable {
     @discardableResult public static func draw(_ recipe: EngineTableRecipe, in context: CGContext,
                                                provider: any EngineTableRecipeProvider, includeTransitionText: Bool = true) throws -> [EngineGlyphMetric] {
         try recipe.validate()
-        var metrics: [EngineGlyphMetric] = []
         var resources: Set<String> = [], bytes = 0
-        for command in recipe.commands {
+        return try drawCommands(recipe.commands, in: context, provider: provider,
+                                includeTransitionText: includeTransitionText, resources: &resources, bytes: &bytes)
+    }
+    private static func drawCommands(_ commands: [EngineDrawingCommand], in context: CGContext,
+                                     provider: any EngineTableRecipeProvider, includeTransitionText: Bool,
+                                     resources: inout Set<String>, bytes: inout Int) throws -> [EngineGlyphMetric] {
+        var metrics: [EngineGlyphMetric] = []
+        for command in commands {
             context.saveGState()
             defer { context.restoreGState() }
             switch command {
             case .fill(let original, let radius, let ink, let align):
-                let r = align ? alignedToDevicePixels(original, in: context) : original
+                let r = aligned(original, to: align, in: context)
                 context.setFillColor(ink.cgColor); context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.fillPath()
             case .stroke(let r, let radius, let width, let ink):
                 context.setStrokeColor(ink.cgColor); context.setLineWidth(width)
                 context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.strokePath()
             case .ellipse(let original, let ink, let align):
-                let r = align ? alignedToDevicePixels(original, in: context) : original
+                let r = aligned(original, to: align, in: context)
                 context.setFillColor(ink.cgColor); context.fillEllipse(in: r)
             case .image(let id, let r, let opacity):
                 let image = try provider.image(id)
@@ -218,20 +237,20 @@ public struct EngineGlyphMetric: Sendable {
                 context.clip(to: t.rect); context.translateBy(x: t.rect.minX + alignment, y: baseline); context.scaleBy(x: 1, y: -1)
                 context.textMatrix = .identity; context.textPosition = .zero; CTLineDraw(line, context)
             case .shadowedFill(let original, let radius, let ink, let offset, let blur, let shadow, let align):
-                let r = align ? alignedToDevicePixels(original, in: context) : original
+                let r = aligned(original, to: align, in: context)
                 context.setShadow(offset: offset, blur: blur, color: shadow.cgColor)
                 context.setFillColor(ink.cgColor); context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.fillPath()
             case .group(let opacity, let commands):
                 context.setAlpha(opacity); context.beginTransparencyLayer(auxiliaryInfo: nil)
-                let nested = EngineTableRecipe(size: recipe.size, commands: commands, regions: [])
                 do {
-                    metrics += try draw(nested, in: context, provider: provider, includeTransitionText: includeTransitionText)
+                    metrics += try drawCommands(commands, in: context, provider: provider, includeTransitionText: includeTransitionText,
+                                                resources: &resources, bytes: &bytes)
                     context.endTransparencyLayer()
                 } catch { context.endTransparencyLayer(); throw error }
             case .clipped(let rect, let radius, let commands):
                 context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.clip()
-                metrics += try draw(EngineTableRecipe(size: recipe.size, commands: commands, regions: []), in: context,
-                                    provider: provider, includeTransitionText: includeTransitionText)
+                metrics += try drawCommands(commands, in: context, provider: provider, includeTransitionText: includeTransitionText,
+                                            resources: &resources, bytes: &bytes)
             }
         }
         return metrics
