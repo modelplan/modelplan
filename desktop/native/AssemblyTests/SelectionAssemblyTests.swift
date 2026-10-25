@@ -128,4 +128,49 @@ final class SelectionAssemblyTests: XCTestCase {
         var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
         XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
     }
+    func testUnsupportedMetricUnitsKeepPublicDefaultIdentitiesWithoutNumbers() throws {
+        var m=model("default");m["efforts"]=[["effort":"high","ability":99,"cost":4,"time":3]]
+        var wire=try XCTUnwrap(JSONSerialization.jsonObject(with:publicationData([m])) as? [String:Any])
+        wire["units"]=["ability":"future-units","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"]
+        let p=try FeedDecoder.publication(JSONSerialization.data(withJSONObject:wire))
+        var a=SelectionAssembly();let r=a.evaluate(feeds:.init(publication:p,personal:nil,personalUsable:false),scope:.all,now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertEqual(r.selectionNotice,"按公开默认")
+        XCTAssertNil(r.models.first?.efforts.first?.ability.value);XCTAssertNil(r.models.first?.efforts.first?.cost.value)
+        XCTAssertEqual(r.effortPage?.models.map(\.id),["default"])
+    }
+    func testExplicitEvidenceUpgradesEarlierUniqueSourceFallbackForSameModel() throws {
+        let f=try feeds([model("default"),model("old",status:"older",selected:false)],
+            sessions:[session("native-old"),session("native-old",owner:"s")])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(r.sessionEvidence.count,1);XCTAssertEqual(r.sessionEvidence.first?.ownership,.explicitSubscription)
+    }
+    @MainActor func testRuntimeUsesPublicStoreEvenWhenPersonalReadIsUnavailable() async throws {
+        let clock = SelectionClock(wall:now)
+        let store = SnapshotStore(transport:PublicationOnlyTransport(data:try publicationData([model("default")])),
+            time:clock,automaticTimers:false)
+        let runtime = ModelSelectionRuntime(store:store,now:{ clock.wall })
+        store.start()
+        let deadline = ContinuousClock.now.advanced(by:.seconds(2))
+        while !store.idle && ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertTrue(store.idle);XCTAssertNil(store.view())
+        let result = runtime.evaluate(scope:.all)
+        XCTAssertEqual(result.shared.orderedIDs,["default"])
+        XCTAssertEqual(result.selectionNotice,"按公开默认")
+        XCTAssertEqual(result.effortPage?.models.map(\.id),["default"])
+        await store.stopAndWait()
+    }
+
+}
+
+
+@MainActor private final class SelectionClock: RefreshTimeSource {
+    var wall: Date
+    var elapsed: TimeInterval = 0
+    init(wall:Date) { self.wall = wall }
+}
+private struct PublicationOnlyTransport: CLITransport {
+    let data: Data
+    func execute(_ command:CLICommand) async throws -> CommandResult {
+        command == .desktop ? .init(exitCode:1,stdout:Data()) : .init(exitCode:0,stdout:data)
+    }
 }

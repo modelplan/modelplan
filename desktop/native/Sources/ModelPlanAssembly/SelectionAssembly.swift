@@ -48,7 +48,7 @@ public struct SelectionAssembly: Sendable {
         let toolNote = chinese ? "该工具可用" : "Available in this tool"
         let usedNote = chinese ? "实际用过" : "Observed use"
         let noData = chinese ? "公开默认车队暂未加载" : "Public default fleet is not loaded yet"
-        guard let source = feeds.publication, !source.publicationId.isEmpty, source.supportedUnits else {
+        guard let source = feeds.publication, !source.publicationId.isEmpty else {
             let empty = ModelSelection.select(.init(scope:scope,publication:nil,subscriptions:[],usage:[],now:now))
             return .init(mappingIssues:[],shared:empty,instruments:nil,models:[],unavailableReason:"publication-unavailable",
                 publicDefaultFallback:true,selectionNotice:defaultNote,modelAvailabilityNotes:[:],sessionEvidence:[],emptyStateMessage:noData,language:language)
@@ -81,7 +81,7 @@ public struct SelectionAssembly: Sendable {
         else { actualIDs = Set(evidence.map(\.modelID)) }
         var toolIDs: Set<String> = []
         var subscriptions: [SelectionSubscription] = []
-        var fallback = !personalFresh || feeds.publicIsLastGood
+        var fallback = !personalFresh || feeds.publicIsLastGood || !source.supportedUnits
         switch scope {
         case .all:
             // The virtual source is a public catalog, not a detected/paid account.
@@ -130,8 +130,9 @@ public struct SelectionAssembly: Sendable {
                 let timeBasis: String?
                 if case .string(let value) = effort.timeBasis { timeBasis = value } else { timeBasis = nil }
                 return InstrumentEffort(key:effort.effort,label:effort.label ?? effort.effort,
-                    ability:.init(effort.ability,basis:effort.abilityBasis),
-                    cost:.init(effort.cost,basis:effort.costBasisId),time:.init(effort.time,basis:timeBasis))
+                    ability:.init(source.supportedUnits ? effort.ability : nil,basis:effort.abilityBasis),
+                    cost:.init(source.supportedUnits ? effort.cost : nil,basis:effort.costBasisId),
+                    time:.init(source.supportedUnits ? effort.time : nil,basis:timeBasis))
             }
             // A publication cannot establish the user's current effort or fast tier.
             return InstrumentModel(id:model.id,name:model.name ?? model.id,efforts:efforts,
