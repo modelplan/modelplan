@@ -26,6 +26,7 @@ public struct DockStationRecipe: Codable, Sendable {
     public var overflowCount:Int?
     public var eventSolidDiameter:CGFloat?,eventHollowDiameter:CGFloat?,eventStrokeWidth:CGFloat?
     public var glyphOpacity:Double?
+    public var replacementResource:String?,readoutOpacity:Double?
     public var eventBackdropKey:String?,eventOutlineKey:String?,eventSolidOutlineWidth:CGFloat?
     public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
 }
@@ -132,12 +133,13 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
         for station in skin.stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
-            for layer in station.layers {try image(layer,frame)}
+            if station.replacementResource == nil {for layer in station.layers {try image(layer,frame)}}
             guard let id=station.subscriptionID,let reading=readings[id] else {
                 if let n=station.overflowCount {try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))}
                 else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text"))}
                 continue
             }
+            if let replacement=station.replacementResource {try image(replacement,frame)} else {
             let radius=station.caseInnerRadius
             guard radius>=0,radius<station.diameter/2 else{throw DockArtworkError.invalidManifest}
             c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
@@ -155,6 +157,7 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                 c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect)
             }
+            }
             if reading.timeLeftFraction != nil {
                 let clock=station.clock,r=clock.radius
                 guard r>0,r.isFinite,clock.dotRadius>0,clock.backWidth>=0 else{throw DockArtworkError.invalidManifest}
@@ -167,7 +170,11 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
                     c.fillEllipse(in:CGRect(x:p.x-clock.dotRadius,y:p.y-clock.dotRadius,width:2*clock.dotRadius,height:2*clock.dotRadius))}
             }
             let textColor=skin.readoutPalette?[reading.status.rawValue] ?? (reading.status == .warning || reading.status == .critical ? reading.status.rawValue : reading.status == .unknown ? "unknown":"text")
-            if station.showsReadout != false {try text(reading.readout,station.readout,skin.text,try ink(textColor))}
+            if station.showsReadout != false {
+                let opacity=station.readoutOpacity ?? 1
+                guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try text(reading.readout,station.readout,skin.text,try ink(textColor))
+            }
             if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
             if let notice=notices[id] {
                 let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"

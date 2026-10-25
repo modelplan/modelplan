@@ -290,7 +290,7 @@ do {
         w.durationSeconds=31*86400;i.windows=[w]
         try expect(try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)==1,"any positive actual time retains one point")
         i.dataState = .stale;let old=try DockInstrumentProjection.evaluate(i,now:now)
-        try expect(old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
+        try expect(old.dataState == .stale && old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
     }

@@ -78,6 +78,11 @@ struct NativeFailure:Error {let message:String}
         try require(result.metrics.contains{$0.text=="25%" && $0.advance>0},"native CoreText data rendering")
         try require(!result.effectsRendered,"static capture does not claim pooled effects")
     }
+    var staleInput=input;staleInput.dataState = .stale
+    let staleReading=try DockInstrumentProjection.evaluate(staleInput,now:instant)
+    var staleSkin=skin;staleSkin.stations[0].replacementResource="test";staleSkin.stations[0].readoutOpacity=0.6
+    let staleResult=try renderer.render(skin:staleSkin,readings:["sub":staleReading],scale:1)
+    try require(staleReading.dataState == .stale && staleResult.metrics.contains{$0.text=="--"},"external stale appearance preserves unavailable quota semantics")
     var bilingualSkin=skin;bilingualSkin.stations[0].aliasRect=CGRect(x:20,y:70,width:56,height:12)
     bilingualSkin.aliasText.useSystemUIFont=true;bilingualSkin.aliasText.language="zh-Hans"
     var bilingualInput=input;bilingualInput.alias="工作甲"
