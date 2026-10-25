@@ -29,14 +29,14 @@ final class SelectionAssemblyTests: XCTestCase {
     }
     func feeds(_ models:[[String:Any]],bindings:[[String:Any]]?=nil,sessions:[[String:Any]]=[],
                personal:Bool=true,usable:Bool=true,revision:String?="r",expiry:TimeInterval=300,
-               members:[[String:Any]]=[],lastGood:Bool=false) throws -> ModelSelectionFeeds {
+               members:[[String:Any]]=[],lastGood:Bool=false,personalPublicationID:String="p") throws -> ModelSelectionFeeds {
         let pub=try FeedDecoder.publication(publicationData(models,revision:revision,members:members))
         var snapshot:PersonalSnapshot?
         if personal {
             let value:[String:Any] = ["schemaVersion":1,"kind":"modelplan.personal-snapshot",
                 "generatedAt":ISO8601DateFormatter().string(from:now),
                 "validUntil":ISO8601DateFormatter().string(from:now.addingTimeInterval(expiry)),
-                "publication":["publicationId":"p"],"subscriptions":bindings ?? [binding("s")],
+                "publication":["publicationId":personalPublicationID],"subscriptions":bindings ?? [binding("s")],
                 "sessionRanking":["measure":"observed-output-tokens","recent7d":["top":sessions]]]
             snapshot=try FeedDecoder.personal(JSONSerialization.data(withJSONObject:value))
         }
@@ -179,6 +179,14 @@ final class SelectionAssemblyTests: XCTestCase {
         XCTAssertEqual(r.selectionNotice,"按公开默认")
         XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
         XCTAssertEqual(r.modelAvailabilityNotes["used"],"实际用过")
+    }
+    func testMismatchedScoredJoinDoesNotHideKnownToolCatalogOrAttestExactComparison() throws {
+        let f=try feeds([model("tool",selected:false),model("global",sources:["other"])],personalPublicationID:"older-publication")
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.subscription("s"),now:now)
+        XCTAssertEqual(r.shared.orderedIDs,["tool"]);XCTAssertEqual(r.modelAvailabilityNotes["tool"],"该工具可用")
+        XCTAssertTrue(r.publicDefaultFallback)
+        XCTAssertFalse(r.instruments?.matchesExact(r.instruments?.publication,scope:.subscription("s")) ?? true)
+        XCTAssertEqual(r.effortPage?.models.map(\.id),["tool"])
     }
     @MainActor func testRuntimeUsesPublicStoreEvenWhenPersonalReadIsUnavailable() async throws {
         let clock = SelectionClock(wall:now)

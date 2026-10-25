@@ -112,7 +112,8 @@ public struct SelectionAssembly: Sendable {
         let hasCatalogDefaults = shared.models.contains { $0.origin == .publishedDefaultFallback }
         let notice = fallback || hasCatalogDefaults ? defaultNote : nil
         // Revision/metric limits gate exact comparisons, not known catalog membership or labels.
-        let catalogMode = fallback || hasCatalogDefaults || publication.selectionRevision?.isEmpty != false || !source.supportedUnits
+        let joinAligned = personalFresh && feeds.personal?.publication?.publicationId == source.publicationId
+        let catalogMode = fallback || hasCatalogDefaults || !joinAligned || publication.selectionRevision?.isEmpty != false || !source.supportedUnits
         var labels: [String: String] = [:]
         if case .subscription = scope {
             for id in shared.orderedIDs {
