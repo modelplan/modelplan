@@ -102,11 +102,11 @@ public struct SelectionAssembly: Sendable {
             subscriptions:subscriptions,usage:[],windowUsage:windowUsage,now:now)
         var shared: SharedModelSelection
         switch scope {
-        case .all: shared = ModelSelection.selectPublicFleet(input)
+        case .all: shared = ModelSelection.selectPublicFleet(input,defaultPublication:mapped.catalog)
         case .subscription: shared = ModelSelection.select(input)
         }
         if shared.models.isEmpty || (scope != .all && fallback) {
-            shared = ModelSelection.publicDefaults(publication:publication,scope:scope)
+            shared = ModelSelection.publicDefaults(publication:mapped.catalog,scope:scope)
             fallback = true
         }
         let hasCatalogDefaults = shared.models.contains { $0.origin == .publishedDefaultFallback }
@@ -190,6 +190,7 @@ public struct SelectionAssembly: Sendable {
 
     private struct MappedPublication {
         let publication: ModelPlanSelection.SelectionPublication
+        let catalog: ModelPlanSelection.SelectionPublication
         let issues: [SelectionMappingIssue]
     }
     private static func publication(_ source: PublicPublication) -> MappedPublication {
@@ -229,6 +230,13 @@ public struct SelectionAssembly: Sendable {
             picks: members.filter { !quarantined.contains($0.id) }.flatMap { member in
                 (member.tags ?? []).compactMap { PublishedPickKind(rawValue: $0).map { PublishedPick(modelID: member.id, kind: $0) } }
             })
-        return MappedPublication(publication:publication, issues:issues)
+        // Model declarations are independent of unreadable ranking/dominance contexts.
+        // This second view is only for labelled public catalog supplementation, never ranked picks.
+        let catalog = ModelPlanSelection.SelectionPublication(publicationID:source.publicationId,
+            selectionRevision:source.selectionRevision,models:source.models.map { model in
+                .init(id:model.id,developerID:model.developerId,lineageID:model.lineageId,
+                    lineageStatus:model.lineageStatus,defaultSelected:model.defaultSelected)
+            },picks:[])
+        return MappedPublication(publication:publication,catalog:catalog,issues:issues)
     }
 }

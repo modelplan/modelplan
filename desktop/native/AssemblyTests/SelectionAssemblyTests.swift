@@ -122,11 +122,23 @@ final class SelectionAssemblyTests: XCTestCase {
         XCTAssertEqual(r.shared.chartIDs,Array(ids.prefix(6)));XCTAssertEqual(r.shared.rowIDs,Array(ids.prefix(3)))
         XCTAssertEqual(r.instruments?.orderedModelIDs,ids);XCTAssertEqual(r.effortPage?.selectedModelID,"m12")
     }
-    func testUnreadableDominanceStillCannotBePromotedByFallback() throws {
-        let f=try feeds([model("bad"),model("default")],personal:false,
-            members:[["id":"bad","tags":["strongest"],"dominatedBy":["id":"default","kind":"future"]]])
+    func testUnreadableRankingDoesNotEraseExplicitDefaultCatalogOrBecomeRankedPick() throws {
+        let f=try feeds([model("bad-context"),model("default")],
+            members:[["id":"bad-context","tags":["strongest"],"dominatedBy":["id":"default","kind":"future"]]])
         var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
-        XCTAssertEqual(r.shared.orderedIDs,["default"]);XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["bad-context","default"])
+        XCTAssertEqual(r.shared.models.first { $0.id=="bad-context" }?.origin,.publishedDefaultFallback)
+        XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
+        XCTAssertTrue(r.publicDefaultFallback);XCTAssertEqual(r.selectionNotice,"按公开默认")
+        XCTAssertFalse(r.instruments?.matchesExact(r.instruments?.publication,scope:.all) ?? true)
+    }
+    func testConflictingRankingContextsDoNotEraseOneUnambiguousModelDeclaration() throws {
+        let f=try feeds([model("default"),model("conflicting-context")],members:[
+            ["id":"conflicting-context","dominatedBy":["id":"default","kind":"weaker"]],
+            ["id":"conflicting-context"]])
+        var a=SelectionAssembly();let r=a.evaluate(feeds:f,scope:.all,now:now)
+        XCTAssertEqual(Set(r.shared.orderedIDs),["default","conflicting-context"])
+        XCTAssertEqual(r.shared.models.first { $0.id=="conflicting-context" }?.origin,.publishedDefaultFallback)
     }
     func testUnsupportedMetricUnitsKeepPublicDefaultIdentitiesWithoutNumbers() throws {
         var m=model("default");m["efforts"]=[["effort":"high","ability":99,"cost":4,"time":3]]
