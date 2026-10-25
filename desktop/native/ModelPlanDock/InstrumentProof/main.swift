@@ -78,6 +78,11 @@ struct NativeFailure:Error {let message:String}
         try require(result.metrics.contains{$0.text=="25%" && $0.advance>0},"native CoreText data rendering")
         try require(!result.effectsRendered,"static capture does not claim pooled effects")
     }
+    var bilingualSkin=skin;bilingualSkin.stations[0].aliasRect=CGRect(x:20,y:70,width:56,height:12)
+    bilingualSkin.aliasText.useSystemUIFont=true;bilingualSkin.aliasText.language="zh-Hans"
+    var bilingualInput=input;bilingualInput.alias="工作甲"
+    let bilingual=try renderer.render(skin:bilingualSkin,readings:["sub":try DockInstrumentProjection.evaluate(bilingualInput,now:instant)],scale:2)
+    try require(bilingual.metrics.contains{$0.text=="工作甲" && $0.advance>0 && !$0.runFonts.isEmpty},"actual CJK fallback runs are recorded rather than inferred from the base font")
     let view=DockInstrumentView(frame:CGRect(x:0,y:0,width:240,height:44));var actions=0
     view.onAction={_ in actions+=1};try view.applyCommunity([reading])
     let first=(view.accessibilityChildren() as? [NSAccessibilityElement])?.first

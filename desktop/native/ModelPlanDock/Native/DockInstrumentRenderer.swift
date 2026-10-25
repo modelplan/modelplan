@@ -13,7 +13,7 @@ public struct DockInk: Codable, Sendable {
 public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect}
 public struct DockRingRecipe: Codable, Sendable {public var radius:CGFloat,width:CGFloat,minimumVisibleFraction:Double,opacity:Double;public var trackOpacity:Double?,unknownDash:[CGFloat]?}
 public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int}
-public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var size:CGFloat,weight:Double}
+public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var language:String?;public var size:CGFloat,weight:Double}
 public struct DockStationRecipe: Codable, Sendable {
     public var subscriptionID:String?
     public var logicalPoints:Int?
@@ -40,7 +40,7 @@ public struct DockInstrumentSkin: Codable, Sendable {
         self.stations=stations;self.palette=palette;self.text=text;self.aliasText=aliasText
     }
 }
-public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat}
+public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
 public struct DockRenderResult {public let image:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
 
 @MainActor public final class DockInstrumentRenderer {
@@ -80,20 +80,30 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
         for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect)}
         var metrics=[DockGlyphMetric]()
         func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
-            guard value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
+            guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
             let font:CTFont
             if let id=recipe.fontResource {font=try resources.font(id,size:recipe.size,weight:recipe.weight)}
-            else if recipe.useSystemUIFont == true {font=CTFontCreateUIFontForLanguage(.system,recipe.size,nil)!}
+            else if recipe.useSystemUIFont == true {font=CTFontCreateUIFontForLanguage(.system,recipe.size,recipe.language.map{$0 as CFString})!}
             else if let name=recipe.systemFontName {
                 guard !name.isEmpty,name.utf8.count<=128 else{throw DockArtworkError.invalidManifest}
                 font=CTFontCreateWithName(name as CFString,recipe.size,nil)
             } else {font=CTFontCreateUIFontForLanguage(.userFixedPitch,recipe.size,nil)!}
-            let line=CTLineCreateWithAttributedString(NSAttributedString(string:value,attributes:[
+            var attributes:[NSAttributedString.Key:Any]=[
                 NSAttributedString.Key(kCTFontAttributeName as String):font,
-                NSAttributedString.Key(kCTForegroundColorAttributeName as String):color]))
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String):color]
+            if let language=recipe.language {
+                guard !language.isEmpty,language.utf8.count<=64 else{throw DockArtworkError.invalidManifest}
+                attributes[NSAttributedString.Key(kCTLanguageAttributeName as String)]=language
+            }
+            let line=CTLineCreateWithAttributedString(NSAttributedString(string:value,attributes:attributes))
+            let runFonts=(CTLineGetGlyphRuns(line) as NSArray).compactMap{item -> String? in
+                let run=item as! CTRun,attributes=CTRunGetAttributes(run) as NSDictionary
+                guard let actual=attributes[kCTFontAttributeName] else{return nil}
+                return CTFontCopyPostScriptName(actual as! CTFont) as String
+            }
             var ascent:CGFloat=0,descent:CGFloat=0,leading:CGFloat=0
             let advance=CTLineGetTypographicBounds(line,&ascent,&descent,&leading)
-            metrics.append(DockGlyphMetric(text:value,font:CTFontCopyPostScriptName(font) as String,advance:advance,ascent:ascent,descent:descent))
+            metrics.append(DockGlyphMetric(text:value,font:CTFontCopyPostScriptName(font) as String,advance:advance,ascent:ascent,descent:descent,runFonts:Array(Set(runFonts)).sorted()))
             c.saveGState();c.clip(to:rect)
             let baseline=rect.midY+(ascent-descent)/2
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
