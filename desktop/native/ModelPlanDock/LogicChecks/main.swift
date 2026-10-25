@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import CoreGraphics
+#if canImport(ModelPlanDock)
+import ModelPlanDock
+#endif
 
 struct CheckFailure: Error, CustomStringConvertible { let description: String }
 var assertions = 0, groups = 0
