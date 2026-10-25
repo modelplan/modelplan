@@ -56,10 +56,37 @@ families cover quota boundaries/unavailability/paging, reserves, current/★/tri
 fast qualifiers, weighted rates, hourly/daily coverage, DST, history and records.
 They are nonvisual contract examples, not frozen visual acceptance evidence.
 
-The parent `desktop/native/Package.swift` and workflow remain assembly-owned. To
-integrate, register the target at `ModelPlanInstruments/Sources/ModelPlanInstruments`
-and its XCTest target at `ModelPlanInstruments/Tests/ModelPlanInstrumentsTests` in
-that manifest, then add the relevant test invocation to native CI. The nested
-manifest provides an independent validation path until that assembly change lands.
+The parent `desktop/native/Package.swift` and native CI now register the instruments
+library and XCTest target. Shared manifest/workflow changes remain assembly-owned.
+The nested manifest also provides a focused, independent validation path.
 Navigation state, CLI adapters, layout, accessibility and visual acceptance belong
 to subsequent integration batches.
+
+## On-demand help logic
+
+`FirstUseHintLedger` stores only the five app-owned boolean flags. Its Codable
+representation retains the reference key `r7-help-hints-v1`, ignores unknown or
+non-true flags, and can be reset to an empty ledger. The assembly owner persists
+that value through its existing preference layer; this target performs no storage
+writes. A storage refresh uses `synchronize(with:)` to cancel stale presentations.
+
+`HelpHintQueue` has one active hint, deduplicates pending kinds and prioritizes
+trial/pinned requests. Call `advance` immediately after enqueue, then schedule its
+`nextDeadline` on the app's monotonic clock. The supplied presentation predicate
+checks actual anchor visibility, app focus, available safe placement and help-map
+suppression. A failed presentation is not marked seen. Hints expire after five
+seconds or on an action; pending hints wait 200 ms after timeout or 750 ms after
+an action. Reset cancels active, pending and deadline state before clearing flags.
+Reduced motion changes only dismissal fade metadata, not hint lifetime.
+
+`HelpDwell` provides a 500 ms pointer deadline, immediate keyboard-focus text and
+leave cancellation using stable control IDs. The caller owns visibility and native
+accessibility routing. `HelpCatalog` supplies two-line bilingual explanations and
+the identical accessible description, with separate speed bases and relative-time
+facts. A semantic `HelpTopic` replaces browser selector matching. `HelpMapCatalog`
+provides 13 cockpit and 8 Dock entries shared by held-Option and menu help.
+
+No help view, global key monitor, placement/routing geometry, animation or native
+preference writer is included. Tall/compact map placement and actual element
+coverage require the frozen presentation integration; content completeness tests
+alone cannot prove visual or accessibility coverage.
