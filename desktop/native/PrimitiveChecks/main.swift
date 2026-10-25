@@ -204,7 +204,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         if failurePose == pose { throw Failure(message: "synthetic drawing failure") }
         let green = request.variant == "green" ? 0.8 : 0.1
         context.setFillColor(CGColor(red: 0.9, green: green, blue: Double(pose) / 16, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+        context.fill(CGRect(x: request.variant == "partial" ? context.width / 2 : 0, y: 0, width: context.width, height: context.height))
     }
 }
 @MainActor private func assertImageAnimation(_ layer: CALayer) throws {
@@ -280,6 +280,9 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     two.configure(request: EffectFrameRequest(profile: RenderProfile(dark: true, scale: 1), points: 16, variant: "red"), provider: source, working: true)
     try check(source.calls == callsBeforeProfile + 9 && pool.atlasCount == 2, "changed render profile reused stale source")
     one.stop(); two.stop(); pool.purgeUnleased()
+    one.configure(request: EffectFrameRequest(profile: RenderProfile(), points: 16, variant: "partial"), provider: source, working: true)
+    try check((try imageInfo(one.layer)).3.allSatisfy { $0 == 0 }, "provider untouched pixels were not transparent")
+    one.stop(); pool.purgeUnleased()
     print("PASS revision/density/variant keys, static Reduce Motion, seek, invalid requests and provider failure rollback")
 
     let reentrant = SteppedImageEffect(pool: pool)

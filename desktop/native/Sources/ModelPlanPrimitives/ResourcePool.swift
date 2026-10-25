@@ -93,6 +93,7 @@ public struct EffectFrameRequest: Hashable, Sendable {
         for pose in 0..<Self.poses {
             guard let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8,
                 bytesPerRow: rowBytes, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            context.clear(CGRect(x: 0, y: 0, width: pixels, height: pixels))
             if let provider {
                 do { try provider.draw(pose: pose, request: key.request, in: context) }
                 catch { return nil }
