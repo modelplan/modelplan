@@ -266,6 +266,56 @@ do {
         try expect(try state.step(input,at:1).nextDeadline == 1+policy.leaveGrace,"configured grace")
         try expect(try state.step(input,at:100).didCollapse,"delayed callback evaluates absolute elapsed deadline")
     }
+    try test("B06 rings stay fixed while selected period and time points change") {
+        let five=DockQuotaWindowInput(id:"5h",period:.fiveHour,label:"5h",remainingPercent:80,resetsAt:now.addingTimeInterval(7200),durationSeconds:18000)
+        let week=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:20,resetsAt:now.addingTimeInterval(302400),durationSeconds:604800)
+        var input=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[week,five]);input.dataState = .fresh
+        var result=try DockInstrumentProjection.evaluate(input,now:now)
+        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","fixed period order, not remaining order")
+        try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
+        input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
+        try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
+        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
+    }
+    try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.warning),(40.0,.warning),(41.0,.normal)] {
+            let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
+            var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+            let p=try DockInstrumentProjection.evaluate(i,now:now)
+            try expect(p.status==expected && p.timeLeftFraction==nil,"quota threshold with unknown reset time")
+        }
+        var w=DockQuotaWindowInput(id:"month",period:.month,label:"Monthly",remainingPercent:30,resetsAt:now.addingTimeInterval(5000),durationSeconds:nil)
+        var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
+        try expect(try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)==nil,"no invented thirty-day month")
+        w.durationSeconds=31*86400;i.windows=[w]
+        try expect(try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)==1,"any positive actual time retains one point")
+        i.dataState = .stale;let old=try DockInstrumentProjection.evaluate(i,now:now)
+        try expect(old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
+        i.dataState = .fresh;i.windows[0].resetsAt=now
+        try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
+    }
+    try test("B06 working effect requires distinct matching fresh observed output") {
+        for n in [0,1,2,6] {
+            var active=Set<String>()
+            for id in 0..<6 {
+                let sid="sub-\(id)", w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:60,resetsAt:nil,durationSeconds:nil)
+                var i=DockInstrumentInput(id:sid,name:"Synthetic",windows:[w]);i.dataState = .fresh
+                i.working=DockWorkingSignal(subscriptionID:sid,bindingVerified:true,fresh:true,observedOutput:id<n)
+                if try DockInstrumentProjection.evaluate(i,now:now).jetEligible {active.insert(sid)}
+            }
+            try expect(active.count==n,"working ID count is exact, no shared-source duplication")
+        }
+        let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:0,resetsAt:nil,durationSeconds:nil)
+        var i=DockInstrumentInput(id:"sub-a",name:"Same maker",windows:[w]);i.dataState = .fresh
+        for binding in [String?.none,"sub-b"] {
+            i.working=DockWorkingSignal(subscriptionID:binding,bindingVerified:true,fresh:true,observedOutput:true)
+            try expect(!(try DockInstrumentProjection.evaluate(i,now:now).jetEligible),"ambiguous/mismatched session lights neither subscription")
+        }
+        i.working=DockWorkingSignal(subscriptionID:"sub-a",bindingVerified:true,fresh:true,observedOutput:true)
+        try expect(try DockInstrumentProjection.evaluate(i,now:now).jetEligible,"zero remains known critical while observed output uses credits")
+        i.windows[0].remainingPercent=nil
+        try expect(!(try DockInstrumentProjection.evaluate(i,now:now).jetEligible),"unknown selected status does not invent a jet colour")
+    }
     if let i=CommandLine.arguments.firstIndex(of:"--receipt"), i+1<CommandLine.arguments.count {
         let value:[String:Any]=["schemaVersion":1,"testGroups":groups,"assertions":assertions,"result":"passed","uiLaunched":false,"fixtureClock":"2023-11-14T22:13:20Z"]
         try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:CommandLine.arguments[i+1]),options:.atomic)
