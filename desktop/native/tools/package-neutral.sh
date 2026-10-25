@@ -3,7 +3,7 @@
 set -euo pipefail
 repo_root=$(cd "$(dirname "$0")/../../.." && pwd)
 native_root="$repo_root/desktop/native"
-archive_dir=${1:?Pass directory with official v0.5.35 archives and checksums.txt}
+archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.txt}
 output_dir=${2:?Pass a new local output directory}
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
 mkdir -p "$output_dir"

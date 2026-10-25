@@ -1,0 +1,180 @@
+name: macOS distribution scaffold
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/native/**", "codex/cli-pin.json", ".github/workflows/macos-distribution.yml"]
+  pull_request:
+    paths: ["desktop/native/tools/distribution/**", ".github/workflows/macos-distribution.yml"]
+  workflow_dispatch:
+    inputs:
+      prepare_signed_candidate:
+        description: Prepare an approved official candidate (no publication)
+        type: boolean
+        default: false
+      candidate_run_id:
+        description: Successful exact-main official assembly run ID (empty skips signing)
+        type: string
+        default: ""
+permissions:
+  contents: read
+concurrency:
+  group: macos-distribution-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  neutral-build:
+    # No secrets or protected environment in the PR/build job.
+    runs-on: macos-latest
+    timeout-minutes: 25
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode for Swift 6 source
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = []
+          for app in Path('/Applications').glob('Xcode*.app'):
+              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
+          if not candidates:
+              raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PY
+      - name: Test release gates with synthetic values only
+        run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
+      - name: Fetch CLI archives from the checked-in public pin
+        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/cli-archives"
+      - name: Build universal neutral app (ad-hoc only)
+        run: |
+          bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
+          mkdir -p "$RUNNER_TEMP/neutral-artifact"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-universal-unsigned.zip"
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'neutral-artifact'
+          archive = root / 'ModelPlan-Community-universal-unsigned.zip'
+          (root / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+          (root / 'build-receipt.json').write_text(json.dumps({
+              'edition': 'community', 'sourceCommit': os.environ['GITHUB_SHA'],
+              'signing': 'ad-hoc only, not Developer ID', 'notarized': False,
+              'minimumMacOS': '14.0', 'architectures': ['arm64', 'x86_64'],
+              'intel': 'untested; 3D may stutter', 'updateCandidate': False
+          }, indent=2) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modelplan-macos-neutral-unsigned
+          path: ${{ runner.temp }}/neutral-artifact/
+          if-no-files-found: error
+          retention-days: 7
+
+  release-candidate:
+    # Cannot run on pull_request, tags, forks, or an arbitrary branch.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan' && inputs.prepare_signed_candidate
+    needs: neutral-build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    environment: macos-release
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_REQUESTED: "true"
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      MACOS_OFFICIAL_WORKFLOW_ID: ${{ vars.MACOS_OFFICIAL_WORKFLOW_ID }}
+      MACOS_SIGNING_IDENTITY: ${{ vars.MACOS_SIGNING_IDENTITY }}
+      MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
+      MACOS_BUNDLE_ID: ${{ vars.MACOS_BUNDLE_ID }}
+      MACOS_FEED_URL: ${{ vars.MACOS_FEED_URL }}
+      MACOS_UPDATE_URL: ${{ vars.MACOS_UPDATE_URL }}
+      SPARKLE_TOOLS_URL: ${{ vars.SPARKLE_TOOLS_URL }}
+      SPARKLE_TOOLS_SHA256: ${{ vars.SPARKLE_TOOLS_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Plan optional stages (presence only; never print secret values)
+        id: gates
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: python3 desktop/native/tools/distribution/release.py plan | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Verify trusted official assembly run
+        if: steps.gates.outputs.sign == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run_id = os.environ['CANDIDATE_RUN_ID']
+          workflow_id = os.environ['MACOS_OFFICIAL_WORKFLOW_ID']
+          assert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', workflow_id)
+          run = json.loads(subprocess.check_output(['gh', 'api', f'repos/modelplan/modelplan/actions/runs/{run_id}']))
+          assert run['head_repository']['full_name'] == 'modelplan/modelplan'
+          assert run['head_branch'] == 'main' and run['head_sha'] == os.environ['GITHUB_SHA']
+          assert run['event'] in ('push', 'workflow_dispatch') and run['conclusion'] == 'success'
+          assert str(run['workflow_id']) == workflow_id
+          PY
+      - uses: actions/download-artifact@v4
+        if: steps.gates.outputs.sign == 'true'
+        with:
+          name: modelplan-macos-official-candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/official-input
+      - name: Validate archive paths and unpack the official candidate
+        if: steps.gates.outputs.sign == 'true'
+        run: |
+          python3 desktop/native/tools/distribution/release.py check-archive --archive "$RUNNER_TEMP/official-input/ModelPlan.app.zip"
+          mkdir "$RUNNER_TEMP/official-app"
+          ditto -x -k "$RUNNER_TEMP/official-input/ModelPlan.app.zip" "$RUNNER_TEMP/official-app"
+      - name: Developer ID sign (temporary keychain; always removed)
+        if: steps.gates.outputs.sign == 'true'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: python3 desktop/native/tools/distribution/release.py sign --app "$RUNNER_TEMP/official-app/ModelPlan.app"
+      - name: Notarize, staple and assess; archive only after acceptance
+        if: steps.gates.outputs.notarize == 'true'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: python3 desktop/native/tools/distribution/release.py notarize --app "$RUNNER_TEMP/official-app/ModelPlan.app" --output "$RUNNER_TEMP/release-output"
+      - name: Prepare reviewed Sparkle signing tool
+        if: steps.gates.outputs.appcast == 'true'
+        run: |
+          python3 desktop/native/tools/distribution/release.py fetch-sparkle --output "$RUNNER_TEMP/sparkle-tools"
+      - name: Sign update archive and create appcast candidate
+        if: steps.gates.outputs.appcast == 'true'
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: python3 desktop/native/tools/distribution/release.py appcast --app "$RUNNER_TEMP/official-app/ModelPlan.app" --output "$RUNNER_TEMP/release-output" --tool "$RUNNER_TEMP/sparkle-tools/sign_update"
+      - uses: actions/upload-artifact@v4
+        if: success() && steps.gates.outputs.notarize == 'true'
+        with:
+          name: modelplan-macos-release-candidate-NOT-PUBLISHED
+          path: ${{ runner.temp }}/release-output/
+          if-no-files-found: error
+          retention-days: 7
+      # No gh release, Pages push, feed replacement or deployment in R7.
