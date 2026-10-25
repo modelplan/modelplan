@@ -5,3 +5,5 @@ MIT validation, integrity and caching for published data. This retains the verif
 The private producer may consume a reviewed, hash-verified copy of this reader. Production scoring/recommendation source, full calibration records, input construction, entry/exit automation, acquisition/review/publication and official visuals remain private. Formula explanations and source weights remain in the methodology documents. No scoring engine or complete calibration snapshot belongs in this module.
 
 Run `npm ci --prefix reader && npm test --prefix reader` (Node 24+). Source rebuilds require a full checkout; the packaged plugin uses its bundled runtime.
+
+The verifier accepts optional published selection metadata: top-level `selectionRevision` and nullable per-model `lineageId`, `lineageStatus` (`current`, `older`, `preview`, `retired`) and `defaultSelected`. Historical and partial publications remain valid. These are producer verdicts; the reader validates their types and preserves them without computing a selection. Strict model validation, content hashes and dependency checks still apply.

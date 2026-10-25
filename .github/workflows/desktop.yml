@@ -2,9 +2,9 @@ name: desktop
 on:
   push:
     branches: [main]
-    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -149,14 +149,14 @@ jobs:
           native_bin_dir=$(swift build --package-path desktop/native --show-bin-path)
           native_artifact_dir="$RUNNER_TEMP/native-runtime"
           mkdir -p "$native_artifact_dir"
-          for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks; do
+          for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks; do
             cp "$native_bin_dir/$native_binary" "$native_artifact_dir/"
             xcrun vtool -show-build "$native_bin_dir/$native_binary"
             otool -L "$native_bin_dir/$native_binary"
           done
           cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"
           cd "$native_artifact_dir"
-          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks > SHA256SUMS
+          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks > SHA256SUMS
           # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
           tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
       - uses: actions/upload-artifact@v4
@@ -168,6 +168,8 @@ jobs:
           retention-days: 3
       - name: Native contract suite
         run: swift run --package-path desktop/native --skip-build ModelPlanContractChecks
+      - name: Frozen CLI desktop contract v1 goldens
+        run: swift run --package-path desktop/native --skip-build ModelPlanContractV1Checks "$GITHUB_WORKSPACE/testdata/contract-v1"
       - name: Common-run-loop deadline check
         run: swift run --package-path desktop/native --skip-build ModelPlanRunLoopChecks
       - name: AppKit lifecycle and neutral surface checks
@@ -199,10 +201,12 @@ jobs:
           tar -xzf "$RUNNER_TEMP/native-runtime-download/native-runtime.tar.gz" -C "$RUNNER_TEMP/native-runtime"
           cd "$RUNNER_TEMP/native-runtime"
           shasum -a 256 --check SHA256SUMS
-          file ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks
+          file ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks
       # Execute the transferred binaries directly: no Swift invocation or rebuild.
       - name: Native contract suite on macOS 14
         run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractChecks"'
+      - name: Frozen CLI desktop contract v1 goldens on macOS 14
+        run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractV1Checks" "$GITHUB_WORKSPACE/testdata/contract-v1"'
       - name: Common-run-loop deadline check on macOS 14
         run: '"$RUNNER_TEMP/native-runtime/ModelPlanRunLoopChecks"'
       - name: AppKit lifecycle and neutral surface checks on macOS 14
