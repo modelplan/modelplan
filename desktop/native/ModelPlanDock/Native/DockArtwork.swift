@@ -50,6 +50,14 @@ public struct DockResourceManifest: Codable, Sendable {
         let key=id+"@"+String(maximumPixelSize);age &+= 1
         if var entry=images[key]{entry.age=age;images[key]=entry;return entry.image}
         let (_,data)=try checkedResource(id)
+        if manifest.files[id]?.path.lowercased().hasSuffix(".svg") == true {
+            let size=try DockStaticSVG.size(data),ratio=CGFloat(maximumPixelSize)/max(size.width,size.height)
+            let width=max(1,Int(ceil(size.width*ratio))),height=max(1,Int(ceil(size.height*ratio)))
+            try makeRoom(for:((width*4+63)/64)*64*height)
+            let image=try DockStaticSVG.image(data,size:size,maximumPixelSize:maximumPixelSize),bytes=image.bytesPerRow*image.height
+            try makeRoom(for:bytes);images[key]=Cached(image:image,bytes:bytes,age:age);decodedBytes+=bytes;peakDecodedBytes=max(decodedBytes,peakDecodedBytes)
+            return image
+        }
         guard let source=CGImageSourceCreateWithData(data as CFData,[kCGImageSourceShouldCache:false] as CFDictionary),
             let properties=CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString:Any],
             let width=properties[kCGImagePropertyPixelWidth] as? Int,let height=properties[kCGImagePropertyPixelHeight] as? Int,
