@@ -138,7 +138,7 @@ jobs:
           swift --version
       - name: Build the neutral app and all native checks
         run: swift build --package-path desktop/native --jobs 2
-      - name: Native lane XCTest suites (instruments, cockpit shell and field)
+      - name: Native lane XCTest suites (selection, instruments, cockpit shell and field)
         run: swift test --package-path desktop/native --jobs 2
       - name: Field bridge protocol checks (synthetic page adapter)
         run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
