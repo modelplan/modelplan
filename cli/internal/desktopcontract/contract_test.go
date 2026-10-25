@@ -157,6 +157,11 @@ func freezeSchema(v any, name string) map[string]any {
 		nullableNumber := map[string]any{"type": []string{"number", "null"}}
 		effort := map[string]any{"type": "object", "required": []string{"effort"}, "properties": map[string]any{"effort": map[string]any{"type": "string", "minLength": 1}, "label": map[string]any{"type": "string"}, "ability": nullableNumber, "cost": nullableNumber, "time": nullableNumber, "abilityBasis": map[string]any{"type": "string"}, "costBasisId": map[string]any{"type": "string"}, "timeEstimated": map[string]any{"type": "boolean"}, "timeBasis": map[string]any{"type": []string{"object", "null"}}}, "additionalProperties": true}
 		model := map[string]any{"type": "object", "required": []string{"id", "developerId", "harnessIds"}, "properties": map[string]any{"id": map[string]any{"type": "string", "minLength": 1}, "name": map[string]any{"type": "string"}, "developerId": map[string]any{"type": "string", "minLength": 1}, "recommended": map[string]any{"type": "string"}, "harnessIds": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": []string{"array", "null"}, "items": map[string]any{"type": "string"}}}, "efforts": map[string]any{"type": []string{"array", "null"}, "items": effort}}, "additionalProperties": true}
+		modelProps := model["properties"].(map[string]any)
+		modelProps["lineageId"] = map[string]any{"type": []string{"string", "null"}, "minLength": 1}
+		modelProps["lineageStatus"] = map[string]any{"type": []string{"string", "null"}, "enum": []any{"current", "older", "preview", "retired", nil}}
+		modelProps["defaultSelected"] = map[string]any{"type": []string{"boolean", "null"}}
+		props["selectionRevision"] = map[string]any{"type": "string", "minLength": 1}
 		props["models"] = map[string]any{"type": "array", "items": model}
 		props["units"] = map[string]any{"type": "object", "required": []string{"ability", "cost", "time"}, "properties": map[string]any{"ability": map[string]any{"const": "websiteAbility"}, "cost": map[string]any{"const": "usdPerReferenceTask"}, "time": map[string]any{"const": "taskTimeCrossModel"}}, "additionalProperties": true}
 		for _, k := range []string{"lineups", "speedTiers", "resets", "windows"} {
@@ -356,8 +361,38 @@ func TestScenarioEvidenceIsSubstantive(t *testing.T) {
 				t.Fatal("four samples fabricated a rate")
 			}
 		}
-		if tc.Desktop.Capabilities["creditsHistory"].Status != "unavailable" || tc.Publication.Capabilities["lineageSelection"].Status != "unavailable" {
-			t.Fatal("source-unavailable feature claimed as supported")
+		if tc.Desktop.Capabilities["creditsHistory"].Status != "unavailable" || tc.Publication.Capabilities["lineageSelection"].Status != "publication-dependent" {
+			t.Fatal("unknown history or publication-dependent selection capability changed")
 		}
+	}
+}
+
+func TestLineageSelectionSchemaRejectsInvalidMetadata(t *testing.T) {
+	cases, err := contracttest.Cases()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := schema(t, "publication")
+	for _, mutation := range []struct {
+		field   string
+		invalid any
+	}{
+		{"lineageId", 42}, {"lineageId", ""}, {"lineageId", true},
+		{"lineageStatus", "newest"}, {"lineageStatus", true}, {"lineageStatus", 1},
+		{"defaultSelected", "false"}, {"defaultSelected", 0},
+		{"selectionRevision", true}, {"selectionRevision", ""}, {"selectionRevision", nil},
+	} {
+		t.Run(mutation.field+"/"+strings.TrimSpace(string(encoded(t, mutation.invalid))), func(t *testing.T) {
+			var doc map[string]any
+			_ = json.Unmarshal(encoded(t, cases[0].Publication), &doc)
+			if mutation.field == "selectionRevision" {
+				doc[mutation.field] = mutation.invalid
+			} else {
+				doc["models"].([]any)[0].(map[string]any)[mutation.field] = mutation.invalid
+			}
+			if err := s.Validate(value(t, encoded(t, doc))); err == nil {
+				t.Fatal("accepted invalid selection metadata")
+			}
+		})
 	}
 }
