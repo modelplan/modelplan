@@ -4,6 +4,34 @@ import Foundation
 public enum ModelSelection {
     public static let recentUseInterval: TimeInterval = 7 * 24 * 60 * 60
 
+    /// A labelled public directory, never evidence of personal use or entitlement.
+    /// Explicit published current/default verdicts suffice here; unknown lineage remains diagnostic.
+    public static func publicDefaults(publication: SelectionPublication, scope: SelectionScope) -> SharedModelSelection {
+        var issues: [SelectionIssue] = [], byID: [String: SelectionModel] = [:], conflicts: Set<String> = []
+        for model in publication.models {
+            guard !model.id.isEmpty else { issues.append(.init(.invalidModelID)); continue }
+            if let old = byID[model.id], old != model { conflicts.insert(model.id) }
+            else { byID[model.id] = model }
+        }
+        var models: [SelectedModel] = [], seen: Set<String> = []
+        for model in publication.models where !model.id.isEmpty && seen.insert(model.id).inserted {
+            func note(_ reason: SelectionIssueReason) { issues.append(.init(reason, modelID: model.id)) }
+            if conflicts.contains(model.id) { note(.conflictingModelID); continue }
+            if model.lineageID?.isEmpty != false { note(.unknownLineageID) }
+            if model.defaultSelected == nil { note(.unknownGlobalDefault) }
+            else if model.defaultSelected == false { note(.notGlobalDefault) }
+            if model.lineageStatus == nil { note(.unknownLineageStatus) }
+            else if !["current", "older", "preview", "retired"].contains(model.lineageStatus!) { note(.unsupportedLineageStatus) }
+            if model.exclusion == .legacy { note(.legacy); continue }
+            if model.exclusion == .retired || model.lineageStatus == "retired" { note(.retired); continue }
+            if model.lineageStatus == "preview" { note(.preview); continue }
+            guard model.lineageStatus == "current", model.defaultSelected == true else { continue }
+            models.append(SelectedModel(model: model, origin: .publishedDefaultFallback))
+        }
+        return SharedModelSelection(scope: scope, publicationID: publication.publicationID,
+            selectionRevision: publication.selectionRevision, models: models, issues: issues)
+    }
+
     public static func select(_ input: SelectionInput) -> SharedModelSelection {
         var issues: [SelectionIssue] = []
         func result(_ models: [SelectedModel] = []) -> SharedModelSelection {
@@ -57,6 +85,10 @@ public enum ModelSelection {
             guard use.usedAt >= cutoff else { continue }
             recent[use.modelID] = max(recent[use.modelID] ?? use.usedAt, use.usedAt)
         }
+        var windowUsed: Set<String> = []
+        for use in input.windowUsage where scopedByID[use.subscriptionID]?.contains(use.modelID) == true {
+            windowUsed.insert(use.modelID)
+        }
 
         var candidates: [SelectionModel] = [], seenModels: Set<String> = []
         for model in publication.models where !model.id.isEmpty && offered.contains(model.id) && seenModels.insert(model.id).inserted {
@@ -73,7 +105,7 @@ public enum ModelSelection {
             else if !["current", "older"].contains(model.lineageStatus!) { reject(.unsupportedLineageStatus); unknown = true }
             if unknown { continue }
             if model.lineageStatus == "older" {
-                guard recent[model.id] != nil else { reject(.olderNotRecentlyUsed); continue }
+                guard recent[model.id] != nil || windowUsed.contains(model.id) else { reject(.olderNotRecentlyUsed); continue }
             } else if input.scope == .all {
                 guard model.defaultSelected == true else { continue }
             }
@@ -102,6 +134,11 @@ public enum ModelSelection {
             return a == b ? index[$0.id]! < index[$1.id]! : a > b
         }
         for model in used.prefix(3) { append(model, .recentUsage(recent[model.id]!)) }
+        // Window membership proves use but cannot order it chronologically. Fill only the remaining
+        // used slots, in publication order, without manufacturing an event Date.
+        let windowSlots = max(0, 3 - ordered.count)
+        let windowOnly = candidates.filter { recent[$0.id] == nil && windowUsed.contains($0.id) }
+        for model in windowOnly.prefix(windowSlots) { append(model, .recentWindow) }
         for kind in PublishedPickKind.allCases {
             for pick in publication.picks where pick.kind == kind {
                 if let model = candidatesByID[pick.modelID], !tail(model) { append(model, .publishedPick(kind)) }
