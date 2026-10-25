@@ -141,14 +141,14 @@ jobs:
           native_bin_dir=$(swift build --package-path desktop/native --show-bin-path)
           native_artifact_dir="$RUNNER_TEMP/native-runtime"
           mkdir -p "$native_artifact_dir"
-          for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks; do
+          for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks; do
             cp "$native_bin_dir/$native_binary" "$native_artifact_dir/"
             xcrun vtool -show-build "$native_bin_dir/$native_binary"
             otool -L "$native_bin_dir/$native_binary"
           done
           cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"
           cd "$native_artifact_dir"
-          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks > SHA256SUMS
+          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks > SHA256SUMS
           # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
           tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
       - uses: actions/upload-artifact@v4
@@ -164,6 +164,8 @@ jobs:
         run: swift run --package-path desktop/native --skip-build ModelPlanRunLoopChecks
       - name: AppKit lifecycle and neutral surface checks
         run: swift run --package-path desktop/native --skip-build ModelPlanShellChecks
+      - name: B05 primitive contracts
+        run: swift run --package-path desktop/native --skip-build ModelPlanPrimitiveChecks
       - name: Synthetic fixture integrity
         run: python3 desktop/native/tools/check-fixture-manifests.py
 
@@ -197,5 +199,7 @@ jobs:
         run: '"$RUNNER_TEMP/native-runtime/ModelPlanRunLoopChecks"'
       - name: AppKit lifecycle and neutral surface checks on macOS 14
         run: '"$RUNNER_TEMP/native-runtime/ModelPlanShellChecks"'
+      - name: B05 primitive contracts on macOS 14
+        run: '"$RUNNER_TEMP/native-runtime/ModelPlanPrimitiveChecks"'
       - name: Synthetic fixture integrity
         run: python3 desktop/native/tools/check-fixture-manifests.py
