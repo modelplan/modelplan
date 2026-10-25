@@ -1,0 +1,30 @@
+# Dock state before visual freeze
+
+The `Logic/` directory contains only generic, MIT presentation logic. It imports Foundation/CoreGraphics, not AppKit, WebKit or a drawing/runtime scene. There are no windows, timers, gestures, CLI calls, rankings, personal-history storage, colours, fonts, artwork or production UI in it. `WindowInputProof/` remains a separate synthetic B05b harness; it is not the dock appearance.
+
+## Interface and invariants
+
+- **`DockSubscriptionPreferences`** stores only ordered stable subscription IDs and hidden IDs. The catalogue must contain unique nonempty IDs. New IDs append in source order, absent preferred IDs are kept for reconnect, and visibility does not erase order. Resetting order does not reset visibility. A drag session previews from its captured baseline, so repeated hover is idempotent. Only commit mutates order; cancel, a changed catalogue/order, or a repeated commit fails without reviving removed IDs. Drop uses the target's original index; keyboard up/down uses the same `move` interface. The caller owns bounded preference-file persistence.
+- **`DockVisibilityState.step`** consumes a current presence snapshot, explicit intent and finite nondecreasing elapsed time. It returns surface state, one-time reveal/collapse effects, stale locks to clear, a generation token and at most one absolute deadline. It creates no timer. The adapter uses the app's sleep-aware elapsed clock, schedules in appropriate run-loop modes, passes `expectedGeneration` and samples current native truth again at a deadline. Normal app deactivation is not lifecycle cancellation. Lock/sleep/display removal uses `lifecycleCancel`; old callbacks cannot restore a surface by replaying an old action. Fullscreen/edge eligibility is supplied by the native owner, never guessed from pointer position.
+- All hide/dwell/guard/slack constants live in **`DockVisibilityPolicy`**. Defaults: 150 ms reveal, 500 ms leave, 2 s stale lock recovery, 300 ms arrival guard, 150 ms sampling, 12 pt retention slack, 16 pt wake zone. An actual mouse button, menu, ignition hold or pinned card protects indefinitely; stale recorded drag/menu/keyboard flags alone do not. The whole wake target counts as inside. Unknown pointer state does not count as absence. A keyboard/AX explicit entry bypasses the arrival-pointer guard.
+- **`DockPresenceArea`** computes hover retention, including full-depth card corridors, from supplied geometry. It does not choose artwork or control sizes. Its padded rectangles **must not become native input windows or click regions**: the real original-event route is the separate B05b gate.
+- **`DockAttentionState.project`** reconciles current typed signals automatically, emits per-subscription semantic segments/dots and a single highest-priority menu notice. The sliver base remains neutral. Geometry supplies subscription-to-station mapping; overflow can share a station without losing account identity. No rank collapses the whole sliver to one colour.
+- Notice priority is forecast, announced reset (hollow blue), confirmed reset (solid blue), expiring card (amber), then observed credits (white). Low quota alone is not a notice. Forecast/credits/card signals require fresh personal data. A dated public reset does not imply a personal meter refill. Expiry is an explicit UTC date, not an invented nominal period. Forecasts are upstream validated signals, not locally recomputed recommendations. Card IDs are sorted before key construction; every key includes subscription identity.
+- Call **`acknowledgeDockOpen` only on a genuine dock opening**, not every data repaint. It acknowledges the selected notice and current fresh severity. Improved fresh severity lowers the baseline; unknown/stale evidence does not pretend that an alert improved. `acknowledgeCockpitOpen` acknowledges the menu notice only. Acknowledging the sliver never clears the open-dock event. `firstAppearance` is consumed explicitly only when a notice is actually presented, separately per surface. Temporary staleness withholds personal notices but preserves acknowledgements until the original deadline; expired/removed keys are pruned. Only the selected event is acknowledged; a hidden lower-priority event remains discoverable.
+
+## Data integration stays explicit
+
+The adapter must start from the shared store's validated, deadline-retired projection and stable subscription bindings; it must not re-read the CLI or bypass Core's expiry/clock rollback ledger. Do not group subscriptions by vendor, attribute source-wide events/speed to an account, or infer quota consumption from tokens. `DockSubscriptionSignal` is an input contract, not a parallel snapshot decoder. Missing scoped data stays unavailable; the adapter must retain known catalogue IDs across a transient read failure rather than treating that failure as deleting all subscriptions.
+
+The current shared `AdviceEvent` DTO does not expose a subscription reference. Whether a newer CLI payload supports it has not been established by this preparation task. A multi-subscription adapter therefore needs the Core owner's reviewed binding seam; do not guess it from source/window strings. Shared Package.swift/Core/Shell/CI are intentionally unchanged. The coordinator can add a target with path `ModelPlanDock/Logic` and a check target with `LogicChecks`; the standalone proof is not library source.
+
+## Checks (no UI)
+
+```sh
+bash desktop/native/ModelPlanDock/check-logic.sh "$HOME/mp/build/M1/logic"
+# Optional architecture and JSON receipt:
+bash desktop/native/ModelPlanDock/check-logic.sh "$HOME/mp/build/M1/logic" arm64 "$HOME/mp/evidence/M1/logic.json"
+bash desktop/native/ModelPlanDock/check-logic.sh "$HOME/mp/build/M1/logic" x86_64
+```
+
+The script runs only the native host architecture. Intel can be cross-compiled on Apple silicon, but is not executed or accepted there. All builds target macOS 14 and keep their module cache in the supplied scratch path. No display, AX, IME or physical-input acceptance can be inferred from these unit tests. B06 visuals still require the coordinator's explicit freeze notice.
