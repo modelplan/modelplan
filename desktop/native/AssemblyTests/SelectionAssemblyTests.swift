@@ -99,4 +99,23 @@ final class SelectionAssemblyTests: XCTestCase {
         XCTAssertEqual(r.shared.orderedIDs,["regular","tail"]);XCTAssertEqual(r.shared.models.last?.model.placement,.pricierTwin)
         XCTAssertTrue(r.shared.issues.contains { $0.modelID == "ambiguous" && $0.reason == .conflictingModelID })
     }
+    func testUnreadableDominanceIsQuarantinedInsteadOfPromotedThroughPick() throws {
+        let invalid: [Any] = [["id":"regular","kind":"future-kind"], ["kind":"weaker"],
+                              ["id":"regular"], "unexpected", [1,2], true]
+        for value in invalid {
+            let source=try joined(models:[model("bad"),model("regular")],members:[
+                ["id":"bad","tags":["strongest"],"dominatedBy":value]])
+            var a=SelectionAssembly()
+            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["bad","regular"])],usage:[],now:now)
+            XCTAssertEqual(r.shared.orderedIDs,["regular"])
+            XCTAssertEqual(r.mappingIssues.map(\.modelID),["bad"])
+            XCTAssertEqual(r.mappingIssues.first?.reason,.unsupportedDominance)
+        }
+        for row: [String:Any] in [["id":"bad","tags":["strongest"]], ["id":"bad","tags":["strongest"],"dominatedBy":NSNull()]] {
+            let source=try joined(models:[model("bad")],members:[row]);var a=SelectionAssembly()
+            let r=a.evaluate(joined:source,scope:.all,subscriptions:[offering(["bad"])],usage:[],now:now)
+            XCTAssertEqual(r.shared.orderedIDs,["bad"]);XCTAssertTrue(r.mappingIssues.isEmpty)
+        }
+    }
+
 }

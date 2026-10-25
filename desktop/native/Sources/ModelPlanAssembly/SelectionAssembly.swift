@@ -23,7 +23,14 @@ public struct AttributedSelectionUsage: Sendable {
     }
 }
 
+public struct SelectionMappingIssue: Equatable, Sendable {
+    public enum Reason: Equatable, Sendable { case unsupportedDominance }
+    public let modelID: String
+    public let reason: Reason
+}
+
 public struct AssembledModelSelection: Sendable {
+    public let mappingIssues: [SelectionMappingIssue]
     public let shared: SharedModelSelection
     public let instruments: InjectedModelSelection?
     public let unavailableReason: String?
@@ -44,7 +51,9 @@ public struct SelectionAssembly: Sendable {
         let validated = JoinedSnapshot.make(personal: joined.personal, presentation: personal,
             publication: joined.publication,
             publicUsable: joined.scoredUnavailableReason == nil && joined.presentation.actionable)
-        let publication = validated.publication.map(Self.publication)
+        let mapped = validated.publication.map(Self.publication)
+        let publication = mapped?.publication
+        let mappingIssues = mapped?.issues ?? []
         let offerings = subscriptions.map { row in
             row.evidence.usable(at: now) ? row.subscription :
                 SelectionSubscription(id: row.subscription.id, availability: .unknown, offeredModelIDs: nil)
@@ -56,7 +65,7 @@ public struct SelectionAssembly: Sendable {
         if validated.scoredUnavailableReason != nil { reason = validated.scoredUnavailableReason }
         else if publication?.selectionRevision?.isEmpty != false { reason = "selection-revision-unavailable" }
         else if subscriptions.isEmpty { reason = "subscription-evidence-unavailable" }
-        else if shared.models.isEmpty && !shared.issues.isEmpty { reason = "selection-unavailable" }
+        else if shared.models.isEmpty && (!shared.issues.isEmpty || !mappingIssues.isEmpty) { reason = "selection-unavailable" }
         else { reason = nil }
         let instrumentScope: InstrumentScope
         switch scope { case .all: instrumentScope = .all; case .subscription(let id): instrumentScope = .subscription(id) }
@@ -70,34 +79,50 @@ public struct SelectionAssembly: Sendable {
                     if case .recentUsage(let at) = model.origin { return (model.id, at) }; return nil
                 }))
         }
-        return AssembledModelSelection(shared: shared, instruments: injected, unavailableReason: reason)
+        return AssembledModelSelection(mappingIssues: mappingIssues, shared: shared, instruments: injected, unavailableReason: reason)
     }
 
-    private static func publication(_ source: PublicPublication) -> ModelPlanSelection.SelectionPublication {
+    private struct MappedPublication {
+        let publication: ModelPlanSelection.SelectionPublication
+        let issues: [SelectionMappingIssue]
+    }
+    private static func publication(_ source: PublicPublication) -> MappedPublication {
         let members = source.lineups.flatMap { $0.members ?? [] }
         let membersByID = Dictionary(grouping: members, by: \.id)
-        return .init(publicationID: source.publicationId, selectionRevision: source.selectionRevision,
-            models: source.models.flatMap { model in
-                // Keep every explicitly different published context; the selector abstains on conflicts.
-                var placements: [PublishedPlacement] = []
-                for member in membersByID[model.id] ?? [] {
-                    var placement: PublishedPlacement = .unspecified
-                    if case .object(let value) = member.dominatedBy,
-                       case .string(let id) = value["id"], !id.isEmpty,
-                       case .string(let kind) = value["kind"] {
-                        switch kind { case "equivalent": placement = .pricierTwin
-                        case "weaker": placement = .dominated; default: break }
+        var issues: [SelectionMappingIssue] = [], quarantined = Set<String>()
+        let models = source.models.flatMap { model -> [SelectionModel] in
+            // Keep every explicitly different readable context; the selector abstains on conflicts.
+            var placements: [PublishedPlacement] = []
+            for member in membersByID[model.id] ?? [] {
+                let placement: PublishedPlacement
+                switch member.dominatedBy {
+                case nil, .some(.null): placement = .unspecified
+                case .some(.object(let value)):
+                    if case .string(let id) = value["id"], !id.isEmpty,
+                       case .string(let kind) = value["kind"], ["equivalent", "weaker"].contains(kind) {
+                        placement = kind == "equivalent" ? .pricierTwin : .dominated
+                    } else {
+                        if quarantined.insert(model.id).inserted { issues.append(.init(modelID:model.id, reason:.unsupportedDominance)) }
+                        return []
                     }
-                    if !placements.contains(placement) { placements.append(placement) }
+                default:
+                    if quarantined.insert(model.id).inserted { issues.append(.init(modelID:model.id, reason:.unsupportedDominance)) }
+                    return []
                 }
-                if placements.isEmpty { placements = [.unspecified] }
-                return placements.map { placement in
-                    SelectionModel(id: model.id, developerID: model.developerId, lineageID: model.lineageId,
-                        lineageStatus: model.lineageStatus, defaultSelected: model.defaultSelected, placement: placement)
-                }
-            },
-            picks: members.flatMap { member in
+                if !placements.contains(placement) { placements.append(placement) }
+            }
+            if placements.isEmpty { placements = [.unspecified] }
+            return placements.map { placement in
+                SelectionModel(id: model.id, developerID: model.developerId, lineageID: model.lineageId,
+                    lineageStatus: model.lineageStatus, defaultSelected: model.defaultSelected, placement: placement)
+            }
+        }
+        // Quarantine all duplicate records for an unreadable model, not just the first context.
+        let publication = ModelPlanSelection.SelectionPublication(publicationID: source.publicationId,
+            selectionRevision: source.selectionRevision, models: models.filter { !quarantined.contains($0.id) },
+            picks: members.filter { !quarantined.contains($0.id) }.flatMap { member in
                 (member.tags ?? []).compactMap { PublishedPickKind(rawValue: $0).map { PublishedPick(modelID: member.id, kind: $0) } }
             })
+        return MappedPublication(publication:publication, issues:issues)
     }
 }
