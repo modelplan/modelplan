@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], products: [
     .library(name: "ModelPlanCore", targets: ["ModelPlanCore"]),
+    .library(name: "ModelPlanAssembly", targets: ["ModelPlanAssembly"]),
     .library(name: "ModelPlanShell", targets: ["ModelPlanShell"]),
     .library(name: "ModelPlanPrimitives", targets: ["ModelPlanPrimitives"]),
     .library(name: "ModelPlanDock", targets: ["ModelPlanDock"]),
@@ -15,6 +16,8 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .executable(name: "ModelPlanCommunity", targets: ["ModelPlanCommunity"]),
 ], targets: [
     .target(name: "ModelPlanCore"),
+    .target(name: "ModelPlanAssembly", dependencies: ["ModelPlanCore", "ModelPlanSelection", "ModelPlanInstruments"]),
+    .testTarget(name: "ModelPlanAssemblyTests", dependencies: ["ModelPlanAssembly"], path: "AssemblyTests"),
     .target(name: "ModelPlanShell", dependencies: ["ModelPlanCore"]),
     .executableTarget(name: "ModelPlanFieldProbe", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "FieldProbe"),
     .target(name: "ModelPlanPrimitives", dependencies: ["ModelPlanCore"]),
@@ -41,7 +44,7 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .executableTarget(name: "ModelPlanWindowProbe", path: "ModelPlanDock/WindowInputProof",
                       exclude: ["README.md", "build.sh", "run-pair.py", "sample-owned.py"],
                       sources: ["Geometry.swift", "main.swift"]),
-    .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanCore", "ModelPlanShell"]),
+    .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanCore", "ModelPlanShell", "ModelPlanAssembly"]),
     .executableTarget(name: "ModelPlanRunLoopChecks", dependencies: ["ModelPlanCore"], path: "RunLoopChecks"),
     .executableTarget(name: "ModelPlanShellChecks", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "ShellChecks"),
     .executableTarget(name: "ModelPlanContractV1Checks", dependencies: ["ModelPlanCore"], path: "ContractV1Checks"),

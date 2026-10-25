@@ -90,6 +90,13 @@ public struct StoreDiagnostics: Sendable {
         if suspended || !personalUsable { projection = projection.stale(reason: suspended ? "suspended" : "personal-read-unavailable") }
         return JoinedSnapshot.make(personal: personal, presentation: projection, publication: publication, publicUsable: publicUsable)
     }
+    /// A dated public catalog is independent of account availability and of the scored join.
+    public func modelSelectionFeeds() -> ModelSelectionFeeds {
+        let current = view()
+        return ModelSelectionFeeds(publication: publication, personal: personal,
+            personalUsable: current?.presentation.actionable == true,
+            publicIsLastGood: !publicUsable || diagnostics.publicationWarning)
+    }
     /// Test/termination hook: cancellation is complete only after this returns.
     public func stopAndWait() async { suspend(); await worker?.value }
     public var idle: Bool { worker == nil && pending.isEmpty }
