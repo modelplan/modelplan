@@ -81,7 +81,13 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: node scripts/fetch-cli.mjs aarch64-apple-darwin
       - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json -- --locked
-      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/Model Plan Community.app"
+      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/ModelPlan Community.app"
+      - name: Verify bundle display names and stable identifier
+        run: |
+          native_info="src-tauri/target/release/bundle/macos/ModelPlan Community.app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$native_info")" = "ModelPlan Community"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$native_info")" = "ModelPlan Community"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$native_info")" = "ai.modelplan.community"
       - uses: actions/upload-artifact@v4
         with:
           name: Model-Plan-Community-macOS-arm64-unsigned

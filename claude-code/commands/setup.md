@@ -1,5 +1,5 @@
 ---
-description: Check the Model Plan plugin's setup (its CLI, status line, hook) part by part and finish what is missing
+description: Check the ModelPlan plugin's setup (its CLI, status line, hook) part by part and finish what is missing
 allowed-tools: Bash(sh:*)
 ---
 

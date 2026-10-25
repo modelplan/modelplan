@@ -266,7 +266,7 @@ func TestHookQuotaDoesNotConsumeMissingBrief(t *testing.T) {
 	if err := h.st.SaveState(store.State{PublicationID: f.id, ManifestHash: publicationHash(f.manifest), Component: "client", ComponentHash: f.objectHash}); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.prompt("thread", now); !strings.HasPrefix(got, "Model Plan task-start brief") || strings.Contains(got, "12%") {
+	if got := h.prompt("thread", now); !strings.HasPrefix(got, "ModelPlan task-start brief") || strings.Contains(got, "12%") {
 		t.Fatalf("late brief: %s", got)
 	}
 	if got := h.prompt("thread", now); got != "" {
@@ -278,7 +278,7 @@ func TestHookQuotaDoesNotConsumeMissingBrief(t *testing.T) {
 		t.Fatalf("cached brief off: %s", got)
 	}
 	t.Setenv("MODELPLAN_TASK_BRIEF", "")
-	if got := h.prompt("cached-thread", now); !strings.HasPrefix(got, "Model Plan task-start brief") || !strings.HasSuffix(got, "\n\nWeekly quota: 12% left, resets in 3d.") {
+	if got := h.prompt("cached-thread", now); !strings.HasPrefix(got, "ModelPlan task-start brief") || !strings.HasSuffix(got, "\n\nWeekly quota: 12% left, resets in 3d.") {
 		t.Fatalf("brief plus factual line: %s", got)
 	}
 	if got := h.prompt("cached-thread", now); got != "" {

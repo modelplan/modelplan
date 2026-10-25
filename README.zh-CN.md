@@ -1,9 +1,9 @@
 <div align="center">
 
-<a href="https://modelplan.ai/?lang=zh"><img src="docs/assets/banner-zh.jpg" alt="Model Plan：用哪个模型、开哪一档、买哪个套餐" width="100%"></a>
+<a href="https://modelplan.ai/?lang=zh"><img src="docs/assets/banner-zh.jpg" alt="ModelPlan：用哪个模型、开哪一档、买哪个套餐" width="100%"></a>
 
 **写代码用哪个 AI 模型、开哪一档推理、再往上推一档值不值？**<br>
-Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Claude Code、Codex 和终端里也能直接用。
+ModelPlan 用实时、可复核的公开数据回答，网页上能看，在 Claude Code、Codex 和终端里也能直接用。
 
 [![Release](https://img.shields.io/github/v/release/modelplan/modelplan?style=flat-square&color=df604c&label=release)](https://github.com/modelplan/modelplan/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/modelplan/modelplan/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/modelplan/modelplan/actions/workflows/ci.yml)
@@ -16,7 +16,7 @@ Model Plan 用实时、可复核的公开数据回答，网页上能看，在 Cl
 
 </div>
 
-## 为什么用 Model Plan
+## 为什么用 ModelPlan
 
 大多数榜单只比各模型的**最高档**。但同一个模型从 Low 推到 Max，成本和耗时往往翻好几倍，能力只多几分。你真正在用的，是「某个模型的某一档」。
 
@@ -66,7 +66,7 @@ codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
 codex plugin add modelplan-codex@modelplan
 ```
 
-对 Codex 说「打开 Model Plan 看板」。需要 Node.js 22+，Codex 自带时会自动使用。安装检查、可选 CLI 与卸载：[详情](codex/README.zh-CN.md)
+对 Codex 说「打开 ModelPlan 看板」。需要 Node.js 22+，Codex 自带时会自动使用。安装检查、可选 CLI 与卸载：[详情](codex/README.zh-CN.md)
 
 </details>
 
@@ -122,7 +122,7 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 
 **Codex 面板**：GPT 模型按 ★ 推荐档比较、带 ⚡ 开关的档位曲线、你的 Codex 额度和官方重置公告。
 
-<img src="docs/assets/codex-zh.jpg" alt="Codex 里的 Model Plan 面板">
+<img src="docs/assets/codex-zh.jpg" alt="Codex 里的 ModelPlan 面板">
 
 </td>
 </tr>
@@ -134,7 +134,7 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 
 ## 不只是另一个榜单
 
-| | 常见榜单 | Model Plan |
+| | 常见榜单 | ModelPlan |
 | --- | --- | --- |
 | 比较的配置 | 各模型最高档 | 各模型的 ★ 推荐档，外加其他每一档 |
 | 成本 | 每百万 token 单价 | 每一档完成一个参考编程任务的成本 |
@@ -148,7 +148,7 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 
 ```mermaid
 flowchart LR
-  S["公开来源<br/>基准 · 厂商页面 · 套餐页面 · 新闻"] --> P["Model Plan 发布<br/>已核验、按内容哈希，每几小时重建"]
+  S["公开来源<br/>基准 · 厂商页面 · 套餐页面 · 新闻"] --> P["ModelPlan 发布<br/>已核验、按内容哈希，每几小时重建"]
   P --> W["modelplan.ai"]
   P --> A["只读 API<br/>/v1/client · llms.txt"]
   A --> K["Skill"]
@@ -159,7 +159,7 @@ flowchart LR
   Q --> K
 ```
 
-所有客户端只读取 Model Plan 已核验的公开发布，以及你的工具本来就写在本机的额度文件。排名、结论和倍数都来自发布数据，客户端从不自己排名。公式与来源见 [METHODOLOGY.zh-CN.md](METHODOLOGY.zh-CN.md)。
+所有客户端只读取 ModelPlan 已核验的公开发布，以及你的工具本来就写在本机的额度文件。排名、结论和倍数都来自发布数据，客户端从不自己排名。公式与来源见 [METHODOLOGY.zh-CN.md](METHODOLOGY.zh-CN.md)。
 
 **原则：** 开源（MIT）· 只读 · 匿名、无账号、无遥测 · 额度只在本机读取 · 从不替你切换模型或档位。
 
@@ -218,7 +218,7 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 
 | | 目录 | 说明 |
 | --- | --- | --- |
-| **Model Plan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
+| **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
 | Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及一个 prompt hook：新提示只显示给你，Claude 每个会话只收一份简短的任务开始简报 |
 | Codex 插件 | [`codex/`](codex/) | Skill 和 GPT 档位面板：⚡ Fast / Ultrafast 开关、你的 Codex 额度、官方重置公告 |
 | 桌面版（预览） | [`desktop/`](desktop/) | macOS 菜单栏应用：菜单栏显示剩余额度和当前提示，弹窗里看会话、额度和档位曲线，每条提醒只通知一次。目前是未签名的测试构建 |
@@ -230,10 +230,10 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 
 发现价格、额度、档位或新闻有误？[报告数据问题](https://github.com/modelplan/modelplan/issues/new?template=data-problem.yml)；modelplan.ai 上的「报错」链接会自动填好页面和条目。欢迎提 bug、想法和 PR，见 [CONTRIBUTING.md](CONTRIBUTING.md)；版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
-如果 Model Plan 帮你省了额度或钱，点个 ⭐ 能让更多人看到它。
+如果 ModelPlan 帮你省了额度或钱，点个 ⭐ 能让更多人看到它。
 
 [![Star History Chart](https://api.star-history.com/svg?repos=modelplan/modelplan&type=Date)](https://star-history.com/#modelplan/modelplan&Date)
 
 ## 许可
 
-代码：[MIT](LICENSE)。[`data/`](data/) 和 API 的数据：[per-file data licenses](data/LICENSE)，注明 Model Plan 即可；第三方数据沿用其来源条款。[`desktop/official-visuals/`](desktop/official-visuals/) 里的官方桌面视觉另有[保留许可](desktop/official-visuals/LICENSE.md)，不是 MIT；品牌也另有规定，见[许可说明](LICENSING.md)。Model Plan 是独立项目，与任何模型厂商无关；厂商名称与商标归各自所有者。
+代码：[MIT](LICENSE)。[`data/`](data/) 和 API 的数据：[per-file data licenses](data/LICENSE)，注明 ModelPlan 即可；第三方数据沿用其来源条款。[`desktop/official-visuals/`](desktop/official-visuals/) 里的官方桌面视觉另有[保留许可](desktop/official-visuals/LICENSE.md)，不是 MIT；品牌也另有规定，见[许可说明](LICENSING.md)。ModelPlan 是独立项目，与任何模型厂商无关；厂商名称与商标归各自所有者。

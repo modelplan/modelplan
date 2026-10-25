@@ -20,7 +20,7 @@ import (
 
 // ---- Claude Code: the status line receives rate_limits on stdin; we keep a sanitised copy.
 
-// StatuslineInput is the subset of Claude Code's status-line JSON that Model Plan uses.
+// StatuslineInput is the subset of Claude Code's status-line JSON that ModelPlan uses.
 // Paths and costs are deliberately not decoded; the session id only becomes a one-way key.
 type StatuslineInput struct {
 	SessionID string `json:"session_id"`
@@ -200,7 +200,7 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 	if status != "" {
 		st.Status = status
 		if status == "missing" {
-			st.Reason = "no status-line snapshot yet; install the Model Plan status line in Claude Code"
+			st.Reason = "no status-line snapshot yet; install the ModelPlan status line in Claude Code"
 		}
 		return nil, st
 	}

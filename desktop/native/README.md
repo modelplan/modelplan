@@ -27,7 +27,7 @@ Fake-process checks use the existing system Python, fixed read-only arguments, h
 Obtain the official v0.5.35 arm64/amd64 CLI archives and `checksums.txt`. Pass their directory and a **new** output directory to `desktop/native/tools/package-neutral.sh`. It verifies archive hashes, compiles both architectures, merges app/helper slices, includes MIT/CLI third-party notices, and ad-hoc signs with Hardened Runtime and no App Sandbox entitlement. This is not Developer ID signing/notarisation; the test bundle ID is provisional. Apple silicon is the runtime target. Intel is untested and is labelled "Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter".
 
 ```sh
-python3 desktop/native/tools/check-packaged-access.py "/path/Model Plan Community.app" /new/receipt-directory
+python3 desktop/native/tools/check-packaged-access.py "/path/ModelPlan Community.app" /new/receipt-directory
 ```
 
 This supplemental app-launched probe verifies synthetic observed, missing and Unix-denied paths without changing TCC, and checks that read-only fixture homes remain unchanged. CLI version is read from `desktop`'s `cliVersion`; the app never adds a `version` or mutating command fallback. Public `publication --json` may maintain the CLI-owned public cache; `desktop --json --read-only` and offline publication create no cache. The app stores neither raw personal output nor a parallel personal-history database.

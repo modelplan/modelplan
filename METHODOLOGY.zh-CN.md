@@ -1,8 +1,8 @@
-# Model Plan 方法与来源
+# ModelPlan 方法与来源
 
 [English](METHODOLOGY.md) · 网站版本：https://modelplan.ai/methodology
 
-本文说明 Model Plan 怎么给模型打分、怎么估算成本和耗时、怎么选 ★ 推荐档、哪些模型能上场，以及用了哪些数据源。本仓库里的客户端只展示这些公开发布的结果，不会自己计算排名。
+本文说明 ModelPlan 怎么给模型打分、怎么估算成本和耗时、怎么选 ★ 推荐档、哪些模型能上场，以及用了哪些数据源。本仓库里的客户端只展示这些公开发布的结果，不会自己计算排名。
 
 ## 一句话版
 
@@ -103,7 +103,7 @@ Q_guard = max(0.8·Q_max, Q_min + 0.1·(Q_max − Q_min))  按原生 AA 分 Q �
 
 ## 数据源与致谢
 
-Model Plan 建立在许多公开项目之上，感谢它们的作者和维护者。
+ModelPlan 建立在许多公开项目之上，感谢它们的作者和维护者。
 
 - **评测：**
   - [Artificial Analysis](https://artificialanalysis.ai/)（AA Intelligence、AA Coding Agent）

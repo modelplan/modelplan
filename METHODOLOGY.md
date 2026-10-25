@@ -1,8 +1,8 @@
-# Model Plan methodology
+# ModelPlan methodology
 
 [中文](METHODOLOGY.zh-CN.md) · Live version: https://modelplan.ai/methodology
 
-How Model Plan scores models, estimates cost and time, picks the ★ recommended effort and chooses which models appear, plus the sources it uses. The clients in this repository only display these published results; they never compute their own rankings.
+How ModelPlan scores models, estimates cost and time, picks the ★ recommended effort and chooses which models appear, plus the sources it uses. The clients in this repository only display these published results; they never compute their own rankings.
 
 ## In short
 
@@ -103,7 +103,7 @@ Time weights measure coverage only; time values follow source priority, not a we
 
 ## Sources and thanks
 
-Model Plan stands on many public projects; thank you to their authors and maintainers.
+ModelPlan stands on many public projects; thank you to their authors and maintainers.
 
 - **Benchmarks:**
   - [Artificial Analysis](https://artificialanalysis.ai/) (AA Intelligence, AA Coding Agent)

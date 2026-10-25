@@ -286,7 +286,7 @@ func (s Style) Statusline(d *digest.Digest, m *digest.Model, effort string, stal
 		tail = " │ " + s.c(warn, s.T.Stale)
 	}
 	if m == nil {
-		label := "Model Plan"
+		label := "ModelPlan"
 		if raw != "" {
 			label += " · " + s.T.NotListed + " " + raw
 		}

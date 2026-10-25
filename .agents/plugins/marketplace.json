@@ -1,7 +1,7 @@
 {
   "name": "modelplan",
   "interface": {
-    "displayName": "Model Plan"
+    "displayName": "ModelPlan"
   },
   "plugins": [
     {

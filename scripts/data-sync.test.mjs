@@ -31,6 +31,6 @@ test("changes are told in records added, removed and changed", () => {
 
 test("the pull request body names the release and each file", () => {
   const body = summary({ version: "1.2.3", previous: "1.2.2", changes: [{ path: "data/a.json", what: "changed `pro`" }] });
-  assert.match(body, /Model Plan 1\.2\.3 \(was 1\.2\.2\)/);
+  assert.match(body, /ModelPlan 1\.2\.3 \(was 1\.2\.2\)/);
   assert.match(body, /\| `data\/a\.json` \| changed `pro` \|/);
 });

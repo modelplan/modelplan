@@ -74,7 +74,7 @@
     {
       "source": "claude-code",
       "status": "missing",
-      "reason": "no status-line snapshot yet; install the Model Plan status line in Claude Code"
+      "reason": "no status-line snapshot yet; install the ModelPlan status line in Claude Code"
     },
     {
       "source": "codex",

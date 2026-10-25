@@ -43,7 +43,7 @@ import ModelPlanShell
             }
         }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Model Plan"
+        item.button?.title = "ModelPlan"
         let menu = NSMenu()
         let show = menu.addItem(withTitle: "Status…", action: #selector(showStatus), keyEquivalent: "")
         show.target = self
@@ -59,7 +59,7 @@ import ModelPlanShell
             let surface = surfaces.makeOverview(); overview = surface
             let panel = NSWindow(contentRect:NSRect(x:0,y:0,width:440,height:210),
                 styleMask:[.titled,.closable],backing:.buffered,defer:false)
-            panel.title = "Model Plan Community"; panel.contentView = surface.view
+            panel.title = "ModelPlan Community"; panel.contentView = surface.view
             panel.isReleasedWhenClosed = false; panel.center(); window = panel
         }
         render(); runtime.store.refresh()

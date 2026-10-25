@@ -459,7 +459,7 @@ func TaskBrief(b *advise.Brief) string {
 	if b.Harness == "claude-code" {
 		where, thread = "model (/model), effort (/effort) and fast mode (/fast) in Claude Code", "session"
 	}
-	lines := []string{"Model Plan task-start brief (advice only: the user switches " + where + "; never say you changed them)."}
+	lines := []string{"ModelPlan task-start brief (advice only: the user switches " + where + "; never say you changed them)."}
 	now := "Now: the plugin could not read the current model; go by the model your own instructions name"
 	if b.Model != "" {
 		now = "Now: " + b.Model + " · " + b.Effort
@@ -516,7 +516,7 @@ func TaskBrief(b *advise.Brief) string {
 	if b.Headroom == "conserve" || b.Headroom == "exhausted" {
 		up = ""
 	}
-	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change"+up+"). Do not bring up quota: the user sees it themselves. If the user asks about quota or a Model Plan hint, run `modelplan quota` or `modelplan advise` for current figures.")
+	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change"+up+"). Do not bring up quota: the user sees it themselves. If the user asks about quota or a ModelPlan hint, run `modelplan quota` or `modelplan advise` for current figures.")
 	return strings.Join(lines, "\n")
 }
 
@@ -530,7 +530,7 @@ func TaskBriefUpdate(b *advise.Brief) string {
 	if l == "" {
 		return ""
 	}
-	return "Model Plan: the " + map[bool]string{true: "session", false: "thread"}[b.Harness == "claude-code"] + " is now on " + b.Model + ". " + l + " The task-start brief's rules still apply."
+	return "ModelPlan: the " + map[bool]string{true: "session", false: "thread"}[b.Harness == "claude-code"] + " is now on " + b.Model + ". " + l + " The task-start brief's rules still apply."
 }
 
 func ladderLine(b *advise.Brief) string {

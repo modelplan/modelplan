@@ -1,6 +1,6 @@
-# Model Plan desktop (preview)
+# ModelPlan desktop (preview)
 
-A menu bar app for Model Plan: which model and effort fit, your quota and resets, Codex Fast, switching back after a reset, and a better model when the one you use is beaten. Built with [Tauri](https://tauri.app). macOS first; the front end is written so iOS and Android can reuse it later.
+A menu bar app for ModelPlan: which model and effort fit, your quota and resets, Codex Fast, switching back after a reset, and a better model when the one you use is beaten. Built with [Tauri](https://tauri.app). macOS first; the front end is written so iOS and Android can reuse it later.
 
 **Status: early preview.** Builds are ad-hoc signed, not notarized. There is no auto-update yet.
 
@@ -27,7 +27,7 @@ The CLI is found in this order: `MODELPLAN_CLI`, the copy bundled in the app, th
 The `desktop` workflow builds an Apple Silicon `.dmg` for each pull request and push to `main`; download it from the run's artifacts. The build is not notarized, so macOS blocks the first launch. Clear the quarantine flag once:
 
 ```sh
-xattr -dr com.apple.quarantine "/Applications/Model Plan Community.app"
+xattr -dr com.apple.quarantine "/Applications/ModelPlan Community.app"
 ```
 
 ## Develop
@@ -71,7 +71,7 @@ The figures come from the CLI and the publication. The UI only shapes them: it d
 
 ## Licence and trademarks
 
-The code here is MIT, like the rest of this repository, except `official-visuals/`, which is under the [Model Plan Official Visuals License 1.0](official-visuals/LICENSE.md). The fonts are under the SIL Open Font License (`codex/ui/fonts`). "Model Plan", the Model Plan logo and the app icon are trademarks of the Model Plan project. Forks must use their own name and icon.
+The code here is MIT, like the rest of this repository, except `official-visuals/`, which is under the [ModelPlan Official Visuals License 1.0](official-visuals/LICENSE.md). The fonts are under the SIL Open Font License (`codex/ui/fonts`). "ModelPlan", the ModelPlan logo and the app icon are trademarks of the ModelPlan project. Forks must use their own name and icon.
 
 ## Community and official appearance
 

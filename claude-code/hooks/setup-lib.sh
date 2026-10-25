@@ -47,8 +47,8 @@ ModelPlan: could not fetch the plugin's modelplan CLI $min_cli ($detail), so quo
         recent notice-statusline 7 && return 1
         : > "$state/notice-statusline-again" 2>/dev/null
       fi
-      msg="ModelPlan：还没有记录到 Claude Code 的额度（要靠 Model Plan 状态栏记录），额度提醒暂不可用。需要时运行 /modelplan:statusline 设置（可以保留你现在的状态栏），这条提示最多出现两次。
-ModelPlan: no Claude Code quota recorded yet (the Model Plan status line records it), so quota hints are off. Run /modelplan:statusline when you want them (it can keep your own status line); this shows twice at most." ;;
+      msg="ModelPlan：还没有记录到 Claude Code 的额度（要靠 ModelPlan 状态栏记录），额度提醒暂不可用。需要时运行 /modelplan:statusline 设置（可以保留你现在的状态栏），这条提示最多出现两次。
+ModelPlan: no Claude Code quota recorded yet (the ModelPlan status line records it), so quota hints are off. Run /modelplan:statusline when you want them (it can keep your own status line); this shows twice at most." ;;
   esac
   : > "$state/notice-$kind" 2>/dev/null
   return 0

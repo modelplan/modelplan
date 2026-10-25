@@ -16,9 +16,9 @@
   ],
   "legacyVisuals": {
     "codex/ui/kit/components.css": "2fa38ccec6c653ef47d475159a765a4aa3e84cb29ee579ff344053c780828ffc",
-    "codex/ui/kit/logo-light.svg": "0f1da3eada044082265fd7adb960a2ce83fd03da862b53b2c0a9e8f190ddd117",
-    "codex/ui/kit/logo.svg": "496544dc8192dea29d783c3e2e3ad2779f74ff710bea00c0476137d2cffbb70b",
-    "codex/ui/kit/source-hashes.json": "16ec4eb8d1efd9129febf9ca786e84c509c1051e39140f8f27b8685fba19cbc6",
+    "codex/ui/kit/logo-light.svg": "c6002733c0a9bcaf92e49d446fae9f15133e4a95b27e7b0c5cf11ad6f301130c",
+    "codex/ui/kit/logo.svg": "9b515a17995ac0f54b902d96e6d3cb00255e9e790d35df475ad16a9ded97e335",
+    "codex/ui/kit/source-hashes.json": "713cfac384d7ac68ca2861f37422fcd5d33dab8e17e604c0478e63f599bb1252",
     "codex/ui/kit/tokens.css": "ae44be46edb7dd99fa79376f7376ce88bbb2f44faf3d775cc17530402519ce4d",
     "docs/assets/banner-zh.jpg": "d95c6356ba3e64861b57e4417b7c1201cea1d7f674dfd1bf72db4d7d7fb0fe17",
     "docs/assets/banner.jpg": "052c3e0f5e8d92fd1b20bc4eba92c0222054e211051bf45830bd47ffca1bfc77",
@@ -46,7 +46,7 @@
     "licenseText": "LICENSES/LicenseRef-ModelPlan-Visuals-1.0.txt",
     "binaries": {},
     "historicalMit": {
-      "desktop/official-visuals/HISTORICAL-MIT.txt": "cab1ffcc0d3ed95f6736bc1f31b74f6a0ccdb1458deedc2f6e9a3532630d2a4f",
+      "desktop/official-visuals/HISTORICAL-MIT.txt": "6d98a3aa9160bbfd0ee9420a2cec649267ea4c3513436c32306b922666555abe",
       "desktop/official-visuals/icons/128x128.png": "f12ce2d3b16a6d4d768faea8f089af7481db4af25038e13b07d5818517b78317",
       "desktop/official-visuals/icons/128x128@2x.png": "2dbc790885f334af2de80e7d3a1a06c5cc8dbcfc346c508e96c10e82317cdbd4",
       "desktop/official-visuals/icons/32x32.png": "0d2618466783c5c069966c18867007f1f22e8c4f16ab1faf8188e390fc0fc0de",
@@ -55,7 +55,7 @@
       "desktop/official-visuals/icons/source/app-icon.svg": "e083eefe9acc04031e7316f484f8d02528b3b1e719a9e058b962d4019a8a3b2e",
       "desktop/official-visuals/icons/source/tray.svg": "059022c2131e77323b5fa511cd2d788cd870086672bdf37d5a062847a5ae34cc",
       "desktop/official-visuals/icons/tray.png": "3f5fe5791e23d272a58983de77808c16dd48e2e623729070e9b3ff392c37b620",
-      "desktop/official-visuals/logo.svg": "496544dc8192dea29d783c3e2e3ad2779f74ff710bea00c0476137d2cffbb70b",
+      "desktop/official-visuals/logo.svg": "9b515a17995ac0f54b902d96e6d3cb00255e9e790d35df475ad16a9ded97e335",
       "desktop/official-visuals/theme.css": "2727f72a72bb89272be87ec2d1fd543863d5ed6156f19980a6a2d565c72b7860"
     },
     "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256."

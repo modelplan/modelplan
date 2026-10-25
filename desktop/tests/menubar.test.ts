@@ -23,7 +23,7 @@ test('a chosen harness, its pool and the better-model hint', () => {
 test('no session: icon only', () => {
   const s = golden();
   s.sessions = [];
-  assert.deepEqual(menuBar(s, 'zh'), { title: '', tooltip: 'Model Plan' });
+  assert.deepEqual(menuBar(s, 'zh'), { title: '', tooltip: 'ModelPlan' });
 });
 
 test('a stale reading yields to a fresh one', () => {

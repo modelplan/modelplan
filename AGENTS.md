@@ -1,4 +1,4 @@
-# Model Plan public development
+# ModelPlan public development
 
 This repository is the canonical source for the public clients and publication reader. Write GitHub issues, PRs, comments and commits in English; discuss with the owner in their language.
 

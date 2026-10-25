@@ -5,7 +5,7 @@ Sources (read-only; nothing is sent anywhere):
   - Codex: token_count rate_limits in the recent $CODEX_HOME/sessions/**/rollout-*.jsonl, merged
     per limit id; model and effort from the calling thread (CODEX_THREAD_ID) or the newest
     interactive one, never from background review threads
-  - Claude Code: the snapshot `modelplan statusline` records in the Model Plan cache; its model
+  - Claude Code: the snapshot `modelplan statusline` records in the ModelPlan cache; its model
     and effort count as this session's only when CLAUDE_CODE_SESSION_ID matches its session key
   - ~/.config/modelplan/local.json, maintained by the user (no secrets)
 
@@ -172,7 +172,7 @@ def read_claude_code(cache, session=""):
     if status:
         st["status"] = status
         if status == "missing":
-            st["reason"] = "no status-line snapshot yet; install the Model Plan status line in Claude Code"
+            st["reason"] = "no status-line snapshot yet; install the ModelPlan status line in Claude Code"
         return [], st
     try:
         s = json.loads(raw)

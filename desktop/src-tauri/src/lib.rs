@@ -1,4 +1,4 @@
-//! The Model Plan menu bar app: a tray item with a short line of text, a popover with the shell's
+//! The ModelPlan menu bar app: a tray item with a short line of text, a popover with the shell's
 //! UI (app/), an expandable window, and one command that asks the `modelplan` CLI for the personal
 //! snapshot. The app itself reads no harness files and no credentials: the CLI does the reading,
 //! exactly as in the plugins.
@@ -170,7 +170,7 @@ fn set_menu_bar(app: AppHandle, title: String, tooltip: String) -> Result<(), St
     tray.set_title(if title.is_empty() { None } else { Some(title) })
         .map_err(|e| e.to_string())?;
     tray.set_tooltip(Some(if tooltip.is_empty() {
-        "Model Plan".to_owned()
+        "ModelPlan".to_owned()
     } else {
         tooltip
     }))
@@ -188,7 +188,7 @@ fn expand(app: AppHandle) -> Result<(), String> {
         return w.set_focus().map_err(|e| e.to_string());
     }
     WebviewWindowBuilder::new(&app, WINDOW, WebviewUrl::App("index.html".into()))
-        .title("Model Plan")
+        .title("ModelPlan")
         .inner_size(760.0, 720.0)
         .min_inner_size(420.0, 480.0)
         .build()
@@ -243,13 +243,13 @@ pub fn run() {
             std::thread::spawn(|| {
                 login_path();
             });
-            let open = MenuItem::with_id(app, "open", "Open Model Plan", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open ModelPlan", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
             TrayIconBuilder::with_id(TRAY)
                 .icon(tauri::include_image!("icons/tray.png"))
                 .icon_as_template(true)
-                .tooltip("Model Plan")
+                .tooltip("ModelPlan")
                 .menu(&menu)
                 // Left click opens the popover; the menu is on right click (and on Linux, where
                 // tray clicks are not reported).
@@ -286,7 +286,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building the Model Plan app");
+        .expect("error while building the ModelPlan app");
     app.run(|_, event| {
         // Closing the window keeps the menu bar item; only Quit ends the app.
         if let RunEvent::ExitRequested {

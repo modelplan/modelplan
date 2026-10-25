@@ -147,7 +147,7 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 	if len(got) > 1200 {
 		t.Errorf("brief is %d bytes; it rides on every thread's first prompt:\n%s", len(got), got)
 	}
-	if u := TaskBriefUpdate(b); u != "Model Plan: the thread is now on GPT-6.1 Sol. GPT-6.1 Sol efforts against the current one: ★Med (current) · High +4.8 pts ×1.37. The task-start brief's rules still apply." {
+	if u := TaskBriefUpdate(b); u != "ModelPlan: the thread is now on GPT-6.1 Sol. GPT-6.1 Sol efforts against the current one: ★Med (current) · High +4.8 pts ×1.37. The task-start brief's rules still apply." {
 		t.Errorf("update = %q", u)
 	}
 	if got := TaskBrief(&advise.Brief{Headroom: "unknown", Models: b.Models}); !strings.Contains(got, "go by the model your own instructions name") {

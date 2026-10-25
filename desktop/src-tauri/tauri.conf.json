@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Model Plan Community",
+  "productName": "ModelPlan Community",
   "version": "0.1.1",
   "identifier": "ai.modelplan.community",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "popover",
-        "title": "Model Plan Community",
+        "title": "ModelPlan Community",
         "url": "index.html",
         "width": 380,
         "height": 580,
@@ -36,7 +36,7 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Which model and effort fit, with your quota",
-    "copyright": "MIT License. \"Model Plan\" and its logo are trademarks; see desktop/README.md.",
+    "copyright": "MIT License. \"ModelPlan\" and its logo are trademarks; see desktop/README.md.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

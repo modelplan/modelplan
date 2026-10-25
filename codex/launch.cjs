@@ -128,7 +128,7 @@ function fallbackServer(result, version) {
       let m; try { m = JSON.parse(line); } catch (e) { continue; }
       if (!m || m.id === undefined || m.id === null) continue;
       if (m.method === 'initialize') reply(m.id, { result: { protocolVersion: (m.params && m.params.protocolVersion) || '2025-06-18', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'modelplans-dashboard', title: SETUP_NEEDED, version }, instructions: text } });
-      else if (m.method === 'tools/list') reply(m.id, { result: { tools: [tool('get_model_dashboard', 'Model Plan data'), tool('open_model_dashboard', 'Model Plan dashboard')] } });
+      else if (m.method === 'tools/list') reply(m.id, { result: { tools: [tool('get_model_dashboard', 'ModelPlan data'), tool('open_model_dashboard', 'ModelPlan dashboard')] } });
       else if (m.method === 'tools/call') reply(m.id, { result: { isError: true, content: [{ type: 'text', text }], structuredContent: { setup: { runtime: null, checked: result.checked } } } });
       else if (m.method === 'resources/list') reply(m.id, { result: { resources: [] } });
       else if (m.method === 'ping') reply(m.id, { result: {} });
