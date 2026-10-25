@@ -16,6 +16,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
 @main struct PrimitiveChecks {
     @MainActor static func main() throws {
         if CommandLine.arguments.contains("--native-menu") { try nativeMenuCheck(); return }
+        if CommandLine.arguments.contains("--live-image-cadence") { try liveCadenceCheck(imageFrames: true); return }
         if CommandLine.arguments.contains("--live-cadence") { try liveCadenceCheck(); return }
         NSApplication.shared.setActivationPolicy(.prohibited)
         let amber = CautionCondition(id: "a", severity: .amber), red = CautionCondition(id: "a", severity: .red)
@@ -30,6 +31,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         state.validate(now: 25, reduceMotion: true); try check(state.mode == .steadyUnacknowledged && state.deadline == nil, "reduce motion")
         print("PASS F16 caution stable identities, press/worsening/timeout/clear/recurrence/reduced motion")
 
+        try pooledImageChecks()
         let pool = EffectResourcePool(); var effects: [SteppedEffect] = []
         for n in 0..<14 {
             let effect = SteppedEffect(pool: pool)
@@ -115,24 +117,30 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         try check(profiles.count == beforeStop, "profile callback survived teardown")
         row.dispose(); anchor.contentView = nil
         print("PASS per-view profile coalescing, correct workspace AX center, native first-responder preservation and teardown")
-        print("5 primitive contract groups passed; injected actions are not physical keyboard/VoiceOver proof")
+        print("8 primitive/provider contract groups passed; injected actions are not physical keyboard/VoiceOver proof")
     }
 }
 
 /// Diagnostic polling exists only in this test executable, never in the product animation path.
-@MainActor private func liveCadenceCheck() throws {
+@MainActor private func liveCadenceCheck(imageFrames: Bool = false) throws {
     NSApplication.shared.setActivationPolicy(.accessory); NSApplication.shared.finishLaunching()
     let view = NSView(frame: NSRect(x: 0, y: 0, width: 140, height: 120)); view.wantsLayer = true
     let window = NSWindow(contentRect: NSRect(x: 20, y: 20, width: 140, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = view; window.level = .floating; window.orderFront(nil)
     let pool = EffectResourcePool(), effect = SteppedEffect(pool: pool)
-    effect.configure(profile: RenderProfile(), working: true); view.layer?.addSublayer(effect.layer); CATransaction.flush()
-    defer { effect.stop(); pool.purgeUnleased(); window.orderOut(nil) }
+    let imageEffect = SteppedImageEffect(pool: pool), provider = SyntheticFrames()
+    if imageFrames {
+        imageEffect.configure(request: EffectFrameRequest(profile: RenderProfile(), points: 64, magnification: 1.5, variant: "red"), provider: provider, working: true)
+        view.layer?.addSublayer(imageEffect.layer)
+    } else { effect.configure(profile: RenderProfile(), working: true); view.layer?.addSublayer(effect.layer) }
+    CATransaction.flush()
+    defer { effect.stop(); imageEffect.stop(); pool.purgeUnleased(); window.orderOut(nil) }
     let start = ContinuousClock.now
     var fingerprints: [String] = [], transitions = 0, samples = 0
     while start.duration(to: .now) < .seconds(5) {
         CFRunLoopRunInMode(.defaultMode, 0.025, false)
-        if let value = effect.layer.mask?.presentation()?.contents,
+        let contents = imageFrames ? imageEffect.layer.presentation()?.contents : effect.layer.mask?.presentation()?.contents
+        if let value = contents,
            CFGetTypeID(value as CFTypeRef) == CGImage.typeID {
             let image = value as! CGImage
             if let data = image.dataProvider?.data {
@@ -146,7 +154,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     let seconds = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
     let result: [String: Any] = ["samples": samples, "transitions": transitions, "seconds": seconds,
         "transitionsPerSecond": Double(transitions) / seconds, "uniquePoses": Set(fingerprints).count,
-        "scope": "live CA presentation-layer content hashes in a visible owned window; diagnostic polling excluded from CPU acceptance"]
+        "scope": imageFrames ? "live untinted RGBA contents; diagnostic polling excluded from CPU acceptance" : "live mask contents; diagnostic polling excluded from CPU acceptance"]
     if let at = CommandLine.arguments.firstIndex(of: "--output"), CommandLine.arguments.count > at + 1 {
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: CommandLine.arguments[at + 1]))
     }
@@ -184,4 +192,118 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     try check(observation.expiredWhileOpen, "deadline did not retire during native NSMenu tracking")
     print("PASS native NSMenu tracking delivered bounded caution expiry before the menu closed")
     print("Programmatic native menu; physical pointer/menu/VoiceOver entry remains a separate owner check")
+}
+
+@MainActor private final class SyntheticFrames: EffectFrameProvider {
+    var identifier = "synthetic.rgba", revision = "1", calls = 0
+    var failurePose: Int?
+    var duringFirstDraw: (() -> Void)?
+    func draw(pose: Int, request: EffectFrameRequest, in context: CGContext) throws {
+        calls += 1
+        if pose == 0 { duringFirstDraw?() }
+        if failurePose == pose { throw Failure(message: "synthetic drawing failure") }
+        let green = request.variant == "green" ? 0.8 : 0.1
+        context.setFillColor(CGColor(red: 0.9, green: green, blue: Double(pose) / 16, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    }
+}
+@MainActor private func assertImageAnimation(_ layer: CALayer) throws {
+    guard let a = layer.animation(forKey: "stepped-images") as? CAKeyframeAnimation else { throw Failure(message: "RGBA animation absent") }
+    try check(a.values?.count == 9 && a.keyTimes?.count == 10 && a.keyTimes?.last == 1 &&
+              a.duration == 1 && a.calculationMode == .discrete && a.repeatCount.isInfinite, "RGBA nine-step CA contract")
+}
+@MainActor private func imageInfo(_ layer: CALayer) throws -> (Int, Int, Int, [UInt8]) {
+    guard let value = layer.contents, CFGetTypeID(value as CFTypeRef) == CGImage.typeID else { throw Failure(message: "pooled RGBA image absent") }
+    let image = value as! CGImage
+    guard let data = image.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { throw Failure(message: "RGBA pixel data absent") }
+    return (image.width, image.height, image.bytesPerRow, Array(UnsafeBufferPointer(start: bytes, count: 4)))
+}
+@MainActor private func pooledImageChecks() throws {
+    let pool = EffectResourcePool(), source = SyntheticFrames()
+    let request = EffectFrameRequest(profile: RenderProfile(scale: 2), points: 64, magnification: 1.5, variant: "red")
+    var effects: [SteppedImageEffect] = []
+    for i in 0..<6 {
+        let effect = SteppedImageEffect(pool: pool)
+        effect.configure(request: EffectFrameRequest(profile: request.profile, points: 64, magnification: 1.5,
+                                                     variant: ["red","green","amber"][i % 3]), provider: source, working: true)
+        try check(effect.isAvailable && effect.isAnimating, "L64 high-density colour admission")
+        effects.append(effect)
+    }
+    try check(pool.activeLeaseCount == 6 && pool.atlasCount == 3 && source.calls == 27, "shared status atlases duplicated across six identities")
+    try check(pool.decodedBytes == 3_981_312 && pool.peakDecodedBytes <= 4_000_000, "all active RGBA leases accounted")
+    try assertImageAnimation(effects[0].layer)
+    do {
+        let info = try imageInfo(effects[0].layer)
+        try check(info.0 == 192 && info.1 == 192 && info.2 == 768 && info.3[0] > 200 && info.3[2] == 0,
+                  "RGBA pixel density or untinted source colour changed")
+    }
+    let refused = SteppedImageEffect(pool: pool), previousCalls = source.calls
+    refused.configure(request: EffectFrameRequest(profile: request.profile, points: 64, magnification: 1.5, variant: "fourth"), provider: source, working: true)
+    try check(!refused.isAvailable && refused.layer.isHidden && source.calls == previousCalls && pool.decodedBytes == 3_981_312,
+              "refusal must happen before provider allocation, without fake official art")
+    let mask = SteppedEffect(pool: pool); mask.configure(profile: RenderProfile(), working: true)
+    try check(!mask.isAnimating && pool.decodedBytes == 3_981_312, "mask and RGBA pools were split or active atlases evicted")
+    mask.stop(); effects.forEach { $0.stop() }; refused.stop(); pool.purgeUnleased()
+    try check(pool.decodedBytes == 0 && pool.activeLeaseCount == 0, "RGBA stop/purge retained CA leases")
+    print("PASS shared mask/RGBA budget, six identities/three variants, L64 2x 1.5 sampling, untinted frames and preallocation refusal")
+
+    let one = SteppedImageEffect(pool: pool)
+    one.configure(request: EffectFrameRequest(profile: RenderProfile(scale: 2, reduceMotion: true), points: 64, magnification: 1.15, variant: "red"), provider: source, working: true)
+    try check(one.isAvailable && !one.isAnimating && one.frameCount == 9 && (try imageInfo(one.layer)).0 == 148, "reduced-motion L64 static source or ceil sampling")
+    one.seekForCapture(.nan); one.seekForCapture(0.5)
+    try check(!one.isAnimating && pool.activeLeaseCount == 1, "capture cloned/released an active atlas")
+    one.stop(); pool.purgeUnleased()
+    for bad in [EffectFrameRequest(profile: RenderProfile(), points: Int.max, variant: "red"),
+                EffectFrameRequest(profile: RenderProfile(), points: 64, magnification: .nan, variant: "red"),
+                EffectFrameRequest(profile: RenderProfile(scale: 3), points: 64, variant: "red")] {
+        one.configure(request: bad, provider: source, working: true); try check(!one.isAvailable && pool.decodedBytes == 0, "invalid raster request did not fail closed")
+    }
+    source.failurePose = 3
+    one.configure(request: request, provider: source, working: true)
+    try check(!one.isAvailable && pool.decodedBytes == 0 && pool.activeLeaseCount == 0, "partial provider draw did not roll back")
+    source.failurePose = nil
+    one.configure(request: request, provider: source, working: true)
+    let priorCalls = source.calls; source.revision = "2"
+    let two = SteppedImageEffect(pool: pool); two.configure(request: request, provider: source, working: true)
+    try check(source.calls == priorCalls + 9 && pool.atlasCount == 2, "revision reused stale images")
+    one.stop(); two.stop(); pool.purgeUnleased()
+    one.configure(request: request, provider: source, working: false)
+    try check(!one.isAvailable && pool.decodedBytes == 0, "inactive effect allocated a frame atlas")
+    for scale in [1, 2] { for points in [44, 52, 64] { for magnification in [1.0, 1.15, 1.5] {
+        let r = EffectFrameRequest(profile: RenderProfile(scale: scale), points: points, magnification: magnification, variant: "red")
+        one.configure(request: r, provider: source, working: true)
+        try check(one.isAvailable && (try imageInfo(one.layer)).0 == Int(ceil(Double(points * scale) * magnification)), "S/M/L density matrix upscaled or refused")
+        one.stop(); pool.purgeUnleased()
+    } } }
+    one.configure(request: EffectFrameRequest(profile: RenderProfile(dark: false, scale: 1), points: 16, variant: "red"), provider: source, working: true)
+    let callsBeforeProfile = source.calls
+    two.configure(request: EffectFrameRequest(profile: RenderProfile(dark: true, scale: 1), points: 16, variant: "red"), provider: source, working: true)
+    try check(source.calls == callsBeforeProfile + 9 && pool.atlasCount == 2, "changed render profile reused stale source")
+    one.stop(); two.stop(); pool.purgeUnleased()
+    print("PASS revision/density/variant keys, static Reduce Motion, seek, invalid requests and provider failure rollback")
+
+    let reentrant = SteppedImageEffect(pool: pool)
+    var nestedRefused = false
+    source.duringFirstDraw = {
+        reentrant.configure(request: request, provider: source, working: true)
+        nestedRefused = !reentrant.isAvailable
+        precondition(pool.decodedBytes <= EffectResourcePool.maximumBytes)
+    }
+    one.configure(request: request, provider: source, working: true)
+    try check(one.isAvailable && nestedRefused && pool.activeLeaseCount == 1, "reentrant reservation bypassed budget or duplicated source")
+    source.duringFirstDraw = nil; one.stop(); pool.purgeUnleased()
+    source.duringFirstDraw = {
+        reentrant.configure(request: EffectFrameRequest(profile: request.profile, points: 96, magnification: 1.5, variant: "nested-budget"), provider: source, working: true)
+        nestedRefused = !reentrant.isAvailable
+    }
+    one.configure(request: request, provider: source, working: true)
+    try check(one.isAvailable && nestedRefused && pool.activeLeaseCount == 1, "in-flight reserved bytes were not budgeted for another source")
+    source.duringFirstDraw = nil; one.stop(); pool.purgeUnleased()
+    var orphan: SteppedImageEffect? = SteppedImageEffect(pool: pool)
+    orphan!.configure(request: request, provider: source, working: true)
+    let retainedLayer = orphan!.layer; orphan = nil
+    try drainUntil({ pool.activeLeaseCount == 0 }, "deinit left a counted live lease")
+    try check(retainedLayer.contents == nil && retainedLayer.animationKeys()?.isEmpty != false, "deinit released budget before CA references")
+    pool.purgeUnleased(); try check(pool.decodedBytes == 0, "orphan atlas remained pinned")
+    print("PASS reentrant source reservation and conservative MainActor teardown of surviving layers")
 }
