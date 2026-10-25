@@ -39,6 +39,18 @@ Known current/default flags can admit a public directory entry with a missing li
 
 The method requires a real `SelectionPublication`. If no actual public data exists, the assembly must show the explicit unloaded empty state; it must not construct placeholder models or fake revisions to call this fallback. A genuinely loaded empty directory stays empty.
 
+## Complete All public fleet composition (P04a)
+
+`ModelSelection.selectPublicFleet(_ input:, defaultPublication: SelectionPublication? = nil)` centrally composes the existing selectors for All. It preserves the ordinary result's existing order/provenance for IDs in `publicDefaults` and for its already-verified recent older models, then appends any missing explicit defaults in publication order. IDs and supplementary diagnostics deduplicate. The complete full order contains the entire explicit current/default fleet, including defaults whose lineage ID is missing or whose current lineage is ambiguous; it cannot silently lose B merely because strict ordinary selection already returned A.
+
+Supplemented defaults retain `.publishedDefaultFallback`, their original nullable lineage/revision fields, and any diagnostic facts. Older entries come only from ordinary selection's validated scope/offered/exact-or-window usage evidence. Conflicting IDs still abstain through the reused selectors. Shared 10/6/3 prefixes are unchanged; no score/ranking/cap algorithm is added.
+
+The optional `defaultPublication` is M0's original model-declaration catalogue, separate from the ranked projection after dominance-context quarantine. Supply original fields without picks or inferred placement. It is used for public-default identity completion only when both `publicationID` and optional `selectionRevision` equal the input publication (including unchanged absent revision for the same publication). A mismatch is ignored, contributing no identities or diagnostics; `nil` preserves the original composition behavior. An absent input publication cannot be replaced by this parameter.
+
+Ordinary ranking always reads only `input`. Supplementary entries remain `.publishedDefaultFallback` catalogue entries, never restored picks/mainstays/exact comparisons. Genuine conflicting IDs in the accepted original catalogue quarantine even a normal older variant, rather than re-entering through the older exception. Missing lineage/revision fields remain unchanged.
+
+Non-All delegates exactly to ordinary `select`, with the same output and diagnostics. Ordinary `select` itself remains strict and unchanged. Without a real publication this helper returns its ordinary unavailable empty result, never fabricated defaults. This All composition includes public-directory members and does not turn those members into personal entitlement claims.
+
 ## Stable order
 
 1. At most three distinct eligible used models in total: exact recent events first, most recent first (equal times use publication order); then window-only members fill remaining slots in publication order. Exact events retain `.recentUsage(actualDate)`; untimed membership uses `.recentWindow`, never a synthetic Date. Window tuple order and duplicates do not establish chronology.
