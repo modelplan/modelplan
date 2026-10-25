@@ -9,6 +9,7 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .library(name: "ModelPlanDock", targets: ["ModelPlanDock"]),
     .library(name: "ModelPlanInstruments", targets: ["ModelPlanInstruments"]),
     .library(name: "ModelPlanCockpitShell", targets: ["ModelPlanCockpitShell"]),
+    .library(name: "ModelPlanField", targets: ["ModelPlanField"]),
     .executable(name: "ModelPlanWindowProbe", targets: ["ModelPlanWindowProbe"]),
     .executable(name: "ModelPlanCommunity", targets: ["ModelPlanCommunity"]),
 ], targets: [
@@ -29,6 +30,10 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
             path: "ModelPlanCockpitShell/Sources/ModelPlanCockpitShell"),
     .testTarget(name: "ModelPlanCockpitShellTests", dependencies: ["ModelPlanCockpitShell"],
                 path: "ModelPlanCockpitShell/Tests/ModelPlanCockpitShellTests"),
+    .target(name: "ModelPlanField", dependencies: ["ModelPlanCore"],
+            path: "ModelPlanField/Sources/ModelPlanField", resources: [.copy("Web")]),
+    .testTarget(name: "ModelPlanFieldTests", dependencies: ["ModelPlanField"],
+                path: "ModelPlanField/Tests/ModelPlanFieldTests"),
     .executableTarget(name: "ModelPlanWindowProbe", path: "ModelPlanDock/WindowInputProof",
                       exclude: ["README.md", "build.sh", "run-pair.py", "sample-owned.py"],
                       sources: ["Geometry.swift", "main.swift"]),

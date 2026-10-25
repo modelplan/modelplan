@@ -107,6 +107,9 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: Select the newest installed Xcode
         run: |
           ls -d /Applications/Xcode*.app
@@ -135,8 +138,10 @@ jobs:
           swift --version
       - name: Build the neutral app and all native checks
         run: swift build --package-path desktop/native --jobs 2
-      - name: Native lane XCTest suites (instruments and cockpit shell)
+      - name: Native lane XCTest suites (instruments, cockpit shell and field)
         run: swift test --package-path desktop/native --jobs 2
+      - name: Field bridge protocol checks (synthetic page adapter)
+        run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
       - name: Dock native resource and instrument checks (neutral inputs)
         run: swift run --package-path desktop/native --skip-build ModelPlanDockInstrumentChecks "$RUNNER_TEMP/dock-instrument-checks"
       - name: Dock logic unit checks
