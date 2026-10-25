@@ -144,7 +144,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
             for s in skin.stations.reversed(){
                 if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){onAction?(.notice(id));return}
-                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || s.readout.contains(global) || s.aliasRect?.contains(global)==true{onAction?(.subscription(id));return}
+                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{onAction?(.subscription(id));return}
                 if s.overflowCount != nil,CGRect(x:s.centre.x-s.diameter/2,y:s.centre.y-s.diameter/2,width:s.diameter,height:s.diameter).contains(global){onAction?(.overflow);return}
             }
         } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){onAction?(.subscription(id))}

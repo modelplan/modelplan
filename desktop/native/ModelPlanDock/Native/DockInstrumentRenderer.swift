@@ -13,7 +13,7 @@ public struct DockInk: Codable, Sendable {
 public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect}
 public struct DockRingRecipe: Codable, Sendable {public var radius:CGFloat,width:CGFloat,minimumVisibleFraction:Double,opacity:Double;public var trackOpacity:Double?,unknownDash:[CGFloat]?}
 public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int}
-public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var size:CGFloat,weight:Double}
+public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var size:CGFloat,weight:Double}
 public struct DockStationRecipe: Codable, Sendable {
     public var subscriptionID:String?
     public var logicalPoints:Int?
@@ -26,6 +26,8 @@ public struct DockStationRecipe: Codable, Sendable {
     public var overflowCount:Int?
     public var eventSolidDiameter:CGFloat?,eventHollowDiameter:CGFloat?,eventStrokeWidth:CGFloat?
     public var glyphOpacity:Double?
+    public var eventBackdropKey:String?,eventOutlineKey:String?,eventSolidOutlineWidth:CGFloat?
+    public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
 }
 public struct DockInstrumentSkin: Codable, Sendable {
     public var schemaVersion:Int
@@ -81,6 +83,7 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
             guard value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
             let font:CTFont
             if let id=recipe.fontResource {font=try resources.font(id,size:recipe.size,weight:recipe.weight)}
+            else if recipe.useSystemUIFont == true {font=CTFontCreateUIFontForLanguage(.system,recipe.size,nil)!}
             else if let name=recipe.systemFontName {
                 guard !name.isEmpty,name.utf8.count<=128 else{throw DockArtworkError.invalidManifest}
                 font=CTFontCreateWithName(name as CFString,recipe.size,nil)
@@ -121,7 +124,8 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
             for layer in station.layers {try image(layer,frame)}
             guard let id=station.subscriptionID,let reading=readings[id] else {
-                if let n=station.overflowCount {try text("+\(n)",frame,skin.text,try ink("text"))}
+                if let n=station.overflowCount {try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))}
+                else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text"))}
                 continue
             }
             let radius=station.caseInnerRadius
@@ -153,7 +157,7 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
                     c.fillEllipse(in:CGRect(x:p.x-clock.dotRadius,y:p.y-clock.dotRadius,width:2*clock.dotRadius,height:2*clock.dotRadius))}
             }
             let textColor=skin.readoutPalette?[reading.status.rawValue] ?? (reading.status == .warning || reading.status == .critical ? reading.status.rawValue : reading.status == .unknown ? "unknown":"text")
-            try text(reading.readout,station.readout,skin.text,try ink(textColor))
+            if station.showsReadout != false {try text(reading.readout,station.readout,skin.text,try ink(textColor))}
             if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
             if let notice=notices[id] {
                 let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"
@@ -161,8 +165,17 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
                 let stroke=station.eventStrokeWidth ?? 1.2
                 guard diameter.isFinite,diameter>0,diameter<=station.eventRect.width,stroke.isFinite,stroke>0,stroke<=diameter else{throw DockArtworkError.invalidManifest}
                 let r=CGRect(x:station.eventRect.midX-diameter/2,y:station.eventRect.midY-diameter/2,width:diameter,height:diameter)
-                if notice.shape == .solid {c.setFillColor(try ink(palette));c.fillEllipse(in:r)}
-                else {c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r)}
+                if notice.shape == .solid {
+                    if let key=station.eventOutlineKey {
+                        let width=station.eventSolidOutlineWidth ?? 0
+                        guard width.isFinite,width>=0,width<=12 else{throw DockArtworkError.invalidManifest}
+                        c.setFillColor(try ink(key));c.fillEllipse(in:r.insetBy(dx:-width,dy:-width))
+                    }
+                    c.setFillColor(try ink(palette));c.fillEllipse(in:r)
+                } else {
+                    if let key=station.eventBackdropKey {c.setFillColor(try ink(key));c.fillEllipse(in:r)}
+                    c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r.insetBy(dx:stroke/2,dy:stroke/2))
+                }
             }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}

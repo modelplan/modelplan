@@ -112,6 +112,13 @@ struct NativeFailure:Error {let message:String}
         input.dataState = .fresh;input.working=DockWorkingSignal(subscriptionID:id,bindingVerified:true,fresh:true,observedOutput:true)
         return try DockInstrumentProjection.evaluate(input,now:instant)
     }
+    var hiddenReadout=skin;hiddenReadout.stations[0].showsReadout=false
+    let hiddenResult=try renderer.render(skin:hiddenReadout,readings:["sub":reading],scale:2)
+    try require(!hiddenResult.metrics.contains{$0.text==reading.readout},"percentage-off omits only visible quota text")
+    let hiddenView=DockInstrumentView(frame:hiddenReadout.bounds)
+    try hiddenView.applyOfficial(skin:hiddenReadout,rows:[reading],renderer:renderer,scale:2,locale:"en")
+    try require((hiddenView.accessibilityChildren() as? [NSAccessibilityElement])?.first?.accessibilityValue() as? String==reading.readout,"hidden percentage remains accessible without repainting text")
+    hiddenView.dispose()
     let effectsView=DockInstrumentView(frame:effectsSkin.bounds)
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
     let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool),provider=SyntheticDockFrameProvider()
