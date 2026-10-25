@@ -17,15 +17,21 @@ Generic MIT model code for the native cockpit shell. This is a nonvisual prepara
 
 Expiry yields `steadyUnacknowledged`; it does not acknowledge. New semantic episodes and worsening severity get a fresh bounded interval. Clear removes latches; Reduce Motion immediately presents a steady light. Colors, lens artwork and localized accessibility strings belong to the presentation layer.
 
+## Semantic caution input (P03)
+
+`update(notices:now:)` accepts `CautionNotice` values. `CautionEpisodeID` binds subscription, optional window, event kind and episode identity, excluding localized text, countdowns and readings. Length framing prevents delimiter collisions; canonical Unicode reconstruction preserves the same identity. Empty or oversized identity components are rejected. Information/blue notices never become primitive caution conditions.
+
+This overload only maps into the existing `CautionLampModel.update` / `ModelPlanPrimitives.CautionState`; it does not add a controller or another transition implementation. Tests cover the specified 0/3/6/16/20/24-second sequence, information exclusion, same-severity new episodes, both severity levels with Reduce Motion/acknowledgement, reconstruction, and elapsed recovery after sleep. The existing condition-based API remains valid.
+
 ## Local verification
 
-The lane-local manifest builds the same source directory that M0 can later register in the shared package. Its only local package dependency is the public parent native package. No private checkout or external package is required. Run from the public worktree, after checking disk space:
+M0 has registered this target in the native root package. Use that root entry point: the historical lane-local manifest depends on the parent and now collides with its same-named target. No manifest change is needed for P03. No private checkout or external package is required. Run from the public worktree, after checking disk space:
 
 ```sh
 df -h ~
 du -sh ~/mp/build/M2
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test \
-  --package-path desktop/native/ModelPlanCockpitShell \
+  --package-path desktop/native --filter ModelPlanCockpitShellTests \
   --scratch-path ~/mp/build/M2 --jobs 2
 node scripts/check-source-policy.mjs
 git diff --check
@@ -33,9 +39,9 @@ git diff --check
 
 Tests exercise tier thresholds, visible-top anchoring, complete fit/reserve containment, negative/above display origins, scaled input conversion, switch restoration, and caution acknowledgement/new/worse/clear/timeout/Reduce Motion/delayed validation. They do not prove physical input, pixels, macOS 14 runtime behavior, animation CPU or app memory acceptance.
 
-## M0 integration request
+## Assembly boundary
 
-The shared `desktop/native/Package.swift`, `ModelPlanCore`, `ModelPlanShell` and `ModelPlanPrimitives` are unchanged. M0 can register the new source/tests without moving or duplicating them:
+The shared `desktop/native/Package.swift`, `ModelPlanCore`, `ModelPlanShell` and `ModelPlanPrimitives` are unchanged. The existing M0-owned root registration already points to these sources/tests:
 
 ```swift
 // products
@@ -49,4 +55,4 @@ The shared `desktop/native/Package.swift`, `ModelPlanCore`, `ModelPlanShell` and
 
 M0 also supplies the frozen closed-profile dimensions and native usable-frame/anchor contract when wiring the presentation. This preparation does not resolve pending appearance geometry or claim full shell/strip acceptance. No shared-state-machine change is currently requested.
 
-STATUS M2 B09/B10-prep done — Nonvisual shell state and unit tests prepared; shared registration and frozen presentation inputs remain with M0.
+The separate `ModelPlanSelection` package is the P03 shared ordered-ID seam. Its README lists the new registration/adapter request; this shell target remains on its existing registration.
