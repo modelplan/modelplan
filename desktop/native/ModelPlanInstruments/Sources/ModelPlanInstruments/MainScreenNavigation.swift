@@ -70,6 +70,8 @@ public struct MainScreenNavigation: Sendable {
         guard let selection, selection.matches(publication, scope: scope) else {
             discardPublicationDependentView(); selectedModelID = nil; selectionPublication = nil; return
         }
+        if !selection.matchesExact(publication, scope: scope),
+           let content = sourced?.content, case .comparison = content { back() }
         if selectionPublication != publication { discardPublicationDependentView() }
         if let content = sourced?.content, case .comparison(let id, _) = content, !selection.orderedModelIDs.contains(id) { back() }
         selectionPublication = publication
