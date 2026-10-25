@@ -56,8 +56,9 @@ claim is silent.
 from/to published effort keys and labels, ★ key, Fast, three-week summary,
 reference-cost ratio/basis, publication identity, reset/expiry and localized
 `message`. It remains contract version 1. Absence means unavailable or suppressed;
-it does not mean “keep” or “change” anything. Reading, including `--read-only`, writes
-nothing. The input revision hashes observed ledger/preferences independently of the
+it does not mean “keep” or “change” anything. Reading the suggestion never writes
+its state; `desktop --read-only` preserves the command’s no-write behavior. The
+input revision hashes observed ledger/preferences independently of the
 clock; `validUntil` includes upcoming reset, expiry and dismissal boundaries.
 
 ## 中文
