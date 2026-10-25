@@ -19,6 +19,7 @@ struct ScenarioIndex: Decodable {
         let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
         let index = try JSONDecoder().decode(ScenarioIndex.self, from: Data(contentsOf: root.appendingPathComponent("cases.json")))
         try require(index.contractVersion == 1 && !index.cases.isEmpty, "unsupported/empty scenario inventory")
+        var effortCases = Set<String>()
         var ids = Set<String>(), decoded = 0
         for entry in index.cases {
             let desktopData = try Data(contentsOf: root.appendingPathComponent(entry.desktop))
@@ -51,6 +52,25 @@ struct ScenarioIndex: Decodable {
                 try require(publication.selectionRevision == nil && first.lineageId == nil && first.lineageStatus == nil, "null flags became known")
                 try require(first.defaultSelected == false && second.defaultSelected == nil, "false and unknown collapsed")
                 try require(second.lineageId == "synthetic:line" && second.lineageStatus == nil, "partial selection flags lost")
+            }
+            if entry.id.hasPrefix("F23-effort-suggestion-") {
+                let mode = String(entry.id.dropFirst("F23-effort-suggestion-".count))
+                effortCases.insert(mode)
+                if mode == "absent" {
+                    try require(personal.effortSuggestion == nil, "insufficient history invented a suggestion")
+                } else {
+                    guard let suggestion = personal.effortSuggestion else {
+                        throw ContractFailure(message: "effort suggestion lost: \(entry.id)")
+                    }
+                    let up = mode == "up"
+                    try require(suggestion.direction == mode && suggestion.cycles == 3, "direction/week count lost")
+                    try require(suggestion.source == "codex" && suggestion.plan == "synthetic-plan" && suggestion.modelId == "synthetic-z", "suggestion identity lost")
+                    try require(suggestion.fromEffort == (up ? "medium" : "high") && suggestion.toEffort == (up ? "high" : "medium") && suggestion.recommended == "medium", "adjacent effort/star keys changed")
+                    try require(abs(suggestion.costRatio - (up ? 1.5 : 2.0 / 3.0)) < 1e-8 && suggestion.costBasisId == "synthetic-reference", "published reference-cost ratio/basis changed")
+                    try require(abs(suggestion.averageUsed - (up ? 45.0 : 295.0 / 3.0)) < 1e-8 && suggestion.hitLimitCycles == (up ? 0 : 2) && !suggestion.fast, "observed history summary changed")
+                    try require(suggestion.publicationId == publication.publicationId && suggestion.expiresAt.date.timeIntervalSince(suggestion.resetAt.date) == 7 * 24 * 60 * 60, "publication/reset/expiry lost")
+                    try require(suggestion.message?.contains("past 3 weeks") == true, "localized user message lost")
+                }
             }
             if entry.id == "F02" {
                 try require(personal.accounts?.first?.windows?.first?.remainingPercent == 0, "known zero lost")
@@ -93,8 +113,9 @@ struct ScenarioIndex: Decodable {
             ids.insert(String(entry.id.prefix(3)))
             decoded += 2
         }
-        try require(ids == Set((1...20).map { String(format: "F%02d", $0) }), "F01-F20 inventory incomplete")
-        print("PASS desktop contract v1: \(decoded) Go-produced golden documents decoded, all F01-F20 data scenarios")
+        try require(ids == Set((1...20).map { String(format: "F%02d", $0) }).union(["F23"]), "F01-F20/F23 inventory incomplete")
+        try require(effortCases == Set(["up", "down", "absent"]), "effort suggestion cases incomplete")
+        print("PASS desktop contract v1: \(decoded) Go-produced golden documents decoded, all F01-F20/F23 data scenarios")
         print("PASS additive/legacy compatibility, version rejection, exact values, attribution and published metadata")
         print("UI-only scenarios cover data prerequisites; no physical, visual, geometry or OS-event acceptance claim")
     }

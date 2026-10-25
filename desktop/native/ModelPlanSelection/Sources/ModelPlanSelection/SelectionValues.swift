@@ -55,9 +55,17 @@ public struct SelectionSubscription: Equatable, Sendable {
 public struct SelectionUsage: Equatable, Sendable {
     public let modelID: String, subscriptionID: String
     public let usedAt: Date
-    /// Supply only actual, attributed use; quota, entitlement or a current binding is not usage.
+    /// Exact attributed per-model event time only. Never substitute evaluation now or SessionRank.lastAt.
     public init(modelID: String, subscriptionID: String, usedAt: Date) {
         self.modelID = modelID; self.subscriptionID = subscriptionID; self.usedAt = usedAt
+    }
+}
+/// Membership in a fresh, upstream-validated recent7d summary with positive usage for this configuration.
+/// There is deliberately no event timestamp. Canonical model/subscription attribution is resolved upstream.
+public struct SelectionWindowUsage: Equatable, Sendable {
+    public let modelID: String, subscriptionID: String
+    public init(modelID: String, subscriptionID: String) {
+        self.modelID = modelID; self.subscriptionID = subscriptionID
     }
 }
 public struct SelectionInput: Sendable {
@@ -65,11 +73,12 @@ public struct SelectionInput: Sendable {
     public let publication: SelectionPublication?
     public let subscriptions: [SelectionSubscription]
     public let usage: [SelectionUsage]
+    public let windowUsage: [SelectionWindowUsage]
     public let now: Date
     public init(scope: SelectionScope, publication: SelectionPublication?, subscriptions: [SelectionSubscription],
-                usage: [SelectionUsage], now: Date) {
+                usage: [SelectionUsage], windowUsage: [SelectionWindowUsage] = [], now: Date) {
         self.scope = scope; self.publication = publication; self.subscriptions = subscriptions
-        self.usage = usage; self.now = now
+        self.usage = usage; self.windowUsage = windowUsage; self.now = now
     }
 }
 
@@ -89,7 +98,8 @@ public struct SelectionIssue: Equatable, Sendable {
     }
 }
 public enum SelectionOrigin: Equatable, Sendable {
-    case recentUsage(Date), publishedPick(PublishedPickKind), developerRoundRobin, publishedTail
+    case recentUsage(Date), recentWindow, publishedDefaultFallback
+    case publishedPick(PublishedPickKind), developerRoundRobin, publishedTail
 }
 public struct SelectedModel: Equatable, Sendable {
     public let model: SelectionModel

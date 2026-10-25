@@ -339,6 +339,95 @@
       ],
       "type": "object"
     },
+    "history-EffortSuggestion": {
+      "additionalProperties": true,
+      "properties": {
+        "averageUsed": {
+          "type": "number"
+        },
+        "costBasisId": {
+          "type": "string"
+        },
+        "costRatio": {
+          "type": "number"
+        },
+        "cycles": {
+          "type": "integer"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "fromEffort": {
+          "type": "string"
+        },
+        "fromLabel": {
+          "type": "string"
+        },
+        "hitLimitCycles": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "publicationId": {
+          "type": "string"
+        },
+        "recommended": {
+          "type": "string"
+        },
+        "resetAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "toEffort": {
+          "type": "string"
+        },
+        "toLabel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "plan",
+        "modelId",
+        "modelName",
+        "direction",
+        "fromEffort",
+        "fromLabel",
+        "toEffort",
+        "toLabel",
+        "recommended",
+        "fast",
+        "cycles",
+        "averageUsed",
+        "hitLimitCycles",
+        "costRatio",
+        "costBasisId",
+        "publicationId",
+        "resetAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
     "history-PaceCycleView": {
       "additionalProperties": true,
       "properties": {
@@ -3178,6 +3267,16 @@
     },
     "dataRevision": {
       "type": "string"
+    },
+    "effortSuggestion": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/history-EffortSuggestion"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "events": {
       "items": {

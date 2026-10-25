@@ -1,0 +1,148 @@
+{
+  "contractVersion": 1,
+  "capabilities": {
+    "alerts": {
+      "status": "supported"
+    },
+    "creditsBalance": {
+      "status": "source-dependent"
+    },
+    "creditsHistory": {
+      "status": "unavailable",
+      "reason": "no-supported-local-source"
+    },
+    "dailyLong": {
+      "status": "source-dependent",
+      "reason": "371-day-retention; coverage-is-observed-not-imputed"
+    },
+    "extraQuotaScopes": {
+      "status": "source-dependent",
+      "reason": "reported-limit-only; model/feature identity is not inferred"
+    },
+    "historyAttribution": {
+      "status": "supported",
+      "reason": "source-wide-unless-observed-session-subscriptionRef-proves-ownership"
+    },
+    "observedUsage": {
+      "status": "source-dependent"
+    },
+    "projects": {
+      "status": "source-dependent",
+      "reason": "opaque-local-refs; labels-respect-projectLabels"
+    },
+    "quotaCycles": {
+      "status": "source-dependent",
+      "reason": "source-plan-window-attribution; not-historical-account-ownership"
+    },
+    "quotaWindows": {
+      "status": "supported"
+    },
+    "resetCards": {
+      "status": "source-dependent"
+    },
+    "resetDropProvenance": {
+      "status": "unavailable",
+      "reason": "meter-drops-do-not-identify-redemption-or-correction"
+    },
+    "sessionRates60s": {
+      "status": "source-dependent"
+    }
+  },
+  "schemaVersion": 1,
+  "kind": "modelplan.personal-snapshot",
+  "generatedAt": "2026-10-20T21:05:00Z",
+  "cliVersion": "synthetic-v1",
+  "publication": {
+    "publicationId": "synthetic-contract-publication",
+    "publishedAt": "2026-10-20T20:00:00Z",
+    "checkedAt": "2026-10-20T21:04:00Z",
+    "verifiedAt": "2026-10-20T21:04:00Z",
+    "stale": false
+  },
+  "sessions": [],
+  "accounts": [],
+  "sources": [],
+  "connections": [],
+  "events": [],
+  "measured": [],
+  "liveSessions": [],
+  "todayTotals": [],
+  "hourly": [],
+  "perfStats": [],
+  "daily": [],
+  "dailyCoverage": {
+    "from": "2026-09-21",
+    "recording": true
+  },
+  "dailyLong": [],
+  "dailyLongCoverage": {
+    "from": "2025-10-15",
+    "recording": true
+  },
+  "paceHistory": {
+    "since": null,
+    "status": "ok",
+    "gapLimitMinutes": {
+      "five_hour": 60,
+      "monthly": 1440,
+      "weekly": 360
+    },
+    "groups": []
+  },
+  "sessionRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "sessions": 0,
+      "totalObservedOutputTokens": 0,
+      "top": []
+    },
+    "recent30d": {
+      "sessions": 0,
+      "totalObservedOutputTokens": 0,
+      "top": []
+    }
+  },
+  "projectRanking": {
+    "measure": "observed-output-tokens",
+    "recent7d": {
+      "projects": 0,
+      "totalObservedOutputTokens": 0,
+      "unattributedOutputTokens": 0,
+      "top": []
+    },
+    "recent30d": {
+      "projects": 0,
+      "totalObservedOutputTokens": 0,
+      "unattributedOutputTokens": 0,
+      "top": []
+    }
+  },
+  "projectLabels": true,
+  "subscriptions": [],
+  "effortSuggestion": {
+    "source": "codex",
+    "plan": "synthetic-plan",
+    "modelId": "synthetic-z",
+    "modelName": "Synthetic Z",
+    "direction": "up",
+    "fromEffort": "medium",
+    "fromLabel": "Med",
+    "toEffort": "high",
+    "toLabel": "High",
+    "recommended": "medium",
+    "fast": false,
+    "cycles": 3,
+    "averageUsed": 45,
+    "hitLimitCycles": 0,
+    "costRatio": 1.5,
+    "costBasisId": "synthetic-reference",
+    "publicationId": "synthetic-contract-publication",
+    "resetAt": "2026-10-20T20:05:00Z",
+    "expiresAt": "2026-10-27T20:05:00Z",
+    "message": "codex / synthetic-plan · Synthetic Z: past 3 weeks averaged 45%; your default could go up from ★Med to High (published reference cost ×1.50)."
+  },
+  "recording": true,
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
+  "dataRevision": "sha256:decf299a87c9b86cb625818d76652323",
+  "validUntil": "2026-10-22T21:04:00Z"
+}
