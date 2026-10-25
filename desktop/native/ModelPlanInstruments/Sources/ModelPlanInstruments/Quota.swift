@@ -90,7 +90,12 @@ public struct QuotaRows: Sendable {
 public struct ResetAllowance: Sendable {
     public let count: Int?
     public let expiresAt: Date?
-    public init(count: Int?, expiresAt: Date?) { self.count = count; self.expiresAt = expiresAt }
+    public let kind: String?
+    public let source: String?
+    public let evidence: InstrumentEvidence
+    public init(count: Int?, expiresAt: Date?, kind: String? = nil, source: String? = nil, evidence: InstrumentEvidence = .init()) {
+        self.count = count; self.expiresAt = expiresAt; self.kind = kind; self.source = source; self.evidence = evidence
+    }
 }
 
 public struct ReservePresentation: Sendable {
@@ -101,18 +106,20 @@ public struct ReservePresentation: Sendable {
     public let expiryWarning: Bool
     public let credits: Double?
     public let drawingCredits: Bool
+    public let allowances: [ResetAllowance]?
 
     /// nil allowances means unreadable; [] means a known zero. Counts can represent grouped allowances.
     public init(allowances: [ResetAllowance]?, credits: Double?, drawingCredits: Bool, now: Date) {
         let active = allowances?.filter { ($0.expiresAt.map { $0 > now } ?? true) && $0.count != 0 }
+        self.allowances = active
         var total: Int? = active == nil ? nil : 0
         for allowance in active ?? [] {
-            guard let count = allowance.count, count >= 0, let previous = total else { total = nil; continue }
+            guard allowance.evidence.usable(at: now), let count = allowance.count, count >= 0, let previous = total else { total = nil; continue }
             let next = previous.addingReportingOverflow(count)
             total = next.overflow ? nil : next.partialValue
         }
         resets = total
-        let dates = (active ?? []).compactMap(\.expiresAt).sorted()
+        let dates = (active ?? []).filter { $0.evidence.usable(at: now) }.compactMap(\.expiresAt).sorted()
         nearestExpiry = dates.first
         compactExpiries = Array(dates.prefix(4))
         expiryOverflow = max(0, dates.count - 4)
@@ -128,10 +135,14 @@ public struct EngineColumn: Sendable {
     public let todayGenerationTPS: Double?
     public let reserve: ReservePresentation?
     public let caution: QuotaLevel
+    public let evidence: InstrumentEvidence
+    public let todayAttribution: UsageAttribution
     public init(id: String, quotas: QuotaRows, todayTokens: Double?, todayGenerationTPS: Double?,
-                reserve: ReservePresentation? = nil, caution: QuotaLevel = .unknown) {
+                reserve: ReservePresentation? = nil, caution: QuotaLevel = .unknown,
+                evidence: InstrumentEvidence = .init(), todayAttribution: UsageAttribution = .verifiedSubscription) {
         self.id = id; self.quotas = quotas; self.todayTokens = known(todayTokens)
         self.todayGenerationTPS = known(todayGenerationTPS); self.reserve = reserve; self.caution = caution
+        self.evidence = evidence; self.todayAttribution = todayAttribution
     }
 }
 

@@ -21,7 +21,8 @@ enum Fixtures {
     ]
     static func model(current: EffortConfiguration? = .init("high"), rec: String = "medium", tier: InstrumentFastTier? = nil,
                       efforts: [InstrumentEffort] = efforts, id: String = "model", older: Bool = false) -> InstrumentModel {
-        .init(id: id, name: id, efforts: efforts, recommended: rec, current: current, fastTier: tier, olderVersion: older)
+        .init(id: id, name: id, efforts: efforts, recommended: rec, current: current, fastTier: tier,
+              lineage: .init(lineageId: "synthetic-lineage", lineageStatus: older ? "older" : "current"))
     }
     static func quota(_ id: String, _ period: QuotaPeriod, _ remaining: Double?, scope: String? = nil) -> InstrumentQuota {
         .init(id: id, period: period, scope: scope, remaining: remaining, resetsAt: now.addingTimeInterval(3600), durationMinutes: 300)
@@ -33,6 +34,7 @@ enum Fixtures {
                         lastAt: Date = now, endedAt: Date? = nil, sub: String? = "a") -> InstrumentSession {
         .init(id: id, subscriptionID: sub, tool: "Claude Code", model: "model", effort: "high", projectID: "p", projectName: project,
               startedAt: now.addingTimeInterval(-600), endedAt: endedAt, lastAt: lastAt, running: running,
-              rate: .init(value: rate, lastAt: lastAt, samples: 5, validSession60s: true))
+              rate: .init(value: rate, lastAt: lastAt, samples: 5, validSession60s: true,
+                          configuration: .init(sessionID: id, modelID: "model", effort: "high", fast: false)))
     }
 }
