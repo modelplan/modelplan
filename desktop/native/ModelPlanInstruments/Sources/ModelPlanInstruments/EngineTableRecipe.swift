@@ -53,12 +53,12 @@ public struct EngineFocusStyle: Equatable, Sendable {
 }
 /// General drawing operations. There are no official silhouettes, coordinates or font names in this schema.
 public enum EngineDrawingCommand: Equatable, Sendable {
-    case fill(rect: CGRect, radius: Double, ink: EngineInk)
+    case fill(rect: CGRect, radius: Double, ink: EngineInk, alignToPixels: Bool = false)
     case stroke(rect: CGRect, radius: Double, width: Double, ink: EngineInk)
-    case ellipse(rect: CGRect, ink: EngineInk)
+    case ellipse(rect: CGRect, ink: EngineInk, alignToPixels: Bool = false)
     case image(resourceID: String, rect: CGRect, opacity: Double)
     case text(EngineTextCommand)
-    case shadowedFill(rect: CGRect, radius: Double, ink: EngineInk, offset: CGSize, blur: Double, shadow: EngineInk)
+    case shadowedFill(rect: CGRect, radius: Double, ink: EngineInk, offset: CGSize, blur: Double, shadow: EngineInk, alignToPixels: Bool = false)
     indirect case group(opacity: Double, commands: [EngineDrawingCommand])
     indirect case clipped(rect: CGRect, radius: Double, commands: [EngineDrawingCommand])
 }
@@ -104,9 +104,9 @@ public struct EngineTableRecipe: Equatable, Sendable {
         for command in commands {
             let valid: Bool
             switch command {
-            case .fill(let r, let radius, let ink), .stroke(let r, let radius, _, let ink):
+            case .fill(let r, let radius, let ink, _), .stroke(let r, let radius, _, let ink):
                 valid = rect(r) && radius.isFinite && radius >= 0 && radius <= min(r.width, r.height) / 2 && ink.valid
-            case .ellipse(let r, let ink): valid = rect(r) && ink.valid
+            case .ellipse(let r, let ink, _): valid = rect(r) && ink.valid
             case .image(let id, let r, let opacity): valid = !id.isEmpty && rect(r) && opacity.isFinite && (0...1).contains(opacity)
             case .text(let t):
                 valid = !t.id.isEmpty && rect(t.rect) && !t.variants.isEmpty && t.variants.count <= 8
@@ -116,7 +116,7 @@ public struct EngineTableRecipe: Equatable, Sendable {
                     && t.transitionDuration.isFinite && (0...0.25).contains(t.transitionDuration)
                     && (depth == 0 || t.transitionDuration == 0)
                     && (t.shadow?.valid ?? true)
-            case .shadowedFill(let r, let radius, let ink, let offset, let blur, let shadow):
+            case .shadowedFill(let r, let radius, let ink, let offset, let blur, let shadow, _):
                 valid = rect(r) && radius.isFinite && radius >= 0 && radius <= min(r.width, r.height) / 2 && ink.valid && shadow.valid
                     && offset.width.isFinite && offset.height.isFinite && abs(offset.width) <= 128 && abs(offset.height) <= 128
                     && blur.isFinite && (0...128).contains(blur)
@@ -155,6 +155,15 @@ public struct EngineGlyphMetric: Sendable {
     public let clipped: Bool
 }
 @MainActor public enum EngineRecipeDrawing {
+    public static func alignedToDevicePixels(_ rect: CGRect, in context: CGContext) -> CGRect {
+        let a = context.convertToDeviceSpace(rect.origin)
+        let b = context.convertToDeviceSpace(CGPoint(x: rect.maxX, y: rect.maxY))
+        func snap(_ value: CGFloat, flipped: Bool) -> CGFloat { flipped ? ceil(value - 0.5) : floor(value + 0.5) }
+        let x0 = snap(a.x, flipped: context.ctm.a < 0), x1 = snap(b.x, flipped: context.ctm.a < 0)
+        let y0 = snap(a.y, flipped: context.ctm.d < 0), y1 = snap(b.y, flipped: context.ctm.d < 0)
+        let device = CGRect(x: min(x0, x1), y: min(y0, y1), width: abs(x1-x0), height: abs(y1-y0))
+        return context.convertToUserSpace(device)
+    }
     public static func choose(_ command: EngineTextCommand, font: CTFont) -> (String, CTLine, Double) {
         var result: (String, CTLine, Double)!
         for text in command.variants {
@@ -177,12 +186,15 @@ public struct EngineGlyphMetric: Sendable {
             context.saveGState()
             defer { context.restoreGState() }
             switch command {
-            case .fill(let r, let radius, let ink):
+            case .fill(let original, let radius, let ink, let align):
+                let r = align ? alignedToDevicePixels(original, in: context) : original
                 context.setFillColor(ink.cgColor); context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.fillPath()
             case .stroke(let r, let radius, let width, let ink):
                 context.setStrokeColor(ink.cgColor); context.setLineWidth(width)
                 context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.strokePath()
-            case .ellipse(let r, let ink): context.setFillColor(ink.cgColor); context.fillEllipse(in: r)
+            case .ellipse(let original, let ink, let align):
+                let r = align ? alignedToDevicePixels(original, in: context) : original
+                context.setFillColor(ink.cgColor); context.fillEllipse(in: r)
             case .image(let id, let r, let opacity):
                 let image = try provider.image(id)
                 if resources.insert(id).inserted {
@@ -205,7 +217,8 @@ public struct EngineGlyphMetric: Sendable {
                 if let shadow = t.shadow { context.setShadow(offset: shadow.offset, blur: shadow.blur, color: shadow.ink.cgColor) }
                 context.clip(to: t.rect); context.translateBy(x: t.rect.minX + alignment, y: baseline); context.scaleBy(x: 1, y: -1)
                 context.textMatrix = .identity; context.textPosition = .zero; CTLineDraw(line, context)
-            case .shadowedFill(let r, let radius, let ink, let offset, let blur, let shadow):
+            case .shadowedFill(let original, let radius, let ink, let offset, let blur, let shadow, let align):
+                let r = align ? alignedToDevicePixels(original, in: context) : original
                 context.setShadow(offset: offset, blur: blur, color: shadow.cgColor)
                 context.setFillColor(ink.cgColor); context.addPath(CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)); context.fillPath()
             case .group(let opacity, let commands):
