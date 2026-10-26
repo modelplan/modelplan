@@ -87,6 +87,7 @@ final class CockpitShellSurfaceTests: XCTestCase {
             surface.setPresentationAllowed(false); XCTAssertGreaterThan(skin.discarded,before)
             surface.setPresentationAllowed(true); XCTAssertEqual(surface.stationLayerCount,0)
             surface.stop(); XCTAssertEqual(skin.layersRequested,0)
+            XCTAssertEqual(surface.backdropBytes,0); XCTAssertNil(surface.state); XCTAssertNil(surface.surfaceLayout)
         }
     }
     func testHostedStationUsesRootCoordinatesAndFailureReleasesResources() async throws {
@@ -103,6 +104,7 @@ final class CockpitShellSurfaceTests: XCTestCase {
             let ctx = CGContext(data:nil,width:88,height:110,bitsPerComponent:8,bytesPerRow:352,
                 space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
             ctx.translateBy(x:0,y:110); ctx.scaleBy(x:1,y:-1)
+            ctx.translateBy(x:-surface.bounds.minX,y:-surface.bounds.minY)
             surface.layer!.render(in:ctx)
             let pixels = ctx.data!.assumingMemoryBound(to:UInt8.self)
             XCTAssertGreaterThan(pixels[96*352+26*4],200)

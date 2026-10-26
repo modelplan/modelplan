@@ -139,7 +139,11 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
         fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
         layer?.add(fade, forKey: "cockpit-quick-open")
     }
-    public func stop() { layer?.removeAnimation(forKey: "cockpit-quick-open"); presentationAllowed = false; clearStations(); skin.discardTransientResources() }
+    public func stop() {
+        layer?.removeAnimation(forKey:"cockpit-quick-open"); presentationAllowed = false
+        clearStations(); skin.discardTransientResources()
+        backdropLayer.contents = nil; backdropBytes = 0; state = nil; surfaceLayout = nil
+    }
     private func validate(_ layout: CockpitSurfaceLayout, _ state: CockpitSurfaceState) throws {
         let b = layout.drawableBounds
         guard !b.isNull, !b.isInfinite, [b.minX,b.minY,b.width,b.height,layout.rootSize.width,layout.rootSize.height].allSatisfy(\.isFinite),
