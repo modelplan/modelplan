@@ -15,6 +15,10 @@ private struct NeverCLI: CLITransport {
     func restorePreferences() async { restores += 1; restored?() }
     func suspend() { suspensions += 1 }
 }
+@MainActor private final class MenuActionTarget: NSObject {
+    var calls = 0
+    @objc func open(_ sender: Any?) { calls += 1 }
+}
 @MainActor final class CommunityHostTests: XCTestCase {
     private func gate() -> LifecycleCoordinator {
         LifecycleCoordinator(store: SnapshotStore(transport: NeverCLI(), automaticTimers: false))
@@ -46,4 +50,20 @@ private struct NeverCLI: CLITransport {
         XCTAssertEqual(first?.title, "Settings unavailable / 设置不可用")
         XCTAssertTrue(first === host.configureSettings(gate())); XCTAssertEqual(creates, 1)
     }
+    func testCommandCommaApplicationMenuSharesTheStatusActionWithoutReparentingIt() async throws {
+        let host = CommunityDelegate(surfaces: NeutralSurfaceProvider()), target = MenuActionTarget()
+        let statusMenu = NSMenu()
+        let item = NSMenuItem(title: "Settings", action: #selector(MenuActionTarget.open(_:)), keyEquivalent: ",")
+        item.target = target; item.keyEquivalentModifierMask = .command; statusMenu.addItem(item)
+        let menu = host.applicationMenu(settingsItem: item)
+        let applicationItem = try XCTUnwrap(menu.items.first?.submenu?.items.first)
+        XCTAssertFalse(applicationItem === item)
+        XCTAssertTrue(item.menu === statusMenu)
+        XCTAssertTrue(applicationItem.target === target)
+        XCTAssertEqual(applicationItem.keyEquivalent, ",")
+        XCTAssertEqual(applicationItem.keyEquivalentModifierMask, .command)
+        _ = target.perform(try XCTUnwrap(applicationItem.action), with: applicationItem)
+        XCTAssertEqual(target.calls, 1)
+    }
+
 }

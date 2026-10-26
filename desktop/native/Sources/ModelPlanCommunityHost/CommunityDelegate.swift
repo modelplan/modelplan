@@ -37,6 +37,16 @@ import ModelPlanShell
         return settingsItem
     }
     func suspendSettings() { settings?.suspend() }
+    /// A status-item menu alone is not the app's Command-comma responder menu.
+    func applicationMenu(settingsItem: NSMenuItem) -> NSMenu {
+        let root = NSMenu(), applicationItem = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        if let copy = settingsItem.copy() as? NSMenuItem { submenu.addItem(copy) }
+        submenu.addItem(.separator())
+        submenu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationItem.submenu = submenu; root.addItem(applicationItem)
+        return root
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let args = CommandLine.arguments
@@ -77,6 +87,7 @@ import ModelPlanShell
         if let settingsItem = configureSettings(runtime.lifecycle) { menu.addItem(settingsItem) }
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu; status = item
+        if let settingsItem { NSApplication.shared.mainMenu = applicationMenu(settingsItem: settingsItem) }
         runtime.start()
     }
     @objc private func showStatus() {
