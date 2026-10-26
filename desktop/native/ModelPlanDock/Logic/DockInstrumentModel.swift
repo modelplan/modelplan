@@ -33,7 +33,7 @@ public struct DockInstrumentInput: Sendable {
     public var working: DockWorkingSignal?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
 }
-public enum DockQuotaStatus: String, Codable, Sendable {case unknown, normal, warning, critical}
+public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
 public struct DockQuotaArc: Equatable, Sendable {
     public let windowID: String, fraction: Double?, status: DockQuotaStatus
 }
