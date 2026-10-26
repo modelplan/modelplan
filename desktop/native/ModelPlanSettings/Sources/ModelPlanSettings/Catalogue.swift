@@ -14,6 +14,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, feedback, licenses
     case dockEdge, detectedReaders, optionalReaders
+    case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
 }
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
@@ -43,7 +44,7 @@ public struct SettingsAbout: Sendable {
                 architecture: SettingsArchitecture = .appleSilicon) {
         self.appVersion = appVersion; self.cliVersion = cliVersion; self.cliState = cliState; self.architecture = architecture
     }
-    private func safeVersion(_ value: String) -> String {
+    func safeVersion(_ value: String) -> String {
         guard value.utf8.count <= 64,
               value.range(of: #"^v?[0-9]+(?:\.[0-9]+){1,3}(?:[+-][A-Za-z0-9.-]+)?$"#, options: .regularExpression) != nil else { return "unknown" }
         return value
@@ -71,6 +72,9 @@ public struct SettingsPageContext: Sendable {
     /// Supplied by the app from its audited bundled notices, not a download or private source.
     public var readerObservations: [SettingsReaderID: ReaderObservation] = [:]
     public var licenseNotices: [SettingsLicenseNotice] = []
+    public var notificationAuthorization: NotificationAuthorization = .unavailable
+    public var updateState: SettingsUpdateState = .unavailable
+    public var availableUpdateVersion: String?
     public init() {}
 }
 public struct SubscriptionRowValue: Equatable, Sendable {
@@ -153,6 +157,11 @@ public enum SettingsCatalogue {
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader IDs and error codes only.","仅含版本、macOS、读取器ID和错误代码。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
         .init(.licenses,"Third-party notices","第三方声明","The app adapter supplies bundled license notices.","由应用适配器提供随包许可证声明。"),
+        .init(.updateStatus,"App updates","应用更新","Check for a newer public version.","检查是否有新的公开版本。"),
+        .init(.websiteLink,"Website","网站","Open the public ModelPlan website.","打开 ModelPlan 公开网站。"),
+        .init(.methodologyLink,"Methodology","方法说明","Read how the published recommendations are worked out.","了解公开推荐的方法。"),
+        .init(.privacyLink,"Privacy","隐私政策","Read what stays on this Mac.","了解哪些数据保留在本机。"),
+        .init(.repositoryLink,"Source repository","源代码仓库","Browse the public source and notices.","浏览公开源代码与声明。"),
     ]
     public static func rows(preferences p: SettingsPreferences, context c: SettingsPageContext,
                             pane: SettingsPane? = nil, query: String = "",
@@ -200,6 +209,7 @@ public enum SettingsCatalogue {
         case .source, .detectedReaders, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .licenses: return .readOnly
         case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
+        case .updateStatus: return c.capabilities.updateServiceAvailable ? .available : .serviceUnavailable
         default: return .available
         }
     }
@@ -256,6 +266,11 @@ public enum SettingsCatalogue {
         case .diagnostics: return .text(c.about.diagnosticText)
         case .feedback: return .link(SettingsAbout.feedbackURL)
         case .licenses: return .notices(c.licenseNotices)
+        case .websiteLink: return .link(SettingsPublicLink.website.url)
+        case .methodologyLink: return .link(SettingsPublicLink.methodology.url)
+        case .privacyLink: return .link(SettingsPublicLink.privacy.url)
+        case .repositoryLink: return .link(SettingsPublicLink.repository.url)
+        case .updateStatus: return .text(c.updateState.rawValue)
         }
     }
     private static func shortcut(_ chord: ShortcutChord) -> String {

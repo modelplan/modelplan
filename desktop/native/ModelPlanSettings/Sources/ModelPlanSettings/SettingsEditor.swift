@@ -49,7 +49,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
     }
 }
 
-public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgress, subscriptionUnavailable, staleContext }
+public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgress, subscriptionUnavailable, staleContext, actionUnavailable }
 
 /// One presenter over the app's existing store. No service calls or second preference file.
 @MainActor public final class SettingsEditor {
@@ -67,6 +67,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public var onEnvironmentChange: ((SettingsSnapshot, EffectiveSettings) -> Void)?
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
+    private var changeObservers: [UUID: () -> Void] = [:]
 
     public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init()) {
         self.store = store; self.context = context; self.environment = environment
@@ -76,10 +77,18 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         // A suspended reload must not replace a newer commit/reload that resumed first.
         if candidate.revision >= (snapshot?.revision ?? 0) { snapshot = candidate }
     }
-    public func reload() async { accept(await store.snapshot()); onChange?() }
-    public func update(context: SettingsPageContext) { self.context = context; onChange?() }
+    public func observeChanges(_ observer: @escaping () -> Void) -> UUID {
+        let id = UUID(); changeObservers[id] = observer; return id
+    }
+    public func removeChangeObserver(_ id: UUID) { changeObservers.removeValue(forKey: id) }
+    private func notifyChange() {
+        onChange?()
+        for observer in Array(changeObservers.values) { observer() }
+    }
+    public func reload() async { accept(await store.snapshot()); notifyChange() }
+    public func update(context: SettingsPageContext) { self.context = context; notifyChange() }
     public func update(environment: SettingsEnvironment) {
-        self.environment = environment; onChange?()
+        self.environment = environment; notifyChange()
         if let snapshot, let effective { onEnvironmentChange?(snapshot, effective) }
     }
     @discardableResult public func commit(_ edit: SettingsB20Edit) async throws -> SettingsSnapshot {
@@ -102,21 +111,72 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         if let intent { onHostRequest?(.init(revision: committed.revision, intent: intent)) }
         return committed
     }
+    @discardableResult public func commit(_ edit: SettingsB22Edit) async throws -> SettingsSnapshot {
+        let previous = snapshot?.preferences.notifications.optedIn ?? false
+        let saved = try await transact(subscriptionID: nil) { try edit.apply(to: &$0) }
+        if case .notificationConsent(let enabled) = edit {
+            onHostRequest?(.init(revision: saved.revision, intent: .notificationConsentChanged(previous: previous, enabled: enabled)))
+        }
+        return saved
+    }
+    /// User actions without a preferences mutation. Host requests are never commit receipts.
+    public func request(_ action: SettingsB22Action) throws {
+        guard !isSaving else { throw SettingsEditorError.editInProgress }
+        guard let snapshot else { throw SettingsEditorError.notLoaded }
+        guard let onHostRequest else { throw SettingsEditorError.actionUnavailable }
+        let intent: SettingsHostIntent
+        switch action {
+        case .clearAppCache:
+            guard context.capabilities.appCacheClearAvailable else { throw SettingsEditorError.actionUnavailable }
+            intent = .action(.clearAppCache)
+        case .openLink(let link): intent = .openPublicLink(link)
+        case .checkForUpdates:
+            guard context.capabilities.updateServiceAvailable else { throw SettingsEditorError.actionUnavailable }
+            intent = .checkForUpdates
+        case .previewFirstRun:
+            guard context.capabilities.firstRunPreviewAvailable else { throw SettingsEditorError.actionUnavailable }
+            intent = .previewFirstRun
+        }
+        onHostRequest(.init(revision: snapshot.revision, intent: intent))
+    }
+    @discardableResult public func completeFirstRun(options: OnboardingOptions, action: FirstRunAction,
+        host: FirstRunHost, expectedRevision: UInt64) async throws -> FirstRunCommit {
+        if action == .seeWhatsHere, !context.capabilities.helpMapAvailable { throw SettingsEditorError.actionUnavailable }
+        let capabilities = context.capabilities
+        let result = try await persist(expectedRevision: expectedRevision, operation: { [store] revision in
+            try await store.completeFirstRun(options: options, action: action, host: host,
+                                             capabilities: capabilities, expectedRevision: revision)
+        }, snapshot: { $0.snapshot })
+        onHostRequest?(.init(revision: result.snapshot.revision,
+            intent: .firstRunCompleted(effects: result.effects, loginRequest: result.login.request)))
+        return result
+    }
     private func transact(subscriptionID: String?, quotaPreviewID: String? = nil,
                           edit: @escaping @Sendable (inout SettingsPreferences) throws -> Void) async throws -> SettingsSnapshot {
-        guard !isSaving else { throw SettingsEditorError.editInProgress }
-        guard let before = snapshot else { throw SettingsEditorError.notLoaded }
         if let id = subscriptionID, !context.subscriptions.contains(where: { $0.id == id }) {
             throw SettingsEditorError.subscriptionUnavailable
         }
-        isSaving = true; onChange?()
-        defer { isSaving = false; onChange?() }
+        return try await persist(quotaPreviewID: quotaPreviewID, operation: { [store] revision in
+            try await store.update(expectedRevision: revision, edit)
+        }, snapshot: { $0 })
+    }
+    private func persist<Value: Sendable>(expectedRevision: UInt64? = nil, quotaPreviewID: String? = nil,
+        operation: @escaping @Sendable (UInt64) async throws -> Value,
+        snapshot receipt: @escaping @Sendable (Value) -> SettingsSnapshot) async throws -> Value {
+        guard !isSaving else { throw SettingsEditorError.editInProgress }
+        guard let before = snapshot else { throw SettingsEditorError.notLoaded }
+        if let expectedRevision, expectedRevision != before.revision {
+            throw SettingsError.staleRevision
+        }
+        isSaving = true; notifyChange()
+        defer { isSaving = false; notifyChange() }
         do {
-            let committed = try await store.update(expectedRevision: before.revision, edit)
+            let result = try await operation(expectedRevision ?? before.revision)
+            let committed = receipt(result)
             accept(committed)
             if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
             onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))
-            return committed
+            return result
         } catch {
             // An external writer on this same actor may have advanced. Show its current truth, never retry over it.
             accept(await store.snapshot())

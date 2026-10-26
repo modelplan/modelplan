@@ -122,6 +122,8 @@ public struct SettingsCapabilities: Sendable {
     public var login: LoginServiceState = .notRegistered
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
+    public var firstRunPreviewAvailable = false
+    public var helpMapAvailable = false
     public init() {}
     /// Returns an intent only. The caller must perform it and refresh the observed service state.
     public func loginRequest(enabled: Bool) -> SettingsActionRequest? {

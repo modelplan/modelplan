@@ -117,7 +117,7 @@ import XCTest
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .autoHide)).isEnabled)
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .dockEdge)).isEnabled)
         controller.selectPane("notifications")
-        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
         controller.selectPane("dock")
         for key: SettingKey in [.dockEdge, .showPercentages, .autoHide, .size, .percentagePin] {
             XCTAssertNotNil(controller.diagram(key: key))

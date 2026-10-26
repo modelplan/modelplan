@@ -14,6 +14,8 @@ import AppKit
     var shortcut: SettingsShortcutControl?
     var order: SettingsOrderControl?
     var resetHints: SettingsActionControl?
+    var surfaceAction: SettingsActionControl?
+    private var licenseView: SettingsLicenseView?
     private var aliasLines: [String: NSStackView] = [:]
     private var aliasLabels: [String: NSTextField] = [:]
     private var subscriptionLabels: [String: NSTextField] = [:]
@@ -62,21 +64,24 @@ import AppKit
         diagram?.stop()
         for popup in choices.values { popup.retire() }
         for field in aliases.values { field.retire() }
-        shortcut?.retire(); order?.retire(); resetHints?.retire()
+        shortcut?.retire(); order?.retire(); resetHints?.retire(); surfaceAction?.retire()
         for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
         choices = [:]; subscriptionLabels = [:]; readerDescriptions = [:]; controlIDs = []
         aliases = [:]; aliasLines = [:]; aliasLabels = [:]; shortcut = nil; order = nil; resetHints = nil
+        surfaceAction = nil; licenseView = nil
     }
 
     func owns(_ view: NSView) -> Bool {
         choices.values.contains { $0 === view } || aliases.values.contains { $0 === view }
-            || shortcut === view || order === view || resetHints === view
+            || shortcut === view || order === view || resetHints === view || surfaceAction === view
     }
 
     func apply(_ row: SettingsRow, language: SettingsLanguage, saving: Bool, input: SettingsDiagramInput?,
                reduced: Bool, onChoice: Selector, target: AnyObject, showGroup: Bool,
                snapshot: SettingsSnapshot, context: SettingsPageContext, holdAvailable: Bool,
-               onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void) {
+               hasHost: Bool, onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void,
+               onSurfaceAction: @escaping (NSView & SettingsOwnedControl, SettingsSurfaceAction) -> Void,
+               onDraftCleared: @escaping (SettingsAliasControl) -> Void) {
         let p = snapshot.preferences
         titleLabel.stringValue = row.title.value(language)
         subtitle.stringValue = row.subtitle.value(language)
@@ -91,9 +96,9 @@ import AppKit
             diagram?.language = language
             diagram?.apply(input, reduceMotion: reduced, animate: true)
         }
-        let enabled = (SettingsB20Edit.keys.contains(key) || SettingsB21Edit.keys.contains(key)) && row.availability == .available
+        let enabled = (SettingsB20Edit.keys.contains(key) || SettingsB21Edit.keys.contains(key) || SettingsB22Edit.keys.contains(key)) && row.availability == .available
         if key == .alias, case .subscriptions(let subs) = row.value {
-            configureAliases(subs, enabled: enabled && !saving, language: language, onEdit: onEdit); return
+            configureAliases(subs, enabled: enabled && !saving, language: language, onEdit: onEdit, onDraftCleared: onDraftCleared); return
         }
         if key == .order {
             configureOrder(p, context: context, enabled: enabled && !saving, language: language, onEdit: onEdit); return
@@ -107,6 +112,48 @@ import AppKit
                 button.onInvoke = { onEdit($0, .resetHints) }; resetHints = button; controls.addArrangedSubview(button)
             }
             resetHints?.title = row.title.value(language); resetHints?.isEnabled = enabled && !saving; return
+        }
+        if key == .licenses, case .notices(let notices) = row.value {
+            if licenseView == nil { retireControls(); let view = SettingsLicenseView(frame: .zero); licenseView = view; controls.addArrangedSubview(view) }
+            licenseView?.apply(notices, language: language); return
+        }
+        let action: SettingsSurfaceAction?
+        switch key {
+        case .diagnostics: action = .copyDiagnostics
+        case .clearAppCache: action = .request(.clearAppCache)
+        case .feedback: action = .request(.openLink(.feedback))
+        case .websiteLink: action = .request(.openLink(.website))
+        case .methodologyLink: action = .request(.openLink(.methodology))
+        case .privacyLink: action = .request(.openLink(.privacy))
+        case .repositoryLink: action = .request(.openLink(.repository))
+        case .updateStatus: action = .request(.checkForUpdates)
+        default: action = nil
+        }
+        if let action {
+            if surfaceAction == nil {
+                retireControls(); let button = SettingsActionControl(key: key); surfaceAction = button
+                button.onInvoke = { onSurfaceAction($0, action) }; controls.addArrangedSubview(button)
+            }
+            surfaceAction?.title = key == .diagnostics ? SettingsWords.text("Copy diagnostics", "复制诊断信息", language)
+                : key == .updateStatus ? SettingsWords.text("Check for updates", "检查更新", language) : row.title.value(language)
+            surfaceAction?.isEnabled = !saving && (key == .diagnostics || hasHost)
+                && (key != .clearAppCache || context.capabilities.appCacheClearAvailable)
+                && (key != .updateStatus || context.capabilities.updateServiceAvailable)
+            if key == .updateStatus {
+                if readout.superview == nil { controls.addArrangedSubview(readout) }
+                let words: (String, String)
+                switch context.updateState {
+                case .unavailable: words = ("Update service unavailable", "更新服务不可用")
+                case .notChecked: words = ("Not checked", "尚未检查")
+                case .current: words = ("Up to date", "已是最新版本")
+                case .available:
+                    let version = context.about.safeVersion(context.availableUpdateVersion ?? "")
+                    words = ("Available: " + version, "可用版本：" + version)
+                case .failed: words = ("Could not check for updates", "无法检查更新")
+                }
+                readout.stringValue = SettingsWords.text(words.0, words.1, language)
+            }
+            return
         }
         var values: [(String, String, String, [String])] = []
         switch row.value {
@@ -167,6 +214,11 @@ import AppKit
         if values.isEmpty {
             if key == .percentagePin { readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language) }
             else if key == .captureHiding { readout.stringValue = SettingsWords.text("Unavailable", "不可用", language) }
+            else if key == .retention { readout.stringValue = SettingsWords.text("Sessions: 35 days\nDaily totals: 371 days\nManaged by the CLI", "会话：35 天\n每日汇总：371 天\n由 CLI 管理", language) }
+            else if key == .clearCLI { readout.stringValue = SettingsWords.text("Unavailable; CLI-owned data", "不可用：CLI 管理的数据", language) }
+            else if key == .architecture {
+                readout.stringValue = context.about.architecture == .intelUntested ? SettingsAbout.intelNote.value(language) : SettingsWords.text("Apple silicon", "Apple 芯片", language)
+            }
             else if case .subscriptions(let subs) = row.value {
                 readout.stringValue = subs.map { $0.name + " · " + Self.sourceStatus($0.value, language: language) }.joined(separator: "\n")
             }
@@ -183,6 +235,14 @@ import AppKit
             ? SettingsWords.text("Update service available", "更新服务可用", language)
             : SettingsWords.text("Update service unavailable", "更新服务不可用", language)
         case .opening, .countdown: status = holdAvailable ? "" : SettingsWords.text("Currently opens quickly", "当前使用快速打开", language)
+        case .notificationConsent:
+            switch context.notificationAuthorization {
+            case .notDetermined: status = SettingsWords.text("System permission not requested", "尚未请求系统权限", language)
+            case .authorized: status = SettingsWords.text("System permission authorized", "系统权限已允许", language)
+            case .provisional: status = SettingsWords.text("System permission provisional", "系统为临时授权", language)
+            case .denied: status = SettingsWords.text("System permission denied", "系统权限被拒绝", language)
+            case .unavailable: status = SettingsWords.text("System notifications unavailable", "系统通知不可用", language)
+            }
         default: status = ""
         }
         if !status.isEmpty {
@@ -192,7 +252,8 @@ import AppKit
     }
 
     private func configureAliases(_ subs: [SubscriptionRowValue], enabled: Bool, language: SettingsLanguage,
-                                  onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void) {
+                                  onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void,
+                                  onDraftCleared: @escaping (SettingsAliasControl) -> Void) {
         let ids = Set(subs.map(\.id))
         for id in Array(aliases.keys) where !ids.contains(id) {
             aliases.removeValue(forKey: id)?.retire()
@@ -204,6 +265,7 @@ import AppKit
                 let field = SettingsAliasControl(subscriptionID: sub.id); aliases[sub.id] = field
                 field.widthAnchor.constraint(equalToConstant: 132).isActive = true; field.font = .systemFont(ofSize: 12)
                 field.onFinish = { onEdit($0, .alias($1)) }
+                field.onDraftCleared = onDraftCleared
                 let label = NSTextField(labelWithString: sub.name); label.font = .systemFont(ofSize: 12)
                 label.setContentHuggingPriority(.defaultLow, for: .horizontal)
                 label.lineBreakMode = .byTruncatingTail; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
