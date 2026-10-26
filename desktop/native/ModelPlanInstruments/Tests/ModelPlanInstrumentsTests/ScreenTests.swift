@@ -110,19 +110,20 @@ final class ScreenTests: XCTestCase {
         let ambiguous = SubscriptionPresentation(id: "a", windows: sub.windows, reserve: nil, credits: nil, statistics: statistics,
                                                   cycles: cycles, peak: nil, observedAt: nil, historyAttributed: false, now: now, language: .english)
         XCTAssertTrue(ambiguous.cycles.isEmpty)
-        let credits = CreditPresentation(balance: 0, used: 0, limit: 0, resetsAt: nil, daily: [])
-        XCTAssertEqual(credits.balance, 0); XCTAssertEqual(credits.limit, 0); XCTAssertNil(credits.remainingPercent)
-        XCTAssertEqual(CreditPresentation(balance: nil, used: 0, limit: 10, resetsAt: nil, daily: []).remainingPercent, 100)
-        let creditDays = (0..<40).map { InstrumentUsageBucket(subscriptionID: "a", at: now.addingTimeInterval(Double($0 - 40) * 86400), tokens: Double($0)) }
-        let creditHistory = CreditPresentation(balance: nil, used: nil, limit: nil, resetsAt: nil, daily: creditDays)
-        XCTAssertEqual(creditHistory.daily.count, 30); XCTAssertEqual(creditHistory.daily.first?.tokens, 10)
+        let credits = CreditPresentation(balance: 0, drawingCredits: nil, evidence: .init(observedAt: now), now: now,
+                                         historyStatus: "unavailable", historyUnavailableReason: "no-supported-local-source")
+        XCTAssertEqual(credits.balance, 0); XCTAssertNil(credits.drawingCredits)
+        XCTAssertEqual(credits.observedAt, now); XCTAssertEqual(credits.historyStatus, "unavailable")
     }
 
-    func testF06F18EffortPagePreservesPublishedOrderAndOldOnlyInAll() {
+    func testF06F18EffortPageConsumesSharedOrderAndPublishedAvailability() {
         let models = [Fixtures.model(id: "z"), Fixtures.model(id: "old", older: true), Fixtures.model(id: "a")]
-        XCTAssertEqual(EffortPagePresentation(models: models, offeredModelIDs: [], scope: .all, publicationUsable: true).models.map(\.id), ["z", "old", "a"])
-        XCTAssertEqual(EffortPagePresentation(models: models, offeredModelIDs: ["old", "a"], scope: .subscription("s"), publicationUsable: true).models.map(\.id), ["a"])
-        XCTAssertTrue(EffortPagePresentation(models: models, offeredModelIDs: [], scope: .all, publicationUsable: false).models.isEmpty)
+        let publication = SelectionPublication(publicationID: "p", selectionRevision: "r")
+        let all = InjectedModelSelection(publication: publication, scope: .all, orderedModelIDs: ["z", "old", "a"])
+        let single = InjectedModelSelection(publication: publication, scope: .subscription("s"), orderedModelIDs: ["a"])
+        XCTAssertEqual(EffortPagePresentation(models: models, selection: all, scope: .all, publication: publication, publicationUsable: true).models.map(\.id), ["z", "old", "a"])
+        XCTAssertEqual(EffortPagePresentation(models: models, selection: single, scope: .subscription("s"), publication: publication, publicationUsable: true).models.map(\.id), ["a"])
+        XCTAssertTrue(EffortPagePresentation(models: models, selection: all, scope: .all, publication: publication, publicationUsable: false).models.isEmpty)
         XCTAssertEqual(MainScreenPage.allCases.map { $0.title(.chinese) }, ["总览", "订阅", "档位", "去向"])
     }
 }

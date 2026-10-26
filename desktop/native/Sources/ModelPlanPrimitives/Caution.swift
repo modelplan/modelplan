@@ -21,8 +21,13 @@ public struct CautionState: Equatable, Sendable {
     public mutating func update(_ conditions: [CautionCondition], now: Double, reduceMotion: Bool) {
         var next: [String: CautionCondition.Severity] = [:]
         for c in conditions { next[c.id] = max(next[c.id] ?? c.severity, c.severity) }
-        let newEpisode = next.contains { id, severity in active[id] == nil || severity > active[id]! }
-        acknowledged = acknowledged.filter { next[$0.key] != nil }
+        let newEpisodeIDs = Set(next.compactMap { id, severity -> String? in
+            guard let previous = active[id] else { return id }
+            return severity > previous ? id : nil
+        })
+        let newEpisode = !newEpisodeIDs.isEmpty
+        // A renewed/worsened condition needs a fresh press; unrelated acknowledgements survive.
+        acknowledged = acknowledged.filter { next[$0.key] != nil && !newEpisodeIDs.contains($0.key) }
         active = next; severity = next.values.max()
         guard !next.isEmpty else { mode = .off; deadline = nil; blinkStart = nil; return }
         if newEpisode {

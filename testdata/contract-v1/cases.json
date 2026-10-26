@@ -273,6 +273,48 @@
       "coverage": "data",
       "desktop": "F19-quarter-hour-desktop.json",
       "publication": "F19-quarter-hour-publication.json"
+    },
+    {
+      "id": "F06-lineage-present",
+      "description": "published lineage selection flags present",
+      "coverage": "data",
+      "desktop": "F06-lineage-present-desktop.json",
+      "publication": "F06-lineage-present-publication.json"
+    },
+    {
+      "id": "F06-lineage-absent",
+      "description": "published lineage selection flags absent",
+      "coverage": "data",
+      "desktop": "F06-lineage-absent-desktop.json",
+      "publication": "F06-lineage-absent-publication.json"
+    },
+    {
+      "id": "F06-lineage-partial",
+      "description": "published lineage selection flags partial",
+      "coverage": "data",
+      "desktop": "F06-lineage-partial-desktop.json",
+      "publication": "F06-lineage-partial-publication.json"
+    },
+    {
+      "id": "F23-effort-suggestion-up",
+      "description": "local quota-history effort suggestion: up",
+      "coverage": "data",
+      "desktop": "F23-effort-suggestion-up-desktop.json",
+      "publication": "F23-effort-suggestion-up-publication.json"
+    },
+    {
+      "id": "F23-effort-suggestion-down",
+      "description": "local quota-history effort suggestion: down",
+      "coverage": "data",
+      "desktop": "F23-effort-suggestion-down-desktop.json",
+      "publication": "F23-effort-suggestion-down-publication.json"
+    },
+    {
+      "id": "F23-effort-suggestion-absent",
+      "description": "local quota-history effort suggestion: absent",
+      "coverage": "data",
+      "desktop": "F23-effort-suggestion-absent-desktop.json",
+      "publication": "F23-effort-suggestion-absent-publication.json"
     }
   ]
 }

@@ -59,14 +59,17 @@ public struct InstrumentModel: Sendable {
     public let recommended: String?
     public let current: EffortConfiguration?
     public let fastTier: InstrumentFastTier?
-    public let olderVersion: Bool
+    public let lineage: InstrumentLineage
     public init(id: String, name: String, efforts: [InstrumentEffort], recommended: String?,
-                current: EffortConfiguration?, fastTier: InstrumentFastTier? = nil, olderVersion: Bool = false) {
+                current: EffortConfiguration?, fastTier: InstrumentFastTier? = nil, lineage: InstrumentLineage = .init()) {
         self.id = id; self.name = name; self.efforts = efforts; self.recommended = recommended
-        self.current = current; self.fastTier = fastTier; self.olderVersion = olderVersion
+        self.current = current; self.fastTier = fastTier; self.lineage = lineage
     }
 
     public func effort(_ key: String) -> InstrumentEffort? { efforts.first { $0.key == key } }
+    public func olderBadge(_ language: InstrumentLanguage) -> String? {
+        lineage.lineageStatus == "older" ? (language == .chinese ? "旧版" : "older") : nil
+    }
     fileprivate func resolve(_ configuration: EffortConfiguration?) -> ResolvedEffort? {
         guard let configuration, let effort = effort(configuration.effort), !configuration.fast || fastTier?.usable == true else { return nil }
         let fast = configuration.fast

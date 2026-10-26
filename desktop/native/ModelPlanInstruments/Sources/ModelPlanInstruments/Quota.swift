@@ -23,6 +23,7 @@ public enum QuotaLevel: Int, Comparable, Sendable {
         return remaining < 16 ? .critical : remaining < 41 ? .amber : .healthy
     }
 }
+public enum QuotaPublicReset: Equatable, Sendable { case announced(Date?), confirmedAwaitingReading }
 
 /// Already attributed input. An absent window is distinct from an unreadable existing window.
 public struct InstrumentQuota: Sendable {
@@ -33,10 +34,14 @@ public struct InstrumentQuota: Sendable {
     public let resetsAt: Date?
     public let durationMinutes: Double?
     public let readable: Bool
+    public let runsOutAt: Date?
+    public let publicReset: QuotaPublicReset?
     public init(id: String, period: QuotaPeriod, scope: String? = nil, remaining: Double?,
-                resetsAt: Date? = nil, durationMinutes: Double? = nil, readable: Bool = true) {
+                resetsAt: Date? = nil, durationMinutes: Double? = nil, readable: Bool = true,
+                runsOutAt: Date? = nil, publicReset: QuotaPublicReset? = nil) {
         self.id = id; self.period = period; self.scope = scope; self.remaining = remaining
         self.resetsAt = resetsAt; self.durationMinutes = durationMinutes; self.readable = readable
+        self.runsOutAt = runsOutAt; self.publicReset = publicReset
     }
 }
 
@@ -50,6 +55,8 @@ public struct QuotaCell: Sendable {
     public let resetsAt: Date?
     public let timeFraction: Double?
     public let timeDots: Int?
+    public let runsOutAt: Date?
+    public let publicReset: QuotaPublicReset?
 
     public init(_ input: InstrumentQuota, now: Date) {
         id = input.id; period = input.period; scope = input.scope
@@ -58,6 +65,11 @@ public struct QuotaCell: Sendable {
         level = .of(remaining)
         litSegments = remaining.map { $0 == 0 ? 0 : max(1, min(10, Int(($0 / 10).rounded()))) }
         resetsAt = input.readable && !passed ? input.resetsAt : nil
+        runsOutAt = input.readable && !passed ? input.runsOutAt.flatMap {
+            let m = $0.timeIntervalSince(now) / 60
+            return m.isFinite && m >= 0 && m < Double(Int.max / 2) ? $0 : nil
+        } : nil
+        publicReset = input.readable ? input.publicReset : nil // Announcement never changes the account reading.
         if input.readable, let reset = input.resetsAt, let duration = known(input.durationMinutes), duration > 0 {
             // Calendar windows need their actual reported duration; never assume a 30-day month.
             timeFraction = min(1, max(0, reset.timeIntervalSince(now) / 60 / duration))
@@ -90,7 +102,12 @@ public struct QuotaRows: Sendable {
 public struct ResetAllowance: Sendable {
     public let count: Int?
     public let expiresAt: Date?
-    public init(count: Int?, expiresAt: Date?) { self.count = count; self.expiresAt = expiresAt }
+    public let kind: String?
+    public let source: String?
+    public let evidence: InstrumentEvidence
+    public init(count: Int?, expiresAt: Date?, kind: String? = nil, source: String? = nil, evidence: InstrumentEvidence = .init()) {
+        self.count = count; self.expiresAt = expiresAt; self.kind = kind; self.source = source; self.evidence = evidence
+    }
 }
 
 public struct ReservePresentation: Sendable {
@@ -101,18 +118,25 @@ public struct ReservePresentation: Sendable {
     public let expiryWarning: Bool
     public let credits: Double?
     public let drawingCredits: Bool
+    public let allowances: [ResetAllowance]?
 
     /// nil allowances means unreadable; [] means a known zero. Counts can represent grouped allowances.
     public init(allowances: [ResetAllowance]?, credits: Double?, drawingCredits: Bool, now: Date) {
-        let active = allowances?.filter { ($0.expiresAt.map { $0 > now } ?? true) && $0.count != 0 }
+        let active = allowances?.filter {
+            // An untrusted zero/expiry cannot prove an empty reserve. Keep the row so
+            // the aggregate stays unknown; only trusted readings may be discarded.
+            guard $0.evidence.usable(at: now) else { return true }
+            return ($0.expiresAt.map { $0 > now } ?? true) && $0.count != 0
+        }
+        self.allowances = active
         var total: Int? = active == nil ? nil : 0
         for allowance in active ?? [] {
-            guard let count = allowance.count, count >= 0, let previous = total else { total = nil; continue }
+            guard allowance.evidence.usable(at: now), let count = allowance.count, count >= 0, let previous = total else { total = nil; continue }
             let next = previous.addingReportingOverflow(count)
             total = next.overflow ? nil : next.partialValue
         }
         resets = total
-        let dates = (active ?? []).compactMap(\.expiresAt).sorted()
+        let dates = (active ?? []).filter { $0.evidence.usable(at: now) }.compactMap(\.expiresAt).sorted()
         nearestExpiry = dates.first
         compactExpiries = Array(dates.prefix(4))
         expiryOverflow = max(0, dates.count - 4)
@@ -128,10 +152,14 @@ public struct EngineColumn: Sendable {
     public let todayGenerationTPS: Double?
     public let reserve: ReservePresentation?
     public let caution: QuotaLevel
+    public let evidence: InstrumentEvidence
+    public let todayAttribution: UsageAttribution
     public init(id: String, quotas: QuotaRows, todayTokens: Double?, todayGenerationTPS: Double?,
-                reserve: ReservePresentation? = nil, caution: QuotaLevel = .unknown) {
+                reserve: ReservePresentation? = nil, caution: QuotaLevel = .unknown,
+                evidence: InstrumentEvidence = .init(), todayAttribution: UsageAttribution = .verifiedSubscription) {
         self.id = id; self.quotas = quotas; self.todayTokens = known(todayTokens)
         self.todayGenerationTPS = known(todayGenerationTPS); self.reserve = reserve; self.caution = caution
+        self.evidence = evidence; self.todayAttribution = todayAttribution
     }
 }
 

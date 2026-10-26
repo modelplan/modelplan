@@ -8,6 +8,7 @@ public struct PublicPublication: Decodable, Sendable {
     public let capabilities: [String: ContractCapability]?
     public let publicationId: String
     public let publishedAt: WireInstant?
+    public let selectionRevision: String?
     public let units: PublicationUnits
     public let models: [PublishedModel]
     public let lineups: [PublishedLineup]
@@ -30,6 +31,9 @@ public struct PublishedModel: Decodable, Sendable {
     public let name: String?
     public let developerId: String?
     public let current: Bool?
+    public let lineageId: String?
+    public let lineageStatus: String?
+    public let defaultSelected: Bool?
     public let recommended: String?
     public let harnessIds: [String:[String]]?
     public let harnessEvidence: JSONValue?

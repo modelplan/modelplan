@@ -5,7 +5,7 @@ public struct InstrumentBinding: Sendable {
     public let subscriptionID: String
     public let sources: [String]
     public init(subscriptionID: String, sources: [String]) { self.subscriptionID = subscriptionID; self.sources = sources }
-    /// Source-wide history is usable for a subscription only under a unique current binding.
+    /// Current source links for labels only. Even a unique link is not proof of historical account ownership.
     public static func sources(for subscription: String, bindings: [Self]) -> [String] {
         let own = Set(bindings.filter { $0.subscriptionID == subscription }.flatMap(\.sources))
         guard !own.isEmpty, own.allSatisfy({ source in
@@ -36,26 +36,47 @@ public struct GenerationSums: Sendable {
 }
 
 public enum UsageRange: Sendable { case hours24, days7, days30 }
+public enum UsageChartMode: Sendable { case stacked, split }
 public struct InstrumentUsageBucket: Sendable {
     public let subscriptionID: String
     public let at: Date
     public let tokens: Double?
-    public init(subscriptionID: String, at: Date, tokens: Double?) {
+    public let attribution: UsageAttribution
+    public let evidence: InstrumentEvidence
+    public let timeBasis: UsageTimeBasis
+    public init(subscriptionID: String, at: Date, tokens: Double?, attribution: UsageAttribution = .verifiedSubscription,
+                evidence: InstrumentEvidence = .init(), timeBasis: UsageTimeBasis = .unspecified) {
         self.subscriptionID = subscriptionID; self.at = at; self.tokens = known(tokens)
+        self.attribution = attribution; self.evidence = evidence; self.timeBasis = timeBasis
     }
+    func usableTokens(now: Date, expectedBasis: UsageTimeBasis? = nil) -> Double? {
+        let compatible = expectedBasis == nil || timeBasis == .unspecified || timeBasis == expectedBasis
+        return attribution == .verifiedSubscription && evidence.usable(at: now) && compatible ? tokens : nil
+    }
+}
+public struct UsageSegment: Sendable {
+    public let subscriptionID: String
+    public let tokens: Double?
 }
 public struct UsageBucket: Sendable {
     /// Absolute start/end retain distinct identities for repeated local hours.
     public let start: Date
     public let end: Date
     public let perSubscription: [String: Double?]
+    public let segments: [UsageSegment]
+    public let evidenceBySubscription: [String: [InstrumentUsageBucket]]
     public var total: Double? { strictSum(Array(perSubscription.values)) }
+    public var recordedTotal: Double? { strictSum(perSubscription.values.compactMap { $0 }.map(Optional.some)) }
+    public var partial: Bool { perSubscription.values.contains { $0 == nil } }
 }
 
 public struct UsageChart: Sendable {
     public let subscriptionIDs: [String]
     public let buckets: [UsageBucket]
-    public init(rows: [InstrumentUsageBucket], subscriptionIDs: [String], range: UsageRange, now: Date, calendar: Calendar) {
+    public let mode: UsageChartMode
+    public init(rows: [InstrumentUsageBucket], subscriptionIDs: [String], range: UsageRange, now: Date, calendar: Calendar,
+                mode: UsageChartMode = .stacked) {
+        self.mode = mode
         var seen = Set<String>()
         self.subscriptionIDs = subscriptionIDs.filter { seen.insert($0).inserted }
         let today = calendar.startOfDay(for: now)
@@ -78,11 +99,14 @@ public struct UsageChart: Sendable {
             let end = calendar.date(byAdding: component, value: 1, to: start)!
             let selected = rows.filter { $0.at >= start && $0.at < end && $0.at <= now }
             var per: [String: Double?] = [:]
+            var evidence: [String: [InstrumentUsageBucket]] = [:]
             for id in ids {
+                evidence[id] = selected.filter { $0.subscriptionID == id }
                 // updateValue retains a present unknown entry; dictionary subscript=nil would remove it.
-                per.updateValue(strictSum(selected.filter { $0.subscriptionID == id }.map(\.tokens)), forKey: id)
+                per.updateValue(strictSum((evidence[id] ?? []).map { $0.usableTokens(now: now, expectedBasis: range == .hours24 ? .completionHour : .turnStartLocalDay) }), forKey: id)
             }
-            return UsageBucket(start: start, end: end, perSubscription: per)
+            let segments = ids.map { UsageSegment(subscriptionID: $0, tokens: per[$0] ?? nil) }
+            return UsageBucket(start: start, end: end, perSubscription: per, segments: segments, evidenceBySubscription: evidence)
         }
     }
 }
@@ -95,26 +119,45 @@ public struct HeatmapCell: Sendable {
     public let total: Double?
     /// nil means no reading; zero means a reported zero. Positive readings use steps 1...4.
     public let intensity: Int?
+    public var completeTotal: Double? { strictSum(Array(perSubscription.values)) }
+    public var partial: Bool { perSubscription.values.contains { $0 == nil } }
 }
 public struct UsageHeatmap: Sendable {
     public let cells: [HeatmapCell]
     public let coverageStart: Date?
     public let shortCoverage: Bool
-    public init(rows: [InstrumentUsageBucket], subscriptionIDs: [String], coverageStart: Date?, now: Date, calendar: Calendar) {
+    public let coverageBySubscription: [String: Date]
+    public let retainedRows: [InstrumentUsageBucket]
+    /// Future cells in the last week are absent. Geometry consumers still have exactly 26 × 7 slots.
+    public var grid: [HeatmapCell?] { (0..<182).map { $0 < cells.count ? cells[$0] : nil } }
+    public init(rows: [InstrumentUsageBucket], subscriptionIDs: [String], coverageStart: Date?, now: Date, calendar: Calendar,
+                coverageBySubscription: [String: Date] = [:]) {
         let today = calendar.startOfDay(for: now)
         let weekday = (calendar.component(.weekday, from: today) + 5) % 7 // Monday = 0
         let count = 25 * 7 + weekday + 1
         let first = calendar.date(byAdding: .day, value: 1 - count, to: today)!
-        self.coverageStart = coverageStart
-        shortCoverage = coverageStart.map { $0 > first } ?? true
         var ids = Set<String>()
         let unique = subscriptionIDs.filter { ids.insert($0).inserted }
+        self.coverageBySubscription = coverageBySubscription.filter { unique.contains($0.key) }
+        let completeCoverage = !unique.isEmpty && unique.allSatisfy { coverageBySubscription[$0] != nil }
+        let reportedCoverage = coverageStart ?? (completeCoverage ? unique.compactMap { coverageBySubscription[$0] }.min() : nil)
+        let resolvedCoverage = reportedCoverage.flatMap { $0 <= now ? $0 : nil }
+        self.coverageStart = resolvedCoverage
+        shortCoverage = resolvedCoverage.map { calendar.startOfDay(for: $0) > first } ?? true
+        let retentionStart = calendar.date(byAdding: .day, value: -370, to: today)!
+        let retained = rows.filter { unique.contains($0.subscriptionID) && $0.at >= retentionStart && $0.at <= now }
+        retainedRows = retained
         let days = (0..<count).map { calendar.date(byAdding: .day, value: $0, to: first)! }
         let values: [(Date, [String: Double?], Double?)] = days.map { day in
             let end = calendar.date(byAdding: .day, value: 1, to: day)!
-            let selected = rows.filter { $0.at >= day && $0.at < end && $0.at <= now && (coverageStart.map { day >= calendar.startOfDay(for: $0) } ?? true) }
+            let selected = retained.filter { $0.at >= day && $0.at < end }
             var per: [String: Double?] = [:]
-            for id in unique { per.updateValue(strictSum(selected.filter { $0.subscriptionID == id }.map(\.tokens)), forKey: id) }
+            for id in unique {
+                let start = coverageBySubscription[id] ?? coverageStart
+                let covered = start.map { day >= calendar.startOfDay(for: $0) } ?? true
+                let tokens = covered ? strictSum(selected.filter { $0.subscriptionID == id }.map { $0.usableTokens(now: now, expectedBasis: .turnStartLocalDay) }) : nil
+                per.updateValue(tokens, forKey: id)
+            }
             let reported = per.values.compactMap { $0 }
             // The tooltip retains unknown subscriptions; intensity describes the recorded portion only.
             let total = reported.isEmpty ? nil : strictSum(reported.map(Optional.some))
@@ -128,5 +171,14 @@ public struct UsageHeatmap: Sendable {
             let step = value.2.map { $0 == 0 ? 0 : $0 <= cuts[0] ? 1 : $0 <= cuts[1] ? 2 : $0 <= cuts[2] ? 3 : 4 }
             return HeatmapCell(day: value.0, column: i / 7, row: i % 7, perSubscription: value.1, total: value.2, intensity: step)
         }
+    }
+    public func coverageDescription(language: InstrumentLanguage, calendar: Calendar) -> String? {
+        guard shortCoverage, let coverageStart else { return nil }
+        let formatter = DateFormatter()
+        formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: language == .chinese ? "zh_CN" : "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let day = formatter.string(from: coverageStart)
+        return language == .chinese ? "从 \(day) 开始记录" : "Recorded since \(day)"
     }
 }

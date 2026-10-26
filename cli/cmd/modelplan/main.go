@@ -88,6 +88,8 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        turn time and tokens) per configuration, recorded on this
                                        machine only from log timestamps and token counts
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
+  modelplan history --effort-suggestion dismiss|off|on
+                                       control local weekly effort suggestions (never changes settings)
   modelplan declare <planId> [generation]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -100,6 +102,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
+     MODELPLAN_EFFORT_SUGGESTION=off (no local weekly effort suggestions),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
@@ -159,6 +162,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	region := fs.String("region", "", "connect: the provider's region (zai: global or bigmodel-cn)")
 	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
+	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -166,6 +170,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	if cmd == "publication" && (!c.json || fs.NArg() != 0) {
 		fmt.Fprintln(stderr, "usage: modelplan publication --json [--offline]")
+		return exitUsage
+	}
+
+	if *effortSuggestion != "" && (cmd != "history" || (*effortSuggestion != "dismiss" && *effortSuggestion != "off" && *effortSuggestion != "on")) {
+		fmt.Fprintln(stderr, "usage: modelplan history --effort-suggestion dismiss|off|on")
 		return exitUsage
 	}
 
@@ -277,6 +286,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return usageCmd(fs.Args(), stdout, stderr, c)
 
 	case "history":
+		if *effortSuggestion != "" {
+			if err := history.SetEffortSuggestion(st.Dir, *effortSuggestion, time.Now()); err != nil {
+				fmt.Fprintln(stderr, err)
+				return exitErr
+			}
+			if c.json {
+				return printJSON(stdout, map[string]string{"effortSuggestion": *effortSuggestion})
+			}
+			if c.lang == "en" {
+				fmt.Fprintln(stdout, "Local effort suggestion preference:", *effortSuggestion)
+			} else {
+				fmt.Fprintln(stdout, "本机档位建议设置：", *effortSuggestion)
+			}
+			return 0
+		}
 		l := history.Load(st.Dir)
 		now := time.Now()
 		observeCodexSpeed(st, now)
@@ -289,6 +313,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		d, _, _ := publication.Load(st)
 		style.History(stdout, l, d, history.Path(st.Dir), now)
+		if v := history.ReadEffortSuggestion(st.Dir, d, now).Suggestion; v != nil {
+			if c.lang == "en" {
+				fmt.Fprintln(stdout, "\nDefault effort suggestion (local only)")
+			} else {
+				fmt.Fprintln(stdout, "\n默认档位建议（仅本机）")
+			}
+			fmt.Fprintln(stdout, style.EffortSuggestionLine(v))
+		}
 		fmt.Fprintln(stdout)
 		style.Measured(stdout, measured, d, true)
 		return 0
@@ -696,6 +728,10 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 			parts = append(parts, style.QuotaNotice(fact))
 		}
 	}
+	// Personal history advice belongs only in the user message, never in parts.
+	if v := history.NotifyEffortSuggestion(st.Dir, d, now); v != nil {
+		shown = append(shown, style.EffortSuggestionLine(v))
+	}
 	if len(parts) > 0 || len(shown) > 0 {
 		out := map[string]any{}
 		if len(shown) > 0 {
@@ -789,11 +825,21 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	connectionEnv := connections.Local(paths)
 	connectionEnv.Gemini = &localUsage
 	connectionEnv.Qwen = &qwenLocal
+	fv := history.ReadEffortSuggestion(st.Dir, d, now)
+	if fv.Suggestion != nil {
+		style := render.Style{T: render.ZH}
+		if c.lang == "en" {
+			style.T = render.EN
+		}
+		fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
+	}
+	boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
 	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 		QwenUsage:   qwenSnapshot(now),
 		Connections: connections.Diagnose(connectionEnv, report),
-		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}),
+		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
+		EffortSuggestion: fv.Suggestion, EffortSuggestionRevision: fv.Revision,
 		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
 }
 
@@ -923,7 +969,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

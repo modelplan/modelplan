@@ -13,11 +13,75 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     while !predicate(), ContinuousClock.now < end { CFRunLoopRunInMode(.defaultMode, 0.02, false) }
     try check(predicate(), message)
 }
+
+@MainActor func awaitCautionDeadline(_ caution: CautionControl, in mode: CFRunLoopMode) throws {
+    let started = ProcessInfo.processInfo.systemUptime
+    let end = started + 0.25
+    var activations = 0, exits: [String] = []
+    func completed() -> Bool {
+        caution.cautionState.mode == .steadyUnacknowledged && caution.animationDuration == nil
+    }
+    // AppKit can stop a nested activation before its timer fires. Keep the original
+    // total budget and tracking mode; never validate the production state for it.
+    while !completed() {
+        let remaining = end - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else { break }
+        let result = CFRunLoopRunInMode(mode, remaining, false)
+        activations += 1
+        if exits.count < 8 { exits.append(String(result.rawValue)) }
+        guard result == .stopped else { break }
+    }
+    let waited = ProcessInfo.processInfo.systemUptime - started
+    try check(completed(), "caution deadline deferred over tracking mode: activations=\(activations), exits=\(exits), waited=\(waited), state=\(caution.cautionState.mode), animation=\(String(describing: caution.animationDuration))")
+}
+
+@MainActor func cautionTrackingDeadlineChecks() throws {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let mode = CFRunLoopMode(rawValue: "NSEventTrackingRunLoopMode" as CFString)
+    CFRunLoopAddCommonMode(CFRunLoopGetMain(), mode)
+    for interrupted in [false, true] {
+        var time = 0.0
+        let caution = CautionControl(elapsed: { time })
+        defer { caution.dispose() }
+        caution.update([CautionCondition(id: "tracking", severity: .amber)], profile: RenderProfile())
+        time = 9.9; caution.validate()
+        try check((caution.animationDuration ?? 99) < 0.11, "tracking regression must use remaining interval")
+        time = 10.2
+        var stopped = false
+        if interrupted {
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), mode.rawValue) {
+                stopped = true; CFRunLoopStop(CFRunLoopGetMain())
+            }
+        }
+        try awaitCautionDeadline(caution, in: mode)
+        try check(!interrupted || stopped, "tracking regression did not interrupt the activation")
+    }
+    // A cancelled callback must still fail; the wait may not validate state itself.
+    var time = 0.0
+    let suspended = CautionControl(elapsed: { time })
+    defer { suspended.dispose() }
+    suspended.update([CautionCondition(id: "cancelled", severity: .amber)], profile: RenderProfile())
+    time = 9.9; suspended.validate(); suspended.suspend(); time = 10.2
+    var rejected = false
+    do { try awaitCautionDeadline(suspended, in: mode) } catch { rejected = true }
+    try check(rejected && suspended.cautionState.mode == .blinking, "tracking check accepted a missing deadline callback")
+}
+
 @main struct PrimitiveChecks {
     @MainActor static func main() throws {
         if CommandLine.arguments.contains("--native-menu") { try nativeMenuCheck(); return }
         if CommandLine.arguments.contains("--live-image-cadence") { try liveCadenceCheck(imageFrames: true); return }
         if CommandLine.arguments.contains("--live-cadence") { try liveCadenceCheck(); return }
+        if CommandLine.arguments.contains("--caution-tracking-deadline") {
+            do { try cautionTrackingDeadlineChecks(); print("PASS tracking deadline: normal, interrupted activation and missing-callback rejection") }
+            catch { fputs("FAIL caution tracking deadline: \(error)\n", stderr); exit(1) }
+            return
+        }
+        if CommandLine.arguments.contains("--caution-recurrence") {
+            do { try cautionRecurrenceChecks(); print("PASS acknowledged severity recurrence regression") }
+            catch { fputs("FAIL caution recurrence: \(error)\n", stderr); exit(1) }
+            return
+        }
         NSApplication.shared.setActivationPolicy(.prohibited)
         let amber = CautionCondition(id: "a", severity: .amber), red = CautionCondition(id: "a", severity: .red)
         var state = CautionState(); state.update([amber], now: 0, reduceMotion: false)
@@ -29,6 +93,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         state.update([], now: 20, reduceMotion: false); try check(state.mode == .off, "clear")
         state.update([amber], now: 24, reduceMotion: false); try check(state.deadline == 34, "recurrence")
         state.validate(now: 25, reduceMotion: true); try check(state.mode == .steadyUnacknowledged && state.deadline == nil, "reduce motion")
+        try cautionRecurrenceChecks()
         print("PASS F16 caution stable identities, press/worsening/timeout/clear/recurrence/reduced motion")
 
         try pooledImageChecks()
@@ -86,8 +151,8 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         time = 10.2
         let mode = CFRunLoopMode(rawValue: "NSEventTrackingRunLoopMode" as CFString)
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), mode)
-        CFRunLoopRunInMode(mode, 0.25, false)
-        try check(row.caution.cautionState.mode == .steadyUnacknowledged && row.caution.animationDuration == nil, "caution deadline deferred over tracking mode")
+        try awaitCautionDeadline(row.caution, in: mode)
+        try cautionTrackingDeadlineChecks()
         row.caution.update([red], profile: profile); let deadline = row.caution.cautionState.deadline
         row.caution.suspend(); time += 2; row.caution.validate()
         try check(row.caution.cautionState.deadline == deadline, "hide/show restarted episode")
@@ -309,4 +374,40 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     try check(retainedLayer.contents == nil && retainedLayer.animationKeys()?.isEmpty != false, "deinit released budget before CA references")
     pool.purgeUnleased(); try check(pool.decodedBytes == 0, "orphan atlas remained pinned")
     print("PASS reentrant source reservation and conservative MainActor teardown of surviving layers")
+}
+
+
+func cautionRecurrenceChecks() throws {
+    let amber = CautionCondition(id: "same-episode", severity: .amber)
+    let red = CautionCondition(id: "same-episode", severity: .red)
+    let other = CautionCondition(id: "other-episode", severity: .red)
+    for reduced in [false, true] {
+        var state = CautionState()
+        state.update([red, other], now: 0, reduceMotion: reduced)
+        state.press()
+        state.update([amber, other], now: 1, reduceMotion: reduced)
+        try check(state.mode == .acknowledged, "improvement must preserve acknowledgement")
+        state.update([red, other], now: 2, reduceMotion: reduced)
+        let expected: CautionState.Mode = reduced ? .steadyUnacknowledged : .blinking
+        try check(state.mode == expected, "worsening must be unacknowledged again")
+        let deadline = state.deadline
+        state.update([red, other], now: 3, reduceMotion: reduced)
+        try check(state.mode == expected && state.deadline == deadline,
+                  "old red acknowledgement cancelled or restarted worsening episode")
+        if !reduced {
+            try check(deadline == 12, "worsening deadline")
+            state.validate(now: 12, reduceMotion: false)
+            state.update([red, other], now: 13, reduceMotion: false)
+            try check(state.mode == .steadyUnacknowledged, "timeout must not revive an old acknowledgement")
+        }
+        state.update([other], now: 14, reduceMotion: reduced)
+        try check(state.mode == .acknowledged, "worsening must not erase another episode's acknowledgement")
+        state.update([red, other], now: 15, reduceMotion: reduced)
+        try check(state.mode == expected, "removed episode returning is new")
+        state.press()
+        state.update([red, other], now: 16, reduceMotion: reduced)
+        try check(state.mode == .acknowledged && state.deadline == nil, "new press must acknowledge the current episode")
+        state.update([], now: 17, reduceMotion: reduced)
+        try check(state.mode == .off, "all clear")
+    }
 }

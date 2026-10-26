@@ -20,6 +20,7 @@ type Publication struct {
 }
 
 type publicationFields struct {
+	SelectionRevision json.RawMessage `json:"selectionRevision,omitempty"`
 	Models            json.RawMessage `json:"models"`
 	Lineups           json.RawMessage `json:"lineups"`
 	SpeedTiers        json.RawMessage `json:"speedTiers"`
