@@ -49,6 +49,20 @@ public enum SettingsB20Edit: Equatable, Sendable {
     }
 }
 
+/// A successful edit from this editor, with its exact CAS input and committed output.
+/// A reset is explicit even when the persisted ledger was already empty.
+public struct SettingsCommittedEdit: Sendable {
+    public enum Kind: Equatable, Sendable { case preferences, resetHelpHints }
+    public let before: SettingsSnapshot, after: SettingsSnapshot
+    public let kind: Kind
+    let origin: SettingsStore
+    public func belongs(to store: SettingsStore) -> Bool { origin === store }
+    public var resetRequest: SettingsHostRequest? {
+        if case .resetHelpHints = kind { return .init(revision: after.revision, intent: .action(.resetHelpHints)) }
+        return nil
+    }
+}
+
 public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgress, subscriptionUnavailable, staleContext, actionUnavailable }
 
 /// One presenter over the app's existing store. No service calls or second preference file.
@@ -68,6 +82,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
     private var changeObservers: [UUID: () -> Void] = [:]
+    private var commitObservers: [UUID: (SettingsCommittedEdit) async -> Void] = [:]
 
     public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init()) {
         self.store = store; self.context = context; self.environment = environment
@@ -81,6 +96,11 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         let id = UUID(); changeObservers[id] = observer; return id
     }
     public func removeChangeObserver(_ id: UUID) { changeObservers.removeValue(forKey: id) }
+    /// Additive app consumers never replace the window's onChange or the coordinator's onCommit.
+    public func observeCommittedEdits(_ observer: @escaping (SettingsCommittedEdit) async -> Void) -> UUID {
+        let id = UUID(); commitObservers[id] = observer; return id
+    }
+    public func removeCommitObserver(_ id: UUID) { commitObservers.removeValue(forKey: id) }
     private func notifyChange() {
         onChange?()
         for observer in Array(changeObservers.values) { observer() }
@@ -98,7 +118,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     @discardableResult public func commit(_ edit: SettingsB21Edit) async throws -> SettingsSnapshot {
         let ids = context.subscriptions.map(\.id)
         let observedLogin = context.capabilities.login
-        let committed = try await transact(subscriptionID: edit.subscriptionID) { try edit.apply(to: &$0, catalogue: ids) }
+        let kind: SettingsCommittedEdit.Kind
+        if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
+        let committed = try await transact(subscriptionID: edit.subscriptionID, kind: kind) { try edit.apply(to: &$0, catalogue: ids) }
         let intent: SettingsHostIntent?
         switch edit {
         case .login(let enabled):
@@ -151,16 +173,17 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             intent: .firstRunCompleted(effects: result.effects, loginRequest: result.login.request)))
         return result
     }
-    private func transact(subscriptionID: String?, quotaPreviewID: String? = nil,
+    private func transact(subscriptionID: String?, quotaPreviewID: String? = nil, kind: SettingsCommittedEdit.Kind = .preferences,
                           edit: @escaping @Sendable (inout SettingsPreferences) throws -> Void) async throws -> SettingsSnapshot {
         if let id = subscriptionID, !context.subscriptions.contains(where: { $0.id == id }) {
             throw SettingsEditorError.subscriptionUnavailable
         }
-        return try await persist(quotaPreviewID: quotaPreviewID, operation: { [store] revision in
+        return try await persist(quotaPreviewID: quotaPreviewID, kind: kind, operation: { [store] revision in
             try await store.update(expectedRevision: revision, edit)
         }, snapshot: { $0 })
     }
     private func persist<Value: Sendable>(expectedRevision: UInt64? = nil, quotaPreviewID: String? = nil,
+        kind: SettingsCommittedEdit.Kind = .preferences,
         operation: @escaping @Sendable (UInt64) async throws -> Value,
         snapshot receipt: @escaping @Sendable (Value) -> SettingsSnapshot) async throws -> Value {
         guard !isSaving else { throw SettingsEditorError.editInProgress }
@@ -176,6 +199,10 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             accept(committed)
             if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
             onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))
+            let transaction = SettingsCommittedEdit(before: before, after: committed, kind: kind, origin: store)
+            // Keep isSaving until app consumers acknowledge the typed receipt. Another edit cannot
+            // overtake its reset/reconciliation boundary; ordinary onChange remains synchronous.
+            for observer in Array(commitObservers.values) { await observer(transaction) }
             return result
         } catch {
             // An external writer on this same actor may have advanced. Show its current truth, never retry over it.
