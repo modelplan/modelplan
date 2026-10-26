@@ -16,6 +16,8 @@ Create one `SettingsEditor` over the app's existing `SettingsStore`, then retain
 
 The sidebar uses the eight canonical panes; bilingual search includes pane/group text and subscription metadata. This increment permits only `SettingsB20Edit.keys`: theme, size, reduced effects and Dock number/window/threshold/sliver choices. Other rows are disabled or unavailable. No login, notification, reader, updater or cache action is executed. Controls retain native identities while values/appearance change. The five small line diagrams use system ink and a single finite 400 ms movement on row hover, control focus or value change, with no timer or idle loop. Reduce Motion cancels immediately; restoring it does not replay. Explicit Day/Night also respects the system's Increase Contrast setting.
 
+Only the current control owned by a displayed row may submit an edit. Pane/search removal and subscription-control replacement permanently disable retired controls, clear their callbacks and cancel menu tracking; a delayed target/action or accessibility press cannot save through them. Rows retained by a search/environment update keep their existing control and focus identity.
+
 ```swift
 let editor = SettingsEditor(store: appSettingsStore, context: subscriptionContext)
 editor.onCommit = { snapshot, effective in

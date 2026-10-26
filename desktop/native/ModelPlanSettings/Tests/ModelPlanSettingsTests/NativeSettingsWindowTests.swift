@@ -15,6 +15,75 @@ import XCTest
         controller.searchField.stringValue = text
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
     }
+    private func assertRetiredCannotCommit(_ popup: SettingsChoiceControl, target: AnyObject?, action: Selector,
+                                          editor: SettingsEditor) async throws {
+        let before = await editor.store.snapshot()
+        let noCommit = expectation(description: "retired control emits no commit receipt")
+        noCommit.isInverted = true
+        editor.onCommit = { _, _ in noCommit.fulfill() }
+        popup.selectItem(at: popup.numberOfItems - 1)
+        _ = popup.sendAction(action, to: target)
+        // Simulate an already-captured target/action, bypassing the control's current callback fields.
+        _ = NSApplication.shared.sendAction(action, to: target, from: popup)
+        await fulfillment(of: [noCommit], timeout: 0.1)
+        let after = await editor.store.snapshot()
+        XCTAssertEqual(after.revision, before.revision, "retired sender persisted a change")
+        XCTAssertNil(popup.target); XCTAssertNil(popup.action); XCTAssertNil(popup.onInteraction)
+        guard !popup.isEnabled else { XCTFail("retired control is still enabled"); return }
+        XCTAssertFalse(popup.accessibilityPerformPress())
+    }
+    func testRetiredPaneAndSearchPopupsCannotCommitWhileCurrentPopupStillWorks() async throws {
+        let editor = SettingsEditor(store: try store())
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        let panePopup = try XCTUnwrap(controller.choice(key: .theme))
+        let target = panePopup.target, action = try XCTUnwrap(panePopup.action)
+        controller.selectPane("dock")
+        try await assertRetiredCannotCommit(panePopup, target: target, action: action, editor: editor)
+
+        controller.selectPane("appearance")
+        let searchPopup = try XCTUnwrap(controller.choice(key: .theme))
+        XCTAssertFalse(searchPopup === panePopup)
+        search("no-such-setting-123", in: controller)
+        try await assertRetiredCannotCommit(searchPopup, target: target, action: action, editor: editor)
+
+        search("", in: controller)
+        let current = try XCTUnwrap(controller.choice(key: .theme))
+        XCTAssertFalse(current === searchPopup)
+        XCTAssertTrue(try XCTUnwrap(controller.window).makeFirstResponder(current))
+        search("Theme", in: controller)
+        controller.refreshEnvironment()
+        XCTAssertTrue(controller.choice(key: .theme) === current)
+        XCTAssertTrue(controller.window?.firstResponder === current)
+        let committed = expectation(description: "current control still commits")
+        editor.onCommit = { _, _ in committed.fulfill() }
+        current.selectItem(at: 2)
+        XCTAssertTrue(current.sendAction(current.action, to: current.target))
+        await fulfillment(of: [committed], timeout: 3)
+        XCTAssertEqual(editor.snapshot?.preferences.theme, .night)
+        controller.close()
+    }
+    func testReplacedSubscriptionPopupCannotCommitForStillPresentID() async throws {
+        var context = SettingsPageContext()
+        context.subscriptions = [.init(id: "sample", name: .init("Sample", "示例"))]
+        let editor = SettingsEditor(store: try store(), context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare(); controller.selectPane("dock")
+        let old = try XCTUnwrap(controller.choice(key: .percentagePin, subscriptionID: "sample"))
+        let target = old.target, action = try XCTUnwrap(old.action)
+        context.subscriptions.append(.init(id: "second", name: .init("Second", "第二个")))
+        editor.update(context: context)
+        let current = try XCTUnwrap(controller.choice(key: .percentagePin, subscriptionID: "sample"))
+        XCTAssertFalse(current === old)
+        try await assertRetiredCannotCommit(old, target: target, action: action, editor: editor)
+        let committed = expectation(description: "replacement control commits")
+        editor.onCommit = { _, _ in committed.fulfill() }
+        current.selectItem(at: 2)
+        XCTAssertTrue(current.sendAction(current.action, to: current.target))
+        await fulfillment(of: [committed], timeout: 3)
+        XCTAssertEqual(editor.snapshot?.preferences.subscriptionSettings["sample"]?.percentagePin, .week)
+        controller.close()
+    }
     func testNativePopupPersistsAndUpdatesTheSameControlAndWindowAppearance() async throws {
         let store = try store(), editor = SettingsEditor(store: store)
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })

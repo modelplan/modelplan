@@ -38,6 +38,7 @@ private enum SettingsWords {
     let settingKey: SettingKey
     let subscriptionID: String?
     var onInteraction: (() -> Void)?
+    private(set) var isRetired = false
     init(key: SettingKey, subscriptionID: String?) {
         settingKey = key; self.subscriptionID = subscriptionID
         super.init(frame: .zero, pullsDown: false)
@@ -46,7 +47,21 @@ private enum SettingsWords {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override func becomeFirstResponder() -> Bool {
+        guard !isRetired else { return false }
         let accepted = super.becomeFirstResponder(); if accepted { onInteraction?() }; return accepted
+    }
+    func retire() {
+        isRetired = true; isEnabled = false
+        target = nil; action = nil; onInteraction = nil
+        menu?.cancelTracking()
+    }
+    override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
+        guard !isRetired else { return false }
+        return super.sendAction(action, to: target)
+    }
+    override func accessibilityPerformPress() -> Bool {
+        guard !isRetired, isEnabled else { return false }
+        return super.accessibilityPerformPress()
     }
     func configure(value: String, options: [String], key: SettingKey, language: SettingsLanguage) {
         // Keep the native control and its focus identity across appearance/locale/value transactions.
@@ -108,6 +123,13 @@ private enum SettingsWords {
     }
     override func mouseEntered(with event: NSEvent) { diagram?.play() }
 
+    func retireControls() {
+        diagram?.stop()
+        for popup in choices.values { popup.retire() }
+        for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
+        choices = [:]; subscriptionLabels = [:]; controlIDs = []
+    }
+
     func apply(_ row: SettingsRow, language: SettingsLanguage, saving: Bool, input: SettingsDiagramInput?,
                reduced: Bool, onChoice: Selector, target: AnyObject, showGroup: Bool) {
         titleLabel.stringValue = row.title.value(language)
@@ -134,8 +156,7 @@ private enum SettingsWords {
         }
         let ids = values.map(\.0)
         if controlIDs != ids || (values.isEmpty && controls.arrangedSubviews.isEmpty) {
-            for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
-            choices = [:]; subscriptionLabels = [:]; controlIDs = ids
+            retireControls(); controlIDs = ids
             for (id, label, _, _) in values {
                 let popup = SettingsChoiceControl(key: key, subscriptionID: id.isEmpty ? nil : id)
                 popup.translatesAutoresizingMaskIntoConstraints = false
@@ -325,10 +346,17 @@ private enum SettingsWords {
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
             let keys = visible.map(\.key)
             if keys != displayedKeys {
-                for key in displayedKeys { if let row = rows[key] { row.diagram?.stop(); stack.removeArrangedSubview(row); row.removeFromSuperview() } }
-                for key in keys {
+                let remaining = Set(keys)
+                for key in displayedKeys where !remaining.contains(key) {
+                    if let row = rows[key] { row.retireControls(); stack.removeArrangedSubview(row); row.removeFromSuperview() }
+                }
+                // Catalogue order is stable. Insert returning/new rows without detaching controls still displayed.
+                for (index, key) in keys.enumerated() {
                     let row = rows[key] ?? SettingsNativeRow(key: key); rows[key] = row
-                    stack.addArrangedSubview(row); row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+                    if row.superview !== stack {
+                        stack.insertArrangedSubview(row, at: index + 3)
+                        row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+                    }
                 }
                 displayedKeys = keys
             }
@@ -351,7 +379,11 @@ private enum SettingsWords {
         }
     }
     @objc private func changeChoice(_ sender: SettingsChoiceControl) {
-        guard !pendingEdit, sender.isEnabled, let value = sender.selectedItem?.representedObject as? String else { return }
+        guard !pendingEdit, sender.isEnabled, !sender.isRetired,
+              displayedKeys.contains(sender.settingKey), let row = rows[sender.settingKey],
+              row.superview === stack, !row.isHiddenOrHasHiddenAncestor,
+              row.choices[sender.subscriptionID ?? ""] === sender, sender.isDescendant(of: row),
+              let value = sender.selectedItem?.representedObject as? String else { return }
         do {
             let edit = try SettingsB20Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
             pendingEdit = true; errorMessage = nil
