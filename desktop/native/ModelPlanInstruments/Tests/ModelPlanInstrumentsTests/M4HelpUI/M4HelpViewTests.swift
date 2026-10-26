@@ -61,6 +61,7 @@ import XCTest
         XCTAssertTrue(button.sendAction(button.action,to:button.target))
         XCTAssertEqual(actions.last,.contextualAction(id:"reading",actionID:"public-source"))
         XCTAssertTrue(view.handleEscape());XCTAssertEqual(actions.last,.dismissContext(id:"reading",returnFocusID:"travel"))
+        XCTAssertFalse(view.outsidePointerDown());XCTAssertEqual(actions.last,.dismissContext(id:"reading",returnFocusID:nil))
         for field in view.subviews.flatMap(\.subviews) { XCTAssertNil(field.toolTip) }
         view.dispose()
     }

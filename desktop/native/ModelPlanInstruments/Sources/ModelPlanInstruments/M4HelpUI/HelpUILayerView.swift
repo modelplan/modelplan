@@ -225,7 +225,12 @@ import AppKit
         if input?.map.mode == .latched {
             onAction?(.dismissMap(reason:.pointer,returnFocusID:input?.map.returnFocusID));return true
         }
-        if let card=presentation?.card,case .firstUse(let id)=card.identity { onAction?(.dismissHint(offerID:id,reason:.pointer)) }
+        if let card=presentation?.card {
+            switch card.identity {
+            case .firstUse(let id):onAction?(.dismissHint(offerID:id,reason:.pointer))
+            case .context(let id):onAction?(.dismissContext(id:id,returnFocusID:nil))
+            }
+        }
         return false
     }
     public override func keyDown(with event:NSEvent) { if event.keyCode != 53 || !handleEscape() { super.keyDown(with:event) } }
