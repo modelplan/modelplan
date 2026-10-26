@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ const (
 	DefaultBase = "https://modelplan.ai"
 	// MinCheckInterval bounds how often interactive commands re-check the pointer.
 	MinCheckInterval = 10 * time.Minute
+	maxCheckJitter   = time.Minute
 	maxObjectBytes   = 250000
 )
 
@@ -46,6 +48,12 @@ type Client struct {
 	Store     *store.Store
 	UserAgent string
 	Now       func() time.Time
+	// Jitter draws independent delays in [0, 60s]; tests may inject a source.
+	Jitter func() time.Duration
+	// NoCheckDelay suppresses the pre-request delay for explicit user syncs.
+	// The interval still applies unless Sync is forced.
+	NoCheckDelay bool
+	wait         func(context.Context, time.Duration) error
 }
 
 func New(base string, st *store.Store, version string) (*Client, error) {
@@ -66,6 +74,8 @@ func New(base string, st *store.Store, version string) (*Client, error) {
 		Store:     st,
 		UserAgent: "modelplan-cli/" + version,
 		Now:       time.Now,
+		Jitter:    func() time.Duration { return time.Duration(rand.Int64N(int64(maxCheckJitter) + 1)) },
+		wait:      waitForCheck,
 	}, nil
 }
 
@@ -95,7 +105,7 @@ type Result struct {
 	PublicationID string
 	Switched      bool // a new publication was verified and is now current
 	NotModified   bool
-	Skipped       bool // checked less than MinCheckInterval ago
+	Skipped       bool // the next allowed pointer check is not due yet
 }
 
 // Sync refreshes the cache. On any failure the last verified publication stays current.
@@ -114,9 +124,22 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 		st = store.State{Base: c.Base}
 	}
 	now := c.Now()
-	if !force && st.PublicationID != "" && now.Sub(st.CheckedAt) < MinCheckInterval {
+	nextCheck := st.NextCheckAt
+	if nextCheck.IsZero() { // caches written before interval jitter
+		nextCheck = st.CheckedAt.Add(MinCheckInterval)
+	}
+	if !force && st.PublicationID != "" && now.Before(nextCheck) {
 		return Result{PublicationID: st.PublicationID, Skipped: true}, nil
 	}
+	if !force && !c.NoCheckDelay && st.PublicationID != "" && !st.CheckedAt.IsZero() {
+		delay := c.checkDelay(ctx, c.Jitter(), time.Now())
+		if delay > 0 {
+			if err := c.wait(ctx, delay); err != nil {
+				return Result{}, err
+			}
+		}
+	}
+	now = c.Now()
 	st.LastAttemptAt = now
 	res, err := c.sync(ctx, &st)
 	if err != nil {
@@ -124,11 +147,41 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	} else {
 		st.LastError = ""
 		st.CheckedAt = now
+		st.NextCheckAt = now.Add(MinCheckInterval + c.Jitter())
 	}
 	if serr := c.Store.SaveState(st); err == nil {
 		err = serr
 	}
 	return res, err
+}
+
+// Reserve the existing HTTP timeout for each possible request (pointer, manifest,
+// component). Short caller deadlines and unbounded HTTP clients skip the delay.
+func (c *Client) checkDelay(ctx context.Context, delay time.Duration, now time.Time) time.Duration {
+	if deadline, ok := ctx.Deadline(); ok {
+		if c.HTTP.Timeout <= 0 {
+			return 0
+		}
+		available := deadline.Sub(now) - 3*c.HTTP.Timeout
+		if available <= 0 {
+			return 0
+		}
+		if delay > available {
+			return available
+		}
+	}
+	return delay
+}
+
+func waitForCheck(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
