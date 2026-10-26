@@ -43,14 +43,16 @@ public struct SubscriptionWindowReset: Equatable, Sendable {
     init?(_ cell:QuotaCell,now:Date,language:InstrumentLanguage,calendar:Calendar) {
         guard let instant=cell.resetsAt,instant>now,instant.timeIntervalSinceReferenceDate.isFinite else{return nil}
         self.instant=instant
-        let formatter=DateFormatter()
-        formatter.locale=calendar.locale ?? Locale(identifier:language == .chinese ? "zh_CN":"en_US_POSIX")
-        formatter.calendar=calendar;formatter.timeZone=calendar.timeZone
-        // Locale chooses date order/hour cycle; the zone distinguishes repeated local hours.
-        formatter.setLocalizedDateFormatFromTemplate("yMdjmsz")
-        absolute=formatter.string(from:instant)
+        absolute=subscriptionAbsoluteTime(instant,language:language,calendar:calendar)
         countdown=InstrumentFormat(language).reset(instant,now:now)
     }
+}
+func subscriptionAbsoluteTime(_ date:Date,language:InstrumentLanguage,calendar:Calendar)->String {
+    let formatter=DateFormatter()
+    formatter.locale=calendar.locale ?? Locale(identifier:language == .chinese ? "zh_CN":"en_US_POSIX")
+    formatter.calendar=calendar;formatter.timeZone=calendar.timeZone
+    formatter.setLocalizedDateFormatFromTemplate("yMdjmsz")
+    return formatter.string(from:date)
 }
 public struct SubscriptionNowRow: Equatable, Sendable {
     public let id: String, title: String, facts: String
@@ -182,14 +184,14 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
                 && Set(a.rows.map(\.id)).count==a.rows.count
         }
     }
-    public func pageContent()->MainScreenPageContent {
+    public func pageContent(history:SubscriptionHistorySnapshot? = nil,initialTab:SubscriptionTab = .now)->MainScreenPageContent {
         let zh=language == .chinese,help=HelpCatalog(language).explanation(.option)
         let options:[MainScreenFooterOption?]
         if case .subscription(let id)=scope,accounts.contains(where:{$0.id==id}) {
-            options=[.init(id:"subscription.tab",choices:[.init("now",title:zh ? "概况":"Now"),.init("history",title:zh ? "记录":"History",enabled:false)],selectedValue:"now",help:help),
-                .init(id:"subscription.usage",choices:[.init("7",title:"7"),.init("30",title:"30")],selectedValue:String(initialDays),help:help),nil]
+            options=[.init(id:"subscription.tab",choices:[.init("now",title:zh ? "概况":"Now"),.init("history",title:zh ? "记录":"History",enabled:history?.selectedAccount != nil)],selectedValue:initialTab == .history && history?.selectedAccount != nil ? "history":"now",help:help),
+                .init(id:"subscription.usage",choices:[.init("7",title:"7"),.init("30",title:"30")],selectedValue:String(initialDays),help:help),history?.cycleOption()]
         } else {options=[nil,nil,nil]}
-        return .init(.subscriptions,options:options,subscription:self)
+        return .init(.subscriptions,options:options,subscription:self,history:history)
     }
     public func display(daysKey:String?)->SubscriptionNowDisplay {
         let days=daysKey=="30" ? 30:daysKey=="7" ? 7:initialDays

@@ -133,6 +133,8 @@ import CoreText
                 key("compare.effort.\(effort.key)", CGRect(x: screen.minX + 6 + Double(i) * keyWidth, y: ladderY, width: keyWidth - 3, height: 20),
                     (effort.recommended ? "★" : "") + effort.title, .effort(modelID: compare.modelID, key: effort.key), compare.help, lit: effort.trial || effort.current, value: value)
             }
+        } else if let history=p.history {
+            list=NeutralSubscriptionHistoryRecipe.make(history,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
         } else if let subscription=p.subscription {
             list=NeutralSubscriptionRecipe.make(subscription,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
         } else if let overview = p.overview {
