@@ -430,7 +430,7 @@ struct NativeFailure:Error {let message:String}
     try require(interaction.presentation?.reorder==nil && !interaction.hasCapture,"preview callback stop cannot reenter an inout gesture or resurrect it")
     interaction.canPreviewOrder={_ in true};interactionTime=12;interaction.start();_=interaction.beginNozzle(id:"a",along:0)
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
-    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["c"],"overflow list uses shared canonical order")
+    interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["b","c"],"overflow list retains accepted off-main subscriptions in shared canonical order")
     interaction.stop()
     let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
     let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)
