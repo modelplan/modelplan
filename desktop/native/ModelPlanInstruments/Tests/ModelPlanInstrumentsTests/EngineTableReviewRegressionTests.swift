@@ -126,6 +126,30 @@ import XCTest
         }
     }
 
+    func testOtherHelpBeyondLabelBudgetStillRendersAndUpdatesWithoutLosingDetails() async throws {
+        let view = EngineTableView(); var focused: HelpExplanation?
+        view.onHelpChange = { value, _ in focused = value }
+        try view.update(columns: [Fixtures.column("acct")], language: .english, now: Fixtures.now)
+        for count in [160, 161] {
+            let windows = (0..<count).map { i in
+                InstrumentQuota(id: "quota-\(i)", period: .daily, scope: "Quota-\(i)", remaining: Double(i % 100),
+                                resetsAt: Fixtures.now.addingTimeInterval(Double(i + 60) * 60))
+            }
+            let column = EngineColumn(id: "acct", quotas: .init(windows: windows, now: Fixtures.now), todayTokens: nil, todayGenerationTPS: nil)
+            do { try view.update(columns: [column], language: .english, now: Fixtures.now) }
+            catch { XCTFail("Valid complete help must not reject the table: \(error)"); return }
+            let cell = try XCTUnwrap(view.presentation?.columns[0]?.cells[2])
+            XCTAssertGreaterThan(cell.help.accessibleDescription.utf8.count, 4096)
+            let region = try XCTUnwrap(view.recipe?.regions.first { $0.id == "engine.acct.row.2" })
+            XCTAssertLessThanOrEqual(region.label.utf8.count, 4096)
+            let control = try XCTUnwrap(view.control(for: region.id)); XCTAssertTrue(control.becomeFirstResponder())
+            XCTAssertEqual(focused, cell.help); XCTAssertEqual(control.accessibilityHelp(), cell.help.accessibleDescription)
+            for index in 0..<count { XCTAssertTrue(cell.help.body.contains("Quota-\(index)·")) }
+            XCTAssertEqual(cell.amount, "0"); XCTAssertTrue(cell.notes[0].hasSuffix("+\(count - 1)"))
+            XCTAssertNoThrow(try view.rasterImage(scale: 1))
+        }
+    }
+
     private func textImages(_ view: EngineTableView) -> [AnyObject] {
         view.layer?.sublayers?.compactMap { $0.contents.map { $0 as AnyObject } } ?? []
     }

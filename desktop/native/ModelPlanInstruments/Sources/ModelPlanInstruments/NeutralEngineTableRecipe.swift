@@ -98,7 +98,7 @@ import CoreText
                         commands.append(.ellipse(rect: CGRect(x: rect.midX - 1, y: barY + 6, width: 2, height: 2), ink: n < dots ? ink : rule))
                     }
                 }
-                regions.append(.init(id: "engine.\(col.id).row.\(row)", rect: area, label: cell.help.accessibleDescription,
+                regions.append(.init(id: "engine.\(col.id).row.\(row)", rect: area, label: cell.accessibilityLabel,
                                      help: cell.help, role: .readout))
             }
             let today = CGRect(x: x + 6, y: lcd.minY + 3 * rowHeight, width: width - 12, height: rowHeight)

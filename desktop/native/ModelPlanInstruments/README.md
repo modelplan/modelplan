@@ -75,6 +75,8 @@ press, while only their keys enter the keyboard sequence. Unknown quota values s
 This includes a table with no subscriptions. Other keeps its compact `+N` reading,
 while its shared hover/focus/accessibility explanation contains every supplied
 window's period, scope, remaining reading and reset, respecting evidence validity.
+The quota's short AX label is separate from that complete help, so additional
+windows do not consume the recipe's label budget or truncate their descriptions.
 Scope keys also expose their actual current-page shortcut in the accessible label
 and shared hover/focus help; these facts do not add a painted legend.
 

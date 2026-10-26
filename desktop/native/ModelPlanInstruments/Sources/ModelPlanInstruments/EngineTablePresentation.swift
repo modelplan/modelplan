@@ -17,6 +17,7 @@ public enum EngineNoteTone: Sendable { case normal, warning, critical, publicRes
 public struct EngineQuotaDisplay: Equatable, Sendable {
     public let amount: String
     public let suffix: String
+    public let accessibilityLabel: String
     public let notes: [String]
     public let level: QuotaLevel
     public let litSegments: Int?
@@ -180,7 +181,9 @@ public struct EngineTablePresentation: Equatable, Sendable {
                     }
                 }
                 let fact = facts.joined(separator: chinese ? "；" : "; ")
-                return EngineQuotaDisplay(amount: amount, suffix: remaining == nil ? "" : "%", notes: [full, brief, small],
+                let label = identity.shortName + " · " + format.rowName(QuotaRow.allCases[row]) + " · " + format.percent(remaining)
+                    + (more.isEmpty ? "" : " " + more)
+                return EngineQuotaDisplay(amount: amount, suffix: remaining == nil ? "" : "%", accessibilityLabel: label, notes: [full, brief, small],
                                           level: valid ? value.level : .unknown, litSegments: valid ? value.litSegments : nil,
                                           timeDots: valid ? value.timeDots : nil, noteTone: noteTone,
                                           help: help.explanation(valid && value.publicReset != nil ? .publicReset : .quota, context: .init(fact: fact)))
