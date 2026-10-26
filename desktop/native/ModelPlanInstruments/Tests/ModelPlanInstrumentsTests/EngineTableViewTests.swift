@@ -29,6 +29,8 @@ import XCTest
             XCTAssertEqual(p.columns[1]?.cells[0]?.amount, "--"); XCTAssertEqual(p.columns[1]?.cells[0]?.suffix, "")
             XCTAssertEqual(p.columns[2]?.cells[0]?.amount, "0"); XCTAssertEqual(p.columns[2]?.cells[0]?.level, .critical)
             XCTAssertEqual(p.columns[2]?.todayTokens, "0"); XCTAssertEqual(p.columns[2]?.todaySpeed, "0")
+            XCTAssertTrue(p.columns[2]!.todayHelp.title.contains("0 t/s"))
+            XCTAssertTrue(p.columns[1]!.todayHelp.title.contains("--"))
         }
     }
 

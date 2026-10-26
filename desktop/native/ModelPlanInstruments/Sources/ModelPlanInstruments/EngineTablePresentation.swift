@@ -179,7 +179,7 @@ public struct EngineTablePresentation: Equatable, Sendable {
             return EngineColumnDisplay(id: column.id, identity: identity, selected: scope == .subscription(column.id),
                                        dimmed: scope != .all && scope != .subscription(column.id), unavailable: !valid,
                                        caution: valid ? column.caution : .unknown, cells: displays, todayTokens: tokens, todaySpeed: speed,
-                                       reserveLines: reserveLines, todayHelp: help.explanation(.todaySpeed, context: .init(fact: todayFact)),
+                                       reserveLines: reserveLines, todayHelp: help.explanation(.todaySpeed, context: .init(fact: todayFact, value: speed.map { $0 + " t/s" })),
                                        reserveHelp: help.explanation(.reserve, context: .init(fact: reserveFact)), reserveWarning: valid && column.reserve?.expiryWarning == true)
         }
         pageIndicators = (0..<model.pageCount).map { p in
