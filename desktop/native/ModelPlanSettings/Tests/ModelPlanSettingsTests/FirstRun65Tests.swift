@@ -94,13 +94,30 @@ final class FirstRun65Tests: XCTestCase {
         let url = try file(), store = try SettingsStore(url: url)
         try await store.update { p in
             p.openAtLogin = false; p.readerConsent.cursor = true; p.onboarding.next()
-            p.helpHints = .init(seen: Set(FirstUseHintKind.allCases), cockpitOpens: 2, hasPinned: true)
+            p.helpHints = .init(seen: Set(FirstUseHintKind.allCases), opens: 2, reveals: 2)
         }
         let restart = try SettingsStore(url: url), loaded = await restart.snapshot()
-        XCTAssertEqual(loaded.preferences.helpHints.seen.count, 8)
+        XCTAssertEqual(loaded.preferences.helpHints.seen.count, 9)
         let reset = try await restart.resetFirstUseHints(expectedRevision: loaded.revision)
         XCTAssertEqual(reset.preferences.helpHints, .init()); XCTAssertFalse(reset.preferences.openAtLogin)
         XCTAssertTrue(reset.preferences.readerConsent.cursor); XCTAssertTrue(reset.preferences.onboarding.completed)
+    }
+    func testLegacyHintMigrationWritesOnlyCanonicalCountersOnNextCommit() async throws {
+        let url = try file()
+        let raw = #"{"schemaVersion":1,"preferences":{"openAtLogin":false,"readerConsent":{"cursor":true},"helpHints":{"seen":["ignition"],"cockpitOpens":2,"hasPinned":true}}}"#
+        try Data(raw.utf8).write(to: url)
+        let store = try SettingsStore(url: url), loaded = await store.snapshot()
+        XCTAssertEqual(loaded.preferences.helpHints.opens, 2); XCTAssertEqual(loaded.preferences.helpHints.reveals, 0)
+        XCTAssertFalse(loaded.preferences.openAtLogin); XCTAssertTrue(loaded.preferences.readerConsent.cursor)
+        XCTAssertEqual(try String(contentsOf: url), raw)
+        try await store.update { $0.showDock = false }
+        let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String:Any])
+        let prefs = try XCTUnwrap(stored["preferences"] as? [String:Any])
+        let hints = try XCTUnwrap(prefs["helpHints"] as? [String:Any])
+        XCTAssertEqual(Set(hints.keys), ["seen","opens","reveals"])
+        let reloaded = try SettingsStore(url: url), snapshot = await reloaded.snapshot()
+        XCTAssertEqual(snapshot.preferences.helpHints.seen, [.ignition]); XCTAssertFalse(snapshot.preferences.openAtLogin)
+        XCTAssertTrue(snapshot.preferences.readerConsent.cursor); XCTAssertFalse(snapshot.preferences.showDock)
     }
     func testLoginRequestsOnlyFollowSuccessfulExplicitCommitsNotSystemObservationOrRestore() async throws {
         let store = try SettingsStore(url: file())
