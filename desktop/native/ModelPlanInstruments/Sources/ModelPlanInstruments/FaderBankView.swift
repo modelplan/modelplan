@@ -16,6 +16,7 @@ import CoreText
     private var language: InstrumentLanguage = .chinese, compact = false, showProjectNames = true
     private var now = Date(timeIntervalSince1970: 0)
     private let elapsed: () -> Double
+    private let hintPointerEligible: () -> Bool
     private var controls: [String: FaderRegionControl] = [:]
     private var surfaces: [String: CALayer] = [:], oldCaps: [String: FaderCapSurface] = [:], oldTexts: [String: EngineTextCommand] = [:]
     private var surfaceScale: Int?, tokens: [String: Int] = [:]
@@ -29,8 +30,9 @@ import CoreText
     private var scale: Int { (window?.backingScaleFactor ?? 2) >= 2 ? 2 : 1 }
     public override var intrinsicContentSize: NSSize { presentation.map { recipeProvider.minimumSize(for: $0) } ?? CGSize(width: 360, height: 320) }
     public init(frame: CGRect = CGRect(x: 0, y: 0, width: 360, height: 320), recipeProvider: (any FaderBankRecipeProvider)? = nil,
-                elapsed: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
-        self.recipeProvider = recipeProvider ?? NeutralFaderBankRecipe(); self.elapsed = elapsed
+                elapsed: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
+                hintPointerEligible: @escaping () -> Bool = { NSEvent.pressedMouseButtons == 0 }) {
+        self.recipeProvider = recipeProvider ?? NeutralFaderBankRecipe(); self.elapsed = elapsed; self.hintPointerEligible = hintPointerEligible
         super.init(frame: frame); appearance = NSAppearance(named: .darkAqua); wantsLayer = true
         focus.fillColor = nil; focus.zPosition = 10; layer?.masksToBounds = false; layer?.addSublayer(focus)
         setAccessibilityElement(false); setAccessibilityIdentifier("fader.bank")
@@ -329,7 +331,7 @@ import CoreText
         let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
     }
     private func beginFaderRest(at point: CGPoint) {
-        guard controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
+        guard hintPointerEligible(), controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
               let region = recipe?.regions.first(where: { $0.role == .slider && $0.enabled && $0.rect.contains(point) }),
               let id = region.modelID else { return }
         let at = elapsed(); guard at.isFinite else { return }

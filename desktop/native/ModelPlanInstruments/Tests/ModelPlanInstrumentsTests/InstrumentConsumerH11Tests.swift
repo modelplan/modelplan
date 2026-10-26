@@ -19,7 +19,8 @@ import XCTest
     }
     func testFaderRestIsTypedTravelAnchorInputAndNeverStartsTrial() async throws {
         var at = 10.0, events: [InstrumentHintInput] = []
-        let view = FaderBankView(elapsed: { at }); view.onHelpChange = { _, _ in }; view.onHintInput = { events.append($0) }
+        var unpressed = true
+        let view = FaderBankView(elapsed: { at }, hintPointerEligible: { unpressed }); view.onHelpChange = { _, _ in }; view.onHintInput = { events.append($0) }
         try view.update(inputs: input(), publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
         let travel = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider })
         let point = CGPoint(x: travel.rect.midX, y: travel.rect.midY)
@@ -33,11 +34,14 @@ import XCTest
         XCTAssertEqual(events.first, .cancelFaderRest(.movement, at: 10.2))
         guard case .faderRestCandidate(_, _, let restarted) = events.last else { return XCTFail("Missing restart input") }
         XCTAssertEqual(restarted, 10.2); XCTAssertNil(view.controller.trial)
+        unpressed = false; events = []
+        view.mouseEntered(with: mouse(view, .mouseEntered, point))
+        XCTAssertFalse(events.contains { if case .faderRestCandidate = $0 { return true }; return false })
         view.dispose()
     }
     func testDragDoesNotOfferHintAndLeaveKeyFocusRemovalCancelRest() async throws {
         var events: [InstrumentHintInput] = []
-        let view = FaderBankView(elapsed: { 12 }); view.onHelpChange = { _, _ in }; view.onHintInput = { events.append($0) }
+        let view = FaderBankView(elapsed: { 12 }, hintPointerEligible: { true }); view.onHelpChange = { _, _ in }; view.onHintInput = { events.append($0) }
         let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false); window.contentView = view
         try view.update(inputs: input(), publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
         let region = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider }), control = try XCTUnwrap(view.control(for: region.id))
