@@ -50,7 +50,7 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.architecture,.diagnostics,.feedback,.licenses])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
     ])
     /// Historical input only; not the default. Retained for generic compatibility/regression tests.
     /// Current content only, not a final page/visual freeze. Regrouping changes this input table alone.
@@ -62,6 +62,6 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.architecture,.diagnostics,.feedback,.licenses])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
     ])
 }

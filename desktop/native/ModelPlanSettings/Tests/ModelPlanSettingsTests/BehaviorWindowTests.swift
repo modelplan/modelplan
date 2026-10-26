@@ -61,7 +61,7 @@ import XCTest
         XCTAssertFalse(try XCTUnwrap(controller.choice(key: .countdown)).isEnabled)
         XCTAssertEqual(editor.effective?.opening, .quick)
         controller.selectPane("notifications")
-        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
         controller.close()
     }
     func testAliasMarkedTextSurvivesEnvironmentAndContextRefreshThenCommitsOnce() async throws {
@@ -158,6 +158,7 @@ import XCTest
         let text = try XCTUnwrap(field.currentEditor() as? NSTextView)
         XCTAssertTrue(field.control(field, textView: text, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         XCTAssertEqual(field.stringValue, ""); XCTAssertEqual(editor.snapshot?.revision, revision)
+        XCTAssertNil(controller.errorMessage, "cancelling the final alias draft must clear only its warning")
         XCTAssertNil(editor.snapshot?.preferences.subscriptionSettings["a"])
         controller.close()
     }

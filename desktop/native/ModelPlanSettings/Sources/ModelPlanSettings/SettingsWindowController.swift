@@ -108,9 +108,17 @@ enum SettingsWords {
     private let environmentProvider: @MainActor () -> SettingsEnvironment
     private var refreshing = false, pendingEdit = false
     private var pendingSaveTask: Task<Void, Never>?
+    private enum ErrorSource { case aliasDraft, persistence, clipboard, hostAction }
+    private var errorSource: ErrorSource?
+    private enum Feedback { case copied, requested }
+    private var feedback: Feedback?
+    private let clipboard: SettingsDiagnosticClipboard
+    let firstRunPreviewButton = NSButton()
 
-    public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil) {
+    public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil,
+                clipboard: SettingsDiagnosticClipboard? = nil) {
         self.editor = editor; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
+        self.clipboard = clipboard ?? SystemDiagnosticClipboard()
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -177,6 +185,10 @@ enum SettingsWords {
         searchField.setAccessibilityIdentifier("settings.search"); side.addSubview(searchField)
         let tableScroll = NSScrollView(); tableScroll.drawsBackground = false; tableScroll.hasVerticalScroller = true
         tableScroll.translatesAutoresizingMaskIntoConstraints = false; side.addSubview(tableScroll)
+        firstRunPreviewButton.isBordered = false; firstRunPreviewButton.alignment = .left
+        firstRunPreviewButton.target = self; firstRunPreviewButton.action = #selector(previewFirstRun)
+        firstRunPreviewButton.translatesAutoresizingMaskIntoConstraints = false; side.addSubview(firstRunPreviewButton)
+        firstRunPreviewButton.setAccessibilityIdentifier("settings.firstRunPreview")
         sidebar.addTableColumn(NSTableColumn(identifier: .init("pane")))
         sidebar.headerView = nil; sidebar.rowHeight = 36; sidebar.style = .sourceList
         sidebar.dataSource = self; sidebar.delegate = self; sidebar.backgroundColor = .clear
@@ -200,7 +212,11 @@ enum SettingsWords {
             searchField.leadingAnchor.constraint(equalTo: side.leadingAnchor, constant: 13), searchField.trailingAnchor.constraint(equalTo: side.trailingAnchor, constant: -13),
             searchField.topAnchor.constraint(equalTo: side.topAnchor, constant: 20), searchField.heightAnchor.constraint(equalToConstant: 28),
             tableScroll.leadingAnchor.constraint(equalTo: side.leadingAnchor, constant: 8), tableScroll.trailingAnchor.constraint(equalTo: side.trailingAnchor, constant: -8),
-            tableScroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 20), tableScroll.bottomAnchor.constraint(equalTo: side.bottomAnchor, constant: -12),
+            tableScroll.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 20), tableScroll.bottomAnchor.constraint(equalTo: firstRunPreviewButton.topAnchor, constant: -16),
+            firstRunPreviewButton.leadingAnchor.constraint(equalTo: side.leadingAnchor, constant: 16),
+            firstRunPreviewButton.trailingAnchor.constraint(equalTo: side.trailingAnchor, constant: -16),
+            firstRunPreviewButton.bottomAnchor.constraint(equalTo: side.bottomAnchor, constant: -12),
+            firstRunPreviewButton.heightAnchor.constraint(equalToConstant: 24),
             divider.leadingAnchor.constraint(equalTo: side.trailingAnchor), divider.widthAnchor.constraint(equalToConstant: 1),
             divider.topAnchor.constraint(equalTo: root.topAnchor), divider.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: divider.trailingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
@@ -216,6 +232,8 @@ enum SettingsWords {
         window?.title = SettingsWords.text("Settings", "设置", language)
         searchField.placeholderString = SettingsWords.text("Search settings", "搜索设置", language)
         searchField.setAccessibilityLabel(searchField.placeholderString)
+        firstRunPreviewButton.title = SettingsWords.text("First run…", "首次运行…", language)
+        firstRunPreviewButton.isEnabled = !editor.isSaving && editor.context.capabilities.firstRunPreviewAvailable && editor.onHostRequest != nil
         sidebar.reloadData()
         if let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == selectedPaneID }) {
             sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
@@ -223,9 +241,12 @@ enum SettingsWords {
         guard let snapshot = editor.snapshot, let effective = editor.effective else {
             heading.stringValue = SettingsWords.text("Loading settings…", "正在读取设置…", language); return
         }
-        if errorMessage == nil, !pendingEdit, !editor.isSaving,
-           rows.values.contains(where: { $0.aliases.values.contains { $0.hasUnsavedDraft && !$0.editing } }) {
+        let hasAliasDraft = rows.values.contains { $0.aliases.values.contains { $0.hasUnsavedDraft } }
+        let completedAliasDraft = rows.values.contains { $0.aliases.values.contains { $0.hasUnsavedDraft && !$0.editing } }
+        if errorSource == .aliasDraft, !hasAliasDraft { errorMessage = nil; errorSource = nil }
+        if errorMessage == nil, !pendingEdit, !editor.isSaving, completedAliasDraft {
             errorMessage = SettingsWords.text("An alias is not saved. Finish editing it again to retry, or press Escape to cancel.", "有别名尚未保存。请重新结束该项编辑以重试，或按 Escape 取消。", language)
+            errorSource = .aliasDraft
         }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
@@ -236,7 +257,8 @@ enum SettingsWords {
         heading.stringValue = query.isEmpty
             ? SettingsStructure.task65.panes.first(where: { $0.id == selectedPaneID })!.title.value(language)
             : SettingsWords.text("Search results", "搜索结果", language)
-        status.stringValue = errorMessage ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
+        let feedbackText = feedback.map { $0 == .copied ? SettingsWords.text("Diagnostics copied", "诊断信息已复制", language) : SettingsWords.text("Request sent to the app", "请求已交给应用", language) }
+        status.stringValue = errorMessage ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
         status.textColor = errorMessage == nil ? .secondaryLabelColor : .systemRed
         status.isHidden = status.stringValue.isEmpty
         do {
@@ -269,7 +291,10 @@ enum SettingsWords {
                                      showGroup: !query.isEmpty || groupID != previousGroup,
                                      snapshot: snapshot, context: editor.context,
                                      holdAvailable: editor.environment.macOSMajor >= 15 && editor.environment.entranceAccepted && !effective.reduceMotion,
-                                     onEdit: { [weak self] sender, edit in self?.changeBehavior(edit, sender: sender) })
+                                     hasHost: editor.onHostRequest != nil,
+                                     onEdit: { [weak self] sender, edit in self?.changeBehavior(edit, sender: sender) },
+                                     onSurfaceAction: { [weak self] sender, action in self?.perform(action, sender: sender) },
+                                     onDraftCleared: { [weak self] sender in guard let self, self.owns(sender) else { return }; self.refresh() })
                 previousGroup = groupID
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
@@ -295,9 +320,12 @@ enum SettingsWords {
             if SettingsB20Edit.keys.contains(sender.settingKey) {
                 let edit = try SettingsB20Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
                 submit(operation: { [editor] in try await editor.commit(edit) })
-            } else {
+            } else if SettingsB21Edit.keys.contains(sender.settingKey) {
                 let edit = try SettingsB21Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
                 changeBehavior(edit, sender: sender)
+            } else {
+                let edit = try SettingsB22Edit(key: sender.settingKey, value: value)
+                submit(operation: { [editor] in try await editor.commit(edit) })
             }
         } catch { refresh() }
     }
@@ -313,13 +341,14 @@ enum SettingsWords {
                         aliasCompletion: ((Bool) -> Void)? = nil) {
         guard !pendingEdit else {
             aliasCompletion?(false)
+            errorSource = aliasCompletion == nil ? .persistence : .aliasDraft
             errorMessage = aliasCompletion == nil
                 ? SettingsWords.text("Another change is still saving. This edit is not saved; try again after saving finishes.", "另一项更改仍在保存。此次更改尚未保存，请在保存完成后重试。", language)
                 : SettingsWords.text("Another change is still saving. This alias is not saved; finish editing again to retry after saving finishes.", "另一项更改仍在保存。此别名尚未保存，请在保存完成后重新结束编辑以重试。", language)
             refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
             return
         }
-        pendingEdit = true; errorMessage = nil
+        pendingEdit = true; errorMessage = nil; errorSource = nil; feedback = nil
         pendingSaveTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.pendingEdit = false; self.refresh() }
@@ -327,8 +356,10 @@ enum SettingsWords {
             catch {
                 aliasCompletion?(false)
                 if aliasCompletion != nil {
+                    self.errorSource = .aliasDraft
                     self.errorMessage = SettingsWords.text("This alias is not saved. Check the text and finish editing again to retry, or press Escape to cancel.", "此别名尚未保存。请检查文本并重新结束编辑以重试，或按 Escape 取消。", self.language)
                 } else {
+                    self.errorSource = .persistence
                     self.errorMessage = (error as? SettingsError) == .staleRevision || (error as? SettingsEditorError) == .staleContext
                         ? SettingsWords.text("Settings changed elsewhere. Review the current value and try again.", "设置已在别处更新，请检查当前值后重试。", self.language)
                         : SettingsWords.text("Could not save this change. The saved settings are retained.", "无法保存此次更改，已保留原设置。", self.language)
@@ -336,6 +367,32 @@ enum SettingsWords {
                 self.refresh(); NSAccessibility.post(element: self.status, notification: .valueChanged)
             }
         }
+    }
+    private func perform(_ action: SettingsSurfaceAction, sender: NSView & SettingsOwnedControl) {
+        guard owns(sender) else { return }
+        switch action {
+        case .copyDiagnostics:
+            if clipboard.writeDiagnostics(editor.context.about.diagnosticText) {
+                feedback = .copied
+                if errorSource == .clipboard { errorMessage = nil; errorSource = nil }
+            } else {
+                errorSource = .clipboard; errorMessage = SettingsWords.text("Could not copy diagnostics.", "无法复制诊断信息。", language)
+            }
+            refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
+        case .request(let request): requestHost(request)
+        }
+    }
+    private func requestHost(_ action: SettingsB22Action) {
+        do {
+            try editor.request(action); feedback = .requested
+            if errorSource == .hostAction { errorMessage = nil; errorSource = nil }
+        } catch {
+            errorSource = .hostAction; errorMessage = SettingsWords.text("This action is unavailable in this build.", "此版本暂不支持该操作。", language)
+        }
+        refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
+    }
+    @objc private func previewFirstRun() {
+        guard firstRunPreviewButton.isEnabled else { return }; requestHost(.previewFirstRun)
     }
     // Native-control integration tests use these identities without exposing test-only actions in the product.
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
@@ -345,6 +402,7 @@ enum SettingsWords {
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
     var orderControl: SettingsOrderControl? { rows[.order]?.order }
     var hintsResetControl: SettingsActionControl? { rows[.resetHints]?.resetHints }
+    func actionControl(key: SettingKey) -> SettingsActionControl? { rows[key]?.surfaceAction }
     /// Wait for the accepted transaction and its UI acknowledgment, not just its store receipt.
     func waitForPendingSave() async { await pendingSaveTask?.value }
 }
