@@ -11,7 +11,7 @@ public struct DockReorderVisuals {
 extension DockInstrumentRenderer {
     /// Registered static parts, excluding every animated effect. No official coordinates/colors are defined here.
     public func reorderVisuals(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int)throws->DockReorderVisuals{
-        var backing=skin;backing.stations=[]
+        var backing=skin;backing.stations=skin.stations.filter{$0.subscriptionID==nil}
         let base=try render(skin:backing,readings:[:],scale:scale).image
         var items=[DockNozzleVisual]()
         for station in skin.stations{
