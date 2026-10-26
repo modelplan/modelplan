@@ -20,6 +20,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
     public let lines: [String]
     public let backLine: String?
     public let footer: [MainScreenFooterDisplay]
+    public let overview: OverviewPageDisplay?
     public let comparison: ComparisonPresentation?
     public let source: MainScreenSource?
     public let sourceModelID: String?
@@ -38,7 +39,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
         if let trial = controller.trial, let input = controller.input(trial.modelID) {
             let compare = ComparisonPresentation(model: input.model, nameVariants: input.nameVariants,
                 trial: trial.configuration, publicationUsable: controller.publicationUsable, language: language)
-            comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
+            overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
             footer = [.back(back), compare.fastAvailable
                 ? .fast(modelID: input.model.id, title: chinese ? "快速" : "Fast", off: chinese ? "关" : "off", on: chinese ? "开" : "on",
                         selected: compare.trialFast, help: HelpCatalog(language).explanation(.comparison, context: .init(fact: compare.notes.joined(separator: " · "))))
@@ -72,6 +73,12 @@ public struct MainScreenPresentation: Equatable, Sendable {
                 } else { slots.append(.blank) }
             }
             footer = slots
+            if pageOptionsAllowed, payload == nil, nav.location.page == .overview, let snapshot = page?.overview {
+                func selected(_ id: String) -> String? {
+                    page?.options.compactMap { $0 }.first { $0.id == id }.flatMap { controller.option($0, page: .overview).selectedValue }
+                }
+                overview = snapshot.display(rangeKey: selected("overview.range"), modeKey: selected("overview.mode"), language: language)
+            } else { overview = nil }
         }
     }
 }

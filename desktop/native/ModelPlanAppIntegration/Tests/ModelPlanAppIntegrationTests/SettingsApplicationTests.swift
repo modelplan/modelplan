@@ -185,4 +185,18 @@ import ModelPlanSettings
         XCTAssertFalse(try XCTUnwrap(app.latest).effective.darkAppearance)
     }
 
+    func testSameRevisionReceiptAfterContextKeepsCurrentContext() async throws {
+        let store = try SettingsStore(url: file())
+        let app = SettingsApplicationCoordinator(store: store) { _ in }
+        await app.reload()
+        let receipt = try await app.commit(.size(.large))
+        var context = SettingsPageContext()
+        context.subscriptions = [.init(id: "new", name: .init("New", "新"))]
+        app.update(context: context)
+        app.editor.onCommit?(receipt, EffectiveSettings(receipt.preferences, environment: .init()))
+        XCTAssertEqual(app.latest?.snapshot.revision, receipt.revision)
+        XCTAssertEqual(app.latest?.context.subscriptions.map(\.id), ["new"])
+        XCTAssertEqual(app.latest?.effective.size, .large)
+    }
+
 }
