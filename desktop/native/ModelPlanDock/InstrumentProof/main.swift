@@ -428,6 +428,16 @@ struct NativeFailure:Error {let message:String}
     interactionEnv.bindingRevision+=1;interaction.refresh();try require(!interaction.hasCapture,"binding change cancels captured old nozzle")
     interaction.toggleOverflow();try require(interaction.presentation?.overflowIDs==["c"],"overflow list uses shared canonical order")
     interaction.stop()
+    let reorderSurface=DockReorderLayersView(frame:effectsSkin.bounds)
+    let firstVisuals=try renderer.reorderVisuals(skin:effectsSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)
+    try reorderSurface.apply(firstVisuals,draggedID:nil,reducedMotion:false)
+    var yieldedSkin=effectsSkin;yieldedSkin.stations[0].centre.x+=10;yieldedSkin.stations[1].centre.x-=10
+    let secondVisuals=try renderer.reorderVisuals(skin:yieldedSkin,readings:Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,$0)}),scale:1)
+    try reorderSurface.apply(secondVisuals,draggedID:"work-0",reducedMotion:false)
+    try require(!reorderSurface.animatingIDs.contains("work-0") && reorderSurface.animatingIDs.contains("work-1"),"native neighbour yield is separate from dragged nozzle/effect bitmap clocks")
+    try reorderSurface.apply(firstVisuals,draggedID:nil,reducedMotion:true)
+    try require(reorderSurface.animatingIDs.isEmpty && reorderSurface.retainedBytes<=16*1024*1024,"RM yield is instant with bounded static parts")
+    reorderSurface.dispose();try require(reorderSurface.retainedBytes==0,"reorder composition releases its counted static parts")
     let labels=Dictionary(uniqueKeysWithValues:DockMenuCommand.allCases.map{($0,"Synthetic-"+$0.rawValue)})
     var menuHelp=0,menuFocus=0,menuSettings=0,menuStates=[Bool]()
     let statusMenu=DockStatusMenu(labels:labels,handlers:[.help:{menuHelp+=1},.settings:{menuSettings+=1}])
@@ -444,8 +454,8 @@ struct NativeFailure:Error {let message:String}
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
     let cardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[.init(id:"extra",kind:.extraQuota,label:"Full extra name",value:"0%",remainingFraction:0,tone:.critical)])
     try cardSurface.apply(cardContent,pinned:true);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
-    let unsafe=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
-    do{try cardSurface.apply(unsafe,pinned:true);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
+    let unsafeCardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
+    do{try cardSurface.apply(unsafeCardContent,pinned:true);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
     cardSurface.dispose()
     let traySurface=DockOverflowTrayView(frame:CGRect(x:0,y:0,width:160,height:80))
     try traySurface.apply([.init(id:"a",label:"Synthetic",value:"--",dragHelp:"Synthetic drag help")]);try require(!traySurface.subviews.isEmpty,"neutral overflow tray is available without official source")
