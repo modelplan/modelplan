@@ -146,6 +146,22 @@ import XCTest
         XCTAssertFalse(stale.sendAction(selector,to:target));XCTAssertFalse(stale.accessibilityPerformPress())
         XCTAssertFalse(view.handleEscape());XCTAssertTrue(actions.isEmpty)
     }
+    func testReentrantWithdrawalMatchingPreviousInactiveInputStillWins() {
+        let view=HelpUILayerView(elapsed:{1})
+        var inactive=M4HelpFixtures.hint();inactive.active=false
+        view.update(inactive);view.onAction={_ in}
+        var next=inactive;next.active=true;next.viewport.width+=1
+        var clearPending=true
+        view.onHintInput={ input in
+            if case .cancelFaderRest(.layoutChange,at:_)=input,clearPending {
+                clearPending=false;view.update(inactive)
+            }
+        }
+        view.update(next)
+        XCTAssertFalse(clearPending);XCTAssertEqual(view.input,inactive)
+        XCTAssertNil(view.presentation?.card);XCTAssertNil(view.currentActionButton)
+        XCTAssertFalse(view.handleEscape());view.dispose()
+    }
     func testReentrantRecipeClearOrDisposalCannotPublishStaleCardOrMap() {
         for stage in ["presentation","font","measure","ink"] {
             for dispose in [false,true] {

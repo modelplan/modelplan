@@ -28,17 +28,23 @@ import AppKit
         for label in [title,body] { label.maximumNumberOfLines=0;label.lineBreakMode = .byWordWrapping }
     }
     required init?(coder:NSCoder) { fatalError("init(coder:) is unsupported") }
-    func configure(title text:String?,body bodyText:String,buttonTitle:String?,bound:Bool) {
-        title.stringValue=text ?? "";title.isHidden=text==nil
-        title.font=provider.font(for:.contextTitle);title.textColor=provider.primaryInk
-        body.stringValue=bodyText;body.font=provider.font(for:.contextBody);body.textColor=provider.primaryInk
+    func configure(title text:String?,body bodyText:String,buttonTitle:String?,bound:Bool,isCurrent:()->Bool) {
+        let titleFont=provider.font(for:.contextTitle);guard isCurrent() else { return }
+        let bodyFont=provider.font(for:.contextBody);guard isCurrent() else { return }
+        let buttonFont=provider.font(for:.button);guard isCurrent() else { return }
+        let ink=provider.primaryInk;guard isCurrent() else { return }
         let width=max(1,bounds.width-22)
-        var y:CGFloat=8
-        if let text { let h=provider.measure(text,width:width,role:.contextTitle).height;title.frame = .init(x:11,y:y,width:width,height:h);y+=h+3 }
+        var titleHeight:CGFloat=0
+        if let text { titleHeight=provider.measure(text,width:width,role:.contextTitle).height;guard isCurrent() else { return } }
         let height=provider.measure(bodyText,width:width,role:text==nil ? .hintBody:.contextBody).height
+        guard isCurrent() else { return }
+        title.stringValue=text ?? "";title.isHidden=text==nil;title.font=titleFont;title.textColor=ink
+        body.stringValue=bodyText;body.font=bodyFont;body.textColor=ink
+        var y:CGFloat=8
+        if text != nil { title.frame = .init(x:11,y:y,width:width,height:titleHeight);y+=titleHeight+3 }
         body.frame = .init(x:11,y:y,width:width,height:height);y+=height+5
         button.title=buttonTitle ?? "";button.isHidden=buttonTitle==nil;button.isEnabled=bound && buttonTitle != nil
-        button.font=provider.font(for:.button);button.frame = .init(x:11,y:y,width:width,height:22)
+        button.font=buttonFont;button.frame = .init(x:11,y:y,width:width,height:22)
         button.setAccessibilityLabel(buttonTitle)
         setAccessibilityIdentifier("help.card."+anchorID)
         needsDisplay=true
@@ -71,6 +77,8 @@ import AppKit
     public private(set) var input:HelpUIRenderInput?
     public private(set) var presentation:HelpUIPresentation?
     public private(set) var layoutCount=0
+    private var generation:UInt64=0
+    private var disposed=false
     private let elapsed:(()->Double)?
     private var header=NSTextField(wrappingLabelWithString:"")
     private var labels=[String:NSTextField]()
@@ -87,24 +95,34 @@ import AppKit
     }
     required init?(coder:NSCoder) { fatalError("init(coder:) is unsupported") }
     public func update(_ next:HelpUIRenderInput) {
-        guard input != next else { return }
-        let old=input
+        guard !disposed,input != next else { return }
+        generation &+= 1;let token=generation
+        // Host/recipe callouts may synchronously update or dispose; their newer generation wins.
+        let old=input;input=next
         if old?.sessionID != next.sessionID { retireCard(animated:false);retireMapSource() }
         if old?.sessionID != next.sessionID || old?.viewport != next.viewport || old?.anchors != next.anchors || old?.profile != next.profile {
             cancelRest(.layoutChange)
+            guard isCurrent(token) else { return }
         }
-        if old?.map.mode == .hidden && next.map.mode != .hidden { cancelRest(.keyboard) }
-        input=next
+        if old?.map.mode == .hidden && next.map.mode != .hidden {
+            cancelRest(.keyboard);guard isCurrent(token) else { return }
+        }
         if next.viewport.width.isFinite,next.viewport.height.isFinite,next.viewport.width>16,next.viewport.height>38,
            next.viewport.width<=16_384,next.viewport.height<=16_384 { setFrameSize(next.viewport) }
         layoutCount+=1
-        let result=validate(recipeProvider.presentation(for:next),input:next),changed=presentation != result
+        let candidate=recipeProvider.presentation(for:next)
+        guard isCurrent(token) else { return }
+        let result=validate(candidate,input:next),changed=presentation != result
         presentation=result
-        applyMap(result,input:next);applyCard(result,input:next)
+        applyMap(result,input:next,token:token)
+        guard isCurrent(token) else { return }
+        applyCard(result,input:next,token:token)
+        guard isCurrent(token) else { return }
         if next.reduceMotion { removeRetiringCard() }
         needsDisplay=true
         if changed { onPresentation?(result) }
     }
+    private func isCurrent(_ token:UInt64)->Bool { !disposed && generation==token }
     private func validate(_ candidate:HelpUIPresentation,input:HelpUIRenderInput)->HelpUIPresentation {
         guard input.active else { return .init(sessionID:input.sessionID) }
         if candidate.mapHeader != nil && input.map.mode == .hidden { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
@@ -131,10 +149,15 @@ import AppKit
               }) else { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
         return candidate
     }
-    private func applyMap(_ result:HelpUIPresentation,input:HelpUIRenderInput) {
+    private func applyMap(_ result:HelpUIPresentation,input:HelpUIRenderInput,token:UInt64) {
+        guard result.mapHeader != nil else { clearMap();return }
+        let headerFont=recipeProvider.font(for:.header);guard isCurrent(token) else { return }
+        let captionFont=recipeProvider.font(for:.caption);guard isCurrent(token) else { return }
+        let buttonFont=recipeProvider.font(for:.button);guard isCurrent(token) else { return }
+        let ink=recipeProvider.primaryInk;guard isCurrent(token) else { return }
         let catalog=HelpMapCatalog(input.language)
         header.isHidden=result.mapHeader==nil;header.stringValue=catalog.metaphor+"\n"+catalog.dismissal
-        header.font=recipeProvider.font(for:.header);header.textColor=recipeProvider.primaryInk
+        header.font=headerFont;header.textColor=ink
         if let frame=result.mapHeader { header.frame=frame.insetBy(dx:8,dy:5) }
         let visible=Set(result.mapLabels.map(\.id))
         for id in Array(labels.keys) where !visible.contains(id) { labels.removeValue(forKey:id)?.removeFromSuperview() }
@@ -142,7 +165,7 @@ import AppKit
             let label=labels[item.id] ?? NSTextField(wrappingLabelWithString:"")
             if labels[item.id]==nil { labels[item.id]=label;addSubview(label) }
             label.stringValue=item.text;label.maximumNumberOfLines=0
-            label.font=recipeProvider.font(for:.caption);label.textColor=recipeProvider.primaryInk
+            label.font=captionFont;label.textColor=ink
             label.frame=item.frame.insetBy(dx:8,dy:5);label.setAccessibilityLabel(item.text)
             label.setAccessibilityIdentifier("help.map."+item.id)
         }
@@ -155,11 +178,11 @@ import AppKit
                     self.onAction?(.mapSourceAction(actionID:id))
                 }
             }
-            mapSource?.title=text;mapSource?.frame=frame;mapSource?.font=recipeProvider.font(for:.button);mapSource?.isEnabled=onAction != nil
+            mapSource?.title=text;mapSource?.frame=frame;mapSource?.font=buttonFont;mapSource?.isEnabled=onAction != nil
         } else { retireMapSource() }
         setAccessibilityLabel(catalog.title)
     }
-    private func applyCard(_ result:HelpUIPresentation,input:HelpUIRenderInput) {
+    private func applyCard(_ result:HelpUIPresentation,input:HelpUIRenderInput,token:UInt64) {
         guard let placement=result.card else { retireCard(animated:input.active && !input.reduceMotion && input.map.mode == .hidden);return }
         if card?.identity != placement.identity || card?.anchorID != placement.anchorID {
             retireCard(animated:false)
@@ -183,10 +206,10 @@ import AppKit
         guard let card else { return };card.frame=placement.frame
         switch placement.identity {
         case .firstUse:
-            if let hint=input.firstUse { card.configure(title:nil,body:hint.text,buttonTitle:hint.dismissTitle,bound:onAction != nil) }
+            if let hint=input.firstUse { card.configure(title:nil,body:hint.text,buttonTitle:hint.dismissTitle,bound:onAction != nil,isCurrent:{self.isCurrent(token)}) }
         case .context:
             if let context=input.contextual { card.configure(title:context.explanation.title,body:context.explanation.body,
-                buttonTitle:context.actionID == nil ? nil:context.actionTitle,bound:onAction != nil) }
+                buttonTitle:context.actionID == nil ? nil:context.actionTitle,bound:onAction != nil,isCurrent:{self.isCurrent(token)}) }
         }
     }
     private func retireCard(animated:Bool) {
@@ -199,18 +222,36 @@ import AppKit
     }
     private func removeRetiringCard() { retiringCard?.layer?.removeAllAnimations();retiringCard?.removeFromSuperview();retiringCard=nil }
     private func retireMapSource() { mapSource?.retire();mapSource?.removeFromSuperview();mapSource=nil;mapSourceID=nil }
-    public func suspend() {
-        cancelRest(.focusLoss)
-        guard let old=input else { return };var next=old;next.active=false;update(next);removeRetiringCard()
+    private func clearMap() {
+        header.isHidden=true
+        for label in labels.values { label.removeFromSuperview() };labels.removeAll();retireMapSource()
     }
-    public func dispose() { suspend();retireMapSource();cancelRest(.teardown);onAction=nil;onHintInput=nil;onPresentation=nil;input=nil;presentation=nil }
+    public func suspend() {
+        guard !disposed else { return }
+        generation &+= 1;let token=generation
+        removeRetiringCard()
+        cancelRest(.focusLoss)
+        guard isCurrent(token),let old=input else { return };var next=old;next.active=false;update(next)
+    }
+    /// Terminal teardown; create a fresh layer when the host needs another presentation session.
+    public func dispose() {
+        guard !disposed else { return }
+        // Publish terminal state before calling the host; teardown callbacks cannot revive this view.
+        disposed=true;generation &+= 1
+        input=nil;presentation=nil;retireCard(animated:false);removeRetiringCard();clearMap();needsDisplay=true
+        cancelRest(.focusLoss);cancelRest(.teardown)
+        onAction=nil;onHintInput=nil;onPresentation=nil
+    }
     public override func viewWillMove(toWindow newWindow:NSWindow?) { if newWindow==nil { suspend() };super.viewWillMove(toWindow:newWindow) }
     private func cancelRest(_ reason:InstrumentHintCancellation) {
-        guard let at=elapsed?(),at.isFinite,at>=0 else { return };onHintInput?(.cancelFaderRest(reason,at:at))
+        let token=generation
+        guard let at=elapsed?(),at.isFinite,at>=0,generation==token else { return };onHintInput?(.cancelFaderRest(reason,at:at))
     }
     @discardableResult public func handleEscape()->Bool {
         guard onAction != nil,let input,input.active else { return false }
+        let token=generation
         cancelRest(.keyboard)
+        guard isCurrent(token) else { return false }
         if input.map.mode != .hidden { onAction?(.dismissMap(reason:.escape,returnFocusID:input.map.returnFocusID));return true }
         if let card=presentation?.card {
             switch card.identity {
@@ -223,7 +264,9 @@ import AppKit
     /// True consumes a latched-map press. False preserves the original underlying click after hint dismissal.
     @discardableResult public func outsidePointerDown()->Bool {
         guard onAction != nil,input?.active==true else { return false }
+        let token=generation
         cancelRest(.pointerDown)
+        guard isCurrent(token) else { return false }
         if input?.map.mode == .latched {
             onAction?(.dismissMap(reason:.pointer,returnFocusID:input?.map.returnFocusID));return true
         }
@@ -238,7 +281,9 @@ import AppKit
     public override func keyDown(with event:NSEvent) { if event.keyCode != 53 || !handleEscape() { super.keyDown(with:event) } }
     public override func mouseDown(with event:NSEvent) {
         guard onAction != nil,input?.active==true else { return }
+        let token=generation
         cancelRest(.pointerDown)
+        guard isCurrent(token) else { return }
         if presentation?.mapHeader != nil,input?.map.mode == .latched { onAction?(.dismissMap(reason:.pointer,returnFocusID:input?.map.returnFocusID)) }
         else if let placement=presentation?.card,case .firstUse(let id)=placement.identity { onAction?(.dismissHint(offerID:id,reason:.pointer)) }
     }
