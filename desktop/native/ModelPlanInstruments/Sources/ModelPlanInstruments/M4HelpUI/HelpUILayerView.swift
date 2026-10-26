@@ -249,9 +249,10 @@ import AppKit
     }
     @discardableResult public func handleEscape()->Bool {
         guard onAction != nil,let input,input.active else { return false }
+        let consumes=input.map.mode != .hidden || presentation?.card != nil
         let token=generation
         cancelRest(.keyboard)
-        guard isCurrent(token) else { return false }
+        guard isCurrent(token) else { return consumes }
         if input.map.mode != .hidden { onAction?(.dismissMap(reason:.escape,returnFocusID:input.map.returnFocusID));return true }
         if let card=presentation?.card {
             switch card.identity {
@@ -264,9 +265,10 @@ import AppKit
     /// True consumes a latched-map press. False preserves the original underlying click after hint dismissal.
     @discardableResult public func outsidePointerDown()->Bool {
         guard onAction != nil,input?.active==true else { return false }
+        let consumes=input?.map.mode == .latched
         let token=generation
         cancelRest(.pointerDown)
-        guard isCurrent(token) else { return false }
+        guard isCurrent(token) else { return consumes }
         if input?.map.mode == .latched {
             onAction?(.dismissMap(reason:.pointer,returnFocusID:input?.map.returnFocusID));return true
         }

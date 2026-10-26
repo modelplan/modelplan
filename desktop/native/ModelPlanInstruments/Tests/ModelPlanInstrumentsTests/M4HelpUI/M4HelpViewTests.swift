@@ -162,6 +162,18 @@ import XCTest
         XCTAssertNil(view.presentation?.card);XCTAssertNil(view.currentActionButton)
         XCTAssertFalse(view.handleEscape());view.dispose()
     }
+    func testReentrantCancellationKeepsTheLatchedMapPressConsumedWithoutStaleActions() {
+        for escape in [false,true] {
+            let view=HelpUILayerView(elapsed:{1});var actions=[HelpUIAction]()
+            var input=M4HelpFixtures.map(.compact640,.english,full:false);input.map.mode = .latched
+            view.onAction={actions.append($0)};view.update(input)
+            var inactive=input;inactive.active=false
+            view.onHintInput={ _ in view.onHintInput=nil;view.update(inactive) }
+            XCTAssertTrue(escape ? view.handleEscape():view.outsidePointerDown(),"the original help press must not reach the cockpit underneath")
+            XCTAssertEqual(view.input,inactive);XCTAssertNil(view.presentation?.mapHeader)
+            XCTAssertTrue(actions.isEmpty);view.dispose()
+        }
+    }
     func testReentrantRecipeClearOrDisposalCannotPublishStaleCardOrMap() {
         for stage in ["presentation","font","measure","ink"] {
             for dispose in [false,true] {
