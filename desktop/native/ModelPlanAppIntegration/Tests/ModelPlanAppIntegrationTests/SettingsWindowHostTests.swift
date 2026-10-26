@@ -136,4 +136,15 @@ import ModelPlanSettings
         XCTAssertNil(app.editor.snapshot)
     }
 
+    func testDefaultUIObservationPreservesAuthoritativeWindowAndEntranceGates() async throws {
+        let app = try application(), surface = TestSettingsSurface()
+        var environment = SettingsEnvironment(); environment.fullscreen = true; environment.entranceAccepted = true
+        app.update(environment: environment)
+        let host = SettingsWindowHost(application: app, canPresent: { true }, makeSurface: { _ in surface })
+        await host.present()
+        XCTAssertTrue(app.editor.environment.fullscreen)
+        XCTAssertTrue(app.editor.environment.entranceAccepted)
+        XCTAssertFalse(try XCTUnwrap(app.latest).effective.dockAllowed)
+    }
+
 }

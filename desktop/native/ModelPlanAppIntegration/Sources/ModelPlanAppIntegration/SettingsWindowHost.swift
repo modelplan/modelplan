@@ -35,10 +35,21 @@ import ModelPlanSettings
 
     public init(application: SettingsApplicationCoordinator,
                 canPresent: @escaping @MainActor () -> Bool,
-                environment: @escaping @MainActor () -> SettingsEnvironment = SettingsWindowController.systemEnvironment,
+                environment: (@MainActor () -> SettingsEnvironment)? = nil,
                 makeSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) {
-        self.application = application; self.canPresent = canPresent; self.environment = environment
-        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: environment) }
+        let resolveEnvironment: @MainActor () -> SettingsEnvironment = environment ?? {
+            // OS UI observations cannot replace app-owned fullscreen or entrance acceptance.
+            var current = application.editor.environment
+            let observed = SettingsWindowController.systemEnvironment()
+            current.darkAppearance = observed.darkAppearance
+            current.reduceMotion = observed.reduceMotion
+            current.reduceTransparency = observed.reduceTransparency
+            current.increaseContrast = observed.increaseContrast
+            current.macOSMajor = observed.macOSMajor
+            return current
+        }
+        self.application = application; self.canPresent = canPresent; self.environment = resolveEnvironment
+        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment) }
         super.init()
     }
 
