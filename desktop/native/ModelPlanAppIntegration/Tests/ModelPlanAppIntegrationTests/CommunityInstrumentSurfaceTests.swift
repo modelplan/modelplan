@@ -22,6 +22,55 @@ import ModelPlanSettings
         return assembly.evaluate(feeds: .init(publication: publication, personal: nil, personalUsable: false),
                                  scope: .all, language: language, now: now)
     }
+    private func exactSelection(secondRecommended: Bool, wideFirst: Bool = false) throws -> AssembledModelSelection {
+        let models: [[String: Any]] = ["first", "second"].map { id in
+            var m: [String: Any] = ["id": id, "name": id, "developerId": "dev", "lineageId": "line-" + id,
+                "lineageStatus": "current", "defaultSelected": true,
+                "efforts": [["effort": "high", "label": id == "first" && wideFirst ? String(repeating: "wide", count: 12) : "High",
+                             "ability": 10, "cost": 2, "time": 3]]]
+            if id == "first" || secondRecommended { m["recommended"] = "high" }
+            return m
+        }
+        let wire: [String: Any] = ["schemaVersion": 1, "publicationId": "p", "selectionRevision": "r",
+            "units": ["ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"],
+            "models": models, "lineups": []]
+        let personal: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot",
+            "generatedAt": ISO8601DateFormatter().string(from: now),
+            "validUntil": ISO8601DateFormatter().string(from: now.addingTimeInterval(300)),
+            "publication": ["publicationId": "p"], "subscriptions": []]
+        var assembly = SelectionAssembly()
+        let packet = assembly.evaluate(feeds: .init(
+            publication: try FeedDecoder.publication(JSONSerialization.data(withJSONObject: wire)),
+            personal: try FeedDecoder.personal(JSONSerialization.data(withJSONObject: personal)), personalUsable: true),
+            scope: .all, now: now)
+        XCTAssertFalse(packet.publicDefaultFallback)
+        XCTAssertTrue(packet.instruments?.matchesExact(packet.instruments?.publication, scope: .all) == true)
+        return packet
+    }
+    func testExactSwitchToModelWithoutRecommendationClearsPreviousComparison() throws {
+        let surface = CommunityInstrumentView()
+        surface.render(selection: try exactSelection(secondRecommended: false), publishedAt: now, now: now)
+        surface.resumePresentation(); surface.selectModel("first")
+        XCTAssertEqual(surface.mainScreen.controller.trial?.modelID, "first")
+        surface.selectModel("second")
+        XCTAssertEqual(surface.selectedModelID, "second")
+        XCTAssertNil(surface.mainScreen.controller.trial)
+        XCTAssertEqual(surface.mainScreen.presentation?.displayedPage, .effort)
+        XCTAssertFalse(surface.renderFailure); surface.dispose()
+    }
+    func testExactSwitchToSmallerComparisonDoesNotRenderPreviousModelAtNewSize() throws {
+        let surface = CommunityInstrumentView()
+        surface.render(selection: try exactSelection(secondRecommended: true, wideFirst: true), publishedAt: now, now: now)
+        surface.resumePresentation(); surface.selectModel("first")
+        XCTAssertEqual(surface.mainScreen.controller.trial?.modelID, "first")
+        let wide = surface.preferredContentSize.width
+        surface.selectModel("second")
+        XCTAssertFalse(surface.renderFailure)
+        XCTAssertEqual(surface.mainScreen.controller.trial?.modelID, "second")
+        XCTAssertEqual(surface.mainScreen.presentation?.comparison?.modelID, "second")
+        XCTAssertLessThan(surface.preferredContentSize.width, wide)
+        XCTAssertFalse(surface.mainScreen.isHidden); surface.dispose()
+    }
     private func application(_ apply: @escaping (SettingsApplication) -> Void) throws -> SettingsApplicationCoordinator {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("community-instruments-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -32,6 +81,7 @@ import ModelPlanSettings
         let provider = CommunityInstrumentSurfaceProvider()
         let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
         XCTAssertTrue(provider.makeOverview() === surface)
+        XCTAssertEqual(surface.modelPicker.accessibilityLabel(), "选择模型")
         surface.render(selection: try selection(), publishedAt: now.addingTimeInterval(-120), now: now)
         XCTAssertEqual(surface.mainScreen.surfaceRenders, 0)
         surface.resumePresentation()
@@ -56,6 +106,7 @@ import ModelPlanSettings
         _ = try await app.commit(.theme(.system)); XCTAssertNil(surface.mainScreen.appearance)
         _ = try await app.editor.commit(SettingsB21Edit.language(.english))
         XCTAssertEqual(surface.instrumentLanguage, .english); XCTAssertEqual(surface.mainScreen.presentation?.language, .english)
+        XCTAssertEqual(surface.modelPicker.accessibilityLabel(), "Choose a model")
         XCTAssertNil(surface.mainScreen.window); surface.dispose()
     }
     func testMissingExactRevisionDoesNotErasePublicCatalogue() throws {

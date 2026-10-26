@@ -65,6 +65,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         mainScreen.appearance = nil
         modelPicker.target = self; modelPicker.action = #selector(pickedModel(_:))
         modelPicker.setAccessibilityIdentifier("community.model-picker")
+        modelPicker.setAccessibilityLabel("选择模型")
         status.setAccessibilityIdentifier("community.instrument-status")
         modelPicker.frame = .init(x: 0, y: 0, width: 600, height: 26)
         mainScreen.frame.origin = .init(x: 0, y: 32)
@@ -74,6 +75,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         guard !retired, application.snapshot.revision >= (settings?.snapshot.revision ?? 0) else { return }
         let languageChanged = settings?.effective.language != application.effective.language
         settings = application
+        modelPicker.setAccessibilityLabel(instrumentLanguage == .chinese ? "选择模型" : "Choose a model")
         switch application.snapshot.preferences.theme {
         case .system: mainScreen.appearance = nil
         case .day: mainScreen.appearance = NSAppearance(named: .aqua)
@@ -165,6 +167,10 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         // This independent community surface retains the existing default MainScreen profile.
         let compact = false
         do {
+            // A picker action replaces its sourced comparison before either sizing or drawing.
+            // Otherwise update would first render A at B's preflight size, or keep A when B
+            // has no usable recommendation and openComparison(B) correctly declines.
+            if compare { mainScreen.closeForCockpit() }
             var controller = mainScreen.controller
             _ = try controller.update(inputs: inputs, selection: selection.instruments,
                 publication: selection.instruments?.publication, publicationUsable: selection.instruments != nil,
