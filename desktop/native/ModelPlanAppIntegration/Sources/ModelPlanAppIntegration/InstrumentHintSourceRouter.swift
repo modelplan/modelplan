@@ -22,10 +22,12 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
 }
 
 /// Maps real view events to one app-owned trial arbiter without owning policy, timers, overlays or files.
-/// Bind each view's onHintInput with its lease; the resolver should capture that view weakly.
+/// Bind each view's onHintInput with its lease. isLive and the resolver should capture it weakly;
+/// isLive checks the current surface lifetime even when the pointer is outside a trial travel.
 @MainActor public final class InstrumentHintSourceRouter {
     private struct Binding {
         let lease: InstrumentHintSourceLease
+        let isLive: () -> Bool
         let resolve: () -> InstrumentHintSourceSnapshot?
     }
     private struct Rest {
@@ -44,12 +46,12 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
                 uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.receiver = receiver; self.uptime = uptime
     }
-    public func register(sourceID: UUID = UUID(),
+    public func register(sourceID: UUID = UUID(), isLive: @escaping () -> Bool,
                          resolve: @escaping () -> InstrumentHintSourceSnapshot?) -> InstrumentHintSourceLease {
         operationGeneration &+= 1
         let lease = InstrumentHintSourceLease(sourceID: sourceID, generation: UUID())
         // Install first: a cancellation callout may synchronously register a newer replacement.
-        bindings[sourceID] = Binding(lease: lease, resolve: resolve)
+        bindings[sourceID] = Binding(lease: lease, isLive: isLive, resolve: resolve)
         if rest?.lease.sourceID == sourceID { cancelCurrent(reason: .targetRemoval) }
         return lease
     }
@@ -69,6 +71,15 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
         guard now.isFinite, now >= 0, eventTime.isFinite, eventTime >= 0, eventTime <= now else { return }
         operationGeneration &+= 1
         let operation = operationGeneration
+        if case .cancelFaderRest(let reason, _) = input {
+            switch reason { case .removal, .teardown: remove(lease); return; default: break }
+        }
+        let live = bindings[lease.sourceID]?.isLive() ?? false
+        guard operationGeneration == operation, isCurrent(lease) else { return }
+        guard live else {
+            if rest?.lease == lease { cancelCurrent(reason: .targetRemoval) }
+            return
+        }
         switch input {
         case .faderRestCandidate(let anchor, let pointer, _):
             let resolved = bindings[lease.sourceID]?.resolve()
@@ -105,7 +116,9 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     public func validatePendingRest() -> InstrumentHintSourceSnapshot? {
         guard let pending = rest else { return nil }
         let operation = operationGeneration
-        let state = bindings[pending.lease.sourceID]?.resolve()
+        let live = bindings[pending.lease.sourceID]?.isLive() ?? false
+        guard operationGeneration == operation, rest?.target == pending.target, isCurrent(pending.lease) else { return nil }
+        let state = live ? bindings[pending.lease.sourceID]?.resolve() : nil
         guard operationGeneration == operation, rest?.target == pending.target, isCurrent(pending.lease) else { return nil }
         guard let state, valid(state), state == pending.snapshot else {
             cancelCurrent(reason: .targetRemoval); return nil
