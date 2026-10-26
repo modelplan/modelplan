@@ -316,6 +316,14 @@ struct NativeFailure:Error {let message:String}
     let clearsBeforeRemoval=edgeClears.count
     edgeEnv.displays=[];edgeEnv.layouts=[];edgeTime=16.1;edgeDriver.refresh();edgeDriver.endBackgroundMove(global:CGPoint(x:980,y:500))
     try require(commits==1 && edgeDriver.presentation?.paintedFrame==nil && edgeClears.count==clearsBeforeRemoval+1,"display removal cancels capture exactly once, no floating frame")
+    edgeEnv.displays=[display];edgeEnv.layouts=edgeLayouts;edgeEnv.pointer=CGPoint(x:999,y:400);edgeEnv.presence.autoHide=false
+    edgeTime=20;edgeDriver.stop();edgeDriver.setPreference(.init(displayID:"screen",edge:.right));edgeDriver.resume();edgeTime=20.4;edgeDriver.dragRegions=edgeRegions
+    let anchorBefore=edgeDriver.presentation!.placement!.sliverFrame.midY
+    _ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:20),global:CGPoint(x:925,y:anchorBefore+100))
+    edgeEnv.presence.mouseButtonDown=true
+    edgeDriver.updateBackgroundMove(global:CGPoint(x:925,y:anchorBefore+120))
+    try require(abs(edgeDriver.presentation!.snapPreview!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
+    edgeDriver.cancelBackgroundMove()
     edgeDriver.stop()
     let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
     try sliver.apply(image:nil,logicalSize:CGSize(width:3,height:20),scale:2,accessibilityLabel:"Synthetic reveal")

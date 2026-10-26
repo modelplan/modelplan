@@ -388,6 +388,13 @@ do {
         try expect(avoid.edge != .bottom && avoid.frame.maxY<=reserved.visibleFrame.maxY,"visible system-Dock edge avoided when an alternative exists")
         try expect(try DockEdgeGeometry.resolve(preference:.init(),displays:[],layouts:[],pointer:nil,primaryID:nil)==nil,"empty screens do not invent a frame")
     }
+    try test("B07 registration: asymmetric full bounds keep the supplied sliver anchor"){
+        let f=CGRect(x:0,y:0,width:1000,height:800),d=DockDisplayArea(id:"d",frame:f,visibleFrame:f)
+        let layout=DockEdgeLayout(displayID:"d",edge:.right,expandedSize:CGSize(width:80,height:240),sliverLength:200,sliverThickness:3,hoverRects:[],alongAnchor:80)
+        let p=try DockEdgeGeometry.resolve(preference:.init(displayID:"d",edge:.right),displays:[d],layouts:[layout],pointer:nil,primaryID:"d")!
+        try expect(p.sliverFrame.midY==400 && p.frame.minY==320,"registered anchor, not expanded bounding-box centre")
+        try expect(p.globalHoverRects.isEmpty,"no invented painted regions")
+    }
     try test("B07 lifecycle: suspension and fresh geometry never reuse actionable arrival state"){
         var v=DockVisibilityState(),presence=DockPresence();presence.autoHide=false
         _=try v.step(presence,at:0,intent:.lifecycleCancel)

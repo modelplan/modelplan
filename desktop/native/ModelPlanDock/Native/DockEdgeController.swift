@@ -46,7 +46,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var running=false,sampling=false,timerGeneration:UInt=0
     private var geometry:[DockDisplayArea]=[],layouts:[DockEdgeLayout]=[]
     private var primaryID:String?
-    private var dragOrigin:CGPoint?,preview:DockEdgePlacement?
+    private var dragOrigin:CGPoint?,preview:DockEdgePlacement?,dragStartPlacement:DockEdgePlacement?
     private var dragStarted=false
     public var isBackgroundMoving:Bool{dragStarted}
     public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment){
@@ -111,11 +111,11 @@ public struct DockEdgePresentation:Equatable,Sendable {
         }
     }
     private func publish(_ next:DockEdgePresentation){if next != presentation{presentation=next;onPresent?(next)}}
-    private func clearMove(){dragOrigin=nil;dragStarted=false;preview=nil}
+    private func clearMove(){dragOrigin=nil;dragStarted=false;preview=nil;dragStartPlacement=nil}
     public func backgroundCanDrag(local:CGPoint)->Bool{guard dragLayout==presentation?.placement?.layout else{return false};return dragRegions?.contains(local) ?? false}
     public func beginBackgroundMove(local:CGPoint,global:CGPoint)->Bool{
         guard acceptsPress(),backgroundCanDrag(local:local),global.x.isFinite,global.y.isFinite,presentation?.state == .expanded else{return false}
-        dragOrigin=global;dragStarted=false;preview=nil;refresh(intent:.sample);return true
+        dragOrigin=global;dragStartPlacement=presentation?.placement;dragStarted=false;preview=nil;refresh(intent:.sample);return true
     }
     public func updateBackgroundMove(global:CGPoint){
         guard let origin=dragOrigin else{return}
@@ -123,10 +123,23 @@ public struct DockEdgePresentation:Equatable,Sendable {
         guard dragStarted || hypot(global.x-origin.x,global.y-origin.y)>5 else{return}
         do{
             let env=read()
-            guard let next=try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,nearest:true,wakeDepth:visibility.policy.wakeDepth) else{cancelBackgroundMove();return}
+            guard let next=try moveDestination(global:global,environment:env) else{cancelBackgroundMove();return}
             dragStarted=true;preview=next
             if let current=presentation{publish(.init(state:current.state,placement:current.placement,snapPreview:next,moving:true))}
         }catch{cancelBackgroundMove();onFailure?(error)}
+    }
+    private func moveDestination(global:CGPoint,environment env:DockEdgeEnvironment)throws->DockEdgePlacement?{
+        guard let nearest=try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,nearest:true,wakeDepth:visibility.policy.wakeDepth) else{return nil}
+        guard let origin=dragOrigin,let start=dragStartPlacement,start.edge==nearest.edge,
+            let display=env.displays.first(where:{$0.id==nearest.displayID}) else{return nearest}
+        // Preserve the grabbed point along the original edge; switching edge orientation recentres
+        // the preview as in the frozen move contract. Do not shift the pointer used to choose an edge.
+        let vertical=start.edge != .bottom
+        let anchor=vertical ? start.sliverFrame.midY:start.sliverFrame.midX
+        let grab=(vertical ? origin.y:origin.x)-anchor
+        let centre=(vertical ? global.y:global.x)-grab
+        let fraction=Double((centre-(vertical ? display.usableFrame.minY:display.usableFrame.minX))/(vertical ? display.usableFrame.height:display.usableFrame.width))
+        return try DockEdgeGeometry.resolve(preference:.init(displayID:nearest.displayID,edge:nearest.edge,alongFraction:fraction),displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,wakeDepth:visibility.policy.wakeDepth)
     }
     public func endBackgroundMove(global:CGPoint){
         guard let origin=dragOrigin else{return}
@@ -138,7 +151,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
                 env.presence.enabled,env.presence.cockpitClosed,env.presence.allowedOverFullscreen,env.presence.lifecycleActive,
                 global.x.isFinite,global.y.isFinite else{cancelBackgroundMove();refresh();return}
             let moved=dragStarted || hypot(global.x-origin.x,global.y-origin.y)>5
-            let destination=moved ? try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,nearest:true,wakeDepth:visibility.policy.wakeDepth):nil
+            let destination=moved ? try moveDestination(global:global,environment:env):nil
             clearMove();onClearRecordedLocks?(.drag)
             if let destination{preference=destination.preference;onCommittedPlacement?(preference)}
             refresh()

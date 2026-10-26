@@ -14,11 +14,13 @@ public struct DockDisplayArea: Equatable, Sendable {
 /// Already-scaled registered geometry. Drawing/scale recipes are injected, never inferred from a label.
 public struct DockEdgeLayout: Equatable, Sendable {
     public let displayID:String,edge:DockEdge,expandedSize:CGSize,sliverLength:CGFloat,sliverThickness:CGFloat
+    /// Registered sliver centre measured from the expanded frame's global minimum along axis.
+    public let alongAnchor:CGFloat
     public let hoverRects:[CGRect]
     public let flipped:Bool
-    public init(displayID:String,edge:DockEdge,expandedSize:CGSize,sliverLength:CGFloat,sliverThickness:CGFloat,hoverRects:[CGRect],flipped:Bool=true){
+    public init(displayID:String,edge:DockEdge,expandedSize:CGSize,sliverLength:CGFloat,sliverThickness:CGFloat,hoverRects:[CGRect],flipped:Bool=true,alongAnchor:CGFloat?=nil){
         self.displayID=displayID;self.edge=edge;self.expandedSize=expandedSize;self.sliverLength=sliverLength
-        self.sliverThickness=sliverThickness;self.hoverRects=hoverRects;self.flipped=flipped
+        self.sliverThickness=sliverThickness;self.alongAnchor=alongAnchor ?? (edge == .bottom ? expandedSize.width:expandedSize.height)/2;self.hoverRects=hoverRects;self.flipped=flipped
     }
 }
 public struct DockEdgePreference: Equatable, Sendable {
@@ -48,6 +50,7 @@ public enum DockEdgeGeometry {
             guard p.edge != .top,!p.displayID.isEmpty,p.expandedSize.width.isFinite,p.expandedSize.height.isFinite,
                 p.expandedSize.width>0,p.expandedSize.height>0,p.expandedSize.width<=4096,p.expandedSize.height<=4096,
                 p.sliverLength.isFinite,p.sliverLength>0,p.sliverLength<=4096,p.sliverThickness.isFinite,p.sliverThickness>0,p.sliverThickness<=256,
+                p.alongAnchor.isFinite,p.alongAnchor>=0,p.alongAnchor<=(p.edge == .bottom ? p.expandedSize.width:p.expandedSize.height),
                 p.hoverRects.count<=4096,p.hoverRects.allSatisfy(finite) else{throw DockEdgeError.invalidGeometry}
             guard keys.insert(p.displayID+"/"+String(describing:p.edge)).inserted else{throw DockEdgeError.duplicateLayout}
         }
@@ -89,25 +92,26 @@ public enum DockEdgeGeometry {
         let u=d.usableFrame,vertical=p.edge != .bottom
         let along=vertical ? p.expandedSize.height:p.expandedSize.width
         let cross=vertical ? p.expandedSize.width:p.expandedSize.height
-        let total=max(along,p.sliverLength),span=vertical ? u.height:u.width
+        let before=max(p.alongAnchor,p.sliverLength/2),after=max(along-p.alongAnchor,p.sliverLength/2)
+        let total=before+after,span=vertical ? u.height:u.width
         guard cross<=(vertical ? u.width:u.height),p.sliverThickness<=cross,wake<=(vertical ? u.width:u.height),p.sliverLength<=span else{return nil}
         let intervals=exposedIntervals(on:d,edge:p.edge,displays:displays,cornerClearance:corner).filter{$0.upperBound-$0.lowerBound>=total}
         guard !intervals.isEmpty else{return nil}
         let desired=point.map{vertical ? $0.y:$0.x} ?? ((vertical ? u.minY:u.minX)+CGFloat(max(0,min(1,fraction)))*span)
-        let centres=intervals.map{r in max(r.lowerBound+total/2,min(r.upperBound-total/2,desired))}
+        let centres=intervals.map{r in max(r.lowerBound+before,min(r.upperBound-after,desired))}
         let centre=centres.min{abs($0-desired)<abs($1-desired)}!
         let frame:CGRect,sliver:CGRect,wakeRect:CGRect
         switch p.edge{
         case .left:
-            frame=CGRect(x:u.minX,y:centre-along/2,width:cross,height:along)
+            frame=CGRect(x:u.minX,y:centre-p.alongAnchor,width:cross,height:along)
             sliver=CGRect(x:u.minX,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
             wakeRect=CGRect(x:u.minX,y:sliver.minY,width:wake,height:sliver.height)
         case .right:
-            frame=CGRect(x:u.maxX-cross,y:centre-along/2,width:cross,height:along)
+            frame=CGRect(x:u.maxX-cross,y:centre-p.alongAnchor,width:cross,height:along)
             sliver=CGRect(x:u.maxX-p.sliverThickness,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
             wakeRect=CGRect(x:u.maxX-wake,y:sliver.minY,width:wake,height:sliver.height)
         case .bottom:
-            frame=CGRect(x:centre-along/2,y:u.minY,width:along,height:cross)
+            frame=CGRect(x:centre-p.alongAnchor,y:u.minY,width:along,height:cross)
             sliver=CGRect(x:centre-p.sliverLength/2,y:u.minY,width:p.sliverLength,height:p.sliverThickness)
             wakeRect=CGRect(x:sliver.minX,y:u.minY,width:sliver.width,height:wake)
         case .top:return nil
