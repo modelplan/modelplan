@@ -39,7 +39,8 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public var onPresent:((DockEdgePresentation)->Void)?
     public var onReveal:(()->Void)?,onCommittedPlacement:((DockEdgePreference)->Void)?,onClearRecordedLocks:((DockRecordedLocks)->Void)?
     public var onFailure:((Error)->Void)?
-    public var dragRegions:DockBackgroundDragRegions?
+    public var dragRegions:DockBackgroundDragRegions?{didSet{dragLayout=presentation?.placement?.layout}}
+    private var dragLayout:DockEdgeLayout?
     private let read:()->DockEdgeEnvironment,clock:()->TimeInterval,scheduler:any DockEdgeScheduling
     private var visibility:DockVisibilityState
     private var running=false,sampling=false,timerGeneration:UInt=0
@@ -57,7 +58,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     /// No window, Settings write, status menu or global keyboard/mouse monitor is created here.
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(){
-        running=false;timerGeneration &+= 1;scheduler.cancel();clearMove()
+        running=false;timerGeneration &+= 1;scheduler.cancel();if dragOrigin != nil{onClearRecordedLocks?(.drag)};clearMove()
         visibility = .init(policy:visibility.policy)
         publish(.init(state:.suppressed(.lifecycle),placement:nil,snapPreview:nil,moving:false))
     }
@@ -78,8 +79,10 @@ public struct DockEdgePresentation:Equatable,Sendable {
         timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
         do{
             let env=read(),now=clock();var input=env.presence
+            guard visibility.policy.sampleInterval>0 else{throw DockLogicError.invalidTime}
             let changed=geometry != env.displays || layouts != env.layouts
-            if changed{if dragOrigin != nil{onClearRecordedLocks?(.drag)};clearMove();geometry=env.displays;layouts=env.layouts}
+            var extraClear:DockRecordedLocks=[]
+            if changed{if dragOrigin != nil{extraClear.insert(.drag)};clearMove();geometry=env.displays;layouts=env.layouts}
             let place=try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:env.pointer,primaryID:env.primaryDisplayID,wakeDepth:visibility.policy.wakeDepth)
             input.outerEdge=place != nil
             if let p=place,let d=env.displays.first(where:{$0.id==p.displayID}),let pointer=env.pointer{
@@ -90,12 +93,16 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if changed && intent == .sample{reset=try visibility.step(input,at:now,intent:.lifecycleCancel)}
             let result=try visibility.step(input,at:now,intent:intent)
             if !input.lifecycleActive || result.state != .expanded{clearMove()}
-            let cleared=result.clearRecordedLocks.union(reset?.clearRecordedLocks ?? [])
+            let cleared=result.clearRecordedLocks.union(reset?.clearRecordedLocks ?? []).union(extraClear)
             if !cleared.isEmpty{onClearRecordedLocks?(cleared)}
             publish(.init(state:result.state,placement:place,snapPreview:preview,moving:dragStarted))
+            guard running,timerGeneration==token else{return}
             if result.didReveal || reset?.didReveal == true{onReveal?()}
+            guard running,timerGeneration==token else{return}
             guard input.lifecycleActive else{return}
+            if case .suppressed = result.state{return}
             let due=min(result.nextDeadline ?? .infinity,now+visibility.policy.sampleInterval)
+            guard due.isFinite,due>now else{throw DockLogicError.invalidTime}
             scheduler.arm(at:due){[weak self] in guard let self,self.running,self.timerGeneration==token else{return};self.refresh()}
         }catch{
             clearMove();running=false;visibility = .init(policy:visibility.policy)
@@ -104,7 +111,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     }
     private func publish(_ next:DockEdgePresentation){if next != presentation{presentation=next;onPresent?(next)}}
     private func clearMove(){dragOrigin=nil;dragStarted=false;preview=nil}
-    public func backgroundCanDrag(local:CGPoint)->Bool{dragRegions?.contains(local) ?? false}
+    public func backgroundCanDrag(local:CGPoint)->Bool{guard dragLayout==presentation?.placement?.layout else{return false};return dragRegions?.contains(local) ?? false}
     public func beginBackgroundMove(local:CGPoint,global:CGPoint)->Bool{
         guard acceptsPress(),backgroundCanDrag(local:local),global.x.isFinite,global.y.isFinite,presentation?.state == .expanded else{return false}
         dragOrigin=global;dragStarted=false;preview=nil;refresh(intent:.sample,duringDragEvent:true);return true

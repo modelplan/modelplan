@@ -140,7 +140,8 @@ public enum DockEdgeGeometry {
         var candidates=[DockEdgePlacement]()
         for d in sorted where nearest || d.id==chosen?.id{
             for edge in allowedEdges{
-                guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,point:nearest ? pointer:nil,corner:cornerClearance,wake:wakeDepth) else{continue}
+                let migrationPoint=preference.edge == .top ? CGPoint(x:d.usableFrame.minX+CGFloat(max(0,min(1,preference.alongFraction)))*d.usableFrame.width,y:d.usableFrame.maxY):nil
+                guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,point:nearest ? pointer:migrationPoint,corner:cornerClearance,wake:wakeDepth) else{continue}
                 candidates.append(c)
             }
         }
@@ -151,7 +152,7 @@ public enum DockEdgeGeometry {
         let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
         if !alternatives.isEmpty{candidates=alternatives}
         if !nearest,let exact=candidates.first(where:{$0.edge==preference.edge}){return exact}
-        guard let target=pointer ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:$0.usableFrame.midY)}) else{return candidates.first}
+        guard let target=pointer ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
         func distance(_ c:DockEdgePlacement)->CGFloat{
             let x=max(c.sliverFrame.minX,min(c.sliverFrame.maxX,target.x)),y=max(c.sliverFrame.minY,min(c.sliverFrame.maxY,target.y))
             return hypot(target.x-x,target.y-y)

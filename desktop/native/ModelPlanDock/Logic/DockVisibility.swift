@@ -70,7 +70,7 @@ public struct DockVisibilityState: Sendable {
             generation &+= 1
             if let reason = suppression() { surface = .suppressed(reason) }
             else { surface = input.autoHide ? .sliver : .expanded }
-            outsideSince = nil; dwellSince = nil; revealedAt = nil; clear = input.recordedLocks
+            outsideSince = nil; dwellSince = nil; revealedAt = surface == .expanded ? now:nil; clear = input.recordedLocks
         } else if let reason = suppression() {
             surface = .suppressed(reason); outsideSince = nil; dwellSince = nil; revealedAt = nil
             if previous != surface { generation &+= 1 }; clear = input.recordedLocks

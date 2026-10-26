@@ -105,7 +105,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let node=nodes[key] ?? DockInstrumentAXNode(),oldValue=node.accessibilityValue() as? String
             node.setAccessibilityRole(.button);node.setAccessibilityParent(self);node.setAccessibilityEnabled(onAction != nil)
             node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.setAccessibilityHelp(help)
-            node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in guard let self,let node,self.nodes[key] === node,let onAction=self.onAction,self.permitsAction?(action,.accessibility) ?? true else{return false};onAction(action);return true}
+            node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in
+                guard let self,let node,self.nodes[key] === node,self.permitsAction?(action,.accessibility) ?? true else{return false}
+                // A gate may synchronously refresh the snapshot; recheck this stable AX node afterward.
+                guard self.nodes[key] === node,let onAction=self.onAction else{return false};onAction(action);return true
+            }
             nodes[key]=node;children.append(node);used.insert(key)
             if oldValue != value {NSAccessibility.post(element:node,notification:.valueChanged)}
         }
@@ -159,7 +163,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         NSCursor.arrow.set()
     }
     public override func cancelOperation(_ sender:Any?){backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
-    private func dispatch(_ action:DockInstrumentAction){if permitsAction?(action,.pointer) ?? true{onAction?(action)}}
+    private func dispatch(_ action:DockInstrumentAction){
+        guard permitsAction?(action,.pointer) ?? true else{return}
+        switch action{
+        case .subscription(let id):guard readings[id] != nil else{return}
+        case .notice(let id):guard readings[id] != nil,notices[id] != nil else{return}
+        case .overflow:guard skin?.stations.contains(where:{$0.overflowCount != nil}) == true else{return}
+        };onAction?(action)
+    }
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}

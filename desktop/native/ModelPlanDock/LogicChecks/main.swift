@@ -338,5 +338,62 @@ do {
         let value:[String:Any]=["schemaVersion":1,"testGroups":groups,"assertions":assertions,"result":"passed","uiLaunched":false,"fixtureClock":"2023-11-14T22:13:20Z"]
         try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys]).write(to:URL(fileURLWithPath:CommandLine.arguments[i+1]),options:.atomic)
     }
+    func layouts(_ displays:[DockDisplayArea],scale:CGFloat=1)->[DockEdgeLayout]{
+        displays.flatMap{d in DockEdgeGeometry.allowedEdges.map{edge in
+            let size=edge == .bottom ? CGSize(width:240*scale,height:80*scale):CGSize(width:80*scale,height:240*scale)
+            return DockEdgeLayout(displayID:d.id,edge:edge,expandedSize:size,sliverLength:240*scale,sliverThickness:3*scale,hoverRects:[CGRect(origin:.zero,size:size)])
+        }}
+    }
+    try test("B07 placement: visible-frame containment, registered scaling and fixed wake"){
+        let frame=CGRect(x:-1000,y:600,width:1000,height:800),d=DockDisplayArea(id:"display",frame:frame,visibleFrame:frame)
+        for scale in [CGFloat(0.8),1,1.3]{for edge in DockEdgeGeometry.allowedEdges{
+            let p=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:edge),displays:[d],layouts:layouts([d],scale:scale),pointer:nil,primaryID:d.id)!
+            try expect(d.usableFrame.contains(p.frame) && d.usableFrame.contains(p.sliverFrame) && d.usableFrame.contains(p.wakeFrame),"all painted/wake frames stay usable")
+            let thickness=edge == .bottom ? p.sliverFrame.height:p.sliverFrame.width
+            let wake=edge == .bottom ? p.wakeFrame.height:p.wakeFrame.width
+            try expect(abs(thickness-3*scale)<0.0001 && wake==16,"registered sliver scales, physical wake does not")
+            let along=edge == .bottom ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
+            try expect(along>=24,"physical hot-corner clearance")
+            try expect(p.edge != .top,"top never emitted")
+        }}
+    }
+    try test("B07 seams: partial, negative, above and fully surrounded fallback"){
+        let a=DockDisplayArea(id:"a",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
+        let b=DockDisplayArea(id:"b",frame:CGRect(x:1000,y:400,width:800,height:400),visibleFrame:CGRect(x:1000,y:400,width:800,height:400))
+        let p=try DockEdgeGeometry.resolve(preference:.init(displayID:"a",edge:.right,alongFraction:0.9),displays:[a,b],layouts:layouts([a,b]),pointer:nil,primaryID:"a")!
+        try expect(p.edge == .right && p.frame.maxY<=400,"partial edge fits wholly below shared interval")
+        try expect(!DockEdgeGeometry.canWake(at:CGPoint(x:999,y:400),placement:p,displays:[a,b]),"exact seam endpoint cannot wake")
+        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:999,y:399),placement:p,displays:[a,b]),"exposed wake remains available")
+        let left=DockDisplayArea(id:"left",frame:CGRect(x:-1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:-1000,y:0,width:1000,height:800))
+        let q=try DockEdgeGeometry.resolve(preference:.init(displayID:"left",edge:.right),displays:[a,left],layouts:layouts([a,left]),pointer:nil,primaryID:"a")!
+        try expect(q.edge != .right,"negative-origin adjoining seam is not a placement")
+        let above=DockDisplayArea(id:"above",frame:CGRect(x:0,y:800,width:1000,height:800),visibleFrame:CGRect(x:0,y:800,width:1000,height:800))
+        let r=try DockEdgeGeometry.resolve(preference:.init(displayID:"above",edge:.bottom),displays:[a,above],layouts:layouts([a,above]),pointer:nil,primaryID:"a")!
+        try expect(r.edge != .bottom,"above-screen bottom seam cannot reveal")
+        let right=DockDisplayArea(id:"right",frame:CGRect(x:1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:1000,y:0,width:1000,height:800))
+        let below=DockDisplayArea(id:"below",frame:CGRect(x:0,y:-800,width:1000,height:800),visibleFrame:CGRect(x:0,y:-800,width:1000,height:800))
+        let all=[a,left,right,below]
+        let fallback=try DockEdgeGeometry.resolve(preference:.init(displayID:"a",edge:.right),displays:all,layouts:layouts(all),pointer:CGPoint(x:500,y:400),primaryID:"a")!
+        try expect(fallback.displayID != "a","fully surrounded display falls back without removing it from topology")
+        try expect(DockEdgeGeometry.canWake(at:CGPoint(x:fallback.wakeFrame.midX,y:fallback.wakeFrame.midY),placement:fallback,displays:all),"fallback remains exposed in full topology")
+    }
+    try test("B07 migration/drop: missing display, top normalization and no floating"){
+        let f=CGRect(x:0,y:0,width:1000,height:800),d=DockDisplayArea(id:"primary",frame:f,visibleFrame:f)
+        let top=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top),displays:[d],layouts:layouts([d]),pointer:nil,primaryID:d.id)!
+        try expect(top.edge == .right && top.frame.maxY==776,"top normalizes to nearest allowed registered position")
+        let bottom=try DockEdgeGeometry.resolve(preference:.init(displayID:"removed"),displays:[d],layouts:layouts([d]),pointer:CGPoint(x:450,y:5),primaryID:d.id,nearest:true)!
+        try expect(bottom.edge == .bottom && bottom.frame.minY==0,"nearest drop snaps, never floats")
+        let reserved=DockDisplayArea(id:"primary",frame:f,visibleFrame:CGRect(x:0,y:50,width:1000,height:724))
+        let avoid=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.bottom),displays:[reserved],layouts:layouts([reserved]),pointer:CGPoint(x:450,y:55),primaryID:d.id)!
+        try expect(avoid.edge != .bottom && avoid.frame.maxY<=reserved.visibleFrame.maxY,"visible system-Dock edge avoided when an alternative exists")
+        try expect(try DockEdgeGeometry.resolve(preference:.init(),displays:[],layouts:[],pointer:nil,primaryID:nil)==nil,"empty screens do not invent a frame")
+    }
+    try test("B07 lifecycle: suspension and fresh geometry never reuse actionable arrival state"){
+        var v=DockVisibilityState(),presence=DockPresence();presence.autoHide=false
+        _=try v.step(presence,at:0,intent:.lifecycleCancel)
+        try expect(!v.acceptsPress(at:0.1) && v.acceptsPress(at:0.3),"non-auto-hide reflow keeps arrival guard")
+        presence.lifecycleActive=false;let paused=try v.step(presence,at:0.4)
+        try expect(paused.state == .suppressed(.lifecycle) && paused.nextDeadline==nil,"lifecycle is an explicit suppression")
+    }
     print("PASS \(groups) groups; \(assertions) assertions")
 } catch { fputs("FAIL \(error)\n",stderr);exit(1) }
