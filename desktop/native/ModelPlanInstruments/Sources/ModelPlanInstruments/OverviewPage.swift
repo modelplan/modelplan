@@ -46,6 +46,8 @@ public struct OverviewPageSnapshot: Equatable, Sendable {
     public let today: Double?, days30: Double?
     public let notices: [OverviewNoticeDisplay]
     public let series: [OverviewSeriesIdentity]
+    public let heatmap: OverviewHeatmapData
+    public let initialVisualization: OverviewVisualization
     public let charts: [OverviewChartData]
     public let calendar: Calendar
     public let information: OverviewInformationRow?
@@ -58,11 +60,14 @@ public struct OverviewPageSnapshot: Equatable, Sendable {
         notices: [InstrumentNotice], identities: [OverviewSeriesIdentity] = [], scope: InstrumentScope,
         now: Date, calendar: Calendar, initialRange: UsageRange = .days7, initialMode: UsageChartMode = .stacked,
         reportedTodaySources: [SourceTokenTotal]? = nil, reportedThirtyDaySources: [SourceTokenTotal]? = nil,
-        information: OverviewInformationRow? = nil) {
+        information: OverviewInformationRow? = nil, initialVisualization: OverviewVisualization = .bars,
+        coverageStart: Date? = nil, coverageBySubscription: [String: Date] = [:]) {
+        self.initialVisualization=initialVisualization
         self.scope=scope; self.calendar=calendar; self.information=information; self.initialRange=initialRange; self.initialMode=initialMode
         let p=OverviewPresentation(columns:columns,daily:daily,hourly:hourly,notices:notices,scope:scope,range:initialRange,
-            coverageStart:nil,now:now,calendar:calendar,mode:initialMode,
+            coverageStart:coverageStart,now:now,calendar:calendar,mode:initialMode,coverageBySubscription:coverageBySubscription,
             reportedTodaySources:reportedTodaySources,reportedThirtyDaySources:reportedThirtyDaySources)
+        heatmap=OverviewHeatmapData(p.heatmap,ids:p.chart.subscriptionIDs,now:now,calendar:calendar,coverageStart:coverageStart)
         today=p.todayTokens; days30=p.thirtyDayTokens
         self.notices=p.notices.map { .init(id:$0.id,text:$0.text,severity:$0.severity) }
         var seen=Set<String>()
@@ -83,7 +88,8 @@ public struct OverviewPageSnapshot: Equatable, Sendable {
     }
     public func footer(_ language: InstrumentLanguage) -> [MainScreenFooterOption?] {
         let zh=language == .chinese,help=HelpCatalog(language).explanation(.option)
-        return [nil,
+        return [.init(id:"overview.chart",choices:[.init("bars",title:zh ? "柱":"Bars"),.init("grid",title:zh ? "点阵":"Grid")],
+                selectedValue:initialVisualization == .heatmap ? "grid":"bars",help:help),
             .init(id:"overview.range",choices:[.init("24",title:"24h"),.init("7",title:"7"),.init("30",title:"30")],selectedValue:Self.rangeKey(initialRange),help:help),
             .init(id:"overview.mode",choices:[.init("stack",title:zh ? "叠":"Stack"),.init("split",title:zh ? "分":"Split")],selectedValue:initialMode == .stacked ? "stack":"split",help:help)]
     }
@@ -91,9 +97,10 @@ public struct OverviewPageSnapshot: Equatable, Sendable {
         .init(.overview, options: footer(language), overview: self)
     }
     public static func rangeKey(_ range: UsageRange) -> String { range == .hours24 ? "24":range == .days7 ? "7":"30" }
-    public func display(rangeKey: String?, modeKey: String?, language: InstrumentLanguage) -> OverviewPageDisplay {
+    public func display(rangeKey: String?, modeKey: String?, language: InstrumentLanguage, visualizationKey: String? = nil) -> OverviewPageDisplay {
         let range:UsageRange=rangeKey == "24" ? .hours24:rangeKey == "30" ? .days30:rangeKey == "7" ? .days7:initialRange
-        return .init(snapshot:self,chart:charts.first{$0.range==range}!,mode:modeKey == "split" ? .split:modeKey == "stack" ? .stacked:initialMode,language:language)
+        return .init(snapshot:self,chart:charts.first{$0.range==range}!,mode:modeKey == "split" ? .split:modeKey == "stack" ? .stacked:initialMode,language:language,
+            visualization:visualizationKey == "grid" ? .heatmap:visualizationKey == "bars" ? .bars:initialVisualization)
     }
 }
 public struct OverviewPageDisplay: Equatable, Sendable {
@@ -101,6 +108,7 @@ public struct OverviewPageDisplay: Equatable, Sendable {
     public let chart: OverviewChartData
     public let mode: UsageChartMode
     public let language: InstrumentLanguage
+    public let visualization: OverviewVisualization
     public var todayText: String { InstrumentFormat(language).tokens(snapshot.today) }
     public var days30Text: String { InstrumentFormat(language).tokens(snapshot.days30) }
     public func visibleNotices(limit: Int) -> (notices:[OverviewNoticeDisplay],more:Int,information:OverviewInformationRow?) {
@@ -108,12 +116,12 @@ public struct OverviewPageDisplay: Equatable, Sendable {
         let count=all.count>limit ? max(0,limit-1):min(limit,all.count)
         return (Array(all.prefix(count)),(all.count>limit ? all.count-count:0),all.count<limit ? snapshot.information:nil)
     }
-    public func explanation(_ bucket: OverviewBucketDisplay) -> HelpExplanation {
+    public func explanation(_ bucket: OverviewBucketDisplay, calendarDay: Bool = false) -> HelpExplanation {
         let format=InstrumentFormat(language),zh=language == .chinese
         let stamp=DateFormatter();stamp.calendar=snapshot.calendar;stamp.timeZone=snapshot.calendar.timeZone
         stamp.locale=Locale(identifier:zh ? "zh_CN":"en_US_POSIX")
         // The numeric offset distinguishes repeated local hours, including non-whole-hour zones.
-        stamp.dateFormat=chart.range == .hours24 ? "HH:mm 'GMT'XXX":zh ? "M月d日":"MMM d"
+        stamp.dateFormat=calendarDay ? "yyyy-MM-dd EEE":chart.range == .hours24 ? "HH:mm 'GMT'XXX":zh ? "M月d日":"MMM d"
         let total=bucket.total.map { format.tokens($0) }
             ?? bucket.recordedTotal.map { format.tokens($0)+(zh ? " · 部分":" · partial") }
             ?? (zh ? "未记录":"No record")

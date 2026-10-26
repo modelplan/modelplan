@@ -9,6 +9,10 @@ public enum MainScreenAction: Equatable, Sendable {
     case fast(modelID: String)
 }
 public enum MainScreenRegionRole: Sendable { case button, readout, choice }
+public struct MainScreenGridPosition: Equatable, Sendable {
+    public let column: Int, row: Int
+    public init(column: Int, row: Int) { self.column=column; self.row=row }
+}
 public struct MainScreenHitRegion: Equatable, Sendable {
     public let id: String, label: String
     public let rect: CGRect
@@ -16,12 +20,13 @@ public struct MainScreenHitRegion: Equatable, Sendable {
     public let help: HelpExplanation
     public let role: MainScreenRegionRole
     public let enabled: Bool, tabStop: Bool
+    public let gridPosition: MainScreenGridPosition?
     public let focusGroup: String?
     public let value: String?
     public init(id: String, rect: CGRect, action: MainScreenAction? = nil, label: String, help: HelpExplanation,
-                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil) {
+                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil, gridPosition: MainScreenGridPosition? = nil) {
         self.id = id; self.rect = rect; self.action = action; self.label = label; self.help = help
-        self.role = role; self.enabled = enabled; self.tabStop = tabStop; self.value = value; self.focusGroup = focusGroup
+        self.role = role; self.enabled = enabled; self.tabStop = tabStop; self.value = value; self.focusGroup = focusGroup; self.gridPosition = gridPosition
     }
 }
 public struct MainScreenRecipe: Equatable, Sendable {
@@ -38,6 +43,9 @@ public struct MainScreenRecipe: Equatable, Sendable {
         try EngineTableRecipe(size: size, commands: commands, regions: [], focusInk: focusInk).validate()
         guard regions.count <= 512, Set(regions.map(\.id)).count == regions.count else { throw EngineTableError.invalidRecipe }
         for r in regions {
+            if let position=r.gridPosition {
+                guard r.focusGroup != nil,(0...4096).contains(position.column),(0...4096).contains(position.row) else {throw EngineTableError.invalidRecipe}
+            }
             guard !r.id.isEmpty, r.label.utf8.count <= 4096,
                   [r.rect.minX, r.rect.minY, r.rect.width, r.rect.height].allSatisfy(\.isFinite),
                   r.rect.minX >= 0, r.rect.minY >= 0, r.rect.width > 0, r.rect.height > 0,

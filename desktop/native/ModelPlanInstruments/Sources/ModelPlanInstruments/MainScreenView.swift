@@ -173,12 +173,28 @@ import AppKit
     }
     fileprivate func navigateGroup(from id: String, event: NSEvent) -> Bool {
         guard let region = controls[id]?.region, let group = region.focusGroup,
-              [123,124,115,119].contains(event.keyCode) else { return false }
-        let ids = recipe?.regions.filter { $0.enabled && $0.tabStop && $0.focusGroup == group }.map(\.id) ?? []
-        guard let index = ids.firstIndex(of: id), !ids.isEmpty else { return false }
+              [123,124,125,126,115,119].contains(event.keyCode) else { return false }
+        let items = recipe?.regions.filter { $0.enabled && $0.tabStop && $0.focusGroup == group } ?? []
+        guard let index = items.firstIndex(where:{$0.id == id}), !items.isEmpty else { return false }
+        let code=event.keyCode
+        if region.gridPosition == nil && (code==125 || code==126) { return false }
         cancelHintRest(.keyboard); keyboard = true
-        let next = event.keyCode == 115 ? 0 : event.keyCode == 119 ? ids.count-1 : min(ids.count-1,max(0,index+(event.keyCode == 124 ? 1:-1)))
-        if let control = controls[ids[next]] { window?.makeFirstResponder(control) }
+        let next: MainScreenHitRegion?
+        if code==115 { next=items.first }
+        else if code==119 { next=items.last }
+        else if let position=region.gridPosition {
+            let horizontal=code==123 || code==124,forward=code==124 || code==125
+            let origin=horizontal ? position.column:position.row
+            next=items.filter { item in
+                guard let p=item.gridPosition else{return false}
+                let value=horizontal ? p.column:p.row
+                return (horizontal ? p.row==position.row:p.column==position.column) && (forward ? value>origin:value<origin)
+            }.min { a,b in
+                let ap=a.gridPosition!,bp=b.gridPosition!
+                return abs((horizontal ? ap.column:ap.row)-origin)<abs((horizontal ? bp.column:bp.row)-origin)
+            }
+        } else { next=items[min(items.count-1,max(0,index+(code==124 ? 1:-1)))] }
+        if let next,let control=controls[next.id] { window?.makeFirstResponder(control) }
         return true
     }
     fileprivate func pointerMode() { cancelHintRest(.pointerDown); keyboard = false; updateFocus(); leaveHelp() }

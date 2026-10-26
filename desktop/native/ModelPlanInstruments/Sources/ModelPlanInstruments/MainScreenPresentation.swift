@@ -72,13 +72,14 @@ public struct MainScreenPresentation: Equatable, Sendable {
                     slots.append(.option(controller.option(value, page: nav.location.page)))
                 } else { slots.append(.blank) }
             }
-            footer = slots
             if pageOptionsAllowed, payload == nil, nav.location.page == .overview, let snapshot = page?.overview {
                 func selected(_ id: String) -> String? {
                     page?.options.compactMap { $0 }.first { $0.id == id }.flatMap { controller.option($0, page: .overview).selectedValue }
                 }
-                overview = snapshot.display(rangeKey: selected("overview.range"), modeKey: selected("overview.mode"), language: language)
+                overview = snapshot.display(rangeKey: selected("overview.range"), modeKey: selected("overview.mode"), language: language,visualizationKey:selected("overview.chart"))
+                if overview?.visualization == .heatmap { slots[1] = .blank; slots[2] = .blank }
             } else { overview = nil }
+            footer = slots
         }
     }
 }

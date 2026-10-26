@@ -174,7 +174,12 @@ public struct MainScreenController: Sendable {
             if case .page = content {} else { return [] }
         }
         guard trial == nil, let original = pages.first(where: { $0.page == navigation.location.page })?.options.compactMap({ $0 }).first(where: { $0.id == id }) else { return [] }
-        let page = navigation.location.page, option = option(original, page: page), choices = option.choices.filter(\.enabled)
+        let page = navigation.location.page
+        if page == .overview, pages.first(where:{$0.page == page})?.overview != nil,
+           id == "overview.range" || id == "overview.mode",
+           let chart = pages.first(where:{$0.page == page})?.options.compactMap({$0}).first(where:{$0.id == "overview.chart"}),
+           option(chart,page:page).selectedValue == "grid" { return [] }
+        let option = option(original, page: page), choices = option.choices.filter(\.enabled)
         guard !choices.isEmpty else { return [] }
         let chosen: String
         if let value {
