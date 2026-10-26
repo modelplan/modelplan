@@ -52,7 +52,7 @@ import AppKit
     }
     public func stop() {
         allowed = false;input = nil;recipe = nil;hovered = nil;glyphMetrics = []
-        for control in controls.values { control.removeFromSuperview() };controls = [:]
+        for control in controls.values { control.retire() };controls = [:]
         cursorLayer.removeAllAnimations();cursorLayer.isHidden = true
     }
     public func control(for recordID:String)->NSControl? { controls["row:"+recordID] }
@@ -137,7 +137,9 @@ import AppKit
             button.setAccessibilityLabel(text.accessibility);button.setAccessibilityIdentifier("record.row."+id)
             button.setAccessibilityValueDescription(line.working ? InstrumentHelpDefinitions.liveSpeed(input.appearance.language):line.age)
             button.toolTip = nil
-            for view in button.subviews { view.removeFromSuperview() }
+            for view in button.subviews {
+                if let name = view as? RecordNameArea { name.retire() } else { view.removeFromSuperview() }
+            }
             for (field,name) in [(RecordStripField.tool,identity?.fullToolName ?? line.tool),(.project,line.projectName)] {
                 guard let name,!name.isEmpty,let box = row.fields[field] else { continue }
                 let area = RecordNameArea(frame:box.offsetBy(dx:-row.frame.minX,dy:-row.frame.minY));area.owner = self;area.key = "row:"+id
@@ -151,14 +153,14 @@ import AppKit
             button.state = input.overflowSelected ? .on:.off
             button.setAccessibilityLabel(label);button.setAccessibilityIdentifier("record.more");button.toolTip = nil
         }
-        for (key,control) in controls where next[key]==nil { control.removeFromSuperview() };controls = next
+        for (key,control) in controls where next[key]==nil { control.retire() };controls = next
     }
 }
 @MainActor private final class RecordStripControl:NSButton {
     let key:String
     weak var owner:RecordStripView?
     private var area:NSTrackingArea?
-    override var acceptsFirstResponder:Bool { true }
+    override var acceptsFirstResponder:Bool { owner != nil && isEnabled }
     init(key:String) { self.key = key;super.init(frame:.zero);title = "";isBordered = false;target = self;action = #selector(press);focusRingType = .exterior }
     required init?(coder:NSCoder) { return nil }
     override func draw(_ dirtyRect:NSRect) {
@@ -166,7 +168,15 @@ import AppKit
         context.setStrokeColor(owner?.focusInk ?? NSColor.keyboardFocusIndicatorColor.cgColor)
         context.setLineWidth(1);context.stroke(bounds.insetBy(dx:1,dy:1))
     }
-    override func becomeFirstResponder()->Bool { needsDisplay = true;return true }
+    /// A removed target must never revive when its key is admitted again.
+    func retire() {
+        owner = nil;target = nil;action = nil;isEnabled = false
+        setAccessibilityElement(false);setAccessibilityLabel(nil);setAccessibilityValueDescription(nil)
+        if let area { removeTrackingArea(area);self.area = nil }
+        for name in subviews.compactMap({$0 as? RecordNameArea}) { name.retire() }
+        removeFromSuperview()
+    }
+    override func becomeFirstResponder()->Bool { guard acceptsFirstResponder else { return false };needsDisplay = true;return true }
     override func resignFirstResponder()->Bool { needsDisplay = true;return true }
     @objc private func press() { _ = owner?.activate(key) }
     override func accessibilityPerformPress()->Bool { owner?.activate(key) ?? false }
@@ -184,6 +194,7 @@ import AppKit
 @MainActor private final class RecordNameArea:NSView {
     weak var owner:RecordStripView?
     var key = ""
+    func retire() { owner = nil;key = "";toolTip = nil;removeFromSuperview() }
     override func draw(_ dirtyRect:NSRect) {}
     override func mouseDown(with event:NSEvent) { _ = owner?.activate(key) }
 }

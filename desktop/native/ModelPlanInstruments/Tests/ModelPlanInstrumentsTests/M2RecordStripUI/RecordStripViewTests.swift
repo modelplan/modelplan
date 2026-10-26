@@ -69,6 +69,52 @@ import XCTest
         try view.configure(input([])); XCTAssertNil(view.control(for: "a")); XCTAssertFalse(a.accessibilityPerformPress())
         try view.configure(input([session("a")])); XCTAssertTrue(try XCTUnwrap(view.control(for: "a")).accessibilityPerformPress())
     }
+    func testRemovedTargetsStayRetiredAfterSameRowsAndOverflowReturn() async throws {
+        try assertRetiredTargetsStayInert(stopAndResume:false)
+    }
+    func testStoppedTargetsStayRetiredAfterExplicitResume() async throws {
+        try assertRetiredTargetsStayInert(stopAndResume:true)
+    }
+    func testReplacedNameAreasStayInertWhileTheirRowControlPersists() async throws {
+        let view = RecordStripView();try view.configure(input([session("a")]))
+        let row = try XCTUnwrap(view.control(for:"a")),oldNames = row.subviews
+        var calls = 0;view.onNavigate = { _,_ in calls += 1 }
+        try view.configure(input([session("a",rate:58)]));XCTAssertTrue(view.control(for:"a") === row)
+        for name in oldNames { name.mouseDown(with:key("",code:0)) }
+        XCTAssertEqual(calls,0)
+        XCTAssertTrue(oldNames.allSatisfy{$0.toolTip==nil && $0.superview==nil})
+        for name in row.subviews { name.mouseDown(with:key("",code:0)) }
+        XCTAssertEqual(calls,2)
+    }
+    private func assertRetiredTargetsStayInert(stopAndResume:Bool) throws {
+        let view = RecordStripView(),value = input((0..<4).map{session("s\($0)")})
+        try view.configure(value)
+        let oldRow = try XCTUnwrap(view.control(for:"s0")),oldMore = try XCTUnwrap(view.moreControl),oldNames = oldRow.subviews
+        XCTAssertEqual(oldNames.count,2)
+        var calls:[MainScreenSource] = [],returns = 0
+        view.onNavigate = { _,source in calls.append(source) };view.onReturn = { returns += 1 }
+        if stopAndResume { view.stop() } else { try view.configure(input([])) }
+        try view.configure(value)
+        if stopAndResume { view.setPresentationAllowed(true) }
+        let recipe = view.recipe?.drawing
+        for stale in [oldRow,oldMore] {
+            XCTAssertFalse(stale.accessibilityPerformPress())
+            stale.keyDown(with:key("\r",code:36));stale.keyDown(with:key(" ",code:49));stale.keyDown(with:key("",code:53))
+            stale.mouseEntered(with:key("",code:0));stale.mouseExited(with:key("",code:0))
+            XCTAssertFalse(stale.isEnabled);XCTAssertNil(stale.target);XCTAssertNil(stale.action)
+        }
+        for name in oldNames { name.mouseDown(with:key("",code:0)) }
+        XCTAssertTrue(calls.isEmpty);XCTAssertEqual(returns,0);XCTAssertEqual(view.recipe?.drawing,recipe)
+        XCTAssertTrue(oldNames.allSatisfy{$0.toolTip==nil && $0.superview==nil})
+        let row = try XCTUnwrap(view.control(for:"s0")),more = try XCTUnwrap(view.moreControl)
+        XCTAssertFalse(row === oldRow);XCTAssertFalse(more === oldMore)
+        XCTAssertTrue(row.accessibilityPerformPress());row.keyDown(with:key("\r",code:36));row.keyDown(with:key(" ",code:49))
+        for name in row.subviews { name.mouseDown(with:key("",code:0)) }
+        XCTAssertEqual(calls,Array(repeating:.record("s0"),count:5))
+        XCTAssertTrue(more.accessibilityPerformPress());more.keyDown(with:key("\r",code:36));more.keyDown(with:key(" ",code:49))
+        XCTAssertEqual(Array(calls.suffix(3)),Array(repeating:.recordOverflow,count:3))
+        row.keyDown(with:key("",code:53));XCTAssertEqual(returns,1)
+    }
     func testExplicitPauseSurvivesEmptyRefreshAndHideDoesNotChangeCallerPermission() async throws {
         let view = RecordStripView(); try view.configure(input([session("a")]))
         view.setPresentationAllowed(false); try view.configure(input([])); try view.configure(input([session("a")]))
