@@ -108,17 +108,26 @@ public struct HelpHintContent: Equatable, Sendable {
 @MainActor final class HelpSettingsReceiptConnection {
     private weak var target: InstrumentHelpComposition?
     private var ready = false
+    private var failure: SettingsCommitDeliveryFailure?
     private var waiting: CheckedContinuation<Void, Never>?, completed: CheckedContinuation<Void, Never>?
     func receive(_ edit: SettingsCommittedEdit) async {
         let startup = !ready
         if startup { await withCheckedContinuation { waiting = $0 } }
-        await target?.consume(edit)
+        if failure == nil { await target?.consume(edit) }
         if startup { let done = completed; completed = nil; done?.resume() }
     }
     func connect(_ target: InstrumentHelpComposition) async {
         self.target = target; ready = true
+        if let failure { target.receiptDeliveryFailed(failure) }
         let pending = waiting; waiting = nil; pending?.resume()
         if pending != nil { await withCheckedContinuation { completed = $0 } }
+    }
+    func failed(_ failure: SettingsCommitDeliveryFailure) {
+        guard self.failure == nil else { return }; self.failure = failure
+        target?.receiptDeliveryFailed(failure)
+        let oldWaiting = waiting, oldCompleted = completed
+        waiting = nil; completed = nil
+        oldWaiting?.resume(); oldCompleted?.resume()
     }
 }
 
@@ -131,6 +140,8 @@ public struct HelpHintContent: Equatable, Sendable {
     /// Map/context actions stay with the owning surface; this module performs no URL/focus/window effect.
     public var onHelpAction: ((HelpUIAction) -> Void)?
     public var onSettingsReceipt: ((SettingsCommittedEdit, Bool) -> Void)?
+    public private(set) var receiptDeliveryFailure: SettingsCommitDeliveryFailure?
+    public var onReceiptDeliveryFailure: ((SettingsCommitDeliveryFailure) -> Void)?
     private let application: SettingsApplicationCoordinator
     private let uptime: () -> TimeInterval
     private var observer: UUID?
@@ -150,7 +161,9 @@ public struct HelpHintContent: Equatable, Sendable {
                                 uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                                 visibility: (@MainActor (HelpUILayerView, CGRect) -> Bool)? = nil) async -> InstrumentHelpComposition {
         let connection = HelpSettingsReceiptConnection()
-        let observer = application.editor.observeCommittedEdits { edit in await connection.receive(edit) }
+        let observer = application.editor.observeCommittedEdits(onFailure: { failure in connection.failed(failure) }) {
+            edit in await connection.receive(edit)
+        }
         if application.editor.snapshot == nil { await application.reload() }
         let layer = HelpUILayerView(recipeProvider: recipeProvider, elapsed: uptime)
         let overlay = InstrumentHelpOverlay(layer: layer, visibility: visibility)
@@ -226,10 +239,18 @@ public struct HelpHintContent: Equatable, Sendable {
         await host.flushPersistence()
         while let task = refreshTask { await task.value }
     }
+    fileprivate func receiptDeliveryFailed(_ failure: SettingsCommitDeliveryFailure) {
+        guard !disposed else { return }
+        receiptDeliveryFailure = failure
+        let callback = onReceiptDeliveryFailure
+        host.abandonPendingPersistenceForRetirement()
+        dispose()
+        callback?(failure)
+    }
     public func dispose() {
         guard !disposed else { return }; disposed = true; generation &+= 1; active = false
         if let observer { application.editor.removeCommitObserver(observer) }; observer = nil
         host.onPersisted = nil; host.dispose(); overlay.dispose()
-        onHelpAction = nil; onSettingsReceipt = nil
+        onHelpAction = nil; onSettingsReceipt = nil; onReceiptDeliveryFailure = nil
     }
 }
