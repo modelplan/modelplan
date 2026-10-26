@@ -223,10 +223,10 @@ struct NativeFailure:Error {let message:String}
     try require(spin.timingFunction==CAMediaTimingFunction(name:.linear),"linear motion timing")
     try require(flicker.duration==1 && flicker.calculationMode == .discrete && flicker.values?.count==9,"original nine-pose one-second bitmap clock unchanged")
     try require(effectsView.layer?.animationKeys()?.isEmpty ?? true,"static surface has no rotation")
-    let root=effectsView.layer!,centre=jet.convert(CGPoint(x:32,y:32),to:effectsView.layer!)
+    let motionRoot=effectsView.layer!,centre=jet.convert(CGPoint(x:32,y:32),to:effectsView.layer!)
     for (seconds,expected) in [(0.0,CGPoint(x:32,y:4)),(0.5,CGPoint(x:60,y:32)),(1.0,CGPoint(x:32,y:60)),(1.5,CGPoint(x:4,y:32)),(2.0,CGPoint(x:32,y:4))] {
         motionDriver.seekForCapture(seconds)
-        let point=jet.convert(CGPoint(x:32,y:60),to:root)
+        let point=jet.convert(CGPoint(x:32,y:60),to:motionRoot)
         try require(hypot(point.x-(centre.x+expected.x-32),point.y-(centre.y+expected.y-32))<0.001,"final native root-view clockwise held pose")
     }
     try require(motionDriver.rotatingIDs.isEmpty && motionDriver.animatingIDs.isEmpty && motionPool.activeLeaseCount==6,"capture freezes both timelines while retaining counted leases")
