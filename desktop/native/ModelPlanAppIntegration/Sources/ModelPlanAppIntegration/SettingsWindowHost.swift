@@ -2,6 +2,8 @@
 import AppKit
 import ModelPlanSettings
 
+public enum SettingsPresentationOrigin: Sendable { case userInitiated, restoration, programmatic }
+
 /// The app host checks lifecycle eligibility after asynchronous preparation and before ordering a window.
 @MainActor public protocol SettingsWindowSurface: AnyObject {
     func prepare() async
@@ -24,10 +26,12 @@ import ModelPlanSettings
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.
-/// Does not activate the app or grant a service permission; the native lifecycle owner supplies canPresent.
+/// Activates only for explicit user entry; restoration/programmatic presentation never steals focus.
+/// The native lifecycle owner supplies canPresent; no service permission is granted.
 @MainActor public final class SettingsWindowHost: NSObject {
     public let application: SettingsApplicationCoordinator
     private let canPresent: @MainActor () -> Bool
+    private let activate: @MainActor () -> Void
     private let environment: @MainActor () -> SettingsEnvironment
     private let makeSurface: @MainActor (SettingsEditor) -> any SettingsWindowSurface
     private var surface: (any SettingsWindowSurface)?
@@ -36,6 +40,7 @@ import ModelPlanSettings
     public init(application: SettingsApplicationCoordinator,
                 canPresent: @escaping @MainActor () -> Bool,
                 environment: (@MainActor () -> SettingsEnvironment)? = nil,
+                activate: @escaping @MainActor () -> Void = { NSApplication.shared.activate() },
                 makeSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) {
         let resolveEnvironment: @MainActor () -> SettingsEnvironment = environment ?? {
             // OS UI observations cannot replace app-owned fullscreen or entrance acceptance.
@@ -49,6 +54,7 @@ import ModelPlanSettings
             return current
         }
         self.application = application; self.canPresent = canPresent; self.environment = resolveEnvironment
+        self.activate = activate
         self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment) }
         super.init()
     }
@@ -67,11 +73,11 @@ import ModelPlanSettings
         let current = request
         Task { [weak self] in
             guard let self, self.request == current else { return }
-            await self.present()
+            await self.present(origin: .userInitiated)
         }
     }
 
-    public func present(paneID: String? = nil) async {
+    public func present(paneID: String? = nil, origin: SettingsPresentationOrigin = .programmatic) async {
         request &+= 1
         let current = request
         guard canPresent() else { return }
@@ -84,6 +90,8 @@ import ModelPlanSettings
         guard current == request, canPresent() else { return }
         // The surface may reload its shared editor while preparing; forward that committed truth too.
         await application.reload()
+        guard current == request, canPresent() else { return }
+        if case .userInitiated = origin { activate() }
         guard current == request, canPresent() else { return }
         surface.show(paneID: paneID)
     }

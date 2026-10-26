@@ -144,6 +144,8 @@ jobs:
         run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
       - name: App settings application tests (no window or system effects)
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2
+      - name: Build the integrated Community entry without launching or packaging
+        run: swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --product ModelPlanCommunityApp
       - name: Field bridge protocol checks (synthetic page adapter)
         run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
       - name: Dock native resource and instrument checks (neutral inputs)
@@ -163,9 +165,13 @@ jobs:
             xcrun vtool -show-build "$native_bin_dir/$native_binary"
             otool -L "$native_bin_dir/$native_binary"
           done
+          integrated_bin_dir=$(swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --show-bin-path)
+          cp "$integrated_bin_dir/ModelPlanCommunityApp" "$native_artifact_dir/"
+          xcrun vtool -show-build "$integrated_bin_dir/ModelPlanCommunityApp"
+          otool -L "$integrated_bin_dir/ModelPlanCommunityApp"
           cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"
           cd "$native_artifact_dir"
-          shasum -a 256 ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks > SHA256SUMS
+          shasum -a 256 ModelPlanCommunity ModelPlanCommunityApp ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks > SHA256SUMS
           # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
           tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
       - uses: actions/upload-artifact@v4
@@ -210,7 +216,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/native-runtime-download/native-runtime.tar.gz" -C "$RUNNER_TEMP/native-runtime"
           cd "$RUNNER_TEMP/native-runtime"
           shasum -a 256 --check SHA256SUMS
-          file ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks
+          file ModelPlanCommunity ModelPlanCommunityApp ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks
       # Execute the transferred binaries directly: no Swift invocation or rebuild.
       - name: Native contract suite on macOS 14
         run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractChecks"'
