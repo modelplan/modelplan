@@ -12,6 +12,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
 /// Its local alpha hit-test is NOT proof that a transparent NSWindow forwards the original cross-app click.
 @MainActor public final class DockInstrumentView:NSView {
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
+    public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
+    public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
+    private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?
     public private(set) var workingLayerParents=[String:CALayer]()
@@ -56,7 +59,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             throw error
         }
     }
-    public func dispose(){clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
+    public func dispose(){backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
     private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
@@ -102,7 +105,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let node=nodes[key] ?? DockInstrumentAXNode(),oldValue=node.accessibilityValue() as? String
             node.setAccessibilityRole(.button);node.setAccessibilityParent(self);node.setAccessibilityEnabled(onAction != nil)
             node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.setAccessibilityHelp(help)
-            node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in guard let self,let node,self.nodes[key] === node,let onAction=self.onAction else{return false};onAction(action);return true}
+            node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in guard let self,let node,self.nodes[key] === node,let onAction=self.onAction,self.permitsAction?(action,.accessibility) ?? true else{return false};onAction(action);return true}
             nodes[key]=node;children.append(node);used.insert(key)
             if oldValue != value {NSAccessibility.post(element:node,notification:.valueChanged)}
         }
@@ -126,27 +129,49 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         }
         nodes=nodes.filter{used.contains($0.key)};setAccessibilityChildren(children)
     }
-    public override func hitTest(_ point:NSPoint)->NSView? {
-        let local=convert(point,from:superview)
-        guard !isHidden,bounds.contains(local),!failed else{return nil}
-        if community{return self}
+    public func isPainted(atLocal local:NSPoint)->Bool {
+        guard !isHiddenOrHasHiddenAncestor,bounds.contains(local),!failed else{return false}
+        if community{return true}
         // This tests only this view's painted raster. The containing window's native route is a separate gate.
-        guard let image,let bytes=alphaData,CFDataGetLength(bytes)>=image.bytesPerRow*image.height,image.bitsPerPixel==32,image.bitsPerComponent==8 else{return nil}
+        guard let image,let bytes=alphaData,CFDataGetLength(bytes)>=image.bytesPerRow*image.height,image.bitsPerPixel==32,image.bitsPerComponent==8 else{return false}
         let x=min(image.width-1,max(0,Int(local.x*CGFloat(scale)))),y=min(image.height-1,max(0,Int(local.y*CGFloat(scale))))
         let alphaIndex=(image.alphaInfo == .premultipliedFirst || image.alphaInfo == .first) ? 0:3
-        guard CFDataGetBytePtr(bytes)![y*image.bytesPerRow+x*4+alphaIndex]>0 else{return nil};return self
+        guard CFDataGetBytePtr(bytes)![y*image.bytesPerRow+x*4+alphaIndex]>0 else{return false};return true
     }
+    public override func hitTest(_ point:NSPoint)->NSView? {isPainted(atLocal:convert(point,from:superview)) ? self:nil}
+    public override func updateTrackingAreas(){
+        if let edgeTracking{removeTrackingArea(edgeTracking)}
+        let next=NSTrackingArea(rect:.zero,options:[.inVisibleRect,.cursorUpdate,.activeAlways],owner:self,userInfo:nil)
+        edgeTracking=next;addTrackingArea(next);super.updateTrackingAreas()
+    }
+    public override func cursorUpdate(with event:NSEvent){
+        if backgroundDragDelegate?.isBackgroundMoving == true{NSCursor.closedHand.set()}
+        else if backgroundDragDelegate?.backgroundCanDrag(local:convert(event.locationInWindow,from:nil)) == true{NSCursor.openHand.set()}
+        else{NSCursor.arrow.set()}
+    }
+    public override func mouseDragged(with event:NSEvent){
+        guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
+        handler.updateBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))
+        if handler.isBackgroundMoving{NSCursor.closedHand.set()}
+    }
+    public override func mouseUp(with event:NSEvent){
+        if let window{backgroundDragDelegate?.endBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))}
+        NSCursor.arrow.set()
+    }
+    public override func cancelOperation(_ sender:Any?){backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
+    private func dispatch(_ action:DockInstrumentAction){if permitsAction?(action,.pointer) ?? true{onAction?(action)}}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}
         let p=convert(event.locationInWindow,from:nil)
+        if let window,backgroundDragDelegate?.beginBackgroundMove(local:p,global:window.convertPoint(toScreen:event.locationInWindow)) == true{return}
         if let skin,!community {
             let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
             for s in skin.stations.reversed(){
-                if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){onAction?(.notice(id));return}
-                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{onAction?(.subscription(id));return}
-                if s.overflowCount != nil,CGRect(x:s.centre.x-s.diameter/2,y:s.centre.y-s.diameter/2,width:s.diameter,height:s.diameter).contains(global){onAction?(.overflow);return}
+                if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){dispatch(.notice(id));return}
+                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{dispatch(.subscription(id));return}
+                if s.overflowCount != nil,CGRect(x:s.centre.x-s.diameter/2,y:s.centre.y-s.diameter/2,width:s.diameter,height:s.diameter).contains(global){dispatch(.overflow);return}
             }
-        } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){onAction?(.subscription(id))}
+        } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){dispatch(.subscription(id))}
     }
 }
