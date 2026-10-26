@@ -87,10 +87,22 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
         guard let layout = surfaceLayout else { return .zero }
         return NSSize(width: layout.drawableBounds.width * rootScale, height: layout.drawableBounds.height * rootScale)
     }
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point,from:superview)
+        guard state != nil, presentationAllowed, !isHiddenOrHasHiddenAncestor, bounds.contains(local) else { return nil }
+        for view in content.values {
+            if let overflow = view as? any CockpitOverflowHitTesting,
+               overflow.interactionBounds.contains(view.convert(local,from:self)), let hit = view.hitTest(local) { return hit }
+        }
+        return super.hitTest(point)
+    }
     public func setContent(_ view: NSView?, for slot: CockpitContentSlot) {
-        content.removeValue(forKey: slot)?.removeFromSuperview()
+        if let old = content[slot], old === view { updateGeometry(); return }
+        if let old = content.removeValue(forKey:slot) {
+            visitConsumers(in:old) { $0.stop() }; old.removeFromSuperview()
+        }
         if let view { content[slot] = view; addSubview(view) }
-        updateGeometry()
+        updateGeometry(); refreshStations()
     }
     public func setRootScale(_ scale: CGFloat) throws {
         guard scale.isFinite, scale > 0, scale <= 4 else { throw CockpitSurfaceError.invalidGeometry }
@@ -118,7 +130,7 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
     public func setPresentationAllowed(_ allowed: Bool) {
         presentationAllowed = allowed
         if allowed { refreshStations() }
-        else { clearStations(); skin.discardTransientResources() }
+        else { clearStations(); skin.discardTransientResources(); forConsumers { $0.setPresentationAllowed(false) } }
     }
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -129,7 +141,7 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
         }
         refreshStations()
     }
-    public override func viewDidHide() { super.viewDidHide(); clearStations(); skin.discardTransientResources() }
+    public override func viewDidHide() { super.viewDidHide(); clearStations(); skin.discardTransientResources(); forConsumers { $0.setPresentationAllowed(false) } }
     public override func viewDidUnhide() { super.viewDidUnhide(); refreshStations() }
     /// Input remains available throughout the compositor-only quick-open fade.
     public func quickOpen(reduceMotion: Bool, duration: CFTimeInterval = 0.18) throws {
@@ -143,7 +155,7 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
     }
     public func stop() {
         layer?.removeAnimation(forKey:"cockpit-quick-open"); presentationAllowed = false
-        clearStations(); skin.discardTransientResources()
+        clearStations(); skin.discardTransientResources(); forConsumers { $0.stop() }
         backdropLayer.contents = nil; backdropBytes = 0; state = nil; surfaceLayout = nil
     }
     private func validate(_ layout: CockpitSurfaceLayout, _ state: CockpitSurfaceState) throws {
@@ -184,8 +196,9 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
         clearStations()
         guard presentationAllowed, !isHiddenOrHasHiddenAncestor, let state, let layout = surfaceLayout,
               window.map({ $0.isVisible && $0.occlusionState.contains(.visible) }) ?? false else {
-            skin.discardTransientResources(); return
+            skin.discardTransientResources(); forConsumers { $0.setPresentationAllowed(false) }; return
         }
+        forConsumers { $0.setPresentationAllowed(true) }
         let layers: [CALayer]
         do { layers = try skin.stationLayers(for:state,layout:layout) }
         catch { skin.discardTransientResources(); throw error }
@@ -193,6 +206,13 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
         for layer in layers { stationContainer.addSublayer(layer) }
         stationLayerCount = layers.count
         CATransaction.commit()
+    }
+    private func visitConsumers(in view:NSView,_ action:(any CockpitPresentationConsumer)->Void) {
+        if let consumer = view as? any CockpitPresentationConsumer { action(consumer) }
+        else { for child in view.subviews { visitConsumers(in:child,action) } }
+    }
+    private func forConsumers(_ action:(any CockpitPresentationConsumer)->Void) {
+        for view in content.values { visitConsumers(in:view,action) }
     }
     private func refreshStations() {
         do { try rebuildStations() }
