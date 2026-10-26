@@ -123,9 +123,10 @@ custom action provides the same favourite operation without a timed gesture.
 
 The default policy requires at least 20 pt between native ticks and between
 labelled positions. An injected provider can explicitly declare an approved dense
-native tick floor (12–20 pt) and the native keys with printed labels. Those labelled
-positions are independently checked at 20 pt; omitted label metadata means every
-tick is labelled. Invalid bounds/keys and spacing below either floor are rejected.
+native tick floor (12–20 pt), the native keys with printed labels, and a separate
+approved label floor. Both policies default to 20 pt; omitted label metadata means
+every tick is labelled. The compact six-plus arrangement explicitly opts both
+policies into its approved 12 pt floor. Invalid bounds/keys and spacing below either floor are rejected.
 The policy value does not approve an official layout or choose its label positions.
 Caps glide for 280 ms unless pointer-owned; changed LCD readings fade for 80 ms.
 Returning ghosts fade after the glide, or fade in place for 120 ms under Reduced

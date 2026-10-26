@@ -75,12 +75,12 @@ final class FaderBankModelTests: XCTestCase {
 }
 
 final class FaderBankRecipeTests: XCTestCase {
-    private func denseRecipe(count: Int = 6, policy: FaderNativeTickPolicy = .standard, labels: [String]? = ["n0", "n5"]) -> FaderBankRecipe {
+    private func denseRecipe(count: Int = 6, policy: FaderSpacingPolicy = .standard, labels: [String]? = ["n0", "n5"], labelPolicy: FaderSpacingPolicy = .standard) -> FaderBankRecipe {
         let region = FaderHitRegion(id: "synthetic.travel", rect: CGRect(x: 0, y: 0, width: 40, height: 96), role: .slider,
             action: .travel("synthetic"), label: "Synthetic model", help: HelpCatalog(.english).explanation(.effort),
             modelID: "synthetic", levelCount: count, top: 8, bottom: 88,
             detents: (0..<count).map { .init(key: "n\($0)", position: Double($0) / Double(count - 1)) },
-            nativeTickPolicy: policy, labelledDetentKeys: labels)
+            nativeTickPolicy: policy, labelledDetentKeys: labels, labelSpacingPolicy: labelPolicy)
         return FaderBankRecipe(size: CGSize(width: 40, height: 96), commands: [], regions: [region], caps: [])
     }
     func testExplicitDenseTicksAreAdmittedWithoutChangingTravelOrLabels() throws {
@@ -96,6 +96,14 @@ final class FaderBankRecipeTests: XCTestCase {
         XCTAssertThrowsError(try denseRecipe(count: 8, policy: .approvedDense(minimumSpacing: 12), labels: ["n0", "n7"]).validate())
         XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labels: nil).validate())
         XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labels: ["n0", "n1"]).validate())
+    }
+    func testExplicitDenseLabelPolicyAdmitsSixAndSevenNativePositions() {
+        for (count, labels) in [(6, ["n0", "n1", "n2", "n4", "n5"]), (7, ["n0", "n1", "n3", "n5", "n6"])] {
+            XCTAssertNoThrow(try denseRecipe(count: count, policy: .approvedDense(minimumSpacing: 12), labels: labels,
+                labelPolicy: .approvedDense(minimumSpacing: 12)).validate())
+            XCTAssertThrowsError(try denseRecipe(count: count, policy: .approvedDense(minimumSpacing: 12), labels: labels).validate())
+        }
+        XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labelPolicy: .approvedDense(minimumSpacing: 11.9)).validate())
     }
     func testInvalidInjectedFloorsAndLabelIdentitiesAreRejected() {
         for minimum in [Double.nan, .infinity, 11.9, 20.1] {
