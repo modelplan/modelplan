@@ -12,6 +12,7 @@ import CoreText
     public private(set) var drawCount = 0
     public var onIntent: ((EngineTableIntent) -> Void)?
     public var onHelpChange: ((HelpExplanation?, CGRect?) -> Void)?
+    public var onHintInput: ((InstrumentHintInput) -> Void)?
     public var reducedMotion = false
     private var input: [EngineColumn] = [], identities: [String: EngineTableIdentity] = [:]
     private var language: InstrumentLanguage = .chinese, clock = Date(timeIntervalSince1970: 0)
@@ -112,6 +113,7 @@ import CoreText
         activate(.selectScope(.subscription(col.id))); return true
     }
     public override func keyDown(with event: NSEvent) {
+        cancelHintRest(.keyboard)
         keyboardModality = true
         synchronizeFocusLayer()
         if event.keyCode == 48, let id = event.modifierFlags.contains(.shift) ? keyboardOrder.last : keyboardOrder.first {
@@ -126,7 +128,13 @@ import CoreText
         for region in regions {
             let control = controls[region.id] ?? EngineRegionControl(owner: self, region: region)
             if controls[region.id] == nil { controls[region.id] = control; addSubview(control) }
-            control.configure(region)
+            let nameID: String?
+            switch region.nameTooltipTarget {
+            case .subscriptionKey(let id), .subscriptionName(let id): nameID = id
+            case nil: nameID = nil
+            }
+            let nativeName = nameID.flatMap { id in presentation?.columns.compactMap { $0 }.first { $0.id == id }?.identity.name }
+            control.configure(region, nativeName: nativeName)
         }
         let ordered = regions.filter(\.tabStop).compactMap { controls[$0.id] }
         for (index, control) in ordered.enumerated() { control.nextKeyView = ordered[(index + 1) % ordered.count] }
@@ -210,12 +218,17 @@ import CoreText
         self.tracking = tracking; addTrackingArea(tracking); super.updateTrackingAreas()
     }
     public override func mouseMoved(with event: NSEvent) {
+        cancelHintRest(.movement)
         pointerModality()
         let point = convert(event.locationInWindow, from: nil)
         // Specific readouts/keys precede whole empty-bay regions in a provider's ordered list.
         guard let region = recipe?.regions.first(where: { $0.rect.contains(point) }) else { leaveHelp(); return }
         dwell.enter(region.id, keyboardFocus: false, at: elapsed()); scheduleHelp()
     }
+    public func cancelHintRest(_ reason: InstrumentHintCancellation) {
+        let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
+    }
+    public override func flagsChanged(with event: NSEvent) { cancelHintRest(.keyboard); super.flagsChanged(with: event) }
     public override func mouseExited(with event: NSEvent) { leaveHelp() }
     fileprivate func focused(_ id: String?) {
         focusID = id
@@ -250,8 +263,8 @@ import CoreText
     public func leaveHelp() {
         dwellTimer?.invalidate(); dwellTimer = nil; dwell.leave(); helpPopover?.close(); onHelpChange?(nil, nil)
     }
-    public func suspend() { leaveHelp(); textLayers.values.forEach { $0.removeAllAnimations() } }
-    public func dispose() { suspend(); onIntent = nil; onHelpChange = nil }
+    public func suspend() { cancelHintRest(.focusLoss); leaveHelp(); textLayers.values.forEach { $0.removeAllAnimations() } }
+    public func dispose() { suspend(); onIntent = nil; onHelpChange = nil; onHintInput = nil }
 }
 
 @MainActor private final class EngineRegionControl: NSControl {
@@ -266,8 +279,9 @@ import CoreText
     override var acceptsFirstResponder: Bool { region.tabStop }
     override var canBecomeKeyView: Bool { region.tabStop && !isHidden }
     override func draw(_ dirtyRect: NSRect) {} // Never paints a separate empty-bay surface.
-    func configure(_ region: EngineHitRegion) {
+    func configure(_ region: EngineHitRegion, nativeName: String? = nil) {
         self.region = region; frame = region.rect; isEnabled = region.enabled
+        toolTip = nativeName
         setAccessibilityElement(true); setAccessibilityIdentifier(region.id)
         setAccessibilityRole(region.role == .button ? .button : region.role == .image ? .image : .group)
         setAccessibilityLabel(region.label); setAccessibilityHelp(region.help.accessibleDescription)
@@ -278,6 +292,7 @@ import CoreText
     override func becomeFirstResponder() -> Bool { owner?.focused(region.id); return true }
     override func resignFirstResponder() -> Bool { owner?.focused(nil); return true }
     override func mouseDown(with event: NSEvent) {
+        owner?.cancelHintRest(.pointerDown)
         owner?.pointerModality()
         if acceptsFirstResponder { window?.makeFirstResponder(self) }
         guard region.enabled, let intent = region.intent else { return }
@@ -289,6 +304,7 @@ import CoreText
         }
     }
     override func keyDown(with event: NSEvent) {
+        owner?.cancelHintRest(.keyboard)
         owner?.keyboardModality = true
         if event.keyCode == 48 {
             if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) } else { window?.selectNextKeyView(self) }

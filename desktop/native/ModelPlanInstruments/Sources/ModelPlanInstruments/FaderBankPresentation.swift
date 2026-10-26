@@ -41,6 +41,7 @@ public struct FaderChannelDisplay: Equatable, Sendable {
     public let vendors: [FaderVendorIdentity]
     public let efforts: [FaderEffortDisplay]
     public let selected: Bool, favorite: Bool
+    public let sourceHighlighted: Bool
     public let current: EffortConfiguration?
     public let trial: EffortConfiguration?
     public let realPosition: Double
@@ -75,7 +76,7 @@ public struct FaderBankPresentation: Equatable, Sendable {
     public var target: FaderChannelDisplay? { channels.compactMap { $0 }.first { $0.id == targetID } }
 
     public init(inputs: [FaderChannelInput], requestedBank: Int = 0, selectedModelID: String? = nil,
-                favoriteIDs: [String] = [], trial: FaderTrial? = nil, draggingModelID: String? = nil,
+                favoriteIDs: [String] = [], trial: FaderTrial? = nil, sourceModelID: String? = nil, draggingModelID: String? = nil,
                 dragPosition: Double? = nil, previewModelID: String? = nil, previewEffort: String? = nil,
                 publicationUsable: Bool, language: InstrumentLanguage,
                 compact: Bool, showProjectNames: Bool = true, now: Date) {
@@ -142,7 +143,7 @@ public struct FaderBankPresentation: Equatable, Sendable {
             let vendors = input.vendors.filter { vendorIDs.insert($0.subscriptionID).inserted }
             let variants = ([model.name] + input.nameVariants).filter { !$0.isEmpty }
             return FaderChannelDisplay(id: model.id, name: model.name, nameVariants: variants, vendors: vendors, efforts: levels,
-                selected: selected, favorite: favoriteIDs.contains(model.id), current: current, trial: validTrial,
+                selected: selected, favorite: favoriteIDs.contains(model.id), sourceHighlighted: sourceModelID == model.id, current: current, trial: validTrial,
                 realPosition: real, parked: current == nil, recommendedPosition: recPosition,
                 ghostPosition: validTrial?.effort == current?.effort ? nil : position(validTrial?.effort), dragPosition: drag,
                 previewPosition: previewModelID == model.id && previewEffort != (validTrial?.effort ?? current?.effort) ? position(previewEffort) : nil,

@@ -15,6 +15,7 @@ public struct MainScreenLocation: Equatable, Sendable {
 }
 public enum MainScreenSource: Equatable, Sendable {
     case hud, fader(String), fast(String), record(String), recordOverflow, alertLamp, noticeOverflow
+    case comparisonRow(String)
 }
 public enum MainScreenContent: Equatable, Sendable {
     case page(MainScreenLocation), comparison(modelID: String, trial: EffortConfiguration), session(String), alerts
@@ -37,14 +38,14 @@ public struct MainScreenNavigation: Sendable {
     }
     public var highlightedPage: MainScreenPage? {
         if let content = sourced?.content, case .comparison = content { return nil }
-        return location.page
+        return sourced?.returnTo.page ?? location.page
     }
     public var trial: EffortConfiguration? {
         if let content = sourced?.content, case .comparison(_, let trial) = content { return trial }
         return nil
     }
-    public mutating func activate(_ content: MainScreenContent, from source: MainScreenSource) {
-        if sourced?.source == source { back(); return }
+    public mutating func activate(_ content: MainScreenContent, from source: MainScreenSource, toggle: Bool = true) {
+        if toggle, sourced?.source == source { back(); return }
         let returnTo = sourced?.returnTo ?? location
         sourced = SourcedScreenContent(source: source, content: content, returnTo: returnTo)
         if case .page(let target) = content { location = target }

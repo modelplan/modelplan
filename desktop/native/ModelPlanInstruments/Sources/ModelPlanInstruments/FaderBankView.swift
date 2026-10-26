@@ -11,6 +11,7 @@ import CoreText
     public private(set) var displayRequests = 0, drawCount = 0, surfaceRenders = 0
     public var onIntent: ((FaderIntent) -> Void)?
     public var onHelpChange: ((HelpExplanation?, CGRect?) -> Void)?
+    public var onHintInput: ((InstrumentHintInput) -> Void)?
     public var reducedMotion = false { didSet { if reducedMotion { stopAnimations() } } }
     private var language: InstrumentLanguage = .chinese, compact = false, showProjectNames = true
     private var now = Date(timeIntervalSince1970: 0)
@@ -21,6 +22,8 @@ import CoreText
     private let focus = CAShapeLayer()
     private var focusedID: String?, keyboard = true
     private var timer: Timer?, dwellTimer: Timer?, dwell = HelpDwell(), tracking: NSTrackingArea?, popover: NSPopover?
+    private var restAnchor: FaderRestAnchor?
+    private var hintObservers: [NSObjectProtocol] = []
     public override var isFlipped: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
     private var scale: Int { (window?.backingScaleFactor ?? 2) >= 2 ? 2 : 1 }
@@ -33,6 +36,7 @@ import CoreText
         setAccessibilityElement(false); setAccessibilityIdentifier("fader.bank")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+    deinit { hintObservers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     public func update(inputs: [FaderChannelInput], publicationUsable: Bool, language: InstrumentLanguage, compact: Bool,
                        now: Date, favoriteIDs: [String]? = nil, selectedModelID: String? = nil,
@@ -50,7 +54,7 @@ import CoreText
     private func publish(_ state: FaderBankController, language: InstrumentLanguage, compact: Bool, now: Date,
                          showProjectNames: Bool, force: Bool = false) throws {
         let p = FaderBankPresentation(inputs: state.inputs, requestedBank: state.bank, selectedModelID: state.selectedModelID,
-            favoriteIDs: state.favoriteIDs, trial: state.trial, draggingModelID: state.draggingModelID, dragPosition: state.dragPosition,
+            favoriteIDs: state.favoriteIDs, trial: state.trial, sourceModelID: state.sourceHighlightID, draggingModelID: state.draggingModelID, dragPosition: state.dragPosition,
             previewModelID: state.previewModelID, previewEffort: state.previewEffort,
             publicationUsable: state.publicationUsable, language: language, compact: compact, showProjectNames: showProjectNames, now: now)
         if !force, p == presentation, recipe?.size == bounds.size, surfaceScale == scale {
@@ -84,6 +88,11 @@ import CoreText
         surfaceRenders += capImages.count + textImages.count
         commitSurfaces(next, prepared: Prepared(caps: capImages, texts: textImages), initial: initial)
         synchronizeRegions(next.regions, oldOrder: oldOrder); updateFocus()
+        if let anchor = restAnchor {
+            if let region = next.regions.first(where: { $0.id == anchor.regionID && $0.modelID == anchor.modelID }) {
+                if region.rect != anchor.travel { cancelHintRest(.layoutChange) }
+            } else { cancelHintRest(.removal) }
+        }
         if let id = dwell.sourceID, !next.regions.contains(where: { $0.id == id }) { leaveHelp() }
         else if dwell.visibleSourceID != nil { showHelp() }
         if previous?.commands != next.commands || previous?.size != next.size { displayRequests += 1; needsDisplay = true }
@@ -213,6 +222,7 @@ import CoreText
         }
     }
     fileprivate func down(_ region: FaderHitRegion, point: CGPoint) {
+        cancelHintRest(.pointerDown)
         pointerMode()
         switch region.action {
         case .lcd(let id): mutate { $0.beginLCDPress(modelID: id, at: elapsed()); return [] }
@@ -221,15 +231,17 @@ import CoreText
         }
     }
     fileprivate func drag(_ region: FaderHitRegion, point: CGPoint) {
+        cancelHintRest(.movement)
         if case .travel = region.action { mutate { $0.moveDrag(position: fraction(region, point), key: nearestKey(region, point)) } }
     }
-    fileprivate func up(_ region: FaderHitRegion, inside: Bool) {
+    fileprivate func up(_ region: FaderHitRegion, inside: Bool, point: CGPoint? = nil) {
         switch region.action {
         case .lcd: mutate { $0.releaseLCD(inside: inside, at: elapsed()) }
         case .travel: mutate { $0.finishDrag(); return [] }
         case .some(let action): if inside { activate(action) }
         default: break
         }
+        if inside, let point { beginFaderRest(at: point) }
     }
     private func fraction(_ region: FaderHitRegion, _ point: CGPoint) -> Double {
         guard let a = region.top, let b = region.bottom, b > a else { return 0.5 }; return min(1, max(0, (point.y - a) / (b - a)))
@@ -249,6 +261,10 @@ import CoreText
         guard next.setTrial(trial) else { throw EngineTableError.invalidRecipe }
         try publish(next, language: language, compact: compact, now: now, showProjectNames: showProjectNames)
     }
+    public func setSourceHighlight(_ id: String?) throws {
+        var next = controller; next.setSourceHighlight(id)
+        try publish(next, language: language, compact: compact, now: now, showProjectNames: showProjectNames)
+    }
     private func schedulePress() {
         timer?.invalidate(); timer = nil
         guard let due = controller.nextDeadline else { return }
@@ -256,16 +272,19 @@ import CoreText
         RunLoop.main.add(t, forMode: .common); timer = t
     }
     fileprivate func key(_ event: NSEvent) -> Bool {
+        cancelHintRest(.keyboard)
         keyboard = true; updateFocus()
         if event.charactersIgnoringModifiers == "[" { mutate { $0.changeBank($0.bank - 1) }; return true }
         if event.charactersIgnoringModifiers == "]" { mutate { $0.changeBank($0.bank + 1) }; return true }
         if event.keyCode == 53 { endTrial(); return true }; return false
     }
     public override func keyDown(with event: NSEvent) {
+        if event.keyCode == 48 { cancelHintRest(.keyboard) }
         if event.keyCode == 48, let id = event.modifierFlags.contains(.shift) ? keyboardOrder.last : keyboardOrder.first { window?.makeFirstResponder(controls[id]) }
         else if !key(event) { super.keyDown(with: event) }
     }
     fileprivate func focusChanged(_ id: String?) {
+        if id == nil { cancelHintRest(.focusLoss) }
         focusedID = id; updateFocus()
         if keyboard, let id { dwell.enter(id, keyboardFocus: true, at: elapsed()); showHelp() } else { leaveHelp() }
     }
@@ -282,7 +301,9 @@ import CoreText
         tracking = t; addTrackingArea(t); super.updateTrackingAreas()
     }
     public override func mouseMoved(with event: NSEvent) {
+        cancelHintRest(.movement)
         keyboard = false; updateFocus(); let point = convert(event.locationInWindow, from: nil)
+        beginFaderRest(at: point)
         guard let region = recipe?.regions.first(where: { $0.rect.contains(point) }) else {
             if controller.draggingModelID == nil, controller.previewModelID != nil { mutate { $0.preview(modelID: nil, key: nil); return [] } }
             leaveHelp(); return
@@ -300,7 +321,21 @@ import CoreText
             dwellTimer = t; RunLoop.main.add(t, forMode: .common)
         }
     }
-    public override func mouseExited(with event: NSEvent) { if controller.draggingModelID == nil { mutate { $0.preview(modelID: nil, key: nil); return [] } }; leaveHelp() }
+    public override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
+    public override func flagsChanged(with event: NSEvent) { cancelHintRest(.keyboard); super.flagsChanged(with: event) }
+    public override func mouseExited(with event: NSEvent) { cancelHintRest(.leave); if controller.draggingModelID == nil { mutate { $0.preview(modelID: nil, key: nil); return [] } }; leaveHelp() }
+    public func cancelHintRest(_ reason: InstrumentHintCancellation) {
+        restAnchor = nil
+        let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
+    }
+    private func beginFaderRest(at point: CGPoint) {
+        guard controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
+              let region = recipe?.regions.first(where: { $0.role == .slider && $0.enabled && $0.rect.contains(point) }),
+              let id = region.modelID else { return }
+        let at = elapsed(); guard at.isFinite else { return }
+        let anchor = FaderRestAnchor(modelID: id, regionID: region.id, travel: region.rect); restAnchor = anchor
+        onHintInput?(.faderRestCandidate(anchor: anchor, pointer: point, at: at))
+    }
     private func showHelp() {
         guard let id = dwell.visibleSourceID, let r = recipe?.regions.first(where: { $0.id == id }) else { return }
         if let onHelpChange { onHelpChange(r.help, r.rect); return }
@@ -313,16 +348,30 @@ import CoreText
     }
     public func leaveHelp() { dwellTimer?.invalidate(); dwellTimer = nil; dwell.leave(); popover?.close(); onHelpChange?(nil, nil) }
     private func stopAnimations() { surfaces.values.forEach { $0.removeAllAnimations() } }
-    public func suspend() { timer?.invalidate(); timer = nil; controller.cancelGesture(); leaveHelp(); stopAnimations() }
+    public func suspend() { cancelHintRest(.focusLoss); timer?.invalidate(); timer = nil; controller.cancelGesture(); leaveHelp(); stopAnimations() }
     public func dispose() {
-        suspend(); onIntent = nil; onHelpChange = nil
+        cancelHintRest(.teardown); suspend(); onIntent = nil; onHelpChange = nil; onHintInput = nil
+        hintObservers.forEach { NotificationCenter.default.removeObserver($0) }; hintObservers = []
         for control in controls.values { control.retire(); control.removeFromSuperview() }
         controls.removeAll(); setAccessibilityChildren([]); focusedID = nil; focus.path = nil
         for layer in surfaces.values { layer.removeFromSuperlayer() }; surfaces.removeAll()
     }
-    public override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window == nil { suspend() }; refreshSize() }
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow(); hintObservers.forEach { NotificationCenter.default.removeObserver($0) }; hintObservers = []
+        if let window {
+            for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification, NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
+                hintObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.cancelHintRest(name == NSWindow.didResignKeyNotification ? .focusLoss : .layoutChange) }
+                })
+            }
+            hintObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.cancelHintRest(.focusLoss) }
+            })
+        } else { suspend() }
+        refreshSize()
+    }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); refreshSize() }
-    public override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); refreshSize() }
+    public override func setFrameSize(_ newSize: NSSize) { cancelHintRest(.layoutChange); super.setFrameSize(newSize); refreshSize() }
     private func refreshSize() {
         guard presentation != nil else { return }
         do { try publish(controller, language: language, compact: compact, now: now, showProjectNames: showProjectNames, force: true) }
@@ -346,6 +395,7 @@ import CoreText
     override func draw(_ dirtyRect: NSRect) {}
     func configure(_ r: FaderHitRegion) {
         region = r; frame = r.rect; isEnabled = r.enabled; setAccessibilityElement(true); setAccessibilityIdentifier(r.id)
+        toolTip = nil
         setAccessibilityRole(r.role == .slider ? .slider : r.role == .button ? .button : .image)
         setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled)
         if r.role == .slider {
@@ -367,10 +417,10 @@ import CoreText
     override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
     override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) }; owner.down(region, point: owner.convert(event.locationInWindow, from: nil)) }
     override func mouseDragged(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.drag(region, point: owner.convert(event.locationInWindow, from: nil)) }
-    override func mouseUp(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.up(region, inside: bounds.contains(convert(event.locationInWindow, from: nil))) }
+    override func mouseUp(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.up(region, inside: bounds.contains(convert(event.locationInWindow, from: nil)), point: owner.convert(event.locationInWindow, from: nil)) }
     override func keyDown(with event: NSEvent) {
         guard region.enabled, let owner = currentOwner else { return }
-        if event.keyCode == 48 { event.modifierFlags.contains(.shift) ? window?.selectPreviousKeyView(self) : window?.selectNextKeyView(self); return }
+        if event.keyCode == 48 { owner.cancelHintRest(.keyboard); event.modifierFlags.contains(.shift) ? window?.selectPreviousKeyView(self) : window?.selectNextKeyView(self); return }
         if owner.key(event) { return }
         if region.role == .slider, !event.modifierFlags.intersection([.option, .command, .control]).isEmpty { super.keyDown(with: event); return }
         if region.role == .slider, let id = region.modelID, [125, 126].contains(event.keyCode) { owner.step(id, up: event.keyCode == 126) }
