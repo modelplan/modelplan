@@ -107,6 +107,7 @@ enum SettingsWords {
     private var appearanceObservation: NSKeyValueObservation?
     private let environmentProvider: @MainActor () -> SettingsEnvironment
     private var refreshing = false, pendingEdit = false
+    private var pendingSaveTask: Task<Void, Never>?
 
     public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil) {
         self.editor = editor; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
@@ -319,7 +320,7 @@ enum SettingsWords {
             return
         }
         pendingEdit = true; errorMessage = nil
-        Task { @MainActor [weak self] in
+        pendingSaveTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.pendingEdit = false; self.refresh() }
             do { _ = try await operation(); aliasCompletion?(true) }
@@ -344,4 +345,6 @@ enum SettingsWords {
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
     var orderControl: SettingsOrderControl? { rows[.order]?.order }
     var hintsResetControl: SettingsActionControl? { rows[.resetHints]?.resetHints }
+    /// Wait for the accepted transaction and its UI acknowledgment, not just its store receipt.
+    func waitForPendingSave() async { await pendingSaveTask?.value }
 }

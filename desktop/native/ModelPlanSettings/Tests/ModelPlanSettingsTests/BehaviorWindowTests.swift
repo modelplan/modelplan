@@ -120,6 +120,7 @@ import XCTest
         first.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: first))
         first.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: first))
         await fulfillment(of: [firstSaved], timeout: 3)
+        await controller.waitForPendingSave()
         XCTAssertTrue(finishedSecond)
         XCTAssertEqual(editor.snapshot?.preferences.subscriptionSettings["a"]?.alias, "First")
         XCTAssertNil(editor.snapshot?.preferences.subscriptionSettings["b"])
@@ -130,6 +131,7 @@ import XCTest
         second.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: second))
         second.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: second))
         await fulfillment(of: [retried], timeout: 3)
+        await controller.waitForPendingSave()
         XCTAssertEqual(receipts, [revision + 1, revision + 2])
         let persisted = await editor.store.snapshot()
         XCTAssertEqual(persisted.preferences.subscriptionSettings["a"]?.alias, "First")
@@ -143,20 +145,12 @@ import XCTest
         await controller.prepare(); controller.selectPane("subscriptions")
         let field = try XCTUnwrap(controller.aliasControl(subscriptionID: "a"))
         let revision = editor.snapshot!.revision, invalid = String(repeating: "x", count: 129)
-        let attempted = expectation(description: "invalid alias transaction completes")
-        var began = false, commits = 0, requests = 0
-        let refresh = editor.onChange
-        defer { editor.onChange = refresh }
-        editor.onChange = {
-            refresh?()
-            if editor.isSaving { began = true }
-            else if began { editor.onChange = refresh; attempted.fulfill() }
-        }
+        var commits = 0, requests = 0
         editor.onCommit = { _, _ in commits += 1 }; editor.onHostRequest = { _ in requests += 1 }
         field.stringValue = invalid
         field.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
         field.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
-        await fulfillment(of: [attempted], timeout: 3)
+        await controller.waitForPendingSave()
         XCTAssertEqual(commits, 0); XCTAssertEqual(requests, 0)
         XCTAssertEqual(editor.snapshot?.revision, revision)
         XCTAssertEqual(field.stringValue, invalid); XCTAssertNotNil(controller.errorMessage)
