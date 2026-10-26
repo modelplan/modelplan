@@ -6,6 +6,7 @@ public struct SettingsEnvironment: Sendable {
     public var darkAppearance = false
     public var reduceMotion = false
     public var reduceTransparency = false
+    public var increaseContrast = false
     public var fullscreen = false
     /// False until the native entrance has independently passed its gate; OS support alone is insufficient.
     public var entranceAccepted = false
@@ -14,6 +15,7 @@ public struct SettingsEnvironment: Sendable {
 }
 public struct EffectiveSettings: Equatable, Sendable {
     public let darkAppearance: Bool, reduceMotion: Bool, reduceTransparency: Bool
+    public let increaseContrast: Bool
     public let dockAllowed: Bool, autoHide: Bool, showPercentages: Bool, sliverAlert: Bool
     public let showDock: Bool, allowedOverFullscreen: Bool, followActiveDisplay: Bool
     public let revealSeconds: Double, magnification: HoverMagnification, size: SettingsSize
@@ -24,6 +26,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         darkAppearance = p.theme == .night || (p.theme == .system && e.darkAppearance)
         reduceMotion = p.motion == .on || (p.motion == .system && e.reduceMotion)
         reduceTransparency = p.transparency == .on || (p.transparency == .system && e.reduceTransparency)
+        increaseContrast = e.increaseContrast
         showDock = p.showDock; allowedOverFullscreen = !e.fullscreen || p.showOverFullscreen
         dockAllowed = showDock && allowedOverFullscreen
         followActiveDisplay = p.followActiveDisplay
