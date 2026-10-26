@@ -104,7 +104,8 @@ import CoreText
                         text("compare.tick.\(tick)", ["×" + String(format: "%.3g", tick)], CGRect(x: screen.minX + 5, y: yy - 6, width: 35, height: 13), 9, muted, .right)
                     }
                     for (i, metric) in ComparisonMetric.allCases.enumerated() {
-                        text("compare.axis.\(i)", [metric.title(p.language)], CGRect(x: plot.minX + Double(i) * plot.width / 2 - 30, y: plot.maxY + 2, width: 60, height: 14), 9, muted, .center)
+                        let labelX: CGFloat = plot.minX + CGFloat(i) * plot.width / 2 - 30
+                        text("compare.axis.\(i)", [metric.title(p.language)], CGRect(x: labelX, y: plot.maxY + 2, width: 60, height: 14), 9, muted, .center)
                     }
                     for profile in chart.profiles {
                         let ink = profile.roles.contains(.current) ? foreground : profile.roles.contains(.recommended) ? gold : blue
