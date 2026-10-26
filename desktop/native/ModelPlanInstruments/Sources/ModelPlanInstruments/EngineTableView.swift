@@ -20,6 +20,7 @@ import CoreText
     private var dwell = HelpDwell(), dwellTimer: Timer?, helpPopover: NSPopover?
     private var tracking: NSTrackingArea?
     private var textLayers: [String: CALayer] = [:], previousText: [String: EngineTextCommand] = [:]
+    private var textLayerScale: Int?
     private let focusLayer = CAShapeLayer()
     private let elapsed: () -> Double
     fileprivate var keyboardModality = true
@@ -44,7 +45,7 @@ import CoreText
                        now: Date, page: Int? = nil, scope: InstrumentScope? = nil) throws {
         let candidate = EngineTablePresentation(columns: columns, identities: identities, requestedPage: page ?? self.page,
                                                 scope: scope ?? self.scope, language: language, now: now)
-        if candidate == presentation && recipe?.size == bounds.size {
+        if candidate == presentation && recipe?.size == bounds.size && textLayerScale == currentTextScale {
             input = columns; self.identities = identities; self.language = language; clock = now
             self.page = candidate.page; self.scope = candidate.scope
             return
@@ -58,13 +59,14 @@ import CoreText
         if let failure { throw failure }
         // Validate fonts/images before publishing the new view state. No private-file fallback is selected here.
         _ = try EngineRecipeDrawing.raster(next, provider: recipeProvider, scale: 1)
+        let textUpdate = try prepareTextLayers(next)
         let old = presentation
         let oldOrder = keyboardOrder
         input = columns; self.identities = identities; self.language = language; clock = now
         self.page = candidate.page; self.scope = candidate.scope
         presentation = candidate; recipe = next; renderError = nil
+        commitTextLayers(textUpdate, initial: old == nil)
         synchronizeRegions(next.regions, previousOrder: oldOrder)
-        try synchronizeTextLayers(next, initial: old == nil)
         synchronizeFocusLayer()
         if let source = dwell.sourceID, !next.regions.contains(where: { $0.id == source }) { leaveHelp() }
         else if dwell.visibleSourceID != nil { showHelp() }
@@ -134,25 +136,37 @@ import CoreText
             window?.makeFirstResponder(ordered[min(index, ordered.count - 1)])
         }
     }
-    private func synchronizeTextLayers(_ recipe: EngineTableRecipe, initial: Bool) throws {
+    private struct PreparedTextUpdate {
+        let ids: Set<String>
+        let scale: Int
+        let surfaces: [(command: EngineTextCommand, image: CGImage)]
+    }
+    private var currentTextScale: Int { (window?.backingScaleFactor ?? 2) >= 2 ? 2 : 1 }
+    private func prepareTextLayers(_ recipe: EngineTableRecipe, force: Bool = false) throws -> PreparedTextUpdate {
         let commands = recipe.commands.compactMap { command -> EngineTextCommand? in
             if case .text(let text) = command, text.transitionDuration > 0 { return text }; return nil
         }
-        let ids = Set(commands.map(\.id))
-        for id in Array(textLayers.keys) where !ids.contains(id) {
-            textLayers.removeValue(forKey: id)?.removeFromSuperlayer(); previousText.removeValue(forKey: id)
-        }
-        let scale = (window?.backingScaleFactor ?? 2) >= 2 ? 2 : 1
+        let scale = currentTextScale
+        var surfaces: [(command: EngineTextCommand, image: CGImage)] = []
         for command in commands {
-            if previousText[command.id] == command { continue }
+            if !force, textLayerScale == scale, previousText[command.id] == command, textLayers[command.id] != nil { continue }
             var local = command
             local.rect.origin = .zero; local.baseline = command.baseline.map { $0 - command.rect.minY }
             let single = EngineTableRecipe(size: command.rect.size, commands: [.text(local)], regions: [])
             let (image, _) = try EngineRecipeDrawing.raster(single, provider: recipeProvider, scale: scale)
+            surfaces.append((command, image))
+        }
+        return PreparedTextUpdate(ids: Set(commands.map(\.id)), scale: scale, surfaces: surfaces)
+    }
+    private func commitTextLayers(_ update: PreparedTextUpdate, initial: Bool) {
+        for id in Array(textLayers.keys) where !update.ids.contains(id) {
+            textLayers.removeValue(forKey: id)?.removeFromSuperlayer(); previousText.removeValue(forKey: id)
+        }
+        for (command, image) in update.surfaces {
             let textLayer = textLayers[command.id] ?? CALayer()
             if textLayers[command.id] == nil { textLayers[command.id] = textLayer; layer?.addSublayer(textLayer) }
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            textLayer.frame = command.rect; textLayer.contentsScale = CGFloat(scale); textLayer.contents = image
+            textLayer.frame = command.rect; textLayer.contentsScale = CGFloat(update.scale); textLayer.contents = image
             textLayer.opacity = 1; textLayer.removeAllAnimations(); CATransaction.commit()
             if !initial, !reducedMotion, window?.isVisible == true, previousText[command.id]?.variants != command.variants {
                 let animation = CABasicAnimation(keyPath: "opacity"); animation.fromValue = 0; animation.toValue = 1
@@ -161,6 +175,12 @@ import CoreText
             }
             previousText[command.id] = command
         }
+        textLayerScale = update.scale
+    }
+    private func refreshTextLayers() {
+        guard let recipe else { return }
+        do { commitTextLayers(try prepareTextLayers(recipe, force: true), initial: true) }
+        catch { renderError = String(describing: error) }
     }
     private func synchronizeFocusLayer() {
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -177,13 +197,11 @@ import CoreText
     fileprivate func pointerModality() { keyboardModality = false; synchronizeFocusLayer() }
     public override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        previousText.removeAll()
-        if let recipe { try? synchronizeTextLayers(recipe, initial: true) }
+        refreshTextLayers()
     }
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        previousText.removeAll()
-        if let recipe { try? synchronizeTextLayers(recipe, initial: true) }
+        refreshTextLayers()
         if window == nil { suspend() }
     }
     public override func updateTrackingAreas() {

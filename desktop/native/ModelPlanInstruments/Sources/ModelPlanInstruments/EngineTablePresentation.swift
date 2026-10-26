@@ -140,9 +140,37 @@ public struct EngineTablePresentation: Equatable, Sendable {
                 let briefNote = specialBrief ?? (valid && remaining != nil && minutes == nil ? short : minutes == nil ? note : short)
                 let brief = [compactTag, briefNote, more].filter { !$0.isEmpty }.joined(separator: " ")
                 let small = [value.scope.map { String($0.prefix(1)) } ?? tag, briefNote].filter { !$0.isEmpty }.joined(separator: " ") + more
-                var fact = identity.name + " · " + (tag.isEmpty ? format.rowName(QuotaRow.allCases[row]) : tag) + " · " + format.percent(remaining)
-                    + " · " + format.reset(future, now: now)
-                if value.publicReset != nil || value.runsOutAt != nil { fact += " · " + note }
+                func quotaFact(_ cell: QuotaCell) -> String {
+                    let detailTag = row == 2 ? [cell.scope, format.period(cell.period)].compactMap { $0 }.joined(separator: "·") : ""
+                    return identity.name + " · " + (detailTag.isEmpty ? format.rowName(QuotaRow.allCases[row]) : detailTag)
+                        + " · " + format.percent(valid ? cell.remaining : nil)
+                        + " · " + format.reset(valid ? cell.resetsAt : nil, now: now)
+                }
+                var facts = row == 2 ? column.quotas.other.map(quotaFact) : [quotaFact(value)]
+                if value.publicReset != nil || value.runsOutAt != nil { facts[0] += " · " + note }
+                if row == 2, valid {
+                    for index in column.quotas.other.indices.dropFirst() {
+                        let extra = column.quotas.other[index]
+                        if let reset = extra.publicReset {
+                            let detail: String
+                            switch reset {
+                            case .confirmedAwaitingReading: detail = chinese ? "已重置 · 等读数" : "Reset · awaiting reading"
+                            case .announced(let date):
+                                if let date {
+                                    let time = format.future(date, now: now, compact: true)
+                                    let relative = abs(date.timeIntervalSince(now)) < 30 ? (chinese ? "现在" : "now")
+                                        : date > now ? (chinese ? time + "后" : "in " + time) : format.age(date, now: now)
+                                    detail = chinese ? "预告 \(relative) 重置" : "Reset \(relative) announced"
+                                } else { detail = chinese ? "预告待定" : "Reset TBA" }
+                            }
+                            facts[index] += " · " + detail
+                        } else if extra.remaining != nil, let runout = extra.runsOutAt {
+                            let time = format.duration(minutes: runout.timeIntervalSince(now) / 60)
+                            facts[index] += " · " + (chinese ? "约\(time)用完" : "out ~\(time)")
+                        }
+                    }
+                }
+                let fact = facts.joined(separator: chinese ? "；" : "; ")
                 return EngineQuotaDisplay(amount: amount, suffix: remaining == nil ? "" : "%", notes: [full, brief, small],
                                           level: valid ? value.level : .unknown, litSegments: valid ? value.litSegments : nil,
                                           timeDots: valid ? value.timeDots : nil, noteTone: noteTone,

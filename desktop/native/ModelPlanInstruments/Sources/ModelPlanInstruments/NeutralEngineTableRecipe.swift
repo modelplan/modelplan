@@ -51,6 +51,11 @@ import CoreText
         }
         if let empty = p.emptyLabel {
             text("engine.empty.message", [empty], lcd.insetBy(dx: 10, dy: 10), 11, muted, .center)
+            for i in 0..<p.tracks {
+                let frame = CGRect(x: left + CGFloat(i) * width, y: lcd.minY, width: width, height: lcd.height)
+                regions.append(.init(id: "engine.empty.\(i).body", rect: frame, label: p.addLabel,
+                                     help: help.explanation(.control, context: .init(fact: p.addLabel)), intent: .openSubscriptionsSettings, tabStop: false))
+            }
             return EngineTableRecipe(size: size, commands: commands, regions: regions, focusInk: accent)
         }
         for row in 0..<p.labels.count {

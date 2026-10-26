@@ -72,6 +72,13 @@ the app routes the last intent to Settings → Subscriptions. Slot keys retain s
 IDs across refreshes. Empty bodies expose the add action to pointer and accessibility
 press, while only their keys enter the keyboard sequence. Unknown quota values stay
 `--`, absent windows stay blank and a reported public reset never refills a quota.
+This includes a table with no subscriptions. Other keeps its compact `+N` reading,
+while its shared hover/focus/accessibility explanation contains every supplied
+window's period, scope, remaining reading and reset, respecting evidence validity.
+
+Updates prepare every throwing drawing/text surface before committing presentation,
+controls or layers. A failed preparation retains the last committed state and an
+identical-input retry remains eligible after the provider recovers.
 
 The default `NeutralEngineTableRecipe` is complete without files or private checkout.
 Trusted assembly may explicitly inject `EngineTableRecipeProvider` for official
