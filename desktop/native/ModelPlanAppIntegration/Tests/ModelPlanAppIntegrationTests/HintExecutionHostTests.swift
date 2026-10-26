@@ -31,11 +31,13 @@ private actor HintGateWriter: HintPreferenceWriting {
     let store: SettingsStore
     let afterCommit: Bool
     var calls = 0, active = 0, maximumActive = 0
+    var attemptedRevisions: [UInt64] = []
     private var blocker: CheckedContinuation<Void, Never>?, listeners: [CheckedContinuation<Void, Never>] = []
     private var blocked = false
     init(store: SettingsStore, afterCommit: Bool = false) { self.store = store; self.afterCommit = afterCommit }
     func snapshot() async -> SettingsSnapshot { await store.snapshot() }
     func saveHints(_ preferences: FirstUseHintPreferences, expectedRevision: UInt64) async throws -> SettingsSnapshot {
+        attemptedRevisions.append(expectedRevision)
         calls += 1; let first = calls == 1; active += 1; maximumActive = max(maximumActive, active)
         defer { active -= 1 }
         if first && !afterCommit { await pause() }
@@ -194,6 +196,40 @@ private actor HintGateWriter: HintPreferenceWriting {
         try host.updateContext(context()); await host.flushPersistence(); let calls = await writer.calls
         XCTAssertEqual(calls, 1); XCTAssertFalse(host.hints.cockpitBudgetUsed)
         XCTAssertEqual(host.hints.preferences.opens, 2); XCTAssertEqual(overlay.presented.count, 1)
+    }
+    func testExplicitRetryRecoversTransientIOAndPersistsShownLedger() async throws {
+        let parent = FileManager.default.temporaryDirectory.appendingPathComponent("hint-retry-" + UUID().uuidString)
+        try Data([1]).write(to: parent)
+        addTeardownBlock { try? FileManager.default.removeItem(at: parent) }
+        let url = parent.appendingPathComponent("settings.json")
+        let store = try SettingsStore(url: url), clock = HintClock(), timer = HintTestScheduler(), overlay = HintTestOverlay()
+        let host = await host(store, clock, timer, overlay)
+        try host.updateContext(context()); await host.flushPersistence()
+        let shown = host.hints.preferences
+        XCTAssertNotNil(host.persistenceError); XCTAssertTrue(shown.seen.contains(.detach))
+        try FileManager.default.removeItem(at: parent)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        host.retryPersistence(); await host.flushPersistence()
+        let saved = await store.snapshot()
+        XCTAssertNil(host.persistenceError); XCTAssertEqual(saved.revision, 1)
+        XCTAssertEqual(saved.preferences.helpHints, shown)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(host.hints.cockpitBudgetUsed); XCTAssertEqual(overlay.presented.count, 1)
+    }
+    func testExplicitRetryPreservesCapturedCASRevisionAndReportsAnotherConflict() async throws {
+        let store = try store(), writer = HintGateWriter(store: store), clock = HintClock(), timer = HintTestScheduler(), overlay = HintTestOverlay()
+        let host = await host(writer, clock, timer, overlay)
+        try host.updateContext(context()); await writer.waitUntilBlocked()
+        let other = try await store.update { $0.openAtLogin = false }; host.observeCommitted(other)
+        await writer.release(); await host.flushPersistence()
+        XCTAssertNotNil(host.persistenceError); let shown = host.hints.preferences
+        host.retryPersistence(); await host.flushPersistence()
+        let attempted = await writer.attemptedRevisions, saved = await store.snapshot()
+        XCTAssertEqual(attempted, [0, 0]); XCTAssertNotNil(host.persistenceError)
+        XCTAssertEqual(host.persistenceError as? SettingsError, .staleRevision)
+        XCTAssertEqual(saved.revision, other.revision); XCTAssertFalse(saved.preferences.openAtLogin)
+        XCTAssertTrue(saved.preferences.helpHints.seen.isEmpty); XCTAssertEqual(host.hints.preferences, shown)
+        XCTAssertTrue(host.hints.cockpitBudgetUsed)
     }
     func testCommittedResetFencesAnOldWriteBeforeItTouchesTheStore() async throws { try await resetRace(afterCommit: false) }
     func testCommittedResetFencesALateSuccessReceipt() async throws { try await resetRace(afterCommit: true) }

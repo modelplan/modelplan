@@ -173,7 +173,12 @@ extension SettingsStore: HintPreferenceWriting {
         return accepted
     }
     /// Explicit retry keeps the captured CAS revision. It never snapshots/rebases over a possible reset.
-    public func retryPersistence() { persistenceError = nil; queuePersistence() }
+    public func retryPersistence() {
+        persistenceError = nil
+        queuePersistence()
+        // The same ledger may already be retained in pending; explicit retry still drains it.
+        startWriteIfNeeded()
+    }
     public func flushPersistence() async { while let task = writeTask { await task.value } }
 
     private func beginOperation() -> UInt64 {
