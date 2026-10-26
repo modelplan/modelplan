@@ -65,6 +65,13 @@ public struct InstrumentFormat: Sendable {
         return formatter.string(from: NSNumber(value: value)).map { "×" + $0 }
     }
 
+    public func tokens(_ value: Double?) -> String {
+        guard let value = known(value) else { return "--" }
+        if value >= 1_000_000 { return String(format: "%.1fM", locale: Locale(identifier: "en_US_POSIX"), value / 1_000_000) }
+        if value >= 1000 { return String(format: "%.0fk", locale: Locale(identifier: "en_US_POSIX"), value / 1000) }
+        return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
     public func percent(_ value: Double?) -> String {
         guard let value = percentage(value) else { return "--" }
         return String(format: "%.0f%%", locale: Locale(identifier: "en_US_POSIX"), value)

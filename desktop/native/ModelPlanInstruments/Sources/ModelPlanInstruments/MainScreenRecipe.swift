@@ -2,6 +2,7 @@
 import AppKit
 
 public enum MainScreenAction: Equatable, Sendable {
+    case overviewAlerts, overviewInformation(String)
     case page(MainScreenPage), back
     case option(page: MainScreenPage, id: String, value: String?)
     case effort(modelID: String, key: String)
@@ -15,11 +16,12 @@ public struct MainScreenHitRegion: Equatable, Sendable {
     public let help: HelpExplanation
     public let role: MainScreenRegionRole
     public let enabled: Bool, tabStop: Bool
+    public let focusGroup: String?
     public let value: String?
     public init(id: String, rect: CGRect, action: MainScreenAction? = nil, label: String, help: HelpExplanation,
-                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil) {
+                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil) {
         self.id = id; self.rect = rect; self.action = action; self.label = label; self.help = help
-        self.role = role; self.enabled = enabled; self.tabStop = tabStop; self.value = value
+        self.role = role; self.enabled = enabled; self.tabStop = tabStop; self.value = value; self.focusGroup = focusGroup
     }
 }
 public struct MainScreenRecipe: Equatable, Sendable {

@@ -98,6 +98,12 @@ import AppKit
     }
     @discardableResult fileprivate func activate(_ action: MainScreenAction) -> Bool {
         switch action {
+        case .overviewAlerts:
+            guard presentation?.overview != nil else { return false }
+            return mutate { $0.open(.alerts, from: .noticeOverflow) }
+        case .overviewInformation(let id):
+            guard presentation?.overview?.snapshot.information?.id == id else { return false }
+            emit([.overviewInformationSelected(id)]); return true
         case .page(let page): return mutate { $0.pressPageKey(page) }
         case .back: return mutate { $0.back() }
         case .option(let page, let id, let value):
@@ -164,6 +170,16 @@ import AppKit
         keyboard = true; updateFocus()
         guard event.keyCode == 53 else { return false }
         return handleEscape()
+    }
+    fileprivate func navigateGroup(from id: String, event: NSEvent) -> Bool {
+        guard let region = controls[id]?.region, let group = region.focusGroup,
+              [123,124,115,119].contains(event.keyCode) else { return false }
+        let ids = recipe?.regions.filter { $0.enabled && $0.tabStop && $0.focusGroup == group }.map(\.id) ?? []
+        guard let index = ids.firstIndex(of: id), !ids.isEmpty else { return false }
+        cancelHintRest(.keyboard); keyboard = true
+        let next = event.keyCode == 115 ? 0 : event.keyCode == 119 ? ids.count-1 : min(ids.count-1,max(0,index+(event.keyCode == 124 ? 1:-1)))
+        if let control = controls[ids[next]] { window?.makeFirstResponder(control) }
+        return true
     }
     fileprivate func pointerMode() { cancelHintRest(.pointerDown); keyboard = false; updateFocus(); leaveHelp() }
     public override func mouseDown(with event: NSEvent) { pointerMode(); super.mouseDown(with: event) }
@@ -261,7 +277,7 @@ import AppKit
     override func keyDown(with event: NSEvent) {
         guard region.enabled, let owner = currentOwner else { return }
         if event.keyCode == 48 { owner.cancelHintRest(.keyboard); event.modifierFlags.contains(.shift) ? window?.selectPreviousKeyView(self) : window?.selectNextKeyView(self); return }
-        if owner.key(event) { return }
+        if owner.navigateGroup(from: region.id, event: event) || owner.key(event) { return }
         if event.keyCode == 36 || event.charactersIgnoringModifiers == " " { _ = accessibilityPerformPress() }
         else { super.keyDown(with: event) }
     }
