@@ -6,7 +6,7 @@ import CoreText
 @MainActor enum NeutralOverviewRecipe {
     static func legendRows(_ display: OverviewPageDisplay) -> Int { max(1,(display.snapshot.series.count+2)/3) }
     static func minimumHeight(_ display: OverviewPageDisplay) -> Double {
-        max(340,250+Double(legendRows(display))*20+Double(max(0,display.snapshot.series.count-1))*2)
+        display.visualization == .heatmap ? 340:max(340,250+Double(legendRows(display))*20+Double(max(0,display.snapshot.series.count-1))*2)
     }
     static func make(_ display: OverviewPageDisplay, in area: CGRect) throws -> (commands:[EngineDrawingCommand],regions:[MainScreenHitRegion]) {
         let zh=display.language == .chinese
@@ -54,6 +54,12 @@ import CoreText
         let totals=(zh ? "今日 ":"Today ")+display.todayText+" · "+(zh ? "30天 ":"30 days ")+display.days30Text
         text("overview.totals",totals,totalRect)
         regions.append(.init(id:"overview.totals",rect:totalRect,label:totals,help:.init(title:zh ? "用量":"Usage",body:totals),role:.readout))
+        if display.visualization == .heatmap {
+            let color:EngineInk
+            if case .subscription(let id)=display.snapshot.scope {color=ink(id)} else {color=fg}
+            let drawing=try NeutralHeatmapRecipe.make(display,in:CGRect(x:area.minX,y:area.minY+92,width:area.width,height:area.height-92),ink:color)
+            return (commands+drawing.commands,regions+drawing.regions)
+        }
         let legendHeight=Double(legendRows(display))*20
         let plot=CGRect(x:area.minX,y:area.minY+92,width:area.width,height:area.height-112-legendHeight)
         guard let geometry=OverviewChartGeometry(display:display,plot:plot) else {throw EngineTableError.invalidRecipe}

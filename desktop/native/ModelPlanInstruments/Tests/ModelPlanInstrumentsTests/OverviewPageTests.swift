@@ -113,7 +113,7 @@ final class OverviewPageTests:XCTestCase {
         var controller=MainScreenController()
         try controller.update(inputs:[],selection:nil,publication:nil,publicationUsable:false,pages:[page])
         let before=MainScreenPresentation(controller:controller,language:.english,compact:false)
-        XCTAssertEqual(before.overview?.chart.buckets.count,7);XCTAssertEqual(before.footer[0],.blank)
+        XCTAssertEqual(before.overview?.chart.buckets.count,7);if case .option(let chart)=before.footer[0] {XCTAssertEqual(chart.id,"overview.chart");XCTAssertEqual(chart.selectedValue,"bars")} else {XCTFail("Missing chart choice")}
         XCTAssertEqual(controller.chooseOption(id:"overview.range",value:"24"),[.optionSelected(page:.overview,id:"overview.range",value:"24")])
         XCTAssertEqual(MainScreenPresentation(controller:controller,language:.english,compact:false).overview?.chart.buckets.count,24)
         controller.chooseOption(id:"overview.mode",value:"split")

@@ -343,6 +343,27 @@ sourced Alerts route; the assembly supplies its detail body using
 `OverviewInformationRow` is already-localized, injected offline information: it
 appears last only when operational notices leave room. Its optional action emits
 `overviewInformationSelected(id)` for the host. This target owns no update service,
-network request, second update store or ALERT-lamp state. The first footer slot is
-reserved for the separately delivered heatmap; range and stack/split occupy the
-remaining slots. Official chart drawing stays behind the recipe-provider seam.
+network request, second update store or ALERT-lamp state. The first footer selects Bars/Grid; the grid hides the range and stack/split
+slots while retaining their prior choices. Official chart drawing stays behind the recipe-provider seam.
+
+
+## Calendar heatmap
+
+Pass `coverageStart` and/or `coverageBySubscription` to `OverviewPageSnapshot`,
+with `initialVisualization: .heatmap` when needed. The snapshot reuses
+`UsageHeatmap` for the retained calendar, per-subscription coverage, partial
+values and five intensity steps. `OverviewHeatmapData.grid` has exactly 182
+slots, Monday first, with future slots absent. Dates before known coverage have
+no painted cell or hit target; a missing reading inside known coverage remains
+blank and accessible. Without coverage metadata, an actual reading proves only
+its own day. A recorded zero gets the zero step, never the missing state.
+
+`OverviewHeatmapGeometry` packs the 26-by-7 calendar and provides date IDs,
+month/coverage bounds and cell hit regions. The neutral All palette is grayscale;
+a subscription uses its injected identity ink (or the stable neutral fallback).
+No official geometry, material or palette is embedded. Native cell help and AX
+share full local dates, known/partial totals and every subscription value.
+Left/Right moves by week, Up/Down by weekday, skipping unavailable targets;
+Home/End selects the first/last available date. Tab also reaches the data and
+coverage explanation. These use the existing shared hover/focus machinery, with
+no extra tooltip producer, hint admission policy, polling timer or collection.
