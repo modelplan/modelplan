@@ -37,6 +37,7 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     private let uptime: () -> TimeInterval
     private var bindings: [UUID: Binding] = [:]
     private var rest: Rest?
+    private var operationGeneration: UInt64 = 0
     public var pendingTarget: TrialHintTarget? { rest?.target }
 
     public init(receiver: any InstrumentTrialHintReceiving,
@@ -45,6 +46,7 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     }
     public func register(sourceID: UUID = UUID(),
                          resolve: @escaping () -> InstrumentHintSourceSnapshot?) -> InstrumentHintSourceLease {
+        operationGeneration &+= 1
         let lease = InstrumentHintSourceLease(sourceID: sourceID, generation: UUID())
         // Install first: a cancellation callout may synchronously register a newer replacement.
         bindings[sourceID] = Binding(lease: lease, resolve: resolve)
@@ -53,6 +55,7 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     }
     public func remove(_ lease: InstrumentHintSourceLease) {
         guard isCurrent(lease) else { return }
+        operationGeneration &+= 1
         bindings.removeValue(forKey: lease.sourceID)
         if rest?.lease == lease { cancelCurrent(reason: .targetRemoval) }
     }
@@ -64,9 +67,13 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
         }
         let now = uptime()
         guard now.isFinite, now >= 0, eventTime.isFinite, eventTime >= 0, eventTime <= now else { return }
+        operationGeneration &+= 1
+        let operation = operationGeneration
         switch input {
         case .faderRestCandidate(let anchor, let pointer, _):
-            guard let state = bindings[lease.sourceID]?.resolve(), isCurrent(lease), valid(state),
+            let resolved = bindings[lease.sourceID]?.resolve()
+            guard operationGeneration == operation, isCurrent(lease) else { return }
+            guard let state = resolved, valid(state),
                   state.anchor == anchor, state.pointer == pointer else {
                 if rest?.lease == lease { cancelCurrent(reason: .targetRemoval) }
                 return
@@ -74,7 +81,9 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
             if let rest, rest.lease == lease, rest.snapshot == state { return }
             if rest != nil { cancelCurrent(reason: .pointerMovement) }
             // A receiver callout can have created a newer rest or replaced this source.
-            guard isCurrent(lease), rest == nil, let receiver else { return }
+            guard operationGeneration == operation, isCurrent(lease), rest == nil, let receiver else { return }
+            let current = bindings[lease.sourceID]?.resolve()
+            guard operationGeneration == operation, isCurrent(lease), rest == nil, current == state else { return }
             let target = TrialHintTarget(id: UUID().uuidString)
             rest = Rest(lease: lease, snapshot: state, target: target)
             let accepted = receiver.beginTrialRest(on: target, at: now)
@@ -95,8 +104,9 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     /// only the matching pending rest; the shared arbiter alone decides whether an offer can show.
     public func validatePendingRest() -> InstrumentHintSourceSnapshot? {
         guard let pending = rest else { return nil }
+        let operation = operationGeneration
         let state = bindings[pending.lease.sourceID]?.resolve()
-        guard rest?.target == pending.target, isCurrent(pending.lease) else { return nil }
+        guard operationGeneration == operation, rest?.target == pending.target, isCurrent(pending.lease) else { return nil }
         guard let state, valid(state), state == pending.snapshot else {
             cancelCurrent(reason: .targetRemoval); return nil
         }
@@ -104,7 +114,7 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
     }
     /// Only after the shared arbiter confirms a real placed/visible offer. No seen flag is written here.
     public func didConfirmShown(_ target: TrialHintTarget) {
-        if rest?.target == target { rest = nil }
+        if rest?.target == target { operationGeneration &+= 1; rest = nil }
     }
     private func isCurrent(_ lease: InstrumentHintSourceLease) -> Bool {
         bindings[lease.sourceID]?.lease == lease
