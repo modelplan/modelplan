@@ -32,7 +32,7 @@ public struct RecordStripViewInput: Sendable {
     }
 }
 public enum RecordStripField: String, CaseIterable, Sendable { case chip, tool, model, effort, project, speed, age }
-public struct RecordStripRowLayout: Sendable {
+public struct RecordStripRowLayout: Equatable, Sendable {
     public let id: String?, frame: CGRect, fields: [RecordStripField:CGRect]
     public init(id:String?,frame:CGRect,fields:[RecordStripField:CGRect]) { self.id = id;self.frame = frame;self.fields = fields }
 }
@@ -55,9 +55,10 @@ public struct RecordStripRecipe: Sendable {
         if let more { guard !more.isNull,!more.isInfinite,more.width>0,more.height>0,root.contains(more) else { throw EngineTableError.invalidRecipe } }
     }
 }
+public enum RecordStripHover: Equatable, Sendable { case row(String), more }
 @MainActor public protocol RecordStripRecipeProvider: InstrumentDrawingResources {
     func preferredSize(for density:RecordStripDensity)->CGSize
-    func recipe(for input:RecordStripViewInput,size:CGSize,hoveredID:String?) throws -> RecordStripRecipe
+    func recipe(for input:RecordStripViewInput,size:CGSize,hover:RecordStripHover?) throws -> RecordStripRecipe
 }
 public struct RecordStripRowText: Sendable {
     public let tool:String,model:String,effort:String,project:String,speed:String,age:String,accessibility:String

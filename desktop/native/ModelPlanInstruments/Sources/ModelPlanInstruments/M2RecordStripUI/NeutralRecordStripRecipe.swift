@@ -13,7 +13,7 @@ import CoreText
         return NSFont.monospacedSystemFont(ofSize: request.size, weight: .regular) as CTFont
     }
     public func image(_ resourceID: String) throws -> CGImage { throw EngineTableError.missingResource(resourceID) }
-    public func recipe(for input: RecordStripViewInput, size: CGSize, hoveredID: String?) throws -> RecordStripRecipe {
+    public func recipe(for input: RecordStripViewInput, size: CGSize, hover: RecordStripHover?) throws -> RecordStripRecipe {
         let foreground = EngineInk(input.appearance.dark ? NSColor.white : .black)
         let muted = EngineInk(input.appearance.dark ? NSColor.lightGray : .darkGray)
         let background = EngineInk(input.appearance.dark ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.95, alpha: 1))
@@ -28,7 +28,7 @@ import CoreText
                 boxes[field] = CGRect(x: x, y: frame.minY, width: width, height: frame.height); x += width + 4
             }
             rows.append(.init(id: line.id, frame: frame, fields: boxes))
-            if input.selectedID == line.id || hoveredID == line.id {
+            if input.selectedID == line.id || hover == .row(line.id) {
                 commands.append(.fill(rect: frame, radius: 2, ink: .init(0.3, 0.5, 0.8, 0.2)))
             }
             commands.append(.fill(rect: CGRect(x: frame.minX, y: frame.minY + 8, width: 6, height: 8), radius: 1,
@@ -51,7 +51,7 @@ import CoreText
         }
         let more = input.presentation.overflow > 0 ? CGRect(x: size.width - 80, y: size.height - 22, width: 72, height: 18) : nil
         if let more {
-            if input.overflowSelected { commands.append(.fill(rect: more, radius: 2, ink: .init(0.3, 0.5, 0.8, 0.2))) }
+            if input.overflowSelected || hover == .more { commands.append(.fill(rect: more, radius: 2, ink: .init(0.3, 0.5, 0.8, 0.2))) }
             commands.append(.text(.init(id: "record.more", variants: ["+\(input.presentation.overflow) ›"], rect: more,
                                        font: .init(size: 11), ink: foreground, alignment: .right)))
         }

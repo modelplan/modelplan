@@ -11,7 +11,8 @@ import AppKit
     public private(set) var glyphMetrics:[EngineGlyphMetric] = []
     private let provider:any RecordStripRecipeProvider
     private var controls:[String:RecordStripControl] = [:]
-    private var hoveredID:String?, allowed = true
+    private var hovered:RecordStripHover?
+    private var allowed = true
     private let cursorLayer = CALayer()
     public init(provider:(any RecordStripRecipeProvider)? = nil) {
         let selected = provider ?? NeutralRecordStripRecipe()
@@ -31,7 +32,7 @@ import AppKit
         let candidate = RecordStripViewInput(presentation:proposed.presentation,density:proposed.density,appearance:proposed.appearance,
             identities:identities,selectedID:selected,overflowSelected:proposed.overflowSelected,cursor:proposed.cursor)
         let size = provider.preferredSize(for:proposed.density)
-        let next = try provider.recipe(for:candidate,size:size,hoveredID:hoveredID.flatMap{ids.contains($0) ? $0:nil})
+        let next = try provider.recipe(for:candidate,size:size,hover:admittedHover(hovered,ids:ids,hasMore:proposed.presentation.overflow>0))
         try next.validate()
         guard next.rows.compactMap(\.id)==lines.map(\.id),next.drawing.size==size,(next.more != nil) == (proposed.presentation.overflow > 0) else { throw EngineTableError.invalidRecipe }
         if let cursor = candidate.cursor {
@@ -41,16 +42,16 @@ import AppKit
         // Resolve resources before publishing data or changing the accessible target tree.
         _ = try EngineRecipeDrawing.raster(next.drawing,provider:provider,scale:1)
         input = candidate;recipe = next;frame.size = size
-        if let hoveredID,!ids.contains(hoveredID) { self.hoveredID = nil }
+        hovered = admittedHover(hovered,ids:ids,hasMore:proposed.presentation.overflow>0)
         synchronizeControls();updateCursor();needsDisplay = true;invalidateIntrinsicContentSize()
     }
     public func setPresentationAllowed(_ allowed:Bool) {
         self.allowed = allowed
-        if !allowed { hoveredID = nil }
+        if !allowed { refreshHover(nil) }
         updateAdmission();updateCursor();needsDisplay = true
     }
     public func stop() {
-        allowed = false;input = nil;recipe = nil;hoveredID = nil;glyphMetrics = []
+        allowed = false;input = nil;recipe = nil;hovered = nil;glyphMetrics = []
         for control in controls.values { control.removeFromSuperview() };controls = [:]
         cursorLayer.removeAllAnimations();cursorLayer.isHidden = true
     }
@@ -73,7 +74,7 @@ import AppKit
         let result = try EngineRecipeDrawing.raster(recipe.drawing,provider:provider,scale:scale)
         glyphMetrics = result.1;return result.0
     }
-    public override func viewDidHide() { super.viewDidHide();updateAdmission();updateCursor() }
+    public override func viewDidHide() { super.viewDidHide();refreshHover(nil);updateAdmission();updateCursor() }
     public override func viewDidUnhide() { super.viewDidUnhide();updateAdmission();updateCursor() }
     public override func keyDown(with event:NSEvent) { if allowed && event.keyCode==53 { onReturn?() } else { super.keyDown(with:event) } }
     fileprivate func activate(_ key:String)->Bool {
@@ -85,12 +86,28 @@ import AppKit
         }
         return false
     }
+    private func admittedHover(_ hover:RecordStripHover?,ids:Set<String>,hasMore:Bool)->RecordStripHover? {
+        switch hover {
+        case .row(let id): return ids.contains(id) ? .row(id):nil
+        case .more: return hasMore ? .more:nil
+        case nil: return nil
+        }
+    }
     fileprivate func hover(_ key:String?,entered:Bool) {
-        guard allowed,let input else { return }
-        let id = key.flatMap { $0.hasPrefix("row:") ? String($0.dropFirst(4)):nil }
-        if entered { hoveredID = id } else if hoveredID==id { hoveredID = nil }
-        do { let next = try provider.recipe(for:input,size:bounds.size,hoveredID:hoveredID);try next.validate();recipe = next;needsDisplay = true }
-        catch { onRenderingFailure?(error) }
+        guard allowed,let key else { return }
+        let target:RecordStripHover = key == "more" ? .more:.row(String(key.dropFirst(4)))
+        if entered { refreshHover(target) } else if hovered==target { refreshHover(nil) }
+    }
+    private func refreshHover(_ target:RecordStripHover?) {
+        guard let input,let old = recipe else { hovered = nil;return }
+        let admitted = admittedHover(target,ids:Set(input.presentation.lines.map(\.id)),hasMore:input.presentation.overflow>0)
+        do {
+            let next = try provider.recipe(for:input,size:old.drawing.size,hover:admitted);try next.validate()
+            // Pointer state may change ink, never the navigation/tooltip target geometry.
+            guard next.rows==old.rows,next.more==old.more,next.drawing.size==old.drawing.size else { throw EngineTableError.invalidRecipe }
+            _ = try EngineRecipeDrawing.raster(next.drawing,provider:provider,scale:1)
+            recipe = next;hovered = admitted;needsDisplay = true
+        } catch { onRenderingFailure?(error) }
     }
     private func updateAdmission() {
         for control in controls.values { control.isEnabled = allowed && !isHiddenOrHasHiddenAncestor }

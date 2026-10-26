@@ -109,6 +109,26 @@ import XCTest
         view.setPresentationAllowed(true); XCTAssertFalse(cursor.isHidden)
         view.stop(); XCTAssertTrue(cursor.isHidden)
     }
+    func testOverflowHoverIsDistinctFromRecordIDAndClearsOnPause() async throws {
+        let view = RecordStripView();try view.configure(input([session("more"),session("z1"),session("z2"),session("z3")]))
+        func pixels() throws -> Data { try XCTUnwrap(try view.rasterImage(scale:1).dataProvider?.data) as Data }
+        let before = try pixels(), more = try XCTUnwrap(view.moreControl)
+        more.mouseEntered(with:key("",code:0));XCTAssertNotEqual(try pixels(),before)
+        view.setPresentationAllowed(false);XCTAssertEqual(try pixels(),before)
+        view.setPresentationAllowed(true);let row = try XCTUnwrap(view.control(for:"more"))
+        row.mouseEntered(with:key("",code:0));XCTAssertNotEqual(try pixels(),before)
+        row.mouseExited(with:key("",code:0));XCTAssertEqual(try pixels(),before)
+    }
+    func testHoverProviderCannotMoveNavigationTargetsOrPublishMissingResources() async throws {
+        let provider = BreakingRecipe(),view = RecordStripView(provider:provider);try view.configure(input([session("a")]))
+        let old = try XCTUnwrap(view.recipe),control = try XCTUnwrap(view.control(for:"a"));var failures = 0
+        view.onRenderingFailure = { _ in failures += 1 }
+        provider.moveOnHover = true;control.mouseEntered(with:key("",code:0))
+        XCTAssertEqual(view.recipe?.rows,old.rows);XCTAssertEqual(failures,1)
+        provider.moveOnHover = false;provider.missingOnHover = true;control.mouseEntered(with:key("",code:0))
+        XCTAssertEqual(view.recipe?.drawing,old.drawing);XCTAssertEqual(failures,2)
+        XCTAssertTrue(control.accessibilityPerformPress())
+    }
     func testNeutralRasterIsCompleteInBothLanguagesThemesScalesAndDensities() async throws {
         let view = RecordStripView()
         for full in [false, true] { for dark in [false, true] { for language in [InstrumentLanguage.english, .chinese] {
@@ -123,13 +143,22 @@ import XCTest
     }
 }
 @MainActor private final class BreakingRecipe: RecordStripRecipeProvider {
-    var broken = false
+    var broken = false,moveOnHover = false,missingOnHover = false
     private let neutral = NeutralRecordStripRecipe()
     func preferredSize(for density: RecordStripDensity) -> CGSize { neutral.preferredSize(for: density) }
     func font(_ request: EngineFontRequest) throws -> CTFont { try neutral.font(request) }
     func image(_ resourceID: String) throws -> CGImage { try neutral.image(resourceID) }
-    func recipe(for input: RecordStripViewInput, size: CGSize, hoveredID: String?) throws -> RecordStripRecipe {
+    func recipe(for input: RecordStripViewInput, size: CGSize, hover: RecordStripHover?) throws -> RecordStripRecipe {
         if broken { throw EngineTableError.invalidRecipe }
-        return try neutral.recipe(for: input, size: size, hoveredID: hoveredID)
+        let next = try neutral.recipe(for: input, size: size, hover: hover)
+        if hover != nil && moveOnHover {
+            let rows = next.rows.map { RecordStripRowLayout(id:$0.id,frame:$0.frame.offsetBy(dx:1,dy:0),fields:$0.fields.mapValues{$0.offsetBy(dx:1,dy:0)}) }
+            return .init(drawing:next.drawing,rows:rows,more:next.more)
+        }
+        if hover != nil && missingOnHover {
+            var drawing = next.drawing;drawing.commands.append(.image(resourceID:"missing",rect:CGRect(x:0,y:0,width:1,height:1),opacity:1))
+            return .init(drawing:drawing,rows:next.rows,more:next.more)
+        }
+        return next
     }
 }
