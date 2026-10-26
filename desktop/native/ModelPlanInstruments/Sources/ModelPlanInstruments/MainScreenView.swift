@@ -220,7 +220,7 @@ import AppKit
     private func configureList(_ list:MainScreenListRecipe?) {
         guard let list else {
             listObserver=nil
-            listScroll?.removeFromSuperview();listScroll?.documentView=nil;listScroll=nil;listDocument.list=nil;return
+            listScroll?.removeFromSuperview();listScroll?.documentView=nil;listScroll=nil;listDocument.list=nil;listDocument.setAccessibilityChildren([]);return
         }
         let changed=listDocument.list != list,reset=listDocument.list?.identity != list.identity
         let scroll=listScroll ?? NSScrollView(frame:list.viewport)

@@ -236,6 +236,16 @@ final class SubscriptionNowTests:XCTestCase {
         XCTAssertTrue(view.control(for:"subscription.a.usage.7.basis")!.accessibilityLabel()!.contains("7日用量"))
         view.dispose()
     }
+    func testClosingCachedViewReleasesDetachedRowControls() async throws {
+        let view=try setup(SubFixture.snapshot([SubFixture.input()]))
+        weak var removed:NSControl?
+        autoreleasepool {
+            removed=view.control(for:"subscription.a.header")
+            view.closeForCockpit()
+        }
+        XCTAssertNil(removed)
+        view.dispose()
+    }
     func testViewAndScrollObserverAreReleasedWithoutExplicitDispose() async throws {
         weak var weakView:MainScreenView?
         try autoreleasepool {var view:MainScreenView?=try setup(SubFixture.snapshot([SubFixture.input()]));weakView=view;view=nil}
