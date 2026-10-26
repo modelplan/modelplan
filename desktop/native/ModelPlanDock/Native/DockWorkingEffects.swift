@@ -13,10 +13,10 @@ public struct DockEffectRotation: Equatable, Sendable {
     public let direction:Direction
     public init(period:Double,direction:Direction = .clockwise){self.period=period;self.direction=direction}
     var valid:Bool {period.isFinite && (0.01...86_400).contains(period)}
-    // The effect sits in DockInstrumentView's flipped parent: positive CA Z is visual clockwise.
+    // The nested flipped parents reverse the final NSView basis; negative CA Z is visual clockwise.
     func angle(elapsed:Double)->Double {
         let turns=max(0,elapsed).truncatingRemainder(dividingBy:period)/period
-        return turns*2*Double.pi*(direction == .clockwise ? 1:-1)
+        return turns*2*Double.pi*(direction == .clockwise ? -1:1)
     }
 }
 
@@ -65,7 +65,7 @@ public struct DockEffectRotation: Equatable, Sendable {
             if quietIDs.contains(id) || effectiveProfile.reduceMotion {staticIDs.insert(id);effect.seekForCapture(0)}
             if let rotation,!effectiveProfile.reduceMotion,!quietIDs.contains(id) {
                 let spin=CABasicAnimation(keyPath:"transform.rotation.z")
-                spin.fromValue=0;spin.toValue=rotation.direction == .clockwise ? 2*Double.pi:-2*Double.pi
+                spin.fromValue=0;spin.toValue=rotation.direction == .clockwise ? -2*Double.pi:2*Double.pi
                 spin.duration=rotation.period;spin.timingFunction=CAMediaTimingFunction(name:.linear)
                 spin.repeatCount = .infinity
                 effect.layer.add(spin,forKey:Self.rotationKey);motionByID[id]=rotation
