@@ -6,9 +6,14 @@ import ModelPlanSettings
 /// Implement with the same app-scoped SettingsStore, not another store for its URL.
 public protocol HintPreferenceWriting: Sendable {
     func snapshot() async -> SettingsSnapshot
+    func acceptsOrigin(of edit: SettingsCommittedEdit) async -> Bool
     func saveHints(_ preferences: FirstUseHintPreferences, expectedRevision: UInt64) async throws -> SettingsSnapshot
 }
+public extension HintPreferenceWriting {
+    func acceptsOrigin(of edit: SettingsCommittedEdit) async -> Bool { false }
+}
 extension SettingsStore: HintPreferenceWriting {
+    public func acceptsOrigin(of edit: SettingsCommittedEdit) -> Bool { edit.belongs(to: self) }
     public func saveHints(_ preferences: FirstUseHintPreferences, expectedRevision: UInt64) throws -> SettingsSnapshot {
         try update(expectedRevision: expectedRevision) { $0.helpHints = preferences }
     }
@@ -42,6 +47,7 @@ extension SettingsStore: HintPreferenceWriting {
     public private(set) var hints: FirstUseHints
     public private(set) var persistenceError: Error?
     public var onPersistenceFailure: ((Error) -> Void)?
+    public var onPersisted: ((SettingsSnapshot) -> Void)?
     public private(set) var isRunning = true
     public lazy var sources = InstrumentHintSourceRouter(receiver: self, uptime: uptime)
     private let persistence: any HintPreferenceWriting
@@ -172,6 +178,39 @@ extension SettingsStore: HintPreferenceWriting {
         startWriteIfNeeded()
         return accepted
     }
+    /// Only a typed, contiguous editor transaction which preserved the saved hint ledger can
+    /// advance a stale CAS base. A fresh snapshot alone is never sufficient evidence.
+    /// The app serializes these receipts with reset receipts through the same binding.
+    @discardableResult public func reconcileUnchangedHints(_ edit: SettingsCommittedEdit) async -> Bool {
+        guard !disposed, resetCheck == nil, case .preferences = edit.kind,
+              edit.before.revision == revision, edit.after.revision > edit.before.revision,
+              edit.before.preferences.helpHints == saved, edit.after.preferences.helpHints == saved else { return false }
+        let originalRevision = revision, originalSaved = saved, epoch = writeEpoch
+        _ = beginOperation(); let token = UUID(); resetCheck = token
+        deadlineID = nil; scheduler.cancel()
+        guard resetCheck == token, !disposed else { return false }
+        let originMatches = await persistence.acceptsOrigin(of: edit)
+        guard resetCheck == token, !disposed else { return false }
+        let snapshot = await persistence.snapshot()
+        guard resetCheck == token, !disposed else { return false }
+        let operation = beginOperation(); resetCheck = nil
+        let deferred = deferredContext; deferredContext = nil
+        let accepted = originMatches && revision == originalRevision && saved == originalSaved && writeEpoch == epoch
+            && snapshot.revision == edit.after.revision && snapshot.revision >= revisionFloor
+            // Origin plus the exact monotonically increasing actor revision identifies the receipt.
+            && snapshot.preferences.helpHints == edit.after.preferences.helpHints
+        revisionFloor = max(revisionFloor, snapshot.revision)
+        if accepted {
+            // A write suspended before this edit can only fail its old CAS; fence its completion.
+            writeEpoch &+= 1; revision = snapshot.revision; saved = snapshot.preferences.helpHints
+            pending = hints.preferences == saved ? nil : hints.preferences
+            if (persistenceError as? SettingsError) == .staleRevision { persistenceError = nil }
+        }
+        guard generation == operation, !disposed else { return accepted }
+        if let deferred, isRunning { try? updateContext(deferred) } else { armDeadline() }
+        startWriteIfNeeded()
+        return accepted
+    }
     /// Explicit retry keeps the captured CAS revision. It never snapshots/rebases over a possible reset.
     public func retryPersistence() {
         persistenceError = nil
@@ -274,6 +313,7 @@ extension SettingsStore: HintPreferenceWriting {
             revisionFloor = receipt.revision
             if hints.preferences == saved { pending = nil } else { pending = hints.preferences }
             startWriteIfNeeded()
+            onPersisted?(receipt)
         case .failure(let error): failPersistence(error)
         }
     }

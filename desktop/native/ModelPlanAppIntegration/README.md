@@ -46,3 +46,42 @@ Route the successful editor's revision-tagged `resetHelpHints` request to `apply
 The injected overlay must verify actual current anchor, placement and surface visibility in `showAndVerify` and `updateAndVerify`; geometry-only `onPresentation` is insufficient. Reentrant surface changes, disposal and stale timer/render callbacks cannot confirm an old offer or hide a new token. Reduced Motion updates keep the original expiry. None of these injected receipts establishes actual displayed UI or physical proof by itself.
 
 This module is execution code, not completed live app composition. CommunityApp still needs one app-scoped host wired to current Dock/Cockpit inputs, the Help UI adapter and Settings receipt routing. Context/clock/source geometry, real overlay eligibility, scoped error reporting and subsequent stale-revision reconciliation remain explicit host responsibilities. No system service, capture, private drawing/copy package, CLI mutation or actual window launch is added. PR183 is the source-router dependency; merge it before this change.
+
+
+## Concrete Help composition and typed Settings receipts
+
+`InstrumentHelpComposition.restored(application:)` uses the existing coordinator/editor/store,
+P10 arbiter/source router/common-mode deadline and one M4 `HelpUILayerView`. The CommunityApp
+session retains one composition after restore; concurrent restore calls share its creation task.
+The commit observer is installed before asynchronous restore and acknowledges any one in-flight
+startup receipt before exposing the composition, so an intervening save cannot be missed.
+It does not open a window or embed a cockpit. The actual cockpit host must embed `layer`, call
+`update` with current session identity, overlay-local anchors, occupied live readings, map/RM
+facts and injected released copy, and suspend/dispose it at the corresponding lifetime boundary.
+Dock-only hints require the actual Dock surface binding and are not admitted by this cockpit layer.
+Trial content also requires the matching P09 source snapshot paired with the converted overlay
+anchor; unbound or replaced sources cannot point a trial offer at an arbitrary other fader.
+
+The adapter checks token, current geometry, session and live AppKit window/view visibility after
+M4 renders and after visibility callouts. A geometry receipt alone never confirms a hint. No-window,
+replaced, hidden or unplaceable offers spend no flag/budget. This runtime check is not physical,
+pixel or occlusion-proof acceptance. Tests inject visibility only for deterministic module regressions.
+Layer actions/cancellations carry the current composition generation; source-view trial callbacks
+still use their P09 leases. Map/context semantic actions remain callbacks to the owning surface.
+No private hint wording, official visual recipe or persisted preferences field is added here.
+
+`SettingsEditor.observeCommittedEdits` is an additive async receipt observer; neither the window's
+`onChange` nor the coordinator's `onCommit` is replaced. Its receipt records the originating store,
+exact before/after revisions and an explicit reset kind, including an already-empty reset. The save
+boundary stays busy until observers acknowledge, so another editor save cannot overtake the reset.
+Only successful commits emit receipts. Hint writes refresh the same editor through the existing
+coordinator, with coalescing reads rather than a second preference owner or timer.
+
+A contiguous ordinary receipt can reconcile a stale hint CAS only if it belongs to the same store,
+preserves the saved hint ledger and matches that actor's current exact revision/ledger. It fences
+an older pending writer and preserves the in-memory shown ledger; a foreign receipt, skipped
+revision, reset receipt or newer reset cannot authorize rebasing. Actual reset receipts continue
+through P10's current-revision/empty-ledger/epoch checks. I/O failures are not cleared by ordinary
+reconciliation. Full live Dock/Cockpit data, size/density rendering, official recipe/copy injection and
+physical/appearance/performance acceptance remain separate work; no launch/signing/system effect
+is performed by this composition increment.

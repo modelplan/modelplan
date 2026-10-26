@@ -27,7 +27,8 @@ import ModelPlanAppIntegration
                     NSApplication.shared.appearance = desired.flatMap { NSAppearance(named: $0) }
                 }
             }
-            return CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true })
+            return CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
+                makeHelp: { application in await InstrumentHelpComposition.restored(application: application) })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime(delegate) { NSApplication.shared.run() }
