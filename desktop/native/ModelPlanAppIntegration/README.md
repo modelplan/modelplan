@@ -142,3 +142,31 @@ source-coordinate callbacks, Help layer embedding, official recipe/copy injectio
 appearance/performance acceptance remain open. The nine no-window module regressions exercise actual
 native view/raster construction and compile/link the Community executable; they do not launch it or
 prove physical input, pixel appearance, window visibility or minimum-system acceptance.
+
+## Actual community contextual Help embedding
+
+The Community session's existing `makeHelp` startup receipt fence supplies the same retained
+`InstrumentHelpComposition` to the upper surface provider. That provider embeds its existing M4
+layer above the real MainScreen. The binding keeps the composition weakly: the session owns its
+lifetime, avoiding a composition/application/application-closure/provider cycle.
+
+MainScreen's existing resolved `onHelpChange` supplies both explanation and source-local rectangle;
+there is no second contextual dwell timer or legacy popover. The binding checks that explanation
+and rectangle still belong to the current recipe, converts them with NSView into overlay-local
+coordinates, and forwards real text/image/control/chart occupancy plus the sibling picker area.
+The existing compact Help layout uses the actual container viewport; it does not assert the generic
+community window is a 640-point cockpit or change the cockpit's frozen profile. Missing/unplaceable
+space remains fail-closed. No frozen Option map placement is guessed from this generic view.
+
+Suspend/close/source replacement removes contextual state. Held old source or dismissal callbacks
+cannot alter the replacement composition, and a reentrant close during layer presentation cannot
+restore old Help. Environment changes refresh the same layer. The generic catalogue supplies no
+cockpit-open/Dock-reveal session, first-use copy, trial lease or offer, so contextual Help cannot
+spend the first-use ledger/budget. Geometry-only presentation remains insufficient for physical or
+visibility acceptance. Source-corner age/website actions, full Option map, Dock/fader and full cockpit
+source binding, released private copy/recipe and physical/performance proof remain open.
+
+Six new no-window regressions cover actual layer/coordinate binding, current-recipe validation,
+lifecycle cleanup, stale callbacks, reentrant close and application/provider release. Together with
+the eleven surface regressions they pass seventeen selected tests and compile/link CommunityApp.
+This change depends on PR193; preserve merge order and exact-head external gates.

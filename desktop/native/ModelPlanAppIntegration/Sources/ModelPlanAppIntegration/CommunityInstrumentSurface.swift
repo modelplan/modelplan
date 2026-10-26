@@ -20,13 +20,18 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 @MainActor public final class CommunityInstrumentSurfaceProvider: NativeSurfaceProvider {
     public private(set) var current: CommunityInstrumentView?
     private var settings: SettingsApplication?
+    private weak var help: InstrumentHelpComposition?
     public init() {}
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
         let surface = CommunityInstrumentView()
         current = surface
         if let settings { surface.apply(settings) }
+        if let help { surface.bindHelp(help) }
         return surface
+    }
+    public func bindHelp(_ composition: InstrumentHelpComposition) {
+        help = composition; current?.bindHelp(composition)
     }
     public func apply(_ application: SettingsApplication) {
         guard application.snapshot.revision >= (settings?.snapshot.revision ?? 0) else { return }
@@ -57,6 +62,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var rendering = false
     private var publishRequested = false, compareRequested = false
     private var retired = false
+    private var helpBinding: CommunityContextHelpBinding?
+    private var helpGeneration: UInt64 = 0
     private var needsSelection = false
     public var instrumentLanguage: InstrumentLanguage { settings?.effective.language == .english ? .english : .chinese }
     public override init() {
@@ -71,6 +78,17 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         mainScreen.frame.origin = .init(x: 0, y: 32)
         view.setFrameSize(preferredContentSize)
     }
+    public func bindHelp(_ composition: InstrumentHelpComposition) {
+        guard !retired, helpBinding?.composition !== composition else { return }
+        helpGeneration &+= 1; let token = helpGeneration
+        let old = helpBinding; helpBinding = nil; old?.dispose()
+        guard !retired, helpGeneration == token else { return }
+        let binding = CommunityContextHelpBinding(composition: composition, source: mainScreen, container: view,
+            active: { [weak self] in self?.isPresented == true && self?.retired == false },
+            language: { [weak self] in self?.instrumentLanguage ?? .chinese },
+            accessibility: { [weak self] in (self?.settings?.effective.reduceMotion ?? true, self?.settings?.effective.reduceTransparency ?? true) })
+        helpBinding = binding; binding.install()
+    }
     public func apply(_ application: SettingsApplication) {
         guard !retired, application.snapshot.revision >= (settings?.snapshot.revision ?? 0) else { return }
         let languageChanged = settings?.effective.language != application.effective.language
@@ -84,6 +102,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         // An application commit must reevaluate live feeds, not resurrect a cached exact personal join.
         if isPresented, let requestFreshSelection { requestFreshSelection() }
         else if languageChanged { needsSelection = true; clearForPendingLanguage() }
+        helpBinding?.refresh()
     }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) { self.diagnostics = diagnostics }
     public func render(selection: AssembledModelSelection, publishedAt: Date?, now: Date) {
@@ -98,10 +117,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         if let requestFreshSelection { requestFreshSelection() }
         else if !needsSelection, selection != nil { requestPublish() }
     }
-    public func suspendPresentation() { isPresented = false; mainScreen.suspend() }
-    public func closePresentation() { isPresented = false; mainScreen.closeForCockpit() }
+    public func suspendPresentation() { isPresented = false; mainScreen.suspend(); helpBinding?.suspend() }
+    public func closePresentation() { isPresented = false; mainScreen.closeForCockpit(); helpBinding?.suspend() }
     public func dispose() {
-        guard !retired else { return }; retired = true; isPresented = false
+        guard !retired else { return }; retired = true; isPresented = false; helpGeneration &+= 1
+        let binding = helpBinding; helpBinding = nil; binding?.dispose()
         modelPicker.target = nil; modelPicker.action = nil; modelPicker.isEnabled = false
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
         requestFreshSelection = nil; contentSizeChanged = nil
@@ -199,6 +219,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
             view.setFrameSize(next); modelPicker.frame.size.width = next.width
             status.isHidden = true; mainScreen.isHidden = false; renderFailure = false
             if changed { contentSizeChanged?() }
+            helpBinding?.refresh()
         } catch { fail() }
     }
     private func clearForPendingLanguage() {
@@ -206,12 +227,12 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         modelPicker.isEnabled = false
         status.stringValue = instrumentLanguage == .chinese ? "正在等待当前语言的模型目录" : "Waiting for the current model catalogue"
         status.frame = .init(x: 8, y: 40, width: max(1, preferredContentSize.width - 16), height: 60)
-        status.isHidden = false
+        status.isHidden = false; helpBinding?.suspend()
     }
     private func fail() {
         mainScreen.closeForCockpit(); mainScreen.isHidden = true; renderFailure = true
         status.stringValue = instrumentLanguage == .chinese ? "当前数据暂无法在原生视图显示" : "Current data cannot be displayed in the native view"
         status.frame = .init(x: 8, y: 40, width: max(1, preferredContentSize.width - 16), height: 60)
-        status.isHidden = false; modelPicker.isEnabled = false
+        status.isHidden = false; modelPicker.isEnabled = false; helpBinding?.suspend()
     }
 }
