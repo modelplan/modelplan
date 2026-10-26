@@ -75,6 +75,8 @@ press, while only their keys enter the keyboard sequence. Unknown quota values s
 This includes a table with no subscriptions. Other keeps its compact `+N` reading,
 while its shared hover/focus/accessibility explanation contains every supplied
 window's period, scope, remaining reading and reset, respecting evidence validity.
+Scope keys also expose their actual current-page shortcut in the accessible label
+and shared hover/focus help; these facts do not add a painted legend.
 
 Updates prepare every throwing drawing/text surface before committing presentation,
 controls or layers. A failed preparation retains the last committed state and an

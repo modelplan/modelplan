@@ -27,6 +27,8 @@ public struct EngineQuotaDisplay: Equatable, Sendable {
 public struct EngineColumnDisplay: Equatable, Sendable {
     public let id: String
     public let identity: EngineTableIdentity
+    public let keyLabel: String
+    public let keyHelp: HelpExplanation
     public let selected: Bool
     public let dimmed: Bool
     public let unavailable: Bool
@@ -57,6 +59,8 @@ public struct EngineTablePresentation: Equatable, Sendable {
     public let pageIndicators: [EnginePageDisplay]
     public let labels: [String]
     public let allLabel: String
+    public let allKeyLabel: String
+    public let allKeyHelp: HelpExplanation
     public let addLabel: String
     public let emptyLabel: String?
     public let previousLabel: String
@@ -75,15 +79,20 @@ public struct EngineTablePresentation: Equatable, Sendable {
         let reserves = model.columns.contains { $0?.reserve != nil }
         labels = [format.rowName(.fiveHours), format.rowName(.weekly), format.rowName(.other), chinese ? "今日" : "Today"]
             + (reserves ? [chinese ? "储备" : "Reserve"] : [])
-        allLabel = chinese ? "全部" : "All"
+        let all = chinese ? "全部" : "All"
+        allLabel = all
+        let allKey = all + (chinese ? "（键 0）" : " (key 0)")
+        allKeyLabel = allKey
+        allKeyHelp = help.explanation(.engine, context: .init(fact: allKey))
         addLabel = chinese ? "＋ 添加订阅" : "＋ Add a subscription"
         emptyLabel = columns.isEmpty ? (chinese ? "未检测到订阅 · modelplan doctor" : "No subscriptions found · modelplan doctor") : nil
         previousLabel = chinese ? "上一页订阅" : "Previous subscriptions"
         nextLabel = chinese ? "下一页订阅" : "Next subscriptions"
-        self.columns = model.columns.map { column in
+        self.columns = model.columns.enumerated().map { slot, column in
             guard let column else { return nil }
             let valid = column.evidence.usable(at: now)
             let identity = identities[column.id] ?? EngineTableIdentity(name: column.id, shortName: column.id)
+            let keyLabel = identity.name + (chinese ? "（键 \(slot + 1)）" : " (key \(slot + 1))")
             let cells = [column.quotas.fiveHours, column.quotas.weekly, column.quotas.tightestOther]
             let displays = cells.enumerated().map { row, value -> EngineQuotaDisplay? in
                 guard let value else { return nil } // Absent window stays a genuinely blank cell.
@@ -204,7 +213,8 @@ public struct EngineTablePresentation: Equatable, Sendable {
                 format.resets(count: $0.resets, nearestExpiry: $0.nearestExpiry, now: now)
                     + ($0.credits.map { " · " + compactTokens($0) + (chinese ? " 点数" : " credits") } ?? "")
             } ?? "" : "--"
-            return EngineColumnDisplay(id: column.id, identity: identity, selected: scope == .subscription(column.id),
+            return EngineColumnDisplay(id: column.id, identity: identity, keyLabel: keyLabel,
+                                       keyHelp: help.explanation(.engine, context: .init(fact: keyLabel)), selected: scope == .subscription(column.id),
                                        dimmed: scope != .all && scope != .subscription(column.id), unavailable: !valid,
                                        caution: valid ? column.caution : .unknown, cells: displays, todayTokens: tokens, todaySpeed: speed,
                                        reserveLines: reserveLines, todayHelp: help.explanation(.todaySpeed, context: .init(fact: todayFact, value: speed.map { $0 + " t/s" })),

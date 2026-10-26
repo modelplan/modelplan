@@ -104,6 +104,28 @@ import XCTest
         }
     }
 
+    func testScopeKeyShortcutIsAvailableInHelpFocusAndAccessibilityWithoutDrawingIt() async throws {
+        for language in [InstrumentLanguage.chinese, .english] {
+            let view = EngineTableView(); var focused: HelpExplanation?
+            view.onHelpChange = { value, _ in focused = value }
+            let columns = (0..<13).map { Fixtures.column("s\($0)") }
+            try view.update(columns: columns, language: language, now: Fixtures.now, page: 2)
+            let all = try XCTUnwrap(view.recipe?.regions.first { $0.id == "engine.all" })
+            let subscription = try XCTUnwrap(view.recipe?.regions.first { $0.id == "engine.subscription.s12" })
+            XCTAssertTrue(all.help.body.contains(language == .chinese ? "键 0" : "key 0"))
+            XCTAssertTrue(subscription.help.body.contains(language == .chinese ? "键 1" : "key 1"))
+            XCTAssertTrue(all.label.contains(language == .chinese ? "键 0" : "key 0"))
+            XCTAssertTrue(subscription.label.contains(language == .chinese ? "键 1" : "key 1"))
+            let control = try XCTUnwrap(view.control(for: subscription.id)); XCTAssertTrue(control.becomeFirstResponder())
+            XCTAssertEqual(focused, subscription.help)
+            XCTAssertEqual(control.accessibilityHelp(), subscription.help.accessibleDescription)
+            let keyText = view.recipe!.commands.compactMap { command -> EngineTextCommand? in
+                if case .text(let text) = command, text.id == "engine.subscription.s12.text" { return text }; return nil
+            }
+            XCTAssertEqual(keyText.first?.variants, ["s12"])
+        }
+    }
+
     private func textImages(_ view: EngineTableView) -> [AnyObject] {
         view.layer?.sublayers?.compactMap { $0.contents.map { $0 as AnyObject } } ?? []
     }

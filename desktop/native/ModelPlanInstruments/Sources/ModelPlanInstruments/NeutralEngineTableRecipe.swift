@@ -31,20 +31,20 @@ import CoreText
             commands.append(.text(.init(id: id, variants: variants, rect: rect, font: .init(size: fontSize, weight: weight), ink: color, alignment: alignment)))
         }
         func key(_ id: String, _ rect: CGRect, _ title: String, _ explanation: HelpExplanation, _ intent: EngineTableIntent,
-                 selected: Bool = false, enabled: Bool = true) {
+                 selected: Bool = false, enabled: Bool = true, label: String? = nil) {
             commands.append(.fill(rect: rect.insetBy(dx: 1, dy: 1), radius: 0, ink: surface))
             commands.append(.stroke(rect: rect.insetBy(dx: 1, dy: 1), radius: 0, width: selected ? 2 : 1, ink: selected ? accent : rule))
             text(id + ".text", [title], rect.insetBy(dx: 5, dy: 1), 11, enabled ? ink : muted, .center)
-            let label = intent == .openSubscriptionsSettings ? p.addLabel : title
-            regions.append(.init(id: id, rect: rect, label: label, help: explanation, intent: intent, enabled: enabled, selected: selected))
+            let accessibleLabel = label ?? (intent == .openSubscriptionsSettings ? p.addLabel : title)
+            regions.append(.init(id: id, rect: rect, label: accessibleLabel, help: explanation, intent: intent, enabled: enabled, selected: selected))
         }
         let all = CGRect(x: 0, y: 0, width: left - 4, height: keyHeight)
-        key("engine.all", all, p.allLabel, help.explanation(.engine, context: .init(fact: p.allLabel)), .selectScope(.all), selected: p.scope == .all)
+        key("engine.all", all, p.allLabel, p.allKeyHelp, .selectScope(.all), selected: p.scope == .all, label: p.allKeyLabel)
         for i in 0..<p.tracks {
             let keyRect = CGRect(x: left + CGFloat(i) * width, y: 0, width: width, height: keyHeight)
             if let col = p.columns[i] {
                 let scope: InstrumentScope = col.selected ? .all : .subscription(col.id)
-                key("engine.subscription." + col.id, keyRect, col.identity.shortName, help.explanation(.engine, context: .init(fact: col.identity.name)), .selectScope(scope), selected: col.selected)
+                key("engine.subscription." + col.id, keyRect, col.identity.shortName, col.keyHelp, .selectScope(scope), selected: col.selected, label: col.keyLabel)
             } else {
                 key("engine.empty.\(p.page * 6 + i).key", keyRect, "—", help.explanation(.control, context: .init(fact: p.addLabel)), .openSubscriptionsSettings)
             }
