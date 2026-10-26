@@ -409,3 +409,29 @@ rows receive no native `toolTip`; task81's six permitted producers are unchanged
 Unchanged snapshots retain the scroll position and bitmap, and teardown removes
 the scroll observer and retires old controls. Official row drawing remains an
 explicit recipe/resource input.
+
+## Subscription History
+
+Build `SubscriptionHistorySnapshot` from supplied per-window cycle/reset facts,
+with the same scope, language and host calendar as the Now snapshot. Pass it to
+`now.pageContent(history: history, initialTab: .history)`. Now/History then shares
+one page; the second footer swaps 7/30 with the supplied window choices while
+retaining both backing selections. Hidden options reject mutations. Without a
+history snapshot the B16 History choice remains unavailable.
+
+History reuses `SubscriptionPresentation` for historical attribution, evidence,
+future filtering and ten-cycle retention in caller order. Nil history remains
+unavailable; a supplied empty array is distinct. Source-wide/current-binding
+history is not copied into subscriptions. End/reset instants stay optional and
+retain the actual supplied values; historical descriptions are relative, with
+no timestamp inferred from a session or snapshot. Reset provenance is supplied
+separately. `hadDrop` records an observed reading drop and cannot manufacture
+redemption, source or event time. Only explicitly supplied, attributable peak
+bands appear, retaining both endpoints and their host-local descriptions.
+
+The neutral page uses static, scaled model/effort/Fast stacks in native scroll
+rows, with distinct unknown/zero values and no invented remainder segments. Fast
+segments use static hatching; shared focus/hover/AX help lists every supplied
+part. Missing history paints no cycle bars, and credits have no history API.
+This adds no reader, schema, scorer, persistence, polling or hint policy. Official
+chart registration/palette and physical/performance evidence remain separate.

@@ -37,7 +37,7 @@ import AppKit
     public func update(inputs: [FaderChannelInput], selection: InjectedModelSelection?, publication: SelectionPublication?,
             publicationUsable: Bool, language: InstrumentLanguage, compact: Bool, scope: InstrumentScope? = nil,
             pages: [MainScreenPageContent] = [], sourcedBodies: [MainScreenSourcedBody] = []) throws {
-        guard pages.allSatisfy({$0.subscription.map{$0.language == language} ?? true}) else{throw MainScreenError.invalidContent}
+        guard pages.allSatisfy({($0.subscription.map{$0.language == language} ?? true) && ($0.history.map{$0.language == language} ?? true)}) else{throw MainScreenError.invalidContent}
         var next = controller
         let effects = try next.update(inputs: inputs, selection: selection, publication: publication, publicationUsable: publicationUsable,
             scope: scope, pages: pages, sourcedBodies: sourcedBodies)

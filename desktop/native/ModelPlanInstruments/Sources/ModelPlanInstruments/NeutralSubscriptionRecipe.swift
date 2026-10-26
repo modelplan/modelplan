@@ -12,8 +12,11 @@ import CoreText
         return String(characters.prefix(lower))+"…"
     }
     static func make(_ display:SubscriptionNowDisplay,in viewport:CGRect)->MainScreenListRecipe {
+        make(rows:display.rows,identity:display.identity,language:display.language,in:viewport)
+    }
+    static func make(rows:[SubscriptionNowRow],identity:String,language:InstrumentLanguage,in viewport:CGRect)->MainScreenListRecipe {
         let foreground=EngineInk(NSColor.labelColor),muted=EngineInk(NSColor.secondaryLabelColor)
-        let input=display.rows.isEmpty ? [SubscriptionNowRow(id:display.identity+".empty",title:display.language == .chinese ? "暂无信息":"No information available",value:"--",help:HelpCatalog(display.language).explanation(.subscription))]:display.rows
+        let input=rows.isEmpty ? [SubscriptionNowRow(id:identity+".empty",title:language == .chinese ? "暂无信息":"No information available",value:"--",help:HelpCatalog(language).explanation(.subscription))]:rows
         let rows=input.map { row -> MainScreenListRowRecipe in
             let color=row.level == .critical ? EngineInk(NSColor.systemRed):row.level == .amber ? EngineInk(NSColor.systemOrange):foreground
             let extra=row.reset == nil ? 0.0:36.0
@@ -37,6 +40,6 @@ import CoreText
             return .init(height:height,commands:commands,region:.init(id:row.id,rect:rect,action:row.scopeTarget.map{.subscriptionScope($0)},
                 label:row.title+"\n"+row.value,help:row.help,role:row.scopeTarget == nil ? .readout:.button,value:row.value,focusGroup:"subscription.rows"))
         }
-        return .init(identity:display.identity,viewport:viewport,rows:rows)
+        return .init(identity:identity,viewport:viewport,rows:rows)
     }
 }

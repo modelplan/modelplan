@@ -26,10 +26,11 @@ public struct MainScreenPageContent: Equatable, Sendable {
     public let page: MainScreenPage
     public let lines: [String]
     public let options: [MainScreenFooterOption?]
+    public let history:SubscriptionHistorySnapshot?
     public let subscription: SubscriptionNowSnapshot?
     public let overview: OverviewPageSnapshot?
-    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil, subscription: SubscriptionNowSnapshot? = nil) {
-        self.page = page; self.lines = lines; self.options = options; self.overview = overview; self.subscription = subscription
+    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil, subscription: SubscriptionNowSnapshot? = nil,history:SubscriptionHistorySnapshot? = nil) {
+        self.page = page; self.lines = lines; self.options = options; self.overview = overview; self.subscription = subscription;self.history=history
     }
 }
 public struct MainScreenSourcedBody: Equatable, Sendable {
@@ -93,6 +94,7 @@ public struct MainScreenController: Sendable {
                       && page.lines.allSatisfy { $0.utf8.count <= 4096 }
                       && (page.overview.map { page.page == .overview && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
                       && (page.subscription.map { page.page == .subscriptions && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
+                      && (page.history.map { page.page == .subscriptions && $0.valid && $0.scope == (scope ?? navigation.scope) && page.subscription?.language == page.history?.language && page.subscription?.calendar == page.history?.calendar } ?? true)
               }), sourcedBodies.count <= 128,
               sourcedBodies.enumerated().allSatisfy({ index, body in sourcedBodies.firstIndex(where: { $0.content == body.content }) == index }),
               sourcedBodies.allSatisfy({ $0.lines.count <= 128 && (1...8).contains($0.titleVariants.count)
@@ -182,6 +184,11 @@ public struct MainScreenController: Sendable {
            id == "overview.range" || id == "overview.mode",
            let chart = pages.first(where:{$0.page == page})?.options.compactMap({$0}).first(where:{$0.id == "overview.chart"}),
            option(chart,page:page).selectedValue == "grid" { return [] }
+        if page == .subscriptions,let content=pages.first(where:{$0.page == page}),content.subscription != nil,
+           let tab=content.options.compactMap({$0}).first(where:{$0.id == "subscription.tab"}) {
+            let history=option(tab,page:page).selectedValue == "history"
+            if (id == "subscription.usage" && history) || (id == "subscription.cycle" && !history) {return []}
+        }
         let option = option(original, page: page), choices = option.choices.filter(\.enabled)
         guard !choices.isEmpty else { return [] }
         let chosen: String
