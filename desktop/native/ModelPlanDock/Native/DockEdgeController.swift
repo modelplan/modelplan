@@ -75,11 +75,20 @@ public struct DockEdgePresentation:Equatable,Sendable {
         dragRegions=regions;view.backgroundDragDelegate=self
         view.permitsAction={[weak self] _,source in self?.acceptsPress(keyboardOrAccessibility:source == .accessibility) ?? false}
     }
+    private func environment()->DockEdgeEnvironment{
+        var value=read()
+        value.displays.sort{$0.id<$1.id}
+        value.layouts.sort{a,b in
+            if a.displayID != b.displayID{return a.displayID<b.displayID}
+            return (DockEdgeGeometry.allowedEdges.firstIndex(of:a.edge) ?? 3)<(DockEdgeGeometry.allowedEdges.firstIndex(of:b.edge) ?? 3)
+        }
+        return value
+    }
     private func refresh(intent:DockVisibilityIntent){
         guard running,!sampling else{return};sampling=true;defer{sampling=false}
         timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
         do{
-            let env=read(),now=clock();var input=env.presence
+            let env=environment(),now=clock();var input=env.presence
             guard visibility.policy.sampleInterval>0 else{throw DockLogicError.invalidTime}
             let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
             var extraClear:DockRecordedLocks=[]
@@ -122,7 +131,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         refresh(intent:.sample);guard dragOrigin != nil,running,global.x.isFinite,global.y.isFinite else{return}
         guard dragStarted || hypot(global.x-origin.x,global.y-origin.y)>5 else{return}
         do{
-            let env=read()
+            let env=environment()
             guard let next=try moveDestination(global:global,environment:env) else{cancelBackgroundMove();return}
             dragStarted=true;preview=next
             if let current=presentation{publish(.init(state:current.state,placement:current.placement,snapPreview:next,moving:true))}
@@ -146,7 +155,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         // Complete the native release transaction before sampling hide deadlines. Never manufacture
         // a mouse-down protection flag after the actual button has been released.
         do{
-            let env=read()
+            let env=environment()
             guard geometry==env.displays,layouts==env.layouts,primaryID==env.primaryDisplayID,
                 env.presence.enabled,env.presence.cockpitClosed,env.presence.allowedOverFullscreen,env.presence.lifecycleActive,
                 global.x.isFinite,global.y.isFinite else{cancelBackgroundMove();refresh();return}

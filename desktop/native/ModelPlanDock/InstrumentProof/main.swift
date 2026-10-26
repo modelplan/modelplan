@@ -334,6 +334,16 @@ struct NativeFailure:Error {let message:String}
     sliver.dispose()
     let outline=DockSnapOutlineView(frame:CGRect(x:0,y:0,width:40,height:40))
     try require(outline.hitTest(CGPoint(x:10,y:10))==nil,"snap outline never catches input")
+    let secondDisplay=DockDisplayArea(id:"other",frame:CGRect(x:2000,y:0,width:1000,height:800),visibleFrame:CGRect(x:2000,y:0,width:1000,height:800))
+    var orderedEnv=DockEdgeEnvironment(displays:[display,secondDisplay],layouts:edgeLayouts,primaryDisplayID:"screen",pointer:CGPoint(x:999,y:400))
+    orderedEnv.presence.autoHide=false
+    let orderedScheduler=NeutralEdgeScheduler(),orderedDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{edgeTime},scheduler:orderedScheduler,read:{orderedEnv})
+    edgeTime=30;orderedDriver.start();edgeTime=30.4;orderedDriver.dragRegions=edgeRegions
+    _ = orderedDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515))
+    orderedEnv.presence.mouseButtonDown=true;orderedDriver.updateBackgroundMove(global:CGPoint(x:925,y:535))
+    orderedEnv.displays.reverse();orderedEnv.layouts.reverse();orderedDriver.refresh()
+    try require(orderedDriver.isBackgroundMoving,"benign array ordering does not cancel unchanged geometry")
+    orderedDriver.cancelBackgroundMove();orderedDriver.stop()
     let gateView=DockInstrumentView(frame:skin.bounds);try gateView.applyCommunity([reading])
     var guardedActions=0;gateView.onAction={_ in guardedActions+=1}
     let retiredAfterGate=(gateView.accessibilityChildren() as! [NSAccessibilityElement]).first!
