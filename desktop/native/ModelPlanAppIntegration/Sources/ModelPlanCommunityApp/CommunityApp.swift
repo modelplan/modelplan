@@ -30,7 +30,11 @@ import ModelPlanAppIntegration
                 }
             }
             return CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
-                makeHelp: { application in await InstrumentHelpComposition.restored(application: application) })
+                makeHelp: { application in
+                    let help = await InstrumentHelpComposition.restored(application: application)
+                    surfaces.bindHelp(help)
+                    return help
+                })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime(delegate) { NSApplication.shared.run() }
