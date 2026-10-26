@@ -76,6 +76,8 @@ public struct SettingsPreferences: Codable, Sendable {
     public var helpHints = FirstUseHintPreferences()
     /// App-owned choice, never the observed SMAppService state. Missing v1 fields default on.
     public var openAtLogin = true
+    /// Saved preference only; observing/performing update checks belongs to the application service.
+    public var automaticUpdates = true
     public var menuDisplay: MenuDisplay = .icon
     public var openShortcut = ShortcutChord("O", modifiers: [.command, .shift])
     public var dockShortcut = ShortcutChord("D", modifiers: [.command, .shift])
@@ -93,7 +95,7 @@ public struct SettingsPreferences: Codable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
-        case openAtLogin, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
+        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
         case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
@@ -111,6 +113,7 @@ public struct SettingsPreferences: Codable, Sendable {
         revealMilliseconds = try value(.revealMilliseconds, revealMilliseconds); magnification = try value(.magnification, magnification)
         showOverFullscreen = try value(.showOverFullscreen, showOverFullscreen); followActiveDisplay = try value(.followActiveDisplay, followActiveDisplay)
         openAtLogin = try value(.openAtLogin, openAtLogin)
+        automaticUpdates = try value(.automaticUpdates, automaticUpdates)
         menuDisplay = try value(.menuDisplay, menuDisplay); openShortcut = try value(.openShortcut, openShortcut)
         dockShortcut = try value(.dockShortcut, dockShortcut); language = try value(.language, language)
         opening = try value(.opening, opening); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)

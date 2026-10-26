@@ -9,7 +9,7 @@ public struct SettingsText: Equatable, Sendable {
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
-    case login, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
+    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, feedback, licenses
@@ -66,6 +66,7 @@ public struct SettingsLicenseNotice: Equatable, Sendable {
 public struct SettingsPageContext: Sendable {
     public var subscriptions: [SettingsSubscription] = []
     public var capabilities = SettingsCapabilities()
+    public var shortcutObservations: [SettingsShortcutObservation] = []
     public var about = SettingsAbout()
     /// Supplied by the app from its audited bundled notices, not a download or private source.
     public var readerObservations: [SettingsReaderID: ReaderObservation] = [:]
@@ -123,14 +124,15 @@ public enum SettingsCatalogue {
         .init(.optionalReaders,"Optional readers","可选读取器","Off by default; saves consent only.","默认关闭；只保存同意选择。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
         .init(.order,"Subscription order","订阅顺序","One shared order for the dock and cockpit; hidden entries remain editable.","挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
-        .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Save your choice; system registration status is shown separately.","保存自动打开的选择；系统注册状态单独显示。"),
+        .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Start ModelPlan after signing in to your Mac.","登录 Mac 后自动启动 ModelPlan。"),
+        .init(.automaticUpdates,"Check for updates automatically","自动检查更新","Show available versions quietly in Overview and the menu.","有可用版本时，在总览和菜单中轻声提醒。"),
         .init(.menuDisplay,"Menu-bar display","菜单栏显示","Icon, tightest percentage or two windows.","图标、最紧张百分比或并列两个窗口。"),
         .init(.openShortcut,"Open cockpit shortcut","开舱快捷键","Global registration can fail; local matching remains available.","全局注册可能失败；应用内匹配仍可用。"),
         .init(.dockShortcut,"Toggle dock shortcut","显示隐藏挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
-        .init(.opening,"Opening behavior","开舱方式","Hold requires an accepted native entrance; otherwise quick-open.","长按需要已验收的原生开舱；否则快速打开。"),
+        .init(.opening,"Opening behavior","开舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
-        .init(.resetHints,"Reset help hints","重置帮助提示","Reset app-owned one-time help hints.","重置本应用的一次性帮助提示。"),
+        .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and their open/reveal budgets.","重置九种首次提示及开舱、挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is observed.","观测到重置时通知。"),
@@ -230,6 +232,7 @@ public enum SettingsCatalogue {
         case .activeDisplay: return .toggle(p.followActiveDisplay)
         case .order: return perSub { $0.id }
         case .login: return .login(LoginSetting(preferences: p, capabilities: c.capabilities))
+        case .automaticUpdates: return .toggle(p.automaticUpdates)
         case .menuDisplay: return choices(p.menuDisplay)
         case .openShortcut: return .text(shortcut(p.openShortcut))
         case .dockShortcut: return .text(shortcut(p.dockShortcut))

@@ -58,7 +58,7 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [.init(id: "main", keys: [.theme,.size,.motion,.transparency])]),
         .init(id: "rings", title: .init("Rings and numbers", "圈和数字"), groups: [.init(id: "main", keys: [.percentageMode,.showPercentages,.percentagePin,.redBelow,.sliverAlert])]),
         .init(id: "position", title: .init("Position and behavior", "位置和行为"), groups: [.init(id: "main", keys: [.showDock,.autoHide,.reveal,.magnification,.fullscreen,.captureHiding,.activeDisplay,.dockEdge,.order])]),
-        .init(id: "general", title: .init("General", "通用"), groups: [.init(id: "main", keys: [.login,.menuDisplay,.openShortcut,.dockShortcut,.language,.opening,.countdown,.resetHints])]),
+        .init(id: "general", title: .init("General", "通用"), groups: [.init(id: "main", keys: [.login,.automaticUpdates,.menuDisplay,.openShortcut,.dockShortcut,.language,.opening,.countdown,.resetHints])]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
