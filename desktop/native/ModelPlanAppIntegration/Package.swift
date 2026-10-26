@@ -5,7 +5,10 @@ import PackageDescription
 // Composition lives above both packages: Settings already depends on the native Dock product.
 let package = Package(
     name: "ModelPlanAppIntegration", platforms: [.macOS(.v14)],
-    products: [.library(name: "ModelPlanAppIntegration", targets: ["ModelPlanAppIntegration"])],
+    products: [
+        .library(name: "ModelPlanAppIntegration", targets: ["ModelPlanAppIntegration"]),
+        .executable(name: "ModelPlanCommunityApp", targets: ["ModelPlanCommunityApp"]),
+    ],
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
         .package(name: "ModelPlanSettings", path: "../ModelPlanSettings"),
@@ -13,6 +16,13 @@ let package = Package(
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
+            .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
+        ]),
+        .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
+            "ModelPlanAppIntegration",
+            .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
+            .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),
         .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration"]),

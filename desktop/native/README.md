@@ -39,3 +39,8 @@ The explicit `--runtime-probe <synthetic-home> <receipt-path> <1–120 seconds>`
 The current source passes 20 contract groups, eight case-manifest integrity checks, the nested common-run-loop deadline check and AppKit adapter/error-view checks. A universal, Hardened Runtime ad-hoc test package passes synthetic read-only helper access and offline-publication checks. Local receipts separately pin the toolchain, binary hashes, cold/idle baseline and integrated child/UI measurements. App/helper deployment and source receipts are separate from a release.
 
 Still required: real macOS 14 runtime coverage and physical lock/sleep/user-switch/display/input proof. Injected notifications and a main-run-loop heartbeat do not prove those interactions or first physical pixels. Signing/notarisation is later distribution work. No WebKit/RealityKit field, entrance, appearance batch, login item, permission change or release is implemented here.
+
+
+## Community Settings composition
+
+The packaged neutral entry is now the upper `ModelPlanCommunityApp` product in `ModelPlanAppIntegration`. It injects the existing Settings store/editor/window host into the reusable root `ModelPlanCommunityHost`, so the root never depends back on Settings. The legacy `ModelPlanCommunity` product and its explicit probe arguments remain available. The helper transport, lifecycle and probes have one implementation in the shared host. Builds/tests do not launch or package the app; actual visual/physical acceptance remains B25. Normal Settings opens are explicit user actions; restore/programmatic paths do not activate. No login/reader/notification/updater operation is enabled by the entry wiring.

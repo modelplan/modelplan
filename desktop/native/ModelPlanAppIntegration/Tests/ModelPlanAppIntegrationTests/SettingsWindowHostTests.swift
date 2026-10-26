@@ -4,7 +4,7 @@ import XCTest
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
-@MainActor private final class TestSettingsSurface: SettingsWindowSurface {
+@MainActor final class TestSettingsSurface: SettingsWindowSurface {
     var prepared = 0, hidden = 0
     var shown: [String?] = []
     var preparation: (() async -> Void)?
@@ -114,7 +114,7 @@ import ModelPlanSettings
     func testMenuAndGearActionsReachTheSameHost() async throws {
         let app = try application(), surface = TestSettingsSurface()
         var builds = 0
-        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() }) { _ in builds += 1; return surface }
+        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() }, activate: {}) { _ in builds += 1; return surface }
         let gear = expectation(description: "gear action shown")
         surface.onShow = { gear.fulfill() }; host.action()
         await fulfillment(of: [gear], timeout: 2)
@@ -130,7 +130,7 @@ import ModelPlanSettings
         let app = try application(), surface = TestSettingsSurface()
         let unexpected = expectation(description: "suspended queued action ordered a window"); unexpected.isInverted = true
         surface.onShow = { unexpected.fulfill() }
-        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() }, makeSurface: { _ in surface })
+        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { _ in surface })
         host.action(); host.suspend()
         await fulfillment(of: [unexpected], timeout: 0.05)
         XCTAssertNil(app.editor.snapshot)
@@ -145,6 +145,40 @@ import ModelPlanSettings
         XCTAssertTrue(app.editor.environment.fullscreen)
         XCTAssertTrue(app.editor.environment.entranceAccepted)
         XCTAssertFalse(try XCTUnwrap(app.latest).effective.dockAllowed)
+    }
+
+    func testActivationOccursOnlyImmediatelyBeforeAnExplicitUserShow() async throws {
+        let app = try application(), surface = TestSettingsSurface()
+        var events: [String] = []
+        surface.preparation = { events.append("prepare") }; surface.onShow = { events.append("show") }
+        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() },
+            activate: { events.append("activate") }, makeSurface: { _ in surface })
+        await host.present(origin: .userInitiated)
+        XCTAssertEqual(events, ["prepare", "activate", "show"])
+        events = []; await host.present(origin: .restoration)
+        XCTAssertEqual(events, ["prepare", "show"])
+        events = []; await host.present()
+        XCTAssertEqual(events, ["prepare", "show"])
+    }
+
+    func testLostEligibilityDoesNotActivateForAUserRequest() async throws {
+        let app = try application(), surface = TestSettingsSurface()
+        var allowed = true, activations = 0
+        surface.preparation = { allowed = false }
+        let host = SettingsWindowHost(application: app, canPresent: { allowed }, environment: { .init() },
+            activate: { activations += 1 }, makeSurface: { _ in surface })
+        await host.present(origin: .userInitiated)
+        XCTAssertEqual(activations, 0); XCTAssertTrue(surface.shown.isEmpty)
+    }
+
+    func testActivationReentrancyCannotOrderASuspendedWindow() async throws {
+        let app = try application(), surface = TestSettingsSurface()
+        weak var current: SettingsWindowHost?
+        let host = SettingsWindowHost(application: app, canPresent: { true }, environment: { .init() },
+            activate: { current?.suspend() }, makeSurface: { _ in surface })
+        current = host
+        await host.present(origin: .userInitiated)
+        XCTAssertTrue(surface.shown.isEmpty); XCTAssertEqual(surface.hidden, 1)
     }
 
 }

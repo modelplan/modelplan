@@ -14,7 +14,7 @@ The desktop CI runs this suite on macOS 14 and the newest hosted macOS image. It
 
 Create one `SettingsEditor` over the app's existing `SettingsStore`, then retain one `SettingsWindowController` for it. `await controller.present()` loads current state and opens the native window; it does not activate the application. The app owns the gear/menu/Command-comma route and activation/focus policy. Constructing/preparing the controller does not show a window.
 
-The sidebar uses the eight canonical panes; bilingual search includes pane/group text and subscription metadata. This increment permits only `SettingsB20Edit.keys`: theme, size, reduced effects and Dock number/window/threshold/sliver choices. Other rows are disabled or unavailable. No login, notification, reader, updater or cache action is executed. Controls retain native identities while values/appearance change. The five small line diagrams use system ink and a single finite 400 ms movement on row hover, control focus or value change, with no timer or idle loop. Reduce Motion cancels immediately; restoring it does not replay. Explicit Day/Night also respects the system's Increase Contrast setting.
+The sidebar uses the eight canonical panes and initially selects General; bilingual search includes pane/group text and subscription metadata. `SettingsB20Edit` covers appearance and Dock number choices. `SettingsB21Edit` adds Dock behavior/position/order, General, opening/countdown and subscription choices. Notifications, privacy, About actions and the first-run view remain unavailable. No system login, global shortcut, reader, updater or cache action is executed. Controls retain native identities while values/appearance change. The five line diagrams retain their finite400ms movement and static reduced-motion behavior.
 
 Only the current control owned by a displayed row may submit an edit. Pane/search removal and subscription-control replacement permanently disable retired controls, clear their callbacks and cancel menu tracking; a delayed target/action or accessibility press cannot save through them. Rows retained by a search/environment update keep their existing control and focus identity.
 
@@ -37,6 +37,20 @@ The host supplies one authoritative environment including fullscreen/entrance ga
 Edits await a revision-checked store transaction before `onCommit`; failed/stale saves emit no receipt and restore the latest committed value. Stale edits require a new explicit choice, rather than automatically overwriting another edit. The editor never opens a second file or service. Assembly must bind the callbacks to actual consumers: passing a model test or seeing a pop-up selection is not proof an open Dock/Cockpit updated.
 
 Native tests never activate/order windows front. Optional `MODELPLAN_SETTINGS_EVIDENCE` points to an existing local evidence directory for neutral offscreen JPEG view renders. These contain synthetic subscriptions and are explicitly not desktop screenshots or physical-display evidence.
+
+## Behavior editing and host requests
+
+`await editor.commit(SettingsB21Edit)` uses the same store, revision check and successful `onCommit` receipt as B20. The app coordinator can call its existing `editor` directly; no new store, consumer producer or Instruments dependency is introduced.
+
+- Order uses the shared `DockSubscriptionPreferences`, preserving missing IDs and hidden subscriptions. Native arrows and local drag/drop carry the expected order; changed membership/order invalidates a drag. Drag pasteboard data is a random local token, not a subscription ID. Reset restores catalogue order without changing aliases/visibility.
+- Alias fields use `AliasDraft` and commit completed editing only. Environment, locale and context refresh keep the same surviving field and its marked text. Completed text remains an unconfirmed local draft until a successful save receipt. If another save is pending or saving fails, the draft stays visible with explicit retry feedback; finish editing again to retry, or Escape cancels it. Removing a field retires it before callbacks can save. Shortcuts are explicit local recorders; Return/IME editing in aliases is not a global key hook.
+- `SettingsPageContext.shortcutObservations` binds each observed registration state to the exact chord. `shortcutPolicy(preferences:)` reuses the existing local/global matching policy; a new saved chord is not shown as registered because an old chord was. Conflicts/denial/unavailability still permit local matching when not editing/composing. Command-comma remains reserved.
+- Login displays saved intent separately from `capabilities.login`. Automatic update checking is an additive v1 Boolean, default true, with explicit false retained and malformed present values rejected. `updateServiceAvailable` is an injected capability, not persisted or inferred from the checkbox. Capture hiding remains unavailable. Unaccepted ignition, macOS14 and Reduce Motion still force effective Quick Open; unavailable Hold cannot be selected and countdown is disabled.
+- Optional readers save consent only and display injected observations/read descriptions. Detection, consent and actual reader activation remain separate facts. No filesystem reader is invoked.
+
+`editor.onHostRequest` receives revision-tagged requests **only after successful explicit edits**: the existing `LoginServicePolicy` intent, shortcut-preference changes, or reset of the shared hint scheduler after all nine persisted hint flags/open/reveal counts reset. Restore/environment/context changes and failed/stale writes emit no request. This callback is not authorization for a system operation. The application owns revision/observation rechecks, its single in-memory hint arbiter, and any separately authorized backend. M0's current app coordinator still forwards `onCommit`; wiring this additional request callback is a separate composition change.
+
+Set `MODELPLAN_B21_EVIDENCE` only when intentionally collecting neutral offscreen General/Subscriptions JPEGs into an existing evidence directory. These do not establish displayed keyboard/IME/VoiceOver, source/native pixel parity or physical-display acceptance.
 
 ## Persistence and consumers
 
@@ -87,7 +101,7 @@ A placement **offer spends nothing**. The adapter must confirm only after the sh
 
 ## Remaining app binding
 
-The native Settings surface, B20 pop-up edits and finite line illustrations are implemented here. App command-comma routing, actual Dock/Cockpit redraw, global shortcuts, login item changes, notification requests and cache deletion need app adapters and corresponding native acceptance. Other setting edits and first-run views remain later increments. Actual keyboard/VoiceOver/IME and minimum-OS/display/system-service checks remain separate from the offscreen tests.
+The Settings surface, B20/B21 edits and finite line illustrations are implemented here. App entry, actual Dock/Cockpit redraw, the shared hint-reset bridge, global registration, login service changes, notification requests and cache deletion need app adapters and corresponding native acceptance. Remaining setting edits and first-run views are later increments. Actual keyboard/VoiceOver/IME and display/system-service checks remain separate from the offscreen tests.
 
 
 ## Hint consumer dependency boundary

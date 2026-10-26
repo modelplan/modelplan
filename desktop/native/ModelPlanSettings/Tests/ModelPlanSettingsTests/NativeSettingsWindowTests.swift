@@ -35,7 +35,7 @@ import XCTest
     func testRetiredPaneAndSearchPopupsCannotCommitWhileCurrentPopupStillWorks() async throws {
         let editor = SettingsEditor(store: try store())
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
-        await controller.prepare()
+        await controller.prepare(); controller.selectPane("appearance")
         let panePopup = try XCTUnwrap(controller.choice(key: .theme))
         let target = panePopup.target, action = try XCTUnwrap(panePopup.action)
         controller.selectPane("dock")
@@ -87,7 +87,7 @@ import XCTest
     func testNativePopupPersistsAndUpdatesTheSameControlAndWindowAppearance() async throws {
         let store = try store(), editor = SettingsEditor(store: store)
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
-        await controller.prepare()
+        await controller.prepare(); controller.selectPane("appearance")
         let popup = try XCTUnwrap(controller.choice(key: .theme))
         let committed = expectation(description: "persisted native popup action")
         editor.onCommit = { _, effective in XCTAssertTrue(effective.darkAppearance); committed.fulfill() }
@@ -114,8 +114,11 @@ import XCTest
         XCTAssertTrue(controller.visibleSettingKeys.isEmpty)
         search("", in: controller); controller.selectPane("dock")
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .size)).isEnabled)
-        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .autoHide)).isEnabled)
-        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .dockEdge)).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(controller.choice(key: .autoHide)).isEnabled)
+        XCTAssertTrue(try XCTUnwrap(controller.choice(key: .dockEdge)).isEnabled)
+        controller.selectPane("notifications")
+        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
+        controller.selectPane("dock")
         for key: SettingKey in [.dockEdge, .showPercentages, .autoHide, .size, .percentagePin] {
             XCTAssertNotNil(controller.diagram(key: key))
         }

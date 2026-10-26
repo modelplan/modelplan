@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 
-private enum SettingsWords {
+enum SettingsWords {
     static func text(_ en: String, _ zh: String, _ language: SettingsLanguage) -> String { language == .english ? en : zh }
     static func option(_ raw: String, key: SettingKey, language: SettingsLanguage) -> String {
         let pair: (String, String)
@@ -20,9 +20,21 @@ private enum SettingsWords {
         case "right": pair = ("Right", "右侧")
         case "left": pair = ("Left", "左侧")
         case "bottom": pair = ("Bottom", "底部")
+        case "none": pair = ("None", "无")
+        case "subtle": pair = ("Subtle", "轻微")
+        case "strong": pair = ("Strong", "明显")
+        case "icon": pair = ("Icon only", "仅图标")
+        case "tightest": pair = ("Tightest percentage", "最紧张百分比")
+        case "twoWindows": pair = ("Two windows", "两个窗口")
+        case "zh-CN": pair = ("Simplified Chinese", "简体中文")
+        case "en": pair = ("English", "英语")
+        case "hold": pair = ("Hold to ignite", "按住点火")
+        case "quick": pair = ("Always quick", "始终快速打开")
         default: pair = (raw, raw)
         }
-        return key == .redBelow ? raw + " %" : text(pair.0, pair.1, language)
+        if key == .redBelow { return raw + " %" }
+        if key == .reveal || key == .countdown { return raw + " ms" }
+        return text(pair.0, pair.1, language)
     }
 }
 
@@ -34,7 +46,7 @@ private enum SettingsWords {
     }
 }
 
-@MainActor final class SettingsChoiceControl: NSPopUpButton {
+@MainActor final class SettingsChoiceControl: NSPopUpButton, SettingsOwnedControl {
     let settingKey: SettingKey
     let subscriptionID: String?
     var onInteraction: (() -> Void)?
@@ -43,6 +55,7 @@ private enum SettingsWords {
         settingKey = key; self.subscriptionID = subscriptionID
         super.init(frame: .zero, pullsDown: false)
         controlSize = .regular
+        menu?.autoenablesItems = false
         setAccessibilityIdentifier("settings.\(key.rawValue)" + (subscriptionID.map { "." + $0 } ?? ""))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -74,129 +87,12 @@ private enum SettingsWords {
     }
 }
 
-@MainActor private final class SettingsNativeRow: NSStackView {
-    let key: SettingKey
-    let titleLabel = NSTextField(labelWithString: "")
-    let subtitle = NSTextField(labelWithString: "")
-    let group = NSTextField(labelWithString: "")
-    let controls = NSStackView()
-    let illustration = NSView()
-    var diagram: SettingsDiagramView?
-    var choices: [String: SettingsChoiceControl] = [:]
-    private var subscriptionLabels: [String: NSTextField] = [:]
-    private var controlIDs: [String] = []
-    private var tracking: NSTrackingArea?
-    private let readout = NSTextField(wrappingLabelWithString: "")
-
-    init(key: SettingKey) {
-        self.key = key
-        super.init(frame: .zero)
-        orientation = .horizontal; alignment = .centerY; distribution = .fill; spacing = 16
-        edgeInsets = .init(top: 14, left: 8, bottom: 14, right: 8)
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        subtitle.font = .systemFont(ofSize: 12); subtitle.textColor = .secondaryLabelColor
-        subtitle.lineBreakMode = .byTruncatingTail
-        subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        group.font = .systemFont(ofSize: 11, weight: .medium); group.textColor = .secondaryLabelColor
-        let copy = NSStackView(views: [group, titleLabel, subtitle])
-        copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 5
-        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        controls.orientation = .vertical; controls.alignment = .trailing; controls.distribution = .fill; controls.spacing = 7
-        readout.font = .systemFont(ofSize: 12); readout.textColor = .secondaryLabelColor
-        addArrangedSubview(copy); addArrangedSubview(illustration); addArrangedSubview(controls)
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 74),
-            copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
-            illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
-            controls.widthAnchor.constraint(equalToConstant: 230),
-        ])
-        setAccessibilityElement(false)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
-        addTrackingArea(next); tracking = next
-    }
-    override func mouseEntered(with event: NSEvent) { diagram?.play() }
-
-    func retireControls() {
-        diagram?.stop()
-        for popup in choices.values { popup.retire() }
-        for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
-        choices = [:]; subscriptionLabels = [:]; controlIDs = []
-    }
-
-    func apply(_ row: SettingsRow, language: SettingsLanguage, saving: Bool, input: SettingsDiagramInput?,
-               reduced: Bool, onChoice: Selector, target: AnyObject, showGroup: Bool) {
-        titleLabel.stringValue = row.title.value(language)
-        subtitle.stringValue = row.subtitle.value(language)
-        group.stringValue = [row.paneTitle.value(language), row.groupTitle?.value(language)].compactMap { $0 }.joined(separator: " · ")
-        group.isHidden = !showGroup
-        if let input {
-            if diagram == nil {
-                let view = SettingsDiagramView(input: input); diagram = view
-                view.playsOnHover = false
-                view.frame = illustration.bounds; view.autoresizingMask = [.width, .height]; illustration.addSubview(view)
-            }
-            diagram?.language = language
-            diagram?.apply(input, reduceMotion: reduced, animate: true)
-        }
-        let enabled = SettingsB20Edit.keys.contains(key) && row.availability == .available
-        var values: [(String, String, String, [String])] = []
-        switch row.value {
-        case .choice(let value, let options): values = [("", "", value, options)]
-        case .toggle(let value): values = [("", "", String(value), ["true", "false"])]
-        case .subscriptions(let subs) where key == .percentagePin:
-            values = subs.map { ($0.id, [$0.name, $0.plan].filter { !$0.isEmpty }.joined(separator: " · "), $0.value, $0.options) }
-        default: break
-        }
-        let ids = values.map(\.0)
-        if controlIDs != ids || (values.isEmpty && controls.arrangedSubviews.isEmpty) {
-            retireControls(); controlIDs = ids
-            for (id, label, _, _) in values {
-                let popup = SettingsChoiceControl(key: key, subscriptionID: id.isEmpty ? nil : id)
-                popup.translatesAutoresizingMaskIntoConstraints = false
-                popup.widthAnchor.constraint(equalToConstant: id.isEmpty ? 180 : 132).isActive = true
-                popup.target = target; popup.action = onChoice
-                popup.onInteraction = { [weak self] in self?.diagram?.play() }
-                choices[id] = popup
-                if label.isEmpty { controls.addArrangedSubview(popup) }
-                else {
-                    let name = NSTextField(labelWithString: label); name.font = .systemFont(ofSize: 12)
-                    subscriptionLabels[id] = name
-                    name.lineBreakMode = .byTruncatingTail; name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-                    let line = NSStackView(views: [name, popup]); line.spacing = 6
-                    controls.addArrangedSubview(line); line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
-                }
-            }
-            if values.isEmpty { controls.addArrangedSubview(readout) }
-        }
-        for (id, label, value, options) in values {
-            guard let popup = choices[id] else { continue }
-            subscriptionLabels[id]?.stringValue = label
-            popup.configure(value: value, options: options, key: key, language: language)
-            popup.isEnabled = enabled && !saving
-            popup.setAccessibilityLabel([row.title.value(language), label].filter { !$0.isEmpty }.joined(separator: " · "))
-            popup.setAccessibilityHelp(enabled ? row.subtitle.value(language) : SettingsWords.text("Not editable in this build.", "此版本暂不提供编辑。", language))
-        }
-        if values.isEmpty {
-            if key == .percentagePin { readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language) }
-            else if case .text(let text) = row.value { readout.stringValue = text }
-            else { readout.stringValue = SettingsWords.text("Not available in this build", "此版本暂不可用", language) }
-        }
-    }
-}
-
 /// App-owned singleton Settings surface. Assembly supplies its existing store and consumes commit receipts.
 /// It does not activate the application, register services, run readers or own a second locale/store.
 @MainActor public final class SettingsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
                                                         NSSearchFieldDelegate, NSWindowDelegate {
     public let editor: SettingsEditor
-    public private(set) var selectedPaneID = "appearance"
+    public private(set) var selectedPaneID = "general"
     public private(set) var errorMessage: String?
     public let searchField = NSSearchField()
     private let sidebar = NSTableView()
@@ -211,6 +107,7 @@ private enum SettingsWords {
     private var appearanceObservation: NSKeyValueObservation?
     private let environmentProvider: @MainActor () -> SettingsEnvironment
     private var refreshing = false, pendingEdit = false
+    private var pendingSaveTask: Task<Void, Never>?
 
     public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil) {
         self.editor = editor; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
@@ -326,6 +223,10 @@ private enum SettingsWords {
         guard let snapshot = editor.snapshot, let effective = editor.effective else {
             heading.stringValue = SettingsWords.text("Loading settings…", "正在读取设置…", language); return
         }
+        if errorMessage == nil, !pendingEdit, !editor.isSaving,
+           rows.values.contains(where: { $0.aliases.values.contains { $0.hasUnsavedDraft && !$0.editing } }) {
+            errorMessage = SettingsWords.text("An alias is not saved. Finish editing it again to retry, or press Escape to cancel.", "有别名尚未保存。请重新结束该项编辑以重试，或按 Escape 取消。", language)
+        }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
         let desiredAppearance: NSAppearance.Name? = snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
@@ -365,7 +266,10 @@ private enum SettingsWords {
                 let groupID = item.paneID + "." + item.groupID
                 rows[item.key]?.apply(item, language: language, saving: editor.isSaving, input: diagrams[item.key],
                                      reduced: effective.reduceMotion, onChoice: #selector(changeChoice(_:)), target: self,
-                                     showGroup: !query.isEmpty || groupID != previousGroup)
+                                     showGroup: !query.isEmpty || groupID != previousGroup,
+                                     snapshot: snapshot, context: editor.context,
+                                     holdAvailable: editor.environment.macOSMajor >= 15 && editor.environment.entranceAccepted && !effective.reduceMotion,
+                                     onEdit: { [weak self] sender, edit in self?.changeBehavior(edit, sender: sender) })
                 previousGroup = groupID
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
@@ -373,35 +277,74 @@ private enum SettingsWords {
             empty.isHidden = !visible.isEmpty
             empty.stringValue = SettingsWords.text("No matching settings", "没有匹配的设置", language)
         } catch {
-            for row in rows.values { row.diagram?.stop(); for choice in row.choices.values { choice.isEnabled = false } }
+            for row in rows.values { row.retireControls() }
             status.stringValue = SettingsWords.text("Settings are unavailable. Check the supplied subscription data.", "设置暂不可用，请检查订阅数据。", language)
             status.isHidden = false
         }
     }
-    @objc private func changeChoice(_ sender: SettingsChoiceControl) {
-        guard !pendingEdit, sender.isEnabled, !sender.isRetired,
+    private func owns(_ sender: NSView & SettingsOwnedControl) -> Bool {
+        guard sender.isEnabled, !sender.isRetired,
               displayedKeys.contains(sender.settingKey), let row = rows[sender.settingKey],
               row.superview === stack, !row.isHiddenOrHasHiddenAncestor,
-              row.choices[sender.subscriptionID ?? ""] === sender, sender.isDescendant(of: row),
-              let value = sender.selectedItem?.representedObject as? String else { return }
+              row.owns(sender), sender.isDescendant(of: row) else { return false }
+        return true
+    }
+    @objc private func changeChoice(_ sender: SettingsChoiceControl) {
+        guard owns(sender), let value = sender.selectedItem?.representedObject as? String else { return }
         do {
-            let edit = try SettingsB20Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
-            pendingEdit = true; errorMessage = nil
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                defer { self.pendingEdit = false; self.refresh() }
-                do { try await self.editor.commit(edit) }
-                catch {
-                    self.errorMessage = (error as? SettingsError) == .staleRevision
-                        ? SettingsWords.text("Settings changed elsewhere. Review the current value and try again.", "设置已在别处更新，请检查当前值后重试。", self.language)
-                        : SettingsWords.text("Could not save this change. The saved settings are retained.", "无法保存此次更改，已保留原设置。", self.language)
-                    NSAccessibility.post(element: self.status, notification: .valueChanged)
-                }
+            if SettingsB20Edit.keys.contains(sender.settingKey) {
+                let edit = try SettingsB20Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
+                submit(operation: { [editor] in try await editor.commit(edit) })
+            } else {
+                let edit = try SettingsB21Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
+                changeBehavior(edit, sender: sender)
             }
         } catch { refresh() }
+    }
+    private func changeBehavior(_ edit: SettingsB21Edit, sender: NSView & SettingsOwnedControl) {
+        guard owns(sender) else { return }
+        if case .alias(let draft) = edit, let field = sender as? SettingsAliasControl {
+            submit(operation: { [editor] in try await editor.commit(edit) }, aliasCompletion: { [weak field] saved in
+                field?.resolveSave(submittedText: draft.text, saved: saved)
+            })
+        } else { submit(operation: { [editor] in try await editor.commit(edit) }) }
+    }
+    private func submit(operation: @escaping @MainActor () async throws -> SettingsSnapshot,
+                        aliasCompletion: ((Bool) -> Void)? = nil) {
+        guard !pendingEdit else {
+            aliasCompletion?(false)
+            errorMessage = aliasCompletion == nil
+                ? SettingsWords.text("Another change is still saving. This edit is not saved; try again after saving finishes.", "另一项更改仍在保存。此次更改尚未保存，请在保存完成后重试。", language)
+                : SettingsWords.text("Another change is still saving. This alias is not saved; finish editing again to retry after saving finishes.", "另一项更改仍在保存。此别名尚未保存，请在保存完成后重新结束编辑以重试。", language)
+            refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
+            return
+        }
+        pendingEdit = true; errorMessage = nil
+        pendingSaveTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.pendingEdit = false; self.refresh() }
+            do { _ = try await operation(); aliasCompletion?(true) }
+            catch {
+                aliasCompletion?(false)
+                if aliasCompletion != nil {
+                    self.errorMessage = SettingsWords.text("This alias is not saved. Check the text and finish editing again to retry, or press Escape to cancel.", "此别名尚未保存。请检查文本并重新结束编辑以重试，或按 Escape 取消。", self.language)
+                } else {
+                    self.errorMessage = (error as? SettingsError) == .staleRevision || (error as? SettingsEditorError) == .staleContext
+                        ? SettingsWords.text("Settings changed elsewhere. Review the current value and try again.", "设置已在别处更新，请检查当前值后重试。", self.language)
+                        : SettingsWords.text("Could not save this change. The saved settings are retained.", "无法保存此次更改，已保留原设置。", self.language)
+                }
+                self.refresh(); NSAccessibility.post(element: self.status, notification: .valueChanged)
+            }
+        }
     }
     // Native-control integration tests use these identities without exposing test-only actions in the product.
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
     func diagram(key: SettingKey) -> SettingsDiagramView? { rows[key]?.diagram }
     var visibleSettingKeys: [SettingKey] { displayedKeys }
+    func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] }
+    func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
+    var orderControl: SettingsOrderControl? { rows[.order]?.order }
+    var hintsResetControl: SettingsActionControl? { rows[.resetHints]?.resetHints }
+    /// Wait for the accepted transaction and its UI acknowledgment, not just its store receipt.
+    func waitForPendingSave() async { await pendingSaveTask?.value }
 }

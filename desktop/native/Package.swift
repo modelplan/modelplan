@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], products: [
     .library(name: "ModelPlanCore", targets: ["ModelPlanCore"]),
+    .library(name: "ModelPlanCommunityHost", targets: ["ModelPlanCommunityHost"]),
     .library(name: "ModelPlanAssembly", targets: ["ModelPlanAssembly"]),
     .library(name: "ModelPlanShell", targets: ["ModelPlanShell"]),
     .library(name: "ModelPlanPrimitives", targets: ["ModelPlanPrimitives"]),
@@ -44,7 +45,9 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .executableTarget(name: "ModelPlanWindowProbe", path: "ModelPlanDock/WindowInputProof",
                       exclude: ["README.md", "build.sh", "run-pair.py", "sample-owned.py"],
                       sources: ["Geometry.swift", "main.swift"]),
-    .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanCore", "ModelPlanShell", "ModelPlanAssembly"]),
+    .target(name: "ModelPlanCommunityHost", dependencies: ["ModelPlanCore", "ModelPlanShell", "ModelPlanAssembly"]),
+    .testTarget(name: "ModelPlanCommunityHostTests", dependencies: ["ModelPlanCommunityHost", "ModelPlanCore", "ModelPlanShell"], path: "CommunityHostTests"),
+    .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanShell", "ModelPlanCommunityHost"]),
     .executableTarget(name: "ModelPlanRunLoopChecks", dependencies: ["ModelPlanCore"], path: "RunLoopChecks"),
     .executableTarget(name: "ModelPlanShellChecks", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "ShellChecks"),
     .executableTarget(name: "ModelPlanContractV1Checks", dependencies: ["ModelPlanCore"], path: "ContractV1Checks"),
