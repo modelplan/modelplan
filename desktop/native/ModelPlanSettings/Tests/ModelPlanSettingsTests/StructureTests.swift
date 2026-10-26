@@ -72,7 +72,7 @@ final class StructureTests: XCTestCase {
         state.back(in: flow); XCTAssertEqual(state.step, .dockLocation)
         state.next(in: flow); state.next(in: flow); XCTAssertEqual(state.step, .detectedSubscriptions); XCTAssertFalse(state.completed)
         state.next(in: flow); XCTAssertTrue(state.completed)
-        state.reconcile(); XCTAssertFalse(state.completed); XCTAssertEqual(state.step, .welcome) // Old completion is not the new final step.
+        state.reconcile(); XCTAssertFalse(state.completed); XCTAssertEqual(state.step, .setup) // Old completion is not the new final step.
     }
     func testChangedDefinitionCannotReuseCompletionEvenWhenFinalIDStaysTheSame() throws {
         let start = OnboardingStepDefinition(id: .init(rawValue: "start"), title: .init("Start", "开始"))
@@ -100,7 +100,7 @@ final class StructureTests: XCTestCase {
             XCTAssertNil(state.lesson); XCTAssertFalse(state.trialDemonstrated)
         }
         var legacy = try JSONDecoder().decode(OnboardingState.self, from: Data("{\"step\":2}".utf8))
-        legacy.reconcile(); XCTAssertEqual(legacy.step, .detectedSubscriptions)
+        legacy.reconcile(in: .provisional); XCTAssertEqual(legacy.step, .detectedSubscriptions)
     }
     func testCustomFlowRestartAndDefinitionChangePreserveUnrelatedPreferences() async throws {
         let url = try file(), flow = try oneStep(), store = try SettingsStore(url: url, onboardingDefinition: flow)
@@ -112,7 +112,7 @@ final class StructureTests: XCTestCase {
         XCTAssertTrue(restored.preferences.onboarding.completed); XCTAssertEqual(restored.preferences.onboarding.step, flow.steps[0].id)
         let changed = try SettingsStore(url: url)
         let recovered = await changed.snapshot()
-        XCTAssertFalse(recovered.preferences.onboarding.completed); XCTAssertEqual(recovered.preferences.onboarding.step, .welcome)
+        XCTAssertFalse(recovered.preferences.onboarding.completed); XCTAssertEqual(recovered.preferences.onboarding.step, .setup)
         XCTAssertEqual(recovered.preferences.theme, .night); XCTAssertFalse(recovered.preferences.showProjectNames)
         XCTAssertFalse(recovered.preferences.notifications.optedIn); XCTAssertEqual(try Data(contentsOf: url), bytes) // Read never rewrites recovery.
     }

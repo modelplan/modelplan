@@ -4,7 +4,7 @@ import Darwin
 import ModelPlanDock
 
 public enum SettingsError: Error, Equatable {
-    case unsupportedSchema, invalidPreference, tooLarge, invalidCatalogue, staleRevision
+    case unsupportedSchema, invalidPreference, tooLarge, invalidCatalogue, staleRevision, invalidTime
 }
 public enum SettingsTheme: String, Codable, CaseIterable, Sendable { case system, day, night }
 public enum SettingsSize: String, Codable, CaseIterable, Sendable { case small = "S", medium = "M", large = "L" }
@@ -71,6 +71,9 @@ public struct SettingsPreferences: Codable, Sendable {
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false
     public var followActiveDisplay = true
+    public var dockEdge: SettingsDockEdge = .right
+    public var readerConsent = ReaderConsent()
+    public var helpHints = FirstUseHintPreferences()
     /// App-owned choice, never the observed SMAppService state. Missing v1 fields default on.
     public var openAtLogin = true
     public var menuDisplay: MenuDisplay = .icon
@@ -91,7 +94,7 @@ public struct SettingsPreferences: Codable, Sendable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
         case openAtLogin, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
-        case notifications, subscriptions, subscriptionSettings, onboarding
+        case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
     public init(from decoder: Decoder) throws {
@@ -114,6 +117,8 @@ public struct SettingsPreferences: Codable, Sendable {
         showProjectNames = try value(.showProjectNames, showProjectNames); notifications = try value(.notifications, notifications)
         subscriptions = try value(.subscriptions, subscriptions); subscriptionSettings = try value(.subscriptionSettings, subscriptionSettings)
         onboarding = try value(.onboarding, onboarding)
+        dockEdge = try value(.dockEdge, dockEdge); readerConsent = try value(.readerConsent, readerConsent)
+        helpHints = try value(.helpHints, helpHints)
         try validate()
     }
     public func validate() throws {
@@ -139,10 +144,10 @@ private struct PreferenceEnvelope: Codable { let schemaVersion: Int; let prefere
 public actor SettingsStore {
     public static let maximumBytes = 256 * 1024
     private let url: URL
-    private let onboardingDefinition: OnboardingDefinition
+    let onboardingDefinition: OnboardingDefinition
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
-    public init(url: URL, onboardingDefinition: OnboardingDefinition = .provisional) throws {
+    public init(url: URL, onboardingDefinition: OnboardingDefinition = .task65) throws {
         self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {
             // Bound allocation before reading. A second bound detects growth during the read.
