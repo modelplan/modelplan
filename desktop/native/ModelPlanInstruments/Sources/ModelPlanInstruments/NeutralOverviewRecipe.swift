@@ -6,7 +6,7 @@ import CoreText
 @MainActor enum NeutralOverviewRecipe {
     static func legendRows(_ display: OverviewPageDisplay) -> Int { max(1,(display.snapshot.series.count+2)/3) }
     static func minimumHeight(_ display: OverviewPageDisplay) -> Double {
-        display.visualization == .heatmap ? 340:max(340,250+Double(legendRows(display))*20+Double(max(0,display.snapshot.series.count-1))*2)
+        max(340,250+Double(legendRows(display))*20+Double(max(0,display.snapshot.series.count-1))*2)
     }
     static func make(_ display: OverviewPageDisplay, in area: CGRect) throws -> (commands:[EngineDrawingCommand],regions:[MainScreenHitRegion]) {
         let zh=display.language == .chinese

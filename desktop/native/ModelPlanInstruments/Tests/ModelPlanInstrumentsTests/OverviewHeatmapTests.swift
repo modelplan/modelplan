@@ -194,6 +194,19 @@ final class OverviewHeatmapTests:XCTestCase {
         XCTAssertEqual(view.presentation?.overview?.visualization,.heatmap)
         view.dispose()
     }
+    func testGridMinimumFrameAlsoFitsBarsForLargerScope() async throws {
+        let now=Fixtures.now,calendar=Fixtures.calendar(),day=calendar.startOfDay(for:now),ids=(0..<13).map{"synthetic-\($0)"}
+        let snapshot=OverviewPageSnapshot(columns:ids.map{Fixtures.column($0)},daily:ids.map{.init(subscriptionID:$0,at:day,tokens:0)},
+            hourly:[],notices:[],scope:.all,now:now,calendar:calendar,initialVisualization:.heatmap)
+        var controller=MainScreenController()
+        try controller.update(inputs:[],selection:nil,publication:nil,publicationUsable:false,pages:[snapshot.pageContent(language:.english)])
+        let provider=NeutralMainScreenRecipe(),presentation=MainScreenPresentation(controller:controller,language:.english,compact:false)
+        let view=MainScreenView(frame:CGRect(origin:.zero,size:provider.minimumSize(for:presentation)),recipeProvider:provider)
+        try update(view,snapshot)
+        XCTAssertTrue(view.control(for:"screen.footer.0")!.accessibilityPerformPress())
+        XCTAssertEqual(view.presentation?.overview?.visualization,.bars);XCTAssertNil(view.renderError)
+        view.dispose()
+    }
     func testWeekRolloverRetiresRemovedCalendarDateAndKeepsNoFutureControls() async throws {
         let calendar=Fixtures.calendar(),sunday=Fixtures.instant("2026-11-01T20:00:00Z"),monday=Fixtures.instant("2026-11-02T20:00:00Z")
         let view=MainScreenView();try update(view,HeatFixture.snapshot(now:sunday,calendar:calendar))
