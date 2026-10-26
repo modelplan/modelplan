@@ -45,6 +45,9 @@ type Armed struct {
 	// WindowResetAt: for an announced reset, the window's own reset when we advised. Only a
 	// reading taken after the announced time with a later window reset shows it reached us.
 	WindowResetAt *time.Time `json:"windowResetAt,omitempty"`
+	// Remaining: for an announced reset, the window's remaining percent when we advised. More
+	// left later also shows the reset reached us (a fixed window only fills up between resets).
+	Remaining *float64 `json:"remaining,omitempty"`
 	// From: the configuration in use when this window was first advised on in this cycle; after
 	// the reset the user is pointed back to it. Nil in state written before 0.5.18 (then ★).
 	From *Config `json:"from,omitempty"`
@@ -293,7 +296,12 @@ func (s *State) arm(es []Event) {
 		if from == nil && e.Model != "" {
 			from = &Config{Model: e.Model, Effort: e.Effort, Fast: e.Fast != nil}
 		}
-		s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At, WindowResetAt: e.windowReset, From: from})
+		var left *float64
+		if e.Type == AnnouncedSurplus && e.RemainingPercent != nil {
+			v := *e.RemainingPercent
+			left = &v
+		}
+		s.Armed = append(s.Armed, Armed{Key: e.Key, Type: e.Type, Source: e.Source, Plan: e.Plan, Window: e.Window, ResetAt: *e.At, WindowResetAt: e.windowReset, Remaining: left, From: from})
 		s.changed = true
 	}
 }
@@ -303,6 +311,19 @@ func (s *State) arm(es []Event) {
 // after an exhausted window. Nothing when the user is on that configuration already: a hint they
 // did not follow left nothing to undo.
 func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Event {
+	// An announced reset can land before its stated time: then it reset at the reading that shows it.
+	for i := range s.Armed {
+		a := &s.Armed[i]
+		if a.Type != AnnouncedSurplus || !now.Before(a.ResetAt) {
+			continue
+		}
+		if acct := accountFor(r, a); acct != nil && reached(acct, a) {
+			if w := windowNow(acct, a.Window); w.ObservedAt.Before(a.ResetAt) {
+				a.ResetAt = w.ObservedAt
+				s.changed = true
+			}
+		}
+	}
 	// One hint per window: a window advised more than once (surplus, then tight) or over
 	// several resets reports only its latest passed reset; exhausted wins at that reset.
 	latest := map[string]int{}
@@ -324,12 +345,7 @@ func (s *State) switchBack(r quota.Report, d *digest.Digest, now time.Time) []Ev
 	var out []Event
 	for _, k := range order {
 		a := &s.Armed[latest[k]]
-		var acct *quota.Account
-		for i := range r.Accounts {
-			if r.Accounts[i].Source == a.Source && r.Accounts[i].Plan == a.Plan {
-				acct = &r.Accounts[i]
-			}
-		}
+		acct := accountFor(r, a)
 		if acct == nil {
 			continue
 		}
@@ -404,11 +420,45 @@ func (e Event) InStatusLine(now time.Time) bool {
 	return e.Type != SwitchBack || e.noted == nil || now.Sub(*e.noted) <= switchBackShown
 }
 
-// restarted: a reading taken after the announced time shows the window with a later reset than
-// when we advised, so the announced reset did reach this account.
+// restarted: a reading taken at or after the announced time (or the time the reset was seen to
+// land) shows the announced reset reached this account.
 func restarted(acct *quota.Account, a *Armed) bool {
 	w := windowNow(acct, a.Window)
-	return a.WindowResetAt != nil && w != nil && w.ResetsAt != nil && w.ResetsAt.After(*a.WindowResetAt) && !w.ObservedAt.Before(a.ResetAt)
+	return reached(acct, a) && !w.ObservedAt.Before(a.ResetAt)
+}
+
+// reached: the window shows a later reset than when we advised (by more than reading jitter), or
+// announcedRise points more left: the announced reset reached this account.
+func reached(acct *quota.Account, a *Armed) bool {
+	w := windowNow(acct, a.Window)
+	if w == nil || w.ResetsAt == nil || a.WindowResetAt == nil {
+		return false
+	}
+	return w.ResetsAt.After(a.WindowResetAt.Add(time.Hour)) ||
+		a.Remaining != nil && w.RemainingPercent != nil && *w.RemainingPercent >= *a.Remaining+announcedRise
+}
+
+// reachedKey: whether the announced reset advised on under this key already reached the account.
+func (s *State) reachedKey(acct *quota.Account, key string) bool {
+	if s == nil {
+		return false
+	}
+	for i := range s.Armed {
+		if s.Armed[i].Key == key {
+			return reached(acct, &s.Armed[i])
+		}
+	}
+	return false
+}
+
+func accountFor(r quota.Report, a *Armed) *quota.Account {
+	var acct *quota.Account
+	for i := range r.Accounts {
+		if r.Accounts[i].Source == a.Source && r.Accounts[i].Plan == a.Plan {
+			acct = &r.Accounts[i]
+		}
+	}
+	return acct
 }
 
 // shownPrefix marks an event the status line has shown, apart from the hook having told it.

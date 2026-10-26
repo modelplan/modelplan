@@ -60,6 +60,11 @@ const (
 	// the longer window is left and that window would not reset on its own before it.
 	announcedLead    = 24 * time.Hour
 	announcedMinLeft = 20.0
+	// A reset can land before the post that announces it is seen, or a little before the post
+	// itself: a window that began within announcedTrail before the post already had it. A window
+	// with announcedRise points more left than when we advised had it too.
+	announcedTrail = 6 * time.Hour
+	announcedRise  = 10.0
 	// Another model is worth naming when it costs at most betterSaving of the current
 	// configuration. Once told, the status line keeps it for betterShown, and the hint is not
 	// repeated for betterFor: a user still on that model a week later chose it.
@@ -199,7 +204,7 @@ func Derive(in Input) []Event {
 		var es []Event
 		// A declared plan a session is linked to is advised through that session.
 		if !(a.Source == "user" && linked[strings.ToLower(a.Plan)]) {
-			es = append(accountEvents(a, in.Digest, now, plan), announcedEvents(a, in.Digest, now)...)
+			es = append(accountEvents(a, in.Digest, now, plan), announcedEvents(a, in.Digest, in.State, now)...)
 		}
 		if in.State != nil {
 			in.State.arm(es)
@@ -224,7 +229,7 @@ func Derive(in Input) []Event {
 				covered[e.Public.ID] = true
 			}
 		}
-		for _, e := range publicEvents(in.Digest, sources, now) {
+		for _, e := range publicEvents(in.Digest, sources, in.Report, in.State, now) {
 			if !covered[e.Public.ID] {
 				out = append(out, e)
 			}
@@ -665,18 +670,13 @@ type resetSummary struct {
 // announcedEvents: a reset the provider announced for a time within announcedLead, while this
 // account's longer window still has announcedMinLeft% that would otherwise last past it. The
 // window is armed for the announced time; switching back waits for a reading that shows the
-// window really restarted (State.switchBack).
-func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
+// window really restarted (State.switchBack). Nothing once the reset has reached this account,
+// whatever the announcement still says: spending ahead would spend the restored allowance.
+func announcedEvents(a *quota.Account, d *digest.Digest, s *State, now time.Time) []Event {
 	if d == nil || harnessOf(a.Source) == "" || a.Headroom == "conserve" || a.Headroom == "exhausted" {
 		return nil
 	}
-	var w *quota.Window
-	for i := range a.Windows {
-		x := &a.Windows[i]
-		if a.InPool(x) && x.WindowMinutes > 300 && x.RemainingPercent != nil && x.ResetsAt != nil && (w == nil || x.WindowMinutes > w.WindowMinutes) {
-			w = x
-		}
-	}
+	w := longerWindow(a)
 	if w == nil || *w.RemainingPercent < announcedMinLeft {
 		return nil
 	}
@@ -692,6 +692,10 @@ func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event 
 		if err != nil || !t.After(now) || t.Sub(now) > announcedLead || !w.ResetsAt.After(t) {
 			continue
 		}
+		// Only a reading taken after the post can tell whether the reset already came.
+		if landed, known := announcedLanded(a, w, s, r); landed || !known {
+			continue
+		}
 		if best == nil || t.Before(bestAt) {
 			best, bestAt = &r, t
 		}
@@ -700,7 +704,7 @@ func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event 
 		return nil
 	}
 	t := bestAt.UTC()
-	e := Event{Type: AnnouncedSurplus, Key: strings.Join([]string{AnnouncedSurplus, a.Source, a.Plan, w.Kind, best.ID}, "|"), Severity: "info",
+	e := Event{Type: AnnouncedSurplus, Key: announcedKey(a, w, best.ID), Severity: "info",
 		Source: a.Source, Plan: a.Plan, Window: w.Kind, At: &t, InMinutes: minutesUntil(t, now), RemainingPercent: w.RemainingPercent, Stale: a.Stale,
 		Public:      &Public{ID: best.ID, Provider: best.Provider, EventType: best.EventType, Status: best.Status, URL: best.URL, When: best.Schedule.Label},
 		windowReset: w.ResetsAt}
@@ -713,10 +717,38 @@ func announcedEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event 
 	return []Event{e}
 }
 
+// longerWindow: the account's longest pooled window past five hours with a known balance and reset.
+func longerWindow(a *quota.Account) *quota.Window {
+	var w *quota.Window
+	for i := range a.Windows {
+		x := &a.Windows[i]
+		if a.InPool(x) && x.WindowMinutes > 300 && x.RemainingPercent != nil && x.ResetsAt != nil && (w == nil || x.WindowMinutes > w.WindowMinutes) {
+			w = x
+		}
+	}
+	return w
+}
+
+// announcedLanded: whether an announced reset already reached this account. A window that began
+// after the post, or within announcedTrail before it, had it; so did one we advised on that has
+// since restarted or has more left. known is false when the reading predates the post.
+func announcedLanded(a *quota.Account, w *quota.Window, s *State, r resetSummary) (landed, known bool) {
+	p, err := time.Parse(time.RFC3339, r.PublishedAt)
+	if err != nil || w.ObservedAt.Before(p) {
+		return false, false
+	}
+	began := w.ResetsAt.Add(-time.Duration(w.WindowMinutes) * time.Minute)
+	return began.After(p.Add(-announcedTrail)) || s.reachedKey(a, announcedKey(a, w, r.ID)), true
+}
+
+func announcedKey(a *quota.Account, w *quota.Window, id string) string {
+	return strings.Join([]string{AnnouncedSurplus, a.Source, a.Plan, w.Kind, id}, "|")
+}
+
 // providerSource: whose public resets matter to which local account.
 var providerSource = map[string]string{"openai": "codex"}
 
-func publicEvents(d *digest.Digest, sources map[string]bool, now time.Time) []Event {
+func publicEvents(d *digest.Digest, sources map[string]bool, rep quota.Report, s *State, now time.Time) []Event {
 	var out []Event
 	for _, raw := range d.Resets {
 		var r resetSummary
@@ -737,10 +769,29 @@ func publicEvents(d *digest.Digest, sources map[string]bool, now time.Time) []Ev
 				continue
 			}
 		}
+		// Nor once the local reading shows it already reached the account: "will reset" would mislead.
+		if r.EventType == "direct_reset_announced" && announcedReached(rep, s, src, r) {
+			continue
+		}
 		out = append(out, Event{Type: PublicReset, Key: PublicReset + "|" + r.ID, Severity: "info", Source: src,
 			Public: &Public{ID: r.ID, Provider: r.Provider, EventType: r.EventType, Status: r.Status, URL: r.URL}})
 	}
 	return out
+}
+
+func announcedReached(rep quota.Report, s *State, src string, r resetSummary) bool {
+	for i := range rep.Accounts {
+		a := &rep.Accounts[i]
+		if a.Source != src {
+			continue
+		}
+		if w := longerWindow(a); w != nil {
+			if landed, _ := announcedLanded(a, w, s, r); landed {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // rateEvents: a published quota-rate boundary for this declared plan within the next hour. A

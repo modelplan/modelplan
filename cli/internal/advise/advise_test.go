@@ -365,6 +365,82 @@ func TestAnnouncedResetSpendsAheadAndSwitchesBackOnlyOnProof(t *testing.T) {
 	}
 }
 
+// A reset can land before the announcement says, before we see the post, or just before the post:
+// then the restored allowance is not spent ahead.
+func TestAnnouncedResetThatAlreadyLandedIsNotSpentAhead(t *testing.T) {
+	ann := func(published, through time.Duration) *digest.Digest {
+		d := fixtureDigest()
+		d.Models = append(d.Models, digest.Model{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium",
+			HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+			Efforts:    []digest.Effort{eff("medium", "Med", 51, 3.4), eff("high", "High", 54, 4.1)}})
+		d.Resets = []json.RawMessage{json.RawMessage(`{"id":"r-ann","provider":"openai","eventType":"direct_reset_announced","status":"upstream-announced","publishedAt":"` +
+			now.Add(published).Format(time.RFC3339) + `","url":"https://x.com/r","schedule":{"precision":"deadline","from":"` + now.Add(through).Format(time.RFC3339) +
+			`","through":"` + now.Add(through).Format(time.RFC3339) + `","label":"before 16:00"}}`)}
+		return d
+	}
+	codex := func(effort string, observed time.Time, weekUsed float64, weekResets time.Time) quota.Account {
+		a := quota.Account{Source: "codex", ObservedAt: observed, Harness: &quota.Harness{Model: "gpt-6-astra", Effort: effort},
+			Windows: []quota.Window{{Kind: "weekly", UsedPercent: f(weekUsed), ResetsAt: &weekResets, WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: observed}}}
+		quota.Evaluate(&a, observed)
+		return a
+	}
+	spends := func(es []Event) bool {
+		for _, e := range es {
+			if e.Type == AnnouncedSurplus {
+				return true
+			}
+		}
+		return false
+	}
+	week := 7 * 24 * time.Hour
+	d := ann(-time.Hour, 6*time.Hour)
+	for name, a := range map[string]quota.Account{
+		// The week began after the post: the reset came before we saw the announcement.
+		"restarted after the post": codex("medium", now.Add(-time.Minute), 3, now.Add(-30*time.Minute).Add(week)),
+		// The post trails the reset by a couple of hours.
+		"restarted just before the post": codex("medium", now.Add(-time.Minute), 5, now.Add(-3*time.Hour).Add(week)),
+		// The last reading predates the post: it cannot tell, so wait for the next one.
+		"reading older than the post": codex("medium", now.Add(-2*time.Hour), 48, now.Add(6*24*time.Hour)),
+	} {
+		es := derive(t, nil, d, a)
+		if spends(es) {
+			t.Errorf("%s: %+v", name, es)
+		}
+		// Once the reading shows the reset arrived, "Codex announced a reset" is not news either.
+		if landed := name != "reading older than the post"; landed == (len(es) != 0) {
+			t.Errorf("%s: news = %v", name, types(es))
+		}
+	}
+
+	// Advised, then the reset lands hours before the stated time: the hint stops and the user is
+	// pointed back to the configuration from before, without waiting for the stated time.
+	s := Load(t.TempDir())
+	weekReset := now.Add(6 * 24 * time.Hour)
+	if es := derive(t, s, d, codex("medium", now.Add(-time.Minute), 48, weekReset)); !spends(es) {
+		t.Fatalf("advised = %v", types(es))
+	}
+	landed := now.Add(2 * time.Hour)
+	es := Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", landed, 1, landed.Add(week))}}, Digest: d, State: s, Now: landed})
+	if len(es) != 1 || es[0].Type != SwitchBack || es[0].Suggest.Effort != "medium" {
+		t.Fatalf("landed early = %+v", es)
+	}
+
+	// A reset that clears usage but keeps the week's end shows as more left than when advised.
+	s = Load(t.TempDir())
+	derive(t, s, d, codex("medium", now.Add(-time.Minute), 48, weekReset))
+	es = Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", landed, 2, weekReset)}}, Digest: d, State: s, Now: landed})
+	if len(es) != 1 || es[0].Type != SwitchBack {
+		t.Fatalf("cleared in place = %+v", es)
+	}
+	// Spending more in the same week is not a reset.
+	s = Load(t.TempDir())
+	derive(t, s, d, codex("medium", now.Add(-time.Minute), 48, weekReset))
+	es = Derive(Input{Report: quota.Report{Accounts: []quota.Account{codex("high", landed, 49, weekReset)}}, Digest: d, State: s, Now: landed})
+	if !spends(es) {
+		t.Fatalf("still before the reset = %v", types(es))
+	}
+}
+
 func TestCodexFullResetCreditsCountForEveryWindow(t *testing.T) {
 	one, exp := 1, now.Add(30*time.Hour)
 	codex := quota.Account{Source: "codex", Plan: "pro", ObservedAt: now.Add(-time.Minute),
