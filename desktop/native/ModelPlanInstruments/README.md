@@ -367,3 +367,42 @@ Left/Right moves by week, Up/Down by weekday, skipping unavailable targets;
 Home/End selects the first/last available date. Tab also reaches the data and
 coverage explanation. These use the existing shared hover/focus machinery, with
 no extra tooltip producer, hint admission policy, polling timer or collection.
+
+## Subscription Now
+
+`SubscriptionNowSnapshot` consumes `SubscriptionNowInput` values built from the
+existing `SubscriptionHeader`, `InstrumentQuota`, `ReservePresentation`,
+`CreditPresentation`, normalized `UsageTokenDetail` and eligible `GenerationSums`.
+Pass its `pageContent()` to the main screen with the matching scope and language; rebuild the localized snapshot when language changes.
+All shows stable account rows; a single scope shows the header, reader/age,
+reported windows, reset reserve, credits balance and selected 7/30-day detail.
+Unknown existing windows use `--`; absent windows do not create quota rows.
+Quota gauges reuse the existing ten-segment projection. Credits have no quota,
+limit, bar or history. Reset expiries show four compact values plus overflow,
+while shared help retains all supplied active allowances.
+
+Each usage window carries its own period, attribution, evidence and generation
+recording verdict. Source-wide/current-binding/unattributed statistics are not
+copied into subscription totals. Known token kinds remain independent of whether
+generation-rate recording is available. Generation speed uses the existing
+compatible eligible sums and minimum sample gate; cache hit uses only input plus
+cache-read, without adding cache-write again. No window borrows another period.
+
+The host owns source-specific freshness and clock/deadline transactions. Supply
+updated `now`/evidence even when a revision is unchanged; this target introduces
+no TTL, collection, read command or timer. Forward
+`subscriptionScopeSelected(id)` to the single host scope owner, then inject its
+new snapshot; pressing an account never writes a session or changes scope behind
+the host. Now/History occupies slot one with History unavailable until its own
+implementation; slot two selects 7/30 and slot three is blank.
+
+`MainScreenListRecipe` adds a bounded native NSScrollView/document with stable
+row controls and visible-row vector drawing. All row resources are preflighted
+before state commits, including offscreen rows; this target allocates no
+full-document bitmap. Tab/arrows/Home/End reveal focused data, and reordering preserves the
+focused ID and keeps it visible. Native scroll wheel handling stays with AppKit.
+Shared hover/focus/AX explanations use the same complete row values. These new
+rows receive no native `toolTip`; task81's six permitted producers are unchanged.
+Unchanged snapshots retain the scroll position and bitmap, and teardown removes
+the scroll observer and retires old controls. Official row drawing remains an
+explicit recipe/resource input.

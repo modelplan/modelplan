@@ -41,6 +41,7 @@ import CoreText
         let accent = EngineInk(NSColor.controlAccentColor)
         var commands: [EngineDrawingCommand] = [.fill(rect: CGRect(origin: .zero, size: size), radius: 0, ink: background)]
         var regions: [MainScreenHitRegion] = []
+        var list:MainScreenListRecipe?
         var chart: ComparisonChartGeometry?
         func text(_ id: String, _ values: [String], _ r: CGRect, _ points: Double, _ ink: EngineInk, _ align: EngineTextAlignment = .left) {
             commands.append(.text(.init(id: id, variants: values, rect: r, font: .init(size: points), ink: ink, alignment: align)))
@@ -132,6 +133,8 @@ import CoreText
                 key("compare.effort.\(effort.key)", CGRect(x: screen.minX + 6 + Double(i) * keyWidth, y: ladderY, width: keyWidth - 3, height: 20),
                     (effort.recommended ? "★" : "") + effort.title, .effort(modelID: compare.modelID, key: effort.key), compare.help, lit: effort.trial || effort.current, value: value)
             }
+        } else if let subscription=p.subscription {
+            list=NeutralSubscriptionRecipe.make(subscription,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
         } else if let overview = p.overview {
             let content = CGRect(x:screen.minX+8,y:y,width:screen.width-16,height:screen.maxY-y-4)
             let drawing = try NeutralOverviewRecipe.make(overview,in:content)
@@ -169,6 +172,6 @@ import CoreText
                 }
             }
         }
-        return MainScreenRecipe(size: size, commands: commands, regions: regions, chart: chart, focusInk: accent)
+        return MainScreenRecipe(size: size, commands: commands, regions: regions, chart: chart, focusInk: accent, list:list)
     }
 }
