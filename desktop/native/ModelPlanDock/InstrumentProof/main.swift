@@ -350,6 +350,48 @@ struct NativeFailure:Error {let message:String}
     gateView.permitsAction={_,_ in try? gateView.applyCommunity([]);return true}
     try require(!retiredAfterGate.accessibilityPerformPress() && guardedActions==0,"action gate snapshot refresh cannot dispatch a retired AX node")
     gateView.dispose()
+    var otherPointerInput=DockInstrumentInput(id:"pointer-other",name:"Synthetic other",windows:[])
+    otherPointerInput.dataState = .fresh
+    let otherPointerReading=try DockInstrumentProjection.evaluate(otherPointerInput,now:instant)
+    let pointerView=DockInstrumentView(frame:skin.bounds);try pointerView.applyCommunity([reading,otherPointerReading])
+    var pointerActions=[DockInstrumentAction]();pointerView.onAction={pointerActions.append($0)}
+    pointerView.permitsAction={_,_ in try? pointerView.applyCommunity([otherPointerReading,reading]);return true}
+    try require(!pointerView.performPointerPress(atLocal:CGPoint(x:10,y:20)) && pointerActions.isEmpty,"gate reorder retaining both readings cannot dispatch the old station")
+    pointerView.permitsAction=nil
+    try require(pointerView.performPointerPress(atLocal:CGPoint(x:10,y:20)) && pointerActions == [.subscription(otherPointerReading.subscriptionID)],"fresh pointer press can select the current reordered target")
+    pointerView.dispose()
+    let overflowGateView=DockInstrumentView(frame:skin.bounds)
+    try overflowGateView.applyOfficial(skin:skin,rows:[reading],renderer:renderer,scale:1,locale:"en")
+    var overflowGateActions=0;overflowGateView.onAction={_ in overflowGateActions+=1}
+    var overflowGateSkin=skin;overflowGateSkin.stations[0].subscriptionID=nil;overflowGateSkin.stations[0].overflowCount=2
+    overflowGateView.permitsAction={_,_ in try? overflowGateView.applyOfficial(skin:overflowGateSkin,rows:[reading],renderer:renderer,scale:1,locale:"en");return true}
+    try require(!overflowGateView.performPointerPress(atLocal:CGPoint(x:48,y:30)) && overflowGateActions==0,"gate migration into overflow rejects the old station even while its reading survives")
+    overflowGateView.dispose()
+    var clearStopEnv=DockEdgeEnvironment(displays:[display],layouts:edgeLayouts,pointer:CGPoint(x:999,y:400))
+    clearStopEnv.presence.autoHide=false;clearStopEnv.presence.recordedLocks=[.menu]
+    let clearStopScheduler=NeutralEdgeScheduler(),clearStopDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{40},scheduler:clearStopScheduler,read:{clearStopEnv})
+    var clearStopReveals=0;clearStopDriver.onReveal={clearStopReveals+=1}
+    clearStopDriver.onClearRecordedLocks={_ in clearStopDriver.stop()}
+    clearStopDriver.start()
+    try require(clearStopDriver.presentation?.state == .suppressed(.lifecycle) && clearStopDriver.presentation?.paintedFrame==nil,"lock-clear reentrant stop cannot be overwritten by the old refresh result")
+    try require(clearStopScheduler.pending==nil && clearStopReveals==0,"reentrant stop cannot rearm or announce a stale reveal")
+    var releaseStopEnv=DockEdgeEnvironment(displays:[display],layouts:edgeLayouts,pointer:CGPoint(x:999,y:400)),releaseStopTime=50.0
+    releaseStopEnv.presence.autoHide=false
+    let releaseStopScheduler=NeutralEdgeScheduler(),releaseStopDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{releaseStopTime},scheduler:releaseStopScheduler,read:{releaseStopEnv})
+    releaseStopDriver.start();releaseStopTime=50.4;releaseStopDriver.dragRegions=edgeRegions
+    try require(releaseStopDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515)),"release reentrancy fixture captures background")
+    releaseStopEnv.presence.mouseButtonDown=true;releaseStopEnv.pointer=CGPoint(x:20,y:300);releaseStopTime=50.5
+    releaseStopDriver.updateBackgroundMove(global:releaseStopEnv.pointer!)
+    var stoppedCommits=0;releaseStopDriver.onCommittedPlacement={_ in stoppedCommits+=1}
+    releaseStopDriver.onClearRecordedLocks={_ in releaseStopDriver.stop()}
+    releaseStopEnv.presence.mouseButtonDown=false;releaseStopTime=51;releaseStopDriver.endBackgroundMove(global:releaseStopEnv.pointer!)
+    try require(stoppedCommits==0 && releaseStopDriver.preference.edge == .right && releaseStopDriver.presentation?.state == .suppressed(.lifecycle),"release lock-clear stop prevents stale preference mutation/commit")
+    try require(releaseStopScheduler.pending==nil,"release callback stop leaves no timer")
+    releaseStopDriver.onClearRecordedLocks=nil;releaseStopTime=52;releaseStopDriver.resume();releaseStopTime=52.4;releaseStopDriver.dragRegions=edgeRegions
+    _ = releaseStopDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515))
+    var recursiveClears=0;releaseStopDriver.onClearRecordedLocks={_ in recursiveClears+=1;if recursiveClears==1{releaseStopDriver.stop()}}
+    releaseStopDriver.stop()
+    try require(recursiveClears==1 && releaseStopDriver.presentation?.state == .suppressed(.lifecycle),"stop retires capture before a reentrant clear callback")
     let continuous=ContinuousClock(),origin=continuous.now
     func elapsed()->Double{let d=origin.duration(to:continuous.now).components;return Double(d.seconds)+Double(d.attoseconds)/1e18}
     let nativeScheduler=DockCommonModeScheduler(clock:{elapsed()});var trackingFired=false

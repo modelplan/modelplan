@@ -59,8 +59,10 @@ public struct DockEdgePresentation:Equatable,Sendable {
     /// No window, Settings write, status menu or global keyboard/mouse monitor is created here.
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(){
-        running=false;timerGeneration &+= 1;scheduler.cancel();if dragOrigin != nil{onClearRecordedLocks?(.drag)};clearMove()
-        visibility = .init(policy:visibility.policy)
+        running=false;timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
+        let hadMove=dragOrigin != nil;clearMove();visibility = .init(policy:visibility.policy)
+        if hadMove{onClearRecordedLocks?(.drag)}
+        guard !running,timerGeneration==token else{return}
         publish(.init(state:.suppressed(.lifecycle),placement:nil,snapPreview:nil,moving:false))
     }
     public func resume(){stop();running=true;refresh()}
@@ -105,6 +107,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if !input.lifecycleActive || result.state != .expanded{clearMove()}
             let cleared=result.clearRecordedLocks.union(reset?.clearRecordedLocks ?? []).union(extraClear)
             if !cleared.isEmpty{onClearRecordedLocks?(cleared)}
+            guard running,timerGeneration==token else{return}
             publish(.init(state:result.state,placement:place,snapPreview:preview,moving:dragStarted))
             guard running,timerGeneration==token else{return}
             if result.didReveal || reset?.didReveal == true{onReveal?()}
@@ -151,24 +154,28 @@ public struct DockEdgePresentation:Equatable,Sendable {
         return try DockEdgeGeometry.resolve(preference:.init(displayID:nearest.displayID,edge:nearest.edge,alongFraction:fraction),displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,wakeDepth:visibility.policy.wakeDepth)
     }
     public func endBackgroundMove(global:CGPoint){
-        guard let origin=dragOrigin else{return}
+        guard running,let origin=dragOrigin else{return}
+        let token=timerGeneration
         // Complete the native release transaction before sampling hide deadlines. Never manufacture
         // a mouse-down protection flag after the actual button has been released.
         do{
             let env=environment()
+            guard running,timerGeneration==token else{return}
             guard geometry==env.displays,layouts==env.layouts,primaryID==env.primaryDisplayID,
                 env.presence.enabled,env.presence.cockpitClosed,env.presence.allowedOverFullscreen,env.presence.lifecycleActive,
                 global.x.isFinite,global.y.isFinite else{cancelBackgroundMove();refresh();return}
             let moved=dragStarted || hypot(global.x-origin.x,global.y-origin.y)>5
             let destination=moved ? try moveDestination(global:global,environment:env):nil
             clearMove();onClearRecordedLocks?(.drag)
+            guard running,timerGeneration==token else{return}
             if let destination{preference=destination.preference;onCommittedPlacement?(preference)}
             refresh()
         }catch{cancelBackgroundMove();refresh();onFailure?(error)}
     }
     public func cancelBackgroundMove(){
-        let hadMove=dragOrigin != nil;clearMove()
+        let token=timerGeneration,hadMove=dragOrigin != nil;clearMove()
         if hadMove{onClearRecordedLocks?(.drag)}
+        guard timerGeneration==token else{return}
         if let current=presentation{publish(.init(state:current.state,placement:current.placement,snapPreview:nil,moving:false))}
     }
 }

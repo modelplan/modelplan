@@ -163,26 +163,41 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         NSCursor.arrow.set()
     }
     public override func cancelOperation(_ sender:Any?){backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
-    private func dispatch(_ action:DockInstrumentAction){
-        guard permitsAction?(action,.pointer) ?? true else{return}
-        switch action{
-        case .subscription(let id):guard readings[id] != nil else{return}
-        case .notice(let id):guard readings[id] != nil,notices[id] != nil else{return}
-        case .overflow:guard skin?.stations.contains(where:{$0.overflowCount != nil}) == true else{return}
-        };onAction?(action)
+    private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
+        if let skin,!community {
+            let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
+            for s in skin.stations.reversed(){
+                if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){return .notice(id)}
+                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{return .subscription(id)}
+                if s.overflowCount != nil,CGRect(x:s.centre.x-s.diameter/2,y:s.centre.y-s.diameter/2,width:s.diameter,height:s.diameter).contains(global){return .overflow}
+            }
+        } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){return .subscription(id)}
+        return nil
+    }
+    @discardableResult private func dispatchPointer(currentPoint:()->NSPoint?)->Bool{
+        guard let initial=currentPoint(),isPainted(atLocal:initial),let action=pointerAction(atLocal:initial),permitsAction?(action,.pointer) ?? true else{return false}
+        // A gate can replace/reorder stations without removing their readings. Re-hit-test the
+        // original physical pointer against the current presentation, rather than validating only ID existence.
+        guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action,let onAction else{return false}
+        onAction(action);return true
+    }
+    /// Neutral checks exercise the same dispatcher without creating a native window/event source.
+    @_spi(DockResourceChecks) @discardableResult public func performPointerPress(atLocal point:NSPoint)->Bool{
+        dispatchPointer(currentPoint:{point})
     }
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}
-        let p=convert(event.locationInWindow,from:nil)
-        if let window,backgroundDragDelegate?.beginBackgroundMove(local:p,global:window.convertPoint(toScreen:event.locationInWindow)) == true{return}
-        if let skin,!community {
-            let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
-            for s in skin.stations.reversed(){
-                if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){dispatch(.notice(id));return}
-                if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{dispatch(.subscription(id));return}
-                if s.overflowCount != nil,CGRect(x:s.centre.x-s.diameter/2,y:s.centre.y-s.diameter/2,width:s.diameter,height:s.diameter).contains(global){dispatch(.overflow);return}
+        let eventWindow=window,screenPoint=window?.convertPoint(toScreen:event.locationInWindow)
+        func currentPoint()->NSPoint?{
+            if let eventWindow,let screenPoint{
+                guard window === eventWindow else{return nil}
+                return convert(eventWindow.convertPoint(fromScreen:screenPoint),from:nil)
             }
-        } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){dispatch(.subscription(id))}
+            guard window==nil else{return nil};return convert(event.locationInWindow,from:nil)
+        }
+        guard let p=currentPoint() else{return}
+        if let screenPoint,backgroundDragDelegate?.beginBackgroundMove(local:p,global:screenPoint) == true{return}
+        dispatchPointer(currentPoint:currentPoint)
     }
 }

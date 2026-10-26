@@ -64,7 +64,7 @@ Only `presentation.paintedFrame` is a window/input frame. The physical wake rect
 
 `DockBackgroundDragRegions` receives the actual body/grip paths and control exclusions. Ignition/nozzles must be excluded by the appearance owner. The adapter offers grab/grabbing cursors and a click-through snap-outline view; the window owner must also make the outline panel ignore input. Drag preview never floats the committed dock; same-edge moves preserve the grabbed-point offset, and drop commits a nearest-edge intent once. Escape, lifecycle/display changes and removal cancel it. A native release event completes before stale-lock fallback; a missing release still recovers from fresh unprotected truth. Rebind drag regions when the registered layout changes; old regions are disabled on the new edge. No subscription reorder is implemented here (B08 owns it).
 
-The action gate distinguishes pointer and AX sources, so a genuine reveal's arrival guard cannot be bypassed by pointer actions and does not block deliberate AX entry. A synchronous snapshot refresh at the gate rechecks stable AX nodes/IDs before dispatch. No key window or first responder is requested by reveal. Cockpit-close restoration resolves sliver/expanded state before publishing, avoiding an expanded-frame flash.
+The action gate distinguishes pointer and AX sources, so a genuine reveal's arrival guard cannot be bypassed by pointer actions and does not block deliberate AX entry. A synchronous snapshot refresh at the gate re-hit-tests the original physical pointer target and rechecks stable AX nodes before dispatch. No key window or first responder is requested by reveal. Cockpit-close restoration resolves sliver/expanded state before publishing, avoiding an expanded-frame flash.
 
 ### Host seams (M0)
 
