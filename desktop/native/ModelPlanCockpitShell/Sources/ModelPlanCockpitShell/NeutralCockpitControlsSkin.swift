@@ -60,6 +60,15 @@ import ModelPlanPrimitives
         context.saveGState(); context.translateBy(x:layout.chart.minX,y:layout.chart.minY)
         context.setStrokeColor(NSColor.labelColor.cgColor); context.setLineWidth(1)
         if let first = chart.frontier.first { context.move(to:first); for p in chart.frontier.dropFirst() { context.addLine(to:p) }; context.strokePath() }
+        for p in chart.points {
+            if let current = p.current {
+                context.setStrokeColor(NSColor.secondaryLabelColor.cgColor);context.setLineWidth(1)
+                context.move(to:current);context.addLine(to:p.recommended);context.strokePath()
+                let dot = CGRect(x:current.x-2.4,y:current.y-2.4,width:4.8,height:4.8)
+                context.setFillColor(NSColor.white.cgColor);context.fillEllipse(in:dot)
+                context.setStrokeColor(NSColor.labelColor.cgColor);context.strokeEllipse(in:dot)
+            }
+        }
         context.setFillColor(NSColor.labelColor.cgColor)
         for p in chart.points { context.setFillColor((p.id==state.hoveredID || p.id==state.selectedID ? NSColor.controlAccentColor:NSColor.labelColor).cgColor);context.fillEllipse(in:CGRect(x:p.recommended.x-2,y:p.recommended.y-2,width:4,height:4)) }
         context.restoreGState()

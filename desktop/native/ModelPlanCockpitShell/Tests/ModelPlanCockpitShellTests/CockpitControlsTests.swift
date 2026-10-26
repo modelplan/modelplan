@@ -148,6 +148,63 @@ final class CockpitControlsTests: XCTestCase {
             XCTAssertThrowsError(try overlay.configure(visible:true,annotations:[annotation,annotation],appearance:.init(scale:1)))
         }
     }
+    func testHUDClearRefreshPreservesCallerAdmissionAndExplicitPause() async throws {
+        try await MainActor.run {
+            let item = model("one",ability:50,cost:2)
+            let populated = CockpitHUDState(profile:.full,appearance:.init(scale:1),models:[item],frontierIDs:["one"])
+            let enter = try XCTUnwrap(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:[],timestamp:0,windowNumber:0,context:nil,characters:"\r",charactersIgnoringModifiers:"\r",isARepeat:false,keyCode:36))
+            for closed in [false,true] {
+                let hud = CockpitHUDView(skin:NeutralCockpitControlsSkin());defer {hud.stop()}
+                var actions = 0;hud.onOpenEffort = { _ in actions += 1 }
+                let cleared = CockpitHUDState(profile:.full,appearance:.init(scale:1),closed:closed,models:closed ? [item]:[])
+                try hud.configure(cleared);try hud.configure(populated)
+                let row = try XCTUnwrap(hud.subviews.compactMap{$0 as? NSButton}.first{$0.accessibilityIdentifier()=="cockpit.hud.one"})
+                XCTAssertTrue(row.accessibilityPerformPress());XCTAssertEqual(actions,1)
+                hud.setPresentationAllowed(false)
+                try hud.configure(cleared);try hud.configure(populated)
+                XCTAssertFalse(hud.accessibilityPerformPress())
+                let pausedRow = try XCTUnwrap(hud.subviews.compactMap{$0 as? NSButton}.first{$0.accessibilityIdentifier()=="cockpit.hud.one"})
+                XCTAssertFalse(pausedRow.accessibilityPerformPress());hud.keyDown(with:enter);XCTAssertEqual(actions,1)
+                hud.setPresentationAllowed(true);XCTAssertTrue(pausedRow.accessibilityPerformPress());XCTAssertEqual(actions,2)
+                hud.stop();try hud.configure(populated);XCTAssertFalse(hud.accessibilityPerformPress())
+            }
+        }
+    }
+    func testNeutralHUDPaintsKnownCurrentDotAndLinkWithoutUnknownOrEqualMarkers() async throws {
+        try await MainActor.run {
+            let skin = NeutralCockpitControlsSkin()
+            let known = CockpitHUDModel(id:"one",name:"One",shortName:"One",recommendedEffort:"High",recommended:.init(ability:80,cost:4),current:.init(ability:20,cost:1),reportedEffort:"Low")
+            let state = CockpitHUDState(profile:.full,appearance:.init(scale:1),models:[known])
+            let layout = try skin.layout(for:state)
+            let chart = CockpitHUDChart.project([known],frontierIDs:[],size:layout.chart.size)
+            let p = try XCTUnwrap(chart.points.first),current = try XCTUnwrap(p.current)
+            let without = CockpitHUDChart(points:[CockpitHUDPoint(id:p.id,recommended:p.recommended,current:nil)],frontier:chart.frontier,costBaseline:chart.costBaseline)
+            let width = Int(layout.frame.width),height = Int(layout.frame.height),stride = width*4
+            @MainActor func paint(_ state:CockpitHUDState,_ chart:CockpitHUDChart)->[UInt8] {
+                let context = CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:stride,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue)!
+                context.translateBy(x:0,y:CGFloat(height));context.scaleBy(x:1,y:-1)
+                skin.drawHUD(in:context,state:state,layout:layout,chart:chart)
+                return Array(UnsafeBufferPointer(start:context.data!.assumingMemoryBound(to:UInt8.self),count:stride*height))
+            }
+            let visible = paint(state,chart),blank = paint(state,without)
+            func changed(near point:CGPoint)->Bool {
+                let x = Int(point.x+layout.chart.minX),y = Int(point.y+layout.chart.minY)
+                for row in (y-2)...(y+2) { for col in (x-2)...(x+2) {
+                    let offset = row*stride+col*4
+                    if (0..<3).contains(where:{abs(Int(visible[offset+$0])-Int(blank[offset+$0]))>8}) { return true }
+                } }
+                return false
+            }
+            XCTAssertTrue(changed(near:current),"A supplied current point must be visible at its hit target")
+            XCTAssertTrue(changed(near:CGPoint(x:(current.x+p.recommended.x)/2,y:(current.y+p.recommended.y)/2)),"A supplied current point must connect to its own recommendation")
+            let unknown = CockpitHUDModel(id:"one",name:"One",shortName:"One",recommendedEffort:"High",recommended:known.recommended)
+            let equal = CockpitHUDModel(id:"one",name:"One",shortName:"One",recommendedEffort:"High",recommended:known.recommended,current:known.recommended,currentIsRecommended:true,reportedEffort:"High")
+            let unknownChart = CockpitHUDChart.project([unknown],frontierIDs:[],size:layout.chart.size)
+            let equalChart = CockpitHUDChart.project([equal],frontierIDs:[],size:layout.chart.size)
+            XCTAssertNil(unknownChart.points.first?.current);XCTAssertNil(equalChart.points.first?.current)
+            XCTAssertEqual(paint(.init(profile:.full,appearance:state.appearance,models:[unknown]),unknownChart),paint(.init(profile:.full,appearance:state.appearance,models:[equal]),equalChart))
+        }
+    }
     private func model(_ id:String,ability:Double,cost:Double)->CockpitHUDModel {
         CockpitHUDModel(id:id,name:"Full "+id,shortName:id,recommendedEffort:"High",recommended:.init(ability:ability,cost:cost))
     }

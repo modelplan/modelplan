@@ -85,7 +85,7 @@ public struct CockpitHUDChart: Sendable {
     }
     public required init?(coder: NSCoder) { return nil }
     public func configure(_ state: CockpitHUDState) throws {
-        if state.closed || state.models.isEmpty { stop(); return }
+        if state.closed || state.models.isEmpty { clearContent(); return }
         guard (1...2).contains(state.appearance.scale), (state.selectedID?.utf8.count ?? 0)<=256, (state.hoveredID?.utf8.count ?? 0)<=256, state.models.count<=6,Set(state.models.map(\.id)).count==state.models.count,
               state.models.allSatisfy({!$0.id.isEmpty && $0.id.utf8.count<=256 && $0.name.utf8.count<=1024 && $0.shortName.utf8.count<=256 && $0.recommendedEffort.utf8.count<=128 && ($0.reportedEffort?.utf8.count ?? 0)<=128}),Set(state.frontierIDs).count==state.frontierIDs.count,
               Set(state.frontierIDs).isSubset(of:Set(state.models.map(\.id))) else { throw CockpitSurfaceError.invalidGeometry }
@@ -147,8 +147,10 @@ public struct CockpitHUDChart: Sendable {
         if !allowed, hoveredID != nil { hoveredID = nil;onHoverModel?(nil);needsDisplay = true }
     }
     public func stop() {
+        presentationAllowed = false;clearContent()
+    }
+    private func clearContent() {
         let hadState = state != nil || !targets.isEmpty || hoveredID != nil
-        presentationAllowed = false
         state = nil; hudLayout = nil; hoveredID = nil; isHidden = true; frame.size = .zero
         for button in targets.values { button.removeFromSuperview() }; targets = [:]
         chart = .project([],frontierIDs:[],size:.zero); if hadState { onHoverModel?(nil) }
@@ -166,6 +168,7 @@ public struct CockpitHUDChart: Sendable {
     }
     public override func mouseDown(with event: NSEvent) { _ = accessibilityPerformPress() }
     public override func keyDown(with event: NSEvent) {
+        guard acceptsModelActions else { return }
         if event.keyCode==53 { onReturn?() }
         else if event.keyCode==36 || event.keyCode==49 { onOpenEffort?(state?.selectedID) }
         else { super.keyDown(with:event) }
