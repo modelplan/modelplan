@@ -75,8 +75,14 @@ import CoreText
                 let height = effort.abilityFraction.map { 3 + $0 * 10 } ?? 1
                 let r = CGRect(x: x + 4 + Double(i) * (barWidth + barGap), y: 63 - height, width: barWidth, height: height)
                 commands.append(.fill(rect: r, radius: 0, ink: effort.current ? foreground : rule))
-                if effort.recommended { commands.append(.fill(rect: CGRect(x: r.minX, y: r.minY - 3, width: r.width, height: 2), radius: 0, ink: star)) }
-                if effort.trial { commands.append(.fill(rect: CGRect(x: r.minX, y: r.maxY - 2, width: r.width, height: 2), radius: 0, ink: blue)) }
+                if effort.recommended,effort.abilityFraction != nil {
+                    if r.height<6 {commands.append(.stroke(rect:r.insetBy(dx:0.5,dy:0.5),radius:0,width:1,ink:star))}
+                    else {commands.append(.fill(rect:CGRect(x:r.minX,y:r.minY,width:r.width,height:2),radius:0,ink:star))}
+                }
+                if effort.trial,effort.abilityFraction != nil {
+                    let short=effort.recommended && r.height<6,inset=short ? min(2,max(0,(r.width-1)/2)):0
+                    commands.append(.fill(rect:CGRect(x:r.minX+inset,y:r.maxY-2,width:r.width-2*inset,height:short ? 1:2),radius:0,ink:blue))
+                }
             }
             text(prefix + ".state", channel.stateVariants, CGRect(x: x + 4, y: 65, width: width - 8, height: 18), 12,
                  channel.trial == nil ? foreground : blue, fade: true)

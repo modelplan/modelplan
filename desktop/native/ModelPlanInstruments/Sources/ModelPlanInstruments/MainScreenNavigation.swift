@@ -15,7 +15,7 @@ public struct MainScreenLocation: Equatable, Sendable {
 }
 public enum MainScreenSource: Equatable, Sendable {
     case hud, fader(String), fast(String), record(String), recordOverflow, alertLamp, noticeOverflow
-    case comparisonRow(String)
+    case comparisonRow(String),destinationSession(String)
 }
 public enum MainScreenContent: Equatable, Sendable {
     case page(MainScreenLocation), comparison(modelID: String, trial: EffortConfiguration), session(String), alerts
@@ -49,6 +49,12 @@ public struct MainScreenNavigation: Sendable {
         let returnTo = sourced?.returnTo ?? location
         sourced = SourcedScreenContent(source: source, content: content, returnTo: returnTo)
         if case .page(let target) = content { location = target }
+    }
+    /// A temporary sourced page changes only its displayed patch; Back keeps the original return location.
+    public mutating func updateDisplayedLocation(_ target:MainScreenLocation) {
+        guard target.page==location.page else{return}
+        location=target
+        if let old=sourced,case .page=old.content {sourced = .init(source:old.source,content:.page(target),returnTo:old.returnTo)}
     }
     /// Drag/key changes update the same local comparison rather than toggling its source off.
     public mutating func updateTrial(_ trial: EffortConfiguration, modelID: String) {

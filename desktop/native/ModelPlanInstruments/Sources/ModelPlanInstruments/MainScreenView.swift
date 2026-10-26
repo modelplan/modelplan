@@ -37,7 +37,7 @@ import AppKit
     public func update(inputs: [FaderChannelInput], selection: InjectedModelSelection?, publication: SelectionPublication?,
             publicationUsable: Bool, language: InstrumentLanguage, compact: Bool, scope: InstrumentScope? = nil,
             pages: [MainScreenPageContent] = [], sourcedBodies: [MainScreenSourcedBody] = []) throws {
-        guard pages.allSatisfy({($0.subscription.map{$0.language == language} ?? true) && ($0.history.map{$0.language == language} ?? true)}) else{throw MainScreenError.invalidContent}
+        guard pages.allSatisfy({($0.subscription.map{$0.language == language} ?? true) && ($0.history.map{$0.language == language} ?? true) && ($0.effort.map{$0.language == language} ?? true) && ($0.destinations.map{$0.language == language} ?? true)}) else{throw MainScreenError.invalidContent}
         var next = controller
         let effects = try next.update(inputs: inputs, selection: selection, publication: publication, publicationUsable: publicationUsable,
             scope: scope, pages: pages, sourcedBodies: sourcedBodies)
@@ -110,6 +110,15 @@ import AppKit
     }
     @discardableResult fileprivate func activate(_ action: MainScreenAction) -> Bool {
         switch action {
+        case .inspectEffort(let id,let key):
+            guard presentation?.effort?.exact == true else{return false}
+            return mutate{$0.openComparison(modelID:id,configuration:.init(key),from:.comparisonRow("effort."+id+"."+key))}
+        case .session(let id):
+            guard presentation?.destinations?.snapshot.details.contains(where:{$0.id==id}) == true else{return false}
+            return mutate{$0.open(.session(id),from:.destinationSession(id))}
+        case .website(let link):
+            guard presentation?.websiteLinks.contains(link) == true else{return false}
+            emit([.openWebsite(link)]);return true
         case .subscriptionScope(let id):
             guard let display=presentation?.subscription,display.snapshot.scope == .all,
                 display.snapshot.accounts.contains(where:{$0.id == id}) else{return false}
@@ -260,7 +269,7 @@ import AppKit
         let items = allRegions.filter { $0.enabled && $0.tabStop && $0.focusGroup == group }
         guard let index = items.firstIndex(where:{$0.id == id}), !items.isEmpty else { return false }
         let code=event.keyCode
-        if region.gridPosition == nil && group != "subscription.rows" && (code==125 || code==126) { return false }
+        if region.gridPosition == nil && !group.hasSuffix(".rows") && (code==125 || code==126) { return false }
         cancelHintRest(.keyboard); keyboard = true
         let next: MainScreenHitRegion?
         if code==115 { next=items.first }

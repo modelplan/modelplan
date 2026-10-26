@@ -14,21 +14,22 @@ import CoreText
     public func minimumSize(for p: MainScreenPresentation) -> CGSize {
         var required = 520.0
         required = max(required, (p.titleVariants.map { width($0, size: 12) }.min() ?? 0) + 28,
-                       (p.lines.map { width($0, size: 10) }.max() ?? 0) + 28)
+                       (p.comparison == nil ? (p.lines.map { width($0, size: 10) }.max() ?? 0):0) + 28)
         if let c = p.comparison {
             let cell = c.columns.map { column in
                 max(width(column.title + " " + (column.equality ?? ""), size: 11), width(column.effort + (column.configuration?.fast == true ? (p.language == .chinese ? " 快速" : " Fast") : ""), size: 12),
                     column.cells.map { width($0.text, size: 12) }.max() ?? 0) + 16
             }.max() ?? 0
             required = max(required, 88 + cell * 3 + 24)
-            required = max(required, c.efforts.reduce(0) { $0 + width(($1.recommended ? "★" : "") + $1.title, size: 11) + 18 } + 24)
+            let widest=c.efforts.map{width(($0.recommended ? "★":"")+$0.title,size:11)}.max() ?? 0
+            required=max(required,Double(c.efforts.count)*max(23,widest+8)+130)
         }
         for slot in p.footer {
             if case .option(let o) = slot {
                 required = max(required, (o.choices.reduce(0) { $0 + width($1.title, size: 10) + 12 }) * Double(p.footer.count) + 24)
             }
         }
-        let baseHeight = p.comparison == nil ? max(240, 118 + Double(p.lines.count) * 16 + (p.backLine == nil ? 0 : 22)) : 288 + Double(p.lines.count) * 16
+        let baseHeight = p.comparison == nil ? max(240, 118 + Double(p.lines.count) * 16 + (p.backLine == nil ? 0 : 22)) : 288
         let height = p.overview.map { max(baseHeight,NeutralOverviewRecipe.minimumHeight($0)) } ?? baseHeight
         return CGSize(width: ceil(required), height: height)
     }
@@ -66,12 +67,28 @@ import CoreText
             text("screen.back.title", [back], r, 11, foreground)
             regions.append(.init(id: "screen.back", rect: r, action: .back, label: back, help: p.returnHelp)); y += 22
         }
-        text("screen.title", p.titleVariants, CGRect(x: screen.minX + 6, y: y, width: screen.width - 12, height: 20), 12, foreground)
-        regions.append(.init(id: "screen.title", rect: CGRect(x: screen.minX + 6, y: y, width: screen.width - 12, height: 20),
-                             label: p.comparison?.modelName ?? p.titleVariants.first ?? "", help: p.comparison?.help ?? p.pageHelp, role: .readout, tabStop: false))
-        y += 22
-        for (i, line) in p.lines.enumerated() {
-            text("screen.note.\(i)", [line], CGRect(x: screen.minX + 6, y: y, width: screen.width - 12, height: 16), 10, muted); y += 16
+        if let compare=p.comparison {
+            let header=CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:14)
+            let links=compare.websiteLinks,primaryWidth=width(links[0].title,size:10),secondaryWidth=width(links[1].title,size:10)
+            let titleWidth=p.titleVariants.map{width($0,size:12)}.min() ?? 0
+            let secondaryFits=titleWidth+primaryWidth+secondaryWidth+36<=header.width
+            let shown=secondaryFits ? links:[links[0]],total=primaryWidth+(secondaryFits ? secondaryWidth+8:0)
+            text("screen.title",p.titleVariants,CGRect(x:header.minX,y:y,width:max(1,header.width-total-24),height:14),12,foreground)
+            regions.append(.init(id:"screen.title",rect:CGRect(x:header.minX,y:y,width:max(1,header.width-total-8),height:14),label:compare.modelName,help:compare.help,role:.readout,tabStop:false))
+            if !compare.notes.isEmpty {text("compare.note",[compare.fastShown ? "⚡":"•"],CGRect(x:header.maxX-total-20,y:y,width:12,height:14),10,muted)}
+            var x=header.maxX-total
+            for (i,link) in shown.enumerated() {
+                let w=width(link.title,size:10),rect=CGRect(x:x,y:y,width:w,height:14)
+                text("compare.link.\(i)",[link.title],rect,10,muted)
+                regions.append(.init(id:"compare.link.\(i)",rect:rect,action:.website(link),label:link.title,help:HelpCatalog(p.language).explanation(.link,context:.init(fact:link.title))))
+                x+=w+8
+            }
+            y+=16
+        } else {
+            text("screen.title",p.titleVariants,CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:20),12,foreground)
+            regions.append(.init(id:"screen.title",rect:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:20),label:p.titleVariants.first ?? "",help:p.pageHelp,role:.readout,tabStop:false))
+            y+=22
+            for (i,line) in p.lines.enumerated() {text("screen.note.\(i)",[line],CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:16),10,muted);y+=16}
         }
         if let compare = p.comparison {
             let labelWidth = 76.0, x = screen.minX + 8 + labelWidth, columnWidth = (screen.width - 16 - labelWidth) / 3, tableHeight = 96.0
@@ -95,44 +112,65 @@ import CoreText
             for (j, metric) in ComparisonMetric.allCases.enumerated() {
                 text("compare.metric.\(j)", [metric.title(p.language)], CGRect(x: screen.minX + 8, y: y + 40 + Double(j) * 18, width: labelWidth - 6, height: 18), 11, muted)
             }
-            let ladderY = screen.maxY - 26, chartTop = y + tableHeight + 8, available = ladderY - chartTop - 18
-            if available >= 34, !compare.chartProfiles.isEmpty {
-                let plot = CGRect(x: screen.minX + 44, y: chartTop + 4, width: screen.width - 70, height: available - 4)
-                chart = compare.chartGeometry(in: plot)
+            let ladderY=screen.maxY-26,chartTop=y+tableHeight+8
+            let slot=CGRect(x:screen.minX+4,y:chartTop,width:screen.width-8,height:ladderY-chartTop-18)
+            if ComparisonPresentation.chartIsPresent(in:slot.size) {
+                let plot=CGRect(x:slot.minX+36,y:slot.minY+6,width:slot.width-106,height:slot.height-14)
+                chart=compare.chartGeometry(in:plot,labelBounds:slot)
                 if let chart {
                     for tick in chart.axis.ticks {
-                        let yy = chart.y(tick)
-                        commands.append(.polyline(points: [CGPoint(x: plot.minX, y: yy), CGPoint(x: plot.maxX, y: yy)], width: tick == 1 ? 1.5 : 0.5, ink: rule))
-                        text("compare.tick.\(tick)", ["×" + String(format: "%.3g", tick)], CGRect(x: screen.minX + 5, y: yy - 6, width: 35, height: 13), 9, muted, .right)
+                        let yy=chart.y(tick)
+                        commands.append(.polyline(points:[.init(x:plot.minX,y:yy),.init(x:plot.maxX,y:yy)],width:tick==1 ? 1:0.5,ink:rule))
+                        let gap=plot.height/Double(max(1,chart.axis.ticks.count-1))
+                        if tick==1 || gap>=11 || tick==chart.axis.ticks.first || tick==chart.axis.ticks.last {
+                            text("compare.tick.\(tick)",["×"+String(format:"%.3g",locale:Locale(identifier:"en_US_POSIX"),tick)],CGRect(x:slot.minX,y:yy-6,width:32,height:13),9,muted,.right)
+                        }
                     }
-                    for (i, metric) in ComparisonMetric.allCases.enumerated() {
-                        let labelX: CGFloat = plot.minX + CGFloat(i) * plot.width / 2 - 30
-                        text("compare.axis.\(i)", [metric.title(p.language)], CGRect(x: labelX, y: plot.maxY + 2, width: 60, height: 14), 9, muted, .center)
+                    for trace in chart.traces {
+                        let ink=trace.metric == .ability ? foreground:muted
+                        let dash:[Double]=trace.fast ? [4,2.5]:trace.metric == .time ? [1,2]:[]
+                        for segment in trace.segments where segment.count>1 {commands.append(.polyline(points:segment.map(\.point),width:trace.metric == .ability ? 1.5:1,ink:ink,dash:dash))}
+                        for point in trace.points.compactMap({$0}) {commands.append(.ellipse(rect:CGRect(x:point.point.x-1.2,y:point.point.y-1.2,width:2.4,height:2.4),ink:ink))}
+                    }
+                    for end in chart.endpoints {
+                        commands.append(.polyline(points:[.init(x:end.anchor.x+2,y:end.anchor.y),.init(x:plot.maxX-2,y:end.anchor.y),.init(x:plot.maxX+8,y:end.y)],width:0.5,ink:muted))
+                        text("compare.end.\(end.metric)",[(compare.fastShown && end.metric != .ability ? "⚡ ":"")+end.metric.title(p.language)],CGRect(x:plot.maxX+10,y:end.y-6,width:58,height:12),p.compact ? 8:9,muted)
                     }
                     for profile in chart.profiles {
-                        let ink = profile.roles.contains(.current) ? foreground : profile.roles.contains(.recommended) ? gold : blue
-                        for segment in profile.segments where segment.count > 1 { commands.append(.polyline(points: segment.map(\.point), width: 1.3, ink: ink)) }
                         for role in profile.roles {
-                            let radius = role == .current ? 2.0 : role == .recommended ? 3.0 : 4.0
-                            for point in profile.points.compactMap({ $0 }) {
-                                let r = CGRect(x: point.point.x - radius, y: point.point.y - radius, width: radius * 2, height: radius * 2)
-                                if role == .current { commands.append(.ellipse(rect: r, ink: foreground)) }
-                                else { commands.append(.stroke(rect: r, radius: radius, width: 1, ink: role == .recommended ? gold : blue)) }
+                            let ink=role == .current ? foreground:role == .recommended ? gold:blue
+                            let x=chart.x(chart.effortKeys.firstIndex(of:profile.configuration.effort)!)
+                            commands.append(.polyline(points:[.init(x:x,y:plot.minY),.init(x:x,y:plot.maxY)],width:1,ink:ink,dash:role == .current ? []:role == .recommended ? [1,2]:[4,2.5]))
+                            if profile.configuration.fast {text("compare.fast.\(role)",["⚡"],CGRect(x:x-4,y:slot.minY,width:10,height:9),8,ink)}
+                            let radius=role == .current ? 2.0:role == .recommended ? 3.3:4.6
+                            for point in profile.points.compactMap({$0}) {
+                                let rect=CGRect(x:point.point.x-radius,y:point.point.y-radius,width:2*radius,height:2*radius)
+                                if role == .current {commands.append(.ellipse(rect:rect,ink:ink))}
+                                else {
+                                    let circle=(0...32).map { i in CGPoint(x:point.point.x+radius*cos(Double(i)*2*Double.pi/32),y:point.point.y+radius*sin(Double(i)*2*Double.pi/32)) }
+                                    commands.append(.polyline(points:circle,width:1,ink:ink,dash:role == .recommended ? [1,2]:[4,2.5]))
+                                }
                             }
                         }
                     }
-                    regions.append(.init(id: "compare.chart", rect: CGRect(x: screen.minX + 4, y: chartTop, width: screen.width - 8, height: available + 14),
-                                         label: compare.chartDescription, help: compare.help, role: .readout, tabStop: false))
+                    regions.append(.init(id:"compare.chart",rect:slot,label:compare.chartDescription,help:compare.help,role:.readout,tabStop:false))
                 }
             }
-            let count = compare.efforts.count, keyWidth = (screen.width - 12) / Double(max(1, count))
+            let count=compare.efforts.count,ladderStart=screen.minX+40,keyWidth=(screen.width-114)/Double(max(1,count))
             for (i, effort) in compare.efforts.enumerated() {
                 let value = [(effort.current ? (p.language == .chinese ? "当前" : "Current") : nil),
                              (effort.trial ? (p.language == .chinese ? "试" : "Try") : nil),
                              (effort.recommended ? (p.language == .chinese ? "★推荐" : "★ Recommended") : nil)].compactMap { $0 }.joined(separator: " · ")
-                key("compare.effort.\(effort.key)", CGRect(x: screen.minX + 6 + Double(i) * keyWidth, y: ladderY, width: keyWidth - 3, height: 20),
+                key("compare.effort.\(effort.key)", CGRect(x:ladderStart+Double(i)*keyWidth+1.5,y:ladderY,width:keyWidth-3,height:20),
                     (effort.recommended ? "★" : "") + effort.title, .effort(modelID: compare.modelID, key: effort.key), compare.help, lit: effort.trial || effort.current, value: value)
             }
+        } else if let data=p.effort {
+            let drawing=NeutralEffortPageRecipe.make(data,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
+            commands+=drawing.commands;regions+=drawing.regions;list=drawing.list
+        } else if let data=p.destinations {
+            list=NeutralDestinationsRecipe.make(data,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
+        } else if let data=p.session {
+            list=NeutralDestinationsRecipe.detail(data,language:p.language,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
         } else if let history=p.history {
             list=NeutralSubscriptionHistoryRecipe.make(history,in:CGRect(x:screen.minX+6,y:y,width:screen.width-12,height:screen.maxY-y-4))
         } else if let subscription=p.subscription {

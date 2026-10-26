@@ -122,11 +122,16 @@ public struct ComparisonProfile: Sendable {
     public let values: ComparisonValues
 }
 
+public struct ComparisonPublishedSample:Sendable {
+    public let configuration:EffortConfiguration
+    public let values:ComparisonValues
+}
 public struct EffortComparison: Sendable {
     public let panels: [ComparisonPanel]
     public let profiles: [ComparisonProfile]
     public let fastAvailable: Bool
     public let fastQualifier: String?
+    public let publishedSamples:[ComparisonPublishedSample]
 
     public init(model: InstrumentModel, trial: EffortConfiguration?, publicationUsable: Bool) {
         let current = publicationUsable ? model.resolve(model.current) : nil
@@ -134,6 +139,14 @@ public struct EffortComparison: Sendable {
         let tried = publicationUsable ? model.resolve(trial) : nil
         fastAvailable = publicationUsable && model.fastTier?.usable == true
         fastQualifier = fastAvailable ? model.fastTier?.qualifier : nil
+        var seen=Set<String>()
+        let efforts=publicationUsable ? model.efforts.filter{seen.insert($0.key).inserted}:[]
+        publishedSamples=([false]+(fastAvailable ? [true]:[])).flatMap { fast in
+            efforts.map { effort in
+                let config=EffortConfiguration(effort.key,fast:fast)
+                return ComparisonPublishedSample(configuration:config,values:ComparisonValues(model.resolve(config),current:current))
+            }
+        }
         var result: [ComparisonPanel] = []
         for (role, value) in [(ComparisonRole.current, current), (.trial, tried), (.recommended, recommended)] {
             let equalCurrent = value != nil && current != nil && value?.configuration == current?.configuration

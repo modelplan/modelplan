@@ -26,11 +26,12 @@ public struct MainScreenPageContent: Equatable, Sendable {
     public let page: MainScreenPage
     public let lines: [String]
     public let options: [MainScreenFooterOption?]
+    public let effort:EffortPageSnapshot?,destinations:DestinationsPageSnapshot?
     public let history:SubscriptionHistorySnapshot?
     public let subscription: SubscriptionNowSnapshot?
     public let overview: OverviewPageSnapshot?
-    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil, subscription: SubscriptionNowSnapshot? = nil,history:SubscriptionHistorySnapshot? = nil) {
-        self.page = page; self.lines = lines; self.options = options; self.overview = overview; self.subscription = subscription;self.history=history
+    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil, subscription: SubscriptionNowSnapshot? = nil,history:SubscriptionHistorySnapshot? = nil,effort:EffortPageSnapshot? = nil,destinations:DestinationsPageSnapshot? = nil) {
+        self.page = page; self.lines = lines; self.options = options; self.overview = overview; self.subscription = subscription;self.history=history;self.effort=effort;self.destinations=destinations
     }
 }
 public struct MainScreenSourcedBody: Equatable, Sendable {
@@ -42,6 +43,8 @@ public struct MainScreenSourcedBody: Equatable, Sendable {
     }
 }
 public enum MainScreenIntent: Equatable, Sendable {
+    case locationChanged(MainScreenLocation,temporary:Bool)
+    case openWebsite(InstrumentWebsiteLink)
     case subscriptionScopeSelected(String)
     case overviewInformationSelected(String)
     case trialChanged(FaderTrial?)
@@ -94,6 +97,8 @@ public struct MainScreenController: Sendable {
                       && page.lines.allSatisfy { $0.utf8.count <= 4096 }
                       && (page.overview.map { page.page == .overview && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
                       && (page.subscription.map { page.page == .subscriptions && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
+                      && (page.effort.map{page.page == .effort && $0.valid && $0.scope == (scope ?? navigation.scope)} ?? true)
+                      && (page.destinations.map{page.page == .destinations && $0.valid && $0.scope == (scope ?? navigation.scope)} ?? true)
                       && (page.history.map { page.page == .subscriptions && $0.valid && $0.scope == (scope ?? navigation.scope) && page.subscription?.language == page.history?.language && page.subscription?.calendar == page.history?.calendar } ?? true)
               }), sourcedBodies.count <= 128,
               sourcedBodies.enumerated().allSatisfy({ index, body in sourcedBodies.firstIndex(where: { $0.content == body.content }) == index }),
@@ -180,6 +185,22 @@ public struct MainScreenController: Sendable {
         }
         guard trial == nil, let original = pages.first(where: { $0.page == navigation.location.page })?.options.compactMap({ $0 }).first(where: { $0.id == id }) else { return [] }
         let page = navigation.location.page
+        if page == .destinations,pages.first(where:{$0.page == page})?.destinations != nil,
+           ["destinations.mode","destinations.days","destinations.time"].contains(id) {
+            let old=navigation.location
+            if (id == "destinations.days" && old.destinationsMode == .timeline) || (id == "destinations.time" && old.destinationsMode == .projects) {return []}
+            let current=id == "destinations.mode" ? (old.destinationsMode == .projects ? "proj":"time"):id == "destinations.days" ? (old.projectPeriod == .days7 ? "7":"30"):(old.timelineRange == .today ? "today":"7d")
+            let choices=original.choices.filter(\.enabled)
+            guard !choices.isEmpty else{return []}
+            let chosen=value ?? choices[(choices.firstIndex{$0.value==current}.map{($0+1)%choices.count}) ?? 0].value
+            guard chosen != current,choices.contains(where:{$0.value==chosen}) else{return []}
+            let location=MainScreenLocation(.destinations,
+                destinationsMode:id == "destinations.mode" ? (chosen == "proj" ? .projects:.timeline):old.destinationsMode,
+                timelineRange:id == "destinations.time" ? (chosen == "today" ? .today:.days7):old.timelineRange,
+                projectPeriod:id == "destinations.days" ? (chosen == "7" ? .days7:.days30):old.projectPeriod)
+            navigation.updateDisplayedLocation(location)
+            return [.locationChanged(location,temporary:navigation.sourced != nil)]
+        }
         if page == .overview, pages.first(where:{$0.page == page})?.overview != nil,
            id == "overview.range" || id == "overview.mode",
            let chart = pages.first(where:{$0.page == page})?.options.compactMap({$0}).first(where:{$0.id == "overview.chart"}),
