@@ -19,6 +19,12 @@ import ModelPlanPrimitives
         context.fillEllipse(in:CGRect(x:2,y:2,width:context.width-4,height:context.height-4))
     }
 }
+@MainActor final class NeutralEdgeScheduler:DockEdgeScheduling {
+    var deadline:TimeInterval?,pending:(@MainActor ()->Void)?,saved=[@MainActor ()->Void]()
+    func arm(at deadline:TimeInterval,_ action:@escaping @MainActor ()->Void){self.deadline=deadline;pending=action;saved.append(action)}
+    func cancel(){deadline=nil;pending=nil}
+    func fire(){let action=pending;pending=nil;action?()}
+}
 struct NativeFailure:Error {let message:String}
 @MainActor func nativeChecks(_ root:URL) throws {
     var checks=0
@@ -249,6 +255,153 @@ struct NativeFailure:Error {let message:String}
     }
     try require(motionDriver.activeIDs.isEmpty && motionDriver.rotatingIDs.isEmpty,"failed recipe retires prior motion")
     motionDriver.stop();motionPool.purgeUnleased();effectsView.dispose()
+    // B07 uses injected display/protection truth and one scheduler. No NSWindow is created.
+    let display=DockDisplayArea(id:"screen",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
+    let edgeLayouts=DockEdgeGeometry.allowedEdges.map{edge in
+        let size=edge == .bottom ? CGSize(width:240,height:80):CGSize(width:80,height:240)
+        return DockEdgeLayout(displayID:"screen",edge:edge,expandedSize:size,sliverLength:240,sliverThickness:3,hoverRects:[CGRect(origin:.zero,size:size)])
+    }
+    var edgeTime=0.0,edgeEnv=DockEdgeEnvironment(displays:[display],layouts:edgeLayouts,pointer:CGPoint(x:999,y:400))
+    let edgeScheduler=NeutralEdgeScheduler()
+    let edgeDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{edgeTime},scheduler:edgeScheduler,read:{edgeEnv})
+    var edgePaints=0,edgeReveals=0,edgeClears=[DockRecordedLocks]()
+    edgeDriver.onPresent={_ in edgePaints+=1};edgeDriver.onReveal={edgeReveals+=1}
+    edgeDriver.onClearRecordedLocks={locks in edgeClears.append(locks);edgeEnv.presence.recordedLocks.subtract(locks)}
+    edgeDriver.start()
+    try require(edgeDriver.presentation?.state == .sliver && edgeScheduler.deadline==0.15,"wake dwell starts at first geometry sample")
+    try require(edgeDriver.presentation?.paintedFrame?.width==3 && edgeDriver.presentation?.placement?.wakeFrame.width==16,"wake rectangle is not an input panel")
+    let staleEdgeTimer=edgeScheduler.saved[0]
+    edgeTime=0.149;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .sliver,"no early reveal")
+    edgeTime=0.15;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .expanded && edgeReveals==1,"one genuine deadline reveal")
+    edgeTime=0.151;try require(!edgeDriver.acceptsPress() && edgeDriver.acceptsPress(keyboardOrAccessibility:true),"arrival blocks pointer, not explicit AX")
+    edgeTime=0.45;try require(edgeDriver.acceptsPress(),"pointer admitted after300ms")
+    let paintsAfterReveal=edgePaints
+    edgeTime=0.5;edgeDriver.refresh();try require(edgePaints==paintsAfterReveal && edgeReveals==1,"sampling does not redraw or repeat reveal policy")
+    edgeEnv.pointer=CGPoint(x:500,y:790);edgeTime=1;edgeDriver.refresh()
+    edgeEnv.cardFrame=CGRect(x:650,y:300,width:180,height:200);edgeEnv.pointer=CGPoint(x:850,y:400);edgeTime=1.4;edgeDriver.refresh()
+    edgeTime=1.7;edgeDriver.refresh();try require(edgeDriver.presentation?.state == .expanded,"full-depth card corridor retains dock")
+    edgeEnv.cardFrame=nil;edgeEnv.pointer=CGPoint(x:500,y:790);edgeTime=2;edgeDriver.refresh()
+    edgeTime=2.499;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .expanded,"leave grace not early")
+    edgeTime=2.5;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .sliver,"leave grace500ms")
+    edgeDriver.reveal();edgeEnv.presence.recordedLocks=[.drag,.menu,.keyboard];edgeEnv.presence.menuActuallyOpen=true
+    edgeTime=3;edgeDriver.refresh();edgeTime=7;edgeDriver.refresh()
+    try require(edgeDriver.presentation?.state == .expanded && edgeEnv.presence.recordedLocks.contains(.menu),"real menu protection outlives stale-lock fallback")
+    edgeEnv.presence.menuActuallyOpen=false;edgeTime=7.1;edgeDriver.refresh()
+    try require(edgeDriver.presentation?.state == .sliver && edgeEnv.presence.recordedLocks.isEmpty,"stale locks clear only without actual protections")
+    edgeEnv.presence.cockpitClosed=false;edgeTime=8;edgeDriver.refresh();edgeEnv.presence.cockpitClosed=true;edgeTime=9;edgeDriver.restoreAfterCockpitClose()
+    try require(edgeDriver.presentation?.state == .sliver,"away close restores sliver without expanded flash")
+    edgeEnv.pointer=CGPoint(x:999,y:400);edgeTime=10;edgeDriver.restoreAfterCockpitClose()
+    try require(edgeDriver.presentation?.state == .expanded && !edgeDriver.acceptsPress(),"wake close restores dock with arrival guard")
+    edgeDriver.stop();let paintsStopped=edgePaints;staleEdgeTimer()
+    try require(edgePaints==paintsStopped && edgeScheduler.pending==nil,"cancelled generation cannot revive surface")
+    edgeEnv.presence.autoHide=false;edgeTime=11;edgeDriver.resume();edgeTime=11.4
+    let body=CGPath(rect:CGRect(x:0,y:0,width:80,height:240),transform:nil)
+    let edgeRegions=DockBackgroundDragRegions(body:body,excludedControls:[CGRect(x:20,y:60,width:40,height:60),CGRect(x:0,y:200,width:20,height:40)])
+    edgeDriver.dragRegions=edgeRegions
+    try require(!edgeDriver.backgroundCanDrag(local:CGPoint(x:30,y:80)) && !edgeDriver.backgroundCanDrag(local:CGPoint(x:10,y:220)),"nozzle and ignition never drag the dock")
+    try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515)),"painted body begins capture")
+    edgeEnv.presence.autoHide=true;edgeEnv.presence.mouseButtonDown=true;edgeEnv.pointer=CGPoint(x:20,y:300);edgeTime=11.5;edgeDriver.updateBackgroundMove(global:edgeEnv.pointer!)
+    try require(edgeDriver.presentation?.snapPreview?.edge == .left && edgeDriver.isBackgroundMoving && edgeDriver.presentation?.placement?.edge == .right,"exact snap destination is separate from stationary dock")
+    var commits=0;edgeDriver.onCommittedPlacement={_ in commits+=1}
+    edgeEnv.presence.mouseButtonDown=false;edgeTime=15;edgeDriver.endBackgroundMove(global:edgeEnv.pointer!)
+    try require(commits==1 && edgeDriver.preference.edge == .left && !edgeDriver.isBackgroundMoving,"long drag release commits once before stale fallback")
+    edgeDriver.endBackgroundMove(global:edgeEnv.pointer!);try require(commits==1,"duplicate mouse-up cannot commit")
+    edgeTime=15.4;try require(!edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300)),"old edge hit regions cannot act before new layout binding")
+    edgeDriver.dragRegions=edgeRegions
+    try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300)),"new drag admitted")
+    edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500));edgeDriver.cancelBackgroundMove()
+    try require(commits==1 && edgeDriver.preference.edge == .left && edgeDriver.presentation?.snapPreview==nil,"Escape/cancel leaves committed placement")
+    edgeTime=16;_ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300))
+    edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500))
+    let clearsBeforeRemoval=edgeClears.count
+    edgeEnv.displays=[];edgeEnv.layouts=[];edgeTime=16.1;edgeDriver.refresh();edgeDriver.endBackgroundMove(global:CGPoint(x:980,y:500))
+    try require(commits==1 && edgeDriver.presentation?.paintedFrame==nil && edgeClears.count==clearsBeforeRemoval+1,"display removal cancels capture exactly once, no floating frame")
+    edgeEnv.displays=[display];edgeEnv.layouts=edgeLayouts;edgeEnv.pointer=CGPoint(x:999,y:400);edgeEnv.presence.autoHide=false
+    edgeTime=20;edgeDriver.stop();edgeDriver.setPreference(.init(displayID:"screen",edge:.right));edgeDriver.resume();edgeTime=20.4;edgeDriver.dragRegions=edgeRegions
+    let anchorBefore=edgeDriver.presentation!.placement!.sliverFrame.midY
+    _ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:20),global:CGPoint(x:925,y:anchorBefore+100))
+    edgeEnv.presence.mouseButtonDown=true
+    edgeDriver.updateBackgroundMove(global:CGPoint(x:925,y:anchorBefore+120))
+    try require(abs(edgeDriver.presentation!.snapPreview!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
+    edgeDriver.cancelBackgroundMove()
+    edgeDriver.stop()
+    let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
+    try sliver.apply(image:nil,logicalSize:CGSize(width:3,height:20),scale:2,accessibilityLabel:"Synthetic reveal")
+    try require(sliver.accessibilityPerformPress() && sliverPresses==1 && sliver.retainedBytes==0,"neutral sliver has an explicit AX reveal")
+    do{try sliver.apply(image:nil,logicalSize:CGSize(width:CGFloat.nan,height:20),scale:2,accessibilityLabel:"bad");throw NativeFailure(message:"bad sliver admitted")}
+    catch DockArtworkError.invalidManifest{checks+=1}
+    try require(!sliver.accessibilityPerformPress() && !sliver.isPainted(atLocal:CGPoint(x:1,y:1)),"failed sliver cannot preserve old actions")
+    sliver.dispose()
+    let outline=DockSnapOutlineView(frame:CGRect(x:0,y:0,width:40,height:40))
+    try require(outline.hitTest(CGPoint(x:10,y:10))==nil,"snap outline never catches input")
+    let secondDisplay=DockDisplayArea(id:"other",frame:CGRect(x:2000,y:0,width:1000,height:800),visibleFrame:CGRect(x:2000,y:0,width:1000,height:800))
+    var orderedEnv=DockEdgeEnvironment(displays:[display,secondDisplay],layouts:edgeLayouts,primaryDisplayID:"screen",pointer:CGPoint(x:999,y:400))
+    orderedEnv.presence.autoHide=false
+    let orderedScheduler=NeutralEdgeScheduler(),orderedDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{edgeTime},scheduler:orderedScheduler,read:{orderedEnv})
+    edgeTime=30;orderedDriver.start();edgeTime=30.4;orderedDriver.dragRegions=edgeRegions
+    _ = orderedDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515))
+    orderedEnv.presence.mouseButtonDown=true;orderedDriver.updateBackgroundMove(global:CGPoint(x:925,y:535))
+    orderedEnv.displays.reverse();orderedEnv.layouts.reverse();orderedDriver.refresh()
+    try require(orderedDriver.isBackgroundMoving,"benign array ordering does not cancel unchanged geometry")
+    orderedDriver.cancelBackgroundMove();orderedDriver.stop()
+    let gateView=DockInstrumentView(frame:skin.bounds);try gateView.applyCommunity([reading])
+    var guardedActions=0;gateView.onAction={_ in guardedActions+=1}
+    let retiredAfterGate=(gateView.accessibilityChildren() as! [NSAccessibilityElement]).first!
+    gateView.permitsAction={_,_ in try? gateView.applyCommunity([]);return true}
+    try require(!retiredAfterGate.accessibilityPerformPress() && guardedActions==0,"action gate snapshot refresh cannot dispatch a retired AX node")
+    gateView.dispose()
+    var otherPointerInput=DockInstrumentInput(id:"pointer-other",name:"Synthetic other",windows:[])
+    otherPointerInput.dataState = .fresh
+    let otherPointerReading=try DockInstrumentProjection.evaluate(otherPointerInput,now:instant)
+    let pointerView=DockInstrumentView(frame:skin.bounds);try pointerView.applyCommunity([reading,otherPointerReading])
+    var pointerActions=[DockInstrumentAction]();pointerView.onAction={pointerActions.append($0)}
+    pointerView.permitsAction={_,_ in try? pointerView.applyCommunity([otherPointerReading,reading]);return true}
+    try require(!pointerView.performPointerPress(atLocal:CGPoint(x:10,y:20)) && pointerActions.isEmpty,"gate reorder retaining both readings cannot dispatch the old station")
+    pointerView.permitsAction=nil
+    try require(pointerView.performPointerPress(atLocal:CGPoint(x:10,y:20)) && pointerActions == [.subscription(otherPointerReading.subscriptionID)],"fresh pointer press can select the current reordered target")
+    pointerView.dispose()
+    let overflowGateView=DockInstrumentView(frame:skin.bounds)
+    try overflowGateView.applyOfficial(skin:skin,rows:[reading],renderer:renderer,scale:1,locale:"en")
+    var overflowGateActions=0;overflowGateView.onAction={_ in overflowGateActions+=1}
+    var overflowGateSkin=skin;overflowGateSkin.stations[0].subscriptionID=nil;overflowGateSkin.stations[0].overflowCount=2
+    overflowGateView.permitsAction={_,_ in try? overflowGateView.applyOfficial(skin:overflowGateSkin,rows:[reading],renderer:renderer,scale:1,locale:"en");return true}
+    try require(!overflowGateView.performPointerPress(atLocal:CGPoint(x:48,y:30)) && overflowGateActions==0,"gate migration into overflow rejects the old station even while its reading survives")
+    overflowGateView.dispose()
+    var clearStopEnv=DockEdgeEnvironment(displays:[display],layouts:edgeLayouts,pointer:CGPoint(x:999,y:400))
+    clearStopEnv.presence.autoHide=false;clearStopEnv.presence.recordedLocks=[.menu]
+    let clearStopScheduler=NeutralEdgeScheduler(),clearStopDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{40},scheduler:clearStopScheduler,read:{clearStopEnv})
+    var clearStopReveals=0;clearStopDriver.onReveal={clearStopReveals+=1}
+    clearStopDriver.onClearRecordedLocks={_ in clearStopDriver.stop()}
+    clearStopDriver.start()
+    try require(clearStopDriver.presentation?.state == .suppressed(.lifecycle) && clearStopDriver.presentation?.paintedFrame==nil,"lock-clear reentrant stop cannot be overwritten by the old refresh result")
+    try require(clearStopScheduler.pending==nil && clearStopReveals==0,"reentrant stop cannot rearm or announce a stale reveal")
+    var releaseStopEnv=DockEdgeEnvironment(displays:[display],layouts:edgeLayouts,pointer:CGPoint(x:999,y:400)),releaseStopTime=50.0
+    releaseStopEnv.presence.autoHide=false
+    let releaseStopScheduler=NeutralEdgeScheduler(),releaseStopDriver=DockEdgeController(preference:.init(displayID:"screen",edge:.right),clock:{releaseStopTime},scheduler:releaseStopScheduler,read:{releaseStopEnv})
+    releaseStopDriver.start();releaseStopTime=50.4;releaseStopDriver.dragRegions=edgeRegions
+    try require(releaseStopDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515)),"release reentrancy fixture captures background")
+    releaseStopEnv.presence.mouseButtonDown=true;releaseStopEnv.pointer=CGPoint(x:20,y:300);releaseStopTime=50.5
+    releaseStopDriver.updateBackgroundMove(global:releaseStopEnv.pointer!)
+    var stoppedCommits=0;releaseStopDriver.onCommittedPlacement={_ in stoppedCommits+=1}
+    releaseStopDriver.onClearRecordedLocks={_ in releaseStopDriver.stop()}
+    releaseStopEnv.presence.mouseButtonDown=false;releaseStopTime=51;releaseStopDriver.endBackgroundMove(global:releaseStopEnv.pointer!)
+    try require(stoppedCommits==0 && releaseStopDriver.preference.edge == .right && releaseStopDriver.presentation?.state == .suppressed(.lifecycle),"release lock-clear stop prevents stale preference mutation/commit")
+    try require(releaseStopScheduler.pending==nil,"release callback stop leaves no timer")
+    releaseStopDriver.onClearRecordedLocks=nil;releaseStopTime=52;releaseStopDriver.resume();releaseStopTime=52.4;releaseStopDriver.dragRegions=edgeRegions
+    _ = releaseStopDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515))
+    var recursiveClears=0;releaseStopDriver.onClearRecordedLocks={_ in recursiveClears+=1;if recursiveClears==1{releaseStopDriver.stop()}}
+    releaseStopDriver.stop()
+    try require(recursiveClears==1 && releaseStopDriver.presentation?.state == .suppressed(.lifecycle),"stop retires capture before a reentrant clear callback")
+    let continuous=ContinuousClock(),origin=continuous.now
+    func elapsed()->Double{let d=origin.duration(to:continuous.now).components;return Double(d.seconds)+Double(d.attoseconds)/1e18}
+    let nativeScheduler=DockCommonModeScheduler(clock:{elapsed()});var trackingFired=false
+    let trackingMode=RunLoop.Mode("ModelPlanSyntheticTracking")
+    CFRunLoopAddCommonMode(CFRunLoopGetMain(),CFRunLoopMode(rawValue:trackingMode.rawValue as CFString))
+    nativeScheduler.arm(at:elapsed()+0.01){trackingFired=true}
+    let trackingEnd=Date().addingTimeInterval(0.2)
+    while !trackingFired && Date()<trackingEnd{RunLoop.main.run(mode:trackingMode,before:trackingEnd)}
+    try require(trackingFired,"deadline runs in an owned synthetic tracking common mode, not default-only")
+    nativeScheduler.cancel()
     if CommandLine.arguments.count>2 {
         let fontRoot=URL(fileURLWithPath:CommandLine.arguments[2])
         let fontURL=fontRoot.appendingPathComponent("jetbrains-mono-latin-wght-normal.ttf"), bytes=try Data(contentsOf:fontURL)

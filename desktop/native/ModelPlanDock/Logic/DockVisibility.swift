@@ -24,7 +24,7 @@ public struct DockRecordedLocks: OptionSet, Sendable {
 }
 public enum DockPointerRegion: Equatable, Sendable { case unknown, outside, inside, wake }
 public struct DockPresence: Sendable {
-    public var enabled = true, autoHide = true, cockpitClosed = true, allowedOverFullscreen = true, outerEdge = true
+    public var enabled = true, autoHide = true, cockpitClosed = true, allowedOverFullscreen = true, outerEdge = true, lifecycleActive = true
     public var pointer: DockPointerRegion = .unknown
     public var recordedLocks: DockRecordedLocks = []
     public var mouseButtonDown = false, menuActuallyOpen = false, ignitionHeld = false, cardPinned = false
@@ -32,7 +32,7 @@ public struct DockPresence: Sendable {
     fileprivate var protected: Bool { mouseButtonDown || menuActuallyOpen || ignitionHeld || cardPinned }
 }
 public enum DockSurfaceState: Equatable, Sendable {
-    public enum Suppression: Equatable, Sendable { case userHidden, cockpit, fullscreen, sharedEdge }
+    public enum Suppression: Equatable, Sendable { case userHidden, cockpit, fullscreen, sharedEdge, lifecycle }
     case suppressed(Suppression), sliver, expanded
 }
 public enum DockVisibilityIntent: Equatable, Sendable { case sample, reveal, restoreFromCockpit, lifecycleCancel }
@@ -63,14 +63,14 @@ public struct DockVisibilityState: Sendable {
         var deadline: TimeInterval?, forced = false
         var clear: DockRecordedLocks = []
         func suppression() -> DockSurfaceState.Suppression? {
-            if !input.enabled { return .userHidden }; if !input.cockpitClosed { return .cockpit }
+            if !input.lifecycleActive { return .lifecycle }; if !input.enabled { return .userHidden }; if !input.cockpitClosed { return .cockpit }
             if !input.allowedOverFullscreen { return .fullscreen }; if !input.outerEdge { return .sharedEdge }; return nil
         }
         if intent == .lifecycleCancel {
             generation &+= 1
             if let reason = suppression() { surface = .suppressed(reason) }
             else { surface = input.autoHide ? .sliver : .expanded }
-            outsideSince = nil; dwellSince = nil; revealedAt = nil; clear = input.recordedLocks
+            outsideSince = nil; dwellSince = nil; revealedAt = surface == .expanded ? now:nil; clear = input.recordedLocks
         } else if let reason = suppression() {
             surface = .suppressed(reason); outsideSince = nil; dwellSince = nil; revealedAt = nil
             if previous != surface { generation &+= 1 }; clear = input.recordedLocks
@@ -113,7 +113,7 @@ public struct DockVisibilityState: Sendable {
     }
 }
 
-public enum DockEdge: CaseIterable, Sendable { case left, right, top, bottom }
+public enum DockEdge: CaseIterable, Equatable, Sendable { case left, right, top, bottom }
 /// Hover-retention geometry only, supplied by the eventual view.
 /// Slack/corridor rectangles MUST NOT be reused as native click-catching regions (B05b proves those separately).
 public struct DockPresenceArea: Sendable {
