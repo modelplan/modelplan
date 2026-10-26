@@ -149,6 +149,11 @@ extension SettingsStore: HintPreferenceWriting {
         deadlineID = nil; scheduler.cancel()
         if let previous { overlay.hide(offerID: previous.offer.id) }
     }
+    /// App composition retires a timed-out Settings consumer before releasing the editor save.
+    /// Keep real in-memory seen/budget truth, but fence late writes and never start another pending write.
+    func abandonPendingPersistenceForRetirement() {
+        writeEpoch &+= 1; pending = nil; resetCheck = nil; deferredContext = nil; onPersisted = nil
+    }
     /// A newer unrelated snapshot is a revision floor, NEVER permission to rebase a stale hint write.
     /// Reset requests are delivered separately, tagged with the successful editor commit revision.
     public func observeCommitted(_ snapshot: SettingsSnapshot) { revisionFloor = max(revisionFloor, snapshot.revision) }

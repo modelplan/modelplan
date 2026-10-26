@@ -280,6 +280,44 @@ private actor HelpPausedWriter: HintPreferenceWriting {
         XCTAssertTrue(restored.host.hints.preferences.seen.isEmpty)
         app.editor.removeCommitObserver(observer); restored.dispose()
     }
+    func testTimedOutOldResetConsumerCannotAffectReplacementComposition() async throws {
+        let app = try application(), old = await composition(app), first = input()
+        try old.update(first, content: copy(), context: context(first)); await old.flush()
+        let connection = HelpSettingsReceiptConnection(); await connection.connect(old)
+        var blocker: CheckedContinuation<Void, Never>?, calls = 0
+        let observer = app.editor.observeCommittedEdits(onFailure: { connection.failed($0) }) { edit in
+            calls += 1; await withCheckedContinuation { blocker = $0 }; await connection.receive(edit)
+        }
+        let reset = try await app.editor.commit(SettingsB21Edit.resetHints)
+        XCTAssertFalse(app.editor.isSaving); XCTAssertEqual(old.receiptDeliveryFailure?.revision, reset.revision)
+        XCTAssertFalse(old.host.isRunning); XCTAssertTrue(old.host.hints.preferences.seen.isEmpty)
+        _ = try await app.editor.commit(SettingsB20Edit.theme(.night))
+        let replacement = await composition(app), next = input()
+        try replacement.update(next, content: copy(), context: context(next)); await replacement.flush()
+        let offer = try XCTUnwrap(replacement.host.hints.visible?.offer.id)
+        blocker?.resume()
+        _ = try await app.editor.commit(SettingsB20Edit.size(.small))
+        await replacement.flush()
+        let saved = await app.editor.store.snapshot()
+        XCTAssertEqual(calls, 1); XCTAssertTrue(saved.preferences.helpHints.seen.contains(.detach))
+        XCTAssertEqual(saved.preferences.theme, .night); XCTAssertEqual(saved.preferences.size, .small)
+        XCTAssertEqual(replacement.host.hints.visible?.offer.id, offer)
+        app.editor.removeCommitObserver(observer); replacement.dispose()
+    }
+    func testStartupConsumerTimeoutCannotExposeAnActiveLateConnectedHost() async throws {
+        let app = try application(); await app.reload()
+        let connection = HelpSettingsReceiptConnection()
+        let observer = app.editor.observeCommittedEdits(onFailure: { connection.failed($0) }) { edit in await connection.receive(edit) }
+        let saved = try await app.editor.commit(SettingsB20Edit.theme(.night))
+        XCTAssertEqual(app.editor.lastCommitDeliveryFailure?.revision, saved.revision)
+        XCTAssertFalse(app.editor.isSaving)
+        let late = await composition(app)
+        await connection.connect(late)
+        XCTAssertFalse(late.host.isRunning); XCTAssertNotNil(late.receiptDeliveryFailure)
+        let input = input(); try late.update(input, content: copy(), context: context(input))
+        XCTAssertNil(late.layer.presentation); XCTAssertTrue(late.host.hints.preferences.seen.isEmpty)
+        app.editor.removeCommitObserver(observer); late.dispose()
+    }
     func testCommunitySessionRetainsOneConcreteHostWithoutShowingAWindow() async throws {
         let app = try application(); var created = 0
         let session = CommunitySettingsSession(application: app, canPresent: { false }, makeHelp: { app in

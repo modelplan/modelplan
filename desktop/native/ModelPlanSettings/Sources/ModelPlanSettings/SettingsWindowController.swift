@@ -258,8 +258,9 @@ enum SettingsWords {
             ? SettingsStructure.task65.panes.first(where: { $0.id == selectedPaneID })!.title.value(language)
             : SettingsWords.text("Search results", "搜索结果", language)
         let feedbackText = feedback.map { $0 == .copied ? SettingsWords.text("Diagnostics copied", "诊断信息已复制", language) : SettingsWords.text("Request sent to the app", "请求已交给应用", language) }
-        status.stringValue = errorMessage ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
-        status.textColor = errorMessage == nil ? .secondaryLabelColor : .systemRed
+        let deliveryWarning = editor.lastCommitDeliveryFailure?.message(language)
+        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
+        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
             let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,

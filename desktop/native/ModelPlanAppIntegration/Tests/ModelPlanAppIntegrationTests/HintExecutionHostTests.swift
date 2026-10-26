@@ -68,6 +68,22 @@ private actor HintGateWriter: HintPreferenceWriting {
                       _ overlay: HintTestOverlay) async -> HintExecutionHost {
         await HintExecutionHost.restored(persistence: writer, scheduler: timer, overlay: overlay, uptime: { clock.now })
     }
+    func testReceiptFailureRetirementDoesNotDrainAnOldPendingWriterAcrossReset() async throws {
+        let sharedStore = try store(), writer = HintGateWriter(store: sharedStore)
+        // Use the writer's own actor for all receipts; no second store for the same URL.
+        let shared = sharedStore, clock = HintClock(), timer = HintTestScheduler(), overlay = HintTestOverlay()
+        let host = await host(writer, clock, timer, overlay)
+        try host.updateContext(context()); await writer.waitUntilBlocked()
+        XCTAssertTrue(host.hints.preferences.seen.contains(.detach))
+        host.abandonPendingPersistenceForRetirement(); host.dispose()
+        _ = try await shared.update(expectedRevision: 0) { $0.helpHints = .init() }
+        _ = try await shared.update(expectedRevision: 1) { $0.theme = .night }
+        await writer.release(); await host.flushPersistence()
+        let saved = await shared.snapshot(), calls = await writer.calls
+        XCTAssertEqual(calls, 1); XCTAssertTrue(saved.preferences.helpHints.seen.isEmpty)
+        XCTAssertEqual(saved.preferences.theme, .night); XCTAssertFalse(host.isRunning)
+        XCTAssertTrue(host.hints.preferences.seen.contains(.detach)) // Historical display truth is not rewritten.
+    }
     func testConfirmedVisibleOfferPersistsThroughTheSameStoreAndSpendsOneBudget() async throws {
         let store = try store(), clock = HintClock(), timer = HintTestScheduler(), overlay = HintTestOverlay()
         let host = await host(store, clock, timer, overlay), ctx = context()

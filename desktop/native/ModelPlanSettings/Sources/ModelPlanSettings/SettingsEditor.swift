@@ -82,9 +82,19 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
     private var changeObservers: [UUID: () -> Void] = [:]
-    private var commitObservers: [UUID: (SettingsCommittedEdit) async -> Void] = [:]
+    public private(set) var lastCommitDeliveryFailure: SettingsCommitDeliveryFailure?
+    private let commitObserverLimit: Duration
+    private lazy var commitObservers = SettingsCommitObservers(limit: commitObserverLimit) { [weak self] failure in
+        self?.lastCommitDeliveryFailure = failure
+        self?.notifyChange()
+    }
 
-    public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init()) {
+    /// A save waits at most two seconds for all app observers together. A shorter bound can be
+    /// injected for tests/hosts; this does not change hint display/dwell timing or persisted policy.
+    public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init(),
+                commitObserverLimit: Duration = .seconds(2)) {
+        precondition(commitObserverLimit > .zero && commitObserverLimit <= .seconds(2))
+        self.commitObserverLimit = commitObserverLimit
         self.store = store; self.context = context; self.environment = environment
     }
     public var effective: EffectiveSettings? { snapshot.map { EffectiveSettings($0.preferences, environment: environment) } }
@@ -97,10 +107,11 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     }
     public func removeChangeObserver(_ id: UUID) { changeObservers.removeValue(forKey: id) }
     /// Additive app consumers never replace the window's onChange or the coordinator's onCommit.
-    public func observeCommittedEdits(_ observer: @escaping (SettingsCommittedEdit) async -> Void) -> UUID {
-        let id = UUID(); commitObservers[id] = observer; return id
+    public func observeCommittedEdits(onFailure: @escaping (SettingsCommitDeliveryFailure) -> Void = { _ in },
+                                      _ observer: @escaping @MainActor (SettingsCommittedEdit) async -> Void) -> UUID {
+        commitObservers.observe(onFailure: onFailure, observer)
     }
-    public func removeCommitObserver(_ id: UUID) { commitObservers.removeValue(forKey: id) }
+    public func removeCommitObserver(_ id: UUID) { commitObservers.remove(id) }
     private func notifyChange() {
         onChange?()
         for observer in Array(changeObservers.values) { observer() }
@@ -200,9 +211,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
             onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))
             let transaction = SettingsCommittedEdit(before: before, after: committed, kind: kind, origin: store)
-            // Keep isSaving until app consumers acknowledge the typed receipt. Another edit cannot
-            // overtake its reset/reconciliation boundary; ordinary onChange remains synchronous.
-            for observer in Array(commitObservers.values) { await observer(transaction) }
+            // Keep the reset boundary until acknowledgment or terminal delivery failure. A deadline
+            // never turns this already-successful store commit into a fake save failure/retry.
+            await commitObservers.deliver(transaction)
             return result
         } catch {
             // An external writer on this same actor may have advanced. Show its current truth, never retry over it.

@@ -73,7 +73,8 @@ No private hint wording, official visual recipe or persisted preferences field i
 `SettingsEditor.observeCommittedEdits` is an additive async receipt observer; neither the window's
 `onChange` nor the coordinator's `onCommit` is replaced. Its receipt records the originating store,
 exact before/after revisions and an explicit reset kind, including an already-empty reset. The save
-boundary stays busy until observers acknowledge, so another editor save cannot overtake the reset.
+boundary stays busy until observers acknowledge or a bounded delivery failure retires the consumer,
+so another editor save cannot overtake an active reset consumer.
 Only successful commits emit receipts. Hint writes refresh the same editor through the existing
 coordinator, with coalescing reads rather than a second preference owner or timer.
 
@@ -85,3 +86,28 @@ through P10's current-revision/empty-ledger/epoch checks. I/O failures are not c
 reconciliation. Full live Dock/Cockpit data, size/density rendering, official recipe/copy injection and
 physical/appearance/performance acceptance remain separate work; no launch/signing/system effect
 is performed by this composition increment.
+
+
+## Bounded post-commit acknowledgment
+
+All async Settings observers for one committed edit share a maximum two-second acknowledgment
+limit; a shorter limit can be injected, without changing hint dwell/display timing. Completion of
+all healthy observers, their explicit removal or the shared deadline releases `isSaving`. Observers
+run concurrently so an unrelated stalled consumer cannot prevent the real reset consumer receiving
+its receipt. This is an event-driven I/O acknowledgment deadline, not another hint admission timer.
+Synchronous callbacks still must not block the main actor.
+
+The commit has already succeeded before this boundary. A timeout therefore returns the actual saved
+snapshot, records `lastCommitDeliveryFailure`, and shows “Settings saved, but some app views could
+not update”; it does not throw a fake disk-save error or retry the saved edit. The failed registration
+is disabled even if its old task eventually returns. Cancellation is requested but an uncooperative
+observer is never awaited as the losing child of a structured race. At most its one outstanding task
+is retained for that registration, rather than starting another stuck task on each later save.
+
+A consumer with live effects must synchronously retire them in its registration's `onFailure` before
+the next save can proceed; read-only observers may use the default no-op callback. The concrete Help
+connection latches failures across startup, fences pending persistence epochs, disposes the old host/
+layer and ignores late receipts before releasing that boundary. Historical in-memory seen/budget
+truth is retained; an old writer cannot drain another pending write across a newer reset. A newly
+restored replacement is independent of the failed connection. No automatic consumer re-enable,
+preferences schema change, second store, repeat hint timer or system effect is introduced.
