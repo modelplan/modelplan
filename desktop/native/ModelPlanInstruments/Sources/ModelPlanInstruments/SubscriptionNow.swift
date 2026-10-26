@@ -36,14 +36,32 @@ public struct SubscriptionQuotaGauge: Equatable, Sendable {
     public let segments:Int?
     init(_ cell:QuotaCell) {remaining=cell.remaining;segments=cell.litSegments}
 }
+/// A supplied, still-actionable reset instant plus both host-local and relative descriptions.
+public struct SubscriptionWindowReset: Equatable, Sendable {
+    public let instant:Date
+    public let absolute:String, countdown:String
+    init?(_ cell:QuotaCell,now:Date,language:InstrumentLanguage,calendar:Calendar) {
+        guard let instant=cell.resetsAt,instant>now,instant.timeIntervalSinceReferenceDate.isFinite else{return nil}
+        self.instant=instant
+        let formatter=DateFormatter()
+        formatter.locale=calendar.locale ?? Locale(identifier:language == .chinese ? "zh_CN":"en_US_POSIX")
+        formatter.calendar=calendar;formatter.timeZone=calendar.timeZone
+        // Locale chooses date order/hour cycle; the zone distinguishes repeated local hours.
+        formatter.setLocalizedDateFormatFromTemplate("yMdjmsz")
+        absolute=formatter.string(from:instant)
+        countdown=InstrumentFormat(language).reset(instant,now:now)
+    }
+}
 public struct SubscriptionNowRow: Equatable, Sendable {
-    public let id: String, title: String, value: String
+    public let id: String, title: String, facts: String
+    public let reset:SubscriptionWindowReset?
+    public var value:String {facts+(reset.map{" · "+$0.absolute+" · "+$0.countdown} ?? "")}
     public let help: HelpExplanation
     public let level: QuotaLevel
     public let scopeTarget: String?
     public let quota:SubscriptionQuotaGauge?
-    public init(id:String,title:String,value:String,help:HelpExplanation,level:QuotaLevel = .unknown,scopeTarget:String? = nil,quota:SubscriptionQuotaGauge? = nil) {
-        self.id=id;self.title=title;self.value=value;self.help=help;self.level=level;self.scopeTarget=scopeTarget;self.quota=quota
+    public init(id:String,title:String,value:String,help:HelpExplanation,level:QuotaLevel = .unknown,scopeTarget:String? = nil,quota:SubscriptionQuotaGauge? = nil,reset:SubscriptionWindowReset? = nil) {
+        self.id=id;self.title=title;self.facts=value;self.reset=reset;self.help=help;self.level=level;self.scopeTarget=scopeTarget;self.quota=quota
     }
 }
 public struct SubscriptionUsageDisplay: Equatable, Sendable {
@@ -63,12 +81,14 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
     public let accounts: [SubscriptionNowAccount]
     public let initialDays: Int
     public let language:InstrumentLanguage
-    public init(inputs:[SubscriptionNowInput],scope:InstrumentScope,now:Date,language:InstrumentLanguage,initialDays:Int = 7) {
-        self.language=language
+    public let calendar:Calendar
+    public init(inputs:[SubscriptionNowInput],scope:InstrumentScope,now:Date,language:InstrumentLanguage,calendar:Calendar,initialDays:Int = 7) {
+        self.language=language;self.calendar=calendar
         self.scope=scope;self.initialDays=initialDays==30 ? 30:7
         let format=InstrumentFormat(language),zh=language == .chinese,catalog=HelpCatalog(language)
-        func row(_ id:String,_ title:String,_ value:String,_ topic:HelpTopic,_ level:QuotaLevel = .unknown,_ quota:SubscriptionQuotaGauge? = nil) -> SubscriptionNowRow {
-            .init(id:id,title:title,value:value,help:catalog.explanation(topic,context:.init(fact:title+" · "+value)),level:level,quota:quota)
+        func row(_ id:String,_ title:String,_ value:String,_ topic:HelpTopic,_ level:QuotaLevel = .unknown,_ quota:SubscriptionQuotaGauge? = nil,_ reset:SubscriptionWindowReset? = nil) -> SubscriptionNowRow {
+            let full=value+(reset.map{" · "+$0.absolute+" · "+$0.countdown} ?? "")
+            return .init(id:id,title:title,value:value,help:catalog.explanation(topic,context:.init(fact:title+" · "+full)),level:level,quota:quota,reset:reset)
         }
         func windowName(_ cell:QuotaCell)->String {
             let name=cell.period == .fiveHours ? format.rowName(.fiveHours):cell.period == .weekly ? format.rowName(.weekly):format.period(cell.period)
@@ -88,7 +108,8 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
             var rows=[row(prefix+".header",name,input.header?.plan ?? "--",.subscription),
                 row(prefix+".source",zh ? "读取来源与时间":"Where and when this was read",(input.sourceLabel ?? "--")+" · "+age+status,.source)]
             for cell in all {
-                let text=format.percent(cell.remaining)+" · "+format.reset(cell.resetsAt,now:now) +
+                let deadline=SubscriptionWindowReset(cell,now:now,language:language,calendar:calendar)
+                let text=format.percent(cell.remaining)+(deadline == nil ? " · --":"") +
                     (cell.runsOutAt.map{" · "+(zh ? "预计用尽 · ":"Estimated run-out · ")+format.future($0,now:now)} ?? "")
                 let reset:String
                 switch cell.publicReset {
@@ -96,7 +117,7 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
                 case .confirmedAwaitingReading:reset=zh ? " · 已重置 · 等读数":" · Reset · awaiting reading"
                 case nil:reset=""
                 }
-                rows.append(row(prefix+".window."+cell.id,windowName(cell),text+reset,.quota,cell.level,.init(cell)))
+                rows.append(row(prefix+".window."+cell.id,windowName(cell),text+reset,.quota,cell.level,.init(cell),deadline))
             }
             if let raw=input.reserve {
                 let reserve=ReservePresentation(allowances:raw.allowances,credits:nil,drawingCredits:false,now:now)
@@ -140,9 +161,11 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
                 return .init(days:days,rows:stats)
             }
             let tightest=all.min { ($0.remaining ?? .infinity)<($1.remaining ?? .infinity) }
-            let summaryValue=([input.header?.plan ?? "--",tightest.map{windowName($0)+" "+format.percent($0.remaining)+" · "+format.reset($0.resetsAt,now:now)},reserveBrief,creditBrief].compactMap{$0}).joined(separator:" · ")+status
+            let summaryValue=([input.header?.plan ?? "--",tightest.map{windowName($0)+" "+format.percent($0.remaining)},reserveBrief,creditBrief].compactMap{$0}).joined(separator:" · ")+status
+            let summaryReset=tightest.flatMap{SubscriptionWindowReset($0,now:now,language:language,calendar:calendar)}
+            let summaryFull=summaryValue+(summaryReset.map{" · "+$0.absolute+" · "+$0.countdown} ?? "")
             let summary=SubscriptionNowRow(id:prefix+".select",title:name,value:summaryValue,
-                help:catalog.explanation(.subscription,context:.init(fact:name+" · "+summaryValue)),level:tightest?.level ?? .unknown,scopeTarget:input.id,quota:tightest.map{.init($0)})
+                help:catalog.explanation(.subscription,context:.init(fact:name+" · "+summaryFull)),level:tightest?.level ?? .unknown,scopeTarget:input.id,quota:tightest.map{.init($0)},reset:summaryReset)
             return .init(id:input.id,name:name,glyphID:input.header?.glyphID,summary:summary,rows:rows,usage:usage)
         }
     }

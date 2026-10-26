@@ -373,11 +373,14 @@ no extra tooltip producer, hint admission policy, polling timer or collection.
 `SubscriptionNowSnapshot` consumes `SubscriptionNowInput` values built from the
 existing `SubscriptionHeader`, `InstrumentQuota`, `ReservePresentation`,
 `CreditPresentation`, normalized `UsageTokenDetail` and eligible `GenerationSums`.
-Pass its `pageContent()` to the main screen with the matching scope and language; rebuild the localized snapshot when language changes.
+Supply the host calendar (including time zone and locale), then pass its `pageContent()` to the main screen with the matching scope and language; rebuild the localized snapshot when language changes.
 All shows stable account rows; a single scope shows the header, reader/age,
 reported windows, reset reserve, credits balance and selected 7/30-day detail.
 Unknown existing windows use `--`; absent windows do not create quota rows.
-Quota gauges reuse the existing ten-segment projection. Credits have no quota,
+Quota gauges reuse the existing ten-segment projection. Known window resets retain
+the supplied instant and show host-local absolute date/time plus countdown on
+separate lines; shared help and AX retain both. Unknown/passed resets have no
+actionable reset instant. Credits have no quota,
 limit, bar or history. Reset expiries show four compact values plus overflow,
 while shared help retains all supplied active allowances.
 

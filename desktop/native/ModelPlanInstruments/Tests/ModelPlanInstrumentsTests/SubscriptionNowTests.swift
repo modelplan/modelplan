@@ -16,8 +16,8 @@ private enum SubFixture {
         .init(id:id,header:.init(name:"Synthetic "+id,plan:"Example tier",glyphID:nil,evidence:.init()),windows:windows,sourceLabel:"Synthetic reader",evidence:evidence,
             reserve:reserve,credits:credits,usage:usage ?? [self.usage(),self.usage(.days30,detail:.init(input:200,output:300,cacheRead:0,cacheWrite:4000))])
     }
-    static func snapshot(_ inputs:[SubscriptionNowInput],scope:InstrumentScope = .subscription("a"),now:Date = now,language:InstrumentLanguage = .english)->SubscriptionNowSnapshot {
-        .init(inputs:inputs,scope:scope,now:now,language:language)
+    static func snapshot(_ inputs:[SubscriptionNowInput],scope:InstrumentScope = .subscription("a"),now:Date = now,language:InstrumentLanguage = .english,calendar:Calendar = Fixtures.calendar())->SubscriptionNowSnapshot {
+        .init(inputs:inputs,scope:scope,now:now,language:language,calendar:calendar)
     }
     static func row(_ snapshot:SubscriptionNowSnapshot,_ suffix:String,days:String = "7")->SubscriptionNowRow {
         snapshot.display(daysKey:days).rows.first{$0.id.hasSuffix(suffix)}!
@@ -52,6 +52,35 @@ final class SubscriptionNowTests:XCTestCase {
         XCTAssertTrue(SubFixture.row(initial,"window.w").value.contains("50%"))
         XCTAssertFalse(SubFixture.row(expired,"window.w").value.contains("50%"))
         XCTAssertTrue(SubFixture.row(expired,"source").value.contains("Reading unavailable"))
+    }
+    func testResetKeepsSuppliedInstantAndHostLocalAbsolutePlusCountdown() {
+        let supplied=Fixtures.instant("2026-10-20T22:05:27Z")
+        let input=SubFixture.input(windows:[.init(id:"w",period:.fiveHours,remaining:50,resetsAt:supplied)])
+        var calendar=Fixtures.calendar();calendar.locale=Locale(identifier:"en_GB")
+        let snapshot=SubFixture.snapshot([input],calendar:calendar),row=SubFixture.row(snapshot,"window.w")
+        XCTAssertEqual(row.reset?.instant,supplied)
+        XCTAssertTrue(row.reset!.absolute.contains("15:05:27"))
+        XCTAssertTrue(row.value.contains(row.reset!.absolute));XCTAssertTrue(row.value.contains("resets in 1h"))
+        XCTAssertTrue(row.help.accessibleDescription.contains(row.reset!.absolute))
+        XCTAssertEqual(snapshot.accounts[0].summary.reset?.instant,supplied)
+        let unknown=SubFixture.row(SubFixture.snapshot([SubFixture.input(windows:[.init(id:"w",period:.fiveHours,remaining:50)])]),"window.w")
+        XCTAssertNil(unknown.reset);XCTAssertTrue(unknown.value.contains("--"))
+        let passed=SubFixture.row(SubFixture.snapshot([input],now:supplied),"window.w")
+        XCTAssertNil(passed.reset);XCTAssertNil(passed.quota?.remaining)
+        XCTAssertFalse(passed.value.contains(row.reset!.absolute))
+        calendar.timeZone=TimeZone(identifier:"Asia/Kathmandu")!
+        let nepal=SubFixture.row(SubFixture.snapshot([input],language:.chinese,calendar:calendar),"window.w")
+        XCTAssertEqual(nepal.reset?.instant,supplied);XCTAssertTrue(nepal.reset!.absolute.contains("03:50:27"))
+        XCTAssertTrue(nepal.value.contains("后重置"))
+    }
+    func testRepeatedLocalResetHoursKeepDifferentOffsetsAndInstants() {
+        let early=Fixtures.instant("2026-11-01T08:30:17Z"),late=Fixtures.instant("2026-11-01T09:30:17Z"),now=Fixtures.instant("2026-11-01T07:00:00Z")
+        func reset(_ date:Date)->SubscriptionWindowReset {
+            SubFixture.row(SubFixture.snapshot([SubFixture.input(windows:[.init(id:"w",period:.fiveHours,remaining:50,resetsAt:date)])],now:now),"window.w").reset!
+        }
+        XCTAssertEqual(reset(early).instant,early);XCTAssertEqual(reset(late).instant,late)
+        XCTAssertNotEqual(reset(early).absolute,reset(late).absolute)
+        XCTAssertTrue(reset(early).absolute.contains(":30:17"));XCTAssertTrue(reset(late).absolute.contains(":30:17"))
     }
     func testF08ResetCountsZeroOneTwoSixAndFourExpiryOverflow() {
         for count in [0,1,2,6] {
@@ -180,6 +209,19 @@ final class SubscriptionNowTests:XCTestCase {
         XCTAssertGreaterThan(view.listScrollView!.contentView.bounds.minY,0)
         XCTAssertTrue(control.becomeFirstResponder())
         XCTAssertTrue(view.recipe!.list!.viewport.contains(try XCTUnwrap(anchor)))
+        view.dispose();window.contentView=nil
+    }
+    func testKnownResetAbsoluteAndCountdownAreBothDrawnAndAccessible() async throws {
+        let date=Fixtures.instant("2026-10-20T22:05:27Z"),snapshot=SubFixture.snapshot([SubFixture.input(windows:[.init(id:"w",period:.fiveHours,remaining:50,resetsAt:date)])])
+        let view=try setup(snapshot),window=NSWindow(contentRect:view.frame,styleMask:[],backing:.buffered,defer:false);window.contentView=view
+        var help:HelpExplanation?;view.onHelpChange={help=$0;_=$1}
+        let reset=SubFixture.row(snapshot,"window.w").reset!,control=view.control(for:"subscription.a.window.w")!
+        XCTAssertTrue(window.makeFirstResponder(control));XCTAssertTrue(control.accessibilityLabel()!.contains(reset.absolute))
+        XCTAssertEqual(control.accessibilityHelp(),help?.accessibleDescription)
+        let commands=view.recipe!.list!.rows.first{$0.region.id=="subscription.a.window.w"}!.commands
+        let values=commands.compactMap{command->EngineTextCommand? in if case .text(let t)=command{return t};return nil}
+        XCTAssertTrue(values.contains{$0.id.hasSuffix("reset.absolute") && $0.variants==[reset.absolute]})
+        XCTAssertTrue(values.contains{$0.id.hasSuffix("reset.countdown") && $0.variants==[reset.countdown]})
         view.dispose();window.contentView=nil
     }
     func testPeriodSelectionRetiresOldReadoutsAndUpdatesFullSharedHelp() async throws {

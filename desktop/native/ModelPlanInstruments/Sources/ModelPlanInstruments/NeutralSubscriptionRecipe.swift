@@ -16,15 +16,20 @@ import CoreText
         let input=display.rows.isEmpty ? [SubscriptionNowRow(id:display.identity+".empty",title:display.language == .chinese ? "暂无信息":"No information available",value:"--",help:HelpCatalog(display.language).explanation(.subscription))]:display.rows
         let rows=input.map { row -> MainScreenListRowRecipe in
             let color=row.level == .critical ? EngineInk(NSColor.systemRed):row.level == .amber ? EngineInk(NSColor.systemOrange):foreground
-            let height=row.quota == nil ? 40.0:56.0,rect=CGRect(x:0,y:0,width:viewport.width,height:height)
+            let extra=row.reset == nil ? 0.0:36.0
+            let height=(row.quota == nil ? 40.0:56.0)+extra,rect=CGRect(x:0,y:0,width:viewport.width,height:height)
             var commands:[EngineDrawingCommand]=[
                 .text(.init(id:row.id+".title",variants:[row.title,shortened(row.title,width:rect.width-12,size:12)],rect:CGRect(x:6,y:2,width:rect.width-12,height:17),font:.init(size:12),ink:color)),
-                .text(.init(id:row.id+".value",variants:[row.value,shortened(row.value,width:rect.width-12,size:10)],rect:CGRect(x:6,y:20,width:rect.width-12,height:16),font:.init(size:10),ink:muted)),
+                .text(.init(id:row.id+".value",variants:[row.facts,shortened(row.facts,width:rect.width-12,size:10)],rect:CGRect(x:6,y:20,width:rect.width-12,height:16),font:.init(size:10),ink:muted)),
                 .polyline(points:[.init(x:6,y:height-1),.init(x:rect.maxX-6,y:height-1)],width:0.5,ink:EngineInk(NSColor.separatorColor))]
+            if let reset=row.reset {
+                commands.append(.text(.init(id:row.id+".reset.absolute",variants:[reset.absolute],rect:CGRect(x:6,y:38,width:rect.width-12,height:16),font:.init(size:10),ink:foreground)))
+                commands.append(.text(.init(id:row.id+".reset.countdown",variants:[reset.countdown],rect:CGRect(x:6,y:56,width:rect.width-12,height:16),font:.init(size:10),ink:muted)))
+            }
             if let quota=row.quota {
                 let width=min(180,rect.width-12),segment=(width-27)/10
                 for i in 0..<10 {
-                    let bar=CGRect(x:6+Double(i)*(segment+3),y:42,width:segment,height:8)
+                    let bar=CGRect(x:6+Double(i)*(segment+3),y:42+extra,width:segment,height:8)
                     commands.append(.stroke(rect:bar,radius:0,width:0.5,ink:EngineInk(NSColor.separatorColor)))
                     if let lit=quota.segments,i<lit {commands.append(.fill(rect:bar,radius:0,ink:color))}
                 }
