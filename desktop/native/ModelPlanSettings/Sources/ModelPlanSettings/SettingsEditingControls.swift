@@ -40,6 +40,7 @@ import AppKit
     var hasUnsavedDraft: Bool { unconfirmedText != nil }
     private var language: SettingsLanguage = .chinese
     var onFinish: ((SettingsAliasControl, AliasDraft) -> Void)?
+    var onDraftCleared: ((SettingsAliasControl) -> Void)?
     init(subscriptionID: String) {
         self.subscriptionID = subscriptionID
         super.init(frame: .zero); delegate = self; isEditable = true; isSelectable = true
@@ -58,8 +59,12 @@ import AppKit
     }
     func resolveSave(submittedText: String, saved: Bool) {
         guard !isRetired, unconfirmedText == submittedText else { return }
-        if saved { unconfirmedText = nil }
-        refreshDraft()
+        if saved { clearDraft() } else { refreshDraft() }
+    }
+    private func clearDraft() {
+        let hadDraft = unconfirmedText != nil
+        unconfirmedText = nil; refreshDraft()
+        if hadDraft { onDraftCleared?(self) }
     }
     var draft: AliasDraft {
         var draft = AliasDraft(subscriptionID: subscriptionID!, committed: committed)
@@ -72,7 +77,7 @@ import AppKit
         let value = draft
         guard !value.composing else { return }
         editing = false
-        guard value.text != committed else { unconfirmedText = nil; refreshDraft(); return }
+        guard value.text != committed else { clearDraft(); return }
         // End-editing is not a save receipt. Retain the completed text through busy/failed refreshes.
         unconfirmedText = value.text; refreshDraft()
         onFinish?(self, value)
@@ -82,8 +87,7 @@ import AppKit
         // Let the input method finish/cancel marked text before interpreting Return/Escape as a form command.
         guard !textView.hasMarkedText() else { return false }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            cancelled = true; unconfirmedText = nil; textView.string = committed; stringValue = committed
-            refreshDraft()
+            cancelled = true; textView.string = committed; stringValue = committed; clearDraft()
             window?.makeFirstResponder(nil); return true
         }
         return false
@@ -91,7 +95,7 @@ import AppKit
     override func becomeFirstResponder() -> Bool { !isRetired && super.becomeFirstResponder() }
     func retire() {
         isRetired = true; cancelled = true; unconfirmedText = nil; isEnabled = false; isEditable = false; isSelectable = false
-        onFinish = nil; target = nil; action = nil; delegate = nil
+        onFinish = nil; onDraftCleared = nil; target = nil; action = nil; delegate = nil
     }
 }
 

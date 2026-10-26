@@ -465,6 +465,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func load(client *publication.Client, st *store.Store, c common, stderr io.Writer) (*digest.Digest, store.State, int) {
 	if !c.offline {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		client.NoCheckDelay = true
 		_, err := client.Sync(ctx, false)
 		cancel()
 		if err != nil && !errors.Is(err, store.ErrBusy) {
@@ -623,6 +624,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 	if s, _ := st.State(); !c.offline && time.Since(s.LastAttemptAt) > backgroundEvery {
 		if d == nil {
 			ctx, cancel := context.WithTimeout(context.Background(), firstSyncWait)
+			client.NoCheckDelay = true
 			_, _ = client.Sync(ctx, false)
 			cancel()
 			if d, _, _ = publication.Load(st); d == nil {

@@ -28,3 +28,145 @@ Verification: `swift test --package-path desktop/native/ModelPlanAppIntegration 
 Explicit gear/tray/Command-comma entry uses `.userInitiated`, activates immediately before show after eligibility checks, and validates again after activation reentrancy. `.restoration` and default `.programmatic` presentation do not activate. Tests inject a no-op/recording activation and fake window surface; they never activate an app or order a real window. The integrated entry applies committed app theme only, including clearing an override for System; it performs no service, reader, updater or consent action.
 
 The packaging script now selects this executable, keeping the final bundle executable name and existing pinned-helper checksum and ad-hoc packaging procedure. No packaging/signing command is run by these tests. CI builds and archives the new executable alongside the legacy one, with macOS14 deployment metadata; it does not launch the integrated app. Actual Dock/Cockpit quota/size/density consumers and H11 single-arbiter/scheduler/overlay/persistence wiring remain separate engineering work. Physical/visual proof remains on the B25 list.
+
+## Instrument hint source lifetime (P09 work in progress)
+
+`InstrumentHintSourceRouter` binds each live Instruments callback to an ephemeral generation and re-resolves view-local travel/pointer state before trial admission and again at the app deadline. Replaced/removed sources cannot cancel a replacement rest; real keyboard/down/focus-loss input from a live surface can cancel pending rest. Repeated stationary candidates keep the existing arbiter deadline.
+
+The injected receiver is the app's **existing single** `FirstUseHints` owner. This adapter owns no hint policy, timer, overlay, preferences file or seen flags. It validates source lifetime and geometry only; after a real successful `confirmShown`, call `didConfirmShown` to retire pending source bookkeeping. The app host must call `cancelPendingRest` alongside arbiter context/lifecycle/reset transactions, even when it retains live view bindings. The full serialized scheduler/overlay/persistence host and actual app/view binding are still pending and are not claimed delivered by this source adapter. No native window, permission or system operation is performed.
+
+## Serialized first-use hint execution
+
+`HintExecutionHost` owns one existing `FirstUseHints` arbiter, its `InstrumentHintSourceRouter`, one injected deadline scheduler and one token-addressed overlay. `HintCommonModeScheduler` reuses the existing finite common-mode timer implementation. Source rests and five-second expiry share that deadline; no view timer or historical hint queue is installed.
+
+Restore through the same app-scoped `SettingsStore` (its `HintPreferenceWriting` conformance changes only `helpHints` using the captured revision). The writer serializes and coalesces actual open/reveal/confirmed-show ledger changes. I/O or stale-revision failures preserve the real in-memory seen/budget state and report an error; they do not reload and blindly retry onto a newer snapshot. Explicit retry keeps the same CAS revision. An unrelated Settings commit is only an observation floor, not permission to rebase old hint state.
+
+Route the successful editor's revision-tagged `resetHelpHints` request to `applyCommittedReset`. It verifies the current snapshot from that same writer, fences old writes/late receipts with a separate epoch, and preserves flags on stale/uncommitted reset requests. This does not replace the Settings window's `onChange` observer. The composition owner must forward normal committed snapshots as revision floors and classify reset receipts explicitly.
+
+The injected overlay must verify actual current anchor, placement and surface visibility in `showAndVerify` and `updateAndVerify`; geometry-only `onPresentation` is insufficient. Reentrant surface changes, disposal and stale timer/render callbacks cannot confirm an old offer or hide a new token. Reduced Motion updates keep the original expiry. None of these injected receipts establishes actual displayed UI or physical proof by itself.
+
+This module is execution code, not completed live app composition. CommunityApp still needs one app-scoped host wired to current Dock/Cockpit inputs, the Help UI adapter and Settings receipt routing. Context/clock/source geometry, real overlay eligibility, scoped error reporting and subsequent stale-revision reconciliation remain explicit host responsibilities. No system service, capture, private drawing/copy package, CLI mutation or actual window launch is added. PR183 is the source-router dependency; merge it before this change.
+
+
+## Concrete Help composition and typed Settings receipts
+
+`InstrumentHelpComposition.restored(application:)` uses the existing coordinator/editor/store,
+P10 arbiter/source router/common-mode deadline and one M4 `HelpUILayerView`. The CommunityApp
+session retains one composition after restore; concurrent restore calls share its creation task.
+The commit observer is installed before asynchronous restore and acknowledges any one in-flight
+startup receipt before exposing the composition, so an intervening save cannot be missed.
+It does not open a window or embed a cockpit. The actual cockpit host must embed `layer`, call
+`update` with current session identity, overlay-local anchors, occupied live readings, map/RM
+facts and injected released copy, and suspend/dispose it at the corresponding lifetime boundary.
+Dock-only hints require the actual Dock surface binding and are not admitted by this cockpit layer.
+Trial content also requires the matching P09 source snapshot paired with the converted overlay
+anchor; unbound or replaced sources cannot point a trial offer at an arbitrary other fader.
+
+The adapter checks token, current geometry, session and live AppKit window/view visibility after
+M4 renders and after visibility callouts. A geometry receipt alone never confirms a hint. No-window,
+replaced, hidden or unplaceable offers spend no flag/budget. This runtime check is not physical,
+pixel or occlusion-proof acceptance. Tests inject visibility only for deterministic module regressions.
+Layer actions/cancellations carry the current composition generation; source-view trial callbacks
+still use their P09 leases. Map/context semantic actions remain callbacks to the owning surface.
+No private hint wording, official visual recipe or persisted preferences field is added here.
+
+`SettingsEditor.observeCommittedEdits` is an additive async receipt observer; neither the window's
+`onChange` nor the coordinator's `onCommit` is replaced. Its receipt records the originating store,
+exact before/after revisions and an explicit reset kind, including an already-empty reset. The save
+boundary stays busy until observers acknowledge or a bounded delivery failure retires the consumer,
+so another editor save cannot overtake an active reset consumer.
+Only successful commits emit receipts. Hint writes refresh the same editor through the existing
+coordinator, with coalescing reads rather than a second preference owner or timer.
+
+A contiguous ordinary receipt can reconcile a stale hint CAS only if it belongs to the same store,
+preserves the saved hint ledger and matches that actor's current exact revision/ledger. It fences
+an older pending writer and preserves the in-memory shown ledger; a foreign receipt, skipped
+revision, reset receipt or newer reset cannot authorize rebasing. Actual reset receipts continue
+through P10's current-revision/empty-ledger/epoch checks. I/O failures are not cleared by ordinary
+reconciliation. Full live Dock/Cockpit data, size/density rendering, official recipe/copy injection and
+physical/appearance/performance acceptance remain separate work; no launch/signing/system effect
+is performed by this composition increment.
+
+
+## Bounded post-commit acknowledgment
+
+All async Settings observers for one committed edit share a maximum two-second acknowledgment
+limit; a shorter limit can be injected, without changing hint dwell/display timing. Completion of
+all healthy observers, their explicit removal or the shared deadline releases `isSaving`. Observers
+run concurrently so an unrelated stalled consumer cannot prevent the real reset consumer receiving
+its receipt. This is an event-driven I/O acknowledgment deadline, not another hint admission timer.
+Synchronous callbacks still must not block the main actor.
+
+The commit has already succeeded before this boundary. A timeout therefore returns the actual saved
+snapshot, records `lastCommitDeliveryFailure`, and shows “Settings saved, but some app views could
+not update”; it does not throw a fake disk-save error or retry the saved edit. The failed registration
+is disabled even if its old task eventually returns. Cancellation is requested but an uncooperative
+observer is never awaited as the losing child of a structured race. At most its one outstanding task
+is retained for that registration, rather than starting another stuck task on each later save.
+
+A consumer with live effects must synchronously retire them in its registration's `onFailure` before
+the next save can proceed; read-only observers may use the default no-op callback. The concrete Help
+connection latches failures across startup, fences pending persistence epochs, disposes the old host/
+layer and ignores late receipts before releasing that boundary. Historical in-memory seen/budget
+truth is retained; an old writer cannot drain another pending write across a newer reset. A newly
+restored replacement is independent of the failed connection. No automatic consumer re-enable,
+preferences schema change, second store, repeat hint timer or system effect is introduced.
+
+
+## Live community model/effort surface
+
+The integrated Community entry now retains `CommunityInstrumentSurfaceProvider` instead of the
+neutral summary panel provider. The shared root host forwards its existing `ModelSelectionRuntime`
+result and actual publication timestamp to the optional `CommunityInstrumentSurface` seam. The
+legacy root entry/probes keep their existing provider. No Settings/AppIntegration reverse dependency
+is introduced into Shell or Instruments, and no second store, selector or score calculation is added.
+
+The upper surface uses the existing native `MainScreenView` with a native model picker over the
+complete ordered public catalogue. Selecting a model refreshes current feeds before using the action;
+a removed target cannot be activated. Available exact comparisons reuse the existing controller;
+without an exact revision/join, the public catalogue and published effort labels remain available.
+Unknown usage, subscription and destination content is explicitly unavailable rather than fabricated.
+Publication age metadata uses only the actual optional publication timestamp and rejects future dates;
+connecting this metadata and website actions to the Option source corner remains separate work.
+
+Committed language/theme changes reevaluate current source facts, and older Settings revisions cannot
+restore stale drawing state. System theme continues to inherit the OS appearance. Settings Size is
+Dock size, so it does not change this independent MainScreen profile. Recipe minimum dimensions are
+prepared before publishing, and a render failure hides the prior bitmap and disables its picker.
+Hidden/closed/lifecycle-suspended surfaces stop rendering and resume from current facts. A synchronous
+size callback can reenter Settings/source delivery; queued rendering coalesces to the latest packet.
+
+This is a real read-only model/effort view in the existing Community status action, not the complete
+four-region cockpit or Dock. Full live overview/fader/engine/record/3D data, Dock size-density binding,
+source-coordinate callbacks, Help layer embedding, official recipe/copy injection and physical,
+appearance/performance acceptance remain open. The nine no-window module regressions exercise actual
+native view/raster construction and compile/link the Community executable; they do not launch it or
+prove physical input, pixel appearance, window visibility or minimum-system acceptance.
+
+## Actual community contextual Help embedding
+
+The Community session's existing `makeHelp` startup receipt fence supplies the same retained
+`InstrumentHelpComposition` to the upper surface provider. That provider embeds its existing M4
+layer above the real MainScreen. The binding keeps the composition weakly: the session owns its
+lifetime, avoiding a composition/application/application-closure/provider cycle.
+
+MainScreen's existing resolved `onHelpChange` supplies both explanation and source-local rectangle;
+there is no second contextual dwell timer or legacy popover. The binding checks that explanation
+and rectangle still belong to the current recipe, converts them with NSView into overlay-local
+coordinates, and forwards real text/image/control/chart occupancy plus the sibling picker area.
+The existing compact Help layout uses the actual container viewport; it does not assert the generic
+community window is a 640-point cockpit or change the cockpit's frozen profile. Missing/unplaceable
+space remains fail-closed. No frozen Option map placement is guessed from this generic view.
+
+Suspend/close/source replacement removes contextual state. Held old source or dismissal callbacks
+cannot alter the replacement composition, and a reentrant close during layer presentation cannot
+restore old Help. Environment changes refresh the same layer. The generic catalogue supplies no
+cockpit-open/Dock-reveal session, first-use copy, trial lease or offer, so contextual Help cannot
+spend the first-use ledger/budget. Geometry-only presentation remains insufficient for physical or
+visibility acceptance. Source-corner age/website actions, full Option map, Dock/fader and full cockpit
+source binding, released private copy/recipe and physical/performance proof remain open.
+
+Six new no-window regressions cover actual layer/coordinate binding, current-recipe validation,
+lifecycle cleanup, stale callbacks, reentrant close and application/provider release. Together with
+the eleven surface regressions they pass seventeen selected tests and compile/link CommunityApp.
+This change depends on PR193; preserve merge order and exact-head external gates.

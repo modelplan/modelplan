@@ -3,7 +3,7 @@ import AppKit
 import ModelPlanCore
 import ModelPlanShell
 
-@MainActor public final class CommunityDelegate: NSObject, NSApplicationDelegate {
+@MainActor public final class CommunityDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var status: NSStatusItem?
     private let surfaces: any NativeSurfaceProvider
     private let makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)?
@@ -72,9 +72,10 @@ import ModelPlanShell
             if !allowed {
                 self.restoreWindow = self.window?.isVisible == true; self.window?.orderOut(nil)
                 self.suspendSettings()
+                (self.overview as? any CommunityInstrumentSurface)?.suspendPresentation()
             } else {
                 self.render()
-                if self.restoreWindow { self.window?.orderFront(nil); self.restoreWindow = false }
+                if self.restoreWindow { self.window?.orderFront(nil); self.restoreWindow = false; (self.overview as? any CommunityInstrumentSurface)?.resumePresentation() }
             }
         }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -94,22 +95,47 @@ import ModelPlanShell
         guard let runtime, runtime.lifecycle.canPresent else { return }
         if window == nil {
             let surface = surfaces.makeOverview(); overview = surface
-            let panel = NSWindow(contentRect:NSRect(x:0,y:0,width:440,height:210),
+            if let consumer = surface as? any CommunityInstrumentSurface {
+                consumer.requestFreshSelection = { [weak self] in self?.render() }
+                consumer.contentSizeChanged = { [weak self, weak surface] in
+                    guard let self, let surface, self.overview === surface,
+                          let consumer = surface as? any CommunityInstrumentSurface,
+                          self.window?.contentView === surface.view else { return }
+                    self.window?.setContentSize(consumer.preferredContentSize)
+                }
+            }
+            let size = (surface as? any CommunityInstrumentSurface)?.preferredContentSize ?? CGSize(width:440,height:210)
+            let panel = NSWindow(contentRect:NSRect(origin:.zero,size:size),
                 styleMask:[.titled,.closable],backing:.buffered,defer:false)
             panel.title = "ModelPlan Community"; panel.contentView = surface.view
-            panel.isReleasedWhenClosed = false; panel.center(); window = panel
+            panel.isReleasedWhenClosed = false; panel.delegate = self; panel.center(); window = panel
         }
         render(); runtime.store.refresh()
-        NSApp.activate(ignoringOtherApps:true); window?.makeKeyAndOrderFront(nil)
+        guard runtime.lifecycle.canPresent else { return }
+        NSApp.activate(ignoringOtherApps:true)
+        guard runtime.lifecycle.canPresent else { return }
+        window?.makeKeyAndOrderFront(nil)
+        (overview as? any CommunityInstrumentSurface)?.resumePresentation()
     }
     private func render() {
         guard let runtime else { return }
         overview?.render(snapshot: runtime.store.view(), diagnostics: runtime.store.diagnostics)
+        if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
+            let selection = runtime.modelSelection.evaluate(scope: .all, selectedID: consumer.selectedModelID,
+                                                            language: consumer.instrumentLanguage)
+            consumer.render(selection: selection, publishedAt: runtime.store.modelSelectionFeeds().publication?.publishedAt?.date, now: Date())
+        }
+    }
+    public func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing === window else { return }
+        restoreWindow = false
+        (overview as? any CommunityInstrumentSurface)?.closePresentation()
     }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let runtime else { return .terminateNow }
         guard !terminating else { return .terminateLater }
         terminating = true
+        (overview as? any CommunityInstrumentSurface)?.suspendPresentation()
         Task { await runtime.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
