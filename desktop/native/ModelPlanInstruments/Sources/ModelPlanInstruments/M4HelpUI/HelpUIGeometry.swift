@@ -40,8 +40,14 @@ public enum HelpUIGeometry {
         guard blocks.count <= 96, blocks.allSatisfy(valid),
               [start.x,start.y,end.x,end.y,viewport.width,viewport.height].allSatisfy(\.isFinite),
               viewport.width > 16,viewport.height > 38 else { return [] }
-        let xs = Array(Set([start.x,end.x,4,viewport.width-4]+blocks.flatMap { [$0.minX-3,$0.maxX+3] })).filter { $0>=4 && $0<=viewport.width-4 }.sorted()
-        let ys = Array(Set([start.y,end.y,28,viewport.height-4]+blocks.flatMap { [$0.minY-3,$0.maxY+3] })).filter { $0>=28 && $0<=viewport.height-4 }.sorted()
+        var xValues:Set<CGFloat> = [start.x,end.x,4,viewport.width-4]
+        var yValues:Set<CGFloat> = [start.y,end.y,28,viewport.height-4]
+        for block in blocks {
+            xValues.insert(block.minX-3);xValues.insert(block.maxX+3)
+            yValues.insert(block.minY-3);yValues.insert(block.maxY+3)
+        }
+        let xs:[CGFloat] = xValues.filter { $0>=4 && $0<=viewport.width-4 }.sorted()
+        let ys:[CGFloat] = yValues.filter { $0>=28 && $0<=viewport.height-4 }.sorted()
         guard xs.count * ys.count <= 40_000,let sx=xs.firstIndex(of:start.x),let sy=ys.firstIndex(of:start.y),
               let ex=xs.firstIndex(of:end.x),let ey=ys.firstIndex(of:end.y) else { return [] }
         let count=xs.count, source=sy*count+sx, destination=ey*count+ex

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import CoreGraphics
 
 public enum HelpUIMapMode: Equatable, Sendable { case hidden, heldOption, latched }
 public enum HelpUIProfile: Equatable, Sendable { case tall890, compact640 }

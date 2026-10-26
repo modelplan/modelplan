@@ -116,8 +116,10 @@ import AppKit
             }
             guard matches,input.map.mode == .hidden else { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
         }
-        let frames=(candidate.mapHeader.map { [$0] } ?? [])+candidate.mapLabels.map(\.frame)
-            +(candidate.mapSourceFrame.map { [$0] } ?? [])+(candidate.card.map { [$0.frame] } ?? [])
+        var frames:[CGRect] = candidate.mapLabels.map(\.frame)
+        if let header=candidate.mapHeader { frames.append(header) }
+        if let source=candidate.mapSourceFrame { frames.append(source) }
+        if let card=candidate.card { frames.append(card.frame) }
         let safe=HelpUIGeometry.safe(input.viewport)
         guard candidate.sessionID==input.sessionID,candidate.mapLabels.count<=32,
               !(candidate.mapHeader != nil && candidate.card != nil),
