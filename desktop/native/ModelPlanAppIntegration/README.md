@@ -111,3 +111,34 @@ layer and ignores late receipts before releasing that boundary. Historical in-me
 truth is retained; an old writer cannot drain another pending write across a newer reset. A newly
 restored replacement is independent of the failed connection. No automatic consumer re-enable,
 preferences schema change, second store, repeat hint timer or system effect is introduced.
+
+
+## Live community model/effort surface
+
+The integrated Community entry now retains `CommunityInstrumentSurfaceProvider` instead of the
+neutral summary panel provider. The shared root host forwards its existing `ModelSelectionRuntime`
+result and actual publication timestamp to the optional `CommunityInstrumentSurface` seam. The
+legacy root entry/probes keep their existing provider. No Settings/AppIntegration reverse dependency
+is introduced into Shell or Instruments, and no second store, selector or score calculation is added.
+
+The upper surface uses the existing native `MainScreenView` with a native model picker over the
+complete ordered public catalogue. Selecting a model refreshes current feeds before using the action;
+a removed target cannot be activated. Available exact comparisons reuse the existing controller;
+without an exact revision/join, the public catalogue and published effort labels remain available.
+Unknown usage, subscription and destination content is explicitly unavailable rather than fabricated.
+Publication age metadata uses only the actual optional publication timestamp and rejects future dates;
+connecting this metadata and website actions to the Option source corner remains separate work.
+
+Committed language/theme changes reevaluate current source facts, and older Settings revisions cannot
+restore stale drawing state. System theme continues to inherit the OS appearance. Settings Size is
+Dock size, so it does not change this independent MainScreen profile. Recipe minimum dimensions are
+prepared before publishing, and a render failure hides the prior bitmap and disables its picker.
+Hidden/closed/lifecycle-suspended surfaces stop rendering and resume from current facts. A synchronous
+size callback can reenter Settings/source delivery; queued rendering coalesces to the latest packet.
+
+This is a real read-only model/effort view in the existing Community status action, not the complete
+four-region cockpit or Dock. Full live overview/fader/engine/record/3D data, Dock size-density binding,
+source-coordinate callbacks, Help layer embedding, official recipe/copy injection and physical,
+appearance/performance acceptance remain open. The nine no-window module regressions exercise actual
+native view/raster construction and compile/link the Community executable; they do not launch it or
+prove physical input, pixel appearance, window visibility or minimum-system acceptance.

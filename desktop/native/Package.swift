@@ -45,7 +45,7 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .executableTarget(name: "ModelPlanWindowProbe", path: "ModelPlanDock/WindowInputProof",
                       exclude: ["README.md", "build.sh", "run-pair.py", "sample-owned.py"],
                       sources: ["Geometry.swift", "main.swift"]),
-    .target(name: "ModelPlanCommunityHost", dependencies: ["ModelPlanCore", "ModelPlanShell", "ModelPlanAssembly"]),
+    .target(name: "ModelPlanCommunityHost", dependencies: ["ModelPlanCore", "ModelPlanShell", "ModelPlanAssembly", "ModelPlanInstruments"]),
     .testTarget(name: "ModelPlanCommunityHostTests", dependencies: ["ModelPlanCommunityHost", "ModelPlanCore", "ModelPlanShell"], path: "CommunityHostTests"),
     .executableTarget(name: "ModelPlanCommunity", dependencies: ["ModelPlanShell", "ModelPlanCommunityHost"]),
     .executableTarget(name: "ModelPlanRunLoopChecks", dependencies: ["ModelPlanCore"], path: "RunLoopChecks"),
