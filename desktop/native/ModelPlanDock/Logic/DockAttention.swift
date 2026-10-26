@@ -46,7 +46,7 @@ public struct DockNoticeKey: Hashable, Sendable {
     public let sourceIDs: [String]
 }
 public struct DockNotice: Equatable, Sendable {
-    public enum Tone: Equatable, Sendable { case amber, blue, white }
+    public enum Tone: Equatable, Hashable, Sendable { case amber, blue, white }
     public enum Shape: Equatable, Sendable { case solid, hollow }
     public let key: DockNoticeKey
     public let tone: Tone

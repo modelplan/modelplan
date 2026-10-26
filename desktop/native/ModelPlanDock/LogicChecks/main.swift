@@ -402,5 +402,79 @@ do {
         presence.lifecycleActive=false;let paused=try v.step(presence,at:0.4)
         try expect(paused.state == .suppressed(.lifecycle) && paused.nextDeadline==nil,"lifecycle is an explicit suppression")
     }
+    try test("B08 card:250ms entry, shared corridor ownership and true pins"){
+        var card=DockCardInteraction()
+        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0)
+        try expect(card.visibility == .hidden && card.nextDeadline==0.25,"card entry is250ms")
+        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.249)
+        try expect(card.visibility == .hidden,"no early card")
+        try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.25)
+        try expect(card.visibility == .hover("a"),"entry deadline shows scoped card")
+        try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:1)
+        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"auto-hide Dock owns500ms corridor decision, no competing card leave timer")
+        try card.click("a",at:1);try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
+        try expect(card.visibility == .pinned("a"),"cockpit suppression does not unpin")
+        try card.step(catalogue:["b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:21)
+        try expect(card.visibility == .hidden,"removed subscription cannot retain a card")
+    }
+    try test("B08 independent card:leave/menu protection/click toggle without a repeat loop"){
+        var card=DockCardInteraction()
+        try card.step(catalogue:["a"],hoveredID:"a",insideShared:true,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:0)
+        try card.step(catalogue:["a"],hoveredID:"a",insideShared:true,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:0.25)
+        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:true,at:5)
+        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"actual menu stays protected beyond2s")
+        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6)
+        try expect(card.nextDeadline==6.25,"standalone retains existing250ms leave grace")
+        try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.25)
+        try expect(card.visibility == .hidden,"standalone leave hides")
+        try card.click("a",at:7);try card.click("a",at:8)
+        try expect(card.visibility == .hidden,"same pinned click toggles closed")
+        try rejects(.invalidTime){try card.click("a",at:7)}
+    }
+    try test("B08 nozzle:along threshold,canonical preview,RM and single host order request"){
+        let prefs=DockSubscriptionPreferences(order:["missing","a","b","c","d"]),catalogue=["a","b","c","d"]
+        let targets=[DockReorderTarget(id:"a",along:0),.init(id:"b",along:20),.init(id:"c",along:40)]
+        var gesture=DockNozzleInteraction();try gesture.begin(id:"a",along:0,overflow:false,targets:targets,catalogue:catalogue,preferences:prefs)
+        try gesture.move(along:5,reducedMotion:false);try expect(gesture.preview==nil,"strictly more than5 along points")
+        try gesture.move(along:38,reducedMotion:false)
+        try expect(gesture.preview?.order == ["b","c","a","d"] && gesture.preview?.neighbourYieldSeconds==0.15,"canonical original-target preview")
+        try expect(prefs.order == ["missing","a","b","c","d"],"preview writes no preferences")
+        if case .order(let request)=try gesture.release(insideMain:true,overSameSource:false,catalogue:catalogue,preferences:prefs){
+            try expect(request.expected==prefs && request.proposed.order==["missing","b","c","a","d"],"intent preserves reconnect slot and baseline")
+        }else{throw CheckFailure(description:"missing order request")}
+        if case .none=try gesture.release(insideMain:true,overSameSource:true,catalogue:catalogue,preferences:prefs){}else{throw CheckFailure(description:"double release")}
+        try gesture.begin(id:"a",along:0,overflow:false,targets:targets,catalogue:catalogue,preferences:prefs)
+        try gesture.move(along:38,reducedMotion:true);try expect(gesture.preview?.neighbourYieldSeconds==0,"RM instant yield")
+        if case .none=try gesture.release(insideMain:false,overSameSource:false,catalogue:catalogue,preferences:prefs){}else{throw CheckFailure(description:"outside drop committed")}
+    }
+    try test("B08 overflow/stale/rejected geometry never reorders or accidentally clicks"){
+        let prefs=DockSubscriptionPreferences(),ids=["a","b","c"],targets=[DockReorderTarget(id:"a",along:0),.init(id:"b",along:20)]
+        var gesture=DockNozzleInteraction();try gesture.begin(id:"c",along:0,overflow:true,targets:targets,catalogue:ids,preferences:prefs)
+        try gesture.move(along:30,reducedMotion:false);try expect(gesture.overflowHelpNeeded && gesture.preview==nil,"overflow drag is help only")
+        if case .none=try gesture.release(insideMain:false,overSameSource:true,catalogue:ids,preferences:prefs){}else{throw CheckFailure(description:"overflow drag clicked")}
+        try gesture.begin(id:"c",along:0,overflow:true,targets:targets,catalogue:ids,preferences:prefs)
+        if case .click("c")=try gesture.release(insideMain:false,overSameSource:true,catalogue:ids,preferences:prefs){}else{throw CheckFailure(description:"overflow tap lost")}
+        try gesture.begin(id:"a",along:0,overflow:false,targets:targets,catalogue:ids,preferences:prefs)
+        try gesture.move(along:25,reducedMotion:false,canPreview:{_ in false});try expect(gesture.preview==nil,"alias/pitch overflow rejects preview")
+        gesture.cancel();try gesture.begin(id:"a",along:0,overflow:false,targets:targets,catalogue:ids,preferences:prefs)
+        try gesture.move(along:25,reducedMotion:false)
+        try rejects(.staleReorder){_=try gesture.release(insideMain:true,overSameSource:false,catalogue:["a","b"],preferences:prefs)}
+        try expect(gesture.source==nil,"stale release is retired")
+        let key=try DockNozzleInteraction.keyboardMove(id:"a",delta:1,catalogue:ids,preferences:prefs)!
+        try expect(key.position==1 && key.proposed.orderedIDs(in:ids)==["b","a","c"],"Option-arrow moves one canonical place")
+    }
+    try test("B08 menu:optional Help and action-bound separators; acknowledge scopes stay distinct"){
+        let old=DockMenuModel.entries(hasHelp:false),full=DockMenuModel.entries(hasHelp:true)
+        try expect(old.count==7 && full.count==8,"callback omission preserves original menu")
+        try expect(full.map(\.command)==[.website,.methodology,.privacy,.checkForUpdates,.help,.settings,.about,.quit],"Help immediately above Settings")
+        try expect(full.filter(\.separatorBefore).map(\.command)==[.checkForUpdates,.quit] && old.filter(\.separatorBefore).count==2,"groups are not positional indices")
+        var attention=DockAttentionState(),signal=fresh("a",.critical);signal.reset=reset()
+        try attention.acknowledge(.cockpitOpening,signals:[signal],at:now)
+        let afterCockpit=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
+        try expect(afterCockpit.menuNotice==nil && afterCockpit.dots.count==1 && afterCockpit.segments.count==1,"cockpit opens acknowledge menu only")
+        try attention.acknowledge(.dockRevealed,signals:[signal],at:now)
+        let afterDock=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
+        try expect(afterDock.dots.isEmpty && afterDock.segments.isEmpty,"genuine Dock reveal acknowledges sliver")
+    }
     print("PASS \(groups) groups; \(assertions) assertions")
 } catch { fputs("FAIL \(error)\n",stderr);exit(1) }

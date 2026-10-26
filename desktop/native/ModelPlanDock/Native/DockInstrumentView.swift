@@ -14,6 +14,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
+    public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
+    public var keyboardNavigationEnabled=false
+    public var keyboardTargetID:String?
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?
@@ -25,7 +28,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     private var workspaceObserver:NSObjectProtocol?
     private var scale=1,locale="en",community=true,failed=false
     public override var isFlipped:Bool{true}
-    public override var acceptsFirstResponder:Bool{false}
+    public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
     deinit {for token in windowObservers{NotificationCenter.default.removeObserver(token)};if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)}}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
@@ -59,7 +62,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             throw error
         }
     }
-    public func dispose(){backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
+    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
     private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
@@ -145,7 +148,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func hitTest(_ point:NSPoint)->NSView? {isPainted(atLocal:convert(point,from:superview)) ? self:nil}
     public override func updateTrackingAreas(){
         if let edgeTracking{removeTrackingArea(edgeTracking)}
-        let next=NSTrackingArea(rect:.zero,options:[.inVisibleRect,.cursorUpdate,.activeAlways],owner:self,userInfo:nil)
+        let next=NSTrackingArea(rect:.zero,options:[.inVisibleRect,.cursorUpdate,.mouseMoved,.mouseEnteredAndExited,.activeAlways],owner:self,userInfo:nil)
         edgeTracking=next;addTrackingArea(next);super.updateTrackingAreas()
     }
     public override func cursorUpdate(with event:NSEvent){
@@ -153,16 +156,33 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         else if backgroundDragDelegate?.backgroundCanDrag(local:convert(event.locationInWindow,from:nil)) == true{NSCursor.openHand.set()}
         else{NSCursor.arrow.set()}
     }
+    public override func mouseMoved(with event:NSEvent){
+        let p=convert(event.locationInWindow,from:nil)
+        if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
+    }
+    public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
+    public override func mouseExited(with event:NSEvent){nozzleEventDelegate?.hoverNozzle(nil)}
     public override func mouseDragged(with event:NSEvent){
+        if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
         guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
         handler.updateBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))
         if handler.isBackgroundMoving{NSCursor.closedHand.set()}
     }
     public override func mouseUp(with event:NSEvent){
+        if let handler=nozzleEventDelegate,handler.hasCapture,let window{
+            let p=convert(event.locationInWindow,from:nil),id:String?
+            if case .subscription(let current)?=pointerAction(atLocal:p),isPainted(atLocal:p){id=current}else{id=nil}
+            handler.endNozzle(global:window.convertPoint(toScreen:event.locationInWindow),currentID:id);return
+        }
         if let window{backgroundDragDelegate?.endBackgroundMove(global:window.convertPoint(toScreen:event.locationInWindow))}
         NSCursor.arrow.set()
     }
-    public override func cancelOperation(_ sender:Any?){backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
+    public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
+    public override func keyDown(with event:NSEvent){
+        let modifiers=event.modifierFlags.intersection([.option,.control,.command])
+        if modifiers == .option,let id=keyboardTargetID,nozzleEventDelegate?.optionArrow(id:id,keyCode:event.keyCode)==true{return}
+        super.keyDown(with:event)
+    }
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
             let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
@@ -174,12 +194,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         } else if let id=orderedIDs.first(where:{stationRect($0)?.contains(p)==true}){return .subscription(id)}
         return nil
     }
-    @discardableResult private func dispatchPointer(currentPoint:()->NSPoint?)->Bool{
+    @discardableResult private func dispatchPointer(currentPoint:()->NSPoint?,nozzleGlobal:CGPoint?=nil)->Bool{
         guard let initial=currentPoint(),isPainted(atLocal:initial),let action=pointerAction(atLocal:initial),permitsAction?(action,.pointer) ?? true else{return false}
         // A gate can replace/reorder stations without removing their readings. Re-hit-test the
         // original physical pointer against the current presentation, rather than validating only ID existence.
-        guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action,let onAction else{return false}
-        onAction(action);return true
+        guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action else{return false}
+        if nozzleGlobal != nil,case .subscription(let id)=action,let handler=nozzleEventDelegate{return handler.beginNozzle(id:id,local:current)}
+        guard let onAction else{return false};onAction(action);return true
     }
     /// Neutral checks exercise the same dispatcher without creating a native window/event source.
     @_spi(DockResourceChecks) @discardableResult public func performPointerPress(atLocal point:NSPoint)->Bool{
@@ -198,6 +219,6 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         }
         guard let p=currentPoint() else{return}
         if let screenPoint,backgroundDragDelegate?.beginBackgroundMove(local:p,global:screenPoint) == true{return}
-        dispatchPointer(currentPoint:currentPoint)
+        dispatchPointer(currentPoint:currentPoint,nozzleGlobal:screenPoint)
     }
 }
