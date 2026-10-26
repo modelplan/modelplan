@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/desktopcontract"
+	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -126,6 +127,53 @@ func publicationRun(args ...string) (int, string, string) {
 	var out, stderr bytes.Buffer
 	code := run(append([]string{"publication"}, args...), nil, &out, &stderr)
 	return code, out.String(), stderr.String()
+}
+
+func TestForegroundLoadWithLongDeadlineDoesNotDelay(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("MODELPLAN_CACHE", t.TempDir())
+	f := newPublicationFixture(t, nil)
+	srv, hits := publicationServer(t, &f)
+	t.Setenv("MODELPLAN_BASE", srv.URL)
+	if code, _, stderr := publicationRun("--json"); code != 0 || stderr != "" {
+		t.Fatalf("seed cache: exit=%d stderr=%s", code, stderr)
+	}
+	st, err := store.Locate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := st.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.CheckedAt = state.CheckedAt.Add(-time.Hour)
+	state.NextCheckAt = state.NextCheckAt.Add(-time.Hour)
+	if err := st.SaveState(state); err != nil {
+		t.Fatal(err)
+	}
+	client, err := publication.New(srv.URL, st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The 30 s foreground deadline exceeds three 5 s HTTP timeouts, so
+	// deadline capping alone would allow a pre-request wait here.
+	client.HTTP.Timeout = 5 * time.Second
+	draws := 0
+	client.Jitter = func() time.Duration {
+		draws++
+		if len(*hits) != 4 {
+			t.Fatal("foreground load drew jitter before checking the pointer")
+		}
+		return time.Minute
+	}
+	var stderr bytes.Buffer
+	d, state, code := load(client, st, common{}, &stderr)
+	if code != 0 || stderr.Len() != 0 || d == nil || d.PublicationID != f.id {
+		t.Fatalf("foreground load: exit=%d stderr=%s digest=%+v", code, stderr.String(), d)
+	}
+	if !client.NoCheckDelay || draws != 1 || len(*hits) != 4 || !state.NextCheckAt.Equal(state.CheckedAt.Add(publication.MinCheckInterval+time.Minute)) {
+		t.Fatalf("noCheckDelay=%v draws=%d requests=%v state=%+v", client.NoCheckDelay, draws, *hits, state)
+	}
 }
 
 func TestPublicationPublicOnlyOnlineAndOffline(t *testing.T) {
