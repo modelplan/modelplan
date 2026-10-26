@@ -20,6 +20,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
     public let lines: [String]
     public let backLine: String?
     public let footer: [MainScreenFooterDisplay]
+    public let history:SubscriptionHistoryDisplay?
     public let subscription: SubscriptionNowDisplay?
     public let overview: OverviewPageDisplay?
     public let comparison: ComparisonPresentation?
@@ -40,7 +41,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
         if let trial = controller.trial, let input = controller.input(trial.modelID) {
             let compare = ComparisonPresentation(model: input.model, nameVariants: input.nameVariants,
                 trial: trial.configuration, publicationUsable: controller.publicationUsable, language: language)
-            subscription = nil; overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
+            history=nil; subscription = nil; overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
             footer = [.back(back), compare.fastAvailable
                 ? .fast(modelID: input.model.id, title: chinese ? "快速" : "Fast", off: chinese ? "关" : "off", on: chinese ? "开" : "on",
                         selected: compare.trialFast, help: HelpCatalog(language).explanation(.comparison, context: .init(fact: compare.notes.joined(separator: " · "))))
@@ -81,9 +82,15 @@ public struct MainScreenPresentation: Equatable, Sendable {
                 if overview?.visualization == .heatmap { slots[1] = .blank; slots[2] = .blank }
             } else { overview = nil }
             if pageOptionsAllowed,payload == nil,nav.location.page == .subscriptions,let snapshot=page?.subscription,snapshot.language == language {
-                let option=page?.options.compactMap{$0}.first{$0.id == "subscription.usage"}
-                subscription=snapshot.display(daysKey:option.flatMap{controller.option($0,page:.subscriptions).selectedValue})
-            } else {subscription=nil}
+                func selected(_ id:String)->String? {page?.options.compactMap{$0}.first{$0.id == id}.flatMap{controller.option($0,page:.subscriptions).selectedValue}}
+                if selected("subscription.tab") == "history",let data=page?.history,data.language == language {
+                    history=data.display(windowKey:selected("subscription.cycle"));subscription=nil
+                    slots[1]=data.cycleOption().map{.option(controller.option($0,page:.subscriptions))} ?? .blank
+                } else {
+                    history=nil;subscription=snapshot.display(daysKey:selected("subscription.usage"))
+                }
+                slots[2] = .blank
+            } else {subscription=nil;history=nil}
             footer = slots
         }
     }
