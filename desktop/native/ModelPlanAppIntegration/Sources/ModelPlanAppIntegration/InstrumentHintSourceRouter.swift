@@ -127,6 +127,9 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
         guard let state, valid(state), state == pending.snapshot else {
             cancelCurrent(reason: .targetRemoval); return nil
         }
+        let stillLive = bindings[pending.lease.sourceID]?.isLive() ?? false
+        guard operationGeneration == operation, rest?.target == pending.target, isCurrent(pending.lease) else { return nil }
+        guard stillLive else { cancelCurrent(reason: .targetRemoval); return nil }
         return state
     }
     /// App host only: invalidate source bookkeeping together with an arbiter context, lifecycle or reset

@@ -97,6 +97,18 @@ import ModelPlanSettings
         value = state(x: 21)
         XCTAssertNil(router.validatePendingRest()); XCTAssertEqual(receiver.cancels, 1)
     }
+    func testDeadlineResolverThatMakesSurfaceInactiveCannotSpendFlagOrBudget() async throws {
+        let receiver = try TrialReceiver(), router = InstrumentHintSourceRouter(receiver: receiver, uptime: { 0 })
+        let value = state(); var live = true, atDeadline = false
+        let lease = router.register(isLive: { live }) {
+            if atDeadline { live = false }
+            return value
+        }
+        enter(router, lease, value); atDeadline = true
+        XCTAssertNil(router.validatePendingRest()); XCTAssertNil(router.pendingTarget)
+        XCTAssertNil(receiver.hints.trialRest); XCTAssertFalse(receiver.hints.preferences.seen.contains(.trial))
+        XCTAssertFalse(receiver.hints.cockpitBudgetUsed)
+    }
     func testMovementInsideTravelStartsFreshArbiterRest() async throws {
         let receiver = try TrialReceiver(); var now = 0.0, value = state()
         let router = InstrumentHintSourceRouter(receiver: receiver, uptime: { now }); let lease = router.register(isLive: { true }) { value }
