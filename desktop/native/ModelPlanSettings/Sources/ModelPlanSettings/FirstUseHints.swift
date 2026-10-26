@@ -68,6 +68,10 @@ public struct FirstUseHints: Sendable {
         if next.dockReveal != context.dockReveal { dockBudgetUsed = false }
         if next.cardPinned && !context.cardPinned { preferences.pinned() }
         context = next
+        // Identity can stay stable while a card/anchor or guarded capture condition disappears.
+        // An unshown offer spends nothing; a shown hint retains its real ledger/budget spend.
+        if let offer = offered, !allowed(offer.kind) { offered = nil }
+        if let presentation = visible, !contextSupports(presentation.offer.kind) { visible = nil }
         if context.helpMapVisible { dismiss() }
         if visible != nil { visible!.reducedMotion = context.reducedMotion }
         offerContextualTriggers()
@@ -114,16 +118,22 @@ public struct FirstUseHints: Sendable {
     private func usesDock(_ kind: FirstUseHintKind) -> Bool {
         kind == .ignition || kind == .drag || (kind == .pinned && context.cockpitOpen == nil)
     }
-    private func allowed(_ kind: FirstUseHintKind) -> Bool {
-        guard !preferences.seen.contains(kind), !context.helpMapVisible,
-              context.cockpitOpen == nil || !cockpitBudgetUsed else { return false }
-        if usesDock(kind) { guard context.dockReveal != nil, !dockBudgetUsed else { return false } }
+    private func contextSupports(_ kind: FirstUseHintKind) -> Bool {
+        guard !context.helpMapVisible else { return false }
+        if usesDock(kind) { guard context.dockReveal != nil else { return false } }
         else { guard context.cockpitOpen != nil else { return false } }
+        // Exact frozen guarded list: pinned/drag deliberately do not gain a capture barrier.
         if [.optionHelp,.shutter,.field,.page,.trial].contains(kind), !context.captureReady { return false }
-        if [.ignition,.field].contains(kind) && !dwellReady.contains(kind) { return false }
         if kind == .shutter && preferences.cockpitOpens < 2 { return false }
         if kind == .drag && !preferences.hasPinned { return false }
         if kind == .pinned && !context.cardPinned { return false }
+        return true
+    }
+    private func allowed(_ kind: FirstUseHintKind) -> Bool {
+        guard contextSupports(kind), !preferences.seen.contains(kind),
+              context.cockpitOpen == nil || !cockpitBudgetUsed else { return false }
+        if usesDock(kind) && dockBudgetUsed { return false }
+        if [.ignition,.field].contains(kind) && !dwellReady.contains(kind) { return false }
         return true
     }
     private mutating func offerContextualTriggers() {

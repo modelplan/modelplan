@@ -139,6 +139,60 @@ final class HintTests: XCTestCase {
         XCTAssertFalse(h.dockBudgetUsed); XCTAssertTrue(h.cockpitBudgetUsed)
         XCTAssertNil(try h.nextOffer(placeable: [.drag], at: 2))
     }
+    func testSameIdentityUnpinInvalidatesOfferWithoutSpendingAndValidNextHintCanProceed() throws {
+        var h = FirstUseHints(), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
+        c.captureReady = true; c.cardPinned = true; try h.updateContext(c, at: 0)
+        let offer = try XCTUnwrap(h.nextOffer(placeable: [.pinned], at: 0))
+        c.cardPinned = false; try h.updateContext(c, at: 0.1)
+        XCTAssertNil(h.offered); XCTAssertNil(h.visible)
+        XCTAssertThrowsError(try h.confirmShown(offer, at: 0.1))
+        XCTAssertFalse(h.preferences.seen.contains(.pinned)); XCTAssertFalse(h.cockpitBudgetUsed); XCTAssertFalse(h.dockBudgetUsed)
+        XCTAssertEqual(try h.nextOffer(placeable: [.optionHelp], at: 0.2)?.kind, .optionHelp)
+    }
+    func testSameIdentityUnpinRemovesVisibleHintButKeepsRealFlagAndBudgetSpend() throws {
+        var h = FirstUseHints(), c = HintContext(dockReveal: UUID()); c.cardPinned = true; c.captureReady = true
+        try h.updateContext(c, at: 0)
+        let offer = try XCTUnwrap(h.nextOffer(placeable: [.pinned], at: 0)); try h.confirmShown(offer, at: 0)
+        c.cardPinned = false; try h.updateContext(c, at: 0.1)
+        XCTAssertNil(h.visible); XCTAssertTrue(h.preferences.seen.contains(.pinned)); XCTAssertTrue(h.dockBudgetUsed)
+        XCTAssertEqual(h.context, c)
+        c.cockpitOpen = UUID(); try h.updateContext(c, at: 1)
+        XCTAssertEqual(try h.nextOffer(placeable: [.optionHelp], at: 1)?.kind, .optionHelp)
+    }
+    func testCaptureLossInvalidatesOnlyExistingGuardedOffersAndRecoveryUnblocksThem() throws {
+        for kind in [FirstUseHintKind.optionHelp,.shutter,.field,.page,.trial] {
+            var h = try open(2, seen: Set(FirstUseHintKind.allCases).subtracting([kind])), c = HintContext(cockpitOpen: UUID())
+            c.captureReady = true; try h.updateContext(c, at: 0)
+            h.request(kind); if kind == .field { try h.beginDwell(kind, at: 0) }
+            let offer = try XCTUnwrap(h.nextOffer(placeable: [kind], at: 0.5))
+            c.captureReady = false; try h.updateContext(c, at: 0.6)
+            XCTAssertNil(h.offered); XCTAssertFalse(h.preferences.seen.contains(kind)); XCTAssertFalse(h.cockpitBudgetUsed)
+            XCTAssertThrowsError(try h.confirmShown(offer, at: 0.6))
+            c.captureReady = true; try h.updateContext(c, at: 0.7)
+            XCTAssertEqual(try h.nextOffer(placeable: [kind], at: 0.7)?.kind, kind)
+        }
+    }
+    func testCaptureLossRemovesGuardedVisibleHintWithoutUndoingSeenOrOpenBudget() throws {
+        var h = try open(), c = h.context
+        let offer = try XCTUnwrap(h.nextOffer(placeable: [.optionHelp], at: 0)); try h.confirmShown(offer, at: 0)
+        c.captureReady = false; try h.updateContext(c, at: 0.1)
+        XCTAssertNil(h.visible); XCTAssertTrue(h.preferences.seen.contains(.optionHelp)); XCTAssertTrue(h.cockpitBudgetUsed)
+        c.captureReady = true; try h.updateContext(c, at: 0.2)
+        h.request(.page); XCTAssertNil(try h.nextOffer(placeable: [.page], at: 0.2))
+        c.cockpitOpen = UUID(); try h.updateContext(c, at: 1)
+        XCTAssertEqual(try h.nextOffer(placeable: [.shutter], at: 1)?.kind, .shutter)
+    }
+    func testCaptureLossDoesNotAddBarrierToPinnedOrDragOffersOrVisibleHints() throws {
+        for kind in [FirstUseHintKind.pinned,.drag] {
+            var h = FirstUseHints(), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
+            c.captureReady = true; c.cardPinned = true; try h.updateContext(c, at: 0)
+            let offer = try XCTUnwrap(h.nextOffer(placeable: [kind], at: 0))
+            c.captureReady = false; try h.updateContext(c, at: 0.1)
+            XCTAssertEqual(h.offered, offer); try h.confirmShown(offer, at: 0.1)
+            try h.updateContext(c, at: 0.2); XCTAssertEqual(h.visible?.offer.kind, kind)
+            XCTAssertTrue(h.preferences.seen.contains(kind)); XCTAssertTrue(h.cockpitBudgetUsed)
+        }
+    }
     func testStorageOnlyContainsEightFlagsAndBoundedProgress() throws {
         let p = FirstUseHintPreferences(seen: Set(FirstUseHintKind.allCases), cockpitOpens: Int.max, hasPinned: true)
         let data = try JSONEncoder().encode(p), dictionary = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
