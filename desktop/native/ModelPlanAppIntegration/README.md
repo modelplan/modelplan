@@ -53,6 +53,8 @@ This module is execution code, not completed live app composition. CommunityApp 
 `InstrumentHelpComposition.restored(application:)` uses the existing coordinator/editor/store,
 P10 arbiter/source router/common-mode deadline and one M4 `HelpUILayerView`. The CommunityApp
 session retains one composition after restore; concurrent restore calls share its creation task.
+The commit observer is installed before asynchronous restore and acknowledges any one in-flight
+startup receipt before exposing the composition, so an intervening save cannot be missed.
 It does not open a window or embed a cockpit. The actual cockpit host must embed `layer`, call
 `update` with current session identity, overlay-local anchors, occupied live readings, map/RM
 facts and injected released copy, and suspend/dispose it at the corresponding lifetime boundary.

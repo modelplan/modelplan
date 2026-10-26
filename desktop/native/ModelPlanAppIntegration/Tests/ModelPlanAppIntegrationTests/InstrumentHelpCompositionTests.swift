@@ -264,6 +264,22 @@ private actor HelpPausedWriter: HintPreferenceWriting {
         _ = try await app.editor.commit(SettingsB20Edit.theme(.night))
         XCTAssertEqual(actions, 0); XCTAssertNil(composition.layer.onAction); XCTAssertFalse(composition.host.isRunning)
     }
+    func testStartupReceiptWaitsForTheRestoredCompositionBeforeReleasingSave() async throws {
+        let app = try application(); await app.reload()
+        let connection = HelpSettingsReceiptConnection(), arrived = expectation(description: "startup receipt")
+        let observer = app.editor.observeCommittedEdits { edit in
+            arrived.fulfill(); await connection.receive(edit)
+        }
+        let edit = Task { try await app.editor.commit(SettingsB20Edit.theme(.night)) }
+        await fulfillment(of: [arrived], timeout: 2)
+        XCTAssertTrue(app.editor.isSaving)
+        let restored = await composition(app)
+        XCTAssertTrue(app.editor.isSaving) // The earlier startup connection still owns acknowledgment.
+        await connection.connect(restored); _ = try await edit.value
+        XCTAssertFalse(app.editor.isSaving); XCTAssertEqual(app.editor.snapshot?.preferences.theme, .night)
+        XCTAssertTrue(restored.host.hints.preferences.seen.isEmpty)
+        app.editor.removeCommitObserver(observer); restored.dispose()
+    }
     func testCommunitySessionRetainsOneConcreteHostWithoutShowingAWindow() async throws {
         let app = try application(); var created = 0
         let session = CommunitySettingsSession(application: app, canPresent: { false }, makeHelp: { app in

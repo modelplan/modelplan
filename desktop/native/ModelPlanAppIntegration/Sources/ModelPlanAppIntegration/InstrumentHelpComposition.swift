@@ -103,6 +103,25 @@ public struct HelpHintContent: Equatable, Sendable {
     }
 }
 
+/// Installs the editor observer before the asynchronous store restore. The editor permits one
+/// save at a time, so at most one startup receipt can wait here; no queue/timer/second store.
+@MainActor final class HelpSettingsReceiptConnection {
+    private weak var target: InstrumentHelpComposition?
+    private var ready = false
+    private var waiting: CheckedContinuation<Void, Never>?, completed: CheckedContinuation<Void, Never>?
+    func receive(_ edit: SettingsCommittedEdit) async {
+        let startup = !ready
+        if startup { await withCheckedContinuation { waiting = $0 } }
+        await target?.consume(edit)
+        if startup { let done = completed; completed = nil; done?.resume() }
+    }
+    func connect(_ target: InstrumentHelpComposition) async {
+        self.target = target; ready = true
+        let pending = waiting; waiting = nil; pending?.resume()
+        if pending != nil { await withCheckedContinuation { completed = $0 } }
+    }
+}
+
 /// App-scoped concrete P10→M4 binding, restored from the existing application's single SettingsStore.
 /// The caller embeds layer in its real cockpit and supplies live context/geometry and released copy.
 @MainActor public final class InstrumentHelpComposition {
@@ -120,9 +139,9 @@ public struct HelpHintContent: Equatable, Sendable {
     private var generation: UInt64 = 0
     private var active = false, disposed = false, refreshAgain = false
     private init(application: SettingsApplicationCoordinator, host: HintExecutionHost,
-                 overlay: InstrumentHelpOverlay, uptime: @escaping () -> TimeInterval) {
+                 overlay: InstrumentHelpOverlay, uptime: @escaping () -> TimeInterval, observer: UUID) {
         self.application = application; self.host = host; self.overlay = overlay; self.uptime = uptime
-        observer = application.editor.observeCommittedEdits { [weak self] edit in await self?.consume(edit) }
+        self.observer = observer
         host.onPersisted = { [weak self] _ in self?.refreshEditor() }
     }
     public static func restored(application: SettingsApplicationCoordinator,
@@ -130,12 +149,17 @@ public struct HelpHintContent: Equatable, Sendable {
                                 scheduler: (any HintDeadlineScheduling)? = nil,
                                 uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                                 visibility: (@MainActor (HelpUILayerView, CGRect) -> Bool)? = nil) async -> InstrumentHelpComposition {
+        let connection = HelpSettingsReceiptConnection()
+        let observer = application.editor.observeCommittedEdits { edit in await connection.receive(edit) }
         if application.editor.snapshot == nil { await application.reload() }
         let layer = HelpUILayerView(recipeProvider: recipeProvider, elapsed: uptime)
         let overlay = InstrumentHelpOverlay(layer: layer, visibility: visibility)
         let host = await HintExecutionHost.restored(persistence: application.editor.store,
             scheduler: scheduler ?? HintCommonModeScheduler(uptime: uptime), overlay: overlay, uptime: uptime)
-        return InstrumentHelpComposition(application: application, host: host, overlay: overlay, uptime: uptime)
+        let composition = InstrumentHelpComposition(application: application, host: host, overlay: overlay, uptime: uptime, observer: observer)
+        // Do not expose a live surface until the startup receipt boundary has been applied.
+        await connection.connect(composition)
+        return composition
     }
     public func update(_ input: HelpUIRenderInput, content: [FirstUseHintKind: HelpHintContent], context: HintContext,
                        trialSource: InstrumentHintSourceSnapshot? = nil) throws {
@@ -176,7 +200,7 @@ public struct HelpHintContent: Equatable, Sendable {
     public func suspend() {
         guard !disposed else { return }; generation &+= 1; active = false; host.suspend(); layer.suspend()
     }
-    private func consume(_ edit: SettingsCommittedEdit) async {
+    fileprivate func consume(_ edit: SettingsCommittedEdit) async {
         guard !disposed, edit.belongs(to: application.editor.store) else { return }
         host.observeCommitted(edit.after)
         let accepted: Bool
