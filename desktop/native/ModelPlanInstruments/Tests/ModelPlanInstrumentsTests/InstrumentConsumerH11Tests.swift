@@ -84,6 +84,52 @@ import XCTest
         }
         engine.dispose(); fader.dispose()
     }
+    func testEveryPointerButtonCancelsPendingRestOnHostAndFaderControl() async throws {
+        var at = 10.0, events: [InstrumentHintInput] = []
+        let view = FaderBankView(elapsed: { at }, hintPointerEligible: { true }); view.onHelpChange = { _, _ in }
+        view.onHintInput = { events.append($0) }
+        let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false); window.contentView = view
+        try view.update(inputs: input(), publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let travel = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider })
+        let control = try XCTUnwrap(view.control(for: travel.id)), point = CGPoint(x: travel.rect.midX, y: travel.rect.midY)
+        for target in [view as NSView, control] {
+            for kind in [NSEvent.EventType.leftMouseDown, .rightMouseDown, .otherMouseDown] {
+                if target === control && kind == .leftMouseDown { continue } // normal slider down legitimately starts a trial
+                at = 10; events = []; view.mouseEntered(with: mouse(view, .mouseEntered, point))
+                guard case .faderRestCandidate = events.last else { return XCTFail("Missing rest before button down") }
+                at = 10.49; events = []
+                let event = mouse(view, kind, point)
+                switch kind { case .leftMouseDown: target.mouseDown(with: event); case .rightMouseDown: target.rightMouseDown(with: event); default: target.otherMouseDown(with: event) }
+                XCTAssertTrue(events.contains(.cancelFaderRest(.pointerDown, at: 10.49)))
+                XCTAssertFalse(events.contains { if case .faderRestCandidate = $0 { return true }; return false })
+                XCTAssertNil(view.controller.trial); XCTAssertNil(view.controller.draggingModelID)
+                at = 10.6 // Passing the old 500ms deadline produces no consumer callback or new rest.
+                XCTAssertEqual(events.last, .cancelFaderRest(.pointerDown, at: 10.49))
+            }
+        }
+        view.dispose(); window.contentView = nil
+    }
+    func testOtherInstrumentPointerDownsCancelSharedRestWithoutActivation() async throws {
+        var events: [InstrumentHintInput] = []
+        let engine = EngineTableView(elapsed: { 11 }), screen = MainScreenView(elapsed: { 11 })
+        engine.onHelpChange = { _, _ in }; screen.onHelpChange = { _, _ in }
+        engine.onHintInput = { events.append($0) }; screen.onHintInput = { events.append($0) }
+        try engine.update(columns: [Fixtures.column("a")], language: .english, now: Fixtures.now)
+        try screen.update(inputs: [], selection: nil, publication: nil, publicationUsable: false, language: .english, compact: false)
+        let engineControl = try XCTUnwrap(engine.control(for: "engine.subscription.a")), screenControl = try XCTUnwrap(screen.control(for: "screen.page.1"))
+        for target in [engine as NSView, screen, engineControl, screenControl] {
+            for kind in [NSEvent.EventType.leftMouseDown, .rightMouseDown, .otherMouseDown] {
+                if (target === engineControl || target === screenControl) && kind == .leftMouseDown { continue }
+                events = []; let event = mouse(target, kind, .zero)
+                switch kind { case .leftMouseDown: target.mouseDown(with: event); case .rightMouseDown: target.rightMouseDown(with: event); default: target.otherMouseDown(with: event) }
+                XCTAssertTrue(events.contains(.cancelFaderRest(.pointerDown, at: 11)))
+                XCTAssertFalse(events.contains { if case .faderRestCandidate = $0 { return true }; return false })
+                XCTAssertNil(screen.controller.trial); XCTAssertEqual(screen.controller.navigation.location.page, .overview)
+                XCTAssertEqual(engine.presentation?.scope, .all)
+            }
+        }
+        engine.dispose(); screen.dispose()
+    }
     func testCanonicalDefinitionsAreSharedDataForAXAndLaterOptionHelp() async throws {
         for language in [InstrumentLanguage.chinese, .english] {
             let catalog = HelpCatalog(language)

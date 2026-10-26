@@ -136,6 +136,9 @@ import AppKit
             let control = controls.removeValue(forKey: id); control?.retire(); control?.removeFromSuperview()
         }
         for r in nativeRegions {
+            if let previous = controls[r.id], previous.region.action != r.action {
+                controls.removeValue(forKey: r.id); previous.retire(); previous.removeFromSuperview()
+            }
             let control = controls[r.id] ?? MainScreenRegionControl(owner: self, region: r)
             if controls[r.id] == nil { controls[r.id] = control; addSubview(control) }
             control.configure(r)
@@ -143,17 +146,7 @@ import AppKit
         let ordered = keyboardOrder.compactMap { controls[$0] }
         for (i, c) in ordered.enumerated() { c.nextKeyView = ordered[(i + 1) % ordered.count] }
         setAccessibilityChildren(nativeRegions.compactMap { controls[$0.id] })
-        func identity(_ action: MainScreenAction?) -> String? {
-            switch action {
-            case .page(let p): return "page:\(p)"
-            case .option(_, let id, _): return "option:" + id
-            case .effort(_, let key): return "effort:" + key
-            case .fast: return "fast"
-            case .back: return "back"
-            case nil: return nil
-            }
-        }
-        if let oldFocus, controls[oldFocus] == nil || identity(oldAction) != identity(controls[oldFocus]?.region.action), !ordered.isEmpty {
+        if let oldFocus, controls[oldFocus] == nil || oldAction != controls[oldFocus]?.region.action, !ordered.isEmpty {
             let back = nativeRegions.first { $0.action == .back }.flatMap { controls[$0.id] }
             let active = presentation?.pageKeys.first(where: \.lit)?.page
             let page = active.flatMap { selected in nativeRegions.first { $0.action == .page(selected) } }.flatMap { controls[$0.id] }
@@ -173,6 +166,9 @@ import AppKit
         return handleEscape()
     }
     fileprivate func pointerMode() { cancelHintRest(.pointerDown); keyboard = false; updateFocus(); leaveHelp() }
+    public override func mouseDown(with event: NSEvent) { pointerMode(); super.mouseDown(with: event) }
+    public override func rightMouseDown(with event: NSEvent) { pointerMode(); super.rightMouseDown(with: event) }
+    public override func otherMouseDown(with event: NSEvent) { pointerMode(); super.otherMouseDown(with: event) }
     fileprivate func focusChanged(_ id: String?) {
         if id == nil { cancelHintRest(.focusLoss) }
         focusedID = id; updateFocus()
@@ -259,6 +255,8 @@ import AppKit
     override func becomeFirstResponder() -> Bool { guard acceptsFirstResponder, let owner = currentOwner else { return false }; owner.focusChanged(region.id); return true }
     override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
     override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; pointerAction = region.action; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) } }
+    override func rightMouseDown(with event: NSEvent) { currentOwner?.pointerMode(); super.rightMouseDown(with: event) }
+    override func otherMouseDown(with event: NSEvent) { currentOwner?.pointerMode(); super.otherMouseDown(with: event) }
     override func mouseUp(with event: NSEvent) { let action = pointerAction; pointerAction = nil; guard action != nil, action == region.action, let owner = currentOwner, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }; _ = owner.activate(at: owner.convert(event.locationInWindow, from: nil)) }
     override func keyDown(with event: NSEvent) {
         guard region.enabled, let owner = currentOwner else { return }

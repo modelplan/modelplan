@@ -228,6 +228,9 @@ import CoreText
     public func cancelHintRest(_ reason: InstrumentHintCancellation) {
         let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
     }
+    public override func mouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.mouseDown(with: event) }
+    public override func rightMouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.rightMouseDown(with: event) }
+    public override func otherMouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.otherMouseDown(with: event) }
     public override func flagsChanged(with event: NSEvent) { cancelHintRest(.keyboard); super.flagsChanged(with: event) }
     public override func mouseExited(with event: NSEvent) { leaveHelp() }
     fileprivate func focused(_ id: String?) {
@@ -303,6 +306,8 @@ import CoreText
             }
         }
     }
+    override func rightMouseDown(with event: NSEvent) { owner?.cancelHintRest(.pointerDown); super.rightMouseDown(with: event) }
+    override func otherMouseDown(with event: NSEvent) { owner?.cancelHintRest(.pointerDown); super.otherMouseDown(with: event) }
     override func keyDown(with event: NSEvent) {
         owner?.cancelHintRest(.keyboard)
         owner?.keyboardModality = true

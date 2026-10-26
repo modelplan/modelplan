@@ -120,7 +120,8 @@ public struct ComparisonPresentation: Equatable, Sendable {
                 case .cost: value = panel.values?.costRatio; chartRatio = value
                 case .time: value = panel.values?.timeRatio; chartRatio = value
                 }
-                let text = hidden ? "" : panel.configuration == nil ? "--" : metric == .ability ? Self.delta(value) : Self.multiple(value)
+                let text = hidden ? "" : value == nil ? (panel.role == .current ? "--" : "—")
+                    : metric == .ability ? Self.delta(value) : Self.multiple(value)
                 return .init(metric: metric, text: text, tableValue: hidden ? nil : value, chartRatio: hidden ? nil : chartRatio)
             }
             return ComparisonColumnDisplay(role: panel.role, title: title,

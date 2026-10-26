@@ -256,6 +256,9 @@ import CoreText
     fileprivate func favorite(_ id: String) { mutate { $0.toggleFavorite(id) } }
     fileprivate var favoriteActionTitle: String { language == .chinese ? "切换钉住到第 1 组" : "Toggle pin to bank 1" }
     fileprivate func pointerMode() { keyboard = false; updateFocus(); leaveHelp() }
+    public override func mouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.mouseDown(with: event) }
+    public override func rightMouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.rightMouseDown(with: event) }
+    public override func otherMouseDown(with event: NSEvent) { cancelHintRest(.pointerDown); super.otherMouseDown(with: event) }
     public func endTrial() { mutate { $0.endTrial() } }
     public func selectModel(_ id: String) { mutate { $0.selectModel(id) } }
     public func setTrial(_ trial: FaderTrial?) throws {
@@ -418,6 +421,8 @@ import CoreText
     override func becomeFirstResponder() -> Bool { guard acceptsFirstResponder, let owner = currentOwner else { return false }; owner.focusChanged(region.id); return true }
     override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
     override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) }; owner.down(region, point: owner.convert(event.locationInWindow, from: nil)) }
+    override func rightMouseDown(with event: NSEvent) { currentOwner?.cancelHintRest(.pointerDown); super.rightMouseDown(with: event) }
+    override func otherMouseDown(with event: NSEvent) { currentOwner?.cancelHintRest(.pointerDown); super.otherMouseDown(with: event) }
     override func mouseDragged(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.drag(region, point: owner.convert(event.locationInWindow, from: nil)) }
     override func mouseUp(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.up(region, inside: bounds.contains(convert(event.locationInWindow, from: nil)), point: owner.convert(event.locationInWindow, from: nil)) }
     override func keyDown(with event: NSEvent) {

@@ -77,6 +77,30 @@ final class ComparisonPresentationTests: XCTestCase {
         let invalid = ComparisonPresentation(model: Fixtures.model(), trial: .init("max", fast: true), publicationUsable: true, language: .english)
         XCTAssertFalse(invalid.fastAvailable); XCTAssertNil(invalid.columns[1].configuration)
     }
+    func testMissingMetricsUseCurrentAndComparisonRoleMarkersInBothDirections() {
+        for language in [InstrumentLanguage.chinese, .english] {
+            for missing in ["high", "max", "medium"] {
+                let efforts = Fixtures.efforts.map { e in
+                    InstrumentEffort(key: e.key, label: e.label, ability: e.ability,
+                        cost: e.key == missing ? Fixtures.metric(nil) : e.cost,
+                        time: e.key == missing ? Fixtures.metric(nil) : e.time)
+                }
+                let model = Fixtures.model(efforts: efforts)
+                let p = ComparisonPresentation(model: model, trial: .init("max"), publicationUsable: true, language: language)
+                for column in p.columns {
+                    for cell in column.cells where cell.metric != .ability {
+                        let absent = missing == "high" || column.configuration?.effort == missing
+                        if absent {
+                            XCTAssertEqual(cell.text, column.role == .current ? "--" : "—"); XCTAssertNil(cell.chartRatio)
+                        } else { XCTAssertNotNil(cell.tableValue); XCTAssertEqual(cell.text, ComparisonPresentation.multiple(cell.tableValue)) }
+                    }
+                }
+                let equal = ComparisonPresentation(model: model, trial: .init("high"), publicationUsable: true, language: language)
+                XCTAssertTrue(equal.columns[1].cells.allSatisfy { $0.text.isEmpty && $0.chartRatio == nil })
+                XCTAssertEqual(equal.columns[1].light, .off)
+            }
+        }
+    }
     func testMissingTimeBreaksPolylineAndNeverInterpolatesThroughGap() throws {
         let efforts = [
             InstrumentEffort(key: "a", label: "A", ability: Fixtures.metric(10), cost: Fixtures.metric(nil), time: Fixtures.metric(20)),
@@ -211,6 +235,44 @@ final class MainScreenControllerTests: XCTestCase {
         view.back(); XCTAssertFalse(button.accessibilityPerformPress())
         let page = try XCTUnwrap(view.control(for: "screen.page.0")); view.dispose()
         XCTAssertFalse(page.accessibilityPerformPress())
+    }
+    func testReplacedModelControlsRetireOldAXAndFocusReferences() async throws {
+        let tier = InstrumentFastTier(costMultiplier: 6, speedMultiplier: 2, taskTimeUnknown: false)
+        let view = try setup(tier), window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 340), styleMask: [], backing: .buffered, defer: false)
+        window.contentView = view
+        try view.update(inputs: [.init(model: Fixtures.model(tier: tier)), .init(model: Fixtures.model(tier: tier, id: "other"))],
+            selection: B13Fixture.selection(), publication: B13Fixture.publication, publicationUsable: true, language: .english, compact: false)
+        view.openComparison(modelID: "model", configuration: .init("max"), from: .fader("model"))
+        let oldEffort = try XCTUnwrap(view.control(for: "compare.effort.low")), oldFast = try XCTUnwrap(view.control(for: "screen.footer.1"))
+        XCTAssertTrue(window.makeFirstResponder(oldEffort))
+        view.openComparison(modelID: "other", configuration: .init("max"), from: .fader("other"), toggle: false)
+        let before = view.controller.trial
+        XCTAssertFalse(oldEffort.accessibilityPerformPress()); XCTAssertFalse(oldFast.accessibilityPerformPress())
+        XCTAssertFalse(oldEffort.becomeFirstResponder()); XCTAssertFalse(oldFast.becomeFirstResponder())
+        oldEffort.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)!)
+        XCTAssertEqual(view.controller.trial, before)
+        XCTAssertTrue(window.firstResponder === view.control(for: "screen.footer.0"))
+        let current = try XCTUnwrap(view.control(for: "compare.effort.low"))
+        XCTAssertFalse(current === oldEffort); XCTAssertTrue(current.accessibilityPerformPress())
+        XCTAssertEqual(view.controller.trial?.modelID, "other"); XCTAssertEqual(view.controller.trial?.configuration.effort, "low")
+        XCTAssertTrue(view.control(for: "screen.footer.1")!.accessibilityPerformPress()); XCTAssertTrue(view.controller.trial!.configuration.fast)
+        view.dispose(); window.contentView = nil
+    }
+    func testReplacedPageOptionRetiresOldReferenceAndRestoresSafeFocus() async throws {
+        let pages = [MainScreenPageContent(.overview, options: [B13Fixture.option, nil, nil]), .init(.effort, options: [B13Fixture.option, nil, nil])]
+        let view = try setup(pages: pages), window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = view
+        let old = try XCTUnwrap(view.control(for: "screen.footer.0"))
+        XCTAssertTrue(window.makeFirstResponder(old)); view.selectPage(.init(.effort))
+        let before = view.presentation
+        XCTAssertFalse(old.accessibilityPerformPress()); XCTAssertFalse(old.becomeFirstResponder())
+        XCTAssertEqual(view.presentation, before)
+        XCTAssertTrue(window.firstResponder === view.control(for: "screen.page.2"))
+        let current = try XCTUnwrap(view.control(for: "screen.footer.0"))
+        XCTAssertFalse(current === old); XCTAssertTrue(current.accessibilityPerformPress())
+        XCTAssertEqual(view.presentation?.footer.first, .option(.init(id: "range", choices: B13Fixture.option.choices, selectedValue: "30", help: B13Fixture.option.help)))
+        view.dispose(); window.contentView = nil
     }
     func testFooterPointerChoosesPrintedValueAndKeyboardCyclesSameKey() async throws {
         let option = MainScreenFooterOption(id: "range", choices: [.init("7", title: "7"), .init("30", title: "30")], selectedValue: "7", help: B13Fixture.option.help)
