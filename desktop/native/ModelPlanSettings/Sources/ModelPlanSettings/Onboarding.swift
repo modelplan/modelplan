@@ -5,6 +5,7 @@ import Foundation
 public struct OnboardingStep: RawRepresentable, Codable, Hashable, Sendable {
     public let rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
+    public static let setup = Self(rawValue: "setup65")
     public static let welcome = Self(rawValue: "welcome")
     public static let detectedSubscriptions = Self(rawValue: "detectedSubscriptions")
     public static let dockLocation = Self(rawValue: "dockLocation")
@@ -43,6 +44,11 @@ public struct OnboardingDefinition: Equatable, Sendable {
         self.steps = steps
     }
     private init(provisional steps: [OnboardingStepDefinition]) { self.steps = steps }
+    /// Current single-page flow has no tour or gesture exercise.
+    public static let task65 = OnboardingDefinition(provisional: [
+        .init(id: .setup, title: .init("Get started", "开始使用")),
+    ])
+    /// Historical draft only; retained for decoding and generic reducer tests, never the default first run.
     /// Provisional existing content, not the final first-run design. One table supplies all order/end rules.
     public static let provisional = OnboardingDefinition(provisional: [
         .init(id: .welcome, title: .init("Welcome and privacy", "欢迎与隐私"), capabilities: .trialDemo),
@@ -57,11 +63,11 @@ public struct OnboardingState: Codable, Equatable, Sendable {
     public private(set) var lesson: TutorialResult?
     public private(set) var trialDemonstrated = false
     private var definitionSignature: [String]?
-    public init(definition: OnboardingDefinition = .provisional) {
+    public init(definition: OnboardingDefinition = .task65) {
         step = definition.steps[0].id; definitionSignature = definition.signature
     }
     public var isStructurallyValid: Bool { validSettingsIdentifier(step.rawValue) }
-    public var isValid: Bool { isValid(in: .provisional) }
+    public var isValid: Bool { isValid(in: .task65) }
     public func isValid(in definition: OnboardingDefinition) -> Bool {
         (definitionSignature == definition.signature || (definitionSignature == nil && definition.signature == OnboardingDefinition.provisional.signature)) &&
             definition.steps.contains { $0.id == step } && (!completed || step == definition.steps.last?.id)
@@ -76,28 +82,32 @@ public struct OnboardingState: Codable, Equatable, Sendable {
         trialDemonstrated = (try? c.decode(Bool.self, forKey: .trialDemonstrated)) ?? false
         definitionSignature = c.contains(.definitionSignature) ? ((try? c.decode([String].self, forKey: .definitionSignature)) ?? []) : nil
     }
-    public mutating func reconcile(in definition: OnboardingDefinition = .provisional) {
+    public mutating func reconcile(in definition: OnboardingDefinition = .task65) {
+        if definition == .task65, completed, step == .dockLocation,
+           definitionSignature == OnboardingDefinition.provisional.signature || definitionSignature == nil {
+            self = .init(definition: definition); completed = true; return
+        }
         guard isStructurallyValid, isValid(in: definition) else { self = .init(definition: definition); return }
         definitionSignature = definition.signature
         if !definition.steps.contains(where: { $0.capabilities.contains(.dockLesson) }) { lesson = nil }
         if !definition.steps.contains(where: { $0.capabilities.contains(.trialDemo) }) { trialDemonstrated = false }
     }
-    public mutating func next(in definition: OnboardingDefinition = .provisional) {
+    public mutating func next(in definition: OnboardingDefinition = .task65) {
         reconcile(in: definition)
         guard !completed, let index = definition.steps.firstIndex(where: { $0.id == step }) else { return }
         if index + 1 < definition.steps.count { step = definition.steps[index + 1].id } else { completed = true }
     }
-    public mutating func back(in definition: OnboardingDefinition = .provisional) {
+    public mutating func back(in definition: OnboardingDefinition = .task65) {
         reconcile(in: definition)
         guard !completed, let index = definition.steps.firstIndex(where: { $0.id == step }), index > 0 else { return }
         step = definition.steps[index - 1].id
     }
-    public mutating func replay(in definition: OnboardingDefinition = .provisional) { self = .init(definition: definition) }
-    public mutating func demonstrateTrial(in definition: OnboardingDefinition = .provisional) {
+    public mutating func replay(in definition: OnboardingDefinition = .task65) { self = .init(definition: definition) }
+    public mutating func demonstrateTrial(in definition: OnboardingDefinition = .task65) {
         reconcile(in: definition)
         if !completed && definition.steps.first(where: { $0.id == step })?.capabilities.contains(.trialDemo) == true { trialDemonstrated.toggle() }
     }
-    public mutating func recordLesson(_ result: TutorialResult, holdAvailable: Bool, in definition: OnboardingDefinition = .provisional) {
+    public mutating func recordLesson(_ result: TutorialResult, holdAvailable: Bool, in definition: OnboardingDefinition = .task65) {
         reconcile(in: definition)
         guard !completed, definition.steps.first(where: { $0.id == step })?.capabilities.contains(.dockLesson) == true,
               result == .quick || holdAvailable else { return }
@@ -136,10 +146,11 @@ public struct TutorialGesture: Sendable {
 /// First-run choice data independent of the provisional page/step definition. Never calls a service.
 public struct OnboardingOptions: Equatable, Sendable {
     public var openAtLogin: Bool
-    public init(preferences: SettingsPreferences) { openAtLogin = preferences.openAtLogin }
+    public var readerConsent: ReaderConsent
+    public init(preferences: SettingsPreferences) { openAtLogin = preferences.openAtLogin; readerConsent = preferences.readerConsent }
     public func loginSetting(capabilities: SettingsCapabilities) -> LoginSetting {
         .init(requestedEnabled: openAtLogin, observedState: capabilities.login)
     }
     /// Apply only this choice inside SettingsStore.update; never overwrite other preferences/progress.
-    public func apply(to preferences: inout SettingsPreferences) { preferences.openAtLogin = openAtLogin }
+    public func apply(to preferences: inout SettingsPreferences) { preferences.openAtLogin = openAtLogin; preferences.readerConsent = readerConsent }
 }

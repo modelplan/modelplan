@@ -13,11 +13,70 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     while !predicate(), ContinuousClock.now < end { CFRunLoopRunInMode(.defaultMode, 0.02, false) }
     try check(predicate(), message)
 }
+
+@MainActor func awaitCautionDeadline(_ caution: CautionControl, in mode: CFRunLoopMode) throws {
+    let started = ProcessInfo.processInfo.systemUptime
+    let end = started + 0.25
+    var activations = 0, exits: [String] = []
+    func completed() -> Bool {
+        caution.cautionState.mode == .steadyUnacknowledged && caution.animationDuration == nil
+    }
+    // AppKit can stop a nested activation before its timer fires. Keep the original
+    // total budget and tracking mode; never validate the production state for it.
+    while !completed() {
+        let remaining = end - ProcessInfo.processInfo.systemUptime
+        guard remaining > 0 else { break }
+        let result = CFRunLoopRunInMode(mode, remaining, false)
+        activations += 1
+        if exits.count < 8 { exits.append(String(result.rawValue)) }
+        guard result == .stopped else { break }
+    }
+    let waited = ProcessInfo.processInfo.systemUptime - started
+    try check(completed(), "caution deadline deferred over tracking mode: activations=\(activations), exits=\(exits), waited=\(waited), state=\(caution.cautionState.mode), animation=\(String(describing: caution.animationDuration))")
+}
+
+@MainActor func cautionTrackingDeadlineChecks() throws {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let mode = CFRunLoopMode(rawValue: "NSEventTrackingRunLoopMode" as CFString)
+    CFRunLoopAddCommonMode(CFRunLoopGetMain(), mode)
+    for interrupted in [false, true] {
+        var time = 0.0
+        let caution = CautionControl(elapsed: { time })
+        defer { caution.dispose() }
+        caution.update([CautionCondition(id: "tracking", severity: .amber)], profile: RenderProfile())
+        time = 9.9; caution.validate()
+        try check((caution.animationDuration ?? 99) < 0.11, "tracking regression must use remaining interval")
+        time = 10.2
+        var stopped = false
+        if interrupted {
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), mode.rawValue) {
+                stopped = true; CFRunLoopStop(CFRunLoopGetMain())
+            }
+        }
+        try awaitCautionDeadline(caution, in: mode)
+        try check(!interrupted || stopped, "tracking regression did not interrupt the activation")
+    }
+    // A cancelled callback must still fail; the wait may not validate state itself.
+    var time = 0.0
+    let suspended = CautionControl(elapsed: { time })
+    defer { suspended.dispose() }
+    suspended.update([CautionCondition(id: "cancelled", severity: .amber)], profile: RenderProfile())
+    time = 9.9; suspended.validate(); suspended.suspend(); time = 10.2
+    var rejected = false
+    do { try awaitCautionDeadline(suspended, in: mode) } catch { rejected = true }
+    try check(rejected && suspended.cautionState.mode == .blinking, "tracking check accepted a missing deadline callback")
+}
+
 @main struct PrimitiveChecks {
     @MainActor static func main() throws {
         if CommandLine.arguments.contains("--native-menu") { try nativeMenuCheck(); return }
         if CommandLine.arguments.contains("--live-image-cadence") { try liveCadenceCheck(imageFrames: true); return }
         if CommandLine.arguments.contains("--live-cadence") { try liveCadenceCheck(); return }
+        if CommandLine.arguments.contains("--caution-tracking-deadline") {
+            do { try cautionTrackingDeadlineChecks(); print("PASS tracking deadline: normal, interrupted activation and missing-callback rejection") }
+            catch { fputs("FAIL caution tracking deadline: \(error)\n", stderr); exit(1) }
+            return
+        }
         if CommandLine.arguments.contains("--caution-recurrence") {
             do { try cautionRecurrenceChecks(); print("PASS acknowledged severity recurrence regression") }
             catch { fputs("FAIL caution recurrence: \(error)\n", stderr); exit(1) }
@@ -92,8 +151,8 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         time = 10.2
         let mode = CFRunLoopMode(rawValue: "NSEventTrackingRunLoopMode" as CFString)
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), mode)
-        CFRunLoopRunInMode(mode, 0.25, false)
-        try check(row.caution.cautionState.mode == .steadyUnacknowledged && row.caution.animationDuration == nil, "caution deadline deferred over tracking mode")
+        try awaitCautionDeadline(row.caution, in: mode)
+        try cautionTrackingDeadlineChecks()
         row.caution.update([red], profile: profile); let deadline = row.caution.cautionState.deadline
         row.caution.suspend(); time += 2; row.caution.validate()
         try check(row.caution.cautionState.deadline == deadline, "hide/show restarted episode")
