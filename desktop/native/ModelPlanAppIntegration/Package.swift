@@ -16,6 +16,7 @@ let package = Package(
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanInstruments", package: "ModelPlanNative"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),
