@@ -1,6 +1,6 @@
-# Settings model layer
+# Native Settings and model layer
 
-MIT; macOS 14+. This package contains state, persistence, page data and consumer projections. It has no view, drawing code, native service calls, process runner or network client. The lane-local package depends on the existing public dock logic. App-target registration remains with the assembly owner.
+MIT; macOS 14+. This package contains state, persistence, page data, consumer projections and a neutral AppKit Settings window. It makes no native service calls and has no process runner or network client. The lane-local package depends on the existing public dock logic. App-target registration remains with the assembly owner.
 
 ```
 swift test --package-path desktop/native/ModelPlanSettings --jobs 2
@@ -8,7 +8,35 @@ swift test --package-path desktop/native/ModelPlanSettings --jobs 2
 
 The current first run is the single-page `OnboardingDefinition.task65`; it has no tour or gesture practice. The confirmed task65 data table has eight panes in order: General, Dock, Cockpit, Appearance, Subscriptions, Notifications, Data & Privacy, About. Dock has Display/Numbers/Position/Order groups, and About stays independent. `SettingsStructure.task65` is the default; the old `provisional` table remains historical input for compatibility tests. This data-table decision is not a visual freeze.
 
-The desktop CI runs this suite on macOS 14 and the newest hosted macOS image. Its F15/F20-style inputs are synthetic: no private assets, account observations or design checkout are needed. This is logic acceptance, not visual or real system-service acceptance.
+The desktop CI runs this suite on macOS 14 and the newest hosted macOS image. Its F15/F20-style inputs are synthetic: no private assets, account observations or design checkout are needed. Model and offscreen AppKit checks do not establish desktop display, real-input or system-service acceptance.
+
+## Native window integration
+
+Create one `SettingsEditor` over the app's existing `SettingsStore`, then retain one `SettingsWindowController` for it. `await controller.present()` loads current state and opens the native window; it does not activate the application. The app owns the gear/menu/Command-comma route and activation/focus policy. Constructing/preparing the controller does not show a window.
+
+The sidebar uses the eight canonical panes; bilingual search includes pane/group text and subscription metadata. This increment permits only `SettingsB20Edit.keys`: theme, size, reduced effects and Dock number/window/threshold/sliver choices. Other rows are disabled or unavailable. No login, notification, reader, updater or cache action is executed. Controls retain native identities while values/appearance change. The five small line diagrams use system ink and a single finite 400 ms movement on row hover, control focus or value change, with no timer or idle loop. Reduce Motion cancels immediately; restoring it does not replay. Explicit Day/Night also respects the system's Increase Contrast setting.
+
+Only the current control owned by a displayed row may submit an edit. Pane/search removal and subscription-control replacement permanently disable retired controls, clear their callbacks and cancel menu tracking; a delayed target/action or accessibility press cannot save through them. Rows retained by a search/environment update keep their existing control and focus identity.
+
+```swift
+let editor = SettingsEditor(store: appSettingsStore, context: subscriptionContext)
+editor.onCommit = { snapshot, effective in
+    // Forward this committed revision to the app's existing Dock/Cockpit renderers.
+    applySettings(snapshot, effective)
+}
+editor.onEnvironmentChange = { snapshot, effective in
+    // Recompute/redraw current consumers without saving a preference.
+    applySettings(snapshot, effective)
+}
+let controller = SettingsWindowController(editor: editor, environmentProvider: currentSettingsEnvironment)
+await controller.present()
+```
+
+The host supplies one authoritative environment including fullscreen/entrance gates, system appearance, Reduce Motion, Reduce Transparency and Increase Contrast. The default provider reads only OS appearance/accessibility preferences; an app with additional gates should inject its own provider. Workspace accessibility changes and app appearance changes request a fresh environment. Update subscription context with `editor.update(context:)`; after external edits to the same store use `await editor.reload()`.
+
+Edits await a revision-checked store transaction before `onCommit`; failed/stale saves emit no receipt and restore the latest committed value. Stale edits require a new explicit choice, rather than automatically overwriting another edit. The editor never opens a second file or service. Assembly must bind the callbacks to actual consumers: passing a model test or seeing a pop-up selection is not proof an open Dock/Cockpit updated.
+
+Native tests never activate/order windows front. Optional `MODELPLAN_SETTINGS_EVIDENCE` points to an existing local evidence directory for neutral offscreen JPEG view renders. These contain synthetic subscriptions and are explicitly not desktop screenshots or physical-display evidence.
 
 ## Persistence and consumers
 
@@ -57,9 +85,9 @@ A placement **offer spends nothing**. The adapter must confirm only after the sh
 - `commitOpenAtLogin` returns a revision-tagged intent **after** persistence. At execution, recheck current revision/choice; stale requests must not act. `LoginServicePolicy` never requests service changes on restore or system observations, never reopens an externally disabled item automatically, and keeps requiresApproval/unavailable states truthful. Actual SMAppService register/unregister, background-item notices, OS observation and failure UI belong to M0/app/backend; no backend exists here.
 - Root manifest/CI/app registration, actual reader activation, placement/focus/VoiceOver/keyboard controls and all official drawing remain outside this lane. Reader consent is storage only, not a CLI reader-enable action.
 
-## Deferred to native binding
+## Remaining app binding
 
-No window/sidebar/pop-up, command-comma registration, global shortcut registration, login item change, notification permission request, actual cache deletion, accessibility focus or IME event handling is executed here. Those need app adapters and the corresponding native acceptance, including actual minimum-OS/service states. This package does not release any visual freeze gate.
+The native Settings surface, B20 pop-up edits and finite line illustrations are implemented here. App command-comma routing, actual Dock/Cockpit redraw, global shortcuts, login item changes, notification requests and cache deletion need app adapters and corresponding native acceptance. Other setting edits and first-run views remain later increments. Actual keyboard/VoiceOver/IME and minimum-OS/display/system-service checks remain separate from the offscreen tests.
 
 
 ## Hint consumer dependency boundary
