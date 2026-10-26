@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -143,6 +144,216 @@ func TestSyncVerifySwitchAndKeepLastGood(t *testing.T) {
 	}
 	if m := d.Match("claude-code", "claude-opus-9"); m == nil || m.ID != "m1" {
 		t.Fatal("reviewed harness identifier did not match")
+	}
+}
+
+func jitterClient(t *testing.T) (*Client, *fakeServer) {
+	t.Helper()
+	f := &fakeServer{objects: map[string][]byte{}, hits: map[string]int{}}
+	publish(f, "jitter", 50, false)
+	srv := httptest.NewServer(f)
+	t.Cleanup(srv.Close)
+	t.Setenv("MODELPLAN_CACHE", t.TempDir())
+	st, err := store.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := New(srv.URL, st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, f
+}
+
+func TestSyncJitterBoundsAndPersistedInterval(t *testing.T) {
+	for _, delay := range []time.Duration{0, 30 * time.Second, time.Minute} {
+		t.Run(delay.String(), func(t *testing.T) {
+			c, f := jitterClient(t)
+			now := time.Date(2026, 10, 26, 0, 0, 0, 0, time.UTC)
+			c.Now = func() time.Time { return now }
+			c.Jitter = func() time.Duration { return delay }
+			waits := 0
+			c.wait = func(context.Context, time.Duration) error {
+				t.Fatal("first check waited")
+				return nil
+			}
+			if res, err := c.Sync(context.Background(), false); err != nil || !res.Switched {
+				t.Fatalf("first check: %+v %v", res, err)
+			}
+			state, err := c.Store.State()
+			if err != nil || !state.NextCheckAt.Equal(now.Add(MinCheckInterval+delay)) {
+				t.Fatalf("next check: %+v %v", state, err)
+			}
+
+			// Reopen the client to prove the interval survives separate CLI invocations.
+			c, err = New(c.Base, c.Store, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.Now = func() time.Time { return now }
+			// The pre-request delay and the following interval use independent draws.
+			draws := 0
+			c.Jitter = func() time.Duration {
+				draws++
+				if draws == 1 {
+					return delay
+				}
+				return time.Minute - delay
+			}
+			c.wait = func(_ context.Context, got time.Duration) error {
+				waits++
+				if got != delay || f.hits["/publications/current.json"] != 1 {
+					t.Fatalf("delay=%v, pointer hits=%v", got, f.hits)
+				}
+				now = now.Add(got)
+				return nil
+			}
+			now = state.NextCheckAt.Add(-time.Nanosecond)
+			if res, err := c.Sync(context.Background(), false); err != nil || !res.Skipped || draws != 0 {
+				t.Fatalf("early check: %+v %v draws=%d", res, err, draws)
+			}
+			now = state.NextCheckAt
+			if res, err := c.Sync(context.Background(), false); err != nil || !res.NotModified {
+				t.Fatalf("due check/ETag 304: %+v %v", res, err)
+			}
+			state, err = c.Store.State()
+			if err != nil || !state.CheckedAt.Equal(now) || !state.NextCheckAt.Equal(now.Add(MinCheckInterval+time.Minute-delay)) {
+				t.Fatalf("rescheduled check: %+v %v", state, err)
+			}
+			wantWaits := 1
+			if delay == 0 {
+				wantWaits = 0
+			}
+			if waits != wantWaits || draws != 2 || f.hits["/publications/current.json"] != 2 {
+				t.Fatalf("waits=%d draws=%d hits=%v", waits, draws, f.hits)
+			}
+		})
+	}
+}
+
+func TestSyncNoDelayForCacheExplicitAndFirstChecks(t *testing.T) {
+	c, f := jitterClient(t)
+	now := time.Now()
+	c.Now = func() time.Time { return now }
+	c.Jitter = func() time.Duration { return time.Minute }
+	c.wait = func(context.Context, time.Duration) error {
+		t.Fatal("first, explicit or offline/cache read waited")
+		return nil
+	}
+	if _, err := c.Sync(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour)
+	before, err := os.ReadFile(c.Store.Dir + "/state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := Load(c.Store); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(c.Store.Dir + "/state.json")
+	if err != nil || !bytes.Equal(before, after) || f.hits["/publications/current.json"] != 1 {
+		t.Fatalf("offline/cache read changed state or used network: %v %v", err, f.hits)
+	}
+	c.NoCheckDelay = true
+	if _, err := c.Sync(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	c.NoCheckDelay = false
+	if _, err := c.Sync(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckDelayDeadlineBudget(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name      string
+		remaining time.Duration
+		timeout   time.Duration
+		want      time.Duration
+	}{
+		{"ample budget", 2 * time.Minute, 20 * time.Second, time.Minute},
+		{"capped", 75 * time.Second, 20 * time.Second, 15 * time.Second},
+		{"foreground deadline", 30 * time.Second, 20 * time.Second, 0},
+		{"first hook deadline", 3 * time.Second, 20 * time.Second, 0},
+		{"exact request budget", time.Minute, 20 * time.Second, 0},
+		{"expired", -time.Second, 20 * time.Second, 0},
+		{"unbounded HTTP", 2 * time.Minute, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Client{HTTP: &http.Client{Timeout: tc.timeout}}
+			ctx, cancel := context.WithDeadline(context.Background(), now.Add(tc.remaining))
+			defer cancel()
+			if got := c.checkDelay(ctx, time.Minute, now); got != tc.want {
+				t.Fatalf("delay=%v want=%v", got, tc.want)
+			}
+		})
+	}
+	c := &Client{HTTP: &http.Client{Timeout: 20 * time.Second}}
+	if got := c.checkDelay(context.Background(), time.Minute, now); got != time.Minute {
+		t.Fatalf("no deadline: delay=%v", got)
+	}
+}
+
+func TestSyncShortDeadlineSkipsDelay(t *testing.T) {
+	c, _ := jitterClient(t)
+	c.Jitter = func() time.Duration { return time.Minute }
+	c.wait = func(context.Context, time.Duration) error {
+		t.Fatal("short deadline waited")
+		return nil
+	}
+	if _, err := c.Sync(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	c.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if res, err := c.Sync(ctx, false); err != nil || !res.NotModified {
+		t.Fatalf("short deadline check: %+v %v", res, err)
+	}
+}
+
+func TestSyncLegacyCacheAndCanceledDelay(t *testing.T) {
+	c, f := jitterClient(t)
+	c.Jitter = func() time.Duration { return time.Minute }
+	if _, err := c.Sync(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	state, err := c.Store.State()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.NextCheckAt = time.Time{} // older clients did not persist a jittered interval
+	if err := c.Store.SaveState(state); err != nil {
+		t.Fatal(err)
+	}
+	now := state.CheckedAt.Add(MinCheckInterval - time.Nanosecond)
+	c.Now = func() time.Time { return now }
+	if res, err := c.Sync(context.Background(), false); err != nil || !res.Skipped {
+		t.Fatalf("legacy interval: %+v %v", res, err)
+	}
+	now = now.Add(time.Nanosecond)
+	c.wait = func(_ context.Context, delay time.Duration) error {
+		if delay != time.Minute {
+			t.Fatalf("delay=%v", delay)
+		}
+		return context.Canceled
+	}
+	if _, err := c.Sync(context.Background(), false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled delay: %v", err)
+	}
+	after, err := c.Store.State()
+	if err != nil || after != state || f.hits["/publications/current.json"] != 1 {
+		t.Fatalf("canceled delay changed state or used network: %+v %v %v", after, err, f.hits)
+	}
+}
+
+func TestWaitForCheckCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitForCheck(ctx, time.Minute); !errors.Is(err, context.Canceled) {
+		t.Fatalf("wait did not honor cancellation: %v", err)
 	}
 }
 

@@ -147,6 +147,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	force := fs.Bool("force", false, "sync: ignore the 10-minute check interval")
 	background := fs.Bool("background", false, "sync: detach and return immediately")
 	quiet := fs.Bool("quiet", false, "sync: print nothing on success")
+	scheduled := fs.Bool("scheduled", false, "sync: interval-triggered background refresh")
 	harness := fs.String("harness", "claude-code", "statusline: which harness feeds stdin")
 	modelFlag := fs.String("model", "", "statusline: model id when stdin has none")
 	effortFlag := fs.String("effort", "", "statusline: current effort when the harness knows it")
@@ -212,6 +213,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
+		client.NoCheckDelay = !*scheduled
 		res, err := client.Sync(ctx, *force)
 		if errors.Is(err, store.ErrBusy) {
 			if !*quiet {
@@ -515,7 +517,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	}
 	s, _ := st.State()
 	if !c.offline && time.Since(s.CheckedAt) > staleAfter && time.Since(s.LastAttemptAt) > backgroundEvery {
-		_ = startDetached("sync", "--quiet", "--base", c.base)
+		_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 	}
 	tail := ""
 	if in.FastMode != nil && *in.FastMode {
@@ -624,10 +626,10 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 			_, _ = client.Sync(ctx, false)
 			cancel()
 			if d, _, _ = publication.Load(st); d == nil {
-				_ = startDetached("sync", "--quiet", "--base", c.base)
+				_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 			}
 		} else if time.Since(s.CheckedAt) > staleAfter {
-			_ = startDetached("sync", "--quiet", "--base", c.base)
+			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}
 	}
 	state := advise.Load(st.Dir)
@@ -799,7 +801,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	if !c.offline && !readOnly {
 		refreshAccountLater(st)
 		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
-			_ = startDetached("sync", "--quiet", "--base", c.base)
+			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}
 	}
 	paths := quotaPaths(st)

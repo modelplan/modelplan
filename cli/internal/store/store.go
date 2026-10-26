@@ -22,6 +22,7 @@ type State struct {
 	ComponentHash string    `json:"componentHash,omitempty"`
 	ETag          string    `json:"etag,omitempty"`          // of current.json
 	CheckedAt     time.Time `json:"checkedAt,omitempty"`     // last successful pointer check
+	NextCheckAt   time.Time `json:"nextCheckAt,omitempty"`   // persisted interval plus jitter
 	VerifiedAt    time.Time `json:"verifiedAt,omitempty"`    // last time a publication was verified and switched
 	LastAttemptAt time.Time `json:"lastAttemptAt,omitempty"` // last sync attempt, successful or not
 	LastError     string    `json:"lastError,omitempty"`

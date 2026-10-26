@@ -190,6 +190,7 @@ func TestPublicationPublicOnlyOnlineAndOffline(t *testing.T) {
 	}
 	state.PublishedAt = "unverified-state-time"
 	state.CheckedAt = time.Now().Add(-time.Hour)
+	state.NextCheckAt = state.NextCheckAt.Add(-time.Hour)
 	if err := st.SaveState(state); err != nil {
 		t.Fatal(err)
 	}
