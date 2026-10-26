@@ -166,7 +166,8 @@ import CoreText
     public var keyboardOrder: [String] { recipe?.regions.filter(\.tabStop).map(\.id) ?? [] }
     public func control(for id: String) -> NSControl? { controls[id] }
     private func synchronizeRegions(_ regions: [FaderHitRegion], oldOrder: [String]) {
-        let oldFocus = controls.first { $0.value === window?.firstResponder }?.key, ids = Set(regions.map(\.id))
+        let oldFocus = controls.first { $0.value === window?.firstResponder }?.key
+        let oldRegion = oldFocus.flatMap { controls[$0]?.region }, ids = Set(regions.map(\.id))
         for id in Array(controls.keys) where !ids.contains(id) { controls.removeValue(forKey: id)?.removeFromSuperview() }
         for region in regions {
             let control = controls[region.id] ?? FaderRegionControl(owner: self, region: region)
@@ -175,7 +176,13 @@ import CoreText
         let ordered = regions.filter(\.tabStop).compactMap { controls[$0.id] }
         for (i, control) in ordered.enumerated() { control.nextKeyView = ordered[(i + 1) % ordered.count] }
         setAccessibilityChildren(regions.compactMap { controls[$0.id] })
-        if let oldFocus, controls[oldFocus] == nil, !ordered.isEmpty { window?.makeFirstResponder(ordered[min(oldOrder.firstIndex(of: oldFocus) ?? 0, ordered.count - 1)]) }
+        if let oldRegion, let modelID = oldRegion.modelID,
+           let target = regions.first(where: { $0.modelID == modelID && $0.role == oldRegion.role && $0.tabStop }),
+           target.id != oldFocus {
+            window?.makeFirstResponder(controls[target.id])
+        } else if let oldFocus, controls[oldFocus] == nil, !ordered.isEmpty {
+            window?.makeFirstResponder(ordered[min(oldOrder.firstIndex(of: oldFocus) ?? 0, ordered.count - 1)])
+        }
     }
     private func mutate(_ action: (inout FaderBankController) -> [FaderIntent]) {
         var next = controller; let intents = action(&next)
@@ -261,7 +268,10 @@ import CoreText
     }
     public override func mouseMoved(with event: NSEvent) {
         keyboard = false; updateFocus(); let point = convert(event.locationInWindow, from: nil)
-        guard let region = recipe?.regions.first(where: { $0.rect.contains(point) }) else { leaveHelp(); return }
+        guard let region = recipe?.regions.first(where: { $0.rect.contains(point) }) else {
+            if controller.draggingModelID == nil, controller.previewModelID != nil { mutate { $0.preview(modelID: nil, key: nil); return [] } }
+            leaveHelp(); return
+        }
         if controller.draggingModelID == nil {
             switch region.action {
             case .travel(let id): mutate { $0.preview(modelID: id, key: nearestKey(region, point)); return [] }

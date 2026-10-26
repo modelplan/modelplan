@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreText
 import XCTest
 @testable import ModelPlanInstruments
 
@@ -74,6 +75,51 @@ final class FaderBankModelTests: XCTestCase {
 }
 
 @MainActor final class FaderBankViewTests: XCTestCase {
+    func testReorderingKeepsKeyboardFocusOnTheSameModel() async throws {
+        let view = FaderBankView(); view.onHelpChange = { _, _ in }
+        let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = view
+        let inputs = ["a", "b", "c"].map { FaderChannelInput(model: Fixtures.model(id: $0)) }
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        XCTAssertTrue(window.makeFirstResponder(view.control(for: "fader.slot.1.travel")))
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: Fixtures.now, favoriteIDs: ["b"])
+        XCTAssertTrue(window.firstResponder === view.control(for: "fader.slot.0.travel"))
+        XCTAssertEqual((window.firstResponder as? NSControl)?.accessibilityLabel(), "b")
+        view.dispose(); window.contentView = nil
+    }
+    func testMovingIntoAnUnoccupiedGapClearsHoverPreview() async throws {
+        let view = FaderBankView(); view.onHelpChange = { _, _ in }
+        let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = view
+        try view.update(inputs: [.init(model: Fixtures.model())], publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let travel = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider })
+        func move(_ point: CGPoint) {
+            let event = NSEvent.mouseEvent(with: .mouseMoved, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                                          windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
+            view.mouseMoved(with: event)
+        }
+        move(CGPoint(x: travel.rect.midX, y: travel.top!))
+        XCTAssertNotNil(view.controller.previewEffort)
+        move(CGPoint(x: 1, y: 1))
+        XCTAssertNil(view.controller.previewEffort)
+        XCTAssertFalse(view.recipe!.caps.contains { $0.kind == .preview })
+        view.dispose(); window.contentView = nil
+    }
+    func testFailedGhostPreparationKeepsCommittedTrialAndAllowsSameInputRetry() async throws {
+        let provider = RecoveringFaderProvider()
+        let tested = FaderBankView(recipeProvider: provider); tested.onHelpChange = { _, _ in }
+        try tested.update(inputs: [.init(model: Fixtures.model())], publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let previous = tested.presentation, control = tested.control(for: "fader.slot.0.travel")
+        provider.failGhost = true
+        let trial = FaderTrial(modelID: "model", configuration: .init("max"))
+        XCTAssertThrowsError(try tested.setTrial(trial))
+        XCTAssertEqual(tested.presentation, previous); XCTAssertNil(tested.controller.trial)
+        XCTAssertTrue(control === tested.control(for: "fader.slot.0.travel"))
+        provider.failGhost = false
+        try tested.setTrial(trial)
+        XCTAssertEqual(tested.controller.trial, trial)
+        tested.dispose()
+    }
     func testNativeRegionsFocusAXIncrementAndNoRepeatedRepaint() async throws {
         let view = FaderBankView(); var shown: HelpExplanation?
         view.onHelpChange = { value, _ in shown = value }
@@ -116,5 +162,25 @@ final class FaderBankModelTests: XCTestCase {
         XCTAssertNotNil(view.renderError); XCTAssertEqual(view.presentation, previous)
         XCTAssertTrue(slider === view.control(for: "fader.slot.0.travel"))
         view.setFrameSize(CGSize(width: 330, height: 320)); XCTAssertNil(view.renderError)
+    }
+}
+
+@MainActor private final class RecoveringFaderProvider: FaderBankRecipeProvider {
+    var failGhost = false
+    private let neutral = NeutralFaderBankRecipe()
+    func minimumSize(for p: FaderBankPresentation) -> CGSize { neutral.minimumSize(for: p) }
+    func font(_ request: EngineFontRequest) throws -> CTFont { try neutral.font(request) }
+    func image(_ resourceID: String) throws -> CGImage {
+        if failGhost { throw EngineTableError.missingResource(resourceID) }
+        return CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!.makeImage()!
+    }
+    func recipe(for p: FaderBankPresentation, size: CGSize) throws -> FaderBankRecipe {
+        let r = try neutral.recipe(for: p, size: size)
+        let caps = r.caps.map { cap in
+            cap.kind == .ghost ? FaderCapSurface(id: cap.id, modelID: cap.modelID, kind: cap.kind, frame: cap.frame,
+                commands: [.image(resourceID: "synthetic-ghost", rect: CGRect(origin: .zero, size: cap.frame.size), opacity: 1)]) : cap
+        }
+        return FaderBankRecipe(size: r.size, commands: r.commands, regions: r.regions, caps: caps, focusInk: r.focusInk)
     }
 }
