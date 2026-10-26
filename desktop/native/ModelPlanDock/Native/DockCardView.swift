@@ -41,7 +41,7 @@ import AppKit
         for (i,c) in edges.enumerated(){c.constant=(i==1 || i==3) ? -style.padding:style.padding}
         func label(_ text:String)->NSTextField{let l=NSTextField(wrappingLabelWithString:text);l.font = .systemFont(ofSize:style.fontSize);l.textColor=style.ink;l.toolTip=nil;l.setAccessibilityLabel(text);return l}
         let head=NSStackView();head.orientation = .horizontal;head.spacing=8
-        if let brandImage{let image=NSImageView(image:brandImage);image.imageScaling = .scaleProportionallyDown;image.setAccessibilityElement(false);image.widthAnchor.constraint(equalToConstant:style.brandSize).isActive=true;image.heightAnchor.constraint(equalToConstant:style.brandSize).isActive=true;head.addArrangedSubview(image)}
+        if let brandImage{let original=brandImage.copy() as! NSImage;original.isTemplate=false;let image=NSImageView(image:original);image.contentTintColor=nil;image.imageScaling = .scaleProportionallyDown;image.setAccessibilityElement(false);image.widthAnchor.constraint(equalToConstant:style.brandSize).isActive=true;image.heightAnchor.constraint(equalToConstant:style.brandSize).isActive=true;head.addArrangedSubview(image)}
         head.addArrangedSubview(label([value.name,value.plan].filter{!$0.isEmpty}.joined(separator:" · ")));stack.addArrangedSubview(head)
         for text in [value.sourceAndAge,value.stateLabel] where !text.isEmpty{stack.addArrangedSubview(label(text))}
         for row in value.rows{

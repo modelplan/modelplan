@@ -422,6 +422,10 @@ struct NativeFailure:Error {let message:String}
     try require(orderAnnouncements==["a:1:3"],"accepted Option move announces each actual position once")
     interaction.orderAccepted(accepted.id,preferences:interactionEnv.preferences,catalogue:interactionEnv.catalogue)
     try require(orderAnnouncements.count==1,"duplicate acceptance does not reannounce")
+    interaction.moveByKeyboard(id:"b",delta:1)
+    let toOverflow=orderRequests.last!;interactionEnv.preferences=toOverflow.proposed;interactionEnv.overflowIDs.insert("b")
+    interaction.orderAccepted(toOverflow.id,preferences:interactionEnv.preferences,catalogue:interactionEnv.catalogue)
+    try require(interaction.presentation?.overflowIDs.contains("b")==true && orderAnnouncements.count==2,"accepted off-main move opens overflow before focus/announcement handoff")
     _=interaction.beginNozzle(id:"a",along:0);interaction.canPreviewOrder={_ in interaction.stop();return true};interaction.moveNozzle(along:25)
     try require(interaction.presentation?.reorder==nil && !interaction.hasCapture,"preview callback stop cannot reenter an inout gesture or resurrect it")
     interaction.canPreviewOrder={_ in true};interactionTime=12;interaction.start();_=interaction.beginNozzle(id:"a",along:0)
@@ -453,7 +457,10 @@ struct NativeFailure:Error {let message:String}
     legacyMenu.dispose()
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
     let cardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[.init(id:"extra",kind:.extraQuota,label:"Full extra name",value:"0%",remainingFraction:0,tone:.critical)])
-    try cardSurface.apply(cardContent,pinned:true);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
+    let templateBrand=NSImage(size:NSSize(width:20,height:20));templateBrand.isTemplate=true
+    try cardSurface.apply(cardContent,pinned:true,brandImage:templateBrand);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
+    let cardHeader=(cardSurface.subviews.first as! NSStackView).arrangedSubviews.first as! NSStackView
+    try require((cardHeader.arrangedSubviews.first as? NSImageView)?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
     let unsafeCardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
     do{try cardSurface.apply(unsafeCardContent,pinned:true);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
     cardSurface.dispose()
