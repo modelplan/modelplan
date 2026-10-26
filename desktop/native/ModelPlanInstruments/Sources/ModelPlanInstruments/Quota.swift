@@ -23,6 +23,7 @@ public enum QuotaLevel: Int, Comparable, Sendable {
         return remaining < 16 ? .critical : remaining < 41 ? .amber : .healthy
     }
 }
+public enum QuotaPublicReset: Equatable, Sendable { case announced(Date?), confirmedAwaitingReading }
 
 /// Already attributed input. An absent window is distinct from an unreadable existing window.
 public struct InstrumentQuota: Sendable {
@@ -33,10 +34,14 @@ public struct InstrumentQuota: Sendable {
     public let resetsAt: Date?
     public let durationMinutes: Double?
     public let readable: Bool
+    public let runsOutAt: Date?
+    public let publicReset: QuotaPublicReset?
     public init(id: String, period: QuotaPeriod, scope: String? = nil, remaining: Double?,
-                resetsAt: Date? = nil, durationMinutes: Double? = nil, readable: Bool = true) {
+                resetsAt: Date? = nil, durationMinutes: Double? = nil, readable: Bool = true,
+                runsOutAt: Date? = nil, publicReset: QuotaPublicReset? = nil) {
         self.id = id; self.period = period; self.scope = scope; self.remaining = remaining
         self.resetsAt = resetsAt; self.durationMinutes = durationMinutes; self.readable = readable
+        self.runsOutAt = runsOutAt; self.publicReset = publicReset
     }
 }
 
@@ -50,6 +55,8 @@ public struct QuotaCell: Sendable {
     public let resetsAt: Date?
     public let timeFraction: Double?
     public let timeDots: Int?
+    public let runsOutAt: Date?
+    public let publicReset: QuotaPublicReset?
 
     public init(_ input: InstrumentQuota, now: Date) {
         id = input.id; period = input.period; scope = input.scope
@@ -58,6 +65,11 @@ public struct QuotaCell: Sendable {
         level = .of(remaining)
         litSegments = remaining.map { $0 == 0 ? 0 : max(1, min(10, Int(($0 / 10).rounded()))) }
         resetsAt = input.readable && !passed ? input.resetsAt : nil
+        runsOutAt = input.readable && !passed ? input.runsOutAt.flatMap {
+            let m = $0.timeIntervalSince(now) / 60
+            return m.isFinite && m >= 0 && m < Double(Int.max / 2) ? $0 : nil
+        } : nil
+        publicReset = input.readable ? input.publicReset : nil // Announcement never changes the account reading.
         if input.readable, let reset = input.resetsAt, let duration = known(input.durationMinutes), duration > 0 {
             // Calendar windows need their actual reported duration; never assume a 30-day month.
             timeFraction = min(1, max(0, reset.timeIntervalSince(now) / 60 / duration))

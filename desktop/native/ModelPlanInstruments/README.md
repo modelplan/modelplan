@@ -1,8 +1,9 @@
-# Instrument presentation data
+# Instrument models and engine table
 
 An independent MIT Swift library for quota rows, effort comparisons, fader readouts,
-main-screen pages and record lines. It uses Foundation only. There are no views,
-assets, process launches, network reads, persistent state or model-setting writes.
+main-screen pages and record lines, plus an AppKit engine-table view. Pure models
+use Foundation; rendering uses AppKit/CoreText/Core Animation. There are no bundled
+visual assets, process launches, network reads, persistent state or model-setting writes.
 
 Inputs are immutable presentation values. The assembly adapter must supply the
 verified Core join, its publication usability, fresh attributed readings and an
@@ -60,8 +61,43 @@ They are nonvisual contract examples, not frozen visual acceptance evidence.
 The parent `desktop/native/Package.swift` and native CI now register the instruments
 library and XCTest target. Shared manifest/workflow changes remain assembly-owned.
 The nested manifest also provides a focused, independent validation path.
-CLI adapters, layout, accessibility and visual acceptance belong to subsequent
-integration batches.
+CLI adapters and app assembly remain integration-owned. Pure tests do not establish
+official pixel, physical input, accessibility or performance acceptance.
+
+## Engine-table integration
+
+`EngineTableView` consumes the existing quota/Today/reserve columns, explicit names,
+language, clock, scope and page. It emits typed scope/page/add-subscription intents;
+the app routes the last intent to Settings → Subscriptions. Slot keys retain stable
+IDs across refreshes. Empty bodies expose the add action to pointer and accessibility
+press, while only their keys enter the keyboard sequence. Unknown quota values stay
+`--`, absent windows stay blank and a reported public reset never refills a quota.
+This includes a table with no subscriptions. Other keeps its compact `+N` reading,
+while its shared hover/focus/accessibility explanation contains every supplied
+window's period, scope, remaining reading and reset, respecting evidence validity.
+The quota's short AX label is separate from that complete help, so additional
+windows do not consume the recipe's label budget or truncate their descriptions.
+Scope keys also expose their actual current-page shortcut in the accessible label
+and shared hover/focus help; these facts do not add a painted legend.
+
+Updates prepare every throwing drawing/text surface before committing presentation,
+controls or layers. A failed preparation retains the last committed state and an
+identical-input retry remains eligible after the provider recovers.
+
+The default `NeutralEngineTableRecipe` is complete without files or private checkout.
+Trusted assembly may explicitly inject `EngineTableRecipeProvider` for official
+resources. The generic drawing schema contains no official coordinates, silhouettes,
+font names or palette. It validates bounded commands/geometry and shares a 16 MB
+decoded-resource budget across nested operations; providers own bounded caches.
+Text uses the first fitting supplied wording, without shrinking its requested font.
+Persistent controls preserve focus and AX help; bounded reading fades end after their
+supplied duration and Reduce Motion suppresses them. Unchanged snapshots do not repaint.
+
+The host should connect `onHelpChange` to its shared, safe-placement help presenter;
+the standalone neutral host has an ordinary popover fallback. Hide/blur calls
+`suspend()`, teardown calls `dispose()`. There is no polling/render loop or global
+input monitor. Official recipes, licensed font bytes, source goldens and visual
+evidence stay private; passing this target's neutral tests is not visual approval.
 
 ## Main-screen data and local navigation
 
