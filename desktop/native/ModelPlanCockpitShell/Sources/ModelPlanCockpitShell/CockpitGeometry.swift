@@ -12,18 +12,23 @@ public struct CockpitMetrics: Equatable, Sendable {
     public let closedFullHeight: CGFloat
     public let closedCompactHeight: CGFloat
     public let exhaustReserve: CGFloat
+    public let openFullHeight: CGFloat
+    public let openCompactHeight: CGFloat
     public static let fullHeight: CGFloat = 890
     public static let compactHeight: CGFloat = 640
     public static let topGap: CGFloat = 6
 
     public init(contentWidth: CGFloat, silhouetteWidth: CGFloat,
                 closedFullHeight: CGFloat, closedCompactHeight: CGFloat,
-                exhaustReserve: CGFloat = 34) {
+                exhaustReserve: CGFloat = 34,
+                openFullHeight: CGFloat = 890, openCompactHeight: CGFloat = 640) {
         precondition(contentWidth.isFinite && contentWidth > 0)
         precondition(silhouetteWidth.isFinite && silhouetteWidth >= contentWidth)
         precondition(closedFullHeight.isFinite && closedFullHeight > 0)
         precondition(closedCompactHeight.isFinite && closedCompactHeight > 0)
         precondition(exhaustReserve.isFinite && exhaustReserve >= 0)
+        precondition(openFullHeight.isFinite && openCompactHeight.isFinite && openCompactHeight > 0 && openFullHeight >= openCompactHeight)
+        self.openFullHeight = openFullHeight; self.openCompactHeight = openCompactHeight
         self.contentWidth = contentWidth
         self.silhouetteWidth = silhouetteWidth
         self.closedFullHeight = closedFullHeight
@@ -33,8 +38,8 @@ public struct CockpitMetrics: Equatable, Sendable {
 
     public func bodyHeight(profile: CockpitProfile, closed: Bool) -> CGFloat {
         switch (profile, closed) {
-        case (.full, false): return Self.fullHeight
-        case (.compact, false): return Self.compactHeight
+        case (.full, false): return openFullHeight
+        case (.compact, false): return openCompactHeight
         case (.full, true): return closedFullHeight
         case (.compact, true): return closedCompactHeight
         }
@@ -94,8 +99,8 @@ public enum CockpitLayout {
 
         let heightBelowGap = area.height - CockpitMetrics.topGap
         let bodyBudget = heightBelowGap - metrics.exhaustReserve
-        let profile: CockpitProfile = bodyBudget >= CockpitMetrics.fullHeight ? .full : .compact
-        let forcedClosed = bodyBudget < CockpitMetrics.compactHeight
+        let profile: CockpitProfile = bodyBudget >= metrics.openFullHeight ? .full : .compact
+        let forcedClosed = bodyBudget < metrics.openCompactHeight
         let closed = window.isClosed(forcedClosed: forcedClosed)
         // The height tiers do not introduce a new width-triggered closure policy.
         guard closed || area.width >= metrics.silhouetteWidth else { return nil }
