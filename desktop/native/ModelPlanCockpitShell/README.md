@@ -56,3 +56,15 @@ The shared `desktop/native/Package.swift`, `ModelPlanCore`, `ModelPlanShell` and
 M0 also supplies the frozen closed-profile dimensions and native usable-frame/anchor contract when wiring the presentation. This preparation does not resolve pending appearance geometry or claim full shell/strip acceptance. No shared-state-machine change is currently requested.
 
 The separate `ModelPlanSelection` package is the P03 shared ordered-ID seam. Its README lists the new registration/adapter request; this shell target remains on its existing registration.
+
+## B09 native surface
+
+`CockpitShellSurface` is an AppKit root with replaceable content slots and an external `CockpitShellSkin`. The skin supplies registered geometry, one background raster, a revision-bound still key, and bounded station layers. `NeutralCockpitShellSkin` is independently usable without private files. Official art, distinctive geometry and effect drawing remain in the private visual package; there is no web renderer in this target.
+
+Use one skin instance per surface. Configure the surface with visible engine-column IDs and measured centres/widths; a nil ID is an inert bay and cannot work. The appearance and still identity must match before a captured image reaches the skin. Closing omits the window slot and rejects a supplied still. `CockpitMetrics` accepts presentation-specific open and closed heights while retaining the existing default tier contract.
+
+`setRootScale` scales the entire view bounds, content controls and input coordinates together. The skin's `drawableBounds` may trim transparent padding while preserving root-local registration and the separate base reserve. M0 owns screen selection, window placement and translating the visible top into global coordinates.
+
+`quickOpen(reduceMotion:)` installs only a 180 ms compositor opacity animation; controls remain available immediately. `setPresentationAllowed(false)`, hidden/occluded/detached views and `stop()` remove station animations and discard transient resources. Window occlusion and OS accessibility-display changes are observed; M0 forwards ordering/Space/session/sleep/display events explicitly. App deactivation does not imply hiding. A provider failure goes to `onRenderingFailure`; configure errors are thrown. The owner keeps the shared effect pool at its existing limit and handles resource admission failure without allocating a second cache.
+
+B09 tests use neutral synthetic providers to check raster admission, duplicate IDs, still identity, closed allocation, whole-root coordinate conversion, quick fade and teardown. Private registered-art comparisons and native-host receipts are separate. They do not establish physical-display input latency, minimum-runtime acceptance or whole-app memory budgets.
