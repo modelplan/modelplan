@@ -13,6 +13,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, feedback, licenses
+    case dockEdge, detectedReaders, optionalReaders
 }
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
@@ -30,8 +31,12 @@ public struct SettingsSubscription: Sendable {
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
 public enum SettingsArchitecture: String, Sendable { case appleSilicon, intelUntested }
+public enum SettingsDiagnosticCode: String, Sendable { case permissionDenied, unsupported, stale, cliUnavailable, readerUnavailable }
 public struct SettingsAbout: Sendable {
     public var appVersion: String, cliVersion: String
+    public var macOSVersion = "unknown"
+    public var enabledReaders = Set<SettingsReaderID>()
+    public var recentErrorCodes: [SettingsDiagnosticCode] = []
     public var cliState: CLIReadState
     public var architecture: SettingsArchitecture
     public init(appVersion: String = "unknown", cliVersion: String = "unknown", cliState: CLIReadState = .unavailable,
@@ -46,7 +51,7 @@ public struct SettingsAbout: Sendable {
     public var version: String { safeVersion(appVersion) }
     /// Deliberate allowlist. No paths, aliases, projects, account IDs, raw CLI output/errors or machine identity.
     public var diagnosticText: String {
-        "app=\(version)\ncli=\(safeVersion(cliVersion))\ncliState=\(cliState.rawValue)\narchitecture=\(architecture.rawValue)"
+        "app=\(version)\ncli=\(safeVersion(cliVersion))\nmacOS=\(safeVersion(macOSVersion))\nreaders=\(SettingsReaderID.allCases.filter { enabledReaders.contains($0) }.map(\.rawValue).joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
     }
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
     public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
@@ -63,6 +68,7 @@ public struct SettingsPageContext: Sendable {
     public var capabilities = SettingsCapabilities()
     public var about = SettingsAbout()
     /// Supplied by the app from its audited bundled notices, not a download or private source.
+    public var readerObservations: [SettingsReaderID: ReaderObservation] = [:]
     public var licenseNotices: [SettingsLicenseNotice] = []
     public init() {}
 }
@@ -72,7 +78,7 @@ public struct SubscriptionRowValue: Equatable, Sendable {
 }
 public enum SettingsRowValue: Equatable, Sendable {
     case choice(String, options: [String]), toggle(Bool), text(String), subscriptions([SubscriptionRowValue])
-    case action(SettingsActionRequest?), link(URL), notices([SettingsLicenseNotice]), login(LoginSetting)
+    case action(SettingsActionRequest?), link(URL), notices([SettingsLicenseNotice]), login(LoginSetting), readers([ReaderSetting])
 }
 public struct SettingsRow: Equatable, Sendable {
     public let key: SettingKey
@@ -112,6 +118,9 @@ public enum SettingsCatalogue {
         .init(.magnification,"Hover magnification","悬停放大","Choose none, subtle or strong.","选择不放大、轻微或明显。"),
         .init(.fullscreen,"Show over full-screen apps","全屏应用上显示","Off by default.","默认关闭。"),
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
+        .init(.dockEdge,"Dock edge","挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
+        .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader observations.","本地读取器的只读观测。"),
+        .init(.optionalReaders,"Optional readers","可选读取器","Off by default; saves consent only.","默认关闭；只保存同意选择。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
         .init(.order,"Subscription order","订阅顺序","One shared order for the dock and cockpit; hidden entries remain editable.","挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
         .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Save your choice; system registration status is shown separately.","保存自动打开的选择；系统注册状态单独显示。"),
@@ -139,7 +148,7 @@ public enum SettingsCatalogue {
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
-        .init(.diagnostics,"Copy diagnostics","复制诊断","Versions and capability enums only; no personal data.","仅含版本和能力枚举，不含个人数据。"),
+        .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader IDs and error codes only.","仅含版本、macOS、读取器ID和错误代码。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
         .init(.licenses,"Third-party notices","第三方声明","The app adapter supplies bundled license notices.","由应用适配器提供随包许可证声明。"),
     ]
@@ -186,7 +195,7 @@ public enum SettingsCatalogue {
         switch k {
         case .captureHiding: return .unsupportedCaptureHiding
         case .retention, .clearCLI: return .cliOwned
-        case .source, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .licenses: return .readOnly
+        case .source, .detectedReaders, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .licenses: return .readOnly
         case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
         default: return .available
@@ -200,6 +209,9 @@ public enum SettingsCatalogue {
             .subscriptions(subs.map { .init(id: $0.id, name: $0.name.value(p.language), plan: $0.plan, value: transform($0), options: options) })
         }
         switch k {
+        case .dockEdge: return choices(p.dockEdge)
+        case .detectedReaders: return .readers(ReaderSetting.project(consent: p.readerConsent, observations: c.readerObservations).filter { $0.consent == nil })
+        case .optionalReaders: return .readers(ReaderSetting.project(consent: p.readerConsent, observations: c.readerObservations).filter { $0.consent != nil })
         case .theme: return choices(p.theme)
         case .size: return choices(p.size)
         case .motion: return choices(p.motion)

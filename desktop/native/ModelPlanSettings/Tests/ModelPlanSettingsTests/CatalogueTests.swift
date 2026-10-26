@@ -79,7 +79,7 @@ final class CatalogueTests: XCTestCase {
         p.subscriptionSettings["one"] = .init(alias: "private-project")
         c.about = .init(appVersion: "/Users/private/account@example.com", cliVersion: "error: secret", cliState: .denied, architecture: .intelUntested)
         let text = c.about.diagnosticText
-        XCTAssertEqual(text, "app=unknown\ncli=unknown\ncliState=denied\narchitecture=intelUntested")
+        XCTAssertEqual(text, "app=unknown\ncli=unknown\nmacOS=unknown\nreaders=\nerrors=")
         c.about.appVersion = "secretToken"; XCTAssertEqual(c.about.version, "unknown")
         c.about.appVersion = "0.5.38-beta.1"; XCTAssertEqual(c.about.version, "0.5.38-beta.1")
         c.about.appVersion = "/Users/private/account@example.com"
