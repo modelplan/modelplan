@@ -36,6 +36,9 @@ import AppKit
     private(set) var isRetired = false
     private(set) var editing = false
     private var committed = "", cancelled = false
+    private var unconfirmedText: String?
+    var hasUnsavedDraft: Bool { unconfirmedText != nil }
+    private var language: SettingsLanguage = .chinese
     var onFinish: ((SettingsAliasControl, AliasDraft) -> Void)?
     init(subscriptionID: String) {
         self.subscriptionID = subscriptionID
@@ -43,9 +46,20 @@ import AppKit
         setAccessibilityIdentifier("settings.alias." + subscriptionID)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
-    func configure(committed: String) {
-        self.committed = committed
-        if !editing { stringValue = committed }
+    func configure(committed: String, language: SettingsLanguage) {
+        self.committed = committed; self.language = language
+        refreshDraft()
+    }
+    private func refreshDraft() {
+        if !editing { stringValue = unconfirmedText ?? committed }
+        setAccessibilityHelp(unconfirmedText == nil ? nil : language == .english
+            ? "Not saved. Finish editing again to retry, or press Escape to cancel."
+            : "尚未保存。重新结束编辑以重试，或按 Escape 取消。")
+    }
+    func resolveSave(submittedText: String, saved: Bool) {
+        guard !isRetired, unconfirmedText == submittedText else { return }
+        if saved { unconfirmedText = nil }
+        refreshDraft()
     }
     var draft: AliasDraft {
         var draft = AliasDraft(subscriptionID: subscriptionID!, committed: committed)
@@ -54,10 +68,13 @@ import AppKit
     }
     func controlTextDidBeginEditing(_ obj: Notification) { guard !isRetired else { return }; editing = true; cancelled = false }
     func controlTextDidEndEditing(_ obj: Notification) {
-        editing = false
-        guard !isRetired, !cancelled, isEnabled else { return }
+        guard !isRetired, !cancelled, isEnabled else { editing = false; return }
         let value = draft
-        guard !value.composing, value.text != committed else { return }
+        guard !value.composing else { return }
+        editing = false
+        guard value.text != committed else { unconfirmedText = nil; refreshDraft(); return }
+        // End-editing is not a save receipt. Retain the completed text through busy/failed refreshes.
+        unconfirmedText = value.text; refreshDraft()
         onFinish?(self, value)
     }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -65,14 +82,15 @@ import AppKit
         // Let the input method finish/cancel marked text before interpreting Return/Escape as a form command.
         guard !textView.hasMarkedText() else { return false }
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            cancelled = true; textView.string = committed; stringValue = committed
+            cancelled = true; unconfirmedText = nil; textView.string = committed; stringValue = committed
+            refreshDraft()
             window?.makeFirstResponder(nil); return true
         }
         return false
     }
     override func becomeFirstResponder() -> Bool { !isRetired && super.becomeFirstResponder() }
     func retire() {
-        isRetired = true; cancelled = true; isEnabled = false; isEditable = false; isSelectable = false
+        isRetired = true; cancelled = true; unconfirmedText = nil; isEnabled = false; isEditable = false; isSelectable = false
         onFinish = nil; target = nil; action = nil; delegate = nil
     }
 }

@@ -92,6 +92,81 @@ import XCTest
         try capture("subscriptions-en-night-offscreen", controller: controller)
         controller.close()
     }
+    func testAliasFinishedDuringAnotherSaveRetainsDraftAndCanBeRetried() async throws {
+        let editor = try await makeEditor()
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare(); controller.selectPane("subscriptions")
+        let first = try XCTUnwrap(controller.aliasControl(subscriptionID: "a"))
+        let second = try XCTUnwrap(controller.aliasControl(subscriptionID: "b"))
+        let revision = editor.snapshot!.revision
+        let refresh = editor.onChange
+        defer { editor.onChange = refresh }
+        var finishedSecond = false, receipts = [UInt64]()
+        let firstSaved = expectation(description: "first save finishes")
+        editor.onCommit = { snapshot, _ in receipts.append(snapshot.revision); firstSaved.fulfill() }
+        second.stringValue = "Second"
+        second.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: second))
+        editor.onChange = {
+            refresh?()
+            guard editor.isSaving, !finishedSecond else { return }
+            // Hold the first transaction here, before it can write, and end a second live alias.
+            finishedSecond = true; editor.onChange = refresh
+            second.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: second))
+            controller.refreshEnvironment()
+            XCTAssertEqual(second.stringValue, "Second", "a completed alias must survive refresh while another save is pending")
+            XCTAssertNotNil(controller.errorMessage, "a rejected save must have explicit retry feedback")
+        }
+        first.stringValue = "First"
+        first.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: first))
+        first.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: first))
+        await fulfillment(of: [firstSaved], timeout: 3)
+        XCTAssertTrue(finishedSecond)
+        XCTAssertEqual(editor.snapshot?.preferences.subscriptionSettings["a"]?.alias, "First")
+        XCTAssertNil(editor.snapshot?.preferences.subscriptionSettings["b"])
+        XCTAssertEqual(second.stringValue, "Second")
+        XCTAssertTrue(controller.errorMessage?.contains("not saved") == true)
+        let retried = expectation(description: "explicit retry saves the retained alias")
+        editor.onCommit = { snapshot, _ in receipts.append(snapshot.revision); retried.fulfill() }
+        second.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: second))
+        second.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: second))
+        await fulfillment(of: [retried], timeout: 3)
+        XCTAssertEqual(receipts, [revision + 1, revision + 2])
+        let persisted = await editor.store.snapshot()
+        XCTAssertEqual(persisted.preferences.subscriptionSettings["a"]?.alias, "First")
+        XCTAssertEqual(persisted.preferences.subscriptionSettings["b"]?.alias, "Second")
+        XCTAssertEqual(second.stringValue, "Second"); XCTAssertNil(controller.errorMessage)
+        controller.close()
+    }
+    func testFailedAliasRetainsDraftWithoutReceiptAndEscapeCancelsIt() async throws {
+        let editor = try await makeEditor()
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare(); controller.selectPane("subscriptions")
+        let field = try XCTUnwrap(controller.aliasControl(subscriptionID: "a"))
+        let revision = editor.snapshot!.revision, invalid = String(repeating: "x", count: 129)
+        let attempted = expectation(description: "invalid alias transaction completes")
+        var began = false, commits = 0, requests = 0
+        let refresh = editor.onChange
+        defer { editor.onChange = refresh }
+        editor.onChange = {
+            refresh?()
+            if editor.isSaving { began = true }
+            else if began { editor.onChange = refresh; attempted.fulfill() }
+        }
+        editor.onCommit = { _, _ in commits += 1 }; editor.onHostRequest = { _ in requests += 1 }
+        field.stringValue = invalid
+        field.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
+        field.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+        await fulfillment(of: [attempted], timeout: 3)
+        XCTAssertEqual(commits, 0); XCTAssertEqual(requests, 0)
+        XCTAssertEqual(editor.snapshot?.revision, revision)
+        XCTAssertEqual(field.stringValue, invalid); XCTAssertNotNil(controller.errorMessage)
+        XCTAssertTrue(try XCTUnwrap(controller.window).makeFirstResponder(field))
+        let text = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        XCTAssertTrue(field.control(field, textView: text, doCommandBy: #selector(NSResponder.cancelOperation(_:))))
+        XCTAssertEqual(field.stringValue, ""); XCTAssertEqual(editor.snapshot?.revision, revision)
+        XCTAssertNil(editor.snapshot?.preferences.subscriptionSettings["a"])
+        controller.close()
+    }
     func testRetiredAliasShortcutAndHintCallbacksCannotPersist() async throws {
         let editor = try await makeEditor()
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })

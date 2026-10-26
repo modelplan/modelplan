@@ -214,7 +214,7 @@ import AppKit
             let field = aliases[sub.id]!, line = aliasLines[sub.id]!
             if controls.arrangedSubviews[index] !== line { controls.removeArrangedSubview(line); controls.insertArrangedSubview(line, at: index) }
             aliasLabels[sub.id]?.stringValue = sub.name
-            field.configure(committed: sub.value); field.isEnabled = enabled || field.editing
+            field.configure(committed: sub.value, language: language); field.isEnabled = enabled || field.editing
             field.setAccessibilityLabel(SettingsWords.text("Alias: ", "别名：", language) + sub.name)
         }
         if subs.isEmpty {

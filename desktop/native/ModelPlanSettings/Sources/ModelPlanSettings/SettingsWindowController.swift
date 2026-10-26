@@ -222,6 +222,10 @@ enum SettingsWords {
         guard let snapshot = editor.snapshot, let effective = editor.effective else {
             heading.stringValue = SettingsWords.text("Loading settings…", "正在读取设置…", language); return
         }
+        if errorMessage == nil, !pendingEdit, !editor.isSaving,
+           rows.values.contains(where: { $0.aliases.values.contains { $0.hasUnsavedDraft && !$0.editing } }) {
+            errorMessage = SettingsWords.text("An alias is not saved. Finish editing it again to retry, or press Escape to cancel.", "有别名尚未保存。请重新结束该项编辑以重试，或按 Escape 取消。", language)
+        }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
         let desiredAppearance: NSAppearance.Name? = snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
@@ -289,7 +293,7 @@ enum SettingsWords {
         do {
             if SettingsB20Edit.keys.contains(sender.settingKey) {
                 let edit = try SettingsB20Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
-                submit { [editor] in try await editor.commit(edit) }
+                submit(operation: { [editor] in try await editor.commit(edit) })
             } else {
                 let edit = try SettingsB21Edit(key: sender.settingKey, value: value, subscriptionID: sender.subscriptionID)
                 changeBehavior(edit, sender: sender)
@@ -298,19 +302,36 @@ enum SettingsWords {
     }
     private func changeBehavior(_ edit: SettingsB21Edit, sender: NSView & SettingsOwnedControl) {
         guard owns(sender) else { return }
-        submit { [editor] in try await editor.commit(edit) }
+        if case .alias(let draft) = edit, let field = sender as? SettingsAliasControl {
+            submit(operation: { [editor] in try await editor.commit(edit) }, aliasCompletion: { [weak field] saved in
+                field?.resolveSave(submittedText: draft.text, saved: saved)
+            })
+        } else { submit(operation: { [editor] in try await editor.commit(edit) }) }
     }
-    private func submit(_ operation: @escaping @MainActor () async throws -> SettingsSnapshot) {
-        guard !pendingEdit else { return }
+    private func submit(operation: @escaping @MainActor () async throws -> SettingsSnapshot,
+                        aliasCompletion: ((Bool) -> Void)? = nil) {
+        guard !pendingEdit else {
+            aliasCompletion?(false)
+            errorMessage = aliasCompletion == nil
+                ? SettingsWords.text("Another change is still saving. This edit is not saved; try again after saving finishes.", "另一项更改仍在保存。此次更改尚未保存，请在保存完成后重试。", language)
+                : SettingsWords.text("Another change is still saving. This alias is not saved; finish editing again to retry after saving finishes.", "另一项更改仍在保存。此别名尚未保存，请在保存完成后重新结束编辑以重试。", language)
+            refresh(); NSAccessibility.post(element: status, notification: .valueChanged)
+            return
+        }
         pendingEdit = true; errorMessage = nil
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.pendingEdit = false; self.refresh() }
-            do { _ = try await operation() }
+            do { _ = try await operation(); aliasCompletion?(true) }
             catch {
-                self.errorMessage = (error as? SettingsError) == .staleRevision || (error as? SettingsEditorError) == .staleContext
-                    ? SettingsWords.text("Settings changed elsewhere. Review the current value and try again.", "设置已在别处更新，请检查当前值后重试。", self.language)
-                    : SettingsWords.text("Could not save this change. The saved settings are retained.", "无法保存此次更改，已保留原设置。", self.language)
+                aliasCompletion?(false)
+                if aliasCompletion != nil {
+                    self.errorMessage = SettingsWords.text("This alias is not saved. Check the text and finish editing again to retry, or press Escape to cancel.", "此别名尚未保存。请检查文本并重新结束编辑以重试，或按 Escape 取消。", self.language)
+                } else {
+                    self.errorMessage = (error as? SettingsError) == .staleRevision || (error as? SettingsEditorError) == .staleContext
+                        ? SettingsWords.text("Settings changed elsewhere. Review the current value and try again.", "设置已在别处更新，请检查当前值后重试。", self.language)
+                        : SettingsWords.text("Could not save this change. The saved settings are retained.", "无法保存此次更改，已保留原设置。", self.language)
+                }
                 self.refresh(); NSAccessibility.post(element: self.status, notification: .valueChanged)
             }
         }
