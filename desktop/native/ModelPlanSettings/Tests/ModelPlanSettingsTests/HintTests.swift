@@ -4,7 +4,7 @@ import XCTest
 
 final class HintTests: XCTestCase {
     private func open(_ n: Int = 1, dock: Bool = false, seen: Set<FirstUseHintKind> = []) throws -> FirstUseHints {
-        var h = FirstUseHints(preferences: .init(seen: seen, cockpitOpens: n-1))
+        var h = FirstUseHints(preferences: .init(seen: seen, opens: n-1, reveals: dock ? 1 : 0))
         var c = HintContext(cockpitOpen: UUID(), dockReveal: dock ? UUID() : nil); c.captureReady = true
         try h.updateContext(c, at: 0); return h
     }
@@ -36,7 +36,7 @@ final class HintTests: XCTestCase {
         h.dismiss(); h.request(.trial)
         XCTAssertNil(try h.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 1))
         c.cockpitOpen = UUID(); c.dockReveal = UUID(); try h.updateContext(c, at: 2)
-        XCTAssertEqual(try h.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 2)?.kind, .optionHelp)
+        XCTAssertEqual(try h.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 2)?.kind, .detach)
         XCTAssertFalse(h.preferences.seen.contains(.shutter)); XCTAssertFalse(h.preferences.seen.contains(.trial))
     }
     func testSecondOpenShutterAndCountsRemainBoundedAcrossRelaunch() throws {
@@ -50,9 +50,9 @@ final class HintTests: XCTestCase {
         let second = try XCTUnwrap(h.nextOffer(placeable: [.optionHelp,.shutter], at: 0)); XCTAssertEqual(second.kind, .shutter)
         try h.confirmShown(second, at: 0)
         for i in 1...10 { c.cockpitOpen = UUID(); try h.updateContext(c, at: Double(i)) }
-        XCTAssertEqual(h.preferences.cockpitOpens, 2)
-        XCTAssertEqual(try JSONDecoder().decode(FirstUseHintPreferences.self, from: Data("{\"cockpitOpens\":999999}".utf8)).cockpitOpens, 2)
-        XCTAssertEqual(try JSONDecoder().decode(FirstUseHintPreferences.self, from: Data("{\"cockpitOpens\":-3}".utf8)).cockpitOpens, 0)
+        XCTAssertEqual(h.preferences.opens, 2)
+        XCTAssertEqual(try JSONDecoder().decode(FirstUseHintPreferences.self, from: Data("{\"cockpitOpens\":999999}".utf8)).opens, 2)
+        XCTAssertEqual(try JSONDecoder().decode(FirstUseHintPreferences.self, from: Data("{\"cockpitOpens\":-3}".utf8)).opens, 0)
     }
     func testFieldAndIgnitionRequire500msAndLeavingCancels() throws {
         var h = try open(dock: true, seen: [.optionHelp,.shutter])
@@ -68,19 +68,18 @@ final class HintTests: XCTestCase {
         XCTAssertNil(try h.nextOffer(placeable: [.ignition], at: 1.599))
         XCTAssertEqual(try h.nextOffer(placeable: [.ignition], at: 1.6)?.kind, .ignition)
     }
-    func testFirstPinDragBeforePinnedAndClosedCardUsesDockBudget() throws {
-        var h = FirstUseHints(), c = HintContext(dockReveal: UUID()); c.captureReady = true
-        try h.updateContext(c, at: 0); h.request(.drag)
-        XCTAssertNil(try h.nextOffer(placeable: [.drag,.pinned], at: 0))
-        c.cardPinned = true; try h.updateContext(c, at: 0.1)
-        XCTAssertTrue(h.preferences.hasPinned)
-        let offer = try XCTUnwrap(h.nextOffer(placeable: [.drag,.pinned], at: 0.1)); XCTAssertEqual(offer.kind, .drag)
-        try h.confirmShown(offer, at: 0.1); h.dismiss()
-        XCTAssertTrue(h.context.cardPinned); XCTAssertFalse(h.preferences.seen.contains(.pinned))
-        XCTAssertNil(try h.nextOffer(placeable: [.pinned], at: 0.2))
-        c.dockReveal = UUID(); try h.updateContext(c, at: 0.3)
-        let pinned = try XCTUnwrap(h.nextOffer(placeable: [.pinned], at: 0.3)); XCTAssertEqual(pinned.kind, .pinned)
-        try h.confirmShown(pinned, at: 0.3); XCTAssertTrue(h.dockBudgetUsed)
+    func testSecondRevealDragDoesNotRequirePinAndKeepsPinnedReservation() throws {
+        var h = FirstUseHints(), c = HintContext(dockReveal: UUID()); c.cardPinned = true
+        try h.updateContext(c, at: 0)
+        XCTAssertNil(try h.nextOffer(placeable: [.pinned], at: 0))
+        try h.beginDockRevealDwell(at: 0)
+        let ignition = try XCTUnwrap(h.nextOffer(placeable: [.ignition,.pinned], at: 0.5))
+        XCTAssertEqual(ignition.kind, .ignition); try h.confirmShown(ignition, at: 0.5); h.dismiss()
+        c.dockReveal = UUID(); c.cardPinned = false; try h.updateContext(c, at: 1)
+        XCTAssertEqual(h.preferences.reveals, 2); try h.beginDockRevealDwell(at: 1)
+        XCTAssertNil(try h.nextOffer(placeable: [.drag], at: 1.499))
+        let drag = try XCTUnwrap(h.nextOffer(placeable: [.drag], at: 1.5)); XCTAssertEqual(drag.kind, .drag)
+        try h.confirmShown(drag, at: 1.5); XCTAssertTrue(h.dockBudgetUsed)
     }
     func testContextualTieOrderAndDeferredUnseenTrigger() throws {
         var h = try open(2, seen: [.optionHelp,.shutter])
@@ -89,8 +88,8 @@ final class HintTests: XCTestCase {
         try h.confirmShown(page, at: 0); h.dismiss()
         XCTAssertNil(try h.nextOffer(placeable: [.trial], at: 0))
         var c = h.context; c.cockpitOpen = UUID(); try h.updateContext(c, at: 1)
-        h.request(.trial)
-        XCTAssertEqual(try h.nextOffer(placeable: [.trial], at: 1)?.kind, .trial)
+        let rest = try XCTUnwrap(h.beginTrialRest(on: .init(id: "travel"), at: 1))
+        XCTAssertEqual(try h.offerTrialRest(rest, placeable: [.trial], at: 1.5)?.kind, .trial)
     }
     func testFiveSecondLifetimeReducedMotionAndResetPreserveUnderlyingContext() throws {
         var h = try open(2), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID()); c.captureReady = true; c.cardPinned = true
@@ -121,14 +120,15 @@ final class HintTests: XCTestCase {
             var h = try open(2, dock: true, seen: higher), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
             c.captureReady = true; c.cardPinned = true; try h.updateContext(c, at: 0)
             for kind in priority { h.request(kind) }
-            try h.beginDwell(.field, at: 0); try h.beginDwell(.ignition, at: 0)
+            try h.beginDwell(.field, at: 0); try h.beginDwell(.ignition, at: 0); try h.beginDwell(.drag, at: 0)
+            _ = try h.beginTrialRest(on: .init(id: "travel"), at: 0)
             let offer = try XCTUnwrap(h.nextOffer(placeable: Set(priority), at: 0.5))
             XCTAssertEqual(offer.kind, priority[index]); try h.confirmShown(offer, at: 0.5)
             XCTAssertEqual(h.preferences.seen, higher.union([priority[index]]))
         }
     }
     func testIndependentBudgetsCannotBeResetByTheOtherContext() throws {
-        var h = FirstUseHints(), c = HintContext(dockReveal: UUID()); c.cardPinned = true; c.captureReady = true
+        var h = FirstUseHints(preferences: .init(seen: [.ignition])), c = HintContext(dockReveal: UUID()); c.cardPinned = true; c.captureReady = true
         try h.updateContext(c, at: 0)
         let pinned = try XCTUnwrap(h.nextOffer(placeable: [.pinned], at: 0)); try h.confirmShown(pinned, at: 0)
         c.cockpitOpen = UUID(); try h.updateContext(c, at: 1)
@@ -137,7 +137,8 @@ final class HintTests: XCTestCase {
         let option = try XCTUnwrap(h.nextOffer(placeable: [.optionHelp], at: 1)); try h.confirmShown(option, at: 1)
         c.dockReveal = UUID(); try h.updateContext(c, at: 2)
         XCTAssertFalse(h.dockBudgetUsed); XCTAssertTrue(h.cockpitBudgetUsed)
-        XCTAssertNil(try h.nextOffer(placeable: [.drag], at: 2))
+        try h.beginDockRevealDwell(at: 2)
+        XCTAssertNil(try h.nextOffer(placeable: [.drag], at: 2.5))
     }
     func testSameIdentityUnpinInvalidatesOfferWithoutSpendingAndValidNextHintCanProceed() throws {
         var h = FirstUseHints(), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
@@ -150,7 +151,7 @@ final class HintTests: XCTestCase {
         XCTAssertEqual(try h.nextOffer(placeable: [.optionHelp], at: 0.2)?.kind, .optionHelp)
     }
     func testSameIdentityUnpinRemovesVisibleHintButKeepsRealFlagAndBudgetSpend() throws {
-        var h = FirstUseHints(), c = HintContext(dockReveal: UUID()); c.cardPinned = true; c.captureReady = true
+        var h = FirstUseHints(preferences: .init(seen: [.ignition])), c = HintContext(dockReveal: UUID()); c.cardPinned = true; c.captureReady = true
         try h.updateContext(c, at: 0)
         let offer = try XCTUnwrap(h.nextOffer(placeable: [.pinned], at: 0)); try h.confirmShown(offer, at: 0)
         c.cardPinned = false; try h.updateContext(c, at: 0.1)
@@ -160,16 +161,19 @@ final class HintTests: XCTestCase {
         XCTAssertEqual(try h.nextOffer(placeable: [.optionHelp], at: 1)?.kind, .optionHelp)
     }
     func testCaptureLossInvalidatesOnlyExistingGuardedOffersAndRecoveryUnblocksThem() throws {
-        for kind in [FirstUseHintKind.optionHelp,.shutter,.field,.page,.trial] {
+        for kind in [FirstUseHintKind.detach,.optionHelp,.shutter,.field,.page,.trial] {
             var h = try open(2, seen: Set(FirstUseHintKind.allCases).subtracting([kind])), c = HintContext(cockpitOpen: UUID())
             c.captureReady = true; try h.updateContext(c, at: 0)
-            h.request(kind); if kind == .field { try h.beginDwell(kind, at: 0) }
+            h.request(kind); if kind == .field { try h.beginDwell(kind, at: 0) }; if kind == .trial { _ = try h.beginTrialRest(on: .init(id: "travel"), at: 0) }
             let offer = try XCTUnwrap(h.nextOffer(placeable: [kind], at: 0.5))
             c.captureReady = false; try h.updateContext(c, at: 0.6)
             XCTAssertNil(h.offered); XCTAssertFalse(h.preferences.seen.contains(kind)); XCTAssertFalse(h.cockpitBudgetUsed)
             XCTAssertThrowsError(try h.confirmShown(offer, at: 0.6))
             c.captureReady = true; try h.updateContext(c, at: 0.7)
-            XCTAssertEqual(try h.nextOffer(placeable: [kind], at: 0.7)?.kind, kind)
+            if kind == .trial {
+                let rest = try XCTUnwrap(h.beginTrialRest(on: .init(id: "travel"), at: 0.7))
+                XCTAssertEqual(try h.offerTrialRest(rest, placeable: [kind], at: rest.deadline)?.kind, kind)
+            } else { XCTAssertEqual(try h.nextOffer(placeable: [kind], at: 0.7)?.kind, kind) }
         }
     }
     func testCaptureLossRemovesGuardedVisibleHintWithoutUndoingSeenOrOpenBudget() throws {
@@ -184,20 +188,21 @@ final class HintTests: XCTestCase {
     }
     func testCaptureLossDoesNotAddBarrierToPinnedOrDragOffersOrVisibleHints() throws {
         for kind in [FirstUseHintKind.pinned,.drag] {
-            var h = FirstUseHints(), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
+            var h = FirstUseHints(preferences: .init(seen: [.ignition], reveals: 1)), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
             c.captureReady = true; c.cardPinned = true; try h.updateContext(c, at: 0)
-            let offer = try XCTUnwrap(h.nextOffer(placeable: [kind], at: 0))
-            c.captureReady = false; try h.updateContext(c, at: 0.1)
-            XCTAssertEqual(h.offered, offer); try h.confirmShown(offer, at: 0.1)
-            try h.updateContext(c, at: 0.2); XCTAssertEqual(h.visible?.offer.kind, kind)
+            if kind == .drag { try h.beginDockRevealDwell(at: 0) }
+            let offer = try XCTUnwrap(h.nextOffer(placeable: [kind], at: 0.5))
+            c.captureReady = false; try h.updateContext(c, at: 0.6)
+            XCTAssertEqual(h.offered, offer); try h.confirmShown(offer, at: 0.6)
+            try h.updateContext(c, at: 0.7); XCTAssertEqual(h.visible?.offer.kind, kind)
             XCTAssertTrue(h.preferences.seen.contains(kind)); XCTAssertTrue(h.cockpitBudgetUsed)
         }
     }
-    func testStorageOnlyContainsEightFlagsAndBoundedProgress() throws {
-        let p = FirstUseHintPreferences(seen: Set(FirstUseHintKind.allCases), cockpitOpens: Int.max, hasPinned: true)
+    func testStorageOnlyContainsNineFlagsAndBoundedCounters() throws {
+        let p = FirstUseHintPreferences(seen: Set(FirstUseHintKind.allCases), opens: Int.max, reveals: Int.max)
         let data = try JSONEncoder().encode(p), dictionary = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(Set(dictionary.keys), ["seen","cockpitOpens","hasPinned"])
-        XCTAssertEqual(dictionary["cockpitOpens"] as? Int, 2)
+        XCTAssertEqual(Set(dictionary.keys), ["seen","opens","reveals"])
+        XCTAssertEqual(dictionary["opens"] as? Int, 2)
         XCTAssertEqual(try JSONDecoder().decode(FirstUseHintPreferences.self, from: data), p)
         XCTAssertThrowsError(try JSONDecoder().decode(FirstUseHintPreferences.self, from: Data("{\"seen\":[\"account-secret\"]}".utf8)))
     }
