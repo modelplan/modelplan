@@ -37,7 +37,7 @@ public struct ReaderSetting: Equatable, Sendable {
         }
     }
 }
-/// Known homes only. No final seven/eight-pane table is supplied while question1 is unanswered.
+/// Confirmed task65 homes shared by the current data table; not a visual/layout implementation.
 public enum Settings65Homes {
     public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints])
     public static let dock: [SettingsGroupDefinition] = [
@@ -49,7 +49,7 @@ public enum Settings65Homes {
     public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.opening,.countdown])
     public static let appearance = SettingsGroupDefinition(id: "appearance", keys: [.theme,.motion,.transparency])
     public static let subscriptions = SettingsGroupDefinition(id: "subscriptions", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])
-    public static let paneCountPending = true
+    public static let paneCountPending = false
 }
 public enum SettingsDiagramKind: String, CaseIterable, Sendable { case edge, percentages, autoCollapse, size, quotaWindow }
 public enum SettingsDiagramInput: Equatable, Sendable {

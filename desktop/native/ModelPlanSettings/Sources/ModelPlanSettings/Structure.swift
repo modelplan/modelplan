@@ -4,9 +4,9 @@ import Foundation
 /// Provisional identifiers retained for callers of the original eight-page draft.
 /// The injected structure, not this enum or its declaration order, determines navigation/grouping.
 public enum SettingsPane: String, CaseIterable, Sendable {
-    case appearance, rings, position, general, notifications, subscriptions, privacy, about
+    case appearance, rings, position, general, notifications, subscriptions, privacy, about, dock, cockpit
     public var title: SettingsText {
-        SettingsStructure.provisional.panes.first { $0.id == rawValue }?.title ?? .init(rawValue, rawValue)
+        SettingsStructure.task65.panes.first { $0.id == rawValue }?.title ?? SettingsStructure.provisional.panes.first { $0.id == rawValue }?.title ?? .init(rawValue, rawValue)
     }
 }
 public struct SettingsGroupDefinition: Equatable, Sendable {
@@ -41,6 +41,18 @@ public struct SettingsStructure: Equatable, Sendable {
         self.panes = panes
     }
     private init(provisional panes: [SettingsPaneDefinition]) { self.panes = panes }
+    /// Confirmed task65 data table; this is not an artwork or native-window release.
+    public static let task65 = SettingsStructure(provisional: [
+        .init(id: "general", title: .init("General", "通用"), groups: [Settings65Homes.general]),
+        .init(id: "dock", title: .init("Dock", "挂件"), groups: Settings65Homes.dock),
+        .init(id: "cockpit", title: .init("Cockpit", "驾驶舱"), groups: [Settings65Homes.cockpit]),
+        .init(id: "appearance", title: .init("Appearance", "外观"), groups: [Settings65Homes.appearance]),
+        .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),
+        .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
+        .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.architecture,.diagnostics,.feedback,.licenses])]),
+    ])
+    /// Historical input only; not the default. Retained for generic compatibility/regression tests.
     /// Current content only, not a final page/visual freeze. Regrouping changes this input table alone.
     public static let provisional = SettingsStructure(provisional: [
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [.init(id: "main", keys: [.theme,.size,.motion,.transparency])]),

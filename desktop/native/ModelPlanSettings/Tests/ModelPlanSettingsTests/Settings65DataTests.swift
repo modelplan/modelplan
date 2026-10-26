@@ -3,12 +3,26 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Settings65DataTests: XCTestCase {
-    func testOnlyUnambiguousHomesPreparedWhilePaneCountIsPending() {
-        XCTAssertTrue(Settings65Homes.paneCountPending)
+    func testConfirmedEightPaneTableAndKnownHomesStayDataDriven() {
+        XCTAssertFalse(Settings65Homes.paneCountPending)
+        XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","about"])
+        XCTAssertEqual(SettingsStructure.task65.panes.count, 8)
+        XCTAssertEqual(SettingsStructure.task65.panes.last?.id, "about")
         XCTAssertEqual(Settings65Homes.dock.map(\.id), ["display","numbers","location","sequence"])
         XCTAssertTrue(Settings65Homes.dock[0].keys.contains(.size)); XCTAssertTrue(Settings65Homes.dock[2].keys.contains(.dockEdge))
         XCTAssertEqual(Settings65Homes.cockpit.keys, [.opening,.countdown])
         XCTAssertFalse(Settings65Homes.general.keys.contains(.opening)); XCTAssertFalse(Settings65Homes.appearance.keys.contains(.size))
+    }
+    func testCurrentTableHasEachKeyOnceAndDefaultCatalogueUsesConfirmedHomes() throws {
+        XCTAssertNoThrow(try SettingsStructure(panes: SettingsStructure.task65.panes))
+        let p = SettingsPreferences(), rows = try SettingsCatalogue.rows(preferences: p, context: .init())
+        XCTAssertEqual(Set(rows.map(\.key)), Set(SettingKey.allCases))
+        XCTAssertEqual(rows.count, SettingKey.allCases.count)
+        let size = try XCTUnwrap(rows.first { $0.key == .size }); XCTAssertEqual(size.paneID, "dock"); XCTAssertEqual(size.groupID, "display")
+        let opening = try XCTUnwrap(rows.first { $0.key == .opening }); XCTAssertEqual(opening.paneID, "cockpit")
+        let login = try XCTUnwrap(rows.first { $0.key == .login }); XCTAssertEqual(login.paneID, "general")
+        let diagnostics = try XCTUnwrap(rows.first { $0.key == .diagnostics }); XCTAssertEqual(diagnostics.paneID, "about")
+        XCTAssertEqual(rows.first?.key, .login)
     }
     func testFiveDiagramInputsHaveFiniteAnimationAndStaticReducedMotionWithoutGeometryChanges() throws {
         var p = SettingsPreferences(); p.showPercentages = false; p.dockEdge = .bottom; p.subscriptionSettings["b"] = .init(percentagePin: .week)

@@ -154,12 +154,12 @@ public enum SettingsCatalogue {
     ]
     public static func rows(preferences p: SettingsPreferences, context c: SettingsPageContext,
                             pane: SettingsPane? = nil, query: String = "",
-                            structure: SettingsStructure = .provisional) throws -> [SettingsRow] {
+                            structure: SettingsStructure = .task65) throws -> [SettingsRow] {
         try rows(preferences: p, context: c, paneID: pane?.rawValue, query: query, structure: structure)
     }
     public static func rows(preferences p: SettingsPreferences, context c: SettingsPageContext,
                             paneID: String?, query: String = "",
-                            structure: SettingsStructure = .provisional) throws -> [SettingsRow] {
+                            structure: SettingsStructure = .task65) throws -> [SettingsRow] {
         try p.validate()
         let catalogue = c.subscriptions.map(\.id)
         guard !catalogue.contains(""), Set(catalogue).count == catalogue.count,
