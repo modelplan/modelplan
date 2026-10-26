@@ -181,7 +181,9 @@ import CoreText
     private func synchronizeRegions(_ regions: [FaderHitRegion], oldOrder: [String]) {
         let oldFocus = controls.first { $0.value === window?.firstResponder }?.key
         let oldRegion = oldFocus.flatMap { controls[$0]?.region }, ids = Set(regions.map(\.id))
-        for id in Array(controls.keys) where !ids.contains(id) { controls.removeValue(forKey: id)?.removeFromSuperview() }
+        for id in Array(controls.keys) where !ids.contains(id) {
+            let control = controls.removeValue(forKey: id); control?.retire(); control?.removeFromSuperview()
+        }
         for region in regions {
             let control = controls[region.id] ?? FaderRegionControl(owner: self, region: region)
             if controls[region.id] == nil { controls[region.id] = control; addSubview(control) }; control.configure(region)
@@ -312,7 +314,12 @@ import CoreText
     public func leaveHelp() { dwellTimer?.invalidate(); dwellTimer = nil; dwell.leave(); popover?.close(); onHelpChange?(nil, nil) }
     private func stopAnimations() { surfaces.values.forEach { $0.removeAllAnimations() } }
     public func suspend() { timer?.invalidate(); timer = nil; controller.cancelGesture(); leaveHelp(); stopAnimations() }
-    public func dispose() { suspend(); onIntent = nil; onHelpChange = nil; for layer in surfaces.values { layer.removeFromSuperlayer() }; surfaces.removeAll() }
+    public func dispose() {
+        suspend(); onIntent = nil; onHelpChange = nil
+        for control in controls.values { control.retire(); control.removeFromSuperview() }
+        controls.removeAll(); setAccessibilityChildren([]); focusedID = nil; focus.path = nil
+        for layer in surfaces.values { layer.removeFromSuperlayer() }; surfaces.removeAll()
+    }
     public override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window == nil { suspend() }; refreshSize() }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); refreshSize() }
     public override func setFrameSize(_ newSize: NSSize) { super.setFrameSize(newSize); refreshSize() }
@@ -326,12 +333,16 @@ import CoreText
 @MainActor private final class FaderRegionControl: NSControl {
     weak var owner: FaderBankView?
     var region: FaderHitRegion
+    private var currentOwner: FaderBankView? {
+        guard let owner, owner.control(for: region.id) === self, superview === owner else { return nil }
+        return owner
+    }
     init(owner: FaderBankView, region: FaderHitRegion) { self.owner = owner; self.region = region; super.init(frame: region.rect); focusRingType = .none; configure(region) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override var isFlipped: Bool { true }
-    override var acceptsFirstResponder: Bool { region.tabStop }
-    override var canBecomeKeyView: Bool { region.tabStop && !isHidden }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { currentOwner != nil && region.tabStop && region.enabled }
+    override var canBecomeKeyView: Bool { acceptsFirstResponder && !isHidden }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { currentOwner != nil && region.enabled }
     override func draw(_ dirtyRect: NSRect) {}
     func configure(_ r: FaderHitRegion) {
         region = r; frame = r.rect; isEnabled = r.enabled; setAccessibilityElement(true); setAccessibilityIdentifier(r.id)
@@ -342,24 +353,32 @@ import CoreText
             setAccessibilityOrientation(.vertical)
         }
         if case .lcd(let id) = r.action {
-            setAccessibilityCustomActions([NSAccessibilityCustomAction(name: owner?.favoriteActionTitle ?? "Favorite", handler: { [weak self] in self?.owner?.favorite(id); return self?.owner != nil })])
+            setAccessibilityCustomActions([NSAccessibilityCustomAction(name: owner?.favoriteActionTitle ?? "Favorite", handler: { [weak self] in
+                guard let self, let owner = self.currentOwner, self.region.enabled, self.region.action == .lcd(id) else { return false }
+                owner.favorite(id); return true
+            })])
         } else { setAccessibilityCustomActions(nil) }
     }
-    override func becomeFirstResponder() -> Bool { owner?.focusChanged(region.id); return true }
-    override func resignFirstResponder() -> Bool { owner?.focusChanged(nil); return true }
-    override func mouseDown(with event: NSEvent) { guard region.enabled else { return }; owner?.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) }; owner?.down(region, point: owner?.convert(event.locationInWindow, from: nil) ?? .zero) }
-    override func mouseDragged(with event: NSEvent) { guard region.enabled else { return }; owner?.drag(region, point: owner?.convert(event.locationInWindow, from: nil) ?? .zero) }
-    override func mouseUp(with event: NSEvent) { guard region.enabled else { return }; owner?.up(region, inside: bounds.contains(convert(event.locationInWindow, from: nil))) }
+    func retire() {
+        owner = nil; isEnabled = false; nextKeyView = nil
+        setAccessibilityElement(false); setAccessibilityEnabled(false); setAccessibilityCustomActions(nil)
+    }
+    override func becomeFirstResponder() -> Bool { guard acceptsFirstResponder, let owner = currentOwner else { return false }; owner.focusChanged(region.id); return true }
+    override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
+    override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) }; owner.down(region, point: owner.convert(event.locationInWindow, from: nil)) }
+    override func mouseDragged(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.drag(region, point: owner.convert(event.locationInWindow, from: nil)) }
+    override func mouseUp(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; owner.up(region, inside: bounds.contains(convert(event.locationInWindow, from: nil))) }
     override func keyDown(with event: NSEvent) {
+        guard region.enabled, let owner = currentOwner else { return }
         if event.keyCode == 48 { event.modifierFlags.contains(.shift) ? window?.selectPreviousKeyView(self) : window?.selectNextKeyView(self); return }
-        if owner?.key(event) == true { return }
+        if owner.key(event) { return }
         if region.role == .slider, !event.modifierFlags.intersection([.option, .command, .control]).isEmpty { super.keyDown(with: event); return }
-        if region.role == .slider, let id = region.modelID, [125, 126].contains(event.keyCode) { owner?.step(id, up: event.keyCode == 126) }
+        if region.role == .slider, let id = region.modelID, [125, 126].contains(event.keyCode) { owner.step(id, up: event.keyCode == 126) }
         else if event.keyCode == 36 || event.charactersIgnoringModifiers == " " { _ = accessibilityPerformPress() }
         else { super.keyDown(with: event) }
     }
-    override func accessibilityPerformPress() -> Bool { guard region.enabled, let action = region.action, region.role != .slider else { return false }; owner?.activate(action); return true }
-    override func accessibilityPerformIncrement() -> Bool { guard region.enabled, region.role == .slider, let id = region.modelID else { return false }; owner?.step(id, up: true); return true }
-    override func accessibilityPerformDecrement() -> Bool { guard region.enabled, region.role == .slider, let id = region.modelID else { return false }; owner?.step(id, up: false); return true }
+    override func accessibilityPerformPress() -> Bool { guard region.enabled, let owner = currentOwner, let action = region.action, region.role != .slider else { return false }; owner.activate(action); return true }
+    override func accessibilityPerformIncrement() -> Bool { guard region.enabled, let owner = currentOwner, region.role == .slider, let id = region.modelID else { return false }; owner.step(id, up: true); return true }
+    override func accessibilityPerformDecrement() -> Bool { guard region.enabled, let owner = currentOwner, region.role == .slider, let id = region.modelID else { return false }; owner.step(id, up: false); return true }
 }
 

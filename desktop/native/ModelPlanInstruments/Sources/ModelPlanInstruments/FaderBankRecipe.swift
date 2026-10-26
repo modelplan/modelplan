@@ -10,6 +10,20 @@ public struct FaderDetent: Equatable, Sendable {
     public let position: Double
     public init(key: String, position: Double) { self.key = key; self.position = position }
 }
+/// A trusted injected provider may declare an approved denser native tick floor.
+/// This does not approve a label arrangement or change the ordinary 20 pt default.
+public enum FaderNativeTickPolicy: Equatable, Sendable {
+    case standard
+    case approvedDense(minimumSpacing: Double)
+    fileprivate func minimumSpacing() throws -> Double {
+        switch self {
+        case .standard: return 20
+        case .approvedDense(let minimum):
+            guard minimum.isFinite, (12...20).contains(minimum) else { throw EngineTableError.invalidRecipe }
+            return minimum
+        }
+    }
+}
 public struct FaderHitRegion: Equatable, Sendable {
     public let id: String
     public let rect: CGRect
@@ -25,14 +39,19 @@ public struct FaderHitRegion: Equatable, Sendable {
     /// Pointer-normalization anchors inside a slider's parent-coordinate frame.
     public let top: Double?, bottom: Double?
     public let detents: [FaderDetent]
+    public let nativeTickPolicy: FaderNativeTickPolicy
+    /// Nil means every native detent is labelled; an explicit list declares a subset.
+    /// Labelled positions retain their independent 20 pt minimum.
+    public let labelledDetentKeys: [String]?
     public init(id: String, rect: CGRect, role: FaderRegionRole = .button, action: FaderRegionAction? = nil,
                 label: String, help: HelpExplanation, tabStop: Bool = true, enabled: Bool = true,
                 modelID: String? = nil, levelCount: Int = 0, shownIndex: Int? = nil, top: Double? = nil, bottom: Double? = nil,
-                detents: [FaderDetent] = []) {
+                detents: [FaderDetent] = [], nativeTickPolicy: FaderNativeTickPolicy = .standard,
+                labelledDetentKeys: [String]? = nil) {
         self.id = id; self.rect = rect; self.role = role; self.action = action; self.label = label; self.help = help
         self.tabStop = tabStop; self.enabled = enabled; self.modelID = modelID; self.levelCount = levelCount
         self.shownIndex = shownIndex; self.top = top; self.bottom = bottom
-        self.detents = detents
+        self.detents = detents; self.nativeTickPolicy = nativeTickPolicy; self.labelledDetentKeys = labelledDetentKeys
     }
 }
 public enum FaderCapKind: Sendable { case real, ghost, preview }
@@ -76,7 +95,13 @@ public struct FaderBankRecipe: Equatable, Sendable {
                       region.detents.count == region.levelCount, Set(region.detents.map(\.key)).count == region.detents.count,
                       region.detents.allSatisfy({ $0.position.isFinite && (0...1).contains($0.position) }) else { throw EngineTableError.invalidRecipe }
                 let positions = region.detents.map { top + $0.position * (bottom - top) }.sorted()
-                for i in positions.indices.dropFirst() where positions[i] - positions[i - 1] < 20 - 0.01 { throw EngineTableError.invalidRecipe }
+                let minimum = try region.nativeTickPolicy.minimumSpacing()
+                for i in positions.indices.dropFirst() where positions[i] - positions[i - 1] < minimum - 0.01 { throw EngineTableError.invalidRecipe }
+                let labelled = region.labelledDetentKeys ?? region.detents.map(\.key)
+                let nativeKeys = Set(region.detents.map(\.key)), labelKeys = Set(labelled)
+                guard labelKeys.count == labelled.count, labelKeys.isSubset(of: nativeKeys) else { throw EngineTableError.invalidRecipe }
+                let labels = region.detents.filter { labelKeys.contains($0.key) }.map { top + $0.position * (bottom - top) }.sorted()
+                for i in labels.indices.dropFirst() where labels[i] - labels[i - 1] < 20 - 0.01 { throw EngineTableError.invalidRecipe }
             }
         }
         for cap in caps {

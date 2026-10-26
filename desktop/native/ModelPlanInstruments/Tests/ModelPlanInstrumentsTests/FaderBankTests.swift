@@ -74,7 +74,81 @@ final class FaderBankModelTests: XCTestCase {
     }
 }
 
+final class FaderBankRecipeTests: XCTestCase {
+    private func denseRecipe(count: Int = 6, policy: FaderNativeTickPolicy = .standard, labels: [String]? = ["n0", "n5"]) -> FaderBankRecipe {
+        let region = FaderHitRegion(id: "synthetic.travel", rect: CGRect(x: 0, y: 0, width: 40, height: 96), role: .slider,
+            action: .travel("synthetic"), label: "Synthetic model", help: HelpCatalog(.english).explanation(.effort),
+            modelID: "synthetic", levelCount: count, top: 8, bottom: 88,
+            detents: (0..<count).map { .init(key: "n\($0)", position: Double($0) / Double(count - 1)) },
+            nativeTickPolicy: policy, labelledDetentKeys: labels)
+        return FaderBankRecipe(size: CGSize(width: 40, height: 96), commands: [], regions: [region], caps: [])
+    }
+    func testExplicitDenseTicksAreAdmittedWithoutChangingTravelOrLabels() throws {
+        XCTAssertThrowsError(try denseRecipe().validate())
+        let approved = denseRecipe(policy: .approvedDense(minimumSpacing: 12))
+        XCTAssertNoThrow(try approved.validate())
+        XCTAssertEqual(approved.regions[0].detents.count, 6)
+        XCTAssertEqual(approved.size.height, 96)
+        XCTAssertNoThrow(try denseRecipe(policy: .approvedDense(minimumSpacing: 16)).validate())
+    }
+    func testNativeAndLabelFloorsRemainIndependent() {
+        XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 16.1)).validate())
+        XCTAssertThrowsError(try denseRecipe(count: 8, policy: .approvedDense(minimumSpacing: 12), labels: ["n0", "n7"]).validate())
+        XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labels: nil).validate())
+        XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labels: ["n0", "n1"]).validate())
+    }
+    func testInvalidInjectedFloorsAndLabelIdentitiesAreRejected() {
+        for minimum in [Double.nan, .infinity, 11.9, 20.1] {
+            XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: minimum)).validate())
+        }
+        for labels in [["n0", "unknown"], ["n0", "n0"]] {
+            XCTAssertThrowsError(try denseRecipe(policy: .approvedDense(minimumSpacing: 12), labels: labels).validate())
+        }
+    }
+}
+
 @MainActor final class FaderBankViewTests: XCTestCase {
+    func testCurrentAXFavoriteActionWorksAndCannotKeepItsFormerModel() async throws {
+        let view = FaderBankView(); view.onHelpChange = { _, _ in }
+        let inputs = (0..<3).map { FaderChannelInput(model: Fixtures.model(id: "m\($0)")) }
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let action = try XCTUnwrap(view.control(for: "fader.slot.2.lcd")?.accessibilityCustomActions()?.first)
+        XCTAssertTrue(action.handler?() ?? false)
+        XCTAssertEqual(view.controller.favoriteIDs, ["m2"])
+        XCTAssertEqual(view.presentation?.channels[0]?.id, "m2")
+        XCTAssertFalse(action.handler?() ?? true)
+        XCTAssertEqual(view.controller.favoriteIDs, ["m2"])
+        view.dispose()
+    }
+    func testRetainedRemovedAndDisposedAXControlsCannotChangeState() async throws {
+        let view = FaderBankView(); var intents: [FaderIntent] = []
+        view.onHelpChange = { _, _ in }; view.onIntent = { intents.append($0) }
+        let inputs = (0..<4).map { FaderChannelInput(model: Fixtures.model(id: "m\($0)")) }
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let removed = try XCTUnwrap(view.control(for: "fader.slot.2.travel"))
+        let oldAction = try XCTUnwrap(view.control(for: "fader.slot.0.lcd")?.accessibilityCustomActions()?.first)
+        view.selectModel("m3")
+        XCTAssertNil(view.control(for: "fader.slot.2.travel"))
+        let before = view.presentation, count = intents.count
+        XCTAssertFalse(removed.accessibilityPerformIncrement())
+        XCTAssertFalse(removed.accessibilityPerformDecrement())
+        XCTAssertFalse(removed.becomeFirstResponder())
+        XCTAssertFalse(oldAction.handler?() ?? true)
+        XCTAssertEqual(view.presentation, before); XCTAssertEqual(intents.count, count)
+        XCTAssertFalse(removed.isEnabled)
+
+        let disposed = try XCTUnwrap(view.control(for: "fader.slot.0.travel"))
+        let lcd = try XCTUnwrap(view.control(for: "fader.slot.0.lcd"))
+        let action = try XCTUnwrap(lcd.accessibilityCustomActions()?.first)
+        view.dispose()
+        XCTAssertNil(view.control(for: "fader.slot.0.travel"))
+        XCTAssertFalse(disposed.accessibilityPerformIncrement())
+        XCTAssertFalse(disposed.accessibilityPerformDecrement())
+        XCTAssertFalse(lcd.accessibilityPerformPress())
+        XCTAssertFalse(action.handler?() ?? true)
+        XCTAssertEqual(view.presentation, before); XCTAssertNil(view.controller.trial)
+        XCTAssertFalse(disposed.isEnabled)
+    }
     func testReorderingKeepsKeyboardFocusOnTheSameModel() async throws {
         let view = FaderBankView(); view.onHelpChange = { _, _ in }
         let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)

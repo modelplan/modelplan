@@ -121,13 +121,20 @@ same label ends its trial; bank changes and explicit `endTrial()` also end it.
 toggles a favourite, returns to bank 1 and consumes the release. An accessibility
 custom action provides the same favourite operation without a timed gesture.
 
-The provider supplies physical detent positions with at least 20 pt separation.
+The default policy requires at least 20 pt between native ticks and between
+labelled positions. An injected provider can explicitly declare an approved dense
+native tick floor (12–20 pt) and the native keys with printed labels. Those labelled
+positions are independently checked at 20 pt; omitted label metadata means every
+tick is labelled. Invalid bounds/keys and spacing below either floor are rejected.
+The policy value does not approve an official layout or choose its label positions.
 Caps glide for 280 ms unless pointer-owned; changed LCD readings fade for 80 ms.
 Returning ghosts fade after the glide, or fade in place for 120 ms under Reduced
 Motion. Surfaces are prepared before committing state; missing resources preserve
 the prior state and identical requests can retry. Unchanged updates and movement
 inside one detent reuse prepared text. Controls survive refreshes; reordering keeps
-keyboard focus on the same visible model. Hover/focus/AX share the help catalogue.
+keyboard focus on the same visible model. Removed/disposed controls are retired;
+callbacks verify their current owner identity, and retained custom actions cannot
+operate on a former model. Hover/focus/AX share the help catalogue.
 
 The default `NeutralFaderBankRecipe` needs only system fonts. For long names or
 native labels, construct a presentation and use `minimumSize(for:)` before sizing
