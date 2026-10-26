@@ -23,13 +23,18 @@ public struct DockOverflowEntry:Equatable,Sendable {
 @MainActor public final class DockOverflowTrayView:NSView {
     public var permitsAction:((String,DockActionSource)->Bool)?
     public var onClick:((String)->Void)?,onHover:((String?)->Void)?,onDragHelp:((String)->Void)?
+    public var keyboardNavigationEnabled=false,edge:DockEdge = .right
+    public var keyboardTargetID:String?,onOptionMove:((String,Int)->Void)?
+    private var ids=Set<String>()
+    public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     private let stack=NSStackView();private var generation:UInt64=0
     public override init(frame:NSRect){super.init(frame:frame);stack.orientation = .vertical;stack.alignment = .leading;stack.spacing=4;stack.frame=bounds;stack.autoresizingMask=[.width,.height];addSubview(stack)}
     required init?(coder:NSCoder){fatalError()}
     public func apply(_ entries:[DockOverflowEntry])throws{
-        generation &+= 1;let token=generation
+        generation &+= 1;let token=generation;ids=[]
         for v in stack.arrangedSubviews{stack.removeArrangedSubview(v);v.removeFromSuperview()}
         guard entries.count<=128,Set(entries.map(\.id)).count==entries.count,entries.allSatisfy({!$0.id.isEmpty && [$0.id,$0.label,$0.value,$0.dragHelp].allSatisfy{$0.utf8.count<=2048}}) else{throw DockLogicError.invalidCatalogue}
+        ids=Set(entries.map(\.id))
         for entry in entries{
             let v=OverflowEntryView(entry:entry)
             v.activate={[weak self] source in guard let self,self.generation==token,self.permitsAction?(entry.id,source) ?? true else{return false};guard self.generation==token,let onClick=self.onClick else{return false};onClick(entry.id);return true}
@@ -38,5 +43,10 @@ public struct DockOverflowEntry:Equatable,Sendable {
             stack.addArrangedSubview(v)
         };frame.size=stack.fittingSize
     }
-    public func dispose(){generation &+= 1;onClick=nil;onHover=nil;onDragHelp=nil;for v in stack.arrangedSubviews{stack.removeArrangedSubview(v);v.removeFromSuperview()}}
+    public override func keyDown(with event:NSEvent){
+        let keys:[UInt16]=edge == .bottom ? [123,124]:[126,125]
+        if event.modifierFlags.intersection([.option,.control,.command]) == .option,let id=keyboardTargetID,ids.contains(id),let index=keys.firstIndex(of:event.keyCode){onOptionMove?(id,index==0 ? -1:1);return}
+        super.keyDown(with:event)
+    }
+    public func dispose(){ids=[];keyboardTargetID=nil;onOptionMove=nil;permitsAction=nil;generation &+= 1;onClick=nil;onHover=nil;onDragHelp=nil;for v in stack.arrangedSubviews{stack.removeArrangedSubview(v);v.removeFromSuperview()}}
 }

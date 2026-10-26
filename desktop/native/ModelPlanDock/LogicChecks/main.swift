@@ -476,5 +476,15 @@ do {
         let afterDock=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
         try expect(afterDock.dots.isEmpty && afterDock.segments.isEmpty,"genuine Dock reveal acknowledges sliver")
     }
+    try test("B08 card data uses canonical quota truth and retains unknown versus zero"){
+        var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
+        input.dataState = .fresh;input.showUsedPercent=true
+        let card=try DockCardProjection.content(input:input,at:now)
+        try expect(card.rows[0].value=="100%" && card.rows[0].remainingFraction==0 && card.rows[0].tone == .critical,"used display never reverses fuel/status truth")
+        try expect(card.rows[1].value=="--" && card.rows[1].remainingFraction==nil,"missing is not zero")
+        input.dataState = .stale
+        let stale=try DockCardProjection.content(input:input,at:now)
+        try expect(stale.rows.allSatisfy{$0.value=="--" && $0.remainingFraction==nil},"stale data does not regain actionable quota")
+    }
     print("PASS \(groups) groups; \(assertions) assertions")
 } catch { fputs("FAIL \(error)\n",stderr);exit(1) }

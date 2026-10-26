@@ -51,7 +51,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
         do{let token=generation,env=read();guard running,generation==token,env.active,env.parentExpanded,env.catalogue.contains(id) else{return};try cards.step(catalogue:env.catalogue,hoveredID:env.hoveredID,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock());try cards.click(id,at:clock());refresh()}catch{stop();onFailure?(error)}
     }
     public func dismissCard(){cards.dismiss();refresh()}
-    public func toggleOverflow(){overflowOpen.toggle();refresh()}
+    public func toggleOverflow(){guard running else{return};overflowOpen.toggle();refresh()}
     public func beginNozzle(id:String,along:Double)->Bool{
         guard running else{return false}
         do{let token=generation,env=read();guard running,generation==token,env.active,env.parentExpanded else{return false};try gesture.begin(id:id,along:along,overflow:env.overflowIDs.contains(id),targets:env.targets,catalogue:env.catalogue,preferences:env.preferences);gestureRevision=env.bindingRevision;return true}catch{gesture.cancel();onFailure?(error);return false}
@@ -99,8 +99,10 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     /// The shared preference owner calls this only after accepting the canonical order; no speculative announcement.
     public func orderAccepted(_ id:UUID,preferences:DockSubscriptionPreferences,catalogue:[String]){
         guard running,let (request,keyboard)=pendingOrders.removeValue(forKey:id),request.catalogue==catalogue,request.proposed==preferences else{return}
+        let token=generation,env=read();guard running,generation==token else{return}
+        if env.overflowIDs.contains(request.movedID){overflowOpen=true}
+        refresh();guard running,generation==token &+ 1 else{return}
         if keyboard{onOrderAnnouncement?(request.movedID,request.position,catalogue.count)}
-        refresh()
     }
     public func orderRejected(_ id:UUID){pendingOrders.removeValue(forKey:id);refresh()}
     private func publish(_ value:DockInteractionPresentation){if value != presentation{presentation=value;onPresent?(value)}}

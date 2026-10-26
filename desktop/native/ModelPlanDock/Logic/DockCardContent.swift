@@ -27,3 +27,18 @@ public struct DockCardContent:Equatable,Sendable {
         guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true}) else{throw DockLogicError.invalidCatalogue}
     }
 }
+
+public enum DockCardProjection {
+    /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
+    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="Close",at now:Date)throws->DockCardContent{
+        _=try DockInstrumentProjection.evaluate(input,now:now)
+        var rows=[DockCardRow]()
+        for window in input.windows{
+            var scoped=input;scoped.windows=[window];scoped.selectedWindowID=window.id
+            let reading=try DockInstrumentProjection.evaluate(scoped,now:now)
+            rows.append(.init(id:"quota:"+window.id,kind:window.period == .fiveHour || window.period == .week ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
+        }
+        let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel)
+        try result.validate();return result
+    }
+}
