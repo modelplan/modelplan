@@ -39,7 +39,7 @@ public struct ReaderSetting: Equatable, Sendable {
 }
 /// Confirmed task65 homes shared by the current data table; not a visual/layout implementation.
 public enum Settings65Homes {
-    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints])
+    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.automaticUpdates,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints])
     public static let dock: [SettingsGroupDefinition] = [
         .init(id: "display", title: .init("Display", "显示"), keys: [.showDock,.autoHide,.reveal,.magnification,.size]),
         .init(id: "numbers", title: .init("Numbers", "数字"), keys: [.showPercentages,.percentageMode,.percentagePin,.redBelow,.sliverAlert]),

@@ -49,7 +49,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
     }
 }
 
-public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgress, subscriptionUnavailable }
+public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgress, subscriptionUnavailable, staleContext }
 
 /// One presenter over the app's existing store. No service calls or second preference file.
 @MainActor public final class SettingsEditor {
@@ -65,6 +65,8 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public var onCommit: ((SettingsSnapshot, EffectiveSettings) -> Void)?
     /// System accessibility/appearance changes never write preferences.
     public var onEnvironmentChange: ((SettingsSnapshot, EffectiveSettings) -> Void)?
+    /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
+    public var onHostRequest: ((SettingsHostRequest) -> Void)?
 
     public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init()) {
         self.store = store; self.context = context; self.environment = environment
@@ -81,17 +83,38 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         if let snapshot, let effective { onEnvironmentChange?(snapshot, effective) }
     }
     @discardableResult public func commit(_ edit: SettingsB20Edit) async throws -> SettingsSnapshot {
+        let id: String? = { if case .percentagePin(let id, _) = edit { return id }; return nil }()
+        return try await transact(subscriptionID: id, quotaPreviewID: id) { try edit.apply(to: &$0) }
+    }
+    @discardableResult public func commit(_ edit: SettingsB21Edit) async throws -> SettingsSnapshot {
+        let ids = context.subscriptions.map(\.id)
+        let observedLogin = context.capabilities.login
+        let committed = try await transact(subscriptionID: edit.subscriptionID) { try edit.apply(to: &$0, catalogue: ids) }
+        let intent: SettingsHostIntent?
+        switch edit {
+        case .login(let enabled):
+            intent = LoginServicePolicy.request(choice: enabled, observed: observedLogin, reason: .explicitUserChoice).map(SettingsHostIntent.action)
+        case .resetHints: intent = .action(.resetHelpHints)
+        case .shortcut:
+            intent = .shortcutPreferencesChanged(openCockpit: committed.preferences.openShortcut, toggleDock: committed.preferences.dockShortcut)
+        default: intent = nil
+        }
+        if let intent { onHostRequest?(.init(revision: committed.revision, intent: intent)) }
+        return committed
+    }
+    private func transact(subscriptionID: String?, quotaPreviewID: String? = nil,
+                          edit: @escaping @Sendable (inout SettingsPreferences) throws -> Void) async throws -> SettingsSnapshot {
         guard !isSaving else { throw SettingsEditorError.editInProgress }
         guard let before = snapshot else { throw SettingsEditorError.notLoaded }
-        if case .percentagePin(let id, _) = edit, !context.subscriptions.contains(where: { $0.id == id }) {
+        if let id = subscriptionID, !context.subscriptions.contains(where: { $0.id == id }) {
             throw SettingsEditorError.subscriptionUnavailable
         }
         isSaving = true; onChange?()
         defer { isSaving = false; onChange?() }
         do {
-            let committed = try await store.update(expectedRevision: before.revision) { try edit.apply(to: &$0) }
+            let committed = try await store.update(expectedRevision: before.revision, edit)
             accept(committed)
-            if case .percentagePin(let id, _) = edit { lastChangedSubscriptionID = id }
+            if let quotaPreviewID { lastChangedSubscriptionID = quotaPreviewID }
             onCommit?(committed, EffectiveSettings(committed.preferences, environment: environment))
             return committed
         } catch {
