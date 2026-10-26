@@ -1,7 +1,7 @@
-# Instrument models and engine table
+# Instrument models, engine table and fader banks
 
 An independent MIT Swift library for quota rows, effort comparisons, fader readouts,
-main-screen pages and record lines, plus an AppKit engine-table view. Pure models
+main-screen pages and record lines, plus AppKit engine-table and fader-bank views. Pure models
 use Foundation; rendering uses AppKit/CoreText/Core Animation. There are no bundled
 visual assets, process launches, network reads, persistent state or model-setting writes.
 
@@ -98,6 +98,49 @@ the standalone neutral host has an ordinary popover fallback. Hide/blur calls
 `suspend()`, teardown calls `dispose()`. There is no polling/render loop or global
 input monitor. Official recipes, licensed font bytes, source goldens and visual
 evidence stay private; passing this target's neutral tests is not visual approval.
+
+## Fader-bank integration (B12)
+
+`FaderBankView` consumes the joined, ordered `FaderChannelInput` values and emits
+selection, inspection, local-trial, bank and favourite intents. The assembly owner
+routes them to the shared selection/navigation/preferences layer. This batch does
+not implement the comparison screen or write a model/session setting.
+
+There are three slots per bank and one fader per unique model. Favourites precede
+the remaining caller order. Every native effort key/label is retained, including
+single-setting and six-plus-setting models; missing current stays `--` with a
+parked cap. Ability bars require compatible published bases. Other-session marks
+and indicator help use supplied attributed sessions, with the caller's privacy
+choice. Vendor identities remain separate from status and trial tones.
+
+The real cap follows reported current. Pointer drags own a continuous ghost while
+the local trial follows the nearest native detent. Label presses, slider Up/Down
+and accessibility increment/decrement use those same native keys. Repeating the
+same label ends its trial; bank changes and explicit `endTrial()` also end it.
+`selectModel` reveals its bank. A short LCD press emits inspection; a 520 ms hold
+toggles a favourite, returns to bank 1 and consumes the release. An accessibility
+custom action provides the same favourite operation without a timed gesture.
+
+The provider supplies physical detent positions with at least 20 pt separation.
+Caps glide for 280 ms unless pointer-owned; changed LCD readings fade for 80 ms.
+Returning ghosts fade after the glide, or fade in place for 120 ms under Reduced
+Motion. Surfaces are prepared before committing state; missing resources preserve
+the prior state and identical requests can retry. Unchanged updates and movement
+inside one detent reuse prepared text. Controls survive refreshes; reordering keeps
+keyboard focus on the same visible model. Hover/focus/AX share the help catalogue.
+
+The default `NeutralFaderBankRecipe` needs only system fonts. For long names or
+native labels, construct a presentation and use `minimumSize(for:)` before sizing
+the neutral view; it preserves whole supplied aliases and grows its ordinary
+layout. An injected official provider owns its frozen geometry and resources.
+The compact six-plus-effort official arrangement still needs a coordinator
+decision; the neutral model/view support does not approve that visual case.
+
+Refreshes without a `trial` argument preserve the local trial. Hosts explicitly
+clear it with `setTrial(nil)` or `endTrial()`. Connect `onHelpChange` and `onIntent`
+to shared presenters/controllers, call `suspend()` when hidden and `dispose()` at
+teardown. Native pointer/VoiceOver/display/performance and official appearance
+acceptance remain separate from synthetic unit and offscreen raster checks.
 
 ## Main-screen data and local navigation
 

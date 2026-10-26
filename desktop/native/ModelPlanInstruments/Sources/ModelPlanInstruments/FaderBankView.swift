@@ -24,8 +24,8 @@ import CoreText
     public override var isFlipped: Bool { true }
     public override var acceptsFirstResponder: Bool { true }
     private var scale: Int { (window?.backingScaleFactor ?? 2) >= 2 ? 2 : 1 }
-    public override var intrinsicContentSize: NSSize { presentation.map { recipeProvider.minimumSize(for: $0) } ?? CGSize(width: 330, height: 320) }
-    public init(frame: CGRect = CGRect(x: 0, y: 0, width: 330, height: 320), recipeProvider: (any FaderBankRecipeProvider)? = nil,
+    public override var intrinsicContentSize: NSSize { presentation.map { recipeProvider.minimumSize(for: $0) } ?? CGSize(width: 360, height: 320) }
+    public init(frame: CGRect = CGRect(x: 0, y: 0, width: 360, height: 320), recipeProvider: (any FaderBankRecipeProvider)? = nil,
                 elapsed: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
         self.recipeProvider = recipeProvider ?? NeutralFaderBankRecipe(); self.elapsed = elapsed
         super.init(frame: frame); appearance = NSAppearance(named: .darkAqua); wantsLayer = true
@@ -61,7 +61,10 @@ import CoreText
             do { next = try recipeProvider.recipe(for: p, size: bounds.size); try next.validate() } catch let e { error = e }
         }
         if let error { throw error }
-        _ = try EngineRecipeDrawing.raster(.init(size: next.size, commands: next.commands, regions: []), provider: recipeProvider, scale: 1)
+        // Pointer-owned cap movement reuses the already prepared static recipe.
+        if force || recipe?.commands != next.commands || recipe?.size != next.size || surfaceScale != scale {
+            _ = try EngineRecipeDrawing.raster(.init(size: next.size, commands: next.commands, regions: []), provider: recipeProvider, scale: 1)
+        }
         var capImages: [(FaderCapSurface, CGImage)] = [], textImages: [(EngineTextCommand, CGImage)] = []
         for cap in next.caps {
             if !force, surfaceScale == scale, let old = oldCaps[cap.id], old.commands == cap.commands, old.frame.size == cap.frame.size, surfaces[cap.id] != nil { continue }
@@ -95,16 +98,26 @@ import CoreText
         let wanted = Set(next.caps.map(\.id))
         for (id, old) in oldCaps where !wanted.contains(id) {
             guard old.kind == .ghost, let target = next.caps.first(where: { $0.kind == .real && $0.modelID == old.modelID }),
-                  !reducedMotion, window?.isVisible == true, let image = surfaces[id] else {
+                  window?.isVisible == true, let image = surfaces[id] else {
                 surfaces.removeValue(forKey: id)?.removeFromSuperlayer(); continue
             }
             let token = (tokens[id] ?? 0) + 1; tokens[id] = token
             let from = image.presentation()?.position ?? image.position
-            CATransaction.begin(); CATransaction.setDisableActions(true); image.frame = target.frame; image.opacity = 0; CATransaction.commit()
-            let move = CABasicAnimation(keyPath: "position"); move.fromValue = from; move.toValue = image.position; move.duration = FaderTiming.glide
-            let fade = CABasicAnimation(keyPath: "opacity"); fade.fromValue = 0.75; fade.toValue = 0; fade.duration = FaderTiming.glide
-            image.add(move, forKey: "return"); image.add(fade, forKey: "hide")
-            DispatchQueue.main.asyncAfter(deadline: .now() + FaderTiming.glide) { [weak self] in
+            let opacity = image.presentation()?.opacity ?? image.opacity
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            if !reducedMotion { image.frame = target.frame }
+            image.opacity = 0; CATransaction.commit()
+            if !reducedMotion {
+                let move = CABasicAnimation(keyPath: "position"); move.fromValue = from; move.toValue = image.position; move.duration = FaderTiming.glide
+                if let t = old.timingCurve { move.timingFunction = CAMediaTimingFunction(controlPoints: t[0], t[1], t[2], t[3]) }
+                image.add(move, forKey: "return")
+            }
+            let fade = CABasicAnimation(keyPath: "opacity"); fade.fromValue = opacity; fade.toValue = 0
+            fade.duration = reducedMotion ? 0.12 : 0.1
+            let delay = reducedMotion ? 0.0 : 0.2
+            fade.beginTime = image.convertTime(CACurrentMediaTime(), from: nil) + delay; fade.fillMode = .backwards
+            image.add(fade, forKey: "hide")
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + fade.duration) { [weak self] in
                 guard let self, self.tokens[id] == token else { return }
                 self.surfaces.removeValue(forKey: id)?.removeFromSuperlayer()
             }

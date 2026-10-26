@@ -7,10 +7,27 @@ import CoreText
     public init() {}
     public func font(_ request: EngineFontRequest) throws -> CTFont { try NeutralEngineTableRecipe().font(request) }
     public func image(_ resourceID: String) throws -> CGImage { throw EngineTableError.missingResource(resourceID) }
+    private func advance(_ text: String, points: Double) -> Double {
+        let system = NSFont.monospacedSystemFont(ofSize: points, weight: .regular)
+        let font = CTFontCreateWithName(system.fontName as CFString, points, nil)
+        return CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: text,
+            attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])), nil, nil, nil)
+    }
+    private func scaleWidth(_ p: FaderBankPresentation) -> Double {
+        max(72, (p.target?.efforts.map { advance($0.label, points: 10) }.max() ?? 0) + 8)
+    }
     public func minimumSize(for p: FaderBankPresentation) -> CGSize {
         let levels = p.channels.compactMap { $0?.efforts.count }.max() ?? 0
         let lcd = p.compact ? 76.0 : 100.0
-        return CGSize(width: 330, height: 32 + lcd + 12 + max(88, Double(max(0, levels - 1)) * 20 + 16) + 32)
+        let channelWidth = p.channels.compactMap { $0 }.map { c -> Double in
+            let name = (c.nameVariants.map { advance($0, points: 11) }.min() ?? 0) + (c.favorite ? 9 : 0)
+            let state = c.stateVariants.map { advance($0, points: 12) }.min() ?? 0
+            let recommendation = c.recommendation.map { advance($0 + (c.costMultiple.map { " · " + $0 } ?? ""), points: 10) } ?? 0
+            let cost = c.costMultiple.map { advance($0 + (p.language == .chinese ? " " + (c.costBasis ?? "") : ""), points: 9) } ?? 0
+            return max(74, max(name, state, recommendation, cost) + 8)
+        }.max() ?? 74
+        return CGSize(width: ceil(max(360, channelWidth * 3 + 36 + scaleWidth(p))),
+                      height: 32 + lcd + 12 + max(88, Double(max(0, levels - 1)) * 20 + 16) + 32)
     }
     public func recipe(for p: FaderBankPresentation, size: CGSize) throws -> FaderBankRecipe {
         let minimum = minimumSize(for: p)
@@ -20,7 +37,7 @@ import CoreText
         let accent = EngineInk(NSColor.controlAccentColor), blue = EngineInk(NSColor.systemBlue), star = EngineInk(NSColor.systemYellow)
         var commands: [EngineDrawingCommand] = [.fill(rect: CGRect(origin: .zero, size: size), radius: 0, ink: EngineInk(NSColor.windowBackgroundColor))]
         var regions: [FaderHitRegion] = [], caps: [FaderCapSurface] = []
-        let gap = 12.0, scaleWidth = 72.0, width = (size.width - scaleWidth - 3 * gap) / 3
+        let gap = 12.0, scaleWidth = scaleWidth(p), width = (size.width - scaleWidth - 3 * gap) / 3
         let lcdHeight = p.compact ? 76.0 : 100.0, top = 28.0 + lcdHeight + 16, bottom = size.height - 36
         let travelTop = top + 8, travelBottom = bottom - 8
         let help = HelpCatalog(p.language)

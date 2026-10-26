@@ -120,6 +120,28 @@ final class FaderBankModelTests: XCTestCase {
         XCTAssertEqual(tested.controller.trial, trial)
         tested.dispose()
     }
+    func testDraggingWithinOneDetentReusesThePreparedTextSurfaces() async throws {
+        let provider = RecoveringFaderProvider()
+        let tested = FaderBankView(recipeProvider: provider); tested.onHelpChange = { _, _ in }
+        let window = NSWindow(contentRect: tested.frame, styleMask: [], backing: .buffered, defer: false)
+        window.contentView = tested
+        try tested.update(inputs: [.init(model: Fixtures.model())], publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let region = try XCTUnwrap(tested.recipe?.regions.first { $0.role == .slider })
+        let slider = try XCTUnwrap(tested.control(for: region.id))
+        func event(_ type: NSEvent.EventType, y: Double) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: tested.convert(CGPoint(x: region.rect.midX, y: y), to: nil), modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0)!
+        }
+        slider.mouseDown(with: event(.leftMouseDown, y: region.top!))
+        let requests = provider.fontRequests, renders = tested.surfaceRenders
+        slider.mouseDragged(with: event(.leftMouseDragged, y: region.top! + 1))
+        XCTAssertEqual(provider.fontRequests, requests)
+        XCTAssertEqual(tested.surfaceRenders, renders)
+        XCTAssertEqual(tested.controller.trial?.configuration.effort, "max")
+        XCTAssertNotNil(tested.controller.dragPosition)
+        slider.mouseUp(with: event(.leftMouseUp, y: region.top! + 1))
+        tested.dispose(); window.contentView = nil
+    }
     func testNativeRegionsFocusAXIncrementAndNoRepeatedRepaint() async throws {
         let view = FaderBankView(); var shown: HelpExplanation?
         view.onHelpChange = { value, _ in shown = value }
@@ -150,9 +172,26 @@ final class FaderBankModelTests: XCTestCase {
             let slider = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider })
             let ys = slider.detents.map { slider.top! + $0.position * (slider.bottom! - slider.top!) }.sorted()
             for i in ys.indices.dropFirst() { XCTAssertGreaterThanOrEqual(ys[i] - ys[i - 1], 20) }
-            for scale in [1, 2] { XCTAssertEqual(try view.rasterImage(scale: scale).width, 330 * scale) }
+            for scale in [1, 2] { XCTAssertEqual(try view.rasterImage(scale: scale).width, 360 * scale) }
             if compact && language == .english { XCTAssertNil(view.presentation?.channels[0]?.costMultiple) }
         }}
+    }
+    func testNeutralMinimumSizeFitsWholeNamesAndNativeEffortLabels() async throws {
+        let effort = InstrumentEffort(key: "native", label: "A published native effort label", ability: Fixtures.metric(nil),
+                                      cost: Fixtures.metric(nil), time: Fixtures.metric(nil))
+        let model = InstrumentModel(id: "long", name: "A complete published model name", efforts: [effort], recommended: "native", current: .init("native"))
+        let input = FaderChannelInput(model: model, nameVariants: ["Whole supplied alias"]), provider = NeutralFaderBankRecipe()
+        let p = FaderBankPresentation(inputs: [input], publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let size = provider.minimumSize(for: p)
+        XCTAssertGreaterThan(size.width, 330)
+        let view = FaderBankView(frame: CGRect(origin: .zero, size: size), recipeProvider: provider); view.onHelpChange = { _, _ in }
+        try view.update(inputs: [input], publicationUsable: true, language: .english, compact: false, now: Fixtures.now)
+        let r = try XCTUnwrap(view.recipe)
+        let glyphs = try EngineRecipeDrawing.raster(.init(size: r.size, commands: r.commands, regions: []), provider: provider, scale: 2).1
+        XCTAssertTrue(glyphs.allSatisfy { !$0.clipped })
+        XCTAssertTrue(glyphs.contains { $0.id == "scale.native" && $0.text == effort.label })
+        XCTAssertTrue(glyphs.contains { $0.id == "fader.slot.0.name" && [model.name, "Whole supplied alias"].contains($0.text) })
+        view.dispose()
     }
     func testInvalidLayoutDoesNotReplaceCommittedStateOrControls() async throws {
         let view = FaderBankView(); view.onHelpChange = { _, _ in }
@@ -161,15 +200,16 @@ final class FaderBankModelTests: XCTestCase {
         view.setFrameSize(CGSize(width: 100, height: 100))
         XCTAssertNotNil(view.renderError); XCTAssertEqual(view.presentation, previous)
         XCTAssertTrue(slider === view.control(for: "fader.slot.0.travel"))
-        view.setFrameSize(CGSize(width: 330, height: 320)); XCTAssertNil(view.renderError)
+        view.setFrameSize(CGSize(width: 360, height: 320)); XCTAssertNil(view.renderError)
     }
 }
 
 @MainActor private final class RecoveringFaderProvider: FaderBankRecipeProvider {
     var failGhost = false
+    private(set) var fontRequests = 0
     private let neutral = NeutralFaderBankRecipe()
     func minimumSize(for p: FaderBankPresentation) -> CGSize { neutral.minimumSize(for: p) }
-    func font(_ request: EngineFontRequest) throws -> CTFont { try neutral.font(request) }
+    func font(_ request: EngineFontRequest) throws -> CTFont { fontRequests += 1; return try neutral.font(request) }
     func image(_ resourceID: String) throws -> CGImage {
         if failGhost { throw EngineTableError.missingResource(resourceID) }
         return CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
