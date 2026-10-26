@@ -125,6 +125,12 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
         }
         return state
     }
+    /// App host only: invalidate source bookkeeping together with an arbiter context, lifecycle or reset
+    /// transaction. View callbacks must use their lease instead of this global host operation.
+    public func cancelPendingRest(reason: TrialHintCancellation) {
+        operationGeneration &+= 1
+        cancelCurrent(reason: reason)
+    }
     /// Only after the shared arbiter confirms a real placed/visible offer. No seen flag is written here.
     public func didConfirmShown(_ target: TrialHintTarget) {
         if rest?.target == target { operationGeneration &+= 1; rest = nil }

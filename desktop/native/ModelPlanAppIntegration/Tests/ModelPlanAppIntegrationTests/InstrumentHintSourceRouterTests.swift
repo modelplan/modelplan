@@ -142,6 +142,17 @@ import ModelPlanSettings
         enter(router, try XCTUnwrap(lease), value); retire = true
         XCTAssertNil(router.validatePendingRest()); XCTAssertNil(receiver.hints.trialRest)
     }
+    func testHostContextInvalidationAllowsSameStationarySourceToEnterAgain() async throws {
+        let receiver = try TrialReceiver(), router = InstrumentHintSourceRouter(receiver: receiver, uptime: { 0 })
+        let value = state(), lease = router.register(isLive: { true }) { value }
+        enter(router, lease, value)
+        var next = HintContext(cockpitOpen: UUID()); next.captureReady = true
+        try receiver.hints.updateContext(next, at: 0)
+        router.cancelPendingRest(reason: .focusLoss)
+        enter(router, lease, value)
+        XCTAssertEqual(receiver.begins, 2); XCTAssertNotNil(router.pendingTarget)
+        XCTAssertEqual(router.pendingTarget, receiver.hints.trialRest?.target)
+    }
     func testReceiverAdmissionDenialDoesNotLeaveRouterPending() async throws {
         let receiver = try TrialReceiver(); var context = receiver.hints.context; context.captureReady = false
         try receiver.hints.updateContext(context, at: 0)
