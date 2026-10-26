@@ -16,19 +16,23 @@ public struct RecordStripIdentity: Sendable {
         self.fullToolName = fullToolName;self.shortModelName = shortModelName;self.fullModelName = fullModelName;self.vendorInk = vendorInk
     }
 }
-/// No cadence is invented here. A later exact cursor handoff can replace this narrow input.
-public struct RecordStripCursor: Sendable {
+/// Provider-owned decorative placement/cadence; no session clock or data refresh timer.
+public struct RecordStripCursor: Equatable, Sendable {
     public let recordID: String, rect: CGRect, visible: Bool
-    public init(recordID:String,rect:CGRect,visible:Bool) { self.recordID = recordID;self.rect = rect;self.visible = visible }
+    public let blinkDuration: Double?
+    public init(recordID:String,rect:CGRect,visible:Bool,blinkDuration:Double? = nil) {
+        self.recordID = recordID;self.rect = rect;self.visible = visible;self.blinkDuration = blinkDuration
+    }
 }
 public struct RecordStripViewInput: Sendable {
     public let presentation: RecordStripPresentation, density: RecordStripDensity, appearance: RecordStripAppearance
     public let identities: [String:RecordStripIdentity]
     public let selectedID: String?, overflowSelected: Bool, cursor: RecordStripCursor?
+    public let windowClosed: Bool
     public init(presentation:RecordStripPresentation,density:RecordStripDensity,appearance:RecordStripAppearance,
-                identities:[String:RecordStripIdentity] = [:],selectedID:String? = nil,overflowSelected:Bool = false,cursor:RecordStripCursor? = nil) {
+                identities:[String:RecordStripIdentity] = [:],selectedID:String? = nil,overflowSelected:Bool = false,cursor:RecordStripCursor? = nil,windowClosed:Bool = false) {
         self.presentation = presentation;self.density = density;self.appearance = appearance;self.identities = identities
-        self.selectedID = selectedID;self.overflowSelected = overflowSelected;self.cursor = cursor
+        self.selectedID = selectedID;self.overflowSelected = overflowSelected;self.cursor = cursor;self.windowClosed = windowClosed
     }
 }
 public enum RecordStripField: String, CaseIterable, Sendable { case chip, tool, model, effort, project, speed, age }
@@ -38,11 +42,19 @@ public struct RecordStripRowLayout: Equatable, Sendable {
 }
 public struct RecordStripRecipe: Sendable {
     public let drawing: EngineTableRecipe, rows: [RecordStripRowLayout], more: CGRect?, cursorInk: EngineInk
-    public init(drawing:EngineTableRecipe,rows:[RecordStripRowLayout],more:CGRect?,cursorInk:EngineInk = .init(1,1,1)) {
-        self.drawing = drawing;self.rows = rows;self.more = more;self.cursorInk = cursorInk
+    public let cursors: [RecordStripCursor]
+    public init(drawing:EngineTableRecipe,rows:[RecordStripRowLayout],more:CGRect?,cursorInk:EngineInk = .init(1,1,1),cursors:[RecordStripCursor] = []) {
+        self.drawing = drawing;self.rows = rows;self.more = more;self.cursorInk = cursorInk;self.cursors = cursors
     }
     public func validate() throws {
         try drawing.validate()
+        guard cursors.count<=5,Set(cursors.map(\.recordID)).count==cursors.count else { throw EngineTableError.invalidRecipe }
+        for cursor in cursors {
+            guard let cell = rows.first(where:{$0.id==cursor.recordID})?.fields[.age],
+                  [cursor.rect.minX,cursor.rect.minY,cursor.rect.width,cursor.rect.height].allSatisfy(\.isFinite),
+                  cursor.rect.width>0,cursor.rect.height>0,cell.contains(cursor.rect),
+                  cursor.blinkDuration.map({$0.isFinite && (0.1...60).contains($0)}) ?? true else { throw EngineTableError.invalidRecipe }
+        }
         let root = CGRect(origin:.zero,size:drawing.size)
         guard rows.count<=5,cursorInk.valid,Set(rows.compactMap(\.id)).count==rows.compactMap(\.id).count else { throw EngineTableError.invalidRecipe }
         for row in rows {
