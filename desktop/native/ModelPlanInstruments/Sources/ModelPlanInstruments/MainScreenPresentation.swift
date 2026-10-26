@@ -20,6 +20,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
     public let lines: [String]
     public let backLine: String?
     public let footer: [MainScreenFooterDisplay]
+    public let subscription: SubscriptionNowDisplay?
     public let overview: OverviewPageDisplay?
     public let comparison: ComparisonPresentation?
     public let source: MainScreenSource?
@@ -39,7 +40,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
         if let trial = controller.trial, let input = controller.input(trial.modelID) {
             let compare = ComparisonPresentation(model: input.model, nameVariants: input.nameVariants,
                 trial: trial.configuration, publicationUsable: controller.publicationUsable, language: language)
-            overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
+            subscription = nil; overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
             footer = [.back(back), compare.fastAvailable
                 ? .fast(modelID: input.model.id, title: chinese ? "快速" : "Fast", off: chinese ? "关" : "off", on: chinese ? "开" : "on",
                         selected: compare.trialFast, help: HelpCatalog(language).explanation(.comparison, context: .init(fact: compare.notes.joined(separator: " · "))))
@@ -68,7 +69,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
                 if case .page = content { pageOptionsAllowed = true } else { pageOptionsAllowed = false }
             } else { pageOptionsAllowed = true }
             for i in 0..<3 {
-                if pageOptionsAllowed, let option = page?.options, i < option.count, let value = option[i] {
+                if pageOptionsAllowed,page?.subscription.map({$0.language == language}) ?? true, let option = page?.options, i < option.count, let value = option[i] {
                     slots.append(.option(controller.option(value, page: nav.location.page)))
                 } else { slots.append(.blank) }
             }
@@ -79,6 +80,10 @@ public struct MainScreenPresentation: Equatable, Sendable {
                 overview = snapshot.display(rangeKey: selected("overview.range"), modeKey: selected("overview.mode"), language: language,visualizationKey:selected("overview.chart"))
                 if overview?.visualization == .heatmap { slots[1] = .blank; slots[2] = .blank }
             } else { overview = nil }
+            if pageOptionsAllowed,payload == nil,nav.location.page == .subscriptions,let snapshot=page?.subscription,snapshot.language == language {
+                let option=page?.options.compactMap{$0}.first{$0.id == "subscription.usage"}
+                subscription=snapshot.display(daysKey:option.flatMap{controller.option($0,page:.subscriptions).selectedValue})
+            } else {subscription=nil}
             footer = slots
         }
     }

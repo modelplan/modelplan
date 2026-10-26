@@ -26,9 +26,10 @@ public struct MainScreenPageContent: Equatable, Sendable {
     public let page: MainScreenPage
     public let lines: [String]
     public let options: [MainScreenFooterOption?]
+    public let subscription: SubscriptionNowSnapshot?
     public let overview: OverviewPageSnapshot?
-    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil) {
-        self.page = page; self.lines = lines; self.options = options; self.overview = overview
+    public init(_ page: MainScreenPage, lines: [String] = [], options: [MainScreenFooterOption?] = [], overview: OverviewPageSnapshot? = nil, subscription: SubscriptionNowSnapshot? = nil) {
+        self.page = page; self.lines = lines; self.options = options; self.overview = overview; self.subscription = subscription
     }
 }
 public struct MainScreenSourcedBody: Equatable, Sendable {
@@ -40,6 +41,7 @@ public struct MainScreenSourcedBody: Equatable, Sendable {
     }
 }
 public enum MainScreenIntent: Equatable, Sendable {
+    case subscriptionScopeSelected(String)
     case overviewInformationSelected(String)
     case trialChanged(FaderTrial?)
     case sourceHighlightChanged(MainScreenSource?)
@@ -90,6 +92,7 @@ public struct MainScreenController: Sendable {
                       && Set(options.map(\.id)).count == options.count && page.lines.count <= 128
                       && page.lines.allSatisfy { $0.utf8.count <= 4096 }
                       && (page.overview.map { page.page == .overview && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
+                      && (page.subscription.map { page.page == .subscriptions && $0.valid && $0.scope == (scope ?? navigation.scope) } ?? true)
               }), sourcedBodies.count <= 128,
               sourcedBodies.enumerated().allSatisfy({ index, body in sourcedBodies.firstIndex(where: { $0.content == body.content }) == index }),
               sourcedBodies.allSatisfy({ $0.lines.count <= 128 && (1...8).contains($0.titleVariants.count)

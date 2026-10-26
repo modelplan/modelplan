@@ -2,6 +2,7 @@
 import AppKit
 
 public enum MainScreenAction: Equatable, Sendable {
+    case subscriptionScope(String)
     case overviewAlerts, overviewInformation(String)
     case page(MainScreenPage), back
     case option(page: MainScreenPage, id: String, value: String?)
@@ -34,10 +35,11 @@ public struct MainScreenRecipe: Equatable, Sendable {
     public let commands: [EngineDrawingCommand]
     public let regions: [MainScreenHitRegion]
     public let chart: ComparisonChartGeometry?
+    public let list: MainScreenListRecipe?
     public let focusInk: EngineInk?
     public init(size: CGSize, commands: [EngineDrawingCommand], regions: [MainScreenHitRegion],
-                chart: ComparisonChartGeometry? = nil, focusInk: EngineInk? = nil) {
-        self.size = size; self.commands = commands; self.regions = regions; self.chart = chart; self.focusInk = focusInk
+                chart: ComparisonChartGeometry? = nil, focusInk: EngineInk? = nil, list: MainScreenListRecipe? = nil) {
+        self.size = size; self.commands = commands; self.regions = regions; self.chart = chart; self.focusInk = focusInk; self.list = list
     }
     public func validate() throws {
         try EngineTableRecipe(size: size, commands: commands, regions: [], focusInk: focusInk).validate()
@@ -50,6 +52,10 @@ public struct MainScreenRecipe: Equatable, Sendable {
                   [r.rect.minX, r.rect.minY, r.rect.width, r.rect.height].allSatisfy(\.isFinite),
                   r.rect.minX >= 0, r.rect.minY >= 0, r.rect.width > 0, r.rect.height > 0,
                   r.rect.maxX <= size.width + 0.5, r.rect.maxY <= size.height + 0.5 else { throw EngineTableError.invalidRecipe }
+        }
+        if let list {
+            try list.validate(in:size)
+            guard regions.count+list.rows.count<=512, Set(regions.map(\.id)).isDisjoint(with:list.rows.map{$0.region.id}) else{throw EngineTableError.invalidRecipe}
         }
         if let chart {
             guard chart.axis.maximum.isFinite, chart.axis.maximum >= 1, chart.axis.ticks.contains(1),
