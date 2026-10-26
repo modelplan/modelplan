@@ -319,3 +319,30 @@ other four permitted name producers are owned by their later/current lanes.
 `InstrumentHelpDefinitions` retains exact canonical `eng.todayBasis` and
 `tape.liveBasis` copy for shared help/AX and the later Option map; no formula or
 statistics period is redefined here.
+
+## Overview bars
+
+`OverviewPageSnapshot` consumes the existing scoped usage/expiry projections and
+retains 24-hour, 7-day and 30-day series. Supply the complete stable subscription
+identity catalog (and optional explicit palette inks), then pass
+`snapshot.pageContent(language:)` to `MainScreenView.update`. Missing readings
+remain unknown; recorded zero stays zero, and incomplete bucket totals are marked
+partial. Calendar inputs retain 23/25-hour days and repeated-hour offset labels.
+
+`OverviewChartGeometry` supplies stacked/split bars with two-point stack gaps,
+proportional heights and full bucket hit regions. Bucket IDs use absolute instants;
+neutral palette slots derive from stable subscription IDs, independent of scope.
+The default recipe reserves a fixed notice area so plot bounds do not move when
+notices change. Tab reaches bucket data and legend names; Left/Right and Home/End
+traverse buckets. Shared hover/focus help and AX expose the same complete values,
+including missing subscriptions. Unchanged snapshots reuse the existing bitmap.
+
+Operational notices retain severity/expiry order. More opens the existing single
+sourced Alerts route; the assembly supplies its detail body using
+`MainScreenSourcedBody(.alerts, ...)`. Escape returns through the same navigation.
+`OverviewInformationRow` is already-localized, injected offline information: it
+appears last only when operational notices leave room. Its optional action emits
+`overviewInformationSelected(id)` for the host. This target owns no update service,
+network request, second update store or ALERT-lamp state. The first footer slot is
+reserved for the separately delivered heatmap; range and stack/split occupy the
+remaining slots. Official chart drawing stays behind the recipe-provider seam.

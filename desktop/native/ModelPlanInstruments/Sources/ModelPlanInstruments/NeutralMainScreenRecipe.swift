@@ -28,7 +28,8 @@ import CoreText
                 required = max(required, (o.choices.reduce(0) { $0 + width($1.title, size: 10) + 12 }) * Double(p.footer.count) + 24)
             }
         }
-        let height = p.comparison == nil ? max(240, 118 + Double(p.lines.count) * 16 + (p.backLine == nil ? 0 : 22)) : 288 + Double(p.lines.count) * 16
+        let baseHeight = p.comparison == nil ? max(240, 118 + Double(p.lines.count) * 16 + (p.backLine == nil ? 0 : 22)) : 288 + Double(p.lines.count) * 16
+        let height = p.overview.map { max(baseHeight,NeutralOverviewRecipe.minimumHeight($0)) } ?? baseHeight
         return CGSize(width: ceil(required), height: height)
     }
     public func recipe(for p: MainScreenPresentation, size: CGSize) throws -> MainScreenRecipe {
@@ -131,6 +132,10 @@ import CoreText
                 key("compare.effort.\(effort.key)", CGRect(x: screen.minX + 6 + Double(i) * keyWidth, y: ladderY, width: keyWidth - 3, height: 20),
                     (effort.recommended ? "★" : "") + effort.title, .effort(modelID: compare.modelID, key: effort.key), compare.help, lit: effort.trial || effort.current, value: value)
             }
+        } else if let overview = p.overview {
+            let content = CGRect(x:screen.minX+8,y:y,width:screen.width-16,height:screen.maxY-y-4)
+            let drawing = try NeutralOverviewRecipe.make(overview,in:content)
+            commands += drawing.commands; regions += drawing.regions
         } else if p.lines.isEmpty {
             text("screen.empty", [p.language == .chinese ? "暂无信息" : "No information available"], CGRect(x: screen.minX + 8, y: y + 12, width: screen.width - 16, height: 24), 12, muted)
         } else {
