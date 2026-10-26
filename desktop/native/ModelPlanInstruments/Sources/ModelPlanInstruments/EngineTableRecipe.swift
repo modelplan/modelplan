@@ -31,12 +31,15 @@ public struct EngineTextCommand: Equatable, Sendable {
     public var font: EngineFontRequest, ink: EngineInk
     public var alignment: EngineTextAlignment
     public var transitionDuration: Double
+    public var letterSpacing: Double
     public var shadow: EngineTextShadow?
     public init(id: String, variants: [String], rect: CGRect, baseline: Double? = nil, font: EngineFontRequest,
-                ink: EngineInk, alignment: EngineTextAlignment = .left, transitionDuration: Double = 0, shadow: EngineTextShadow? = nil) {
+                ink: EngineInk, alignment: EngineTextAlignment = .left, transitionDuration: Double = 0, shadow: EngineTextShadow? = nil,
+                letterSpacing: Double = 0) {
         self.id = id; self.variants = variants; self.rect = rect; self.baseline = baseline
         self.font = font; self.ink = ink; self.alignment = alignment; self.transitionDuration = transitionDuration
         self.shadow = shadow
+        self.letterSpacing = letterSpacing
     }
 }
 public struct EngineTextShadow: Equatable, Sendable {
@@ -115,6 +118,7 @@ public struct EngineTableRecipe: Equatable, Sendable {
                     && t.font.weight.isFinite && (1...1000).contains(t.font.weight) && t.ink.valid
                     && (t.baseline.map { $0.isFinite && abs($0) <= 8192 } ?? true)
                     && t.transitionDuration.isFinite && (0...0.25).contains(t.transitionDuration)
+                    && t.letterSpacing.isFinite && (-16...16).contains(t.letterSpacing)
                     && (depth == 0 || t.transitionDuration == 0)
                     && (t.shadow?.valid ?? true)
             case .shadowedFill(let r, let radius, let ink, let offset, let blur, let shadow, _):
@@ -142,11 +146,14 @@ public struct EngineTableRecipe: Equatable, Sendable {
 }
 public enum EngineTableError: Error { case invalidRecipe, missingResource(String), resourceBudget, invalidScale }
 
-/// Trusted assembly injects official recipes/resources explicitly. The neutral implementation needs no files.
-@MainActor public protocol EngineTableRecipeProvider: AnyObject {
-    func recipe(for presentation: EngineTablePresentation, size: CGSize) throws -> EngineTableRecipe
+/// Generic native drawing resources; callers inject official material separately.
+@MainActor public protocol InstrumentDrawingResources: AnyObject {
     func font(_ request: EngineFontRequest) throws -> CTFont
     func image(_ resourceID: String) throws -> CGImage
+}
+/// Trusted assembly injects official recipes/resources explicitly. The neutral implementation needs no files.
+@MainActor public protocol EngineTableRecipeProvider: InstrumentDrawingResources {
+    func recipe(for presentation: EngineTablePresentation, size: CGSize) throws -> EngineTableRecipe
 }
 
 public struct EngineGlyphMetric: Sendable {
@@ -180,10 +187,12 @@ public struct EngineGlyphMetric: Sendable {
     public static func choose(_ command: EngineTextCommand, font: CTFont) -> (String, CTLine, Double) {
         var result: (String, CTLine, Double)!
         for text in command.variants {
-            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            var attributes: [NSAttributedString.Key: Any] = [
                 NSAttributedString.Key(kCTFontAttributeName as String): font,
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String): command.ink.cgColor,
-            ]))
+            ]
+            if command.letterSpacing != 0 { attributes[NSAttributedString.Key(kCTKernAttributeName as String)] = command.letterSpacing }
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
             let width = CTLineGetTypographicBounds(line, nil, nil, nil)
             result = (text, line, width)
             if width <= command.rect.width + 0.2 { break }
@@ -191,14 +200,14 @@ public struct EngineGlyphMetric: Sendable {
         return result
     }
     @discardableResult public static func draw(_ recipe: EngineTableRecipe, in context: CGContext,
-                                               provider: any EngineTableRecipeProvider, includeTransitionText: Bool = true) throws -> [EngineGlyphMetric] {
+                                               provider: any InstrumentDrawingResources, includeTransitionText: Bool = true) throws -> [EngineGlyphMetric] {
         try recipe.validate()
         var resources: Set<String> = [], bytes = 0
         return try drawCommands(recipe.commands, in: context, provider: provider,
                                 includeTransitionText: includeTransitionText, resources: &resources, bytes: &bytes)
     }
     private static func drawCommands(_ commands: [EngineDrawingCommand], in context: CGContext,
-                                     provider: any EngineTableRecipeProvider, includeTransitionText: Bool,
+                                     provider: any InstrumentDrawingResources, includeTransitionText: Bool,
                                      resources: inout Set<String>, bytes: inout Int) throws -> [EngineGlyphMetric] {
         var metrics: [EngineGlyphMetric] = []
         for command in commands {
@@ -255,7 +264,7 @@ public struct EngineGlyphMetric: Sendable {
         }
         return metrics
     }
-    public static func raster(_ recipe: EngineTableRecipe, provider: any EngineTableRecipeProvider, scale: Int) throws -> (CGImage, [EngineGlyphMetric]) {
+    public static func raster(_ recipe: EngineTableRecipe, provider: any InstrumentDrawingResources, scale: Int) throws -> (CGImage, [EngineGlyphMetric]) {
         try recipe.validate()
         guard (1...2).contains(scale) else { throw EngineTableError.invalidScale }
         let w = ceil(recipe.size.width * Double(scale)), h = ceil(recipe.size.height * Double(scale))
