@@ -290,7 +290,7 @@ do {
         w.durationSeconds=31*86400;i.windows=[w]
         try expect(try DockInstrumentProjection.evaluate(i,now:now).litTimePoints(positions:37)==1,"any positive actual time retains one point")
         i.dataState = .stale;let old=try DockInstrumentProjection.evaluate(i,now:now)
-        try expect(old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
+        try expect(old.dataState == .stale && old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
     }
@@ -315,6 +315,24 @@ do {
         try expect(try DockInstrumentProjection.evaluate(i,now:now).jetEligible,"zero remains known critical while observed output uses credits")
         i.windows[0].remainingPercent=nil
         try expect(!(try DockInstrumentProjection.evaluate(i,now:now).jetEligible),"unknown selected status does not invent a jet colour")
+    }
+    try test("task62 cockpit restore inserts the final state without an away reveal frame") {
+        for edge in ["left","right","bottom"] {for autoHide in [true,false] {for pointer in [DockPointerRegion.outside,.inside,.wake,.unknown] {
+            var state=DockVisibilityState(),input=DockPresence();input.autoHide=autoHide;input.cockpitClosed=false
+            _=try state.step(input,at:0);let oldGeneration=state.generation
+            input.cockpitClosed=true;input.pointer=pointer;input.recordedLocks=[.drag]
+            let change=try state.step(input,at:1,intent:.restoreFromCockpit)
+            let expanded = !autoHide || pointer == .inside || pointer == .wake
+            try expect(change.state == (expanded ? .expanded:.sliver),"\(edge) restore final state")
+            try expect(change.didReveal==expanded && !change.didCollapse,"no away reveal/collapse pair")
+            try expect(change.nextDeadline==nil && change.clearRecordedLocks == [.drag],"no stale grace or drag timer")
+            try rejects(.staleGeneration){_=try state.step(input,at:2,expectedGeneration:oldGeneration)}
+            if expanded{try expect(!state.acceptsPress(at:1.01),"restored visible instrument preserves arrival guard")}
+        }}}
+        var retained=DockVisibilityState(),input=DockPresence();input.pointer = .outside
+        _=try retained.step(input,at:0,intent:.reveal)
+        let restored=try retained.step(input,at:1,intent:.restoreFromCockpit)
+        try expect(restored.state == .sliver && !restored.didReveal && !restored.didCollapse,"restoration also avoids an animated collapse when the old hidden view retained expanded state")
     }
     if let i=CommandLine.arguments.firstIndex(of:"--receipt"), i+1<CommandLine.arguments.count {
         let value:[String:Any]=["schemaVersion":1,"testGroups":groups,"assertions":assertions,"result":"passed","uiLaunched":false,"fixtureClock":"2023-11-14T22:13:20Z"]
