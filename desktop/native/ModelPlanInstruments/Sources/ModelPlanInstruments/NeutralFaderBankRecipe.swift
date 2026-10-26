@@ -56,6 +56,7 @@ import CoreText
             commands.append(.fill(rect: lcd, radius: 0, ink: surface))
             commands.append(.fill(rect: CGRect(x: lcd.midX - 2, y: top, width: 4, height: bottom - top), radius: 0, ink: rule))
             guard let channel = p.channels[slot] else { continue }
+            if channel.sourceHighlighted { commands.append(.stroke(rect: lcd.insetBy(dx: 1, dy: 1), radius: 0, width: 2, ink: blue)) }
             let prefix = "fader.slot.\(slot)"
             let indicator = CGRect(x: lcd.midX - 3, y: 10, width: 6, height: 6)
             let indicatorInk = channel.indicatorTone == .trial ? blue : channel.indicatorTone == .idle ? muted : foreground

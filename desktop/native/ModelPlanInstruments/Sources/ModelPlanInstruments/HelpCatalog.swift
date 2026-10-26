@@ -103,11 +103,11 @@ public struct HelpCatalog: Sendable {
             title = copy("速度 · ", "Speed · ") + (helpLine(context.value) ?? "--")
             switch topic {
             case .liveSpeed:
-                basis = copy("最近 60 秒的平均生成速度；没有可用速度时显示 --。", "Average generation speed over the last 60 seconds; -- means unavailable.")
+                basis = InstrumentHelpDefinitions.liveSpeed(language)
             case .sessionSpeed:
                 basis = copy("这次会话的输出 token 数除以生成用时。", "Output tokens divided by generation time for this whole session.")
             case .todaySpeed:
-                basis = copy("今天的输出 token 数除以今天的生成用时。", "Today's output tokens divided by today's generation time.")
+                basis = InstrumentHelpDefinitions.todayAverage(language)
             default:
                 if let days = context.statisticsPeriod?.days {
                     basis = copy("最近 \(days) 天的输出 token 数除以生成用时。", "Output tokens divided by generation time over the last \(days) days.")
@@ -117,7 +117,7 @@ public struct HelpCatalog: Sendable {
             }
         case .today:
             title = copy("今日", "Today")
-            basis = copy("这是这个订阅今天记录的输出。", "This is the output recorded for this subscription today.")
+            basis = InstrumentHelpDefinitions.todayAverage(language)
         case .credits:
             title = copy("点数", "Credits")
             basis = copy("这是当前点数及所选期间的点数用量。", "This is the credit balance or credit use in the selected period.")

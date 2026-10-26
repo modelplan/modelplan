@@ -1,7 +1,7 @@
-# Instrument models, engine table and fader banks
+# Instrument models and native cockpit controls
 
 An independent MIT Swift library for quota rows, effort comparisons, fader readouts,
-main-screen pages and record lines, plus AppKit engine-table and fader-bank views. Pure models
+main-screen pages and record lines, plus AppKit engine-table, fader-bank and main-screen views. Pure models
 use Foundation; rendering uses AppKit/CoreText/Core Animation. There are no bundled
 visual assets, process launches, network reads, persistent state or model-setting writes.
 
@@ -220,6 +220,10 @@ selection algorithm or view.
 
 ## On-demand help logic
 
+The five-flag ledger/queue below is the retained preparation-era API. Current
+runtime consumers use assembly's single shared arbiter owned by ModelPlanSettings.
+These views never instantiate that legacy queue or persist a second hint ledger.
+
 `FirstUseHintLedger` stores only the five app-owned boolean flags. Its Codable
 representation retains the reference key `r7-help-hints-v1`, ignores unknown or
 non-true flags, and can be reset to an empty ledger. The assembly owner persists
@@ -246,3 +250,72 @@ No help view, global key monitor, placement/routing geometry, animation or nativ
 preference writer is included. Tall/compact map placement and actual element
 coverage require the frozen presentation integration; content completeness tests
 alone cannot prove visual or accessibility coverage.
+
+## Trial and main-screen navigation (B13)
+
+`MainScreenController` wraps the existing `MainScreenNavigation` and
+`EffortComparison`. Models and the exact shared selection/publication join are
+injected; there is no second selector, recommendation engine or CLI action. One
+sourced comparison/trial retains its original return location. Repeated source
+presses return; drag/effort/Fast changes preserve the source; replacement, page,
+scope/model selection, bank/favourite activation and cockpit close end the old
+trial. Page keys keep underlying option state and discard temporary sourced-page
+patches. Comparison page keys are dark; other sourced views retain the underlying
+page lamp.
+
+`ComparisonPresentation` keeps three fixed Current/Try/★ slots and the existing
+configuration equality/backlight rules. Equal-current Try has no painted values
+or separate chart profile. Table values and chart geometry share the current
+reference, including valid fast cost/time. Qualifiers and explicitly unknown task
+time remain available; unknown current never borrows ★. Missing metric points
+break polylines. The ratio axis includes ×1 even in a large fast domain.
+
+`MainScreenView` provides native keys, pointer and accessibility actions, shared
+hover/focus explanations and atomic bitmap preparation/retry. It caches unchanged
+snapshots, retires removed controls and checks current owner identity on callbacks.
+`MainScreenRecipeProvider` injects drawing/resources; the default uses ordinary
+system-font panels and needs no files. Inspect `minimumSize(for:)` for long names
+or qualifiers. `EngineDrawingCommand.polyline` is a bounded generic primitive;
+official geometry, fonts, colours, skins and source SVG receipts stay private.
+
+Ordinary page footers retain three slots, including blank ones; comparison has
+the frozen two-slot Back/Fast row with an unused Fast key blank. Injected option
+choices print all states. Pointer activation chooses the printed state; keyboard
+activation cycles enabled states. Page/session/alert bodies are caller-provided
+text snapshots here, for their owning later batches to replace. B13 does not
+implement those later page visualizations.
+
+Assembly connects `FaderBankView.onIntent` to `receiveFaderIntent`, then handles
+`MainScreenView.onIntents` as one batch: mirror `trialChanged` into the fader's
+`setTrial`, route `modelSelected` through the shared selector and mirror
+`sourceHighlightChanged` with `setSourceHighlight(controller.sourceModelID)`.
+It also marks HUD/record/alert sources. The batch callback takes precedence over
+the single-intent callback. `handleEscape()` is offered to the shell before its
+close action; `closeForCockpit()` clears trial/source without depending on a page
+render. Blur/occlusion calls `suspend()`, actual teardown calls `dispose()`.
+
+## H11 consumer boundary (tasks 80/81)
+
+`InstrumentHintInput` is an explicit injected event boundary. Fader pointer rest
+starts/restarts with a typed `FaderRestAnchor` on the travel (also covering the
+real cap); the shared arbiter owns its 500 ms deadline/admission. Movement, leave,
+down, key/modifier input, focus loss, layout/removal and teardown cancel pending
+rest. Drag never requests a displayed hint; release can start a fresh rest.
+Candidate emission does not change trial/session. Views own no nine-hint priority,
+open/reveal counter, seen flag, per-open budget or hint persistence.
+
+Connect the owned views' `onHintInput` to that one M1 arbiter adapter when available.
+Window/app focus cancellation is emitted by the fader; the cockpit owner routes
+inputs from other owned surfaces through the same boundary. An absent adapter is
+explicitly unbound; ordinary B13 still works and this library does not pretend
+the shared policy is integrated. Shared hint display and help suppression remain
+with that presenter. The inherited tray Help gap is not fixed here.
+
+Task 81 native titles are separate from custom explanations and accessibility.
+Only declared engine subscription-name producers receive native `toolTip`, using
+the supplied full name unconditionally, even if it fits. Fader/main-screen and
+other engine readings have no native tooltip; their full AX help remains. The
+other four permitted name producers are owned by their later/current lanes.
+`InstrumentHelpDefinitions` retains exact canonical `eng.todayBasis` and
+`tape.liveBasis` copy for shared help/AX and the later Option map; no formula or
+statistics period is redefined here.

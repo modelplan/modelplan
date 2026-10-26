@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-public enum MainScreenPage: CaseIterable, Equatable, Sendable {
+public enum MainScreenPage: CaseIterable, Hashable, Sendable {
     case overview, subscriptions, effort, destinations
     public func title(_ language: InstrumentLanguage) -> String {
         switch (self, language) {

@@ -60,6 +60,7 @@ public enum EngineDrawingCommand: Equatable, Sendable {
     case fill(rect: CGRect, radius: Double, ink: EngineInk, alignment: EngineRasterAlignment = .none)
     case stroke(rect: CGRect, radius: Double, width: Double, ink: EngineInk)
     case ellipse(rect: CGRect, ink: EngineInk, alignment: EngineRasterAlignment = .none)
+    case polyline(points: [CGPoint], width: Double, ink: EngineInk, dash: [Double] = [])
     case image(resourceID: String, rect: CGRect, opacity: Double)
     case text(EngineTextCommand)
     case shadowedFill(rect: CGRect, radius: Double, ink: EngineInk, offset: CGSize, blur: Double, shadow: EngineInk, alignment: EngineRasterAlignment = .none)
@@ -67,6 +68,8 @@ public enum EngineDrawingCommand: Equatable, Sendable {
     indirect case clipped(rect: CGRect, radius: Double, commands: [EngineDrawingCommand])
 }
 public enum EngineAccessibilityRole: Sendable { case button, readout, image }
+/// H11/task81 permits native titles only at the two full subscription-name producers here.
+public enum EngineNameTooltipTarget: Equatable, Sendable { case subscriptionKey(String), subscriptionName(String) }
 public struct EngineHitRegion: Equatable, Sendable {
     public let id: String
     public let rect: CGRect
@@ -76,11 +79,13 @@ public struct EngineHitRegion: Equatable, Sendable {
     public let intent: EngineTableIntent?
     public let tabStop: Bool, enabled: Bool, selected: Bool
     public let focus: EngineFocusStyle?
+    public let nameTooltipTarget: EngineNameTooltipTarget?
     public init(id: String, rect: CGRect, label: String, help: HelpExplanation, role: EngineAccessibilityRole = .button,
-                intent: EngineTableIntent? = nil, tabStop: Bool = true, enabled: Bool = true, selected: Bool = false, focus: EngineFocusStyle? = nil) {
+                intent: EngineTableIntent? = nil, tabStop: Bool = true, enabled: Bool = true, selected: Bool = false, focus: EngineFocusStyle? = nil,
+                nameTooltipTarget: EngineNameTooltipTarget? = nil) {
         self.id = id; self.rect = rect; self.label = label; self.help = help; self.role = role
         self.intent = intent; self.tabStop = tabStop; self.enabled = enabled; self.selected = selected
-        self.focus = focus
+        self.focus = focus; self.nameTooltipTarget = nameTooltipTarget
     }
 }
 public struct EngineTableRecipe: Equatable, Sendable {
@@ -111,6 +116,11 @@ public struct EngineTableRecipe: Equatable, Sendable {
             case .fill(let r, let radius, let ink, _), .stroke(let r, let radius, _, let ink):
                 valid = rect(r) && radius.isFinite && radius >= 0 && radius <= min(r.width, r.height) / 2 && ink.valid
             case .ellipse(let r, let ink, _): valid = rect(r) && ink.valid
+            case .polyline(let points, let width, let ink, let dash):
+                count += points.count
+                valid = count <= 8192 && (2...2048).contains(points.count) && width.isFinite && width > 0 && width <= 128 && ink.valid
+                    && points.allSatisfy { $0.x.isFinite && $0.y.isFinite && abs($0.x) <= 8192 && abs($0.y) <= 8192 }
+                    && dash.count <= 16 && dash.allSatisfy { $0.isFinite && $0 > 0 && $0 <= 256 }
             case .image(let id, let r, let opacity): valid = !id.isEmpty && rect(r) && opacity.isFinite && (0...1).contains(opacity)
             case .text(let t):
                 valid = !t.id.isEmpty && rect(t.rect) && !t.variants.isEmpty && t.variants.count <= 8
@@ -223,6 +233,10 @@ public struct EngineGlyphMetric: Sendable {
             case .ellipse(let original, let ink, let align):
                 let r = aligned(original, to: align, in: context)
                 context.setFillColor(ink.cgColor); context.fillEllipse(in: r)
+            case .polyline(let points, let width, let ink, let dash):
+                context.setStrokeColor(ink.cgColor); context.setLineWidth(width); context.setLineJoin(.round)
+                if !dash.isEmpty { context.setLineDash(phase: 0, lengths: dash.map { CGFloat($0) }) }
+                context.beginPath(); context.move(to: points[0]); points.dropFirst().forEach { context.addLine(to: $0) }; context.strokePath()
             case .image(let id, let r, let opacity):
                 let image = try provider.image(id)
                 if resources.insert(id).inserted {

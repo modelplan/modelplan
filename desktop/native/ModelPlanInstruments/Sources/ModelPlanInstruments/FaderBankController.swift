@@ -4,6 +4,8 @@ import Foundation
 public enum FaderIntent: Equatable, Sendable {
     case selectModel(String), inspectModel(String), trialChanged(FaderTrial?)
     case favoritesChanged([String]), bankChanged(Int)
+    /// A bank/favourite activation replaces a sourced main-screen view even at a bank boundary.
+    case closeSourcedView
 }
 public enum FaderTiming {
     public static let glide = 0.280
@@ -18,6 +20,7 @@ public struct FaderBankController: Sendable {
     public private(set) var selectedModelID: String?
     public private(set) var favoriteIDs: [String] = []
     public private(set) var trial: FaderTrial?
+    public private(set) var sourceHighlightID: String?
     public private(set) var draggingModelID: String?
     public private(set) var dragPosition: Double?
     public private(set) var previewModelID: String?, previewEffort: String?
@@ -38,6 +41,7 @@ public struct FaderBankController: Sendable {
         if let selected = self.selectedModelID, model(selected) == nil { self.selectedModelID = nil }
         if let id = draggingModelID, model(id) == nil { cancelGesture() }
         if let press, model(press.id) == nil { self.press = nil }
+        if let id = sourceHighlightID, model(id) == nil { sourceHighlightID = nil }
         if let trial, !valid(trial) { self.trial = nil; return [.trialChanged(nil)] }
         return []
     }
@@ -48,6 +52,10 @@ public struct FaderBankController: Sendable {
     @discardableResult public mutating func setTrial(_ trial: FaderTrial?) -> Bool {
         guard trial == nil || valid(trial!) else { return false }
         self.trial = trial; return true
+    }
+    /// Mirrors the one main-screen source, without selecting a model or changing a trial.
+    public mutating func setSourceHighlight(_ id: String?) {
+        sourceHighlightID = id.flatMap { model($0) == nil ? nil : $0 }
     }
     public mutating func endTrial() -> [FaderIntent] {
         cancelGesture()
@@ -60,9 +68,10 @@ public struct FaderBankController: Sendable {
         return ended + [.selectModel(id), .bankChanged(bank)]
     }
     public mutating func changeBank(_ requested: Int) -> [FaderIntent] {
+        sourceHighlightID = nil
         let ended = endTrial(), next = min(max(0, requested), bankCount - 1)
-        guard next != bank else { return ended }
-        bank = next; return ended + [.bankChanged(next)]
+        guard next != bank else { return ended + [.closeSourcedView] }
+        bank = next; return ended + [.closeSourcedView, .bankChanged(next)]
     }
     public mutating func tryEffort(modelID: String, key: String, toggle: Bool = false) -> [FaderIntent] {
         guard let model = model(modelID), model.effort(key) != nil else { return [] }
@@ -127,10 +136,11 @@ public struct FaderBankController: Sendable {
     private mutating func toggleFavorite(_ id: String, preservingPress: Bool) -> [FaderIntent] {
         guard model(id) != nil else { return [] }
         let saved = press, ended = endTrial()
+        sourceHighlightID = nil
         if preservingPress { press = saved }
         if favoriteIDs.contains(id) { favoriteIDs.removeAll { $0 == id } }
         else { favoriteIDs.insert(id, at: 0) }
         bank = 0
-        return ended + [.favoritesChanged(favoriteIDs), .bankChanged(0)]
+        return ended + [.closeSourcedView, .favoritesChanged(favoriteIDs), .bankChanged(0)]
     }
 }
