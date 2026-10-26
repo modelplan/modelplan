@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.40, Codex plugin 0.15.32 and Claude Code plugin 0.7.31 (2026-10-26)
+
 - `modelplan advise`: **no spending ahead of a reset that already came.** A Codex reset can land
   before its stated time, before the announcement is seen, or minutes before the post itself,
   while the public record still says "announced". `announced_reset_with_surplus` now needs a
@@ -14,6 +16,7 @@ These ship with the next CLI release; its pin PR gives them a version heading.
   hint, restarted or has 10 points more left. The "Codex announced a usage reset" news is dropped
   for the same reason, and the switch-back comes as soon as an early landing shows instead of
   waiting for the stated time.
+- Both plugins pin CLI v0.5.40 and its published archive checksums.
 
 ## CLI v0.5.39, Codex plugin 0.15.31 and Claude Code plugin 0.7.30 (2026-10-25)
 
