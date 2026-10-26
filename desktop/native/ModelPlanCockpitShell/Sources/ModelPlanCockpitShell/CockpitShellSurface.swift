@@ -99,12 +99,14 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
     public func configure(_ state: CockpitSurfaceState) throws {
         let layout = try skin.layout(for: state)
         try validate(layout, state)
-        let still = !state.closed && state.still?.key == layout.expectedStillKey ? state.still?.image : nil
-        let image = try skin.backdrop(for: state, layout: layout, matchingStill: still)
+        let still = !state.closed && state.still?.key == layout.expectedStillKey ? state.still : nil
+        let admittedState = CockpitSurfaceState(profile:state.profile,closed:state.closed,appearance:state.appearance,
+            stations:state.stations,still:still,effectPhase:state.effectPhase)
+        let image = try skin.backdrop(for:admittedState,layout:layout,matchingStill:still?.image)
         let scale = CGFloat(state.appearance.scale)
         guard image.width == Int(ceil(layout.drawableBounds.width * scale)),
               image.height == Int(ceil(layout.drawableBounds.height * scale)) else { throw CockpitSurfaceError.invalidRaster }
-        self.state = state; surfaceLayout = layout
+        self.state = admittedState; surfaceLayout = layout
         CATransaction.begin(); CATransaction.setDisableActions(true)
         backdropLayer.contents = image; backdropLayer.contentsScale = scale; backdropLayer.contentsGravity = .resize
         backdropBytes = image.bytesPerRow * image.height

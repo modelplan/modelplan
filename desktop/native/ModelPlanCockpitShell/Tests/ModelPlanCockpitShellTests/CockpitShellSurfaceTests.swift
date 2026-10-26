@@ -60,6 +60,56 @@ final class CockpitShellSurfaceTests: XCTestCase {
             surface.stop()
         }
     }
+    func testRejectedStillsAreNotRetainedInSurfaceState() async throws {
+        try await MainActor.run {
+            let skin = TestSkin(), surface = CockpitShellSurface(skin:skin)
+            defer { surface.stop() }
+            let appearance = RenderProfile(dark:true,scale:1,locale:"en",viewport:"ownership")
+            let station = CockpitStation(id:"visible",centerX:20,columnWidth:10,working:false,signal:.healthy)
+            for (closed,key) in [(true,"current"),(false,"stale")] {
+                weak var image: CGImage?
+                try autoreleasepool {
+                    let candidate = TestSkin.image(); image = candidate
+                    try surface.configure(.init(profile:.compact,closed:closed,appearance:appearance,
+                        stations:[station],still:.init(key:key,image:candidate),effectPhase:0.25))
+                    XCTAssertNil(skin.suppliedStill)
+                    XCTAssertNil(surface.state?.still)
+                    XCTAssertEqual(surface.state?.profile,.compact)
+                    XCTAssertEqual(surface.state?.closed,closed)
+                    XCTAssertEqual(surface.state?.appearance,appearance)
+                    XCTAssertEqual(surface.state?.stations.first?.id,"visible")
+                    XCTAssertEqual(surface.state?.effectPhase,0.25)
+                }
+                XCTAssertNil(image,"A rejected raster must not outlive its caller")
+            }
+        }
+    }
+    func testAdmittedStillRetainsIdentityWithoutOwningCallerCache() async throws {
+        try await MainActor.run {
+            let skin = TestSkin(), surface = CockpitShellSurface(skin:skin)
+            defer { surface.stop() }
+            weak var admitted: CGImage?
+            try autoreleasepool {
+                let image = TestSkin.image(); admitted = image
+                try surface.configure(.init(profile:.full,closed:false,appearance:.init(scale:1),
+                    still:.init(key:"current",image:image)))
+                XCTAssertTrue(skin.suppliedStill === image)
+                XCTAssertEqual(surface.state?.still?.key,"current")
+                XCTAssertTrue(surface.state?.still?.image === image)
+                skin.suppliedStill = nil // Check the surface's ownership independently of the provider.
+            }
+            XCTAssertNotNil(admitted)
+            var callerCache = surface.state?.still?.image
+            try autoreleasepool {
+                try surface.configure(.init(profile:.full,closed:true,appearance:.init(scale:1),
+                    still:.init(key:"current",image:try XCTUnwrap(callerCache))))
+            }
+            XCTAssertNil(surface.state?.still); XCTAssertNil(skin.suppliedStill)
+            XCTAssertTrue(callerCache === admitted) // Rejection does not clear an independently owned cache.
+            callerCache = nil
+            XCTAssertNil(admitted)
+        }
+    }
     func testMalformedInputsAndProviderRasterFailBeforeRetention() async throws {
         try await MainActor.run {
             let skin = TestSkin(), surface = CockpitShellSurface(skin:skin)
