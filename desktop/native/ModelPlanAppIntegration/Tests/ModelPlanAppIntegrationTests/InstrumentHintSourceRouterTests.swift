@@ -126,6 +126,15 @@ import ModelPlanSettings
         XCTAssertEqual(receiver.begins, 2); XCTAssertEqual(router.pendingTarget, receiver.token?.target)
         XCTAssertEqual(router.validatePendingRest()?.anchor.modelID, "b")
     }
+    func testCancellationCalloutCannotAdmitSourceItMadeInactive() async throws {
+        let receiver = try TrialReceiver(), router = InstrumentHintSourceRouter(receiver: receiver, uptime: { 0 })
+        var value = state(), live = true
+        let lease = router.register(isLive: { live }) { value }; enter(router, lease, value)
+        value = state(x: 21); receiver.onCancel = { live = false }
+        enter(router, lease, value)
+        XCTAssertEqual(receiver.begins, 1); XCTAssertNil(router.pendingTarget)
+        XCTAssertNil(receiver.hints.trialRest); XCTAssertFalse(receiver.hints.preferences.seen.contains(.trial))
+    }
     func testCancellationCalloutCannotAdmitAnAnchorThatChangedDuringIt() async throws {
         let receiver = try TrialReceiver(), router = InstrumentHintSourceRouter(receiver: receiver, uptime: { 0 })
         var value = state(); let lease = router.register(isLive: { true }) { value }; enter(router, lease, value)

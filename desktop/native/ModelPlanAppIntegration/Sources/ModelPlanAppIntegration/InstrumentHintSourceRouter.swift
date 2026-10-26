@@ -93,8 +93,12 @@ public struct InstrumentHintSourceLease: Hashable, Sendable {
             if rest != nil { cancelCurrent(reason: .pointerMovement) }
             // A receiver callout can have created a newer rest or replaced this source.
             guard operationGeneration == operation, isCurrent(lease), rest == nil, let receiver else { return }
+            let currentLive = bindings[lease.sourceID]?.isLive() ?? false
+            guard operationGeneration == operation, isCurrent(lease), rest == nil, currentLive else { return }
             let current = bindings[lease.sourceID]?.resolve()
             guard operationGeneration == operation, isCurrent(lease), rest == nil, current == state else { return }
+            let stillLive = bindings[lease.sourceID]?.isLive() ?? false
+            guard operationGeneration == operation, isCurrent(lease), rest == nil, stillLive else { return }
             let target = TrialHintTarget(id: UUID().uuidString)
             rest = Rest(lease: lease, snapshot: state, target: target)
             let accepted = receiver.beginTrialRest(on: target, at: now)
