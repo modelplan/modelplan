@@ -18,9 +18,25 @@ final class DockSVGShapeValidator: NSObject,XMLParserDelegate {
             }
         }
         if depth==1 {
-            guard elementName=="svg",let w=attributes["width"].flatMap(Double.init),let h=attributes["height"].flatMap(Double.init),
-                w.isFinite,h.isFinite,w>0,h>0,w<=4096,h<=4096 else{valid=false;parser.abortParsing();return}
-            size=CGSize(width:w,height:h)
+            // A viewBox-only vector has an intrinsic aspect ratio and needs no rewritten source bytes.
+            // Partial or malformed dimensions never fall back to viewBox to bypass validation.
+            var viewport:CGSize?
+            if let box=attributes["viewBox"] {
+                let parts=box.split(whereSeparator:{$0.isWhitespace || $0==","})
+                let numbers=parts.compactMap{Double($0)}
+                guard numbers.count==4,parts.count==4,numbers.allSatisfy({$0.isFinite}),
+                    abs(numbers[0])<=4096,abs(numbers[1])<=4096,numbers[2].isNormal,numbers[3].isNormal,numbers[2]>0,numbers[3]>0,
+                    numbers[2]<=4096,numbers[3]<=4096 else{valid=false;parser.abortParsing();return}
+                viewport=CGSize(width:numbers[2],height:numbers[3])
+            }
+            if attributes["width"]==nil && attributes["height"]==nil,let viewport {
+                size=viewport
+            } else {
+                guard elementName=="svg",let w=attributes["width"].flatMap(Double.init),let h=attributes["height"].flatMap(Double.init),
+                    w.isNormal,h.isNormal,w>0,h>0,w<=4096,h<=4096 else{valid=false;parser.abortParsing();return}
+                size=CGSize(width:w,height:h)
+            }
+            guard elementName=="svg" else{valid=false;parser.abortParsing();return}
         }
     }
     func parser(_ parser:XMLParser,didEndElement:String,namespaceURI:String?,qualifiedName:String?){depth-=1}

@@ -51,6 +51,28 @@ struct NativeFailure:Error {let message:String}
     let vectors=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["vector":svgFile]))
     let vector=try vectors.image("vector",maximumPixelSize:64)
     try require(vector.width==64 && vector.height==64,"native SVG raster uses explicit physical dimensions")
+    // Neutral intrinsic-white input: no vendor contour or official visual is embedded here.
+    let viewBox=Data("<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2,-2 28 28'><rect width='24' height='24' fill='#ffffff'/></svg>".utf8)
+    try require(try DockStaticSVG.size(viewBox)==CGSize(width:28,height:28),"viewBox-only intrinsic size with negative origin")
+    try viewBox.write(to:root.appendingPathComponent("viewbox.svg"))
+    let viewBoxFile=DockResourceFile(path:"viewbox.svg",sha256:SHA256.hash(data:viewBox).map{String(format:"%02x",$0)}.joined(),bytes:viewBox.count)
+    let intrinsic=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["white":viewBoxFile]))
+    for pixels in [20,40] {
+        let image=try intrinsic.image("white",maximumPixelSize:pixels)
+        try require(image.width==pixels && image.height==pixels,"viewBox-only native 1x/2x card mark dimensions")
+        let sample=CGContext(data:nil,width:pixels,height:pixels,bitsPerComponent:8,bytesPerRow:pixels*4,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
+        sample.draw(image,in:CGRect(x:0,y:0,width:pixels,height:pixels))
+        let b=sample.data!.assumingMemoryBound(to:UInt8.self),i=(pixels/2*pixels+pixels/2)*4
+        try require(b[i]==255 && b[i+1]==255 && b[i+2]==255 && b[i+3]==255,"intrinsic white is not tinted")
+        try require(try intrinsic.image("white",maximumPixelSize:pixels) === image,"viewBox raster cache reused")
+    }
+    try require(intrinsic.decodedBytes>0 && intrinsic.decodedBytes<=16*1024*1024,"viewBox images use counted cache")
+    intrinsic.purge();try require(intrinsic.decodedBytes==0,"viewBox cache purges")
+    for attributes in ["", "width='28'", "height='28'", "width='bad' height='28' viewBox='0 0 28 28'", "viewBox='0 0 0 28'", "viewBox='0 0 -1 28'", "viewBox='0 0 28 4097'", "viewBox='nan 0 28 28'", "viewBox='4097 0 28 28'", "viewBox='inf 0 28 28'", "viewBox='0 0 1e-320 28'", "viewBox='0 0 28'", "viewBox='0 0 28 28 0'", "width='28' height='28' viewBox='0 0 -1 28'"] {
+        let input=Data("<svg xmlns='http://www.w3.org/2000/svg' \(attributes)><rect width='1' height='1'/></svg>".utf8)
+        do{_=try DockStaticSVG.size(input);throw NativeFailure(message:"invalid intrinsic viewport admitted: \(attributes)")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+    }
     let normalisedTiny=try DockStaticSVG.pixelSize(CGSize(width:1e-200,height:1e-200),maximumPixelSize:64)
     try require(normalisedTiny.width==64 && normalisedTiny.height==64,"tiny normal dimensions normalise without reciprocal overflow")
     let thin=try DockStaticSVG.pixelSize(CGSize(width:1e-200,height:4096),maximumPixelSize:4096)
