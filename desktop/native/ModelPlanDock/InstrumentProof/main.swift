@@ -2,6 +2,7 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import QuartzCore
 import CoreText
 import CryptoKit
 import ImageIO
@@ -192,7 +193,7 @@ struct NativeFailure:Error {let message:String}
     hiddenView.dispose()
     let effectsView=DockInstrumentView(frame:effectsSkin.bounds)
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
-    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool),provider=SyntheticDockFrameProvider()
+    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool,systemReduceMotion:{false}),provider=SyntheticDockFrameProvider()
     let magnifications=Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,1.5)})
     try driver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:RenderProfile(scale:2),magnification:magnifications,compositing:.screen,provider:{_ in provider})
     try require(driver.activeIDs.count==6 && driver.animatingIDs.count==6,"six distinct native consumers")
@@ -205,6 +206,49 @@ struct NativeFailure:Error {let message:String}
     try driver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:RenderProfile(scale:2,reduceMotion:true),magnification:magnifications,provider:{_ in provider})
     try require(driver.activeIDs.count==6 && driver.animatingIDs.isEmpty,"Reduced Motion retains static frame zero")
     driver.stop();pool.purgeUnleased();effectsView.dispose();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"explicit teardown releases every jet")
+    // Optional motion remains independent of the shared discrete bitmap clock.
+    var syntheticSystemReduction=false
+    let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction})
+    let recipe=DockEffectRotation(period:2,direction:.clockwise)
+    func motion(_ profile:RenderProfile = .init(scale:1),quiet:Set<String>=[])throws {
+        try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:1,locale:"en")
+        try motionDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:profile,rotation:recipe,quietIDs:quiet,provider:{_ in provider})
+    }
+    try motion()
+    try require(motionDriver.rotatingIDs.count==6 && motionDriver.animatingIDs.count==6,"independent bitmap and rotation timelines")
+    let jet=effectsView.workingLayerParents["work-0"]!.sublayers!.first!
+    let spin=jet.animation(forKey:"dock-effect-rotation") as! CABasicAnimation
+    let flicker=jet.animation(forKey:"stepped-images") as! CAKeyframeAnimation
+    try require(spin.duration==2 && spin.keyPath=="transform.rotation.z" && spin.repeatCount.isInfinite,"host-supplied period, effect-only Z rotation")
+    try require(spin.timingFunction==CAMediaTimingFunction(name:.linear),"linear motion timing")
+    try require(flicker.duration==1 && flicker.calculationMode == .discrete && flicker.values?.count==9,"original nine-pose one-second bitmap clock unchanged")
+    try require(effectsView.layer?.animationKeys()?.isEmpty ?? true,"static surface has no rotation")
+    let motionRoot=effectsView.layer!,centre=jet.convert(CGPoint(x:32,y:32),to:effectsView.layer!)
+    for (seconds,expected) in [(0.0,CGPoint(x:32,y:4)),(0.5,CGPoint(x:60,y:32)),(1.0,CGPoint(x:32,y:60)),(1.5,CGPoint(x:4,y:32)),(2.0,CGPoint(x:32,y:4))] {
+        motionDriver.seekForCapture(seconds)
+        let point=jet.convert(CGPoint(x:32,y:60),to:motionRoot)
+        try require(hypot(point.x-(centre.x+expected.x-32),point.y-(centre.y+expected.y-32))<0.001,"final native root-view clockwise held pose")
+    }
+    try require(motionDriver.rotatingIDs.isEmpty && motionDriver.animatingIDs.isEmpty && motionPool.activeLeaseCount==6,"capture freezes both timelines while retaining counted leases")
+    try motion(quiet:["work-0"])
+    try require(motionDriver.rotatingIDs.count==5 && motionDriver.animatingIDs.count==5 && motionDriver.activeIDs.count==6,"quiet keeps only static frame zero")
+    let quietJet=effectsView.workingLayerParents["work-0"]!.sublayers!.first!,quietImage=quietJet.contents as! CGImage
+    motionDriver.seekForCapture(0.75)
+    try require(quietJet.contents as! CGImage === quietImage && CATransform3DIsIdentity(quietJet.transform),"quiet capture cannot advance bitmap or rotation")
+    try motion(RenderProfile(scale:1,reduceMotion:true))
+    try require(motionDriver.activeIDs.count==6 && motionDriver.rotatingIDs.isEmpty && motionDriver.animatingIDs.isEmpty,"app reduction stops both timelines")
+    syntheticSystemReduction=true;try motion()
+    try require(motionDriver.rotatingIDs.isEmpty && motionDriver.animatingIDs.isEmpty,"injected system reduction is independent of app profile")
+    syntheticSystemReduction=false;try motion()
+    effectsView.viewDidHide();motionPool.purgeUnleased()
+    try require(motionDriver.activeIDs.isEmpty && motionDriver.rotatingIDs.isEmpty && motionPool.activeLeaseCount==0 && motionPool.decodedBytes==0,"hide retires rotation, contents and leases")
+    try motion()
+    for invalid in [Double.nan,Double.infinity,0,-1,0.001,86_401] {
+        do {try motionDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(),rotation:.init(period:invalid),provider:{_ in provider});throw NativeFailure(message:"invalid motion admitted")}
+        catch DockArtworkError.invalidManifest{checks+=1}
+    }
+    try require(motionDriver.activeIDs.isEmpty && motionDriver.rotatingIDs.isEmpty,"failed recipe retires prior motion")
+    motionDriver.stop();motionPool.purgeUnleased();effectsView.dispose()
     if CommandLine.arguments.count>2 {
         let fontRoot=URL(fileURLWithPath:CommandLine.arguments[2])
         let fontURL=fontRoot.appendingPathComponent("jetbrains-mono-latin-wght-normal.ttf"), bytes=try Data(contentsOf:fontURL)
