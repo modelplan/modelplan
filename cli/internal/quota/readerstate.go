@@ -29,7 +29,7 @@ type ReaderGrant struct {
 }
 type ReaderProfile struct {
 	Root        string // locally admitted tool root, never a remotely supplied path
-	AccountFile string // optional locally admitted tool-owned metadata file
+	AccountFile string // optional locally admitted tool-owned account file; provider-specific
 }
 
 type readerMetadata struct {
