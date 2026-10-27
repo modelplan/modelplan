@@ -32,6 +32,10 @@ public struct MainScreenHitRegion: Equatable, Sendable {
     public let focusGroup: String?
     public let value: String?
     public let accessibilityDetails:[MainScreenAccessibilityDetail]
+    var validAccessibilityDetails:Bool {
+        accessibilityDetails.count<=512 && Set(accessibilityDetails.map(\.id)).count==accessibilityDetails.count &&
+        accessibilityDetails.allSatisfy{!$0.id.isEmpty && $0.id.utf8.count<=1024 && $0.label.utf8.count<=16_384 && $0.value.utf8.count<=16_384}
+    }
     public init(id: String, rect: CGRect, action: MainScreenAction? = nil, label: String, help: HelpExplanation,
                 role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil, gridPosition: MainScreenGridPosition? = nil, accessibilityDetails:[MainScreenAccessibilityDetail] = []) {
         self.id = id; self.rect = rect; self.action = action; self.label = label; self.help = help
@@ -53,9 +57,10 @@ public struct MainScreenRecipe: Equatable, Sendable {
     public func validate() throws {
         try EngineTableRecipe(size: size, commands: commands, regions: [], focusInk: focusInk).validate()
         guard regions.count <= 512, Set(regions.map(\.id)).count == regions.count else { throw EngineTableError.invalidRecipe }
+        guard (list?.rows.count ?? 0)<=256,
+              regions.reduce(0,{$0+$1.accessibilityDetails.count})+(list?.rows.reduce(0,{$0+$1.region.accessibilityDetails.count}) ?? 0)<=512 else {throw EngineTableError.invalidRecipe}
         for r in regions {
-            guard r.accessibilityDetails.count<=512,Set(r.accessibilityDetails.map(\.id)).count==r.accessibilityDetails.count,
-                  r.accessibilityDetails.allSatisfy({!$0.id.isEmpty && $0.id.utf8.count<=1024 && $0.label.utf8.count<=16_384 && $0.value.utf8.count<=16_384}) else {throw EngineTableError.invalidRecipe}
+            guard r.validAccessibilityDetails else {throw EngineTableError.invalidRecipe}
             if let position=r.gridPosition {
                 guard r.focusGroup != nil,(0...4096).contains(position.column),(0...4096).contains(position.row) else {throw EngineTableError.invalidRecipe}
             }

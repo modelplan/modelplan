@@ -39,6 +39,19 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
         let region=MainScreenHitRegion(id:"chart",rect:.init(x:0,y:0,width:100,height:100),label:"Chart",help:.init(title:"Chart",body:"Synthetic"),role:.readout,accessibilityDetails:[detail,detail])
         XCTAssertThrowsError(try MainScreenRecipe(size:.init(width:100,height:100),commands:[],regions:[region]).validate())
     }
+    @MainActor func testScrollableRowsKeepDetailsAndTheWholeTreeHasOneBound() throws {
+        let detail=MainScreenAccessibilityDetail(id:"metric",label:"Value",value:"1")
+        func region(_ id:String,_ details:[MainScreenAccessibilityDetail])->MainScreenHitRegion{
+            .init(id:id,rect:.init(x:0,y:0,width:100,height:40),label:id,help:.init(title:id,body:"Synthetic"),role:.readout,accessibilityDetails:details)
+        }
+        let list=MainScreenListRecipe(identity:"b23",viewport:.init(x:0,y:0,width:100,height:80),rows:[
+            .init(height:40,commands:[],region:region("one",[detail])),.init(height:40,commands:[],region:region("two",[detail]))])
+        try MainScreenRecipe(size:.init(width:100,height:100),commands:[],regions:[],list:list).validate()
+        XCTAssertEqual(list.positionedRegions[1].rect.minY,40)
+        XCTAssertEqual(list.positionedRegions[1].accessibilityDetails,[detail])
+        let many=(0..<300).map{MainScreenAccessibilityDetail(id:"point.\($0)",label:"Point",value:"1")}
+        XCTAssertThrowsError(try MainScreenRecipe(size:.init(width:100,height:100),commands:[],regions:[region("one",many),region("two",many)]).validate())
+    }
 }
 
 @MainActor final class B23ChartTreeTests:XCTestCase {
