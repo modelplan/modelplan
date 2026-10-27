@@ -116,3 +116,129 @@ struct ProofHold {
     try check(hold.commits==1,"one release -> one action")
     return ["\(count) edge/size/count/scale geometry cells", "negative and above origins, safe inset intersection", "stable/ambiguous/missing display selection", "en/zh 600/520 uniform fit and hit inverse", "generation-safe hold cancellation and single commit"]
 }
+
+// E00 is isolated to this probe executable; none of these APIs are linked into the product host.
+import simd
+import RealityKit
+import Metal
+import Darwin
+
+enum EntranceProbeRoute: String { case quickOnly, isolatedProbe }
+struct EntranceProbeCamera {
+    let width: Float, height: Float, eye: SIMD3<Float>, near: Float, far: Float
+    var matrix: simd_float4x4? {
+        guard [width,height,eye.x,eye.y,eye.z,near,far].allSatisfy(\.isFinite), width>0,height>0,near>0,eye.z>near,far>eye.z else { return nil }
+        let l=(-width/2-eye.x)*near/eye.z, r=(width/2-eye.x)*near/eye.z
+        let b=(-height/2-eye.y)*near/eye.z, t=(height/2-eye.y)*near/eye.z
+        return simd_float4x4(columns:(SIMD4(2*near/(r-l),0,0,0),SIMD4(0,2*near/(t-b),0,0),
+            SIMD4((r+l)/(r-l),(t+b)/(t-b),far/(near-far),-1),SIMD4(0,0,near*far/(near-far),0)))
+    }
+    func pagePoint(_ point: SIMD3<Float>) -> SIMD2<Float>? {
+        guard let matrix else { return nil }
+        let p=matrix*SIMD4(point-eye,1)
+        guard p.w.isFinite,p.w>0 else { return nil }
+        return SIMD2((p.x/p.w+1)*width/2,(1-p.y/p.w)*height/2)
+    }
+    static func route(osMajor: Int, experimentRequested: Bool) -> EntranceProbeRoute {
+        osMajor>=15 && experimentRequested ? .isolatedProbe : .quickOnly
+    }
+}
+func entranceGeometryChecks() throws -> [String] {
+    struct Failure:Error{let message:String}
+    func check(_ value:Bool,_ text:String)throws{if !value{throw Failure(message:text)}}
+    var points=0
+    for eyeY:Float in [-120,0,150] {
+        let camera=EntranceProbeCamera(width:640,height:480,eye:SIMD3(30,eyeY,900),near:1,far:2000)
+        for x:Float in [-320,0,320] {for y:Float in [-240,0,240] {
+            guard let p=camera.pagePoint(SIMD3(x,y,0)) else{throw Failure(message:"invalid projection")}
+            try check(abs(p.x-(x+320))<0.001 && abs(p.y-(240-y))<0.001,"Z=0 one-point registration")
+            points+=1
+        }}
+    }
+    try check(EntranceProbeCamera.route(osMajor:14,experimentRequested:true) == .quickOnly,"14 cannot unlock")
+    try check(EntranceProbeCamera.route(osMajor:26,experimentRequested:false) == .quickOnly,"no implicit scene allocation")
+    try check(EntranceProbeCamera.route(osMajor:15,experimentRequested:true) == .isolatedProbe,"15 explicit experiment")
+    try check(EntranceProbeCamera(width:0,height:1,eye:SIMD3(0,0,2),near:1,far:3).matrix==nil,"invalid geometry")
+    return ["E00 \(points) analytic off-axis plane checks; no rendered-pixel claim", "E00 macOS14 quick-only and explicit15+ isolated-probe policy"]
+}
+
+@available(macOS 15.0, *) @MainActor final class EntrancePlaceholderScene {
+    let root=Entity(),camera=Entity()
+    let renderer: RealityRenderer
+    let device: any MTLDevice
+    let texture: any MTLTexture
+    private let emitter=Entity()
+    init() throws {
+        struct Missing:Error{}
+        guard let device=MTLCreateSystemDefaultDevice() else{throw Missing()}
+        self.device=device
+        let descriptor=MTLTextureDescriptor.texture2DDescriptor(pixelFormat:.bgra8Unorm,width:256,height:256,mipmapped:false)
+        descriptor.usage=[.renderTarget,.shaderRead];descriptor.storageMode = .private
+        guard let texture=device.makeTexture(descriptor:descriptor) else{throw Missing()};self.texture=texture
+        renderer=try RealityRenderer()
+        let projection=EntranceProbeCamera(width:2,height:2,eye:SIMD3(0.2,0.3,4),near:0.1,far:20)
+        camera.position=projection.eye
+        camera.components.set(ProjectiveTransformCameraComponent(projectionMatrix:projection.matrix!))
+        root.addChild(camera)
+        let box=ModelEntity(mesh:.generateBox(size:0.4),materials:[UnlitMaterial(color:.white)])
+        root.addChild(box)
+        let occluder=ModelEntity(mesh:.generateBox(size:SIMD3(0.25,0.6,0.01)),materials:[OcclusionMaterial(receivesDynamicLighting:false)])
+        occluder.position=SIMD3(0.15,0,0.3);root.addChild(occluder)
+        var alpha=UnlitMaterial(color:.white);alpha.blending = .transparent(opacity:.init(floatLiteral:0.5))
+        let transparent=ModelEntity(mesh:.generateBox(size:0.2),materials:[alpha]);transparent.position=SIMD3(-0.4,0,0.3);root.addChild(transparent)
+        var particles=ParticleEmitterComponent();particles.isEmitting=true
+        particles.mainEmitter.birthRate=16;particles.mainEmitter.birthRateVariation=0
+        particles.mainEmitter.lifeSpan=0.25;particles.mainEmitter.lifeSpanVariation=0
+        particles.mainEmitter.blendMode = .additive
+        emitter.components.set(particles);root.addChild(emitter)
+        renderer.entities.append(root);renderer.activeCamera=camera
+        renderer.cameraSettings.isToneMappingEnabled=false
+        renderer.cameraSettings.colorBackground = .color(CGColor(gray:0,alpha:0))
+    }
+    func renderOneFrame() async throws {
+        let output=try RealityRenderer.CameraOutput(.singleProjection(colorTexture:texture))
+        let completion=EntranceFrameCompletion()
+        try await withCheckedThrowingContinuation { (continuation:CheckedContinuation<Void,Error>) in
+            completion.continuation=continuation
+            completion.timeout=Task { @MainActor in
+                do{try await Task.sleep(for:.seconds(5))}catch{return}
+                completion.finish(.failure(EntranceFrameCompletion.TimedOut()))
+            }
+            do{try renderer.updateAndRender(deltaTime:1.0/60,cameraOutput:output,onComplete:{_ in Task { @MainActor in completion.finish(.success(())) }})}
+            catch{completion.finish(.failure(error))}
+        }
+    }
+    func dispose(){emitter.components.remove(ParticleEmitterComponent.self);renderer.activeCamera=nil;renderer.entities.removeAll();root.children.removeAll()}
+}
+@MainActor private final class EntranceFrameCompletion {
+    struct TimedOut:Error{}
+    var continuation:CheckedContinuation<Void,Error>?,timeout:Task<Void,Never>?
+    func finish(_ result:Result<Void,Error>){guard let continuation else{return};self.continuation=nil;timeout?.cancel();timeout=nil;continuation.resume(with:result)}
+}
+struct EntranceProcessSample {
+    let at=ProcessInfo.processInfo.systemUptime
+    let cpu:Double?,footprint:UInt64?
+    init(){
+        var time=timespec()
+        cpu=clock_gettime(CLOCK_PROCESS_CPUTIME_ID,&time)==0 ? Double(time.tv_sec)+Double(time.tv_nsec)/1e9:nil
+        var info=task_vm_info_data_t(),count=mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size/MemoryLayout<integer_t>.size)
+        let result=withUnsafeMutablePointer(to:&info){pointer in pointer.withMemoryRebound(to:integer_t.self,capacity:Int(count)){task_info(mach_task_self_,task_flavor_t(TASK_VM_INFO),$0,&count)}}
+        footprint=result==KERN_SUCCESS ? info.phys_footprint:nil
+    }
+}
+@MainActor func entranceHeadlessProbe(render: Bool) async throws -> [String:Any] {
+    let checks=try entranceGeometryChecks(),before=EntranceProcessSample()
+    var result:[String:Any]=["schemaVersion":1,"scope":"isolated-offscreen-placeholder-probe","analyticChecks":checks,"windowCount":0,"capture":false,"productEnabled":false,"minimumRuntimeAccepted":false,"pixelParityAccepted":false,"performanceAccepted":false]
+    guard #available(macOS 15.0, *),render else{result["route"]="quick-only-or-plan-checks";return result}
+    var frames=0
+    do{
+        let scene=try EntrancePlaceholderScene();defer{scene.dispose()}
+        for _ in 0..<4{try await scene.renderOneFrame();frames+=1}
+    }
+    let after=EntranceProcessSample(),elapsed=after.at-before.at
+    result["route"]="isolated-probe";result["completedFrames"]=frames;result["elapsedSeconds"]=elapsed
+    if let a=before.cpu,let b=after.cpu{result["processCPUSeconds"]=max(0,b-a)}
+    if let a=before.footprint,let b=after.footprint{result["processFootprintBeforeBytes"]=a;result["processFootprintAfterBytes"]=b}
+    result["limits"]="Four finite renderer completions only, no GPU/WindowServer/helper accounting, no actual macOS15 receipt, no pixel readback, Metal custom material or frozen particle parity. Process samples are not paired performance acceptance."
+    return result
+}

@@ -108,7 +108,7 @@ import CoreText
         let capImages = Dictionary(uniqueKeysWithValues: prepared.caps.map { ($0.0.id, $0.1) })
         let wanted = Set(next.caps.map(\.id))
         for (id, old) in oldCaps where !wanted.contains(id) {
-            guard old.kind == .ghost, let target = next.caps.first(where: { $0.kind == .real && $0.modelID == old.modelID }),
+            guard !reducedMotion,old.kind == .ghost, let target = next.caps.first(where: { $0.kind == .real && $0.modelID == old.modelID }),
                   window?.isVisible == true, let image = surfaces[id] else {
                 surfaces.removeValue(forKey: id)?.removeFromSuperlayer(); continue
             }

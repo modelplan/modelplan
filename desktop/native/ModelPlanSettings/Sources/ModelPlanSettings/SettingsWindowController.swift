@@ -398,6 +398,33 @@ enum SettingsWords {
         guard firstRunPreviewButton.isEnabled else { return }; requestHost(.previewFirstRun)
     }
     // Native-control integration tests use these identities without exposing test-only actions in the product.
+    /// Reads the retained controls and same store; does not reload, show, focus, edit or capture a window.
+    @_spi(SettingsAcceptance) public func acceptanceCheckpoint() async -> SettingsAcceptanceCheckpoint {
+        let before=editor.snapshot?.revision,stored=await editor.store.snapshot()
+        var controls:[(String,NSView)]=[("settings.search",searchField),("settings.sidebar",sidebar)]
+        var popups=[SettingsAcceptancePopup](),editing=0,unsaved=0
+        for key in displayedKeys {
+            guard let row=rows[key] else{continue}
+            for (ordinal,id) in row.choices.keys.sorted().enumerated() {
+                guard let choice=row.choices[id] else{continue}
+                controls.append(("settings.choice."+key.rawValue,choice))
+                popups.append(.init(key:key.rawValue,ordinal:ordinal,selectedIndex:choice.indexOfSelectedItem,itemCount:choice.numberOfItems,enabled:choice.isEnabled))
+            }
+            for alias in row.aliases.values {
+                controls.append(("settings.alias",alias));if alias.editing{editing+=1};if alias.hasUnsavedDraft{unsaved+=1}
+            }
+            if let shortcut=row.shortcut{controls.append(("settings.shortcut",shortcut))}
+            if let order=row.order{controls.append(("settings.order",order))}
+            if let action=row.surfaceAction{controls.append(("settings.action."+key.rawValue,action))}
+        }
+        let current=editor.snapshot?.revision
+        return .init(surface:.settings,editorRevision:current,storeRevision:stored.revision,
+            consistentRevision:before==current && current==stored.revision,isSaving:editor.isSaving,
+            windowVisible:window?.isVisible ?? false,windowKey:window?.isKeyWindow ?? false,
+            focus:settingsAcceptanceFocus(window:window,controls:controls),
+            settings:.init(selectedPane:selectedPaneID,searchLength:searchField.stringValue.count,visibleKeys:displayedKeys.map(\.rawValue),editingAliases:editing,unsavedAliases:unsaved,popups:popups),
+            firstRun:nil,loginStateFromContext:editor.context.capabilities.login.rawValue)
+    }
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
     func diagram(key: SettingKey) -> SettingsDiagramView? { rows[key]?.diagram }
     var visibleSettingKeys: [SettingKey] { displayedKeys }

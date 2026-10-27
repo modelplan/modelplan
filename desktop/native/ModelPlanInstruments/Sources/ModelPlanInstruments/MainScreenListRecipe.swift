@@ -21,7 +21,7 @@ public struct MainScreenListRecipe: Equatable, Sendable {
         return rows.map { row in
             defer{y+=row.height};let r=row.region
             return .init(id:r.id,rect:r.rect.offsetBy(dx:0,dy:y),action:r.action,label:r.label,help:r.help,role:r.role,
-                enabled:r.enabled,tabStop:r.tabStop,value:r.value,focusGroup:r.focusGroup,gridPosition:r.gridPosition)
+                enabled:r.enabled,tabStop:r.tabStop,value:r.value,focusGroup:r.focusGroup,gridPosition:r.gridPosition,accessibilityDetails:r.accessibilityDetails)
         }
     }
     func validate(in size:CGSize)throws {
@@ -31,7 +31,7 @@ public struct MainScreenListRecipe: Equatable, Sendable {
             Set(rows.map{ $0.region.id }).count==rows.count else{throw EngineTableError.invalidRecipe}
         for row in rows {
             let r=row.region
-            guard row.height.isFinite,(16...256).contains(row.height),!r.id.isEmpty,r.label.utf8.count<=8192,
+            guard r.validAccessibilityDetails,row.height.isFinite,(16...256).contains(row.height),!r.id.isEmpty,r.label.utf8.count<=8192,
                 [r.rect.minX,r.rect.minY,r.rect.width,r.rect.height].allSatisfy(\.isFinite),r.rect.minX>=0,r.rect.minY>=0,
                 r.rect.width>0,r.rect.height>0,r.rect.maxX<=viewport.width,r.rect.maxY<=row.height else{throw EngineTableError.invalidRecipe}
             try EngineTableRecipe(size:CGSize(width:viewport.width,height:row.height),commands:row.commands,regions:[]).validate()

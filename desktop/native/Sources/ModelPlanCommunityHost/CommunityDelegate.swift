@@ -6,6 +6,8 @@ import ModelPlanShell
 @MainActor public final class CommunityDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var status: NSStatusItem?
     private let surfaces: any NativeSurfaceProvider
+    private let injectedTransport: (any CLITransport)?
+    private let statusItemTitle: String
     private let companion: (any CommunityCompanionSurface)?
     private let makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)?
     private var settings: (any CommunitySettingsIntegration)?
@@ -19,9 +21,16 @@ import ModelPlanShell
     private var terminating = false
     public init(surfaces: any NativeSurfaceProvider,
                 companion: (any CommunityCompanionSurface)? = nil,
+                transport: (any CLITransport)? = nil, statusItemTitle: String = "ModelPlan",
                 makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)? = nil) {
-        self.surfaces = surfaces; self.companion = companion; self.makeSettings = makeSettings; super.init()
+        self.surfaces = surfaces; self.companion = companion; self.makeSettings = makeSettings
+        self.injectedTransport = transport; self.statusItemTitle = statusItemTitle; super.init()
     }
+    /// A single runtime/store owns either the explicit preview feed or the pinned live helper.
+    func makeRuntime() -> CommunityRuntime {
+        CommunityRuntime(transport: injectedTransport ?? BundledCLI(bundle: Bundle.main.bundleURL))
+    }
+
     /// Initialization does not start the CLI, events or application; the normal launch route calls this once.
     func configureSettings(_ gate: LifecycleCoordinator) -> NSMenuItem? {
         guard let makeSettings else { return nil }
@@ -84,7 +93,7 @@ import ModelPlanShell
             probe = RuntimeProbe(home: URL(fileURLWithPath: args[at + 1]), output: URL(fileURLWithPath: args[at + 2]), duration: duration)
             probe?.start(); return
         }
-        let runtime = CommunityRuntime(transport: BundledCLI(bundle: Bundle.main.bundleURL))
+        let runtime = makeRuntime()
         self.runtime = runtime
         runtime.store.onChange = { [weak self] in self?.render() }
         runtime.lifecycle.onPresentationChange = { [weak self] allowed in
@@ -101,7 +110,7 @@ import ModelPlanShell
             }
         }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "ModelPlan"
+        item.button?.title = statusItemTitle
         let menu = NSMenu()
         let show = menu.addItem(withTitle: "Status…", action: #selector(showStatus), keyEquivalent: "")
         show.target = self
