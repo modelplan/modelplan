@@ -19,9 +19,31 @@ import CoreGraphics
         let w=Int(ceil(logicalSize.width*CGFloat(scale))),h=Int(ceil(logicalSize.height*CGFloat(scale)))
         guard w*h<=800_000 else{throw DockArtworkError.decodedBudget}
         if let image{
-            guard image.width>=w,image.height>=h else{throw DockArtworkError.invalidManifest}
+            let vertical = h > w
+            guard vertical ? image.width >= w : image.height >= h else { throw DockArtworkError.invalidManifest }
             guard let c=CGContext(data:nil,width:w,height:h,bitsPerComponent:8,bytesPerRow:w*4,space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue) else{throw DockArtworkError.invalidManifest}
-            c.draw(image,in:CGRect(x:0,y:0,width:w,height:h));guard let normalized=c.makeImage(),let bytes=c.data else{throw DockArtworkError.invalidManifest}
+            c.interpolationQuality = .high
+            // A legacy supplier may still emit a short strip. Keep its authored end rounding
+            // at the cross-axis scale; stretch only the middle instead of magnifying the caps.
+            let sourceAlong = vertical ? image.height : image.width
+            let sourceCross = vertical ? image.width : image.height
+            let targetAlong = vertical ? h : w, targetCross = vertical ? w : h
+            if targetAlong > sourceAlong, sourceAlong > 2 * sourceCross {
+                let cap = sourceCross, targetCap = CGFloat(targetCross)
+                for (start, length, targetStart, targetLength) in [
+                    (0, cap, CGFloat(0), targetCap),
+                    (cap, sourceAlong - 2 * cap, targetCap, CGFloat(targetAlong) - 2 * targetCap),
+                    (sourceAlong - cap, cap, CGFloat(targetAlong) - targetCap, targetCap)
+                ] {
+                    let source = vertical ? CGRect(x: 0, y: start, width: sourceCross, height: length)
+                                          : CGRect(x: start, y: 0, width: length, height: sourceCross)
+                    let target = vertical ? CGRect(x: 0, y: targetStart, width: CGFloat(targetCross), height: targetLength)
+                                          : CGRect(x: targetStart, y: 0, width: targetLength, height: CGFloat(targetCross))
+                    guard let piece = image.cropping(to: source) else { throw DockArtworkError.invalidManifest }
+                    c.draw(piece, in: target)
+                }
+            } else { c.draw(image,in:CGRect(x:0,y:0,width:w,height:h)) }
+            guard let normalized=c.makeImage(),let bytes=c.data else{throw DockArtworkError.invalidManifest}
             let p=bytes.assumingMemoryBound(to:UInt8.self);alpha=(0..<(w*h)).map{p[$0*4+3]};self.image=normalized
             retainedBytes=normalized.bytesPerRow*normalized.height+alpha.count
         }

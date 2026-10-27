@@ -23,6 +23,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
+    /// Registered hull extent excludes raster padding, separate controls and shadows.
+    public var registeredHullBounds: CGRect? {
+        guard let path = registeredHullPath else { return nil }
+        let rect = path.boundingBoxOfPath
+        return rect.isNull || rect.isEmpty ? nil : rect
+    }
     public var registeredHullPath: CGPath? {
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
         let path = CGMutablePath()

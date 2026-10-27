@@ -22,6 +22,13 @@ public struct StaticDockGeometry {
         self.sliverAlongAnchor = sliverAlongAnchor; self.sliverImage = sliverImage; self.sliverScale = sliverScale
     }
 
+    public mutating func registerSliver(hullBounds: CGRect, expandedSize: CGSize, edge: SettingsDockEdge,
+                                       parameters: DockSliverParameters = .current, scale: CGFloat = 1) throws {
+        guard !hullBounds.isNull, !hullBounds.isEmpty else { throw DockEdgeError.invalidGeometry }
+        let metrics = try parameters.resolve(fullSpan: edge == .bottom ? hullBounds.width : hullBounds.height, scale: scale)
+        sliverLength = metrics.length; sliverThickness = metrics.thickness
+        sliverAlongAnchor = edge == .bottom ? hullBounds.midX : expandedSize.height - hullBounds.midY
+    }
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
@@ -37,6 +44,7 @@ public struct StaticDockGeometry {
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
     private let appearance: Appearance?
+    private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
     private let createsNativePanels: Bool
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
@@ -69,16 +77,17 @@ public struct StaticDockGeometry {
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = NSButton(frame: .zero)
-    private lazy var edge = makeEdge()
+    private lazy var edge = makeEdge(policy: visibilityPolicy)
 
-    public convenience init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date = { Date() }) {
-        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true)
+    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, currentDate: @escaping @MainActor () -> Date = { Date() }) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters)
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
-         nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+         sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil) {
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
+        self.sliverParameters = sliverParameters
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
@@ -126,7 +135,7 @@ public struct StaticDockGeometry {
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
-            edge = makeEdge(preference: saved, policy: value.effective.visibilityPolicy)
+            edge = makeEdge(preference: saved, policy: visibilityPolicy)
             connectEdge()
         }
         rebuild()
@@ -182,6 +191,7 @@ public struct StaticDockGeometry {
                 let candidate = try appearance(dockView, rows, passPreferences)
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
+                try registerSliver(&geometry, view: dockView, preferences: passPreferences)
             }
             else {
                 try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
@@ -212,6 +222,7 @@ public struct StaticDockGeometry {
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
                     var candidate = try appearance(view, rows, oriented)
+                    try registerSliver(&candidate, view: view, preferences: oriented)
                     guard passIsCurrent(generation) else { return }
                     view.onAction = dockView.onAction
                     view.permitsAction = { [weak self, weak view] _, source in
@@ -291,6 +302,19 @@ public struct StaticDockGeometry {
     }
     private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
     private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
+    private var visibilityPolicy: DockVisibilityPolicy {
+        var value = DockVisibilityPolicy()
+        value.revealDwell = Double(preferences.revealMilliseconds) / 1000
+        value.wakeDepth = sliverParameters.trackingDepth
+        return value
+    }
+    private func registerSliver(_ geometry: inout StaticDockGeometry, view: DockInstrumentView, preferences: SettingsPreferences) throws {
+        guard let hull = view.registeredHullBounds else { return }
+        let scales = sliverParameters.sizeScales
+        let factor = preferences.size == .small ? scales.small : preferences.size == .large ? scales.large : scales.medium
+        try geometry.registerSliver(hullBounds: hull, expandedSize: view.frame.size, edge: preferences.dockEdge,
+                                    parameters: sliverParameters, scale: factor)
+    }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
     }
