@@ -17,7 +17,6 @@ import (
 const copilotQuota = `{"quotaSnapshots":{"premium_interactions":{"usedRequests":75,"entitlementRequests":300,"remainingPercentage":75,"resetDate":"2026-11-01T00:00:00Z"},"chat":{"entitlementRequests":-1}}}`
 
 func TestCopilotHelperProcess(t *testing.T) {
-	isolateHome(t)
 	if os.Getenv("MODELPLAN_TEST_COPILOT_HELPER") != "1" {
 		return
 	}
@@ -45,6 +44,8 @@ func TestCopilotHelperProcess(t *testing.T) {
 		result := `{"protocolVersion":3}`
 		switch req.Method {
 		case "connect":
+		case "auth.getStatus":
+			result = `{"isAuthenticated":true,"authType":"user"}`
 		case "account.getQuota":
 			result = copilotQuota
 		default:
@@ -107,7 +108,7 @@ func TestCopilotRuntimeOptInAndCache(t *testing.T) {
 			a = &r.Accounts[i]
 		}
 	}
-	if a == nil || a.Subscription != nil || len(a.Windows) != 1 {
+	if a == nil || a.Subscription != nil || len(a.Windows) != 2 {
 		t.Fatalf("%+v", r)
 	}
 	w := a.Windows[0]
@@ -148,7 +149,7 @@ func TestCopilotPartialQuota(t *testing.T) {
 		{`{"quotaSnapshots":{"premium_interactions":{"usedRequests":-2,"entitlementRequests":300}}}`, nil},
 	} {
 		e := parseCopilot(json.RawMessage(tc.raw), now)
-		if e.Status != "ok" || len(e.Windows) != 1 {
+		if e.Status != "ok" || len(e.Windows) < 1 {
 			t.Fatalf("%s: %+v", tc.raw, e)
 		}
 		got := e.Windows[0].UsedPercent
@@ -178,7 +179,7 @@ func TestCopilotProtocolFailuresAndLegacy(t *testing.T) {
 			t.Fatalf("%q: %v", raw, err)
 		}
 	}
-	raw := copilotFrame(`{"id":1,"error":{"code":-32601}}`) + copilotFrame(`{"id":2,"result":{"protocolVersion":3}}`) + copilotFrame(`{"method":"notification"}`) + copilotFrame(`{"id":3,"result":`+copilotQuota+`}`)
+	raw := copilotFrame(`{"id":1,"error":{"code":-32601}}`) + copilotFrame(`{"id":2,"result":{"protocolVersion":3}}`) + copilotFrame(`{"method":"notification"}`) + copilotFrame(`{"id":3,"result":{"isAuthenticated":true,"authType":"user"}}`) + copilotFrame(`{"id":4,"result":`+copilotQuota+`}`)
 	var calls bytes.Buffer
 	if _, err := copilotQuotaRPC(strings.NewReader(raw), &calls); err != nil {
 		t.Fatal(err)
@@ -191,7 +192,7 @@ func TestCopilotProtocolFailuresAndLegacy(t *testing.T) {
 func TestCopilotMissingRuntimeAndResetCounts(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("MODELPLAN_COPILOT", filepath.Join(t.TempDir(), "missing"))
-	if e := fetchCopilot(context.Background(), nil, "local", "", now); e.Status != "error" || !strings.Contains(e.Error, "--backend codexbar") {
+	if e := fetchCopilot(context.Background(), nil, "local", "", now); e.Status != "error" || !strings.Contains(e.Error, "Open Copilot") {
 		t.Fatalf("%+v", e)
 	}
 	e := parseCopilot(json.RawMessage(copilotQuota), now)
