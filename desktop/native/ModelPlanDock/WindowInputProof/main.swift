@@ -115,7 +115,7 @@ func rect(_ r:CGRect)->[Double] { [r.minX,r.minY,r.width,r.height].map(Double.in
     }
     func applicationDidFinishLaunching(_ notification:Notification){
         if checksMode {
-            do {let lines=try geometryChecks()+nativeContracts();receipt.add("geometryChecks",["passed":lines]);print(lines.joined(separator:"\n"));NSApp.terminate(nil)}
+            do {let lines=try geometryChecks()+entranceGeometryChecks()+nativeContracts();receipt.add("geometryChecks",["passed":lines]);print(lines.joined(separator:"\n"));NSApp.terminate(nil)}
             catch{fputs("FAIL \(error)\n",stderr);exit(1)}
             return
         }
@@ -246,6 +246,17 @@ func rect(_ r:CGRect)->[Double] { [r.minX,r.minY,r.width,r.height].map(Double.in
     func applicationWillTerminate(_ notification:Notification){if let outsideMonitor{NSEvent.removeMonitor(outsideMonitor)};tokens.forEach{NotificationCenter.default.removeObserver($0);NSWorkspace.shared.notificationCenter.removeObserver($0)};receipt.add("terminated")}
 }
 extension boolean_t {var boolValue:Bool{self != 0}}
+if arguments.contains("--entrance-plan-checks") || arguments.contains("--entrance-offscreen") {
+    Task { @MainActor in
+        do{
+            let value=try await entranceHeadlessProbe(render:arguments.contains("--entrance-offscreen"))
+            let data=try JSONSerialization.data(withJSONObject:value,options:[.prettyPrinted,.sortedKeys])
+            if let receiptURL{try data.write(to:receiptURL,options:.atomic)}
+            print(String(decoding:data,as:UTF8.self));exit(0)
+        }catch{fputs("E00 probe failed: \(error)\n",stderr);exit(1)}
+    }
+    dispatchMain()
+}
 MainActor.assumeIsolated {
     let app=NSApplication.shared
     app.setActivationPolicy(.regular)
