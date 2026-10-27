@@ -218,7 +218,13 @@ The [main note's exclusive file table](agent-usage-auto-detection.md#step-b-deli
 | Adaptive cadence | Each provider keeps its own interval plus one cross-process/account attempt gate. Prove 5-min minimum, stable-source 10/15/30-min stretching, activity return to 5 min, error/backoff/Retry-After, resume/clock rollback and hidden/asleep suspension. No public plan value or reset proximity bypasses the floor. Local ingestion has a bounded independent I/O budget and performs no usage calls. |
 | Incremental logs | Unchanged files read **zero content bytes**; appends read only new complete records. Commit a cursor only with its sanitised aggregate/session result. Restart resumes that checkpoint; torn final lines, streaming duplicates, retries and interrupted commits neither double-count nor omit committed observations. No full historical rescans. |
 
-**Claude prepaid budget:** preserve the two-request maximum. On a cold/invalidated identity cache, fetch usage + profile, not credits. Once the same organisation/eligible wallet is established, a later admitted read fetches **fresh usage + `/api/oauth/organizations/{org}/prepaid/credits`**. That uses cached stable identity, not another read's usage. Revalidation consumes the metadata slot again; credits remain independently aged/unknown. Do not loop over organisations, probe a third endpoint, guess a currency/amount or turn absent/404/unsupported credits into zero. The owner-specified credit contract needs a sanitised response fixture before a field mapping is accepted. Response/account mismatch invalidates the binding; partial optional failure retains only accurately aged last-good components, never labels them one fresh complete capture.
+**Claude v1 budget (owner decision, 2026-10-27):** cold reads use usage + profile
+(at most two requests); same-binding warm reads use usage only. Prepaid credits
+are **dropped from v1**. No sanitised OAuth response exists, and we must not call
+that endpoint with real credentials to obtain one. TODO: add prepaid in a later
+PR only after a sanitised fixture establishes the response and units. V1 keeps
+only evidenced `five_hour`, `seven_day`, model-week windows and extra-usage
+spend/limit; no wallet amount is inferred from CodexBar's web parser.
 
 **Antigravity S route:** bind a single `GetUserStatus` request to an already-running local language server's verified loopback listener. No app/CLI/server launch, OAuth file, Keychain lookup or account credential. A version requiring a local CSRF nonce can use only approved transient local transport metadata; failure to discover it is unavailable, not another credential source. Test wrong-process/non-loopback listeners, redirects, inaccessible/absent server and invalid nonce with no remote requests or fallback calls. Returned model fractions/reset metadata keep their scope; missing duration or quota stays unknown. This native local route is independent of CodexBar's not-read classification.
 
@@ -318,3 +324,17 @@ Applicable reader PRs in both lanes must exercise all access classes, standard K
 [RID]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/docs/provider-ids.md
 [BCI]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/BrowserCookieImportOrder.swift
 [CCC]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCLI/CLICacheCommand.swift
+
+
+### Native Keychain hybrid policy (owner decision, 2026-10-27)
+
+Background calls through `/usr/bin/security` reuse a prior grant with an about
+two-second kill/reap deadline. Timeout records `keychain-confirmation-needed`;
+Deny records `denied`. Both persist provider-wide and suspend background Keychain
+calls while retaining the last good reading and capture age. The sole next step
+is **Allow in Settings**. Only an explicit Settings/App refresh or CLI action may
+make an interactive call with a longer deadline. No automatic retry after Deny,
+including a renamed/recreated item or profile change. Forgetting readings must
+preserve this access state; only an explicit successful interactive read clears
+it. Tests inject success, a slow killed process and Deny OS exit codes. Neither
+secret bytes nor stderr/error bodies may enter serialization or diagnostics.
