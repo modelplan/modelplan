@@ -161,7 +161,7 @@ public enum DockEdgeGeometry {
         let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
         if !alternatives.isEmpty{candidates=alternatives}
         if !nearest,let exact=candidates.first(where:{$0.edge==preference.edge}){return exact}
-        guard let target=pointer ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
+        guard let target=(nearest ? pointer:nil) ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
         func distance(_ c:DockEdgePlacement)->CGFloat{
             let x=max(c.sliverFrame.minX,min(c.sliverFrame.maxX,target.x)),y=max(c.sliverFrame.minY,min(c.sliverFrame.maxY,target.y))
             return hypot(target.x-x,target.y-y)

@@ -39,6 +39,11 @@ public struct StaticDockGeometry {
     private let appearance: Appearance?
     private let currentDate: @MainActor () -> Date
     private let createsNativePanels: Bool
+    private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
+    private let elapsedClock: (() -> TimeInterval)?
+    private let edgeScheduling: (any DockEdgeScheduling)?
+    var edgePresentation: DockEdgePresentation? { edge.presentation }
+    func refreshPresence() { edge.refresh() }
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
@@ -64,13 +69,16 @@ public struct StaticDockGeometry {
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = NSButton(frame: .zero)
-    private lazy var edge = DockEdgeController(read: { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) })
+    private lazy var edge = makeEdge()
 
     public convenience init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date = { Date() }) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true)
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
-    init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool) {
+    init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
+         nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+         elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil) {
+        self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
@@ -118,7 +126,7 @@ public struct StaticDockGeometry {
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
-            edge = DockEdgeController(preference: saved, policy: value.effective.visibilityPolicy, read: { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) })
+            edge = makeEdge(preference: saved, policy: value.effective.visibilityPolicy)
             connectEdge()
         }
         rebuild()
@@ -187,13 +195,6 @@ public struct StaticDockGeometry {
         }
         guard passIsCurrent(generation) else { return }
         model = next
-        if sliverPrepared {
-            let logical = sliverLogicalSize
-            // AppKit can round the owned window to whole backing pixels. A data-only
-            // update must keep that actual surface size until registered geometry changes.
-            let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
-            _ = try? prepareSliver(size: size)
-        }
         if rows.isEmpty && appearance == nil {
             dockView.setFrameSize(CGSize(width: 210, height: 60))
             empty.frame = dockView.bounds.insetBy(dx: 10, dy: 10)
@@ -223,7 +224,14 @@ public struct StaticDockGeometry {
             }
         }
         edgeGeometries = nextGeometries; edgeViews = nextViews
-        let primary = NSScreen.screens.first.map { displayID($0, index: 0) } ?? "primary-unavailable"
+        if sliverPrepared {
+            let logical = sliverLogicalSize
+            // AppKit can round the owned window to whole backing pixels. A data-only
+            // update must keep that actual surface size until registered geometry changes.
+            let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
+            _ = try? prepareSliver(size: size)
+        }
+        let primary = environment().primaryDisplayID ?? "primary-unavailable"
         let selectedID = passPreferences.dockDisplayID ?? primary
         let preference = DockEdgePreference(displayID: passPreferences.followActiveDisplay ? nil : selectedID,
             edge: selected, alongFraction: passPreferences.dockAlongFraction)
@@ -232,11 +240,26 @@ public struct StaticDockGeometry {
         if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
         if permitted { edge.start(); edge.refresh() }
     }
-    private func environment() -> DockEdgeEnvironment {
-        let screens = NSScreen.screens
-        let displays = screens.enumerated().map { index, screen in
-            DockDisplayArea(id: displayID(screen, index: index), frame: screen.frame, visibleFrame: screen.visibleFrame)
+    private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
+        let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        if let elapsedClock, let edgeScheduling {
+            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read)
         }
+        return DockEdgeController(preference: preference, policy: policy, read: read)
+    }
+    private func environment() -> DockEdgeEnvironment {
+        let native: DockEdgeEnvironment
+        if let nativeEnvironment { native = nativeEnvironment() }
+        else {
+            let displays = NSScreen.screens.enumerated().map { index, screen in
+                DockDisplayArea(id: displayID(screen, index: index), frame: screen.frame, visibleFrame: screen.visibleFrame)
+            }
+            var presence = DockPresence()
+            presence.mouseButtonDown = NSEvent.pressedMouseButtons != 0
+            native = .init(displays: displays, layouts: [], primaryDisplayID: displays.first?.id,
+                           pointer: NSEvent.mouseLocation, presence: presence)
+        }
+        let displays = native.displays
         let layouts = displays.flatMap { display in
             edgeGeometries.compactMap { orientation, geometry -> DockEdgeLayout? in
                 guard let view = edgeViews[orientation] else { return nil }
@@ -246,14 +269,14 @@ public struct StaticDockGeometry {
                     alongAnchor: geometry.sliverAlongAnchor)
             }
         }
-        var presence = DockPresence()
+        var presence = native.presence
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
-        presence.lifecycleActive = permitted && !retired; presence.mouseButtonDown = NSEvent.pressedMouseButtons != 0
+        presence.lifecycleActive = permitted && !retired
+        presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen; presence.cardPinned = cardPanel?.isVisible == true
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
-        let pointer = preferences.followActiveDisplay ? NSEvent.mouseLocation : nil
-        return .init(displays: displays, layouts: layouts, primaryDisplayID: displays.first?.id,
-            pointer: pointer ?? NSEvent.mouseLocation, presence: presence, cardFrame: cardPanel?.isVisible == true ? cardPanel?.frame : nil)
+        return .init(displays: displays, layouts: layouts, primaryDisplayID: native.primaryDisplayID,
+            pointer: native.pointer, presence: presence, cardFrame: cardPanel?.isVisible == true ? cardPanel?.frame : nil)
     }
     private func displayID(_ screen: NSScreen, index: Int) -> String {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return "session.\(index)" }

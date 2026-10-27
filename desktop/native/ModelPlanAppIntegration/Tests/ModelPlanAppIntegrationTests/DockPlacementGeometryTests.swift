@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 import XCTest
+import AppKit
+import ModelPlanSettings
+@testable import ModelPlanAppIntegration
 import ModelPlanDock
 
 final class DockPlacementGeometryTests: XCTestCase {
@@ -40,6 +43,46 @@ final class DockPlacementGeometryTests: XCTestCase {
         let restored = try place(preference, displays: [left, right], pointer: CGPoint(x: 50, y: 50))
         XCTAssertEqual(initial, restored)
         XCTAssertEqual(preference.displayID, "left"); XCTAssertEqual(preference.alongFraction, 0.61)
+    }
+    func testBlockedEdgeRecoveryIgnoresOrdinaryPointerMotion() throws {
+        let preference = DockEdgePreference(displayID: "left", edge: .right, alongFraction: 0.61)
+        let a = try place(preference, displays: [left, right], pointer: CGPoint(x: -1190, y: 400))
+        let b = try place(preference, displays: [left, right], pointer: CGPoint(x: -400, y: -195))
+        XCTAssertEqual(a, b)
+        let dragA = try place(preference, displays: [left, right], pointer: CGPoint(x: -1190, y: 400), nearest: true)
+        let dragB = try place(preference, displays: [left, right], pointer: CGPoint(x: -400, y: -195), nearest: true)
+        XCTAssertNotEqual(dragA.edge, dragB.edge)
+    }
+    @MainActor func testPreparedSliverRefreshUsesCurrentMapWithExistingPlacement() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var opaque = false
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                                      visibleFrame: CGRect(x: 0, y: 0, width: 800, height: 600))
+        let host = StaticDockPreviewHost(appearance: { view, rows, _ in
+            try view.applyCommunity(rows)
+            var bytes = [UInt8](repeating: 255, count: 4 * 20 * 4)
+            if !opaque { for index in 0..<16 { bytes[index] = 0 } }
+            let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+            let image = try XCTUnwrap(CGImage(width: 4, height: 20, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: 16, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+            return .init(hoverRects: [view.bounds], sliverLength: 20, sliverThickness: 4, sliverImage: image)
+        }, currentDate: { Date() }, createsNativePanels: false, nativeEnvironment: {
+            .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: CGPoint(x: 100, y: 100))
+        })
+        defer { host.close() }
+        let c = SettingsApplicationCoordinator(store: try SettingsStore(url: folder.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await c.reload(); host.setPresentationAllowed(true)
+        let before = try XCTUnwrap(host.edgePresentation)
+        XCTAssertNotNil(before.placement)
+        let sliver = try host.prepareSliver(size: CGSize(width: 4, height: 20))
+        XCTAssertFalse(sliver.isPainted(atLocal: CGPoint(x: 0.5, y: 0.5)))
+        opaque = true
+        host.render(snapshot: nil, diagnostics: .init())
+        XCTAssertEqual(host.edgePresentation, before, "same placement/layout must still replace material")
+        XCTAssertTrue(sliver.isPainted(atLocal: CGPoint(x: 0.5, y: 0.5)))
     }
     func testExplicitNearestDragStillMoves() throws {
         let preference = DockEdgePreference(displayID: "left", edge: .bottom, alongFraction: 0.5)
