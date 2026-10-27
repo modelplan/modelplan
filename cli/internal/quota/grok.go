@@ -62,25 +62,25 @@ type grokAuth struct {
 	Team          string `json:"team_id"`
 }
 
+// Pointer fields preserve omitted versus explicitly empty provider values.
+// Provider tables merge only over a base of the same type, as in the pinned
+// first-party GrokComConfigSection; an OIDC table cannot inherit OAuth2 defaults.
+type grokProviderConfig struct {
+	Issuer        *string `toml:"issuer"`
+	Client        *string `toml:"client_id"`
+	Principal     string  `toml:"principal_id"`
+	PrincipalType string  `toml:"principal_type"`
+}
+type grokLoginConfig struct {
+	Preferred  *string             `toml:"preferred_method"`
+	External   *string             `toml:"auth_provider_command"`
+	ForcedTeam any                 `toml:"force_login_team_uuid"`
+	OIDC       *grokProviderConfig `toml:"oidc"`
+	OAuth2     *grokProviderConfig `toml:"oauth2"`
+}
 type grokLocalConfig struct {
-	Auth struct {
-		Preferred string `toml:"preferred_method"`
-	} `toml:"auth"`
-	Login struct {
-		Preferred  string `toml:"preferred_method"`
-		External   string `toml:"auth_provider_command"`
-		ForcedTeam any    `toml:"force_login_team_uuid"`
-		OIDC       *struct {
-			Issuer string `toml:"issuer"`
-			Client string `toml:"client_id"`
-		} `toml:"oidc"`
-		OAuth2 *struct {
-			Issuer        string `toml:"issuer"`
-			Client        string `toml:"client_id"`
-			Principal     string `toml:"principal_id"`
-			PrincipalType string `toml:"principal_type"`
-		} `toml:"oauth2"`
-	} `toml:"grok_com_config"`
+	Auth   grokLoginConfig `toml:"auth"`
+	Login  grokLoginConfig `toml:"grok_com_config"`
 	Models map[string]struct {
 		Key string `toml:"api_key"`
 		Env string `toml:"env_key"`
@@ -88,6 +88,22 @@ type grokLocalConfig struct {
 	Endpoints struct {
 		Deployment string `toml:"deployment_key"`
 	} `toml:"endpoints"`
+}
+
+func grokMergeProvider(table, base *grokProviderConfig) (*grokProviderConfig, bool) {
+	if table == nil {
+		return base, true
+	}
+	merged := *table
+	if base != nil {
+		if merged.Issuer == nil {
+			merged.Issuer = base.Issuer
+		}
+		if merged.Client == nil {
+			merged.Client = base.Client
+		}
+	}
+	return &merged, merged.Issuer != nil && merged.Client != nil
 }
 
 // Return the selected first-party scope, or fail before credential/HTTP I/O.
@@ -103,15 +119,31 @@ func grokAuthScope(root string) (string, bool) {
 	if status != "missing" && (status != "" || toml.Unmarshal(b, &cfg) != nil) {
 		return "", false
 	}
-	for _, preferred := range []string{cfg.Auth.Preferred, cfg.Login.Preferred} {
-		if preferred != "" && preferred != "oidc" {
-			return "", false
-		}
+	// [auth] is a top-level alias. An explicit grok_com_config key wins;
+	// provider tables are not deep-merged between the alias and explicit section.
+	login := cfg.Login
+	if login.Preferred == nil {
+		login.Preferred = cfg.Auth.Preferred
 	}
-	if cfg.Login.External != "" || cfg.Endpoints.Deployment != "" || cfg.Login.ForcedTeam != nil {
+	if login.External == nil {
+		login.External = cfg.Auth.External
+	}
+	if login.ForcedTeam == nil {
+		login.ForcedTeam = cfg.Auth.ForcedTeam
+	}
+	if login.OIDC == nil {
+		login.OIDC = cfg.Auth.OIDC
+	}
+	if login.OAuth2 == nil {
+		login.OAuth2 = cfg.Auth.OAuth2
+	}
+	if login.Preferred != nil && *login.Preferred != "oidc" {
 		return "", false
 	}
-	if cfg.Login.OAuth2 != nil && (cfg.Login.OAuth2.Principal != "" || cfg.Login.OAuth2.PrincipalType != "") {
+	if (login.External != nil && *login.External != "") || cfg.Endpoints.Deployment != "" || login.ForcedTeam != nil {
+		return "", false
+	}
+	if login.OAuth2 != nil && (login.OAuth2.Principal != "" || login.OAuth2.PrincipalType != "") {
 		return "", false
 	}
 	for _, model := range cfg.Models {
@@ -119,33 +151,38 @@ func grokAuthScope(root string) (string, bool) {
 			return "", false
 		}
 	}
-	issuer, client := "https://auth.x.ai", grokDefaultClient
-	if value := os.Getenv("GROK_OAUTH2_ISSUER"); value != "" {
-		issuer = value
+	oidcIssuer, oidcClient := os.Getenv("GROK_OIDC_ISSUER"), os.Getenv("GROK_OIDC_CLIENT_ID")
+	oauthIssuer, oauthClient := os.Getenv("GROK_OAUTH2_ISSUER"), os.Getenv("GROK_OAUTH2_CLIENT_ID")
+	// A partially named environment provider is ambiguous and unsupported here.
+	if (oidcIssuer == "") != (oidcClient == "") || (oauthIssuer == "") != (oauthClient == "") {
+		return "", false
 	}
-	if value := os.Getenv("GROK_OAUTH2_CLIENT_ID"); value != "" {
-		client = value
-	}
-	if cfg.Login.OAuth2 != nil {
-		if cfg.Login.OAuth2.Issuer != "" {
-			issuer = cfg.Login.OAuth2.Issuer
+	var oidc, oauth2 *grokProviderConfig
+	if oidcIssuer != "" {
+		oidc = &grokProviderConfig{Issuer: &oidcIssuer, Client: &oidcClient}
+	} else {
+		if oauthIssuer == "" {
+			oauthIssuer, oauthClient = "https://auth.x.ai", grokDefaultClient
 		}
-		if cfg.Login.OAuth2.Client != "" {
-			client = cfg.Login.OAuth2.Client
-		}
+		oauth2 = &grokProviderConfig{Issuer: &oauthIssuer, Client: &oauthClient}
 	}
-	if value := os.Getenv("GROK_OIDC_ISSUER"); value != "" {
-		issuer = value
-		client = os.Getenv("GROK_OIDC_CLIENT_ID")
+	var valid bool
+	oidc, valid = grokMergeProvider(login.OIDC, oidc)
+	if !valid {
+		return "", false
 	}
-	if cfg.Login.OIDC != nil {
-		if cfg.Login.OIDC.Issuer != "" {
-			issuer = cfg.Login.OIDC.Issuer
-		}
-		if cfg.Login.OIDC.Client != "" {
-			client = cfg.Login.OIDC.Client
-		}
+	oauth2, valid = grokMergeProvider(login.OAuth2, oauth2)
+	if !valid {
+		return "", false
 	}
+	selected := oidc
+	if selected == nil {
+		selected = oauth2
+	}
+	if selected == nil || selected.Issuer == nil || selected.Client == nil {
+		return "", false
+	}
+	issuer, client := *selected.Issuer, *selected.Client
 	if strings.TrimRight(issuer, "/") != "https://auth.x.ai" || !grokID.MatchString(client) {
 		return "", false
 	}
@@ -184,8 +221,10 @@ func grokExpiry(auth grokAuth, now time.Time) bool {
 }
 
 func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	meta := r.Previous.Metadata
+	changed := meta.CredentialKey != "" || meta.AccountKey != ""
 	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}}
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
 	}
 	scope, ok := grokAuthScope(r.Profile.Root)
 	if !ok {
@@ -205,6 +244,10 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		return fail("unavailable", "No supported Grok Build saved session")
 	}
 	auth, found := store[scope]
+	credentialKey := readerHash(r.Paths.Cache, "grok:credential", auth.Key)
+	identity := auth.User + "\x00" + auth.PrincipalType + "\x00" + auth.Principal + "\x00" + auth.Team
+	accountKey := readerHash(r.Paths.Cache, "grok:account", identity)
+	changed = (meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)) || (meta.AccountKey != "" && (accountKey == "" || meta.AccountKey != accountKey))
 	if !found || (auth.Mode != "oidc" && auth.Mode != "external") || strings.TrimRight(auth.Issuer, "/") != "https://auth.x.ai" || !grokID.MatchString(auth.User) || auth.Key == "" || len(auth.Key) > 16<<10 || strings.ContainsAny(auth.Key, " \t\r\n") {
 		return fail("unavailable", "This Grok Build login type is not supported yet")
 	}
@@ -225,13 +268,9 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		out.Entry.NextStep = out.Entry.Notice
 		return out
 	}
-	credentialKey := readerHash(r.Paths.Cache, "grok:credential", auth.Key)
-	identity := auth.User + "\x00" + auth.PrincipalType + "\x00" + auth.Principal + "\x00" + auth.Team
-	accountKey := readerHash(r.Paths.Cache, "grok:account", identity)
 	if credentialKey == "" || accountKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
-	changed := (r.Previous.Metadata.CredentialKey != "" && r.Previous.Metadata.CredentialKey != credentialKey) || (r.Previous.Metadata.AccountKey != "" && r.Previous.Metadata.AccountKey != accountKey)
 	var billing grokBilling
 	state, retry := grokBillingGet(ctx, c, auth, &billing, r.Now)
 	if state != "" {

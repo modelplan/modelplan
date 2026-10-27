@@ -15,7 +15,13 @@ configurations without an established selector contract return unavailable
 without a request. No arbitrary scope/account search is performed. Environment
 API keys do not override a fresh selected session unless the tool's auth selection
 actually chooses API-key mode; they are never sent to the subscription endpoint.
-Configured principal/team mismatches are rejected.
+Configured principal/team mismatches are rejected. Provider tables merge only
+over a base of the same type: an explicit OIDC table without an OIDC environment
+base requires both issuer and client ID. It cannot borrow the OAuth2 default.
+A valid partial table may retain omitted fields from its matching base, while
+explicit empty values do not inherit. The `[auth]` alias follows top-level
+explicit-section precedence without deep-merging provider tables. Ambiguous
+partial environment selectors and malformed tables are unsupported without a request.
 
 Supported saved sessions are `oidc`/first-party `external` with the exact xAI issuer.
 Legacy web-login and API-key entries are not imported as subscription auth. The
@@ -55,11 +61,15 @@ non-additive. Their Grok-specific subscription reference is separate from Cursor
 until a verified common seat ID/provider link exists. No alias is inferred from
 email, local IDs, usage or reset coincidence. Cursor/Grok use the conservative
 shared five-minute gate from PR227; merge this provider after that foundation.
-That gate covers one whole native route, never a union of partial readings.
+That gate covers one whole native route, never a union of partial readings. The
+independent non-personal provider reservation in
+`observed/reader-attempts/grok.json` also survives Forget, reconnect, new grants
+and restart; personal reading purges preserve both gates.
 
 Profiles share the provider-wide five-minute floor, stable 10/15/30-minute cadence,
-10/20/40/60-minute error backoff and Retry-After. Failed reads retain the last good
-capture and age. JSON rendering uses sanitized ModelPlan cache only. Identities,
+10/20/40/60-minute error backoff and Retry-After. Same-generation failures retain the last good capture and age. The selected
+credential/account generation is compared before expiry, type or scope failures;
+a changed or unidentifiable session cannot inherit the old quota or wallet. JSON rendering uses sanitized ModelPlan cache only. Identities,
 principals, teams, credential generations and profile paths persist only as keyed
 hashes/opaque references. No raw project labels or identity strings are cached.
 
@@ -69,5 +79,8 @@ especially `xai-grok-login/{model,config,storage}.rs`,
 (Apache-2.0; protocol evidence, no copied code). The pager dispatch controls UI;
 the shell extension defines the actual request and USD-cent response contract.
 Fixtures are handwritten and tests use synthetic files/`httptest` only. CLIJIT
-owns consent/commands and must consume the shared-pool and monetary DTOs before
+owns consent/commands and must consume the shared-pool, monetary and `beta` DTOs before
 enabling this reader. No local-history/speed files are edited.
+
+Effective source/account JSON retains `beta:true` on successful, stale and unavailable
+projections. Synthetic fixtures establish compatibility and do not qualify the reader as stable.
