@@ -54,6 +54,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
   modelplan quota                      your own usage windows: this machine's logs, and Codex's own
                                        account reading (--refresh-account asks it now; at most every
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
+  modelplan detect [--json]            presence-only tool detection; no credentials or network
   modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
   modelplan disconnect <provider>
   modelplan connections [status|refresh]
@@ -204,13 +205,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	open := store.Open
-	if (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
+	if cmd == "detect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
 		open = store.Locate // creates nothing
 	}
 	st, err := open()
 	if err != nil {
 		fmt.Fprintln(stderr, "cache:", err)
 		return exitErr
+	}
+	if cmd == "detect" {
+		return detectCmd(fs.Args(), stdout, stderr, st, c)
 	}
 	client, err := publication.New(c.base, st, version)
 	if err != nil {

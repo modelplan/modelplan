@@ -33,11 +33,19 @@ type ReaderProfile struct {
 }
 
 type readerMetadata struct {
-	CredentialKey   string    `json:"credentialKey,omitempty"`
-	AccountKey      string    `json:"accountKey,omitempty"`
-	OrganizationKey string    `json:"organizationKey,omitempty"`
-	VerifiedAt      time.Time `json:"verifiedAt,omitempty"`
-	Plan            string    `json:"plan,omitempty"`
+	CredentialKey   string             `json:"credentialKey,omitempty"`
+	AccountKey      string             `json:"accountKey,omitempty"`
+	OrganizationKey string             `json:"organizationKey,omitempty"`
+	VerifiedAt      time.Time          `json:"verifiedAt,omitempty"`
+	Plan            string             `json:"plan,omitempty"`
+	PlanDetails     *readerPlanDetails `json:"planDetails,omitempty"`
+}
+
+// Stable metadata is projected explicitly, never a persisted raw vendor payload.
+type readerPlanDetails struct {
+	Minutes int        `json:"minutes"`
+	ResetAt *time.Time `json:"resetAt,omitempty"`
+	Unified bool       `json:"unified"`
 }
 type readerEntry struct {
 	ProfileKey string         `json:"profileKey"`
@@ -157,7 +165,10 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 		return false
 	}
 	s, err := loadReaderState(p.Cache, provider)
-	return err == nil && !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now)
+	if err != nil || now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
+		return false
+	}
+	return xSubscriptionDue(p.Cache, provider, now)
 }
 
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
@@ -177,6 +188,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return err
 	}
 	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
+		return nil
+	}
+	if !xSubscriptionDue(p.Cache, provider, now) {
 		return nil
 	}
 	n := nativeReaders[provider]
@@ -215,6 +229,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	}
 	s.AttemptedAt, s.NextAttemptAt = now.UTC(), now.Add(5*time.Minute).UTC()
 	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
+		return err
+	}
+	if err := reserveXSubscription(p.Cache, provider, now); err != nil {
 		return err
 	}
 	s.NextProfile = (index + 1) % len(profiles)
