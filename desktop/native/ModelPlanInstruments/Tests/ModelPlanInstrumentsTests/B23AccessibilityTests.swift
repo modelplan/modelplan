@@ -55,12 +55,19 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
 }
 
 @MainActor final class B23ChartTreeTests:XCTestCase {
-    func testChoiceRoleExposesBooleanSelectedState() throws {
-        let provider=B23ChoiceRecipe(),view=MainScreenView(recipeProvider:provider)
-        try view.update(inputs:[],selection:nil,publication:nil,publicationUsable:false,language:.english,compact:false)
-        let control=try XCTUnwrap(view.control(for:"choice"))
-        XCTAssertEqual(control.accessibilityRole(),.radioButton)
-        XCTAssertEqual((control.accessibilityValue() as? NSNumber)?.boolValue,true)
+    func testConsoleFooterExposesItsRealCycleControlAndCurrentValue() throws {
+        let view=MainScreenView();view.onHelpChange={_,_ in}
+        let publication=SelectionPublication(publicationID:"b23-option",selectionRevision:"1")
+        let selection=InjectedModelSelection(publication:publication,scope:.all,orderedModelIDs:["model"],selectedModelID:"model")
+        let option=MainScreenFooterOption(id:"range",choices:[.init("7",title:"7"),.init("30",title:"30")],selectedValue:"7",help:HelpCatalog(.english).explanation(.option))
+        try view.update(inputs:[.init(model:Fixtures.model())],selection:selection,publication:publication,publicationUsable:true,language:.english,compact:false,pages:[.init(.overview,options:[option,nil,nil])])
+        let control=try XCTUnwrap(view.control(for:"screen.footer.0"))
+        XCTAssertEqual(control.accessibilityRole(),.button)
+        XCTAssertEqual(control.accessibilityValue() as? String,"7")
+        XCTAssertNil(view.control(for:"screen.footer.0.choice.30"),"choice descriptors are pointer regions; AX uses the single cycle button")
+        XCTAssertTrue(control.accessibilityPerformPress())
+        XCTAssertEqual(control.accessibilityValue() as? String,"30")
+        XCTAssertTrue(control === view.control(for:"screen.footer.0"))
         view.closeForCockpit()
     }
     func testReducedMotionRemovesATrialGhostWithoutItsRetirementFade() throws {
@@ -131,12 +138,3 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
     }
 }
 
-@MainActor private final class B23ChoiceRecipe:MainScreenRecipeProvider {
-    let base=NeutralEngineTableRecipe()
-    func image(_ id:String)throws->CGImage{try base.image(id)}
-    func font(_ request:EngineFontRequest)throws->CTFont{try base.font(request)}
-    func minimumSize(for presentation:MainScreenPresentation)->CGSize{.init(width:100,height:100)}
-    func recipe(for presentation:MainScreenPresentation,size:CGSize)throws->MainScreenRecipe{
-        .init(size:size,commands:[],regions:[.init(id:"choice",rect:.init(x:0,y:0,width:40,height:20),label:"Selected option",help:.init(title:"Choice",body:"Synthetic"),role:.choice,value:"1")])
-    }
-}
