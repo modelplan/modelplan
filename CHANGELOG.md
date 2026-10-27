@@ -7,6 +7,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Add the beta native Gemini CLI OAuth-file quota reader, with explicit shared consent, at most Code Assist metadata + quota per read, separately aged Google One AI credits and model/request counters. No OAuth refresh, project enumeration, inference or CodexBar fallback; unsupported login modes make no request.
+- CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
 
