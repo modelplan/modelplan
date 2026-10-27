@@ -74,3 +74,9 @@ The action gate distinguishes pointer and AX sources, so a genuine reveal's arri
 - Forward environment changes with `refresh`/`setPreference`, genuine cockpit close with `restoreAfterCockpitClose` and lifecycle teardown with `stop`. Real source-data expiry/caution deadlines remain with Core/the app and must continue in tracking modes. This UI tracker runs no CLI or independent data freshness policy.
 
 Geometry/state tests and synthetic common-mode/AX/event checks are not physical monitor, original input, fullscreen/Spaces, pixels or performance acceptance. Missing integrated/physical proof is parked to B25 under the coordinator rule; B08 remains a separate batch.
+
+## Optional temporal interpolation candidate
+
+`DockEffectSampling.interpolatedCandidate` is an explicit, default-off candidate. It borrows the existing nine images through the counted effect's seek interface and performs cyclic linear CA opacity interpolation with public addition compositing. It decodes no additional atlas and creates no app-driven frame timer. One injected host epoch aligns the interpolation and effect-only rotation; the rotation period remains supplied independently. Quiet/Reduce Motion stay static. Capture holds both timelines, and hide/reset/disposal clear borrowed image references before releasing the shared lease. The worst six-consumer recipe adds54 small CA layers, not54 decoded images.
+
+This changes the reference's nine stepped contents updates per second to compositor interpolation, not to a thirty-frame raster atlas. Native compositing appearance, GPU/backing cost, paired incremental CPU and total memory must be measured before the official provider selects it. Source/offscreen checks do not constitute that enablement gate. The default `stepped` path and private visual resources remain unchanged.

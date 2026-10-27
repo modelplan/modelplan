@@ -486,5 +486,19 @@ do {
         let stale=try DockCardProjection.content(input:input,at:now)
         try expect(stale.rows.allSatisfy{$0.value=="--" && $0.remainingFraction==nil},"stale data does not regain actionable quota")
     }
+    try test("P04 cyclic interpolation keeps exact poses and bounded adjacent weights"){
+        for index in 0..<9 {
+            let s=DockTemporalSample.at(seconds:Double(index)/9,count:9)!
+            try expect(s.lower==index && abs(s.fraction)<0.000001,"original pose boundary")
+            let half=DockTemporalSample.at(seconds:(Double(index)+0.5)/9,count:9)!
+            try expect(half.lower==index && half.upper==(index+1)%9 && abs(half.fraction-0.5)<0.000001,"cyclic adjacent midpoint")
+        }
+        for step in 0...600 {
+            let s=DockTemporalSample.at(seconds:Double(step)/60,count:9)!
+            try expect((0..<9).contains(s.lower) && (0..<9).contains(s.upper) && (0...1).contains(s.fraction),"bounded finite mixture")
+        }
+        try expect(DockTemporalSample.at(seconds:1,count:9)==DockTemporalSample.at(seconds:0,count:9),"seam is exact")
+        try expect(DockTemporalSample.at(seconds:Double.nan,count:9)==nil && DockTemporalSample.at(seconds:1,count:0)==nil && DockTemporalSample.at(seconds:1,count:9,period:0)==nil,"invalid sample is rejected")
+    }
     print("PASS \(groups) groups; \(assertions) assertions")
 } catch { fputs("FAIL \(error)\n",stderr);exit(1) }

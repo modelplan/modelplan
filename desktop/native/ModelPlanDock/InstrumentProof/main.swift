@@ -212,6 +212,31 @@ struct NativeFailure:Error {let message:String}
     try driver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:RenderProfile(scale:2,reduceMotion:true),magnification:magnifications,provider:{_ in provider})
     try require(driver.activeIDs.count==6 && driver.animatingIDs.isEmpty,"Reduced Motion retains static frame zero")
     driver.stop();pool.purgeUnleased();effectsView.dispose();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"explicit teardown releases every jet")
+    let smoothPool=EffectResourcePool(),smoothProvider=SyntheticDockFrameProvider()
+    var hostTimeReads=0
+    let smoothDriver=DockWorkingEffects(pool:smoothPool,systemReduceMotion:{false},hostTime:{hostTimeReads+=1;return 100})
+    try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
+    try smoothDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(scale:2),magnification:magnifications,rotation:.init(period:1),sampling:.interpolatedCandidate,provider:{_ in smoothProvider})
+    try require(smoothDriver.interpolatedIDs.count==6 && smoothDriver.interpolationLayerCount==54 && smoothDriver.animatingIDs.count==6,"P04 candidate uses bounded native interpolation without an app frame loop")
+    try require(hostTimeReads==1 && smoothPool.activeLeaseCount==6 && smoothPool.atlasCount==3 && smoothProvider.draws==27 && smoothPool.decodedBytes==3_981_312,"P04 shares one host origin and the existing counted nine-frame atlases")
+    let smoothJet=effectsView.workingLayerParents["work-0"]!.sublayers!.first!,smoothLayers=smoothJet.sublayers!
+    let smoothSpin=smoothJet.animation(forKey:"dock-effect-rotation") as! CABasicAnimation
+    let smoothOpacity=smoothLayers[0].animation(forKey:"dock-frame-interpolation") as! CAKeyframeAnimation
+    try require(smoothSpin.beginTime==smoothOpacity.beginTime && smoothSpin.duration==1 && smoothOpacity.duration==1 && smoothOpacity.calculationMode == .linear,"P04 1s rotation and interpolation use one origin; continuous interpolation is not a new rotation period")
+    let imageIDs=Set(smoothLayers.map{ObjectIdentifier($0.contents as! CGImage)})
+    smoothDriver.seekForCapture(0.5/9)
+    try require(abs(Double(smoothLayers[0].opacity)-0.5)<0.0001 && abs(Double(smoothLayers[1].opacity)-0.5)<0.0001 && smoothDriver.animatingIDs.isEmpty,"P04 static seek holds the same adjacent-frame mixture")
+    try require(imageIDs==Set(smoothLayers.map{ObjectIdentifier($0.contents as! CGImage)}) && smoothProvider.draws==27,"P04 seek neither regenerates nor duplicates image storage")
+    smoothDriver.seekForCapture(1)
+    try require(smoothLayers[0].opacity==1 && smoothLayers.dropFirst().allSatisfy{$0.opacity==0},"P04 cyclic endpoint returns exactly to the original frame")
+    effectsView.viewDidHide();smoothPool.purgeUnleased()
+    try require(smoothDriver.activeIDs.isEmpty && smoothDriver.interpolationLayerCount==0 && smoothLayers.allSatisfy{$0.contents==nil && $0.superlayer==nil} && smoothPool.decodedBytes==0,"P04 hide clears CA references before releasing leases")
+    try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
+    try smoothDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(scale:2,reduceMotion:true),sampling:.interpolatedCandidate,provider:{_ in smoothProvider})
+    try require(smoothDriver.interpolatedIDs.isEmpty && smoothDriver.animatingIDs.isEmpty && smoothDriver.rotatingIDs.isEmpty,"P04 reduced motion cannot opt into interpolation")
+    try smoothDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(scale:2),quietIDs:Set(working.map(\.subscriptionID)),sampling:.interpolatedCandidate,provider:{_ in smoothProvider})
+    try require(smoothDriver.interpolatedIDs.isEmpty && smoothDriver.animatingIDs.isEmpty,"P04 quiet output stays static")
+    smoothDriver.stop();smoothPool.purgeUnleased();effectsView.dispose()
     // Optional motion remains independent of the shared discrete bitmap clock.
     var syntheticSystemReduction=false
     let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction})
