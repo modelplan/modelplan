@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Catalogue helper routes now distinguish audited standard, separate advanced browser-session and not-read access. Standard consent excludes browser sessions; `connect <tool> --browser-session` explains Safe Storage/cookie caching and grants one provider explicitly. Forget clears its helper cookie cache. All connect JSON paths are previews; confirmations name destination hosts. Privacy/revocation gates now also protect Qwen status exports and generation-fenced refresh/snapshot/history writes.
+
 - CLI `connect --detected` adds a pre-checked, single-confirmation consent chooser and read-only JSON preview, shared versioned per-tool grants, automatic/passive privacy (`MODELPLAN_READERS=passive|off`), persistent source denials, and one-time new-tool hints. `disconnect <tool|--all>` revokes first and deletes ModelPlan-owned readings while retaining other tools and request gates. Unreviewed helper routes and incompatible catalogue entries cannot admit readers.
 
 - CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.

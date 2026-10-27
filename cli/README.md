@@ -6,6 +6,17 @@ persists reader privacy; `MODELPLAN_READERS=passive|off` restricts it.
 `modelplan disconnect <tool|--all>` revokes permission and deletes cached readings.
 [Shared consent](../docs/cli-consent.md).
 
+Audited standard CodexBar access is included in the checked group with Keychain
+disabled. Browser-session tools stay in a separate unchecked advanced group;
+`connect <tool> --browser-session` explains Safe Storage and the helper's cookie
+cache before its own confirmation. Forget also clears that provider's cookie
+cache. Not-read/token-refresh and API-key-only helper platforms are not offered.
+Every `connect --json` is a preview; connecting starts no reader or refresh.
+
+标准 CodexBar 路径须经审核并关闭钥匙串；浏览器会话单列为高级未勾选组，
+用 `connect <工具> --browser-session` 查看 Safe Storage 和 cookie 缓存说明后单独确认。
+忘记读数也会按提供商清除 cookie 缓存；所有 `connect --json` 只预览，连接不启动读取器。
+
 `modelplan connect --detected` 预勾选已检测工具，只确认一次；`--json` 仅预览。
 `--privacy automatic|passive` 保存隐私级别，`MODELPLAN_READERS=passive|off` 进一步限制。
 `disconnect <工具|--all>` 撤销授权并删除缓存读数。[共享授权](../docs/cli-consent.md)。
@@ -34,7 +45,7 @@ echo '{"model":{"id":"claude-opus-5-5"}}' | ./dist/modelplan statusline
 ./dist/modelplan doctor
 ./dist/modelplan quota                # your own windows, read on this machine only
 ./dist/modelplan advise               # what is worth doing about them now
-./dist/modelplan codexbar enable cursor zai   # other plans, read through CodexBar's CLI (opt-in)
+./dist/modelplan connect --detected         # standard detected tools; explicit consent
 echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":39,"resets_at":2000000000}}}' \
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
@@ -85,10 +96,10 @@ The same command, and `modelplan effort <model>` for one model, also show **your
 
 ### Other plans through CodexBar
 
-`modelplan codexbar enable cursor zai` reads the usage of plans whose meters sit behind the vendor's own sign-in: `copilot`, `cursor`, `kiro`, `opencodego` and `zai`. It does this through the CLI of [CodexBar](https://github.com/steipete/CodexBar) (MIT). Claude Code and Codex are never read this way; this client reads them itself.
+`modelplan connect --detected` offers audited standard helper routes alongside native readers. Browser-session routes require `modelplan connect <tool> --browser-session` and their separate explanation/confirmation. Head providers use native readers with no automatic helper fallback. An unaudited, unknown-access or not-read route remains unsupported.
 
-- **Off until enabled.** Enabling is the consent. It is stored in `~/.config/modelplan/codexbar.json`. `modelplan codexbar disable` turns it off again, and `MODELPLAN_CODEXBAR=off` overrides it.
-- **No credentials pass through this client.** CodexBar finds them where the user keeps them: its own config (`config set-api-key`), another CLI's login (kiro-cli), the Cursor app, or browser cookies. In the background it never asks for Keychain access. `modelplan codexbar` shows, per provider, what was read and, when nothing was, what CodexBar needs.
+- **Consent and access class.** Helper use requires the current catalogue audit/class and the shared grant. Standard runs force `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1`; browser access is off until its explicit per-provider grant. Legacy `codexbar enable` settings alone cannot bypass these gates. `MODELPLAN_CODEXBAR=off` stops usage reads.
+- **Credential handling.** ModelPlan reads only the helper's sanitised JSON. Standard helpers use their audited local login/read-only CLI route without refresh. Advanced browser routes may ask for Safe Storage and cache a session cookie in CodexBar's own Keychain item; Forget runs provider-scoped cookie cleanup. No browser discovery runs during detection or connect.
 - **Pinned release.** The first run downloads the CodexBar CLI release pinned in `internal/quota/codexbar-pin.json`: about 14 MB on macOS and 53 MB on Linux. It is checked against the pinned SHA-256 and kept under the cache's `codexbar/` directory. `MODELPLAN_CODEXBAR=<path>` uses another copy, and one the user installed is used when there is no pinned copy. The `codexbar-pin` workflow proposes newer releases weekly, after a live check that their JSON still parses.
 - **Runs in the background.** At most every 10 minutes (30 after every provider failed), one provider per call, with a 60 s limit each and English output. The cached reading (`observed/codexbar.json`) holds windows, reset times and the plan name only. Identities, account ids and error text naming local paths or addresses are dropped.
 - **Shown, not hinted.** `quota` and the dashboards show these plans. They give no prompt hints in Claude Code or Codex, which do not draw on them.

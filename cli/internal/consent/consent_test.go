@@ -1,7 +1,11 @@
 package consent
 
 import (
+	"bufio"
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -75,8 +79,61 @@ func TestConsentMalformedAndLockFailClosed(t *testing.T) {
 		t.Fatal("overwrote invalid state")
 	}
 	os.Remove(file)
-	os.WriteFile(file+".lock", nil, 0600)
+	unlock, err := lockFile(file + ".lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
 	if err := Change(file, func(s *State) error { t.Fatal("ignored lock"); return nil }); err == nil {
 		t.Fatal("ignored lock")
 	}
+}
+
+func TestReaderLockChildProcess(t *testing.T) {
+	if os.Getenv("MODELPLAN_TEST_READER_LOCK_CHILD") != "1" {
+		return
+	}
+	unlock, err := ReaderLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	fmt.Println("locked")
+	time.Sleep(time.Hour)
+}
+
+func TestKilledReaderReleasesKernelAdmission(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestReaderLockChildProcess$")
+	cmd.Env = append(os.Environ(), "MODELPLAN_TEST_READER_LOCK_CHILD=1")
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cmd.Process.Kill(); cmd.Wait() }()
+	scan := bufio.NewScanner(out)
+	if !scan.Scan() || scan.Text() != "locked" {
+		t.Fatal("child did not take lock")
+	}
+	if _, err := ReaderLock(); err == nil {
+		t.Fatal("overlapping reader admitted")
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	cmd.Wait()
+	unlock, err := ReaderLock()
+	if err != nil {
+		t.Fatal("killed reader left admission stuck", err)
+	}
+	unlock()
 }

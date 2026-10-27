@@ -58,6 +58,8 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
   modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
   modelplan connect --detected [--privacy automatic|passive] [--json]
                                        preview or confirm the pre-checked detected-tool list once
+  modelplan connect <tool> --browser-session
+                                       separate advanced consent; browser Safe Storage and cookie cache explained
   modelplan disconnect <tool|--all>    revoke consent and delete that tool's cached readings
   modelplan connections [status|refresh]
                                        which reader serves each other plan (connections.json):
@@ -169,6 +171,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
 	detected := fs.Bool("detected", false, "connect: choose detected tools with one consent confirmation")
 	privacy := fs.String("privacy", "", "connect --detected: automatic or passive")
+	browserSession := fs.Bool("browser-session", false, "connect: separately consent to one advanced browser-session provider")
 	all := fs.Bool("all", false, "disconnect: revoke all tools and delete readings")
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
@@ -188,7 +191,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	open := store.Open
-	if cmd == "detect" || (cmd == "connect" && *detected) || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
+	if cmd == "detect" || cmd == "connect" || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
 		open = store.Locate // creates nothing
 	}
 	st, err := open()
@@ -200,11 +203,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return detectCmd(fs.Args(), stdout, stderr, st, c)
 	}
 	if cmd == "connect" && *detected {
-		if fs.NArg() != 0 {
+		if fs.NArg() != 0 || *browserSession {
 			fmt.Fprintln(stderr, "usage: modelplan connect --detected [--json] [--privacy automatic|passive]")
 			return exitUsage
 		}
 		return connectDetected(stdin, stdout, stderr, st, c, *privacy)
+	}
+	if cmd == "connect" {
+		return connectProvider(fs.Args(), stdin, stdout, stderr, st, c, *backend, *region, *keyEnv, *privacy, *browserSession)
 	}
 	if cmd == "disconnect" {
 		return disconnectTools(fs.Args(), *all, stdout, stderr, st, c)
@@ -292,7 +298,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		state := advise.Load(st.Dir)
 		now := time.Now()
 		report := quota.ReadPermitted(quotaPaths(st), now)
-		_ = history.Observe(st.Dir, report, now)
+		observeQuotaHistory(st, report, now)
 		observeCodexSpeed(st, now)
 		observeAgents(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
@@ -523,9 +529,32 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if effort == "" && in.Effort != nil {
 		effort = in.Effort.Level
 	}
+	if preview {
+		return statuslineInput(in, stdout, style, st, c, harness, modelID, effort, true)
+	}
+	unlock, err := consent.ReaderLock()
+	if err != nil {
+		return 0
+	}
+	defer unlock()
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		return 0
+	}
+	code := 0
+	if err := consent.Publish(state.Generation, func() error {
+		code = statuslineInput(in, stdout, style, st, c, harness, modelID, effort, false)
+		return nil
+	}); err != nil {
+		return 0
+	}
+	return code
+}
+
+func statuslineInput(in quota.StatuslineInput, stdout io.Writer, style render.Style, st *store.Store, c common, harness, modelID, effort string, preview bool) int {
 	now := time.Now()
 	var acct *quota.Account
-	if harness == "claude-code" {
+	if harness == "claude-code" && (preview || consent.Allowed("claude", consent.Local)) {
 		// A custom endpoint (GLM through Z.ai) decides which model an id means and which plan pays.
 		in.Endpoint = digest.Endpoint(os.Getenv("ANTHROPIC_BASE_URL"))
 		if !preview && consent.Allowed("claude", consent.Local) {
@@ -674,10 +703,12 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 	}
 	var es []advise.Event
 	report := quota.ReadPermitted(paths, now)
-	_ = history.Observe(st.Dir, report, now)
+	observeQuotaHistory(st, report, now)
 	if harness == "claude-code" {
 		if consent.Allowed("claude", consent.Local) {
-			_ = speed.ObserveClaude(st.Dir, in.TranscriptPath, false, speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}, now)
+			_ = consent.LocalWrite("claude", func() error {
+				return speed.ObserveClaude(st.Dir, in.TranscriptPath, false, speed.Ingest{Labels: projectLabels(), Subscription: quota.ClaudeSubscription(st.Dir)}, now)
+			})
 		}
 	} else {
 		observeCodexSpeed(st, now)
@@ -835,7 +866,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	paths := quotaPaths(st)
 	report := quota.ReadPermitted(paths, now)
 	if !readOnly {
-		_ = history.Observe(st.Dir, report, now)
+		observeQuotaHistory(st, report, now)
 		observeCodexSpeed(st, now)
 		observeAgents(st, now)
 		observeLiveSessions(st, paths, report, now)
@@ -889,7 +920,9 @@ func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report
 			refs[a.Source] = a.Subscription.Ref
 		}
 	}
-	_ = speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
+	reportWrite(report, func() error {
+		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
+	})
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
@@ -898,9 +931,11 @@ func observeCodexSpeed(st *store.Store, now time.Time) {
 	if !consent.Allowed("codex", consent.Local) {
 		return
 	}
-	home := quotaPaths(st).CodexHome
-	_ = speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
-		speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
+	_ = consent.LocalWrite("codex", func() error {
+		home := quotaPaths(st).CodexHome
+		return speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
+			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
+	})
 }
 
 // projectLabelsCmd shows or sets the project-label switch: on unless the user turned it off (the
@@ -946,10 +981,10 @@ func observeAgents(st *store.Store, now time.Time) {
 	home, _ := os.UserHomeDir()
 	in := speed.Ingest{Labels: projectLabels()}
 	if consent.Allowed("zai", consent.Local) {
-		_ = speed.ObserveZCode(st.Dir, home, in, now)
+		_ = consent.LocalWrite("zai", func() error { return speed.ObserveZCode(st.Dir, home, in, now) })
 	}
 	if consent.Allowed("opencodego", consent.Local) {
-		_ = speed.ObserveOpenCode(st.Dir, home, in, now)
+		_ = consent.LocalWrite("opencodego", func() error { return speed.ObserveOpenCode(st.Dir, home, in, now) })
 	}
 }
 

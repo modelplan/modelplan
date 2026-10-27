@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/connections"
-	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -24,57 +23,6 @@ import (
 func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.Store, c common, quiet bool, backend, region, keyEnv string) int {
 	p := quotaPaths(st)
 	switch cmd {
-	case "connect", "disconnect":
-		if len(args) != 1 {
-			fmt.Fprintf(stderr, "usage: modelplan %s <provider>  (%s)\n", cmd, strings.Join(providerIDs(), ", "))
-			return exitUsage
-		}
-		prov := strings.ToLower(args[0])
-
-		s := quota.QuotaSource{Provider: prov, Backend: quota.BackendNative, Enabled: cmd == "connect", Region: region, KeyEnv: keyEnv}
-		switch {
-		case cmd == "disconnect":
-			s.Region, s.KeyEnv = "", ""
-		case backend == "codexbar" || backend == quota.BackendCodexBar:
-			s.Backend, s.Region, s.KeyEnv = quota.BackendCodexBar, "", ""
-		case backend != "native":
-			fmt.Fprintln(stderr, "connect: --backend is native or codexbar")
-			return exitUsage
-		default:
-			if _, _, ok := quota.NativeReader(prov); !ok {
-				fmt.Fprintf(stderr, "connect: %s has no native reader yet; use --backend codexbar\n", prov)
-				return exitUsage
-			}
-		}
-		if err := quota.SetConnection(p.ConnectionsFile, s); err != nil {
-			fmt.Fprintln(stderr, "connect:", err)
-			return exitUsage
-		}
-		// An explicit legacy connect may re-enable a revoked tool, but never
-		// clears a remembered Keychain Deny or broadens catalogue consent.
-		if err := consent.Change(consent.Path(), func(current *consent.State) error { return consent.Set(current, prov, s.Enabled, "", "", time.Now()) }); err != nil {
-			fmt.Fprintln(stderr, err)
-			return exitErr
-		}
-		class := consent.ExplicitKey
-		if s.Backend == quota.BackendCodexBar {
-			class = consent.Bridge
-		} else if prov == "cursor" {
-			class = consent.Credential
-		} else if prov == "copilot" || prov == "kiro" {
-			class = consent.Runtime
-		}
-		if cmd == "connect" && !c.offline && consent.Allowed(prov, class) {
-			if s.Backend == quota.BackendNative {
-				_ = startDetached("connections", "refresh", "--quiet")
-			} else if quota.CodexBarFetchDue(st.Dir, time.Now()) {
-				_ = startDetached("codexbar", "fetch", "--quiet")
-			} else {
-				_ = startDetached("codexbar", "refresh", "--quiet")
-			}
-		}
-		return connectionsStatus(stdout, stderr, p, c, quiet)
-
 	case "connections":
 		sub := "status"
 		if len(args) > 0 {

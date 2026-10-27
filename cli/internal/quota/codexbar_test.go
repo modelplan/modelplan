@@ -42,6 +42,7 @@ exit 0
 func cbPaths(t *testing.T, providers ...string) Paths {
 	dir := t.TempDir()
 	p := Paths{Cache: filepath.Join(dir, "cache"), CodexBarFile: filepath.Join(dir, "codexbar.json")}
+	auditFixtureHelpers(t, &p)
 	if providers != nil {
 		if err := SetCodexBarEnabled(p.CodexBarFile, providers); err != nil {
 			t.Fatal(err)

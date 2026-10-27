@@ -64,10 +64,13 @@ type Selection struct {
 	SecretPolicy string   `json:"secretPolicy,omitempty"`
 	// Blocked: why the selected backend does not run: codexbar-off, native-off, no-native-reader,
 	// no-key.
-	Blocked string `json:"blocked,omitempty"`
+	Blocked     string `json:"blocked,omitempty"`
+	AccessClass string `json:"accessClass,omitempty"`
 }
 
 var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+
+func ValidateSource(s QuotaSource) error { return s.check() }
 
 // LoadConnections reads connections.json. A missing file is no entries; an unusable one is an
 // error, and then no provider is read through it (nor through a legacy setting it may override).
@@ -122,6 +125,13 @@ func (s QuotaSource) check() error {
 }
 
 // Selections: the effective backend of every provider that is configured anywhere, sorted.
+var loadReaderCatalogue = func(cache string) *detect.Catalogue {
+	if d, _, err := publication.Load(&store.Store{Dir: cache}); err == nil {
+		return d.Catalogue
+	}
+	return nil
+}
+
 func Selections(p Paths) ([]Selection, error) {
 	entries, err := LoadConnections(p.ConnectionsFile)
 	if err != nil {
@@ -139,18 +149,10 @@ func Selections(p Paths) ([]Selection, error) {
 		by[s.Provider] = x
 	}
 	policy, mode := consent.Current()
-	var publishedRoutes = map[string]struct {
-		preferred string
-		audited   bool
-		minCli    string
-	}{}
-	if d, _, err := publication.Load(&store.Store{Dir: p.Cache}); err == nil && d.Catalogue != nil {
-		for _, e := range d.Catalogue.Detectors {
-			publishedRoutes[e.ProviderID] = struct {
-				preferred string
-				audited   bool
-				minCli    string
-			}{e.Preferred, e.CodexBar.Audited, e.MinCLI}
+	publishedRoutes := map[string]detect.Entry{}
+	if cat := loadReaderCatalogue(p.Cache); cat != nil {
+		for _, e := range cat.Detectors {
+			publishedRoutes[e.ProviderID] = e
 		}
 	}
 	for id, r := range policy.Tools {
@@ -172,6 +174,8 @@ func Selections(p Paths) ([]Selection, error) {
 		x.Provider = id
 		x.Backend = backend
 		x.Origin = "consent.json"
+		x.Region = r.Region
+		x.KeyEnv = r.KeyEnv
 		by[id] = x
 	}
 	out := make([]Selection, 0, len(by))
@@ -229,13 +233,13 @@ func Selections(p Paths) ([]Selection, error) {
 				x.Blocked = "no-key"
 			}
 		}
-		class := consent.ExplicitKey
+		class := consent.Credential
 		if x.Backend == BackendCodexBar {
 			class = consent.Bridge
-		} else if x.Provider == "cursor" {
-			class = consent.Credential
 		} else if x.Provider == "copilot" || x.Provider == "kiro" {
 			class = consent.Runtime
+		} else if n := nativeReaders[x.Provider]; n != nil && n.KeyEnv != "" {
+			class = consent.ExplicitKey
 		}
 		allowed := policy.Allows(x.Provider, class, mode)
 		if _, decided := policy.Tools[x.Provider]; !decided && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
@@ -245,23 +249,29 @@ func Selections(p Paths) ([]Selection, error) {
 			x.Blocked = "reader-consent-or-privacy"
 		}
 		if route, ok := publishedRoutes[x.Provider]; ok {
-			if route.preferred == "off" {
+			if route.Preferred == "off" {
 				x.Blocked = "catalogue-off"
 			}
-			if x.Backend == BackendCodexBar && !route.audited {
-				x.Blocked = "codexbar-not-audited"
-			}
 		}
-		if x.Origin == "consent.json" && x.Backend == BackendCodexBar {
+		if x.Backend == BackendCodexBar {
 			// No automatic native-to-helper fallback. A helper is selected only
 			// by an audited catalogue route explicitly accepted by the user.
 			route, ok := publishedRoutes[x.Provider]
-			audited := ok && route.preferred == "codexbar" && route.audited
-			if !audited {
+			if !ok {
 				x.Blocked = "codexbar-not-audited"
+			} else if reason := route.HelperStatus(); reason != "" {
+				x.Blocked = reason
+			} else {
+				x.AccessClass = route.CodexBar.Access
+				if route.Preferred != "codexbar" {
+					x.Blocked = "catalogue-off"
+				}
+				if x.AccessClass == "browser-session" && !policy.Tools[x.Provider].BrowserSession {
+					x.Blocked = "browser-session-consent-required"
+				}
 			}
 		}
-		if route, ok := publishedRoutes[x.Provider]; ok && !detect.Compatible(p.CLIVersion, route.minCli) {
+		if route, ok := publishedRoutes[x.Provider]; ok && !detect.Compatible(p.CLIVersion, route.MinCLI) {
 			x.Blocked = "update-required"
 		}
 		out = append(out, x)
@@ -275,7 +285,7 @@ func Selections(p Paths) ([]Selection, error) {
 // router. No credential-reading implementation lives here.
 func ReadPermitted(p Paths, now time.Time) Report {
 	s, mode := consent.Current()
-	r := Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
+	r := Report{ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
 	if mode == consent.Off {
 		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
 		return r
@@ -309,6 +319,11 @@ func ReadPermitted(p Paths, now time.Time) Report {
 // locks as the current readers. Attempt gates/identities are retained so revoke,
 // reconnect and catalogue rollback cannot reset a provider's request budget.
 func ForgetTool(p Paths, tool string) error {
+	admission, err := consent.ReaderLock()
+	if err != nil {
+		return err
+	}
+	defer admission()
 	if !consent.ValidTool(tool) {
 		return errors.New("invalid tool")
 	}
@@ -391,8 +406,13 @@ func ForgetTool(p Paths, tool string) error {
 				} else {
 					json.Unmarshal(row["source"], &id)
 					id = strings.TrimPrefix(strings.TrimPrefix(id, "native:"), "codexbar:")
-					if id == "claude-code" {
+					switch id {
+					case "claude-code":
 						id = "claude"
+					case "zcode":
+						id = "zai"
+					case "opencode":
+						id = "opencodego"
 					}
 				}
 				if id != tool {

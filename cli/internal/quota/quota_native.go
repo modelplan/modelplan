@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"net/http"
 	"os"
@@ -114,6 +115,15 @@ var nativeClient = &http.Client{Timeout: nativeTimeout}
 
 // RefreshNative asks each native provider once and caches the sanitised readings. One at a time.
 func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
+	admission, err := consent.ReaderLockContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer admission()
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		return err
+	}
 	on := active(p, BackendNative)
 	if len(on) == 0 {
 		return errors.New("no native provider is on")
@@ -126,6 +136,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	home, _ := os.UserHomeDir()
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	for _, x := range on {
+		if !consent.CurrentGeneration(state.Generation) {
+			return errors.New("consent changed; refresh stopped")
+		}
 		key := os.Getenv(x.KeyEnv)
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
@@ -153,7 +166,7 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	return writeAtomic(nativePath(p.Cache), append(b, '\n'))
+	return consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) })
 }
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the

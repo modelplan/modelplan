@@ -3,6 +3,7 @@
 package consent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,8 +15,8 @@ import (
 	"time"
 )
 
-const TextVersion = 1
-const Text = "Allow ModelPlan on this user account—App, plugins and all CLI copies—to read usage for the selected tools using their existing sign-in, through native readers or the included CodexBar helper. CodexBar is downloaded automatically with a verified checksum; you do not install it. Your credential is sent to that provider to authenticate; it is never sent to ModelPlan servers or stored by ModelPlan. macOS may ask for Keychain access. You can turn this off in Settings."
+const TextVersion = 2
+const Text = "Allow ModelPlan on this user account—App, plugins and all CLI copies—to read usage for the selected tools using their existing sign-in, through native readers or audited standard CodexBar access. CodexBar is downloaded automatically with a verified checksum; you do not install it. Your credential is sent only to the provider hosts shown for that tool; it is never sent to ModelPlan servers or stored by ModelPlan. macOS may ask for Keychain access for our own readers; standard CodexBar access has Keychain disabled. Browser-session access is excluded and requires separate per-provider consent. You can turn this off in Settings."
 
 const (
 	Automatic   = "automatic"
@@ -34,6 +35,10 @@ type Record struct {
 	At                 time.Time `json:"at"`
 	ReaderID           string    `json:"readerId,omitempty"`
 	Backend            string    `json:"backend,omitempty"`
+	Region             string    `json:"region,omitempty"`
+	KeyEnv             string    `json:"keyEnv,omitempty"`
+	BrowserSession     bool      `json:"browserSession,omitempty"`
+	BrowserCookieCache bool      `json:"browserCookieCache,omitempty"`
 	// Profiles are opaque descriptors, never account identities or token paths.
 	Profiles      []string        `json:"profiles,omitempty"`
 	DeniedSources map[string]bool `json:"deniedSources,omitempty"`
@@ -135,12 +140,11 @@ func Change(file string, change func(*State) error) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(file+".lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	unlock, err := lockFile(file + ".lock")
 	if err != nil {
 		return errors.New("consent busy; retry")
 	}
-	lock.Close()
-	defer os.Remove(file + ".lock")
+	defer unlock()
 	s, err := Load(file)
 	if err != nil {
 		return err
@@ -183,6 +187,7 @@ func Set(s *State, id string, allowed bool, reader, backend string, now time.Tim
 	r.At = now.UTC()
 	r.ReaderID = reader
 	r.Backend = backend
+	r.BrowserSession = false
 	// Reconnecting does not clear a Keychain Deny. Only explicit Settings Retry
 	// may clear that source after informing the user; no retry is offered here.
 	s.Tools[id] = r
@@ -203,3 +208,63 @@ func Deny(file, tool, source string) error {
 	})
 }
 func CurrentGeneration(g uint64) bool { s, err := Load(Path()); return err == nil && s.Generation == g }
+
+// ReaderLock coordinates refresh/snapshot writers with Forget readings. A
+// revoked provider is reselected only after this lock, never from a stale list.
+func ReaderLock() (func(), error) {
+	file := Path() + ".readers.lock"
+	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		return nil, err
+	}
+	return lockFile(file)
+}
+
+// Detached refreshes may briefly wait for a local snapshot/history commit. Do
+// not make the foreground caller wait or let a fresh child starve on that race.
+func ReaderLockContext(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	for {
+		unlock, err := ReaderLock()
+		if err == nil {
+			return unlock, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+func LocalWrite(tool string, write func() error) error {
+	unlock, err := ReaderLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	s, mode := Current()
+	if !s.Allows(tool, Local, mode) {
+		return errors.New("local reader not permitted")
+	}
+	return Publish(s.Generation, write)
+}
+
+// Publish serializes generation validation and the short cache commit with
+// consent changes. No credential or provider I/O belongs inside this callback.
+func Publish(g uint64, write func() error) error {
+	file := Path() + ".lock"
+	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		return err
+	}
+	unlock, err := lockFile(file)
+	if err != nil {
+		return errors.New("consent busy; reading not published")
+	}
+	defer unlock()
+	s, err := Load(Path())
+	if err != nil || s.Generation != g {
+		return errors.New("consent changed; reading not published")
+	}
+	return write()
+}

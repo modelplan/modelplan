@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"math"
 	"net/http"
@@ -28,8 +29,8 @@ import (
 
 // CodexBar (github.com/steipete/CodexBar, MIT) reads usage for vendors whose meters sit behind
 // their own sign-ins. This client never handles those credentials: CodexBar's CLI finds them
-// where the user keeps them (its own config, another CLI's login, browser cookies without
-// Keychain prompts in the background) and we only parse its JSON. It runs only for the
+// through an audited access class. Standard access forces Keychain off; browser
+// access requires a separate per-provider grant. We only parse its JSON. It runs for the
 // providers the user enabled in ~/.config/modelplan/codexbar.json, one provider per call, in the
 // background and at most every 10 minutes. The reading is cached in <cache>/observed/codexbar.json
 // without identities, account ids or error text that names local paths.
@@ -423,6 +424,15 @@ func CodexBarDue(p Paths, now time.Time) bool {
 // RefreshCodexBar runs CodexBar once per enabled provider and caches the sanitised reading
 // (or why it could not run). One refresh at a time.
 func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) error {
+	admission, err := consent.ReaderLockContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer admission()
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		return err
+	}
 	if codexbarOff() {
 		return errors.New("disabled by MODELPLAN_CODEXBAR")
 	}
@@ -431,7 +441,9 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 		return errors.New("no CodexBar provider enabled")
 	}
 	if bin == "" {
-		return saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "CodexBar CLI not found"})
+		return consent.Publish(state.Generation, func() error {
+			return saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "CodexBar CLI not found"})
+		})
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "codexbar.lock"), now, time.Duration(len(enabled)+1)*codexbarTimeout)
 	if !ok {
@@ -441,7 +453,18 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 	home, _ := os.UserHomeDir()
 	s := &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "ok", Providers: []codexbarEntry{}}
 	for _, prov := range enabled {
-		out, err := runCodexBar(ctx, bin, prov)
+		if !consent.CurrentGeneration(state.Generation) {
+			return errors.New("consent changed; refresh stopped")
+		}
+		access := "standard"
+		if ss, err := Selections(p); err == nil {
+			for _, x := range ss {
+				if x.Provider == prov {
+					access = x.AccessClass
+				}
+			}
+		}
+		out, err := runCodexBar(ctx, bin, prov, access)
 		e := parseCodexBar(out, prov, home, now)
 		if e.identity != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
@@ -451,7 +474,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 		}
 		s.Providers = append(s.Providers, e)
 	}
-	return saveCodexBar(p.Cache, s)
+	return consent.Publish(state.Generation, func() error { return saveCodexBar(p.Cache, s) })
 }
 
 func saveCodexBar(cache string, s *codexbarSnap) error {
@@ -478,11 +501,15 @@ func lockFile(p string, now time.Time, stale time.Duration) (func(), bool) {
 
 // runCodexBar: one provider, JSON only, English text, bounded output. CodexBar exits 1 when the
 // provider failed and still prints the JSON, so the exit code is not an error by itself.
-func runCodexBar(ctx context.Context, bin, provider string) ([]byte, error) {
+func runCodexBar(ctx context.Context, bin, provider string, access ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, codexbarTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
-	cmd.Env = append(os.Environ(), "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+	class := "standard"
+	if len(access) == 1 {
+		class = access[0]
+	}
+	cmd.Env = codexBarEnvironment(class)
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	var out bytes.Buffer

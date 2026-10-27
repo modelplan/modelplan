@@ -194,11 +194,12 @@ type SourceStatus struct {
 }
 
 type Report struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	EvaluatedAt   time.Time      `json:"evaluatedAt"`
-	Accounts      []Account      `json:"accounts"`
-	Sources       []SourceStatus `json:"sources"`
-	Note          string         `json:"note"`
+	ConsentGeneration uint64         `json:"-"` // framework fence for downstream cache writers
+	SchemaVersion     int            `json:"schemaVersion"`
+	EvaluatedAt       time.Time      `json:"evaluatedAt"`
+	Accounts          []Account      `json:"accounts"`
+	Sources           []SourceStatus `json:"sources"`
+	Note              string         `json:"note"`
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
