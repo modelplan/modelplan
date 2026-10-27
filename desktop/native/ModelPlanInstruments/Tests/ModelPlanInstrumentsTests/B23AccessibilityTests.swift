@@ -55,6 +55,20 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
 }
 
 @MainActor final class B23ChartTreeTests:XCTestCase {
+    func testReducedMotionRemovesATrialGhostWithoutItsRetirementFade() throws {
+        _ = NSApplication.shared
+        let view=FaderBankView();view.onHelpChange={_,_ in};view.reducedMotion=true
+        let window=B23AnimationAdmissionWindow(contentRect:view.frame,styleMask:[],backing:.buffered,defer:true)
+        window.isReleasedWhenClosed=false;window.contentView=view
+        defer{view.dispose();window.contentView=nil;window.close()}
+        try view.update(inputs:[.init(model:Fixtures.model())],publicationUsable:true,language:.english,compact:false,now:Fixtures.now)
+        try view.setTrial(.init(modelID:"model",configuration:.init("max")))
+        let ghost=try XCTUnwrap(view.recipe?.caps.first{$0.kind == .ghost})
+        let layer=try XCTUnwrap(view.layer?.sublayers?.first{$0.frame==ghost.frame && $0.contents != nil})
+        view.endTrial()
+        XCTAssertNil(layer.superlayer);XCTAssertNil(layer.animation(forKey:"hide"))
+        XCTAssertNil(view.controller.trial)
+    }
     func testReduceMotionImmediatelyStopsAnInFlightReadingWithoutChangingItsValue() throws {
         let view=EngineTableView(recipeProvider:B23ReadingRecipe())
         try view.update(columns:[],language:.english,now:Fixtures.now)
@@ -93,6 +107,11 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
         }
         view.back();XCTAssertNil(view.control(for:"compare.chart"));XCTAssertNil(first.accessibilityParent())
     }
+}
+
+/// Admission seam only: this window is never ordered on screen and creates no physical-input proof.
+@MainActor private final class B23AnimationAdmissionWindow:NSWindow {
+    override var isVisible:Bool{true}
 }
 
 @MainActor private final class B23ReadingRecipe:EngineTableRecipeProvider {
