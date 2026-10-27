@@ -46,6 +46,7 @@ type nativeReader struct {
 var nativeReaders = map[string]*nativeReader{
 	"antigravity": antigravityReader,
 	"grok":        grokReader,
+	"claude":      claudeAccountReader,
 	"zai":         zaiReader,
 	"kimi":        kimiReader,
 	"cursor":      cursorReader,
