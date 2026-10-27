@@ -12,6 +12,11 @@ public enum MainScreenAction: Equatable, Sendable {
     case fast(modelID: String)
 }
 public enum MainScreenRegionRole: Sendable { case button, readout, choice }
+/// Traversable text/data alternatives; these never add painted layout or actions.
+public struct MainScreenAccessibilityDetail: Equatable, Sendable {
+    public let id:String,label:String,value:String
+    public init(id:String,label:String,value:String) {self.id=id;self.label=label;self.value=value}
+}
 public struct MainScreenGridPosition: Equatable, Sendable {
     public let column: Int, row: Int
     public init(column: Int, row: Int) { self.column=column; self.row=row }
@@ -26,10 +31,12 @@ public struct MainScreenHitRegion: Equatable, Sendable {
     public let gridPosition: MainScreenGridPosition?
     public let focusGroup: String?
     public let value: String?
+    public let accessibilityDetails:[MainScreenAccessibilityDetail]
     public init(id: String, rect: CGRect, action: MainScreenAction? = nil, label: String, help: HelpExplanation,
-                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil, gridPosition: MainScreenGridPosition? = nil) {
+                role: MainScreenRegionRole = .button, enabled: Bool = true, tabStop: Bool = true, value: String? = nil, focusGroup: String? = nil, gridPosition: MainScreenGridPosition? = nil, accessibilityDetails:[MainScreenAccessibilityDetail] = []) {
         self.id = id; self.rect = rect; self.action = action; self.label = label; self.help = help
         self.role = role; self.enabled = enabled; self.tabStop = tabStop; self.value = value; self.focusGroup = focusGroup; self.gridPosition = gridPosition
+        self.accessibilityDetails=accessibilityDetails
     }
 }
 public struct MainScreenRecipe: Equatable, Sendable {
@@ -47,6 +54,8 @@ public struct MainScreenRecipe: Equatable, Sendable {
         try EngineTableRecipe(size: size, commands: commands, regions: [], focusInk: focusInk).validate()
         guard regions.count <= 512, Set(regions.map(\.id)).count == regions.count else { throw EngineTableError.invalidRecipe }
         for r in regions {
+            guard r.accessibilityDetails.count<=512,Set(r.accessibilityDetails.map(\.id)).count==r.accessibilityDetails.count,
+                  r.accessibilityDetails.allSatisfy({!$0.id.isEmpty && $0.id.utf8.count<=1024 && $0.label.utf8.count<=16_384 && $0.value.utf8.count<=16_384}) else {throw EngineTableError.invalidRecipe}
             if let position=r.gridPosition {
                 guard r.focusGroup != nil,(0...4096).contains(position.column),(0...4096).contains(position.row) else {throw EngineTableError.invalidRecipe}
             }

@@ -64,6 +64,8 @@ import AppKit
         stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
         titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         privacy.font = .systemFont(ofSize: 14); subscriptions.font = .systemFont(ofSize: 13)
+        titleLabel.setAccessibilityIdentifier("firstRun.title");privacy.setAccessibilityIdentifier("firstRun.privacy")
+        subscriptions.setAccessibilityIdentifier("firstRun.subscriptions")
         readerStack.orientation = .vertical; readerStack.alignment = .leading; readerStack.spacing = 10
         for id in OptionalReaderID.allCases {
             let button = NSButton(checkboxWithTitle: "", target: self, action: #selector(readerChanged(_:)))
@@ -80,6 +82,9 @@ import AppKit
         doneButton.keyEquivalent = "\r"; doneButton.setAccessibilityIdentifier("firstRun.done")
         helpButton.isBordered = false; helpButton.target = self; helpButton.action = #selector(seeWhatsHere)
         helpButton.setAccessibilityIdentifier("firstRun.help")
+        let focusOrder=OptionalReaderID.allCases.compactMap{readerButtons[$0]}+[loginButton,doneButton,helpButton]
+        for (a,b) in zip(focusOrder,focusOrder.dropFirst()) {a.nextKeyView=b}
+        window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
         for view in [titleLabel,privacy,subscriptions,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
@@ -119,6 +124,7 @@ import AppKit
             loginButton.title = LoginSetting.title.value(language)
             loginButton.state = options?.openAtLogin == true ? .on : .off
             loginSubtitle.stringValue = page.loginSubtitle.value(language)
+            loginButton.setAccessibilityHelp(loginSubtitle.stringValue)
             doneButton.title = page.done.value(language); helpButton.title = page.seeWhatsHere.value(language)
             status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
             let appearance: NSAppearance.Name? = p.theme == .system ? nil : p.theme == .night ? .darkAqua : .aqua

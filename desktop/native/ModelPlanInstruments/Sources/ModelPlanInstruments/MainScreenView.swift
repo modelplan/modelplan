@@ -367,6 +367,7 @@ import AppKit
     weak var owner: MainScreenView?
     var region: MainScreenHitRegion
     private var pointerAction: MainScreenAction?
+    private var detailNodes=[String:NSAccessibilityElement]()
     private var currentOwner: MainScreenView? { guard let owner, owner.control(for: region.id) === self, owner.owns(self) else { return nil }; return owner }
     init(owner: MainScreenView, region: MainScreenHitRegion) { self.owner = owner; self.region = region; super.init(frame: region.rect); focusRingType = .none; configure(region) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -377,11 +378,26 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {}
     func configure(_ r: MainScreenHitRegion) {
         region = r; frame = r.rect; isEnabled = r.enabled
-        setAccessibilityElement(true); setAccessibilityIdentifier(r.id); setAccessibilityRole(r.role == .button ? .button : .image)
+        setAccessibilityElement(true); setAccessibilityIdentifier(r.id)
+        setAccessibilityRole(!r.accessibilityDetails.isEmpty ? .group:r.role == .button ? .button:r.role == .choice ? .radioButton:.staticText)
         setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled); setAccessibilityValue(r.value)
+        let retained=Set(r.accessibilityDetails.map(\.id))
+        for id in Array(detailNodes.keys) where !retained.contains(id) {
+            let node=detailNodes.removeValue(forKey:id);node?.setAccessibilityElement(false);node?.setAccessibilityParent(nil)
+        }
+        setAccessibilityChildren(r.accessibilityDetails.map { item in
+            let node=detailNodes[item.id] ?? NSAccessibilityElement();detailNodes[item.id]=node
+            node.setAccessibilityElement(true);node.setAccessibilityRole(.staticText);node.setAccessibilityParent(self)
+            node.setAccessibilityIdentifier(r.id+"."+item.id);node.setAccessibilityLabel(item.label);node.setAccessibilityValue(item.value)
+            node.setAccessibilityFrameInParentSpace(bounds);return node
+        })
         toolTip = nil
     }
-    func retire() { owner = nil; pointerAction = nil; isEnabled = false; nextKeyView = nil; setAccessibilityEnabled(false); setAccessibilityElement(false) }
+    func retire() {
+        owner = nil; pointerAction = nil; isEnabled = false; nextKeyView = nil; setAccessibilityEnabled(false); setAccessibilityElement(false)
+        for node in detailNodes.values {node.setAccessibilityElement(false);node.setAccessibilityParent(nil)}
+        detailNodes.removeAll();setAccessibilityChildren([])
+    }
     override func becomeFirstResponder() -> Bool { guard acceptsFirstResponder, let owner = currentOwner else { return false }; owner.reveal(region.id); owner.focusChanged(region.id); return true }
     override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
     override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; pointerAction = region.action; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) } }
