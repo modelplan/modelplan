@@ -87,6 +87,36 @@ import XCTest
         XCTAssertFalse(view.requestEnlarge(trigger:.field,atLocalPoint:CGPoint(x:201,y:50)));XCTAssertEqual(calls,0)
         view.onEnlargeRequest = {_ in false};XCTAssertFalse(view.requestEnlarge());XCTAssertFalse(view.opening)
     }
+    func testLocalizedHelpAndHandAffordanceShareAdmissionWithoutNativeTooltip() throws {
+        let view = CockpitPortholeView(),base = state()
+        for (locale,text) in [("en","Click to open the 3D launch field"),("zh-CN","点击打开 3D 发射场")] {
+            try view.configure(.init(size:base.size,imageRect:base.imageRect,still:base.still,admittedModelIDs:base.admittedModelIDs,closed:false,rendererAvailable:true,locale:locale))
+            view.setPresentationAllowed(true)
+            XCTAssertEqual(view.pointingHandRect,base.imageRect);XCTAssertEqual(view.helpTargets().first?.label,text)
+            XCTAssertEqual(view.accessibilityLabel(),text);XCTAssertEqual(view.accessibilityHelp(),text);XCTAssertNil(view.toolTip)
+            view.setEnlarged(true);XCTAssertNil(view.pointingHandRect);XCTAssertTrue(view.helpTargets().isEmpty)
+            view.setEnlarged(false);view.setPresentationAllowed(false);XCTAssertNil(view.pointingHandRect)
+        }
+        try view.configure(state(closed:true));view.setPresentationAllowed(true);XCTAssertNil(view.pointingHandRect)
+        try view.configure(state(available:false));XCTAssertTrue(view.helpTargets().isEmpty)
+        view.stop();XCTAssertTrue(view.helpTargets().isEmpty)
+    }
+    func testFieldHelpForwardsOnlyEventsToTheSingleHostOwner() throws {
+        let view = CockpitPortholeView();try view.configure(state());view.setPresentationAllowed(true)
+        var events:[String] = []
+        view.onHelpInput = { event in
+            switch event {
+            case .entered(let target,_,_):XCTAssertEqual(target.id,"field");events.append("entered")
+            case .moved:events.append("moved")
+            case .cancelled:events.append("cancelled")
+            }
+        }
+        let event = NSEvent.mouseEvent(with:.mouseMoved,location:CGPoint(x:50,y:50),modifierFlags:[],timestamp:1,windowNumber:0,context:nil,eventNumber:0,clickCount:0,pressure:0)!
+        view.mouseEntered(with:event);view.mouseMoved(with:event);view.setPresentationAllowed(false)
+        XCTAssertEqual(events,["entered","moved","cancelled"])
+        view.mouseMoved(with:event);XCTAssertEqual(events.count,3)
+        view.stop();XCTAssertTrue(view.trackingAreas.isEmpty)
+    }
     func testInvalidProjectionDoesNotCreateFocusAndConfigurationFailsAtomically() throws {
         let projection = CockpitRocketProjection(captureID:"c",stillKey:"s",points:[.init(modelID:"a",normalized:CGPoint(x:Double.nan,y:0)),.init(modelID:"a",normalized:.zero)])
         XCTAssertNil(projection.nearest(to:.zero,admittedIDs:["a"]) {$0})
