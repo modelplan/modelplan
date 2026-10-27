@@ -91,7 +91,7 @@ The App's Settings offer "Install for Claude Code" and "Install for Codex". When
 ## 8. Open items
 
 - The X Subscription: both the Cursor and Grok Build readers can see the shared pool, but no provider ID proves two readings are the same seat yet. Until a verified common ID or link exists, they stay separate and labelled "shared-pool link unverified", never summed (FEEDFIX design note).
-- Claude Code session fields (`effort`, `usage.speed` on disk) are unconfirmed by a first-party source; the passive reader treats them as optional and stays beta until a sanitised fixture confirms them.
+- Claude Code session fields: confirmed on the owner's machine on 2026-10-27 with a sanitised probe (field names and short enums only): assistant records carry top-level `effort` (e.g. `high`), `message.model` and `message.usage.speed` (`standard`/`fast`). The passive reader still treats them as optional, because older records may lack them.
 - ZCode: no decryption of its encrypted credential store in v1.
 - Codex desktop app session-log location (M2 audit) for the passive path.
 - Privacy page and in-app consent wording, reviewed by the owner before the first credential-reading release.
