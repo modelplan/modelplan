@@ -117,6 +117,22 @@ import XCTest
         view.mouseMoved(with:event);XCTAssertEqual(events.count,3)
         view.stop();XCTAssertTrue(view.trackingAreas.isEmpty)
     }
+    func testHelpCancellationCannotDispatchAfterHostStopsOrReplacesContext() throws {
+        for replace in [false,true] {
+            let view = CockpitPortholeView();try view.configure(state());view.setPresentationAllowed(true)
+            var opens = 0;view.onEnlargeRequest = {_ in opens += 1;return true}
+            view.onHelpInput = { input in
+                guard case .cancelled = input else { return }
+                if replace { try? view.configure(self.state(ids:["b"])) } else { view.stop() }
+                XCTAssertFalse(view.requestEnlarge())
+            }
+            let event = NSEvent.mouseEvent(with:.mouseMoved,location:CGPoint(x:50,y:50),modifierFlags:[],timestamp:1,windowNumber:0,context:nil,eventNumber:0,clickCount:0,pressure:0)!
+            view.mouseEntered(with:event)
+            XCTAssertFalse(view.requestEnlarge(trigger:.field,atLocalPoint:CGPoint(x:50,y:50)))
+            XCTAssertEqual(opens,0);XCTAssertFalse(view.opening)
+            view.stop()
+        }
+    }
     func testInvalidProjectionDoesNotCreateFocusAndConfigurationFailsAtomically() throws {
         let projection = CockpitRocketProjection(captureID:"c",stillKey:"s",points:[.init(modelID:"a",normalized:CGPoint(x:Double.nan,y:0)),.init(modelID:"a",normalized:.zero)])
         XCTAssertNil(projection.nearest(to:.zero,admittedIDs:["a"]) {$0})

@@ -79,6 +79,7 @@ public struct CockpitPortholeState {
     private var allowed = false
     private var openingGesture:CockpitPortholeGesture?
     private var fieldTracking:NSTrackingArea?,hovering = false
+    private var stateRevision:UInt64 = 0,dispatching = false
     public override init(frame:NSRect) {
         super.init(frame:frame);setAccessibilityElement(true);setAccessibilityRole(.button);setAccessibilityIdentifier("cockpit.field")
     }
@@ -91,14 +92,16 @@ public struct CockpitPortholeState {
               r.width>0,r.height>0,root.contains(r),state.admittedModelIDs.count<=256,
               Set(state.admittedModelIDs).count==state.admittedModelIDs.count,
               state.admittedModelIDs.allSatisfy({!$0.isEmpty && $0.utf8.count<=1024}),state.accessibilityLabel.utf8.count<=4096,!state.locale.isEmpty,state.locale.utf8.count<=64 else { throw CockpitSurfaceError.invalidGeometry }
-        if self.state?.imageRect != state.imageRect || self.state?.locale != state.locale || self.state?.closed != state.closed || self.state?.interactive != state.interactive || self.state?.rendererAvailable != state.rendererAvailable || self.state?.accessibilityLabel != state.accessibilityLabel || self.state?.still?.key != state.still?.key || self.state?.still?.captureID != state.still?.captureID { cancelHelp(.layoutChange) }
+        let cancel = self.state?.imageRect != state.imageRect || self.state?.locale != state.locale || self.state?.closed != state.closed || self.state?.interactive != state.interactive || self.state?.rendererAvailable != state.rendererAvailable || self.state?.accessibilityLabel != state.accessibilityLabel || self.state?.still?.key != state.still?.key || self.state?.still?.captureID != state.still?.captureID
+        stateRevision &+= 1
         self.state = state;frame.size = state.size;setAccessibilityLabel(state.accessibilityLabel);setAccessibilityHelp(state.helpText)
         updateTrackingAreas();invalidateFieldCursor()
+        if cancel { cancelHelp(.layoutChange) }
         // Refreshing metadata must not reset an already accepted opening.
     }
-    public func setPresentationAllowed(_ allowed:Bool) { self.allowed = allowed;if !allowed { cancelHelp(.focusLoss) };invalidateFieldCursor() }
+    public func setPresentationAllowed(_ allowed:Bool) { if self.allowed != allowed { stateRevision &+= 1 };self.allowed = allowed;if !allowed { cancelHelp(.focusLoss) };invalidateFieldCursor() }
     public func setEnlarged(_ enlarged:Bool) { opening = enlarged;if !enlarged { openingGesture = nil } else { cancelHelp(.pointerDown) };invalidateFieldCursor() }
-    public func stop() { cancelHelp(.teardown);allowed = false;opening = false;openingGesture = nil;state = nil;updateTrackingAreas();invalidateFieldCursor() }
+    public func stop() { cancelHelp(.teardown);stateRevision &+= 1;allowed = false;opening = false;openingGesture = nil;state = nil;updateTrackingAreas();invalidateFieldCursor() }
     private var admitted:Bool { allowed && !isHiddenOrHasHiddenAncestor && state?.closed==false && state?.interactive==true && state?.rendererAvailable==true }
     public var pointingHandRect:CGRect? { admitted && !opening ? state?.imageRect:nil }
     public func helpTargets()->[CockpitHelpTarget] {
@@ -137,7 +140,9 @@ public struct CockpitPortholeState {
     /// The existing zoom key can call the same route. No field runtime is constructed here.
     @discardableResult public func requestEnlarge(trigger:CockpitPortholeTrigger = .zoom,atLocalPoint:CGPoint? = nil,
                                                   gesture:CockpitPortholeGesture? = nil)->Bool {
-        guard admitted,!opening,let state,let onEnlargeRequest else { return false }
+        guard admitted,!opening,!dispatching,let state,onEnlargeRequest != nil else { return false }
+        dispatching = true;defer { dispatching = false }
+        let revision = stateRevision
         var focus:String?
         if let point = atLocalPoint {
             guard point.x.isFinite,point.y.isFinite,state.imageRect.contains(point),containsFieldPoint?(point) != false else { return false }
@@ -150,7 +155,9 @@ public struct CockpitPortholeState {
             }
         }
         // Latch before calling the host so reentrant, double-click and key paths cannot double-open.
-        cancelHelp(.pointerDown);opening = true;openingGesture = gesture;invalidateFieldCursor()
+        cancelHelp(.pointerDown)
+        guard revision==stateRevision,admitted,!opening,let onEnlargeRequest else { return false }
+        opening = true;openingGesture = gesture;invalidateFieldCursor()
         let accepted = onEnlargeRequest(.init(focusModelID:focus,captureID:state.still?.captureID,trigger:trigger,gesture:gesture))
         if !accepted { opening = false;openingGesture = nil;invalidateFieldCursor() }
         return accepted
