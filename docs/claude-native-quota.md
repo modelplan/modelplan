@@ -39,7 +39,11 @@ Profile account/org IDs and credential generations are stored only as
 domain-separated keyed hashes using ModelPlan's existing installation identity key.
 Public readings carry an opaque subscription reference. The raw account/org IDs
 are not stored. Stable identity metadata lives for at most 24 hours and is bound
-to the credential. A changed credential invalidates that binding before use.
+to the credential. A changed credential invalidates that binding before expiry/scope validation,
+including expired or missing-scope replacements. Same-token validation failures
+retain the original capture age; malformed or unavailable file bindings cannot
+inherit another account. Keychain Deny/timeout keeps the last good capture as
+required by the separate confirmation policy above.
 
 ## Requests and quota shapes
 
@@ -71,13 +75,18 @@ wallet or zero balance.
 ## Cache, cadence and verification
 
 A cross-process provider reservation enforces a five-minute floor across all
-profiles and callers. Unchanged readings adapt to 10/15/30 minutes; failures back
+profiles and callers, including Forget, reconnect, new grant generations and
+process restarts. The separate non-personal reservation
+`observed/reader-attempts/claude.json` contains only its next permitted attempt
+time; purging personal readings must preserve it. Unchanged readings adapt to 10/15/30 minutes; failures back
 off to 10/20/40/60 minutes and honor a longer Retry-After. Native readers share the
 existing serialization lock. Failures preserve the last good account and its
 capture time, except that a changed credential cannot inherit an unverified old
 identity. Cache projections drop windows whose reset has passed. Duplicate
 profiles with a verified common subscription reference show the newest reading.
 The cache projection performs no tool-file reads, HTTP, subprocess or refresh.
+Effective source/account JSON emits `beta:true` on success, stale captures and
+unavailable results until real-account acceptance; CLIJIT must preserve this label.
 
 Tests use synthetic credential files and an `httptest` server only. Keychain tests
 inject fast success, a child process killed on deadline and Deny exit codes;

@@ -94,14 +94,21 @@ func claudeLoginUnsupported(root string) bool {
 }
 
 func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	meta := r.Previous.Metadata
+	changed := meta.CredentialKey != ""
+	fail := func(state, notice string) readerOutcome {
+		out := claudeFailure(state, notice)
+		out.Invalidate = changed
+		return out
+	}
 	if claudeLoginUnsupported(r.Profile.Root) {
-		return claudeFailure("unavailable", "This Claude Code login type is not supported yet")
+		return fail("unavailable", "This Claude Code login type is not supported yet")
 	}
 	b, status := readBounded(filepath.Join(r.Profile.Root, ".credentials.json"), 64<<10)
 	if status == "missing" {
 		profiles := claudeProfiles()
 		if !r.Grant.Keychain || len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
-			return claudeFailure("unavailable", "No supported Claude Code saved login")
+			return fail("unavailable", "No supported Claude Code saved login")
 		}
 		k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
 			Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
@@ -112,25 +119,24 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		b, status = k.Value, ""
 	}
 	if status != "" {
-		return claudeFailure("unavailable", "Claude Code saved login is unreadable")
+		return fail("unavailable", "Claude Code saved login is unreadable")
 	}
 	var credential claudeCredential
 	if json.Unmarshal(b, &credential) != nil || credential.OAuth == nil {
-		return claudeFailure("unavailable", "This Claude Code login type is not supported yet")
+		return fail("unavailable", "This Claude Code login type is not supported yet")
 	}
 	oauth := credential.OAuth
+	credentialKey := readerHash(r.Paths.Cache, "claude:credential", oauth.AccessToken)
+	changed = meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
 	if oauth.AccessToken == "" || len(oauth.AccessToken) > 16<<10 || strings.ContainsAny(oauth.AccessToken, "\r\n") || oauth.ExpiresAt <= r.Now.UnixMilli() {
-		return claudeFailure("expired", "Open Claude Code to refresh")
+		return fail("expired", "Open Claude Code to refresh")
 	}
 	if !contains(oauth.Scopes, "user:profile") {
-		return claudeFailure("unavailable", "This Claude Code login scope is not supported yet")
+		return fail("unavailable", "This Claude Code login scope is not supported yet")
 	}
-	credentialKey := readerHash(r.Paths.Cache, "claude:credential", oauth.AccessToken)
 	if credentialKey == "" {
-		return claudeFailure("unavailable", "Identity key unavailable")
+		return fail("unavailable", "Identity key unavailable")
 	}
-	meta := r.Previous.Metadata
-	changed := meta.CredentialKey != "" && meta.CredentialKey != credentialKey
 	cold := meta.CredentialKey != credentialKey || meta.AccountKey == "" || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
 	var binding *Binding
 	if cold {
