@@ -18,6 +18,8 @@ ModelPlan answers from live, checkable public data, on the web and inside Claude
 
 ## Why ModelPlan
 
+[Choose an entry point: Mac App, plugins or Skill](docs/product-surfaces.md).
+
 Most leaderboards compare every model at its **top** setting. But inside one model, going from Low to Max often costs several times more and takes several times longer, for a few points of ability. What you actually run is a model *at an effort*.
 
 - **★ Recommended effort.** Every model gets its best-value effort, and you see exactly what one more step up buys (`+4.8 ability`) and costs (`×1.37`).
@@ -71,14 +73,14 @@ Ask Codex to *"Open the ModelPlan dashboard"*. Needs Node.js 22+, found automati
 </details>
 
 <details>
-<summary><b>modelplan CLI</b>: a single static binary for macOS, Linux and Windows</summary>
+<summary><b>modelplan CLI</b>: a single static binary for macOS and Linux</summary>
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
 modelplan lineup --dev anthropic
 ```
 
-Windows: download from [Releases](https://github.com/modelplan/modelplan/releases). With Go: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. The Skill and plugins use it when it is installed and work without it. [More](cli/)
+With Go: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. The Skill and plugins use it when it is installed and work without it. [More](cli/)
 
 </details>
 

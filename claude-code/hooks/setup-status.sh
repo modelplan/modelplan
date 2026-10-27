@@ -9,6 +9,7 @@ ago() { # minutes since a file changed
   echo $(( ($(date +%s) - t) / 60 ))
 }
 echo "plugin: modelplan $(plugin_version) (answering: this check ran)"
+sh "$here/automatic-hints.sh" status
 cli=$(sh "$here/find-cli.sh" "$min_cli")
 why=$(fetch_error)
 if [ -z "$cli" ]; then
@@ -29,7 +30,7 @@ if m=$(ago "$snap"); then
 elif grep -q 'modelplan statusline' "$(settings_file)" 2>/dev/null; then
   echo "statusline: set in $(settings_file), no reading recorded yet (it records once the interactive status line renders)"
 else
-  echo "statusline: not set up (quota hints need it; /modelplan:statusline)"
+  echo "statusline: optional display, not set up (/modelplan:statusline); Claude quota needs an available local snapshot; automatic detection is coming"
 fi
 # Other plans read through CodexBar (optional): the CLI reports its own config and cache.
 if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" 0.5.13; then
@@ -48,10 +49,12 @@ if m=$(ago "$state/hook-ran"); then
 else echo "hook: has not run yet (it runs when you send a message; disabled hooks or a managed policy stop it)"; fi
 recent statusline-declined 90 && echo "declined: statusline"
 r=$(head -1 "$state/hook-result" 2>/dev/null)
-if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" "$min_cli" && [ -f "$state/hook-ran" ]; then
+if [ "$(cat "$HOME/.config/modelplan/claude-code/automatic-hints" 2>/dev/null)" = off ]; then
+  echo "hints: off by choice; commands and the optional status line still work"
+elif [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" "$min_cli" && [ -f "$state/hook-ran" ]; then
   case $r in
     failed*) echo "hints: failing (the last run could not compute them; the next message retries)" ;;
-    ok) if [ -f "$snap" ]; then echo "hints: computed on the last run (quota hints and the task-start brief)"; else echo "hints: task-start brief computed; quota hints wait for the status line"; fi ;;
+    ok) echo "hints: computed on the last run; missing quota readings remain unknown" ;;
     *) echo "hints: not verified yet (send a message, then check again)" ;;
   esac
 else

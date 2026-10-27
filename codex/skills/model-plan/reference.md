@@ -6,7 +6,7 @@ Read the lookup section for every query. Read time-of-use or personal state only
 
 Default origin: `https://modelplan.ai`. The Skill does not scrape vendors, require a key, or use the old `/v1/explore` and `/v1/recommendations` paths. Fetch only what the question needs, keep responses for the current answer, and report HTTP/schema failures rather than interpreting an error body as data. Use bounded requests and at most one retry of a failed read.
 
-Check `command -v modelplan` (else `~/.local/bin/modelplan`, where its installer puts it; Homebrew's `bin` too) and `modelplan --help`. CLI commands:
+Check `command -v modelplan` (else `~/.local/bin/modelplan` or `~/.cache/modelplan-cli/modelplan`; Homebrew's `bin` too) and `modelplan --help`. CLI commands:
 
 ```sh
 modelplan sync
@@ -122,10 +122,10 @@ Run exactly one of:
 
 ```sh
 modelplan quota --json                              # when the CLI advertises `quota`
-python3 '<this skill directory>/scripts/quota.py'   # otherwise; standard library only
+python3 '<this skill directory>/scripts/quota.py'   # deprecated fallback during CLI auto-detection transition
 ```
 
-Both print the same report and read only:
+The CLI returns readings supported by the installed release. Today Claude Code quota is available only from a snapshot recorded by the optional ModelPlan status line; automatic detection is coming. Without that snapshot, report Claude Code quota as unknown. The deprecated Python fallback reads the local files below and has fewer sources:
 
 | Source | File | Notes |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ Measured speed (CLI 0.5.23+, not in the Skill reader): `modelplan history --json
 
 How the user turns readings on, when they ask or when it would change the advice:
 
-- **Claude Code**: install the ModelPlan plugin and run `/modelplan:statusline` (or set `"statusLine": {"type": "command", "command": "<full path>/modelplan statusline"}`; the full path, because Claude Code may run it with a shorter PATH). A user who keeps their own status line can record without displaying: `input=$(cat); printf %s "$input" | <full path>/modelplan statusline --record-only` at the top of their script. To show the user a sample line, use `statusline --preview` (CLI 0.5.6+), which records nothing.
+- **Claude Code**: the current CLI reads the local snapshot recorded by `modelplan statusline`; automatic detection is coming. The status line remains optional. Offer `/modelplan:statusline` only if the user wants it, explaining that without a recorded snapshot their Claude Code quota is unknown today. Public model/effort advice and other sources still work. The deprecated Python fallback reads that same snapshot; neither reader currently detects a Claude sign-in automatically.
 - **Codex**: nothing to set up. Readings appear after the first turn of a ChatGPT-login session.
 - **Other plans**: create `~/.config/modelplan/local.json` with the schema below. Do not create or overwrite it unless asked.
 

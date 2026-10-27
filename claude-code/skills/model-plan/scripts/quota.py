@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Read the user's own usage windows from files the harnesses already write on this machine.
+"""Deprecated: temporary fallback until CLI auto-detection lands; prefer modelplan quota.
+
+Read the user's own usage windows from files the harnesses already write on this machine.
 
 Sources (read-only; nothing is sent anywhere):
   - Codex: token_count rate_limits in the recent $CODEX_HOME/sessions/**/rollout-*.jsonl, merged
