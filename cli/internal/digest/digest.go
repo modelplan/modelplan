@@ -104,6 +104,7 @@ type MultiplierHorizon struct {
 }
 type Digest struct {
 	publication       publicationFields
+	CLIUpdate         json.RawMessage    `json:"cli,omitempty"` // optional verified update pin; decoded only by explicit update
 	PublicationID     string             `json:"publicationId"`
 	ProjectionVersion string             `json:"projectionVersion,omitempty"`
 	Multipliers       []MultiplierWindow `json:"multipliers"`
