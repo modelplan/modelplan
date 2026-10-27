@@ -20,7 +20,7 @@ import (
 // wire contract (github/copilot-sdk, 538675843887643ce471c874a3a9870ebda3f6f4).
 // Authentication stays with the installed runtime. No session, turn, login, token import,
 // credential-file read/write, or inferred entitlement is needed.
-var copilotReader = &nativeReader{Regions: []string{"local"}, Fetch: fetchCopilot}
+var copilotReader = &nativeReader{Regions: []string{"local"}, Collect: collectCopilot, Fetch: fetchCopilot}
 
 var copilotBin = func() string {
 	if p := os.Getenv("MODELPLAN_COPILOT"); p != "" && filepath.IsAbs(p) {
@@ -30,18 +30,20 @@ var copilotBin = func() string {
 	return p
 }
 
-const copilotFallback = "; use modelplan connect copilot --backend codexbar for the separately configured bridge"
+type copilotRPCError struct{ state string }
+
+func (e *copilotRPCError) Error() string { return copilotNext(e.state) }
 
 func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Time) codexbarEntry {
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	bin := copilotBin()
 	if bin == "" {
-		e.Error = "Copilot runtime not found" + copilotFallback
+		e.Error = copilotNext("not_detected")
 		return e
 	}
 	raw, err := askCopilot(ctx, bin)
 	if err != nil {
-		e.Error = err.Error() + copilotFallback
+		e.Error = err.Error()
 		return e
 	}
 	return parseCopilot(raw, now)
@@ -52,6 +54,7 @@ func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "--headless", "--no-auto-update", "--stdio")
 	cmd.Stderr = io.Discard
+	cmd.Env = copilotEnvironment(os.Environ())
 	cmd.WaitDelay = time.Second
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -62,7 +65,7 @@ func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
 		return nil, errors.New("Copilot output unavailable")
 	}
 	if cmd.Start() != nil {
-		return nil, errors.New("Copilot runtime did not start")
+		return nil, &copilotRPCError{"not_detected"}
 	}
 	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	raw, err := copilotQuotaRPC(out, in)
@@ -100,7 +103,14 @@ func copilotQuotaRPC(out io.Reader, in io.Writer) (json.RawMessage, error) {
 				continue
 			}
 			if m.Error != nil {
-				return nil, m.Error.Code, errors.New("Copilot quota RPC unavailable (runtime capability or sign-in)")
+				state := "upstream_changed"
+				if m.Error.Code == -32601 {
+					state = "not_supported_yet"
+				}
+				if m.Error.Code == 401 || m.Error.Code == 403 {
+					state = "expired_login"
+				}
+				return nil, m.Error.Code, &copilotRPCError{state}
 			}
 			if len(m.Result) == 0 || string(m.Result) == "null" {
 				return nil, 0, errors.New("empty Copilot reply")
@@ -122,7 +132,24 @@ func copilotQuotaRPC(out io.Reader, in io.Writer) (json.RawMessage, error) {
 	if json.Unmarshal(handshake, &protocol) != nil || protocol.Version != 3 {
 		return nil, errors.New("unsupported Copilot runtime protocol (expected 3)")
 	}
-	raw, _, err := call(3, "account.getQuota")
+	auth, _, err := call(3, "auth.getStatus")
+	if err != nil {
+		return nil, err
+	}
+	var status struct {
+		Authenticated bool   `json:"isAuthenticated"`
+		Type          string `json:"authType"`
+	}
+	if json.Unmarshal(auth, &status) != nil {
+		return nil, &copilotRPCError{"upstream_changed"}
+	}
+	if !status.Authenticated {
+		return nil, &copilotRPCError{"expired_login"}
+	}
+	if status.Type != "user" {
+		return nil, &copilotRPCError{"not_supported_yet"}
+	}
+	raw, _, err := call(4, "account.getQuota")
 	return raw, err
 }
 
@@ -173,44 +200,69 @@ func parseCopilot(raw json.RawMessage, now time.Time) codexbarEntry {
 		e.Error = "unreadable Copilot quota reply"
 		return e
 	}
-	q := r.Snapshots["premium_interactions"]
-	if q == nil {
-		e.Error = "Copilot premium-request quota unavailable"
+	for _, pool := range []string{"premium_interactions", "chat", "completions"} {
+		q := r.Snapshots[pool]
+		if q == nil || (q.Used == nil && q.Limit == nil && q.Remaining == nil && !q.Unlimited) {
+			continue
+		}
+		w := Window{Kind: "unknown", Limit: pool, ResetMode: "fixed", ObservedAt: now.UTC()}
+		// A missing field is unknown. Zero entitlement is not 100% remaining; -1 is unlimited.
+		if q.Used != nil && *q.Used >= 0 {
+			w.Requests = &RequestUsage{Used: q.Used}
+		}
+		if q.Limit != nil && *q.Limit > 0 && !q.Unlimited {
+			if w.Requests == nil {
+				w.Requests = &RequestUsage{}
+			}
+			w.Requests.Limit = q.Limit
+			if p := finite(q.Remaining, 0, 100); p != nil {
+				used := 100 - *p
+				w.UsedPercent = &used
+			} else if w.Requests.Used != nil {
+				used := float64(*q.Used) / float64(*q.Limit) * 100
+				w.UsedPercent = &used
+			}
+		} else if q.Unlimited || (q.Limit != nil && *q.Limit == -1) {
+			if w.Requests == nil {
+				w.Requests = &RequestUsage{}
+			}
+			w.Requests.Unlimited = true
+		}
+		if t, err := time.Parse(time.RFC3339, q.Reset); err == nil {
+			t = t.UTC()
+			w.ResetsAt = &t
+			// The SDK gives a reset date but no cycle length. Do not guess monthly.
+			if !t.After(now) {
+				continue
+			}
+		}
+		if w.UsedPercent == nil {
+			if w.Requests == nil {
+				w.Requests = &RequestUsage{}
+			}
+			w.Requests.Reason = "missing_entitlement_or_usage"
+		}
+		e.Windows = append(e.Windows, w)
+	}
+	if len(e.Windows) == 0 {
+		e.Error = copilotNext("not_supported_yet")
 		return e
 	}
-	w := Window{Kind: "monthly", Limit: "premium_interactions", ResetMode: "fixed", ObservedAt: now.UTC()}
-	// A missing field is unknown. Zero entitlement is not 100% remaining; -1 is unlimited.
-	if q.Used != nil && *q.Used >= 0 {
-		w.Requests = &RequestUsage{Used: q.Used}
-	}
-	if q.Limit != nil && *q.Limit > 0 && !q.Unlimited {
-		if w.Requests == nil {
-			w.Requests = &RequestUsage{}
-		}
-		w.Requests.Limit = q.Limit
-		if p := finite(q.Remaining, 0, 100); p != nil {
-			used := 100 - *p
-			w.UsedPercent = &used
-		} else if w.Requests.Used != nil {
-			used := float64(*q.Used) / float64(*q.Limit) * 100
-			w.UsedPercent = &used
-		}
-	} else if q.Unlimited || (q.Limit != nil && *q.Limit == -1) {
-		if w.Requests == nil {
-			w.Requests = &RequestUsage{}
-		}
-		w.Requests.Unlimited = true
-	}
-	if t, err := time.Parse(time.RFC3339, q.Reset); err == nil {
-		t = t.UTC()
-		w.ResetsAt = &t
-	}
-	if w.UsedPercent == nil {
-		if w.Requests == nil {
-			w.Requests = &RequestUsage{}
-		}
-		w.Requests.Reason = "missing_entitlement_or_usage"
-	}
-	e.Status, e.Windows = "ok", []Window{w}
+	e.Status = "ok"
 	return e
+}
+
+// Do not import GitHub CLI/SDK tokens from the caller's environment. Proxy and
+// runtime-home settings are inherited; the installed runtime owns its sign-in.
+func copilotEnvironment(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "COPILOT_GITHUB_TOKEN", "COPILOT_SDK_AUTH_TOKEN", "NODE_DEBUG":
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
