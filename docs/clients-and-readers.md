@@ -88,12 +88,12 @@ The App's Settings offer "Install for Claude Code" and "Install for Codex". When
 
 **Must hold before the first credential-reading release**
 1. **Consent scope:** one consent covers ModelPlan on this macOS user account: the App, the plugins and every CLI copy, because they share the data directory. The consent text says so.
-2. **Privacy levels:** Settings and `connect` offer **Automatic** (the default: detected tools, including credential-based readers) and **Passive only** (no credential reads: Codex app-server, session logs, the optional Claude Code status line, explicit keys). Cautious users and managed Macs keep working without credential reads. `MODELPLAN_READERS=passive|off` enforces the same.
+2. **Privacy levels (owner-approved 2026-10-27):** Settings and `connect` offer **Automatic** (the default: detected tools, including credential-based readers) and **Passive only** (no credential reads: Codex app-server, session logs, the optional Claude Code status line, explicit keys). Cautious users and managed Macs keep working without credential reads. `MODELPLAN_READERS=passive|off` enforces the same.
 3. **Keychain prompt UX:** the consent page warns that macOS will ask once per tool. A "Deny" marks that tool denied and is never re-prompted automatically; the user can retry from Settings.
 4. **Plans without quota windows:** API-key / pay-as-you-go use and team or enterprise pools the user cannot see are shown as "pay-as-you-go" or "managed by your organisation", never as 0% or 100%.
 5. **Several accounts per provider:** personal and work logins (several `CLAUDE_CONFIG_DIR`s, Codex profiles) are separate subscriptions with their own keyed refs and user aliases.
 6. **Proxies:** an App launched from Finder has no proxy environment. The App passes the system proxy settings to the CLI; the CLI honours them for provider and publication calls.
-7. **Beta label:** a reader stays "beta" in the UI and the catalogue until it has been verified on a real account (the owner's or an opted-in tester's). Beta readers still respect every safeguard.
+7. **Beta label (owner-approved 2026-10-27):** a reader stays "beta" in the UI and the catalogue until it has been verified on a real account (the owner's or an opted-in tester's). Beta readers still respect every safeguard.
 8. **Failure display:** no tool detected, denied, expired login, unsupported, estimated and stale are distinct states, each with one next step. A broken reader never shows a guessed number.
 9. **Notices and legal:** CodexBar (MIT) and any Pulse-derived logic (Apache-2.0) are listed in `THIRD-PARTY-NOTICES.md` and the App's About → Licences. The privacy page is updated and reviewed by the owner.
 
@@ -106,6 +106,6 @@ The App's Settings offer "Install for Claude Code" and "Install for Codex". When
 
 **Later**
 15. Linux credential stores (Secret Service) for tools that use them; Linux keeps file-based and passive sources first.
-16. A mainland-China-reachable mirror of the publication, if users in China report sync failures (to verify).
+16. A China-reachable mirror of the publication (China and the US are the main markets), if users in China report sync failures (to verify).
 17. Team/enterprise admin readers, only if a provider offers a member-visible endpoint.
 18. Keep terms distinct: the App's red threshold is a level (remaining ≤ threshold); the CLI's "tight" is a pace (on track to run out before the reset). Both appear consistently in the App, the hints and the docs.
