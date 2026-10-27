@@ -22,13 +22,31 @@ type Entry struct {
 	ReaderID    string `json:"readerId"`
 	Preferred   string `json:"preferred"`
 	CodexBar    struct {
-		Audited bool `json:"audited"`
+		Audited bool   `json:"audited"`
+		Access  string `json:"access,omitempty"`
 	} `json:"codexbar"`
 	MinCLI          string            `json:"minCli"`
 	Beta            bool              `json:"beta"`
 	DetectionStatus string            `json:"detectionStatus"`
 	Signals         []json.RawMessage `json:"signals"`
 }
+
+// HelperStatus is independent per provider. A checksum/audit flag alone cannot
+// opt an older client into an unknown access class.
+func (e Entry) HelperStatus() string {
+	if !e.CodexBar.Audited {
+		return "codexbar-not-audited"
+	}
+	switch e.CodexBar.Access {
+	case "standard", "browser-session":
+		return ""
+	case "not-read":
+		return "codexbar-not-read"
+	default:
+		return "codexbar-access-unknown"
+	}
+}
+
 type Signal struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`

@@ -69,6 +69,13 @@ func Run(c *Catalogue, e Env, version, source string) Report {
 		if entry.DetectionStatus == "no-safe-signal" {
 			t.Status = "no-safe-signal"
 		}
+		if entry.Preferred == "codexbar" {
+			if reason := entry.HelperStatus(); reason != "" {
+				t.Preferred = "off"
+				t.Status = reason
+				t.NextStep = "not yet supported"
+			}
+		}
 		r.Tools = append(r.Tools, t)
 	}
 	return r
