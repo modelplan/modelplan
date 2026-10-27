@@ -73,14 +73,14 @@ Ask Codex to *"Open the ModelPlan dashboard"*. Needs Node.js 22+, found automati
 </details>
 
 <details>
-<summary><b>modelplan CLI</b>: a single static binary for macOS, Linux and Windows</summary>
+<summary><b>modelplan CLI</b>: a single static binary for macOS and Linux</summary>
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
 modelplan lineup --dev anthropic
 ```
 
-Windows: download from [Releases](https://github.com/modelplan/modelplan/releases). With Go: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. The Skill and plugins use it when it is installed and work without it. [More](cli/)
+With Go: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. The Skill and plugins use it when it is installed and work without it. [More](cli/)
 
 </details>
 
