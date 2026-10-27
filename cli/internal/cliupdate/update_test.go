@@ -15,9 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fixtureTransport func(*http.Request) (*http.Response, error)
+
+const previousFixture = "#!/bin/sh\necho 'modelplan 0.5.40'\n"
 
 func (f fixtureTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
@@ -91,7 +94,7 @@ func fixtureTarget(t *testing.T) (string, string) {
 	if err := os.MkdirAll(filepath.Dir(exe), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(exe, []byte("previous verified CLI"), 0700); err != nil {
+	if err := os.WriteFile(exe, []byte(previousFixture), 0700); err != nil {
 		t.Fatal(err)
 	}
 	return home, exe
@@ -125,7 +128,7 @@ func TestUpdateUsesPublishedPinAndKeepsPreviousBinary(t *testing.T) {
 				t.Fatalf("wrong binary: %q %v", b, err)
 			}
 			b, err = os.ReadFile(exe + ".previous")
-			if err != nil || string(b) != "previous verified CLI" {
+			if err != nil || string(b) != previousFixture {
 				t.Fatalf("previous binary lost: %q %v", b, err)
 			}
 			if _, err := os.Stat(exe + ".update.lock"); !os.IsNotExist(err) {
@@ -170,7 +173,7 @@ func TestFailedUpdateKeepsBinaryAndCatalogue(t *testing.T) {
 			if err == nil {
 				t.Fatal("bad update accepted")
 			}
-			for file, want := range map[string]string{exe: "previous verified CLI", catalogue: "verified catalogue fixture"} {
+			for file, want := range map[string]string{exe: previousFixture, catalogue: "verified catalogue fixture"} {
 				b, e := os.ReadFile(file)
 				if e != nil || string(b) != want {
 					t.Fatalf("last verified file changed: %s %q %v", file, b, e)
@@ -249,5 +252,126 @@ func TestPinValidationVersionSkewCancellationAndLock(t *testing.T) {
 	}
 	if !newer("0.5.40", "0.5.40-dev") || newer("0.5.39", "0.5.40") {
 		t.Fatal("version comparison failed")
+	}
+}
+
+func TestVersionPrecedenceIgnoresBuildMetadata(t *testing.T) {
+	for _, v := range []struct {
+		target, current string
+		want            bool
+	}{
+		{"1.2.2", "1.2.3+local", false},
+		{"1.2.3", "1.2.3+local", false},
+		{"1.2.3", "v1.2.3+local-with-hyphen", false},
+		{"1.2.4", "1.2.3+local", true},
+		{"1.2.3", "1.2.3-dev+local", true},
+		{"1.2.2", "1.2.3-dev+local", false},
+	} {
+		if got := newer(v.target, v.current); got != v.want {
+			t.Errorf("newer(%q,%q)=%t, want %t", v.target, v.current, got, v.want)
+		}
+	}
+}
+
+func TestStaleProcessRechecksInstalledVersionUnderLock(t *testing.T) {
+	for _, installed := range []string{"9.9.9", "9.9.9+local", "9.9.9+local-with-hyphen", "10.0.0+local"} {
+		t.Run(installed, func(t *testing.T) {
+			home, exe := fixtureTarget(t)
+			// The probe must execute under the shared replacement lock, not
+			// trust the stale version compiled into the running process.
+			body := []byte("#!/bin/sh\n[ -e \"$0.update.lock\" ] || exit 79\necho 'modelplan " + installed + "'\n")
+			if err := os.WriteFile(exe, body, 0700); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.Stat(exe)
+			archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+			r, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+				t.Fatal("newer destination fetched an older pin")
+				return nil, nil
+			})
+			if err != nil || r.Status != "up_to_date" || r.Current != installed {
+				t.Fatal(r, err)
+			}
+			after, _ := os.Stat(exe)
+			b, _ := os.ReadFile(exe)
+			if !bytes.Equal(b, body) || !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
+				t.Fatal("equal/newer destination changed")
+			}
+			entries, err := os.ReadDir(filepath.Dir(exe))
+			if err != nil || len(entries) != 1 {
+				t.Fatal("skip left a lock, backup or stage", entries, err)
+			}
+		})
+	}
+}
+
+func TestDestinationChangedDuringDownloadIsKept(t *testing.T) {
+	home, exe := fixtureTarget(t)
+	archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+	body := []byte("#!/bin/sh\necho 'modelplan 10.0.0+local'\n")
+	_, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+		// Simulate an older installer that has not learned the shared lock.
+		other := exe + ".concurrent"
+		if err := os.WriteFile(other, body, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(other, exe); err != nil {
+			t.Fatal(err)
+		}
+		return io.NopCloser(bytes.NewReader(archive)), nil
+	})
+	if !errors.Is(err, ErrTargetChanged) {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(exe); !bytes.Equal(b, body) {
+		t.Fatal("downgraded concurrent replacement")
+	}
+	if _, err := os.Stat(exe + ".previous"); !os.IsNotExist(err) {
+		t.Fatal("backup changed before destination revalidation")
+	}
+}
+
+func TestUnverifiableTargetVersionNeverFetchesOrReplaces(t *testing.T) {
+	for _, script := range []string{"echo 'modelplan unknown'", "echo 'modelplan 0.5.40'; exit 1", "printf '%0600d\\n' 0"} {
+		t.Run(script, func(t *testing.T) {
+			home, exe := fixtureTarget(t)
+			body := []byte("#!/bin/sh\n" + script + "\n")
+			os.WriteFile(exe, body, 0700)
+			archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+			_, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+				t.Fatal("unverified target fetched")
+				return nil, nil
+			})
+			if !errors.Is(err, ErrTargetVersion) {
+				t.Fatal(err)
+			}
+			if b, _ := os.ReadFile(exe); !bytes.Equal(b, body) {
+				t.Fatal("unverified target replaced")
+			}
+		})
+	}
+}
+
+func TestTargetProbeHonoursDeadlineAndSkillLock(t *testing.T) {
+	home, exe := fixtureTarget(t)
+	archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+	pin := fixturePin("linux/arm64", archive)
+	noFetch := func(context.Context, string) (io.ReadCloser, error) { t.Fatal("unexpected fetch"); return nil, nil }
+	if err := os.Mkdir(exe+".update.lock", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", pin, noFetch); !errors.Is(err, ErrBusy) {
+		t.Fatal("Skill directory lock ignored", err)
+	}
+	if err := os.Remove(exe + ".update.lock"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\nwhile :; do :; done\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := Apply(ctx, exe, home, "0.5.40", "linux/arm64", pin, noFetch); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("probe exceeded caller deadline", err)
 	}
 }

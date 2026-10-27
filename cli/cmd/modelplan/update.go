@@ -74,7 +74,7 @@ func updateCmd(args []string, stdout, stderr io.Writer, c common) int {
 		if result.Status == "updated" {
 			fmt.Fprintln(stdout, "Updated CLI; previous binary kept / CLI 已更新并保留上一个副本:", result.Target)
 		} else {
-			fmt.Fprintln(stdout, "CLI is current or newer / CLI 已是当前或更新版本:", version)
+			fmt.Fprintln(stdout, "CLI is current or newer / CLI 已是当前或更新版本:", result.Current)
 		}
 	}
 	if err != nil {

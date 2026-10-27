@@ -80,7 +80,8 @@ func TestUpdateConsumesOnlyVerifiedPublicationPin(t *testing.T) {
 			srv, _ := publicationServer(t, &f)
 			t.Setenv("MODELPLAN_BASE", srv.URL)
 			exe := filepath.Join(t.TempDir(), "modelplan")
-			if err := os.WriteFile(exe, []byte("previous CLI fixture"), 0700); err != nil {
+			previous := []byte("#!/bin/sh\necho 'modelplan 0.5.40'\n")
+			if err := os.WriteFile(exe, previous, 0700); err != nil {
 				t.Fatal(err)
 			}
 			oldExecutable, oldFetch := updateExecutable, fetchCLIUpdate
@@ -106,7 +107,7 @@ func TestUpdateConsumesOnlyVerifiedPublicationPin(t *testing.T) {
 				if kind == "bad-checksum" {
 					wantCalls = 1
 				}
-				if code == 0 || calls != wantCalls || string(b) != "previous CLI fixture" {
+				if code == 0 || calls != wantCalls || !bytes.Equal(b, previous) {
 					t.Fatalf("invalid update changed executable: exit=%d calls=%d stderr=%s binary=%q", code, calls, stderr.String(), b)
 				}
 			}

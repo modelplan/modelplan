@@ -5,6 +5,7 @@ package cliupdate
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -25,15 +27,18 @@ import (
 )
 
 var (
-	ErrNoPin    = errors.New("verified publication has no CLI update pin yet")
-	ErrPin      = errors.New("invalid CLI update pin in the verified publication")
-	ErrManaged  = errors.New("plugin- or App-managed CLI copies must be updated by their owner")
-	ErrPlatform = errors.New("no published CLI checksum for this platform")
-	ErrChecksum = errors.New("CLI archive checksum mismatch; current binary kept")
-	ErrArchive  = errors.New("invalid CLI release archive; current binary kept")
-	ErrBusy     = errors.New("another CLI update is running")
-	versionRE   = regexp.MustCompile(`^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$`)
-	hashRE      = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	ErrNoPin           = errors.New("verified publication has no CLI update pin yet")
+	ErrPin             = errors.New("invalid CLI update pin in the verified publication")
+	ErrManaged         = errors.New("plugin- or App-managed CLI copies must be updated by their owner")
+	ErrPlatform        = errors.New("no published CLI checksum for this platform")
+	ErrChecksum        = errors.New("CLI archive checksum mismatch; current binary kept")
+	ErrArchive         = errors.New("invalid CLI release archive; current binary kept")
+	ErrBusy            = errors.New("another CLI update is running")
+	ErrTargetVersion   = errors.New("cannot verify the installed CLI version; current binary kept")
+	ErrTargetChanged   = errors.New("CLI destination changed during update; current binary kept")
+	versionRE          = regexp.MustCompile(`^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$`)
+	installedVersionRE = regexp.MustCompile(`^v?(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+	hashRE             = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 const (
@@ -186,6 +191,31 @@ func Apply(ctx context.Context, executable, home, current, platform string, pin 
 	}
 	lock.Close()
 	defer os.Remove(target + ".update.lock")
+	// The running process can be older than the file another updater installed
+	// while it discovered its pin. Inspect the destination under the shared lock.
+	resolved, err := Target(executable, home)
+	if err != nil {
+		return r, err
+	}
+	if resolved != target {
+		return r, ErrTargetChanged
+	}
+	installedInfo, err := os.Stat(target)
+	if err != nil {
+		return r, ErrTargetChanged
+	}
+	installed, err := targetVersion(ctx, target)
+	if err != nil {
+		return r, err
+	}
+	if !unchanged(target, installedInfo) {
+		return r, ErrTargetChanged
+	}
+	r.Current = installed
+	if !newer(pin.Latest, installed) {
+		r.Status = "up_to_date"
+		return r, nil
+	}
 	stage, err := os.MkdirTemp(filepath.Dir(target), ".modelplan-update-")
 	if err != nil {
 		return r, errors.New("cannot stage CLI update")
@@ -225,6 +255,11 @@ func Apply(ctx context.Context, executable, home, current, platform string, pin 
 	if err := ctx.Err(); err != nil {
 		return r, err
 	}
+	// Cooperating installers hold the same lock. Also refuse an unexpected
+	// replacement by an older installer that does not yet implement the lock.
+	if !unchanged(target, installedInfo) {
+		return r, ErrTargetChanged
+	}
 	backup := filepath.Join(stage, "previous")
 	if err := copyBinary(target, backup); err != nil {
 		return r, errors.New("cannot preserve previous CLI")
@@ -253,8 +288,10 @@ func Apply(ctx context.Context, executable, home, current, platform string, pin 
 }
 
 func newer(target, current string) bool {
+	// SemVer build metadata has no precedence, even when it contains a hyphen.
+	current = strings.SplitN(strings.TrimPrefix(current, "v"), "+", 2)[0]
 	prerelease := strings.Contains(current, "-")
-	current = strings.SplitN(strings.TrimPrefix(current, "v"), "-", 2)[0]
+	current = strings.SplitN(current, "-", 2)[0]
 	if !versionRE.MatchString(current) {
 		return true
 	}
@@ -267,6 +304,44 @@ func newer(target, current string) bool {
 		}
 	}
 	return prerelease
+}
+
+func unchanged(target string, before os.FileInfo) bool {
+	after, err := os.Stat(target)
+	return err == nil && os.SameFile(before, after) && before.Size() == after.Size() && before.ModTime().Equal(after.ModTime())
+}
+
+// Only the installed CLI is executed, with the fixed version command. Bound
+// time/output, discard stderr and never execute an unactivated archive candidate.
+func targetVersion(ctx context.Context, target string) (string, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(probeCtx, target, "version")
+	var out versionOutput
+	cmd.Stdout = &out
+	cmd.Stderr = io.Discard
+	cmd.WaitDelay = 100 * time.Millisecond
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "", ErrTargetVersion
+	}
+	fields := strings.Fields(out.String())
+	if len(fields) != 2 || fields[0] != "modelplan" || !installedVersionRE.MatchString(fields[1]) {
+		return "", ErrTargetVersion
+	}
+	return strings.TrimPrefix(fields[1], "v"), nil
+}
+
+type versionOutput struct{ data bytes.Buffer }
+
+func (b *versionOutput) String() string { return b.data.String() }
+func (b *versionOutput) Write(p []byte) (int, error) {
+	if len(p) > 512-b.data.Len() {
+		return 0, ErrTargetVersion
+	}
+	return b.data.Write(p)
 }
 
 func copyBinary(src, dst string) error {
