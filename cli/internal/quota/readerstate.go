@@ -38,6 +38,7 @@ type readerMetadata struct {
 	OrganizationKey string             `json:"organizationKey,omitempty"`
 	VerifiedAt      time.Time          `json:"verifiedAt,omitempty"`
 	Plan            string             `json:"plan,omitempty"`
+	ScopeKey        string             `json:"scopeKey,omitempty"`
 	PlanDetails     *readerPlanDetails `json:"planDetails,omitempty"`
 }
 
