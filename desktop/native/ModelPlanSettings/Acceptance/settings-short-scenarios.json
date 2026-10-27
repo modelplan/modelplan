@@ -1,0 +1,381 @@
+{
+  "catalogVersion": 1,
+  "source": {
+    "nativeBaseRevision": "f48e497aeeb1f2cd62338db9ed78023ac1736fce",
+    "contract": "settings.task65"
+  },
+  "requiredRuntimeBindings": [
+    "fixtureHash",
+    "sourceRevision",
+    "appRevision",
+    "cliRevision",
+    "visualRevision",
+    "toolchain",
+    "os",
+    "hardware",
+    "profile"
+  ],
+  "fixtures": [
+    {
+      "id": "m4-settings-0",
+      "path": "Fixtures/settings-0.json",
+      "sha256": "b8dbe56342aa4d03d24804e87f63224e74db67cc38356df51f6ce3b3c4732c65",
+      "subscriptionCount": 0
+    },
+    {
+      "id": "m4-settings-1",
+      "path": "Fixtures/settings-1.json",
+      "sha256": "85d21acd12ce05ef612830e7b75b0dd6c48d98c6fee07611cbe9ab5d5b75b461",
+      "subscriptionCount": 1
+    },
+    {
+      "id": "m4-settings-6",
+      "path": "Fixtures/settings-6.json",
+      "sha256": "200f7759df76d6ea17938c2f3c77b7a2b67ba4a8556d468c53e79ed5fe4d1c57",
+      "subscriptionCount": 6
+    }
+  ],
+  "profiles": [
+    {
+      "id": "en-day-1x-logical",
+      "locale": "en",
+      "theme": "day",
+      "scale": 1,
+      "physicalTopologyEstablished": false
+    },
+    {
+      "id": "zh-day-1x-logical",
+      "locale": "zh-CN",
+      "theme": "day",
+      "scale": 1,
+      "physicalTopologyEstablished": false
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "settings.panes",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "offscreen",
+      "expectedGate": "paneMembership",
+      "steps": [
+        {
+          "action": "visitPane",
+          "pane": "general"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.general"
+        },
+        {
+          "action": "visitPane",
+          "pane": "dock"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.dock"
+        },
+        {
+          "action": "visitPane",
+          "pane": "cockpit"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.cockpit"
+        },
+        {
+          "action": "visitPane",
+          "pane": "appearance"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.appearance"
+        },
+        {
+          "action": "visitPane",
+          "pane": "subscriptions"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.subscriptions"
+        },
+        {
+          "action": "visitPane",
+          "pane": "notifications"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.notifications"
+        },
+        {
+          "action": "visitPane",
+          "pane": "privacy"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.privacy"
+        },
+        {
+          "action": "visitPane",
+          "pane": "about"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.about"
+        }
+      ]
+    },
+    {
+      "id": "settings.search",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "offscreen",
+      "expectedGate": "searchFilter",
+      "steps": [
+        {
+          "action": "visitPane",
+          "pane": "dock"
+        },
+        {
+          "action": "search",
+          "value": "login"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "search.english"
+        },
+        {
+          "action": "search",
+          "value": "登录"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "search.chinese"
+        },
+        {
+          "action": "search",
+          "value": ""
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "search.cleared"
+        }
+      ]
+    },
+    {
+      "id": "settings.popups",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "offscreen",
+      "expectedGate": "localPopupCommit",
+      "steps": [
+        {
+          "action": "visitPane",
+          "pane": "appearance"
+        },
+        {
+          "action": "choosePopup",
+          "key": "theme",
+          "value": "night"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "popup.theme"
+        },
+        {
+          "action": "choosePopup",
+          "key": "motion",
+          "value": "on"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "popup.motion"
+        },
+        {
+          "action": "visitPane",
+          "pane": "dock"
+        },
+        {
+          "action": "choosePopup",
+          "key": "size",
+          "value": "L"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "popup.size"
+        }
+      ]
+    },
+    {
+      "id": "settings.alias-cancel",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "offscreen",
+      "expectedGate": "aliasCancelNoCommit",
+      "steps": [
+        {
+          "action": "visitPane",
+          "pane": "subscriptions"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "alias.before"
+        },
+        {
+          "action": "beginAliasDraft",
+          "value": "Transient synthetic draft"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "alias.draft"
+        },
+        {
+          "action": "cancelAliasDraft"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "alias.cancelled"
+        }
+      ]
+    },
+    {
+      "id": "first-run.structure",
+      "revision": 1,
+      "fixture": "m4-settings-0",
+      "profile": "en-day-1x-logical",
+      "evidence": "offscreen",
+      "expectedGate": "firstRunReady",
+      "steps": [
+        {
+          "action": "prepareFirstRun"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "first-run.ready"
+        }
+      ],
+      "fixtureVariants": [
+        "m4-settings-1",
+        "m4-settings-6"
+      ]
+    },
+    {
+      "id": "settings.command-comma.human",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "humanInput",
+      "expectedGate": "hostCommandComma",
+      "steps": [
+        {
+          "action": "awaitHuman",
+          "instruction": "In the actual host, press Command-comma once. Do not call showWindow or a menu target as a substitute for the key input."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "command-comma.open"
+        },
+        {
+          "action": "awaitHuman",
+          "instruction": "Confirm the owned Settings window is key and its search field receives typing; close normally."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "command-comma.closed"
+        }
+      ]
+    },
+    {
+      "id": "settings.popup-escape.human",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "humanInput",
+      "expectedGate": "nativePopupEscape",
+      "steps": [
+        {
+          "action": "awaitHuman",
+          "instruction": "In Settings Appearance, open the Theme popup using the real keyboard or pointer. Record actual menu tracking in the caller-owned runner."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "popup.menu-open"
+        },
+        {
+          "action": "awaitHuman",
+          "instruction": "Press Escape to dismiss the menu. Confirm the choice and store revision did not change and focus returns to that control."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "popup.menu-cancelled"
+        }
+      ]
+    },
+    {
+      "id": "settings.ime-cancel.human",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "zh-day-1x-logical",
+      "evidence": "humanInput",
+      "expectedGate": "imeCancelNoCommit",
+      "steps": [
+        {
+          "action": "awaitHuman",
+          "instruction": "With an already configured Chinese IME, focus the fixture alias and enter marked text without committing it. Record actual input; changing the app locale is not IME proof."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "ime.marked"
+        },
+        {
+          "action": "awaitHuman",
+          "instruction": "Cancel composition using the IME, then cancel the edit with Escape. Do not use setMarkedText or an AliasDraft model call as physical-input evidence."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "ime.cancelled"
+        }
+      ]
+    },
+    {
+      "id": "first-run.focus.human",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "humanInput",
+      "expectedGate": "firstRunKeyboardOrder",
+      "steps": [
+        {
+          "action": "awaitHuman",
+          "instruction": "Use the actual host first-run entry with this same fixture store. Check the initial reader control, Tab through readers/login/Done/Help and back, respecting disabled controls."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "first-run.keyboard-order"
+        }
+      ]
+    },
+    {
+      "id": "settings.voiceover.human",
+      "revision": 1,
+      "fixture": "m4-settings-1",
+      "profile": "en-day-1x-logical",
+      "evidence": "humanInput",
+      "expectedGate": "voiceOver",
+      "steps": [
+        {
+          "action": "awaitHuman",
+          "instruction": "With VoiceOver already configured by the owner, traverse the eight panes and a search result, then one popup/current value. Record real speech/focus observations; do not enable OS features automatically."
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "settings.voiceover"
+        }
+      ]
+    }
+  ]
+}

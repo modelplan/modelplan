@@ -22,8 +22,14 @@ public struct StaticDockGeometry {
 
 /// Self-test host. Reuses the Dock projection/edge controller and the application's one feed/store.
 /// No working effects, entrance animation, global input monitor, reader activation or service registration.
-@MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionSurface, NSMenuDelegate {
+@MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionVisibility, NSMenuDelegate {
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
+    public private(set) var isVisible = false
+    public var visibilityChanged: (() -> Void)?
+    private func reportVisibility(_ visible: Bool) {
+        guard visible != isVisible else { return }
+        isVisible = visible; visibilityChanged?()
+    }
     public var showConsole: (() -> Void)?
     public var showSettings: (() -> Void)?
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -207,7 +213,7 @@ public struct StaticDockGeometry {
     }
     private func present(_ value: DockEdgePresentation) {
         guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); return }
+        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); reportVisibility(false); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
@@ -217,11 +223,12 @@ public struct StaticDockGeometry {
         case .sliver:
             try? sliver.apply(image: nil, logicalSize: frame.size, scale: 1, accessibilityLabel: "Show Dock / 显示挂件")
             content = sliver
-        case .suppressed: panel.orderOut(nil); return
+        case .suppressed: panel.orderOut(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); dockView.menu = content.menu
         panel.setFrame(frame, display: true); panel.orderFrontRegardless()
+        reportVisibility(panel.isVisible)
     }
     private func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
@@ -289,6 +296,7 @@ public struct StaticDockGeometry {
         edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
         dockView.dispose(); sliver.dispose(); card.dispose()
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
+        reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil
     }
 }

@@ -23,6 +23,7 @@ actor FakeCLI: CLITransport {
     var personal: Data, publication: Data
     var delay: UInt64 = 1_000_000
     var offline = false, warning = false, ignoreCancellation = false
+    var refreshError: TransportError?, refreshExit: Int32 = 0
     init(_ personal: Data, _ publication: Data) { self.personal = personal; self.publication = publication }
     func configure(offline: Bool = false, warning: Bool = false, delay: UInt64 = 1_000_000, ignoreCancellation: Bool = false) {
         self.offline = offline; self.warning = warning; self.delay = delay; self.ignoreCancellation = ignoreCancellation
@@ -30,9 +31,14 @@ actor FakeCLI: CLITransport {
     func execute(_ command: CLICommand) async throws -> CommandResult {
         calls.append(command); active += 1; peak = max(peak, active); defer { active -= 1 }
         if ignoreCancellation { try? await Task.sleep(nanoseconds: delay) } else { try await Task.sleep(nanoseconds: delay) }
+        if command == .refreshAccount {
+            if let refreshError { throw refreshError }
+            return CommandResult(exitCode: refreshExit, stdout: Data())
+        }
         if offline && command != .desktop { return CommandResult(exitCode: 3, stdout: Data()) }
         return CommandResult(exitCode: 0, stdout: command == .desktop ? personal : publication, warning: warning)
     }
+    func failRefresh(_ error: TransportError? = nil, exitCode: Int32 = 0) { refreshError = error; refreshExit = exitCode }
     func setPersonal(_ data: Data) { personal = data }
     func setPublication(_ data: Data) { publication = data }
     func stats() -> ([CLICommand], Int) { (calls, peak) }
@@ -154,6 +160,7 @@ actor FakeCLI: CLITransport {
         passed("app-owned preferences and native window role policy")
         count += try await additionalChecks()
         count += try await lifecycleChecks()
+        count += try await accountRefreshChecks()
         print("\(count) contract groups passed; synthetic, no visual/minimum-runtime/performance claim")
     }
 }
@@ -183,6 +190,9 @@ func processChecks() async throws {
     let args = try await argsTransport.execute(.desktop)
     let argv = try JSONDecoder().decode([String].self, from: args.stdout)
     try require(argv == ["desktop","--json","--read-only"] && args.warning && args.stderrTruncated, "fixed readonly args/stderr cap")
+    let refreshArgs = try await argsTransport.execute(.refreshAccount)
+    try require(try JSONDecoder().decode([String].self, from: refreshArgs.stdout) == ["quota", "--refresh-account", "--quiet"], "fixed synchronous account refresh arguments")
+    try require(CLICommand.refreshAccount.timeout == 20, "bounded account refresh timeout")
     let bundle = dir.appendingPathComponent("Synthetic.app"), helpers = bundle.appendingPathComponent("Contents/Helpers"), resources = bundle.appendingPathComponent("Contents/Resources")
     try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
@@ -199,6 +209,7 @@ func processChecks() async throws {
     let start = ContinuousClock.now
     do { _ = try await slow.execute(.desktop); throw CheckFailure(message: "timeout accepted") } catch TransportError.timeout {}
     try require(start.duration(to: .now) < .seconds(2), "bounded kill/reap")
+    do { _ = try await slow.execute(.refreshAccount); throw CheckFailure(message: "refresh timeout accepted") } catch TransportError.timeout {}
     let pidFile = dir.appendingPathComponent("owned-child.pid")
     let cancelling = ProcessCLITransport(executable: exe, environment: ["MODE":"slow","PIDFILE":pidFile.path])
     let task = Task { try await cancelling.execute(.desktop) }

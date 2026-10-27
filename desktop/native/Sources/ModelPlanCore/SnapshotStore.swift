@@ -40,6 +40,9 @@ public struct StoreDiagnostics: Sendable {
     private var timer: Timer?
     private var generation = 0
     private var suspended = true
+    private var surfacesVisible = false
+    private var accountRefreshDue: TimeInterval = 0
+    private static let accountRefreshInterval: TimeInterval = 300
     private var desktopDue: TimeInterval = .infinity, publicationDue: TimeInterval = .infinity
     private var knownDeadline: Date?
     private var expiryRefreshNeeded = false
@@ -51,6 +54,15 @@ public struct StoreDiagnostics: Sendable {
     }
     deinit { timer?.invalidate(); worker?.cancel() }
     public func start() { guard suspended else { return }; resume() }
+    /// Hosts report actual Dock (including its sliver) or cockpit visibility, independently of OS pauses.
+    /// A visibility change never clears sleep/lock suspension or resets the attempt spacing.
+    public func setSurfacesVisible(dock: Bool, cockpit: Bool) {
+        let visible = dock || cockpit
+        guard visible != surfacesVisible else { return }
+        surfacesVisible = visible
+        if visible, !suspended { enqueue(.desktop); kick() }
+        arm()
+    }
     public func refresh() {
         guard !suspended else { return }
         enqueue(.desktop); enqueue(.publicationOffline); enqueue(.publication); kick()
@@ -78,7 +90,7 @@ public struct StoreDiagnostics: Sendable {
     public func tick() {
         guard !suspended else { return }
         _ = view()
-        if time.elapsed >= desktopDue || expiryRefreshNeeded { enqueue(.desktop); expiryRefreshNeeded = false }
+        if time.elapsed >= desktopDue || expiryRefreshNeeded || (surfacesVisible && time.elapsed >= accountRefreshDue) { enqueue(.desktop); expiryRefreshNeeded = false }
         if time.elapsed >= publicationDue { enqueue(.publication) }
         onChange?(); kick(); arm()
     }
@@ -111,9 +123,22 @@ public struct StoreDiagnostics: Sendable {
         diagnostics.childRunning = true
         worker = Task { [weak self, transport, decoder] in
             do {
+                try Task.checkCancellation()
+                // Check visibility at execution time: presentation can resume after kick() queued
+                // this worker. Both commands keep the same slot, including cancellation/reaping.
+                if command == .desktop, let self, self.surfacesVisible,
+                   self.time.elapsed >= self.accountRefreshDue {
+                    self.accountRefreshDue = self.time.elapsed + Self.accountRefreshInterval
+                    do { _ = try await transport.execute(.refreshAccount) } catch { /* Best effort. */ }
+                    try Task.checkCancellation()
+                }
+                if command == .desktop, let self { self.desktopDue = self.time.elapsed + 60 }
                 let result = try await transport.execute(command)
                 try Task.checkCancellation()
                 switch command {
+                case .refreshAccount:
+                    // Refresh output is never a feed; the desktop worker invokes it above.
+                    break
                 case .desktop:
                     guard result.exitCode == 0 else { throw FeedError.malformed("desktop-exit") }
                     let value = try await decoder.personal(result.stdout)
@@ -161,6 +186,7 @@ public struct StoreDiagnostics: Sendable {
         guard automaticTimers, !suspended else { return }
         // Pending work owns past cadence deadlines; completion re-arms them. Never poll a slow child.
         var delays = [desktopDue - time.elapsed, publicationDue - time.elapsed].filter { $0 > 0 && $0.isFinite }
+        if surfacesVisible, accountRefreshDue > time.elapsed { delays.append(accountRefreshDue - time.elapsed) }
         if let deadline = view()?.presentation.nextDeadline {
             let delay = deadline.timeIntervalSince(time.wall)
             if delay > 0 { delays.append(delay) }
