@@ -262,7 +262,9 @@ public struct StaticDockGeometry {
     }
     private func acceptsInstrumentAction(from view: DockInstrumentView, source: DockActionSource) -> Bool {
         guard !createsNativePanels || view.superview === container else { return false }
-        return edge.acceptsPress(keyboardOrAccessibility: source == .accessibility)
+        guard edge.acceptsPress(keyboardOrAccessibility: source == .accessibility) else { return false }
+        // The gate samples current geometry and can synchronously switch the displayed edge.
+        return !createsNativePanels || view.superview === container
     }
     private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
     private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
