@@ -156,6 +156,9 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		return e
 	}
 	local := transport.Clone()
+	// This RPC is bound to a verified loopback listener. Supplied system/proxy
+	// policy must not route its nonce through a proxy or block the local dial.
+	local.Proxy = nil
 	baseDial := local.DialContext
 	if baseDial == nil {
 		baseDial = (&net.Dialer{Timeout: nativeTimeout}).DialContext

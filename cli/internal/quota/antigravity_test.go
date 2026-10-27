@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -221,5 +222,38 @@ func TestAntigravityNativeFailureGenerationAndLegacyRecovery(t *testing.T) {
 	}
 	if r := ReadAntigravityCache(ctxB, cache, now.Add(10*time.Minute)); r.Reading != nil || r.Availability != "expired_login" {
 		t.Fatal(r)
+	}
+}
+
+func TestAntigravityVerifiedLoopbackBypassesSuppliedProxy(t *testing.T) {
+	isolateHome(t)
+	localCalls, proxyCalls, verifications := 0, 0, 0
+	desc, _ := antigravityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		localCalls++
+		if r.Header.Get("X-Codeium-Csrf-Token") != "csrf-canary" {
+			t.Error("local nonce missing")
+		}
+		_, _ = w.Write([]byte(antigravityFixture))
+	})
+	antigravityVerify = func(context.Context, AntigravityServer) error { verifications++; return nil }
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyCalls++
+		http.Error(w, "proxy must not receive local RPC", 502)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxyURL)
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: nativeTimeout}
+	e := fetchAntigravity(WithAntigravityServer(context.Background(), desc), client, "", "", now)
+	if e.Status != "ok" || localCalls != 1 || proxyCalls != 0 || verifications != 2 {
+		t.Fatalf("entry=%+v local=%d proxy=%d verification=%d", e, localCalls, proxyCalls, verifications)
+	}
+	if transport.Proxy == nil {
+		t.Fatal("caller transport was mutated")
 	}
 }
