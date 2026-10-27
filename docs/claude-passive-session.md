@@ -1,58 +1,72 @@
-# Passive Claude Code session state (beta)
+# Passive Claude session adapter (beta, draft)
 
-The native session collector reads Claude Code's own `projects/**/*.jsonl` under
-the locally admitted `~/.claude` or `CLAUDE_CONFIG_DIR` root. It needs neither a
-plugin nor a status line. It never opens credentials, contacts a provider, launches
-Claude, changes its settings or uses inference.
+This PR is stacked on `cli/readers-local-history` / PR228 at the coordinator's
+request. It contains no independent file walker, cursor, offset cache or log
+collector. `ProjectClaudeSessions` reuses `localusage.HistoryAccess` and projects
+bounded transient record batches into model/effort/Fast plus keyed session and
+observation metadata. It performs no file/credential/Keychain/process/network I/O.
 
-The owner confirmed these fields with a sanitised probe on 2026-10-27:
+## Exact READERS API gap
 
-| Session field | ModelPlan field |
-| --- | --- |
-| `message.model` | `harness.model` |
-| Top-level `effort` | `harness.effort` |
-| `message.usage.speed` (`standard` / `fast`) | `harness.fastMode` (`false` / `true`) |
+PR228 currently exports `RefreshHistory`, `ReadHistoryCache`,
+`ForgetHistoryProfile`, and the count-oriented `HistoryAccess/HistoryRow/HistoryResult`
+types. `historyDepth("claude")` is unsupported; `historyAllowed`, `decodeHistory`,
+`historyCursor` and its atomic commit logic are private and fixed to seven history
+providers. `HistoryRow` carries day/model/token counts, not effort, nullable Fast,
+source session selection or a sanitized custom snapshot.
 
-All three are optional for older records. Missing or unknown values stay unknown;
-the reader does not inherit an older turn's values or infer speed from
-`service_tier`. It ignores `inference_geo`, `iterations`, message content, cwd and
-project labels. The committed owner-confirmed fixture contains exactly the
-confirmed fields; other fixtures add invented transcript envelopes for testing.
-No real transcripts were accessed for development or tests.
+The adapter needs READERS to export a bounded append/decoder seam that:
 
-Each source keeps its newest assistant record. Sidechain, metadata and compact
-summary records, `subagents` directories and `agent-*.jsonl` are excluded. Selection
-uses record timestamps, falling back to file modification time for older records
-without a timestamp. The most recent main session is marked **recent-thread**;
-an explicitly named cached session is **current-thread**. These labels describe
-the transcript source; they do not assert which OAuth account owns the session.
-With multiple quota accounts the session remains a separate unbound local entry.
+- admits approved main Claude transcript paths and supplies the filename session
+  selector/profile scope without persisting raw paths;
+- feeds new complete rows and explicitly marks bounded discovery/recovery uncertainty;
+- allows a sanitized session-state snapshot (and only minimal keyed technical
+  decoder/frontier state) to commit atomically with its cursor;
+- preserves old capture age on incomplete/unreadable input and supports a bounded
+  local-state cadence independent of network quota gates;
+- retains existing byte-count, restart, truncation/replacement, privacy and
+  revocation guarantees.
 
-The ModelPlan cache stores only model/effort/fast, capture time, keyed session and
-source identities, and the minimal file-identity/offset checkpoint needed to read
-appends. It contains no raw session IDs, content, paths or project names. Project
-labels are not collected even when the optional label preference permits them.
-The installation's existing identity key supplies domain-separated HMACs; raw
-device/inode identifiers are also hashed before persistence.
+Until that API exists, this PR stays draft and has no collector/cache integration.
+It does not patch READERS-owned files or invent a second cursor. Retarget to main
+once PR228 merges; wire the adapter only after the exported contract is agreed.
+The original standalone cursor has been removed.
 
-Reads after the first use the committed byte offset, including after a process
-restart. Truncation or replacement resets the cursor and uses a bounded tail.
-An incomplete final row waits for its newline. Initial/recovery reads inspect at
-most 256 KiB per file, 128 files and 4,096 directory entries; larger or partial
-views are reported as **partial**. Directory discovery inspects names/metadata,
-never performs a full transcript-content rescan, and never follows symlinks.
-The collector currently requires Unix device/inode metadata (macOS/Linux).
+## Projection contract
 
-CLIJIT calls `RefreshClaudeSessions` with a trusted `ClaudeSessionAccess` after
-shared consent. A missing grant or `MODELPLAN_READERS=off` blocks collection;
-Passive-only permits it. A consent-generation callback discards in-flight results
-after revocation. Ordinary `quota.Read`, including JSON rendering, reads only
-ModelPlan's sanitized session cache and never starts collection. A passive cached
-session replaces optional status-line harness fields, including with unknown
-values; the plugin/status line cannot override it. CLIJIT owns collector scheduling
-and consent wiring. No files in `cli/internal/speed` are changed.
+The owner confirmed top-level `effort`, `message.model`, and
+`message.usage.speed` on 2026-10-27. The committed minimal fixture has exactly those
+shapes; other usage keys are ignored. Missing/null/unknown fields independently
+remain unknown, including malformed optional values. Speed standard maps false;
+fast maps true. No service-tier/latency/preference inference is used. A minimal
+field fixture cannot establish a current/interactive session by itself.
 
-Tests cover the confirmed/older shapes, optional unknowns, newest/main/current
-selection, append-only offsets across collector calls, poisoned old spans that
-must not be rescanned, inode replacement, truncation, incomplete rows, bounded
-tail recovery, cached reads after transcript removal and absence of private data.
+Selection validates filename/header session agreement and source timestamps,
+reconstructs the selected main-chain leaf through transient UUID/parent UUIDs,
+and chooses its newest complete assistant record. Complete same-message streaming
+fragments are deduplicated; conflicting model/effort/Fast values become unknown
+independently. Later incomplete blocks do not freshen or splice the previous turn.
+Sidechains, agent/team workers, metadata/compaction, synthetic/error responses,
+SDK entrypoints and daemon sessions cannot displace an interactive recent thread.
+Unclassified origins cannot displace confirmed CLI/IDE/desktop origins. Explicit
+matching callers get current-thread; an unmatched caller is reported as such.
+A bounded/incomplete discovery cannot claim recent-thread. No file mtime or
+foreground-process inspection establishes activity.
+
+The session key is HMAC-SHA256 over the installation key, a versioned domain,
+opaque profile ref and session ID. Profiles cannot share a key accidentally.
+Raw IDs, ancestry, entrypoint/session-kind fields, content, cwd, titles, project
+names and other usage fields remain transient or are never decoded. No label is
+collected even if the optional project-label preference would permit it. The
+selected projection replaces optional plugin/status-line harness metadata as a
+whole, including clearing absent fields; optional snapshots cannot override it.
+Automatic and Passive-only are admitted; missing consent/denial/off fail closed.
+
+Protocol evidence is read-only: Anthropic SDK Python sessions.py at
+717cea09021fac3654879f0a362ed254a73ec35d and published TypeScript SDK 0.3.301.
+Their implementations are not copied or vendored. All records in tests are
+handwritten; no real transcript or credential was read. Tests cover the owner
+shape/older optional fields, branches/resumes, streaming duplicates/conflicts,
+SDK/daemon/worker exclusions, current versus recent/missing caller, timestamp
+and bounded uncertainty, HMAC isolation/privacy canaries and optional snapshots.
+Incremental I/O/atomic-commit acceptance remains blocked on the READERS seam above.

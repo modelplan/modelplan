@@ -233,7 +233,6 @@ func Read(p Paths, now time.Time) Report {
 	}
 	applyCodexBar(&r, p, now)
 	applyNative(&r, p, now)
-	applyClaudeSessions(&r, p.Cache, p.ClaudeSession)
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}

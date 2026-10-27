@@ -6,7 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-- Add the beta passive Claude Code session-state collector: current/recent thread model, effort and Fast state from local transcripts, with incremental offsets and keyed session identities. Missing fields remain unknown; no plugin or status line is required. Shared-consent scheduling is supplied by the CLI framework.
+- Add the beta Claude session-state projection adapter for owner-confirmed model/effort/Fast fields and keyed session selection. Collector integration remains pending the shared READERS append/snapshot interface; no independent cursor or plugin/status-line dependency.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
 

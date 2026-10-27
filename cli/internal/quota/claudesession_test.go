@@ -2,8 +2,8 @@ package quota
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,289 +13,201 @@ import (
 
 var claudeSessionNow = time.Date(2026, 10, 27, 20, 0, 0, 0, time.UTC)
 
-func TestClaudeSessionConfirmedFieldsAndOptionalOlderRows(t *testing.T) {
+func sessionAccess(t *testing.T) localusage.HistoryAccess {
+	t.Helper()
 	isolateHome(t)
-	key := bytes.Repeat([]byte{7}, 32)
+	t.Setenv("MODELPLAN_READERS", "")
+	return localusage.HistoryAccess{Allowed: true, Privacy: "automatic", ProfileRef: strings.Repeat("a", 64), Key: bytes.Repeat([]byte{7}, 32)}
+}
+func TestClaudeSessionConfirmedAndOptionalFields(t *testing.T) {
+	sessionAccess(t)
 	b, err := os.ReadFile(filepath.Join("testdata", "claude-sessions", "owner-confirmed.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	turn := parseClaudeSessionTurn(bytes.TrimSpace(b), key, "synthetic-session", claudeSessionNow, claudeSessionNow)
-	if turn == nil || turn.Model != "claude-opus-5-5" || turn.Effort != "high" || turn.Fast == nil || *turn.Fast {
-		t.Fatal("owner-confirmed fields not read")
+	f := parseClaudeSessionFields(b)
+	if f.Model != "claude-opus-5-5" || f.Effort != "high" || f.FastMode == nil || *f.FastMode {
+		t.Fatal("confirmed fields missing")
 	}
 	b, err = os.ReadFile(filepath.Join("testdata", "claude-sessions", "older-optional.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := bytes.Split(bytes.TrimSpace(b), []byte{'\n'})
-	for i, row := range rows {
-		turn = parseClaudeSessionTurn(row, key, "synthetic-session", claudeSessionNow, claudeSessionNow)
-		if turn == nil {
-			t.Fatal("optional fields rejected")
-		}
+	for i, row := range bytes.Split(bytes.TrimSpace(b), []byte{'\n'}) {
+		f = parseClaudeSessionFields(row)
 		switch i {
 		case 0:
-			if turn.Model != "claude-opus-5-5" || turn.Effort != "" || turn.Fast != nil {
-				t.Fatal("missing effort/speed guessed")
+			if f.Model != "claude-opus-5-5" || f.Effort != "" || f.FastMode != nil {
+				t.Fatal("optional values inferred")
 			}
 		case 1:
-			if turn.Model != "" || turn.Effort != "high" || turn.Fast == nil || *turn.Fast {
-				t.Fatal("missing model guessed")
+			if f.Model != "" || f.Effort != "high" || f.FastMode == nil || *f.FastMode {
+				t.Fatal("optional model inferred")
 			}
 		case 2:
-			if turn.Model != "" || turn.Effort != "" || turn.Fast != nil {
-				t.Fatal("unknown fields inherited")
+			if f.Model != "" || f.Effort != "" || f.FastMode != nil {
+				t.Fatal("unknown values inherited")
 			}
 		}
 	}
-}
-
-func sessionTestTree(t *testing.T) (string, string, ClaudeSessionAccess) {
-	t.Helper()
-	isolateHome(t)
-	t.Setenv("MODELPLAN_READERS", "")
-	cache := filepath.Join(t.TempDir(), "cache")
-	root := filepath.Join(t.TempDir(), "claude")
-	project := filepath.Join(root, "projects", "private-project-name")
-	if err := os.MkdirAll(project, 0o700); err != nil {
-		t.Fatal(err)
+	f = parseClaudeSessionFields([]byte(`{"effort":123,"message":{"model":"claude-opus-5-5","usage":"invalid"}}`))
+	if f.Model != "claude-opus-5-5" || f.Effort != "" || f.FastMode != nil {
+		t.Fatal("one malformed field discarded valid model")
 	}
-	return cache, project, ClaudeSessionAccess{Allowed: true, Root: root}
 }
-
-func writeSessionRow(t *testing.T, path, id, model, effort, speed string, at time.Time, appendRow bool, sidechain bool) {
-	t.Helper()
-	v := map[string]any{"type": "assistant", "timestamp": at.Format(time.RFC3339Nano), "sessionId": id, "isSidechain": sidechain, "effort": effort, "cwd": "/private/private-project-name", "message": map[string]any{"model": model, "content": []any{map[string]any{"type": "text", "text": "SYNTHETIC-MESSAGE-MUST-NOT-PERSIST"}}, "usage": map[string]any{"speed": speed, "service_tier": "not-a-speed-signal", "inference_geo": "not-a-model-signal", "iterations": []any{}}}}
+func sessionRow(id, parent, session, model, effort, speed string, at time.Time, extra map[string]any) []byte {
+	v := map[string]any{"type": "assistant", "uuid": id, "parentUuid": parent, "sessionId": session, "timestamp": at.Format(time.RFC3339Nano), "effort": effort, "message": map[string]any{"id": "message-" + id, "model": model, "role": "assistant", "stop_reason": "end_turn", "content": []any{map[string]any{"text": "PRIVATE-CONTENT-CANARY", "type": "text"}}, "usage": map[string]any{"speed": speed, "service_tier": "PRIVATE-TIER-CANARY", "inference_geo": "PRIVATE-GEO-CANARY", "iterations": []any{"PRIVATE-ITERATIONS-CANARY"}}}, "cwd": "/private/PRIVATE-PROJECT-CANARY", "title": "PRIVATE-TITLE-CANARY"}
+	for k, value := range extra {
+		v[k] = value
+	}
 	b, _ := json.Marshal(v)
-	b = append(b, '\n')
-	flags := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
-	if appendRow {
-		flags = os.O_CREATE | os.O_WRONLY | os.O_APPEND
-	}
-	f, err := os.OpenFile(path, flags, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = f.Write(b)
-	closeErr := f.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if closeErr != nil {
-		t.Fatal(closeErr)
-	}
-	if err := os.Chtimes(path, at, at); err != nil {
-		t.Fatal(err)
-	}
+	return b
 }
-
-func TestClaudeSessionsIncrementalNewestInteractiveAndPrivacy(t *testing.T) {
-	cache, project, access := sessionTestTree(t)
-	first := filepath.Join(project, "synthetic-session-a.jsonl")
-	second := filepath.Join(project, "synthetic-session-b.jsonl")
-	writeSessionRow(t, first, "synthetic-session-a", "claude-opus-5-5", "high", "standard", claudeSessionNow.Add(-time.Hour), false, false)
-	writeSessionRow(t, second, "synthetic-session-b", "claude-sonnet-4-6", "medium", "fast", claudeSessionNow.Add(-time.Minute), false, false)
-	subdir := filepath.Join(project, "subagents")
-	if err := os.MkdirAll(subdir, 0o700); err != nil {
-		t.Fatal(err)
+func sessionBatch(session, entrypoint string, at time.Time, model string) ClaudeSessionBatch {
+	header, _ := json.Marshal(map[string]any{"type": "system", "uuid": "root", "parentUuid": nil, "sessionId": session, "timestamp": at.Add(-time.Second).Format(time.RFC3339Nano), "entrypoint": entrypoint, "version": "2.1.301"})
+	return ClaudeSessionBatch{ExpectedSessionID: session, CompleteDiscovery: true, Records: [][]byte{header, sessionRow("assistant", "root", session, model, "high", "standard", at, nil)}}
+}
+func TestClaudeSessionInteractiveCurrentAndUnknownSelection(t *testing.T) {
+	a := sessionAccess(t)
+	old := sessionBatch("session-old", "cli", claudeSessionNow.Add(-time.Hour), "claude-opus-5-5")
+	newer := sessionBatch("session-new", "claude-vscode", claudeSessionNow.Add(-time.Minute), "claude-sonnet-4-6")
+	unknown := sessionBatch("session-unknown", "", claudeSessionNow, "claude-opus-5-5")
+	sdk := sessionBatch("session-sdk", "sdk-ts", claudeSessionNow, "claude-opus-5-5")
+	daemon := sessionBatch("session-daemon", "cli", claudeSessionNow, "claude-opus-5-5")
+	var h map[string]any
+	_ = json.Unmarshal(daemon.Records[0], &h)
+	h["sessionKind"] = "daemon-worker"
+	daemon.Records[0], _ = json.Marshal(h)
+	r := ProjectClaudeSessions(a, []ClaudeSessionBatch{old, newer, unknown, sdk, daemon}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-sonnet-4-6" || r.Selected.Attribution != "recent-thread" {
+		t.Fatal("unknown/headless session displaced interactive")
 	}
-	writeSessionRow(t, filepath.Join(subdir, "agent-private.jsonl"), "synthetic-sidechain", "claude-opus-5-5", "max", "fast", claudeSessionNow, false, true)
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	s, _ := loadClaudeSessions(cache)
-	if len(s.Files) != 2 {
-		t.Fatal("subagent was discovered")
-	}
-	r := Report{}
-	applyClaudeSessions(&r, cache, "")
-	if len(r.Accounts) != 1 || r.Accounts[0].Harness.Model != "claude-sonnet-4-6" || r.Accounts[0].Harness.Attribution != "recent-thread" {
-		t.Fatal("newest interactive session not selected")
-	}
-	before := map[string]int64{}
-	for _, cp := range s.Files {
-		before[cp.SourceKey] = cp.Offset
-	}
-	// Poison an already consumed span without changing its length or inode.
-	// A full rescan would publish this newer timestamp; an incremental read must
-	// preserve the original parsed turn and consume only appended bytes.
-	poison, err := os.ReadFile(second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	poison = bytes.ReplaceAll(poison, []byte("claude-sonnet-4-6"), []byte("claude-bogusx-4-6"))
-	poison = bytes.ReplaceAll(poison, []byte(claudeSessionNow.Add(-time.Minute).Format(time.RFC3339Nano)), []byte(claudeSessionNow.Add(time.Minute).Format(time.RFC3339Nano)))
-	if err := os.WriteFile(second, poison, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// A newer assistant row has unknown fields. It must clear older values rather
-	// than inherit or let an optional status-line source fill them in.
-	writeSessionRow(t, first, "synthetic-session-a", "", "", "", claudeSessionNow, true, false)
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	s, _ = loadClaudeSessions(cache)
-	advanced := 0
-	for _, cp := range s.Files {
-		if cp.Offset > before[cp.SourceKey] {
-			advanced++
-		}
-	}
-	if advanced != 1 {
-		t.Fatal("incremental offsets were rescanned or lost")
-	}
-	r = Report{Accounts: []Account{{Source: "claude-code", Harness: &Harness{Model: "optional-status-line-model", Effort: "max"}}}}
-	applyClaudeSessions(&r, cache, "")
-	h := r.Accounts[0].Harness
-	if h.Model != "" || h.Effort != "" || h.FastMode != nil || h.Attribution != "recent-thread" || len(h.SessionKey) != 64 {
-		t.Fatal("unknown session state overridden")
-	}
-	r = Report{}
-	applyClaudeSessions(&r, cache, "synthetic-session-b")
-	if r.Accounts[0].Harness.Attribution != "current-thread" || r.Accounts[0].Harness.Model != "claude-sonnet-4-6" {
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{old, newer}, "session-old", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Attribution != "current-thread" || r.Selected.Model != "claude-opus-5-5" {
 		t.Fatal("explicit session not selected")
 	}
-	// A cache-only projection remains usable after the transcript tree disappears.
-	if err := os.RemoveAll(access.Root); err != nil {
-		t.Fatal(err)
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{newer}, "missing", claudeSessionNow)
+	if !r.CallerMissing || r.Selected == nil || r.Selected.Attribution != "recent-thread" {
+		t.Fatal("missing caller relabelled current")
 	}
-	b1, _ := os.ReadFile(claudeSessionPath(cache))
-	r = Report{}
-	applyClaudeSessions(&r, cache, "")
-	b2, _ := os.ReadFile(claudeSessionPath(cache))
-	if len(r.Accounts) != 1 || !bytes.Equal(b1, b2) {
-		t.Fatal("cache projection touched collection")
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{unknown, sdk, daemon}, "", claudeSessionNow)
+	if r.Selected != nil {
+		t.Fatal("fabricated interactive attribution")
 	}
-	assertSessionCachePrivate(t, cache)
+	newer.CompleteDiscovery = false
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{newer}, "", claudeSessionNow)
+	if r.Selected != nil || r.Availability != "partial" {
+		t.Fatal("bounded uncertainty claimed recent")
+	}
+	assertClaudeProjectionPrivate(t, r)
 }
-
-type claudeFakeFileInfo struct {
-	os.FileInfo
-	sys any
+func TestClaudeSessionMainChainResumeAndStreamingConflicts(t *testing.T) {
+	a := sessionAccess(t)
+	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+	batch.Records = append(batch.Records, sessionRow("branch-a", "assistant", "session-main", "claude-sonnet-4-6", "low", "fast", claudeSessionNow.Add(-30*time.Second), nil))
+	// A resumed user leaf points back to the earlier main-chain assistant.
+	user, _ := json.Marshal(map[string]any{"type": "user", "uuid": "resume", "parentUuid": "assistant", "sessionId": "session-main", "timestamp": claudeSessionNow.Format(time.RFC3339Nano)})
+	batch.Records = append(batch.Records, user)
+	r := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-opus-5-5" {
+		t.Fatal("abandoned branch displaced resumed main chain")
+	}
+	batch.Records = append(batch.Records, sessionRow("reply", "resume", "session-main", "", "", "", claudeSessionNow, nil))
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "" || r.Selected.Effort != "" || r.Selected.FastMode != nil {
+		t.Fatal("newer missing fields inherited")
+	}
+	// Two complete blocks of the same message disagree only about effort/speed.
+	var first map[string]any
+	_ = json.Unmarshal(sessionRow("fragment-one", "reply", "session-main", "claude-opus-5-5", "high", "fast", claudeSessionNow, nil), &first)
+	first["message"].(map[string]any)["id"] = "shared-message"
+	one, _ := json.Marshal(first)
+	var second map[string]any
+	_ = json.Unmarshal(sessionRow("fragment-two", "fragment-one", "session-main", "claude-opus-5-5", "low", "standard", claudeSessionNow, nil), &second)
+	second["message"].(map[string]any)["id"] = "shared-message"
+	two, _ := json.Marshal(second)
+	batch.Records = append(batch.Records, one, two, two)
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-opus-5-5" || r.Selected.Effort != "" || r.Selected.FastMode != nil {
+		t.Fatal("streaming conflict guessed a value")
+	}
+	account := Account{Harness: &Harness{Model: "optional-plugin-model", Effort: "max"}}
+	applyClaudeSessionProjection(&account, r)
+	if account.Harness.Model != "claude-opus-5-5" || account.Harness.Effort != "" || account.Harness.FastMode != nil {
+		t.Fatal("optional snapshot overrode native unknowns")
+	}
+	assertClaudeProjectionPrivate(t, r)
 }
-
-func (f claudeFakeFileInfo) Sys() any { return f.sys }
-
-func TestClaudeSessionFileIdentityDarwinSignedDevice(t *testing.T) {
-	// Darwin's device field is signed, unlike Linux's. Both must support cursor
-	// replacement detection without persisting the underlying device/inode.
-	info := claudeFakeFileInfo{sys: &struct {
-		Dev int32
-		Ino uint64
-	}{Dev: 23, Ino: 42}}
-	if claudeSessionFileIdentity(info) != "17:2a" {
-		t.Fatal("Darwin file identity unavailable")
+func TestClaudeSessionExclusionsPrivacyAndScopedKeys(t *testing.T) {
+	a := sessionAccess(t)
+	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+	for _, extra := range []map[string]any{{"isSidechain": true}, {"agentId": "PRIVATE-AGENT-CANARY"}, {"teamName": "PRIVATE-TEAM-CANARY"}, {"isMeta": true}, {"isCompactSummary": true}, {"isApiErrorMessage": true}} {
+		batch.Records = append(batch.Records, sessionRow("excluded", "assistant", "session-main", "claude-sonnet-4-6", "max", "fast", claudeSessionNow, extra))
 	}
-}
-
-func TestClaudeSessionTruncationReplacementAndIncompleteLine(t *testing.T) {
-	cache, project, access := sessionTestTree(t)
-	path := filepath.Join(project, "synthetic-session.jsonl")
-	writeSessionRow(t, path, "synthetic-session", "claude-opus-5-5", "high", "standard", claudeSessionNow.Add(-time.Minute), false, false)
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
+	batch.Records = append(batch.Records, sessionRow("synthetic", "assistant", "session-main", "<synthetic>", "max", "fast", claudeSessionNow, nil))
+	r := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-opus-5-5" {
+		t.Fatal("excluded record displaced native session")
 	}
-	// Replace with a larger file on another inode; size alone cannot detect it.
-	replacement := filepath.Join(project, "replacement.tmp")
-	writeSessionRow(t, replacement, "synthetic-new-session", "claude-sonnet-4-6", "low", "fast", claudeSessionNow, false, false)
-	f, err := os.OpenFile(replacement, os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		t.Fatal(err)
+	key := r.Selected.SessionKey
+	a.ProfileRef = strings.Repeat("b", 64)
+	other := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if other.Selected == nil || other.Selected.SessionKey == key {
+		t.Fatal("profiles shared an unscoped session key")
 	}
-	_, _ = f.Write([]byte(strings.Repeat(" ", 512) + "\n"))
-	_ = f.Close()
-	if err := os.Rename(replacement, path); err != nil {
-		t.Fatal(err)
+	a.Key = nil
+	if ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow).Selected != nil {
+		t.Fatal("missing HMAC key accepted")
 	}
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	r := Report{}
-	applyClaudeSessions(&r, cache, "")
-	if r.Accounts[0].Harness.Model != "claude-sonnet-4-6" {
-		t.Fatal("replacement missed")
-	}
-	// A truncated incomplete row cannot be published until it gains a newline.
-	if err := os.WriteFile(path, []byte(`{"type":"assistant","effort":"high","message":{"model":"claude-opus-5-5"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, claudeSessionNow, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	s, _ := loadClaudeSessions(cache)
-	if s.Files[0].Offset != 0 || s.Files[0].Turn != nil {
-		t.Fatal("incomplete row consumed")
-	}
-	f, err = os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = f.Write([]byte{'\n'})
-	_ = f.Close()
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
-	}
-	s, _ = loadClaudeSessions(cache)
-	if s.Files[0].Turn == nil || s.Files[0].Turn.Model != "claude-opus-5-5" {
-		t.Fatal("completed row not read")
-	}
-}
-
-func TestClaudeSessionBoundedTailAndAdmission(t *testing.T) {
-	cache, project, access := sessionTestTree(t)
-	path := filepath.Join(project, "synthetic-session.jsonl")
-	if err := os.WriteFile(path, []byte(strings.Repeat("x", 2*claudeSessionChunk)+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	writeSessionRow(t, path, "synthetic-session", "claude-opus-5-5", "high", "standard", claudeSessionNow, true, false)
-	access.Allowed = false
-	if RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow) == nil {
+	a = sessionAccess(t)
+	a.Allowed = false
+	if ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow).Availability != "consent_required" {
 		t.Fatal("no consent accepted")
 	}
-	if _, err := os.Stat(claudeSessionPath(cache)); !os.IsNotExist(err) {
-		t.Fatal("unadmitted read wrote state")
-	}
-	access.Allowed = true
+	a.Allowed = true
 	t.Setenv("MODELPLAN_READERS", "off")
-	if RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow) == nil {
+	if ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow).Availability != "off" {
 		t.Fatal("off ignored")
 	}
 	t.Setenv("MODELPLAN_READERS", "passive")
-	if err := RefreshClaudeSessions(context.Background(), cache, access, claudeSessionNow); err != nil {
-		t.Fatal(err)
+	if ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow).Selected == nil {
+		t.Fatal("passive blocked local projection")
 	}
-	s, _ := loadClaudeSessions(cache)
-	if !s.Partial || len(s.Files) != 1 || s.Files[0].Turn == nil || s.Files[0].Offset < claudeSessionChunk {
-		t.Fatal("bounded tail recovery failed")
-	}
-	assertSessionCachePrivate(t, cache)
+	assertClaudeProjectionPrivate(t, r)
 }
-
-func assertSessionCachePrivate(t *testing.T, cache string) {
-	t.Helper()
-	err := filepath.WalkDir(cache, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		for _, private := range []string{"SYNTHETIC-MESSAGE-MUST-NOT-PERSIST", "private-project-name", "synthetic-session", "synthetic-new-session", "synthetic-sidechain", "service_tier", "inference_geo", "iterations"} {
-			if strings.Contains(string(b), private) {
-				t.Fatal("private transcript field persisted")
-			}
-		}
-		return nil
-	})
+func TestClaudeSessionFilenameTimestampAndPartialBlocks(t *testing.T) {
+	a := sessionAccess(t)
+	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+	mismatch := batch
+	mismatch.ExpectedSessionID = "other-session"
+	if ProjectClaudeSessions(a, []ClaudeSessionBatch{mismatch}, "", claudeSessionNow).Selected != nil {
+		t.Fatal("filename/header mismatch accepted")
+	}
+	var partial map[string]any
+	_ = json.Unmarshal(sessionRow("partial", "assistant", "session-main", "claude-sonnet-4-6", "max", "fast", claudeSessionNow, nil), &partial)
+	partial["message"].(map[string]any)["stop_reason"] = nil
+	b, _ := json.Marshal(partial)
+	batch.Records = append(batch.Records, b)
+	r := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-opus-5-5" || !r.Selected.ObservedAt.Equal(claudeSessionNow.Add(-time.Minute)) {
+		t.Fatal("partial block freshened old state")
+	}
+	// The minimal owner fixture proves fields, but no timestamp/interactivity.
+	raw, err := os.ReadFile(filepath.Join("testdata", "claude-sessions", "owner-confirmed.jsonl"))
 	if err != nil {
 		t.Fatal(err)
+	}
+	r = ProjectClaudeSessions(a, []ClaudeSessionBatch{{ExpectedSessionID: "session-minimal", CompleteDiscovery: true, Records: [][]byte{raw}}}, "", claudeSessionNow)
+	if r.Selected != nil {
+		t.Fatal("field fixture fabricated a live session")
+	}
+}
+func assertClaudeProjectionPrivate(t *testing.T, r ClaudeSessionProjection) {
+	t.Helper()
+	b, _ := json.Marshal(r)
+	for _, private := range []string{"PRIVATE-", "session-main", "session-old", "session-new", "shared-message", "parentUuid", "entrypoint", "sessionKind", "cwd", "content", "service_tier", "inference_geo", "iterations"} {
+		if strings.Contains(string(b), private) {
+			t.Fatal("private record field escaped projection")
+		}
 	}
 }
