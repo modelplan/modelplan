@@ -42,7 +42,13 @@ gate across profiles, regions and processes. Neither source/account switches nor
 disconnect/reconnect bypass it. The login route has a five-minute floor, stable
 10/15/30-minute cadence and 10/20/40/60-minute error backoff plus Retry-After. The
 existing key route keeps its 10-minute cadence/30-minute error wait under the same
-minimum gate. Failed reads retain the last good capture. A new shared grant owns
+minimum gate. The shared managed reservation in
+`observed/reader-attempts/kimi.json` and Kimi's cross-source reservation both
+survive Forget/reconnect/new grants/restart; preserve their union during
+integration and personal-data purge. Same-generation failures retain the last good capture and its original age.
+Credential generation is compared before expiry/JWT/device validation; changed
+expired or unsupported logins (including a new token with no device ID) cannot
+inherit the previous account. A missing device is never repaired. A new shared grant owns
 the routing decision even if it is blocked; it does not trigger a legacy-key
 fallback. `MODELPLAN_READERS=off` also stops legacy native collection.
 
@@ -60,3 +66,6 @@ this is independently implemented and does not copy code or upstream account
 fixtures. Tests use synthetic files, JWTs/device IDs and `httptest` only. The
 second lane's Kimi history files and all speed files remain untouched. CLIJIT
 owns consent/commands and enables the new source only after the shared handoff.
+
+Effective source/account JSON emits `beta:true` for successful, stale and unavailable
+projections. CLIJIT must retain the route-aware projection and both provider gates.

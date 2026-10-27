@@ -234,8 +234,10 @@ func kimiFinish(cache string, next time.Time) error {
 func kimiReserve(cache string, now time.Time) error { return kimiFinish(cache, now.Add(5*time.Minute)) }
 
 func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	meta := r.Previous.Metadata
+	changed := meta.CredentialKey != ""
 	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}}
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
 	}
 	if r.Grant.Region != "" && r.Grant.Region != "china" {
 		return fail("unavailable", "Kimi Code saved login is supported in China only")
@@ -252,7 +254,12 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 		Access string          `json:"access_token"`
 		Expiry json.RawMessage `json:"expires_at"`
 	}
-	if status != "" || json.Unmarshal(b, &credential) != nil || credential.Access == "" || len(credential.Access) > 16<<10 || strings.ContainsAny(credential.Access, " \t\r\n") {
+	if status != "" || json.Unmarshal(b, &credential) != nil {
+		return fail("unavailable", "No supported Kimi Code saved login")
+	}
+	credentialKey := readerHash(r.Paths.Cache, "kimi-login:credential", credential.Access)
+	changed = meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
+	if credential.Access == "" || len(credential.Access) > 16<<10 || strings.ContainsAny(credential.Access, " \t\r\n") {
 		return fail("unavailable", "No supported Kimi Code saved login")
 	}
 	expires := kimiNumber(credential.Expiry, false)
@@ -286,11 +293,9 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 	if deviceStatus != "" || !kimiLoginID.MatchString(device) {
 		return fail("unavailable", "Kimi Code device identity is missing or unsupported; open Kimi Code")
 	}
-	credentialKey := readerHash(r.Paths.Cache, "kimi-login:credential", credential.Access)
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
-	changed := r.Previous.Metadata.CredentialKey != "" && r.Previous.Metadata.CredentialKey != credentialKey
 	var raw json.RawMessage
 	state, retry := kimiLoginGet(ctx, c, credential.Access, device, &raw, r.Now)
 	if state != "" {
@@ -317,7 +322,7 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Kimi Code sign-in changed during the read"}, Invalidate: true}
 	}
 	a := &Account{Source: "native:kimi", Via: "native", Plan: "Kimi Code (China)", ObservedAt: r.Now.UTC(), Windows: parsed.Windows}
-	meta := readerMetadata{CredentialKey: credentialKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}
+	meta = readerMetadata{CredentialKey: credentialKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}
 	if subject != "" {
 		meta.AccountKey = readerHash(r.Paths.Cache, "kimi-login:account-cn", subject)
 		if !IdentityOff() {
