@@ -15,6 +15,15 @@ private struct NeverCLI: CLITransport {
     func restorePreferences() async { restores += 1; restored?() }
     func suspend() { suspensions += 1 }
 }
+@MainActor private final class FakeCompanionSurface: CommunityCompanionSurface {
+    var showConsole: (() -> Void)?
+    var showSettings: (() -> Void)?
+    var permissions: [Bool] = []
+    var renders = 0, closes = 0
+    func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) { renders += 1 }
+    func setPresentationAllowed(_ allowed: Bool) { permissions.append(allowed) }
+    func close() { closes += 1 }
+}
 @MainActor private final class MenuActionTarget: NSObject {
     var calls = 0
     @objc func open(_ sender: Any?) { calls += 1 }
@@ -49,6 +58,34 @@ private struct NeverCLI: CLITransport {
         XCTAssertFalse(first?.isEnabled ?? true)
         XCTAssertEqual(first?.title, "Settings unavailable / 设置不可用")
         XCTAssertTrue(first === host.configureSettings(gate())); XCTAssertEqual(creates, 1)
+    }
+    func testCompanionInitializationDoesNotInstallCallbacksOrTouchItsPresentation() async {
+        let companion = FakeCompanionSurface()
+        let host = CommunityDelegate(surfaces: NeutralSurfaceProvider(), companion: companion)
+        withExtendedLifetime(host) {
+            XCTAssertNil(companion.showConsole); XCTAssertNil(companion.showSettings)
+            XCTAssertTrue(companion.permissions.isEmpty)
+            XCTAssertEqual(companion.renders, 0); XCTAssertEqual(companion.closes, 0)
+        }
+    }
+    func testCompanionSettingsUsesTheConfiguredMenuActionAndCurrentLifecyclePermission() async {
+        let companion = FakeCompanionSurface(), settings = FakeSettingsIntegration(), target = MenuActionTarget()
+        settings.settingsMenuItem.target = target
+        settings.settingsMenuItem.action = #selector(MenuActionTarget.open(_:))
+        let lifecycle = gate()
+        let host = CommunityDelegate(surfaces: NeutralSurfaceProvider(), companion: companion) { _ in settings }
+        _ = host.configureSettings(lifecycle)
+        host.configureCompanion(lifecycle)
+        XCTAssertEqual(companion.permissions, [false])
+        companion.showSettings?(); XCTAssertEqual(target.calls, 0)
+        lifecycle.start()
+        companion.showSettings?(); XCTAssertEqual(target.calls, 1)
+        settings.settingsMenuItem.isEnabled = false
+        companion.showSettings?(); XCTAssertEqual(target.calls, 1)
+        settings.settingsMenuItem.isEnabled = true
+        lifecycle.set(.userDisabled, blocked: true)
+        companion.showSettings?(); XCTAssertEqual(target.calls, 1)
+        await lifecycle.stop()
     }
     func testCommandCommaApplicationMenuSharesTheStatusActionWithoutReparentingIt() async throws {
         let host = CommunityDelegate(surfaces: NeutralSurfaceProvider()), target = MenuActionTarget()
