@@ -156,6 +156,41 @@ struct NativeFailure:Error {let message:String}
         try require(abs(scaled.stations[0].outer.width-2*factor)<0.0001 && abs(scaled.text.size-11*factor)<0.0001,"rings and text share the geometry scale")
         scaledView.dispose()
     }
+    // Neutral precomposited control: preserve source alpha, downsample once at destination scale.
+    let controlContext=CGContext(data:nil,width:180,height:180,bitsPerComponent:8,bytesPerRow:720,
+        space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
+    controlContext.setShouldAntialias(true);controlContext.setFillColor(CGColor(red:1,green:0,blue:0,alpha:1))
+    controlContext.fillEllipse(in:CGRect(x:9,y:9,width:162,height:162))
+    let controlURL=root.appendingPathComponent("neutral-control.png")
+    let controlWriter=CGImageDestinationCreateWithURL(controlURL as CFURL,"public.png" as CFString,1,nil)!
+    CGImageDestinationAddImage(controlWriter,controlContext.makeImage()!,nil)
+    try require(CGImageDestinationFinalize(controlWriter),"neutral source control PNG")
+    let controlData=try Data(contentsOf:controlURL)
+    let controlFile=DockResourceFile(path:"neutral-control.png",sha256:SHA256.hash(data:controlData).map{String(format:"%02x",$0)}.joined(),bytes:controlData.count)
+    let controlStore=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["control":controlFile]))
+    let sourceControl=try controlStore.image("control",maximumPixelSize:23,preserveSourcePixels:true)
+    try require(sourceControl.width==180 && sourceControl.height==180,"control keeps original pixels until final composition")
+    try require(try controlStore.image("control",maximumPixelSize:46,preserveSourcePixels:true) === sourceControl,"source control has one counted cache entry across backing scales")
+    var controlSkin=skin;controlSkin.bodyPolygon=[];controlSkin.stations=[]
+    controlSkin.fixedLayers=try JSONDecoder().decode([DockBitmapLayer].self,from:Data(#"[{"resource":"control","rect":[[13.25,9.5],[22.5,22.5]]}]"#.utf8))
+    let controlRenderer=DockInstrumentRenderer(resources:controlStore)
+    for scale in [1,2] {
+        let rendered=try controlRenderer.render(skin:controlSkin,readings:[:],scale:scale).image
+        let pixels=rendered.dataProvider!.data!,bytes=CFDataGetBytePtr(pixels)!
+        let alphas=(0..<rendered.height).flatMap { y in (0..<rendered.width).map { x in bytes[y*rendered.bytesPerRow+x*4+3] } }
+        try require(alphas.contains{ $0>0 && $0<255 },"fractional control edge retains antialias coverage at 1x and 2x")
+        try require(bytes[3]==0,"source transparent margin stays transparent")
+        for y in 0..<rendered.height { for x in 0..<rendered.width {
+            let offset=y*rendered.bytesPerRow+x*4
+            if bytes[offset+3]>0 {
+                try require(bytes[offset]>=bytes[offset+3]-1 && bytes[offset+1]==0 && bytes[offset+2]==0,"premultiplied source edge has no dark fringe")
+            }
+        } }
+        let scaledView=DockInstrumentView(frame:.zero);scaledView.presentationBackingScale=scale
+        try scaledView.applyOfficial(skin:controlSkin,rows:[],renderer:controlRenderer,scale:3-scale,locale:"en")
+        try require(scaledView.renderedPixelSize==CGSize(width:96*scale,height:96*scale),"destination backing overrides a stale supplier scale")
+        scaledView.dispose()
+    }
     var staleInput=input;staleInput.dataState = .stale
     let staleReading=try DockInstrumentProjection.evaluate(staleInput,now:instant)
     var staleSkin=skin;staleSkin.stations[0].replacementResource="test";staleSkin.stations[0].readoutOpacity=0.6

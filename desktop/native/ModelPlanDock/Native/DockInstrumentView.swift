@@ -15,6 +15,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public private(set) var appliedGeometryScale: CGFloat = 1
     private var communityRowHeight: CGFloat = 44
     @_spi(DockResourceChecks) public var presentedNozzleDiameters: [CGFloat] { skin?.stations.map(\.diameter) ?? [] }
+    /// The host resolves the destination screen even while this view is detached/collapsed.
+    public var presentationBackingScale: Int?
+    @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
+        image.map { CGSize(width: $0.width, height: $0.height) }
+    }
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
@@ -71,7 +76,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public func applyOfficial(skin:DockInstrumentSkin,rows:[DockInstrumentReading],notices:[String:DockNotice]=[:],renderer:DockInstrumentRenderer,scale:Int,locale:String) throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        guard (1...2).contains(scale) else{throw DockArtworkError.invalidManifest}
+        let renderScale = presentationBackingScale ?? window.map { Int($0.backingScaleFactor) } ?? scale
+        guard (1...2).contains(scale), (1...2).contains(renderScale) else{throw DockArtworkError.invalidManifest}
         resetVisuals()
         do {
             let factor: CGFloat
@@ -82,15 +88,15 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             } else { factor = 1 }
             let skin = try skin.scaled(by: factor)
             appliedGeometryScale = factor
-            let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:scale)
-            community=false;failed=false;self.skin=skin;self.scale=scale;self.locale=locale;self.notices=notices
+            let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
+            community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;alphaData=result.image.dataProvider?.data
             frame.size=skin.bounds.size
-            CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(scale)
+            CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
             for id in Array(workingLayerParents.keys) where !visible.contains(id){workingLayerParents[id]?.removeFromSuperlayer();workingLayerParents.removeValue(forKey:id)}
             for station in skin.stations {guard let id=station.subscriptionID,values[id] != nil else{continue}
-                let parent=workingLayerParents[id] ?? CALayer();parent.isGeometryFlipped=true;parent.contentsScale=CGFloat(scale)
+                let parent=workingLayerParents[id] ?? CALayer();parent.isGeometryFlipped=true;parent.contentsScale=CGFloat(renderScale)
                 parent.frame=CGRect(x:station.centre.x-station.diameter/2-skin.bounds.minX,y:station.centre.y-station.diameter/2-skin.bounds.minY,width:station.diameter,height:station.diameter)
                 if parent.superlayer == nil{layer?.addSublayer(parent)};workingLayerParents[id]=parent
             }

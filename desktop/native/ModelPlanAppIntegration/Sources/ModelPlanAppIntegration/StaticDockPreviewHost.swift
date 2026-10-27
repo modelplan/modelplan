@@ -202,6 +202,9 @@ public struct StaticDockGeometry {
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
+        let backingScale = destinationBackingScale()
+        dockView.presentationBackingScale = backingScale
+        alternateViews.forEach { $0.presentationBackingScale = backingScale }
         do {
             if let appearance {
                 let candidate = try appearance(dockView, rows, passPreferences)
@@ -315,6 +318,18 @@ public struct StaticDockGeometry {
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         return .init(displays: displays, layouts: layouts, primaryDisplayID: native.primaryDisplayID,
             pointer: native.pointer, presence: presence, cardFrame: cardPanel?.isVisible == true ? cardPanel?.frame : nil)
+    }
+    private func destinationBackingScale() -> Int {
+        let screens = NSScreen.screens, env = environment()
+        let primary = screens.first.map { displayID($0, index: 0) }
+        let preference = DockEdgePreference(displayID: preferences.followActiveDisplay ? nil : preferences.dockDisplayID ?? primary,
+            edge: nativeEdge(preferences.dockEdge), alongFraction: preferences.dockAlongFraction)
+        let placement = try? DockEdgeGeometry.resolve(preference: preference, displays: env.displays, layouts: env.layouts,
+            pointer: env.pointer, primaryID: primary, wakeDepth: visibilityPolicy.wakeDepth)
+        let target = placement?.displayID ?? preference.displayID
+        let selected = screens.enumerated().first { displayID($0.element, index: $0.offset) == target }?.element
+            ?? screens.first { preferences.followActiveDisplay && $0.frame.contains(NSEvent.mouseLocation) } ?? screens.first
+        return min(2, max(1, Int(selected?.backingScaleFactor ?? 1)))
     }
     private func displayID(_ screen: NSScreen, index: Int) -> String {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return "session.\(index)" }
