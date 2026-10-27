@@ -49,10 +49,15 @@ public struct DockOverflowEntry:Equatable,Sendable {
     public func apply(_ entries:[DockOverflowEntry])throws{
         generation &+= 1;let token=generation
         guard entries.count<=128,Set(entries.map(\.id)).count==entries.count,entries.allSatisfy({!$0.id.isEmpty && [$0.id,$0.label,$0.value,$0.dragHelp].allSatisfy{$0.utf8.count<=2048}}) else{clear();throw DockLogicError.invalidCatalogue}
+        let previousOrder=order,focusedID=rows.first(where:{$0.value === window?.firstResponder})?.key
+        let previousTarget=focusedID ?? keyboardTargetID
         ids=Set(entries.map(\.id))
         order=entries.map(\.id)
         for id in Array(rows.keys) where !ids.contains(id){if let row=rows.removeValue(forKey:id){row.retire();stack.removeArrangedSubview(row);row.removeFromSuperview()}}
-        if let id=keyboardTargetID,!ids.contains(id){keyboardTargetID=nil}
+        if let id=previousTarget,!ids.contains(id){
+            if keyboardNavigationEnabled,let index=previousOrder.firstIndex(of:id),!order.isEmpty{keyboardTargetID=order[min(index,order.count-1)]}
+            else{keyboardTargetID=nil}
+        }
         for (index,entry) in entries.enumerated(){
             let v=rows[entry.id] ?? OverflowEntryView(entry:entry);rows[entry.id]=v;v.configure(entry)
             v.setAccessibilityEnabled(onClick != nil)
@@ -66,6 +71,11 @@ public struct DockOverflowEntry:Equatable,Sendable {
         };frame.size=stack.fittingSize
         let ordered=order.compactMap{rows[$0]}
         for (index,row) in ordered.enumerated(){row.nextKeyView=index+1<ordered.count ? ordered[index+1]:nil}
+        // Only an already-focused row in this key window may transfer actual keyboard focus.
+        // Passive refresh never activates a window or selects a subscription.
+        if let focusedID,!ids.contains(focusedID),keyboardNavigationEnabled,window?.isKeyWindow==true{
+            window?.makeFirstResponder(keyboardTargetID.flatMap{rows[$0]} ?? self)
+        }
     }
     private func navigate(_ id:String,event:NSEvent)->Bool{
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])

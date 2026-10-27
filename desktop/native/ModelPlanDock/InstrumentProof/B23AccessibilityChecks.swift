@@ -51,6 +51,20 @@ import ModelPlanDock
     try tray.apply([.init(id:"one",label:"Subscription one",value:"40%",dragHelp:"Drag to reorder")])
     try require(row === descendants(tray).first(where:{$0.accessibilityIdentifier()=="dock.overflow.one"}),"overflow refresh preserves focus object")
     try require(row.accessibilityLabel()=="Subscription one · 40%","retained overflow row relocalizes")
+    let two=DockOverflowEntry(id:"two",label:"Two",value:"20%",dragHelp:"Reorder")
+    let three=DockOverflowEntry(id:"three",label:"Three",value:"30%",dragHelp:"Reorder")
+    try tray.apply([entry,two,three])
+    guard let middle=descendants(tray).first(where:{$0.accessibilityIdentifier()=="dock.overflow.two"}) else{throw NativeFailure(message:"B23: missing second row")}
+    try require(middle.becomeFirstResponder() && tray.keyboardTargetID=="two","focus a non-first row")
+    try tray.apply([three,two,entry])
+    try require(middle === descendants(tray).first(where:{$0.accessibilityIdentifier()=="dock.overflow.two"}) && tray.keyboardTargetID=="two","reorder retains the focused row/target")
+    try require(middle.nextKeyView === row,"reorder updates the key-view chain")
+    let selectedCount=selected.count
+    try tray.apply([three,entry])
+    try require(tray.keyboardTargetID=="one","removed focused target falls back to the nearest surviving index")
+    try require(!middle.acceptsFirstResponder && !middle.accessibilityPerformPress(),"removed focused row retired")
+    try require(selected.count==selectedCount,"focus fallback never selects a subscription")
+    try tray.apply([]);try require(tray.keyboardTargetID==nil,"empty tray has no fallback target")
     tray.dispose();try require(!row.accessibilityPerformPress() && !row.acceptsFirstResponder,"retired row cannot focus or act")
     return checks
 }
