@@ -36,6 +36,13 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 
 **Long tail:** every other provider CodexBar supports is read through the **bundled CodexBar CLI**. It is fetched at a pinned version with a SHA-256 check, under its MIT licence notice, and the user never installs it. It runs only for detected tools that have no native reader, under the same consent, which names CodexBar, and only for providers whose CodexBar path is **audited** at the pinned version: no token refresh, no copy or cache of the tool's credentials, no launching the provider's CLI, no inference. Unaudited providers show "not yet supported". (CodexBar 0.81.0 refreshes some providers' tokens, launches provider CLIs and caches credentials in its own Keychain item, so the audit is per provider.)
 
+**CodexBar access classes** (owner-approved 2026-10-27), recorded per provider in the catalogue:
+- **Standard:** the tool's own local login or CLI, no token refresh. CodexBar runs with `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1`, so it neither caches credentials nor decrypts browser stores. Included in the one-click consent.
+- **Browser session (advanced):** providers readable only from a browser sign-in (about 50 at 0.81.0, e.g. Windsurf, Devin, Augment, Qoder, Trae CN, Perplexity, Manus, Mistral). Off by default and never in the one-click consent. The user turns each one on separately; the explanation says macOS will ask for the browser's "Safe Storage" key, which unlocks that browser's saved sign-ins, and that CodexBar keeps the session cookie in its own Keychain item. "Forget readings" also clears that cookie cache.
+- **Not read:** providers whose CodexBar path refreshes tokens (e.g. Antigravity, Factory, StepFun, Vertex AI); head providers use our native readers instead. API-key-only platforms are not offered.
+
+**Where users choose:** the first-run page lists the tools detected from local signals in two groups: standard (pre-checked) and browser session (advanced, unchecked, with a one-line note; checking one shows the full explanation). Settings → Subscriptions has a per-subscription reading-source switch, and "Add subscription" for web-only services with no local signal. Detection never scans browser data.
+
 **Routing**, per provider, from the catalogue: `preferred: native | codexbar | off`.
 
 - **Native first, no automatic CodexBar fallback for head providers** (coordinator decision after source review, 2026-10-27). CodexBar's head-provider paths refresh tokens or launch CLIs, which our safeguards forbid. A native reader that fails on an upstream change shows "temporarily unavailable" until our fix ships. A later CodexBar pin whose path for that provider passes the audit may be enabled as fallback through the catalogue.
@@ -48,7 +55,8 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 - One **read** per provider every 5 minutes or more. A read is a fixed, documented set of at most two requests (for example Claude usage + profile, Cursor plan info + period usage, Gemini project + quota); stable metadata is cached for up to 24 hours, so most reads are one request.
 - Never print or store secret values; store only sanitised readings and keyed-hash identities.
 - Tell the user, in the consent text and the privacy page, that a tool's credential is sent to that tool's own provider to authenticate.
-- On macOS, read Keychain items through `/usr/bin/security`. "Always Allow" then attaches to Apple's stable binary rather than to each new ad-hoc-signed CLI build, so updates do not re-prompt.
+- On macOS, read Keychain items through `/usr/bin/security`. "Always Allow" then attaches to Apple's stable binary rather than to each new ad-hoc-signed CLI build, so updates do not re-prompt. This applies to our own readers; the pinned, stably signed CodexBar binary may use its own Keychain access.
+- Launching a provider's CLI is allowed only for an audited read-only command that consumes no quota (for example `copilot --headless … account.getQuota`).
 
 **No prerequisite installs (owner, firm):** nothing may require the plugin or the Claude Code status line. Claude Code's current model, effort and Fast state are read passively from its own local session records, the same way Codex rollouts are read. The status line and plugin hooks are optional extra sources only.
 
