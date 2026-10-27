@@ -140,7 +140,7 @@ import XCTest
         view.onHelpInput = { input in
             guard case .cancelled = input else { return };cancellations += 1
             XCTAssertNil(view.state);XCTAssertFalse(view.requestEnlarge())
-            XCTAssertThrowsError(try view.configure(self.state()))
+            do { try view.configure(self.state());XCTFail("Reentrant configure must be rejected during teardown") } catch {}
             view.setPresentationAllowed(true);view.setEnlarged(true);view.stop()
             XCTAssertFalse(view.requestEnlarge());XCTAssertFalse(view.opening)
         }
