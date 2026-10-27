@@ -79,13 +79,14 @@ public struct CockpitPortholeState {
     private var allowed = false
     private var openingGesture:CockpitPortholeGesture?
     private var fieldTracking:NSTrackingArea?,hovering = false
-    private var stateRevision:UInt64 = 0,dispatching = false
+    private var stateRevision:UInt64 = 0,dispatching = false,tearingDown = false
     public override init(frame:NSRect) {
         super.init(frame:frame);setAccessibilityElement(true);setAccessibilityRole(.button);setAccessibilityIdentifier("cockpit.field")
     }
     public convenience init() { self.init(frame:.zero) }
     public required init?(coder:NSCoder) { return nil }
     public func configure(_ state:CockpitPortholeState) throws {
+        guard !tearingDown else { throw CockpitSurfaceError.invalidGeometry }
         let root = CGRect(origin:.zero,size:state.size),r = state.imageRect
         guard [state.size.width,state.size.height,r.minX,r.minY,r.width,r.height].allSatisfy(\.isFinite),
               state.size.width>0,state.size.height>0,state.size.width<=2048,state.size.height<=2048,
@@ -99,10 +100,16 @@ public struct CockpitPortholeState {
         if cancel { cancelHelp(.layoutChange) }
         // Refreshing metadata must not reset an already accepted opening.
     }
-    public func setPresentationAllowed(_ allowed:Bool) { if self.allowed != allowed { stateRevision &+= 1 };self.allowed = allowed;if !allowed { cancelHelp(.focusLoss) };invalidateFieldCursor() }
-    public func setEnlarged(_ enlarged:Bool) { opening = enlarged;if !enlarged { openingGesture = nil } else { cancelHelp(.pointerDown) };invalidateFieldCursor() }
-    public func stop() { cancelHelp(.teardown);stateRevision &+= 1;allowed = false;opening = false;openingGesture = nil;state = nil;updateTrackingAreas();invalidateFieldCursor() }
-    private var admitted:Bool { allowed && !isHiddenOrHasHiddenAncestor && state?.closed==false && state?.interactive==true && state?.rendererAvailable==true }
+    public func setPresentationAllowed(_ allowed:Bool) { guard !tearingDown else { return };if self.allowed != allowed { stateRevision &+= 1 };self.allowed = allowed;if !allowed { cancelHelp(.focusLoss) };invalidateFieldCursor() }
+    public func setEnlarged(_ enlarged:Bool) { guard !tearingDown else { return };opening = enlarged;if !enlarged { openingGesture = nil } else { cancelHelp(.pointerDown) };invalidateFieldCursor() }
+    public func stop() {
+        guard !tearingDown else { return }
+        tearingDown = true;defer { tearingDown = false }
+        stateRevision &+= 1;allowed = false;opening = false;openingGesture = nil;state = nil
+        // Revoke first: host cancellation may call back into any public entry point.
+        cancelHelp(.teardown);updateTrackingAreas();invalidateFieldCursor()
+    }
+    private var admitted:Bool { !tearingDown && allowed && !isHiddenOrHasHiddenAncestor && state?.closed==false && state?.interactive==true && state?.rendererAvailable==true }
     public var pointingHandRect:CGRect? { admitted && !opening ? state?.imageRect:nil }
     public func helpTargets()->[CockpitHelpTarget] {
         guard let rect = pointingHandRect,let state else { return [] }
