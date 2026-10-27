@@ -36,7 +36,7 @@ type consentChoice struct {
 
 func choice(t detect.Tool, mode string) consentChoice {
 	x := consentChoice{Tool: t.ProviderID, Name: t.DisplayName, ReaderID: t.ReaderID, Backend: t.Preferred, Status: "available", Beta: t.Beta, Group: "standard", Hosts: consentHosts(t.ProviderID, "")}
-	if t.CodexBar.Access == "browser-session" && (t.Preferred == "codexbar" || strings.HasPrefix(t.ReaderID, "codexbar:") || strings.HasPrefix(t.Status, "codexbar-")) {
+	if t.CodexBar.AccessClass == "browser-session" && (t.Preferred == "codexbar" || strings.HasPrefix(t.ReaderID, "codexbar:") || strings.HasPrefix(t.Status, "codexbar-")) {
 		x.Group = "advanced"
 	}
 	x.Access = "Read this tool's existing sign-in and authenticate only to its provider for usage; no credential is stored by ModelPlan."
@@ -63,7 +63,7 @@ func choice(t detect.Tool, mode string) consentChoice {
 		x.Status = "privacy-blocked"
 	case t.Preferred == "codexbar":
 		x.Access = "Via audited CodexBar with CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1 and cookieSource=off: read this tool's own login or audited read-only, no-quota CLI command; no token refresh or browser import."
-		if t.CodexBar.Access == "browser-session" {
+		if t.CodexBar.AccessClass == "browser-session" {
 			x.Group = "advanced"
 			x.Status = "browser-session-explicit-only"
 			x.Access = "Browser session (advanced): off by default; use modelplan connect " + t.ProviderID + " --browser-session for a separate explanation and confirmation."
@@ -94,7 +94,7 @@ func connectDetected(stdin io.Reader, stdout, stderr io.Writer, st *store.Store,
 	legacy, _ := quota.LoadConnections(quotaPaths(st).ConnectionsFile)
 	for _, tool := range detection(st).Tools {
 		if tool.Detected {
-			if tool.CodexBar.Access == "not-read" && (strings.HasPrefix(tool.ReaderID, "codexbar:") || strings.HasPrefix(tool.Status, "codexbar-")) {
+			if tool.CodexBar.AccessClass == "not-read" && (strings.HasPrefix(tool.ReaderID, "codexbar:") || strings.HasPrefix(tool.Status, "codexbar-")) {
 				continue
 			}
 			x := choice(tool, mode)

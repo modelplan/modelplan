@@ -9,7 +9,7 @@ enables nothing. The command starts no reader, download or background work.
 `--json` reports proposed choices, access lines, beta flags, consent text and
 text version without prompting or writing.
 
-The catalogue's `codexbar: {audited, access}` distinguishes `standard`,
+The catalogue's `codexbar: {audited, accessClass}` distinguishes `standard`,
 `browser-session` and `not-read`. Audited standard access uses the tool's own
 login or an audited read-only CLI command that consumes no quota. It always runs
 with `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1` **and** `cookieSource: off` in its

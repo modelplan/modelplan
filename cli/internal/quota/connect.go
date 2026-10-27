@@ -262,7 +262,7 @@ func Selections(p Paths) ([]Selection, error) {
 			} else if reason := route.HelperStatus(); reason != "" {
 				x.Blocked = reason
 			} else {
-				x.AccessClass = route.CodexBar.Access
+				x.AccessClass = route.CodexBar.AccessClass
 				if route.Preferred != "codexbar" {
 					x.Blocked = "catalogue-off"
 				}

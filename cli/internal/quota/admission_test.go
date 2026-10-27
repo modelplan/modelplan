@@ -113,7 +113,7 @@ printf '[]'
 	}{{"standard", false, "off"}, {"browser-session", false, ""}, {"browser-session", true, "auto"}, {"standard", true, "off"}} {
 		for i := range cat.Detectors {
 			if cat.Detectors[i].ProviderID == "cursor" {
-				cat.Detectors[i].CodexBar.Access = v.access
+				cat.Detectors[i].CodexBar.AccessClass = v.access
 			}
 		}
 		if err := consent.Change(consent.Path(), func(s *consent.State) error {

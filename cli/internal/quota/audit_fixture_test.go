@@ -14,7 +14,7 @@ func auditFixtureHelpers(t *testing.T, p *Paths) {
 	for id := range CodexBarProviders {
 		e := detect.Entry{ProviderID: id, ReaderID: "codexbar:" + id, Preferred: "codexbar", MinCLI: "0.0.0", Beta: true}
 		e.CodexBar.Audited = true
-		e.CodexBar.Access = "standard"
+		e.CodexBar.AccessClass = "standard"
 		cat.Detectors = append(cat.Detectors, e)
 	}
 	old := loadReaderCatalogue

@@ -118,7 +118,7 @@ func TestChoiceNeverFallsBackAndRequiresAudit(t *testing.T) {
 		t.Fatal(x)
 	}
 	tool.CodexBar.Audited = true
-	tool.CodexBar.Access = "standard"
+	tool.CodexBar.AccessClass = "standard"
 	if x := choice(tool, consent.Automatic); !x.Selected || !strings.Contains(x.Access, "CodexBar") {
 		t.Fatal(x)
 	}

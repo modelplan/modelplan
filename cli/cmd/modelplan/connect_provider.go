@@ -129,7 +129,7 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 			fmt.Fprintln(stderr, "connect: no audited, supported CodexBar route for this provider")
 			return exitUsage
 		}
-		if (e.CodexBar.Access == "browser-session") != browser {
+		if (e.CodexBar.AccessClass == "browser-session") != browser {
 			fmt.Fprintln(stderr, "connect: browser-session providers require --browser-session explicitly")
 			return exitUsage
 		}

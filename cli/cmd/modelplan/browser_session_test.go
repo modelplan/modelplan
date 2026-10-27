@@ -23,7 +23,7 @@ func accessCatalogue(t *testing.T, access string) {
 	browser.ReaderID = "codexbar:windsurf"
 	browser.Preferred = "codexbar"
 	browser.CodexBar.Audited = true
-	browser.CodexBar.Access = access
+	browser.CodexBar.AccessClass = access
 	f := newPublicationFixture(t, func(doc map[string]json.RawMessage) {
 		var data map[string]json.RawMessage
 		json.Unmarshal(doc["data"], &data)
