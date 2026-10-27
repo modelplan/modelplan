@@ -1,14 +1,14 @@
 # Passive Claude session adapter (beta, draft)
 
-This PR is stacked on `cli/readers-local-history` / PR228 at the coordinator's
-request. It contains no independent file walker, cursor, offset cache or log
+PR228 has merged, and this PR is now based on current main. The shared
+interface below still needs its session-state extension. It contains no independent file walker, cursor, offset cache or log
 collector. `ProjectClaudeSessions` reuses `localusage.HistoryAccess` and projects
 bounded transient record batches into model/effort/Fast plus keyed session and
 observation metadata. It performs no file/credential/Keychain/process/network I/O.
 
 ## Exact READERS API gap
 
-PR228 currently exports `RefreshHistory`, `ReadHistoryCache`,
+The merged PR228 currently exports `RefreshHistory`, `ReadHistoryCache`,
 `ForgetHistoryProfile`, and the count-oriented `HistoryAccess/HistoryRow/HistoryResult`
 types. `historyDepth("claude")` is unsupported; `historyAllowed`, `decodeHistory`,
 `historyCursor` and its atomic commit logic are private and fixed to seven history
@@ -28,8 +28,9 @@ The adapter needs READERS to export a bounded append/decoder seam that:
   revocation guarantees.
 
 Until that API exists, this PR stays draft and has no collector/cache integration.
-It does not patch READERS-owned files or invent a second cursor. Retarget to main
-once PR228 merges; wire the adapter only after the exported contract is agreed.
+It does not patch READERS-owned files or invent a second cursor. The coordinator
+has retargeted it to main; merging the dependency did not add the required
+append/snapshot extension. Wire the adapter only after that exported contract exists.
 The original standalone cursor has been removed.
 
 ## Projection contract
