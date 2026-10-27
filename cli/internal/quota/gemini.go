@@ -126,8 +126,23 @@ func geminiUnsupported(root string) bool {
 }
 
 func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	meta := r.Previous.Metadata
+	configured := os.Getenv("GOOGLE_CLOUD_PROJECT")
+	if configured == "" {
+		configured = os.Getenv("GOOGLE_CLOUD_PROJECT_ID")
+	}
+	configuredKey := ""
+	if configured != "" && geminiProjectID.MatchString(configured) {
+		configuredKey = readerHash(r.Paths.Cache, "gemini:project", configured)
+	}
+	// A selector switch invalidates the old scope even if token validation exits
+	// early (for example the same token expires just as the project changes).
+	scopeChanged := configured != "" && meta.ScopeKey != "" && (configuredKey == "" || configuredKey != meta.ScopeKey)
+	// Unknown/malformed/unsupported bindings cannot retain another account's
+	// numbers. Once decoded, an equal token can retain its original-age capture.
+	changed := meta.CredentialKey != ""
 	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}}
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
 	}
 	if geminiUnsupported(r.Profile.Root) {
 		return fail("unavailable", "This Gemini CLI login type is not supported yet")
@@ -139,31 +154,45 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	if status != "" || json.Unmarshal(b, &credential) != nil {
 		return fail("unavailable", "No supported Gemini CLI OAuth file login; secure-store-only login is not supported yet")
 	}
+	credentialKey := readerHash(r.Paths.Cache, "gemini:credential", credential.AccessToken)
+	changed = scopeChanged || (meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey))
 	if credential.AccessToken == "" || len(credential.AccessToken) > 16<<10 || strings.ContainsAny(credential.AccessToken, "\r\n") || credential.Expiry <= r.Now.Add(time.Minute).UnixMilli() {
 		out := fail("expired", "Open Gemini CLI to refresh")
 		out.Entry.NextStep = out.Entry.Notice
 		return out
 	}
-	credentialKey := readerHash(r.Paths.Cache, "gemini:credential", credential.AccessToken)
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
-	meta := r.Previous.Metadata
-	changed := meta.CredentialKey != "" && meta.CredentialKey != credentialKey
 	projectCacheKey := readerHash(r.Paths.Cache, "gemini:transient-project", r.ProfileKey+"\x00"+credentialKey+"\x00"+r.Grant.Generation)
 	if projectCacheKey == "" {
+		changed = meta.CredentialKey != ""
 		return fail("unavailable", "Identity key unavailable")
+	}
+	if configured != "" {
+		if !geminiProjectID.MatchString(configured) {
+			changed = changed || meta.ScopeKey != ""
+			return fail("unavailable", "Unsupported configured Gemini project")
+		}
+		if configuredKey == "" {
+			changed = meta.CredentialKey != ""
+			return fail("unavailable", "Identity key unavailable")
+		}
 	}
 	project := geminiRecalled(projectCacheKey, r.Now)
 	cold := meta.CredentialKey != credentialKey || meta.ScopeKey == "" || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
-	if !cold && project.ID == "" {
-		configured := os.Getenv("GOOGLE_CLOUD_PROJECT")
-		if configured == "" {
-			configured = os.Getenv("GOOGLE_CLOUD_PROJECT_ID")
-		}
-		if geminiProjectID.MatchString(configured) && readerHash(r.Paths.Cache, "gemini:project", configured) == meta.ScopeKey {
-			project = geminiProject{ID: configured, Plan: meta.Plan, At: meta.VerifiedAt}
-		}
+	// Validate the current selector even when a transient warm project exists.
+	// Discovery for a switched selector uses this same read's first of two slots.
+	if configured != "" && configuredKey != meta.ScopeKey {
+		cold = true
+		project = geminiProject{}
+	}
+	if project.ID != "" && readerHash(r.Paths.Cache, "gemini:project", project.ID) != meta.ScopeKey {
+		cold = true
+		project = geminiProject{}
+	}
+	if !cold && project.ID == "" && configured != "" && configuredKey == meta.ScopeKey {
+		project = geminiProject{ID: configured, Plan: meta.Plan, At: meta.VerifiedAt}
 	}
 	if project.ID == "" {
 		cold = true
@@ -174,21 +203,13 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	}
 	if cold {
 		request := map[string]any{"mode": "HEALTH_CHECK", "metadata": map[string]string{"ideType": "GEMINI_CLI", "pluginType": "GEMINI"}}
-		configured := os.Getenv("GOOGLE_CLOUD_PROJECT")
-		if configured == "" {
-			configured = os.Getenv("GOOGLE_CLOUD_PROJECT_ID")
-		}
 		if configured != "" {
-			if !geminiProjectID.MatchString(configured) {
-				return fail("unavailable", "Unsupported configured Gemini project")
-			}
 			request["cloudaicompanionProject"] = configured
 		}
 		var assist geminiAssist
 		state, retry := geminiJSON(ctx, c, "loadCodeAssist", credential.AccessToken, request, &assist, r.Now)
 		if state != "" {
 			out := fail(state, geminiNextStep(state))
-			out.Invalidate = changed
 			out.RetryAfter = retry
 			return out
 		}
@@ -196,18 +217,19 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		if id == "" {
 			id = configured
 		}
+		scopeKey := readerHash(r.Paths.Cache, "gemini:project", id)
+		changed = changed || (meta.ScopeKey != "" && scopeKey != meta.ScopeKey)
 		plan := geminiTier(assist.CurrentTier.ID)
-		if !geminiProjectID.MatchString(id) || plan == "" {
-			return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Gemini project or tier is not supported yet; open Gemini CLI"}, Invalidate: changed}
+		if !geminiProjectID.MatchString(id) || scopeKey == "" || plan == "" || (configured != "" && id != configured) {
+			return fail("unavailable", "Gemini project or tier is not supported yet; open Gemini CLI")
 		}
 		project = geminiProject{ID: id, Plan: plan, At: r.Now.UTC()}
-		meta = readerMetadata{CredentialKey: credentialKey, ScopeKey: readerHash(r.Paths.Cache, "gemini:project", id), VerifiedAt: r.Now.UTC(), Plan: plan}
+		meta = readerMetadata{CredentialKey: credentialKey, ScopeKey: scopeKey, VerifiedAt: r.Now.UTC(), Plan: plan}
 		creditValues := assist.CurrentTier.Credits
 		if assist.PaidTier.Credits != nil {
 			creditValues = assist.PaidTier.Credits
 		}
 		wallet = geminiCredits(creditValues, r.Now)
-		geminiRemember(projectCacheKey, project, r.Now)
 	}
 	var quota geminiQuota
 	state, retry := geminiJSON(ctx, c, "retrieveUserQuota", credential.AccessToken, map[string]string{"project": project.ID}, &quota, r.Now)
@@ -234,6 +256,8 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 			}
 		}
 	}
+	// Publish transient metadata only with a complete consistent reading.
+	geminiRemember(projectCacheKey, project, r.Now)
 	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
 }
 

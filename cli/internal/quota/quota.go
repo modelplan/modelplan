@@ -155,7 +155,8 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	Source     string    `json:"source"` // claude-code | codex | user | codexbar:<provider>
+	Beta       bool      `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source     string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string    `json:"plan,omitempty"`
 	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time `json:"observedAt"`
@@ -192,6 +193,7 @@ func (a *Account) InPool(w *Window) bool {
 }
 
 type SourceStatus struct {
+	Beta   bool   `json:"beta,omitempty"`
 	Source string `json:"source"`
 	Status string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema; CodexBar also: stale | estimated | unavailable
 	Reason string `json:"reason,omitempty"`

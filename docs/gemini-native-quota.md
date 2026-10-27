@@ -27,7 +27,11 @@ disabled; the App's injected proxy transport is preserved.
 
 Stable same-credential project/tier metadata lasts at most 24 hours. Raw project
 selectors stay in bounded transient process memory; persisted metadata contains
-only their keyed hash. A warm process, or a matching currently configured
+only their keyed hash. Before every reuse, the current selector is compared with the persisted scope and
+transient project. A switched selector invalidates the old account and revalidates
+project/tier in the first of the same two slots; a failed new scope cannot inherit
+old quota, plan or wallet metadata. Transient metadata is published only after a
+complete successful reading. A warm process, or a matching currently configured
 `GOOGLE_CLOUD_PROJECT`/`GOOGLE_CLOUD_PROJECT_ID`, needs only the quota request.
 After a process restart without a recoverable configured project, discovery takes
 the second allowed slot again. This privacy constraint means such short-lived CLI
@@ -52,9 +56,15 @@ by a later quota-only read. Missing/unknown units never become zero or USD.
 Account/project references use keyed hashes and opaque local subscription refs;
 without usable local account metadata there is no fabricated verified binding.
 
-Failures preserve the last good reading and capture age. Cross-process/profile
+Failures for the same binding preserve the last good reading and capture age.
+Expired, malformed or unsupported changed bindings suppress the previous account
+before returning, with no compatibility request. Effective account/source JSON
+keeps `beta:true` for success, stale captures and unavailable states. Cross-process/profile
 spacing is at least five minutes, with stable-source 10/15/30-minute cadence and
-10/20/40/60-minute error backoff plus Retry-After. Ordinary/JSON rendering uses
+10/20/40/60-minute error backoff plus Retry-After. Forget/disconnect purges the
+personal reading while preserving `observed/reader-attempts/gemini.json`, a
+non-personal reservation containing only its next permitted attempt time. New
+grants and process restarts cannot reset this floor. Ordinary/JSON rendering uses
 ModelPlan cache only, without credentials/config/log reads or background work.
 
 Protocol evidence: [Google Gemini CLI 363a131](https://github.com/google-gemini/gemini-cli/tree/363a13119a57354f469732577518b9d6b319d1d6/packages/core/src/code_assist)
@@ -63,4 +73,6 @@ and CodexBar 0.81.0's GeminiStatusProbe (MIT). This is an independent implementa
 not vendored source or an auth-library dependency. Tests use handwritten fixtures,
 synthetic homes/tokens and `httptest`, never real credentials or provider accounts.
 CLIJIT owns command/consent wiring and the new `requests.remaining`/credit-scope
-projection before enabling this reader. The unchanged common foundation is PR225.
+projection, beta label and reservation-preserving purge before enabling this
+reader. The common foundation originates in PR225; the review fixes here add the
+independent request reservation and effective beta projection.
