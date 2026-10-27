@@ -24,20 +24,24 @@ public struct DockEffectRotation: Equatable, Sendable {
 @MainActor public final class DockWorkingEffects {
     public let pool:EffectResourcePool
     private var consumers=[String:SteppedImageEffect]()
+    private var interpolations=[String:DockInterpolatedFrames]()
+    private let hostTime:()->CFTimeInterval
     public private(set) var unavailableIDs=Set<String>()
     public var activeIDs:Set<String>{Set(consumers.filter{$0.value.isAvailable}.map(\.key))}
-    public var animatingIDs:Set<String>{Set(consumers.filter{$0.value.isAnimating}.map(\.key))}
+    public var animatingIDs:Set<String>{Set(consumers.filter{$0.value.isAnimating}.map(\.key)).union(interpolations.filter{$0.value.isAnimating}.map(\.key))}
+    public var interpolatedIDs:Set<String>{Set(interpolations.keys)}
+    public var interpolationLayerCount:Int{interpolations.values.reduce(0){$0+$1.layerCount}}
     public var frameCounts:[String:Int]{consumers.mapValues(\.frameCount)}
     private let systemReduceMotion:()->Bool
     private var motionByID=[String:DockEffectRotation]()
     private var staticIDs=Set<String>()
     private static let rotationKey="dock-effect-rotation"
     public var rotatingIDs:Set<String>{Set(consumers.filter{$0.value.layer.animation(forKey:Self.rotationKey) != nil}.map(\.key))}
-    public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion}){
-        self.pool=pool;self.systemReduceMotion=systemReduceMotion
+    public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion},hostTime:@escaping ()->CFTimeInterval = {CACurrentMediaTime()}){
+        self.pool=pool;self.systemReduceMotion=systemReduceMotion;self.hostTime=hostTime
     }
     public func configure(view:DockInstrumentView,skin:DockInstrumentSkin,readings:[DockInstrumentReading],profile:RenderProfile,
-                          magnification:[String:Double]=[:],compositing:DockEffectCompositing = .sourceOver,rotation:DockEffectRotation? = nil,quietIDs:Set<String> = [],provider:(DockInstrumentReading)->(any EffectFrameProvider)?) throws {
+                          magnification:[String:Double]=[:],compositing:DockEffectCompositing = .sourceOver,rotation:DockEffectRotation? = nil,quietIDs:Set<String> = [],sampling:DockEffectSampling = .stepped,provider:(DockInstrumentReading)->(any EffectFrameProvider)?) throws {
         stop();pool.purgeUnleased();unavailableIDs=[]
         guard Set(readings.map(\.subscriptionID)).count==readings.count else{throw DockLogicError.invalidCatalogue}
         guard rotation?.valid ?? true else{throw DockArtworkError.invalidManifest}
@@ -46,6 +50,7 @@ public struct DockEffectRotation: Equatable, Sendable {
         view.onVisualReset={[weak self] in self?.stop()}
         if compositing == .screen && !view.layerUsesCoreImageFilters {view.layerUsesCoreImageFilters=true}
         let rows=Dictionary(uniqueKeysWithValues:readings.map{($0.subscriptionID,$0)})
+        let epoch=hostTime();guard epoch.isFinite else{throw DockArtworkError.invalidManifest}
         CATransaction.begin();CATransaction.setDisableActions(true);defer{CATransaction.commit()}
         for station in skin.stations {
             guard let id=station.subscriptionID,let reading=rows[id],reading.jetEligible else{continue}
@@ -63,14 +68,19 @@ public struct DockEffectRotation: Equatable, Sendable {
             }
             // Quiet uses the existing atlas and static frame zero, without a second profile/cache.
             if quietIDs.contains(id) || effectiveProfile.reduceMotion {staticIDs.insert(id);effect.seekForCapture(0)}
+            parent.addSublayer(effect.layer)
+            if sampling == .interpolatedCandidate,!effectiveProfile.reduceMotion,!quietIDs.contains(id) {
+                guard let interpolation=DockInterpolatedFrames(effect:effect,epoch:epoch) else{effect.stop();effect.layer.removeFromSuperlayer();unavailableIDs.insert(id);continue}
+                interpolations[id]=interpolation
+            }
             if let rotation,!effectiveProfile.reduceMotion,!quietIDs.contains(id) {
                 let spin=CABasicAnimation(keyPath:"transform.rotation.z")
                 spin.fromValue=0;spin.toValue=rotation.direction == .clockwise ? -2*Double.pi:2*Double.pi
                 spin.duration=rotation.period;spin.timingFunction=CAMediaTimingFunction(name:.linear)
-                spin.repeatCount = .infinity
+                spin.repeatCount = .infinity;spin.beginTime=effect.layer.convertTime(epoch,from:nil)
                 effect.layer.add(spin,forKey:Self.rotationKey);motionByID[id]=rotation
             }
-            parent.addSublayer(effect.layer);consumers[id]=effect
+            consumers[id]=effect
         }
     }
     /// Freeze both timelines at elapsed seconds; the nine-pose contents clock remains unchanged.
@@ -78,9 +88,10 @@ public struct DockEffectRotation: Equatable, Sendable {
         guard phase.isFinite else{return}
         CATransaction.begin();CATransaction.setDisableActions(true);defer{CATransaction.commit()}
         for (id,effect) in consumers {
-            effect.seekForCapture(staticIDs.contains(id) ? 0:phase);effect.layer.removeAnimation(forKey:Self.rotationKey)
+            if let interpolation=interpolations[id]{interpolation.seek(phase)}else{effect.seekForCapture(staticIDs.contains(id) ? 0:phase)}
+            effect.layer.removeAnimation(forKey:Self.rotationKey)
             if let motion=motionByID[id]{effect.layer.transform=CATransform3DMakeRotation(motion.angle(elapsed:phase),0,0,1)}
         }
     }
-    public func stop(){for effect in consumers.values{effect.stop();effect.layer.removeFromSuperlayer()};consumers=[:];motionByID=[:];staticIDs=[];unavailableIDs=[]}
+    public func stop(){for interpolation in interpolations.values{interpolation.stop()};interpolations=[:];for effect in consumers.values{effect.stop();effect.layer.removeFromSuperlayer()};consumers=[:];motionByID=[:];staticIDs=[];unavailableIDs=[]}
 }
