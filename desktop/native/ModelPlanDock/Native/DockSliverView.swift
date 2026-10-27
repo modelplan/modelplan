@@ -28,7 +28,7 @@ import CoreGraphics
             let sourceAlong = vertical ? image.height : image.width
             let sourceCross = vertical ? image.width : image.height
             let targetAlong = vertical ? h : w, targetCross = vertical ? w : h
-            if targetAlong > sourceAlong, sourceAlong > 2 * sourceCross {
+            if targetAlong > 2 * targetCross, sourceAlong > 2 * sourceCross {
                 let cap = sourceCross, targetCap = CGFloat(targetCross)
                 for (start, length, targetStart, targetLength) in [
                     (0, cap, CGFloat(0), targetCap),

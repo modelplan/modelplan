@@ -47,7 +47,7 @@ import ModelPlanSettings
         parameters.visibleThickness = .nan
         XCTAssertThrowsError(try parameters.resolve(fullSpan: 180, scale: 1))
     }
-    func testLegacyShortSliverKeepsAuthoredEndCornersWhenExtended() throws {
+    func testLegacySliverKeepsAuthoredEndCornersWhenResized() throws {
         var bytes = [UInt8](repeating: 255, count: 8 * 104 * 4)
         for y in 0..<4 { for x in 0..<4 { for c in 0..<4 { bytes[(y * 8 + x) * 4 + c] = 0 } } }
         for y in 98..<104 { for x in 4..<8 { for c in 0..<4 { bytes[(y * 8 + x) * 4 + c] = 0 } } }
@@ -57,12 +57,14 @@ import ModelPlanSettings
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         let surface = DockSliverView(frame: .zero)
-        try surface.apply(image: image, logicalSize: CGSize(width: 4, height: 148), scale: 2, accessibilityLabel: "Synthetic")
-        XCTAssertFalse(surface.isPainted(atLocal: CGPoint(x: 0.5, y: 0.5)))
-        XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 0.5, y: 3)), "the head corner must not stretch along the full span")
-        XCTAssertFalse(surface.isPainted(atLocal: CGPoint(x: 3.5, y: 147.5)))
-        XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 3.5, y: 144)), "the distinct tail cap must keep its registration")
-        XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 2, y: 74)))
+        for length: CGFloat in [32, 148] {
+            try surface.apply(image: image, logicalSize: CGSize(width: 4, height: length), scale: 2, accessibilityLabel: "Synthetic")
+            XCTAssertFalse(surface.isPainted(atLocal: CGPoint(x: 0.5, y: 0.5)))
+            XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 0.5, y: 3)), "the head corner must not stretch along the full span")
+            XCTAssertFalse(surface.isPainted(atLocal: CGPoint(x: 3.5, y: length - 0.5)))
+            XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 3.5, y: length - 4)), "the distinct tail cap must keep its registration")
+            XCTAssertTrue(surface.isPainted(atLocal: CGPoint(x: 2, y: length / 2)))
+        }
     }
     func testWakeDwellLeaveDeadlineAndRepeatedReveal() throws {
         let policy = DockVisibilityPolicy()
