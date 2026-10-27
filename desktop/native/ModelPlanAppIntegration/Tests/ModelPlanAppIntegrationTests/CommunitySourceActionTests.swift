@@ -83,7 +83,7 @@ import ModelPlanSettings
         let (surface,help,facts,_,_)=try await setup();defer{surface.dispose();help.dispose()}
         surface.setOptionHelpHeld(true)
         let id=try XCTUnwrap(help.layer.input?.map.sourceActionID),held=help.onHelpAction
-        help.onHelpAction?(.dismissMap(reason:.escape,returnFocusID:nil))
+        XCTAssertTrue(surface.mainScreen.handleEscape())
         surface.setOptionHelpHeld(true);XCTAssertEqual(help.layer.input?.map.mode,.hidden)
         surface.setOptionHelpHeld(false);surface.setOptionHelpHeld(true)
         XCTAssertNotNil(help.layer.presentation?.mapSourceFrame)
@@ -101,6 +101,15 @@ import ModelPlanSettings
         let callback=surface.mainScreen.onIntents
         callback?([.openWebsite(link),.openWebsite(link)])
         XCTAssertEqual(facts.opened,[link]);callback?([.openWebsite(link)]);XCTAssertEqual(facts.opened,[link])
+    }
+    func testHelpEscapePrecedesComparisonBackWithoutClearingItsTrial()async throws {
+        let (surface,help,_,_,_)=try await setup(exact:true);defer{surface.dispose();help.dispose()}
+        surface.selectModel("model");XCTAssertEqual(surface.mainScreen.controller.trial?.modelID,"model")
+        surface.setOptionHelpHeld(true)
+        XCTAssertTrue(surface.mainScreen.handleEscape())
+        XCTAssertEqual(surface.mainScreen.controller.trial?.modelID,"model")
+        XCTAssertEqual(help.layer.input?.map.mode,.hidden)
+        XCTAssertTrue(surface.mainScreen.handleEscape());XCTAssertNil(surface.mainScreen.controller.trial)
     }
     func testActualModifierResponderRouteRetiresButtonsOnOptionRelease()async throws {
         let (surface,help,facts,_,_)=try await setup();defer{surface.dispose();help.dispose()}

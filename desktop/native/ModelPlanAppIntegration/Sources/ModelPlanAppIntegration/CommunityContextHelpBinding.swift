@@ -43,7 +43,7 @@ import ModelPlanSettings
             guard let self, !self.retired, self.active(),self.actionGeneration==token else { return }
             switch action {
             case .dismissContext(let id, _) where id == self.contextID: self.source?.leaveHelp()
-            case .dismissMap: self.optionDismissed=true;self.optionHeld=false;self.refresh()
+            case .dismissMap: _ = self.consumeEscape()
             case .mapSourceAction(let id):
                 guard self.optionHeld,let composition=self.composition,
                       ((composition.layer.input?.map.sourceActionID==id && composition.layer.presentation?.mapSourceFrame != nil)
@@ -53,6 +53,10 @@ import ModelPlanSettings
             default: break
             }
         }
+    }
+    @discardableResult func consumeEscape() -> Bool {
+        guard !retired,active(),optionHeld else { return false }
+        optionDismissed=true;optionHeld=false;refresh();return true
     }
     func setOptionHeld(_ held: Bool) {
         guard !retired,active() else { return }

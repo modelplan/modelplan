@@ -182,3 +182,5 @@ injected public website opener. CommunityApp supplies the HTTPS modelplan.ai ope
 headless tests inject a recorder and never open a browser. Existing comparison website intents use the same
 current-link fence. This partial community map is not the complete Cockpit/Dock map or physical/appearance
 acceptance, and it does not change the MainScreen profile or chart heights.
+The injected Help Escape callback runs before MainScreen comparison Back: one Escape dismisses held
+Option help without clearing its local trial, and the next Escape retains the original Back behavior.

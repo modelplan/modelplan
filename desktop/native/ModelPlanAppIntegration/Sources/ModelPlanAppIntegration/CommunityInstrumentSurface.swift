@@ -42,8 +42,10 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 
 @MainActor private final class InstrumentContainer: NSView {
     var optionChanged: ((Bool) -> Void)?
+    var escape: (() -> Bool)?
     override var isFlipped: Bool { true }
     override func flagsChanged(with event: NSEvent) { optionChanged?(event.modifierFlags.contains(.option));super.flagsChanged(with:event) }
+    override func keyDown(with event: NSEvent) { if event.keyCode==53,escape?()==true { return };super.keyDown(with:event) }
 }
 
 /// Live read-only public model/effort consumer using M3's existing native MainScreenView.
@@ -76,6 +78,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         self.openWebsite = openWebsite
         super.init()
         (view as? InstrumentContainer)?.optionChanged = { [weak self] held in self?.setOptionHelpHeld(held) }
+        let escape: () -> Bool = { [weak self] in self?.helpBinding?.consumeEscape() ?? false }
+        mainScreen.onHelpEscape=escape;(view as? InstrumentContainer)?.escape=escape
         mainScreen.onIntents = { [weak self] intents in
             guard let self,self.isPresented,!self.retired,!self.renderFailure else { return }
             for intent in intents {
@@ -147,7 +151,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         guard !retired else { return }; retired = true; isPresented = false; helpGeneration &+= 1
         let binding = helpBinding; helpBinding = nil; binding?.dispose()
         modelPicker.target = nil; modelPicker.action = nil; modelPicker.isEnabled = false
-        (view as? InstrumentContainer)?.optionChanged = nil
+        (view as? InstrumentContainer)?.optionChanged = nil;(view as? InstrumentContainer)?.escape=nil
+        mainScreen.onHelpEscape=nil
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
         requestFreshSelection = nil; contentSizeChanged = nil
     }
