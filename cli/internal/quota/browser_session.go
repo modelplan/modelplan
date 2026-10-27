@@ -2,7 +2,6 @@ package quota
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -14,62 +13,38 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
-// The pinned helper reads CODEXBAR_CONFIG (CodexBarConfigStore.swift). Give each
-// usage invocation its own version-1 config, with only its explicit provider.
-// Never import an ambient config's cookies, tokens, hooks or provider settings.
-// KeychainAccessGate alone does not block Safari or plaintext Firefox cookies.
-func codexBarUsageConfig(provider, access string) (string, func(), error) {
-	if !consent.ValidTool(provider) || provider == "all" || provider == "both" {
-		return "", nil, errors.New("invalid single CodexBar provider")
-	}
-	cookieSource := "off"
-	if access == "browser-session" {
-		cookieSource = "auto"
-	}
-	type providerConfig struct {
-		ID           string `json:"id"`
-		Enabled      bool   `json:"enabled"`
-		CookieSource string `json:"cookieSource"`
-	}
-	config := struct {
-		Version   int              `json:"version"`
-		Providers []providerConfig `json:"providers"`
-	}{Version: 1, Providers: []providerConfig{{provider, true, cookieSource}}}
-	b, err := json.Marshal(config)
-	if err != nil {
-		return "", nil, err
-	}
-	dir, err := os.MkdirTemp("", "modelplan-codexbar-")
-	if err != nil {
-		return "", nil, errors.New("CodexBar usage config unavailable")
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	file := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(file, b, 0o600); err != nil {
-		cleanup()
-		return "", nil, errors.New("CodexBar usage config unavailable")
-	}
-	return file, cleanup, nil
-}
-
+// The standard restriction is injected only into that child. Advanced children
+// inherit the user's choice, including an explicit disable; never force it off.
 func codexBarEnvironment(access string) []string {
 	env := []string{}
 	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "CODEXBAR_DISABLE_KEYCHAIN_ACCESS=") {
+		if !strings.HasPrefix(value, "CODEXBAR_DISABLE_KEYCHAIN_ACCESS=") || access == "browser-session" {
 			env = append(env, value)
 		}
 	}
-	disabled := "1"
-	if access == "browser-session" {
-		disabled = "0"
+	if access != "browser-session" {
+		env = append(env, "CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1")
 	}
-	return append(env, "CODEXBAR_DISABLE_KEYCHAIN_ACCESS="+disabled, "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+	return append(env, "LANG=en_US.UTF-8", "LC_ALL=en_US.UTF-8")
+}
+
+func codexBarConfigEnvironment(access, file string) []string {
+	env := []string{}
+	for _, value := range codexBarEnvironment(access) {
+		if !strings.HasPrefix(value, "CODEXBAR_CONFIG=") {
+			env = append(env, value)
+		}
+	}
+	return append(env, "CODEXBAR_CONFIG="+file)
 }
 
 // ClearBrowserCookies is an explicit Forget operation, never a usage read. The
 // fixed, provider-scoped CLI is documented by pinned CLICacheCommand.swift at
 // ee890b5f392e70d6e20162d3e95cf9f1be265b60. No --all, login or helper fetch.
 func ClearBrowserCookies(ctx context.Context, p Paths, provider string) error {
+	if os.Getenv("CODEXBAR_DISABLE_KEYCHAIN_ACCESS") == "1" {
+		return errors.New("cookie cleanup blocked by CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1; retain cleanup marker and retry when permitted")
+	}
 	admission, err := consent.ReaderLock()
 	if err != nil {
 		return err

@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -186,6 +188,7 @@ func TestConsentDestinationsFollowSelectedRegion(t *testing.T) {
 
 func TestForgetClearsOnlyProviderCookieCacheAndRetainsFailedMarker(t *testing.T) {
 	home := consentFixtureHome(t)
+	t.Setenv("CODEXBAR_DISABLE_KEYCHAIN_ACCESS", "0")
 	accessCatalogue(t, "browser-session")
 	code, _, errOut := consentRun([]string{"connect", "windsurf", "--browser-session"}, "yes\n")
 	if code != 0 {
@@ -233,6 +236,126 @@ printf '%s|%s\n' "$*" "$CODEXBAR_DISABLE_KEYCHAIN_ACCESS" >> "$MODELPLAN_TEST_CO
 	b, _ := os.ReadFile(log)
 	if strings.Count(string(b), "--provider windsurf") != 2 || strings.Contains(string(b), "--all") || !strings.Contains(string(b), "json|0") {
 		t.Fatal(string(b))
+	}
+}
+
+func TestForgetCapturesGrantCommittedBeforeRevocation(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		for _, disabled := range []string{"0", "1"} {
+			name := "single/keychain=" + disabled
+			if all {
+				name = "all/keychain=" + disabled
+			}
+			t.Run(name, func(t *testing.T) {
+				home := consentFixtureHome(t)
+				t.Setenv("CODEXBAR_DISABLE_KEYCHAIN_ACCESS", disabled)
+				cookie, other, log := filepath.Join(home, "windsurf.cookie"), filepath.Join(home, "devin.cookie"), filepath.Join(home, "cookie-clear-calls")
+				for _, path := range []string{cookie, other} {
+					if err := os.WriteFile(path, []byte("synthetic cookie cache"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Setenv("MODELPLAN_TEST_COOKIE_LOG", log)
+				t.Setenv("MODELPLAN_TEST_COOKIE_FILE", cookie)
+				bin := filepath.Join(home, "helper")
+				script := `#!/bin/sh
+printf '%s|%s\n' "$*" "$CODEXBAR_DISABLE_KEYCHAIN_ACCESS" >> "$MODELPLAN_TEST_COOKIE_LOG"
+[ "$*" = 'cache clear --cookies --provider windsurf --format json' ] || exit 9
+/bin/rm "$MODELPLAN_TEST_COOKIE_FILE"
+`
+				if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("MODELPLAN_CODEXBAR", bin)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				beforeRevoke, release := make(chan struct{}), make(chan struct{})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				old := changeDisconnectConsent
+				changeDisconnectConsent = func(file string, change func(*consent.State) error) error {
+					// This is the stale-snapshot point from the original bug.
+					s, err := consent.Load(file)
+					if err != nil {
+						return err
+					}
+					if s.Tools["windsurf"].BrowserCookieCache {
+						return errors.New("unexpected earlier cookie obligation")
+					}
+					close(beforeRevoke)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return ctx.Err()
+					}
+					return consent.Change(file, change)
+				}
+				t.Cleanup(func() { changeDisconnectConsent = old })
+				args := []string{"disconnect", "windsurf", "--json"}
+				if all {
+					args = []string{"disconnect", "--all", "--json"}
+				}
+				type result struct {
+					code     int
+					out, err string
+				}
+				done := make(chan result, 1)
+				go func() { code, out, err := consentRun(args, ""); done <- result{code, out, err} }()
+				select {
+				case <-beforeRevoke:
+				case <-ctx.Done():
+					t.Fatal("Forget did not reach revocation")
+				}
+				// A new advanced tool/grant appears after Forget's initial snapshot,
+				// but before the actual revocation transaction acquires current state.
+				if err := consent.Change(consent.Path(), func(s *consent.State) error {
+					if err := consent.Set(s, "windsurf", true, "codexbar:windsurf", "codexbar", time.Now()); err != nil {
+						return err
+					}
+					r := s.Tools["windsurf"]
+					r.BrowserSession, r.BrowserCookieCache = true, true
+					s.Tools["windsurf"] = r
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				close(release)
+				var got result
+				select {
+				case got = <-done:
+				case <-ctx.Done():
+					t.Fatal("Forget did not complete")
+				}
+				s, err := consent.Load(consent.Path())
+				if err != nil || s.Tools["windsurf"].Allowed {
+					t.Fatal("current grant was not revoked", s, err)
+				}
+				calls, readErr := os.ReadFile(log)
+				if disabled == "1" {
+					if got.code == 0 || !strings.Contains(got.err, "CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1") || !s.Tools["windsurf"].BrowserCookieCache || !os.IsNotExist(readErr) {
+						t.Fatal("user disable must leave cleanup pending without helper access", got, s, string(calls), readErr)
+					}
+					if _, err := os.Stat(cookie); err != nil {
+						t.Fatal("blocked cleanup changed cookies", err)
+					}
+				} else {
+					if got.code != 0 || s.Tools["windsurf"].BrowserCookieCache || readErr != nil || strings.Count(string(calls), "--provider windsurf") != 1 || !strings.Contains(string(calls), "json|0") {
+						t.Fatal("late grant's cookie obligation missed", got, s, string(calls), readErr)
+					}
+					if _, err := os.Stat(cookie); !os.IsNotExist(err) {
+						t.Fatal("cookie cache retained after successful Forget", err)
+					}
+				}
+				if _, err := os.Stat(other); err != nil {
+					t.Fatal("other provider cookie changed", err)
+				}
+			})
+		}
 	}
 }
 

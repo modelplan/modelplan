@@ -258,21 +258,16 @@ func rememberOffered(rows []consentChoice) {
 	})
 }
 
+// Narrow transaction seam for controlled grant-before-revoke regression tests.
+var changeDisconnectConsent = consent.Change
+
 func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *store.Store, c common) int {
 	if (all && len(args) != 0) || (!all && len(args) != 1) {
 		fmt.Fprintln(stderr, "usage: modelplan disconnect <tool|--all>")
 		return exitUsage
 	}
-	s, err := consent.Load(consent.Path())
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return exitErr
-	}
 	ids := []string{}
 	if all {
-		for id := range s.Tools {
-			ids = append(ids, id)
-		}
 		for _, tool := range detection(st).Tools {
 			ids = append(ids, tool.ProviderID)
 		}
@@ -289,17 +284,25 @@ func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *stor
 			return exitUsage
 		}
 	}
-	sort.Strings(ids)
-	unique := ids[:0]
-	for _, id := range ids {
-		if len(unique) == 0 || id != unique[len(unique)-1] {
-			unique = append(unique, id)
+	// Select current records and capture cookie obligations under the same lock
+	// as revocation. --all also includes grants committed after the initial list.
+	cookies := map[string]bool{}
+	err := changeDisconnectConsent(consent.Path(), func(current *consent.State) error {
+		if all {
+			for id := range current.Tools {
+				ids = append(ids, id)
+			}
 		}
-	}
-	ids = unique
-	// Revoke first. A purge failure must never leave a tool enabled.
-	err = consent.Change(consent.Path(), func(current *consent.State) error {
+		sort.Strings(ids)
+		unique := ids[:0]
 		for _, id := range ids {
+			if len(unique) == 0 || id != unique[len(unique)-1] {
+				unique = append(unique, id)
+			}
+		}
+		ids = unique
+		for _, id := range ids {
+			cookies[id] = current.Tools[id].BrowserCookieCache
 			if err := consent.Set(current, id, false, "", "", time.Now()); err != nil {
 				return err
 			}
@@ -322,7 +325,7 @@ func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *stor
 			if err = quota.ForgetTool(quotaPaths(st), id); err != nil {
 				break
 			}
-			if s.Tools[id].BrowserCookieCache {
+			if cookies[id] {
 				if err = quota.ClearBrowserCookies(context.Background(), quotaPaths(st), id); err != nil {
 					break
 				}

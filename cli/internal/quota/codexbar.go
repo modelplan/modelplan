@@ -464,7 +464,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 				}
 			}
 		}
-		out, err := runCodexBar(ctx, bin, prov, access)
+		out, err := runCodexBarGeneration(ctx, bin, prov, access, state.Generation)
 		e := parseCodexBar(out, prov, home, now)
 		if e.identity != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
@@ -502,24 +502,30 @@ func lockFile(p string, now time.Time, stale time.Duration) (func(), bool) {
 // runCodexBar: one provider, JSON only, English text, bounded output. CodexBar exits 1 when the
 // provider failed and still prints the JSON, so the exit code is not an error by itself.
 func runCodexBar(ctx context.Context, bin, provider string, access ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, codexbarTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		return nil, err
+	}
 	class := "standard"
 	if len(access) == 1 {
 		class = access[0]
 	}
-	config, cleanup, err := codexBarUsageConfig(provider, class)
+	return runCodexBarGeneration(ctx, bin, provider, class, state.Generation)
+}
+
+func runCodexBarGeneration(ctx context.Context, bin, provider, class string, generation uint64) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, codexbarTimeout)
+	defer cancel()
+	config, cleanup, err := codexBarUsageConfig(ctx, bin, provider, class)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	for _, value := range codexBarEnvironment(class) {
-		if !strings.HasPrefix(value, "CODEXBAR_CONFIG=") {
-			cmd.Env = append(cmd.Env, value)
-		}
+	if !consent.CurrentGeneration(generation) {
+		return nil, errors.New("consent changed; helper usage not started")
 	}
-	cmd.Env = append(cmd.Env, "CODEXBAR_CONFIG="+config)
+	cmd := exec.CommandContext(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
+	cmd.Env = codexBarConfigEnvironment(class, config)
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	var out bytes.Buffer

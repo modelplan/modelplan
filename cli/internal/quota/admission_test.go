@@ -25,41 +25,48 @@ func TestHelperCookieConfigAndKeychainAreAccessScoped(t *testing.T) {
 	t.Setenv("CODEXBAR_CONFIG", ambient)
 	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:1234")
 	bin := filepath.Join(dir, "helper")
-	script := `#!/bin/sh
-printf '%s\n' "$CODEXBAR_DISABLE_KEYCHAIN_ACCESS" "$CODEXBAR_CONFIG" "$HTTPS_PROXY"
+	script := "#!/bin/sh\n" + fakeConfigMetadata(t) + `printf '%s\n' "$CODEXBAR_DISABLE_KEYCHAIN_ACCESS" "$CODEXBAR_CONFIG" "$HTTPS_PROXY"
 cat "$CODEXBAR_CONFIG"
 exit "$MODELPLAN_TEST_HELPER_EXIT"
 `
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, exit := range []string{"0", "7"} {
-		t.Setenv("MODELPLAN_TEST_HELPER_EXIT", exit)
-		for _, v := range []struct{ access, keychain, cookies string }{{"standard", "1", "off"}, {"browser-session", "0", "auto"}, {"unknown", "1", "off"}, {"", "1", "off"}} {
-			out, err := runCodexBar(context.Background(), bin, "cursor", v.access)
-			if (err == nil) != (exit == "0") {
-				t.Fatalf("%+v exit %s: %v", v, exit, err)
-			}
-			parts := strings.SplitN(string(out), "\n", 4)
-			if len(parts) != 4 || parts[0] != v.keychain || parts[1] == ambient || parts[2] != "http://proxy.invalid:1234" {
-				t.Fatalf("%+v: %s", v, out)
-			}
-			var config struct {
-				Version   int              `json:"version"`
-				Providers []map[string]any `json:"providers"`
-			}
-			if err := json.Unmarshal([]byte(parts[3]), &config); err != nil {
-				t.Fatal(err, string(out))
-			}
-			if config.Version != 1 || len(config.Providers) != 1 {
-				t.Fatal("usage must select only its explicit provider", config)
-			}
-			p := config.Providers[0]
-			if len(p) != 3 || p["id"] != "cursor" || p["enabled"] != true || p["cookieSource"] != v.cookies || strings.Contains(parts[3], "synthetic-cookie") || strings.Contains(parts[3], "hooks") {
-				t.Fatalf("%+v: ambient config leaked or wrong cookie source: %s", v, parts[3])
-			}
-			if _, err := os.Stat(filepath.Dir(parts[1])); !os.IsNotExist(err) {
-				t.Fatal("temporary config retained after helper exit", err)
+	for _, inherited := range []string{"", "0", "1"} {
+		t.Setenv("CODEXBAR_DISABLE_KEYCHAIN_ACCESS", inherited)
+		for _, exit := range []string{"0", "7"} {
+			t.Setenv("MODELPLAN_TEST_HELPER_EXIT", exit)
+			for _, v := range []struct{ access, keychain, cookies string }{{"standard", "1", "off"}, {"browser-session", inherited, "auto"}, {"unknown", "1", "off"}, {"", "1", "off"}} {
+				out, err := runCodexBar(context.Background(), bin, "cursor", v.access)
+				if (err == nil) != (exit == "0") {
+					t.Fatalf("%+v exit %s: %v", v, exit, err)
+				}
+				parts := strings.SplitN(string(out), "\n", 4)
+				if len(parts) != 4 || parts[0] != v.keychain || parts[1] == ambient || parts[2] != "http://proxy.invalid:1234" {
+					t.Fatalf("%+v: %s", v, out)
+				}
+				var config struct {
+					Version   int              `json:"version"`
+					Providers []map[string]any `json:"providers"`
+				}
+				if err := json.Unmarshal([]byte(parts[3]), &config); err != nil {
+					t.Fatal(err, string(out))
+				}
+				if config.Version != 1 || len(config.Providers) != len(fixtureRegistry) {
+					t.Fatal("usage needs the complete effective registry", config)
+				}
+				for _, p := range config.Providers {
+					wantCookies, wantEnabled := "off", p["id"] == "cursor"
+					if wantEnabled {
+						wantCookies = v.cookies
+					}
+					if len(p) != 3 || p["enabled"] != wantEnabled || p["cookieSource"] != wantCookies || strings.Contains(parts[3], "synthetic-cookie") || strings.Contains(parts[3], "hooks") {
+						t.Fatalf("%+v: ambient config leaked or wrong cookie source: %s", v, parts[3])
+					}
+				}
+				if _, err := os.Stat(filepath.Dir(parts[1])); !os.IsNotExist(err) {
+					t.Fatal("temporary config retained after helper exit", err)
+				}
 			}
 		}
 	}
@@ -70,7 +77,11 @@ exit "$MODELPLAN_TEST_HELPER_EXIT"
 
 func TestHelperUsageConfigIsPrivateAndFailsClosed(t *testing.T) {
 	isolateHome(t)
-	file, cleanup, err := codexBarUsageConfig("cursor", "standard")
+	bin := filepath.Join(t.TempDir(), "metadata-helper")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+fakeConfigMetadata(t)+"exit 99\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	file, cleanup, err := codexBarUsageConfig(context.Background(), bin, "cursor", "standard")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +93,7 @@ func TestHelperUsageConfigIsPrivateAndFailsClosed(t *testing.T) {
 		}
 	}
 	for _, provider := range []string{"all", "both", "cursor,windsurf", "../cursor"} {
-		if _, _, err := codexBarUsageConfig(provider, "browser-session"); err == nil {
+		if _, _, err := codexBarUsageConfig(context.Background(), bin, provider, "browser-session"); err == nil {
 			t.Fatal("accepted non-single provider", provider)
 		}
 	}
@@ -99,8 +110,7 @@ func TestHelperRefreshCookieAutoRequiresCurrentBrowserRouteAndGrant(t *testing.T
 	dir := t.TempDir()
 	bin, log := filepath.Join(dir, "helper"), filepath.Join(dir, "configs")
 	t.Setenv("MODELPLAN_TEST_HELPER_CONFIGS", log)
-	if err := os.WriteFile(bin, []byte(`#!/bin/sh
-cat "$CODEXBAR_CONFIG" >> "$MODELPLAN_TEST_HELPER_CONFIGS"
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+fakeConfigMetadata(t)+`cat "$CODEXBAR_CONFIG" >> "$MODELPLAN_TEST_HELPER_CONFIGS"
 printf '\n' >> "$MODELPLAN_TEST_HELPER_CONFIGS"
 printf '[]'
 `), 0700); err != nil {
@@ -219,8 +229,10 @@ func TestHelperRefreshRevocationFencesPublication(t *testing.T) {
 	t.Setenv("MODELPLAN_TEST_HELPER_RELEASE", release)
 	t.Setenv("MODELPLAN_TEST_HELPER_INNER", inner)
 	script := `#!/bin/sh
+if [ "$1" != config ]; then
 : > "$MODELPLAN_TEST_HELPER_STARTED"
 while [ ! -f "$MODELPLAN_TEST_HELPER_RELEASE" ]; do sleep 0.01; done
+fi
 exec "$MODELPLAN_TEST_HELPER_INNER" "$@"
 `
 	os.WriteFile(bin, []byte(script), 0700)

@@ -14,10 +14,15 @@ cache before its own confirmation; only that provider gets `cookieSource: auto`.
 Forget also clears that provider's cookie cache. Not-read/token-refresh and
 API-key-only helper platforms are not offered.
 Every `connect --json` is a preview; connecting starts no reader or refresh.
+The config covers the complete effective helper registry and is checked after
+normalization; all providers except the granted advanced target keep cookies Off.
+A user-set Keychain disable remains in force and leaves cookie cleanup pending.
 
 标准 CodexBar 路径须经审核并关闭钥匙串及 cookie 导入（`cookieSource: off`）；浏览器会话单列为高级未勾选组，
 用 `connect <工具> --browser-session` 查看 Safe Storage 和 cookie 缓存说明后单独确认，只有该提供商使用 `cookieSource: auto`。
 忘记读数也会按提供商清除 cookie 缓存；所有 `connect --json` 只预览，连接不启动读取器。
+配置包含完整有效注册表并核对规范化结果；只有本次高级授权目标可用 Auto，其余均为 Off。
+用户的钥匙串禁用设置不会被覆盖；清理受阻时保留待清理标记。
 
 `modelplan connect --detected` 预勾选已检测工具，只确认一次；`--json` 仅预览。
 `--privacy automatic|passive` 保存隐私级别，`MODELPLAN_READERS=passive|off` 进一步限制。
