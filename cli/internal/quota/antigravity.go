@@ -6,9 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +26,7 @@ var antigravityReader = &nativeReader{Name: "Antigravity", Regions: []string{"lo
 // A descriptor can be supplied by CLIJIT after consent. Ambiguous discovery is
 // unavailable: no port scanning, probing, network fallback or app launch.
 type AntigravityServer struct {
+	PID  int
 	Port int
 	CSRF string
 	TLS  bool
@@ -65,7 +69,13 @@ func antigravityServers(raw []byte) []AntigravityServer {
 	var out []AntigravityServer
 	for _, line := range strings.Split(string(raw), "\n") {
 		f := strings.Fields(line)
-		if len(f) < 3 || !strings.Contains(strings.ToLower(line), "language_server") {
+		if len(f) < 4 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(f[0])
+		uid, uidErr := strconv.Atoi(f[1])
+		name := strings.ToLower(filepath.Base(f[2]))
+		if pidErr != nil || uidErr != nil || pid <= 0 || uid != os.Getuid() || !(name == "language_server" || strings.HasPrefix(name, "language_server_")) {
 			continue
 		}
 		app := antigravityFlag(f, "--app_data_dir")
@@ -80,7 +90,7 @@ func antigravityServers(raw []byte) []AntigravityServer {
 		if !antigravityCSRF(token) {
 			continue
 		}
-		out = append(out, AntigravityServer{Port: port, CSRF: token})
+		out = append(out, AntigravityServer{PID: pid, Port: port, CSRF: token})
 	}
 	return out
 }
@@ -99,7 +109,7 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	s, ok := ctx.Value(antigravityServerKey{}).(AntigravityServer)
 	if !ok {
-		raw, err := antigravityCommand(ctx, "/bin/ps", "-u", strconv.Itoa(os.Getuid()), "-o", "pid=,args=")
+		raw, err := antigravityCommand(ctx, "/bin/ps", "-u", strconv.Itoa(os.Getuid()), "-o", "pid=,uid=,comm=,args=")
 		if err != nil {
 			e.Error = antigravityNext("not_detected")
 			return e
@@ -115,7 +125,11 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		}
 		s = servers[0]
 	}
-	if s.Port < 1 || s.Port > 65535 || !antigravityCSRF(s.CSRF) {
+	if s.PID <= 0 || s.Port < 1 || s.Port > 65535 || !antigravityCSRF(s.CSRF) {
+		e.Error = antigravityNext("not_supported_yet")
+		return e
+	}
+	if antigravityVerify(ctx, s) != nil {
 		e.Error = antigravityNext("not_supported_yet")
 		return e
 	}
@@ -134,6 +148,36 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		c = nativeClient
 	}
 	client := *c
+	transport, ok := c.Transport.(*http.Transport)
+	if c.Transport == nil {
+		transport = http.DefaultTransport.(*http.Transport)
+	} else if !ok {
+		e.Error = antigravityNext("not_supported_yet")
+		return e
+	}
+	local := transport.Clone()
+	baseDial := local.DialContext
+	if baseDial == nil {
+		baseDial = (&net.Dialer{Timeout: nativeTimeout}).DialContext
+	}
+	local.DialTLSContext = nil
+	local.DialContext = func(dialCtx context.Context, network, address string) (net.Conn, error) {
+		if address != net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port)) {
+			return nil, errors.New("local endpoint changed")
+		}
+		conn, err := baseDial(dialCtx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		// Revalidate after connect, before Transport sends HTTP headers/nonce.
+		if err := antigravityVerify(dialCtx, s); err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}
+	client.Transport = local
+	defer local.CloseIdleConnections()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
@@ -200,4 +244,58 @@ func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 	}
 	// Models are Antigravity pools; no Claude Code/Codex plan or account binding.
 	return e
+}
+
+// A supplied descriptor is not authority by itself. Re-read the current process
+// nonce/port and the OS listener owner; never send the nonce to an unrelated PID.
+var antigravityVerify = verifyAntigravityServer
+
+func verifyAntigravityServer(ctx context.Context, s AntigravityServer) error {
+	raw, err := antigravityCommand(ctx, "/bin/ps", "-p", strconv.Itoa(s.PID), "-o", "pid=,uid=,comm=,args=")
+	if err != nil {
+		return errors.New("Antigravity process unavailable")
+	}
+	candidates := antigravityServers(raw)
+	if len(candidates) != 1 || candidates[0].PID != s.PID || candidates[0].Port != s.Port || candidates[0].CSRF != s.CSRF {
+		return errors.New("Antigravity process changed")
+	}
+	bin := "/usr/bin/lsof"
+	if runtime.GOOS == "darwin" {
+		bin = "/usr/sbin/lsof"
+	}
+	raw, err = antigravityCommand(ctx, bin, "-nP", "-iTCP:"+strconv.Itoa(s.Port), "-sTCP:LISTEN", "-Fpcun")
+	if err != nil {
+		return errors.New("Antigravity listener unavailable")
+	}
+	pid, uid := -1, -1
+	matched := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		if len(line) < 2 {
+			continue
+		}
+		switch line[0] {
+		case 'p':
+			pid, err = strconv.Atoi(line[1:])
+			if err != nil || pid != s.PID {
+				return errors.New("Antigravity listener owner changed")
+			}
+			uid = -1
+		case 'u':
+			uid, err = strconv.Atoi(line[1:])
+			if err != nil || uid != os.Getuid() {
+				return errors.New("Antigravity listener user changed")
+			}
+		case 'n':
+			if pid != s.PID || uid != os.Getuid() {
+				return errors.New("Antigravity listener unverified")
+			}
+			if line[1:] == net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port)) {
+				matched = true
+			}
+		}
+	}
+	if !matched {
+		return errors.New("Antigravity loopback listener unavailable")
+	}
+	return nil
 }
