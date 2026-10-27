@@ -125,6 +125,8 @@ type Card struct {
 type Credits struct {
 	Unlimited  bool      `json:"unlimited,omitempty"`
 	Balance    *float64  `json:"balance,omitempty"`
+	Currency   string    `json:"currency,omitempty"` // explicit ISO currency for monetary wallets
+	Unit       string    `json:"unit,omitempty"`     // money | credits; absent for legacy readings
 	ObservedAt time.Time `json:"observedAt"`
 	AgeMinutes *int      `json:"ageMinutes,omitempty"`
 }
@@ -211,10 +213,11 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
 	Cache, CodexHome, LocalFile string
-	CodexBarFile                string // ~/.config/modelplan/codexbar.json: providers read through CodexBar
-	ConnectionsFile             string // ~/.config/modelplan/connections.json: which backend reads each provider
-	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
-	ClaudeSession               string // the calling Claude Code session, when known
+	CodexBarFile                string        // ~/.config/modelplan/codexbar.json: providers read through CodexBar
+	ConnectionsFile             string        // ~/.config/modelplan/connections.json: which backend reads each provider
+	CodexThread                 string        // the calling Codex thread, when known (CODEX_THREAD_ID)
+	ClaudeSession               string        // the calling Claude Code session, when known
+	ReaderAccess                *ReaderAccess // explicit shared-consent admission for saved-login readers
 }
 
 // Read gathers every available source and evaluates it at now.

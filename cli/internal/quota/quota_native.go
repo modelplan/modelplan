@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -32,15 +33,18 @@ const (
 // variable ("" for a reader that asks the agent's own CLI, which keeps the sign-in) and the fetch,
 // which returns a cache entry (Status ok or error, never the key).
 type nativeReader struct {
-	Name    string
-	Regions []string
-	KeyEnv  string
-	Collect func(ctx context.Context, c *http.Client, cache string, now time.Time) codexbarEntry
-	Fetch   func(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry
+	Name     string
+	Regions  []string
+	KeyEnv   string
+	Collect  func(ctx context.Context, c *http.Client, cache string, now time.Time) codexbarEntry
+	Fetch    func(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry
+	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
+	Profiles func() []ReaderProfile
 }
 
 // nativeReaders: the registry. A provider without one stays on CodexBar.
 var nativeReaders = map[string]*nativeReader{
+	"claude":     claudeAccountReader,
 	"zai":        zaiReader,
 	"kimi":       kimiReader,
 	"cursor":     cursorReader,
@@ -84,7 +88,19 @@ func loadNative(cache string) *nativeSnap {
 
 // NativeDue: a native provider runs and its cached reading is missing or old enough.
 func NativeDue(p Paths, now time.Time) bool {
+	for provider, n := range nativeReaders {
+		if n.Managed != nil && managedDue(p, provider, now) {
+			return true
+		}
+	}
 	on := active(p, BackendNative)
+	legacy := on[:0]
+	for _, x := range on {
+		if nativeReaders[x.Provider].Managed == nil {
+			legacy = append(legacy, x)
+		}
+	}
+	on = legacy
 	if len(on) == 0 || p.Cache == "" {
 		return false
 	}
@@ -97,6 +113,9 @@ func NativeDue(p Paths, now time.Time) bool {
 		by[e.Provider] = e
 	}
 	for _, x := range on {
+		if nativeReaders[x.Provider].Managed != nil {
+			continue
+		}
 		e, ok := by[x.Provider]
 		wait := NativeEvery
 		if ok && e.Status != "ok" {
@@ -115,20 +134,47 @@ var nativeClient = &http.Client{Timeout: nativeTimeout}
 // RefreshNative asks each native provider once and caches the sanitised readings. One at a time.
 func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	on := active(p, BackendNative)
-	if len(on) == 0 {
+	legacy := on[:0]
+	for _, x := range on {
+		if nativeReaders[x.Provider].Managed == nil {
+			legacy = append(legacy, x)
+		}
+	}
+	on = legacy
+	managed := []string{}
+	for provider, n := range nativeReaders {
+		if n.Managed != nil {
+			if _, allowed := readerAllowed(p, provider); allowed {
+				managed = append(managed, provider)
+			}
+		}
+	}
+	if len(on) == 0 && len(managed) == 0 {
 		return errors.New("no native provider is on")
 	}
-	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+1)*nativeTimeout)
+	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+len(managed)+1)*nativeTimeout)
 	if !ok {
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
+	sort.Strings(managed)
+	for _, provider := range managed {
+		if err := refreshManaged(ctx, p, provider, now); err != nil {
+			return err
+		}
+	}
+	if len(on) == 0 {
+		return nil
+	}
 	home, _ := os.UserHomeDir()
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	for _, x := range on {
 		key := os.Getenv(x.KeyEnv)
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
+		if n.Managed != nil {
+			continue
+		}
 		if n.Collect != nil {
 			e = n.Collect(ctx, nativeClient, p.Cache, now)
 		} else {
@@ -195,6 +241,11 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
+	for provider, n := range nativeReaders {
+		if n.Managed != nil {
+			applyManaged(r, p, provider, now)
+		}
+	}
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})
@@ -208,6 +259,9 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 	}
 	for _, x := range ss {
+		if n := nativeReaders[x.Provider]; n != nil && n.Managed != nil {
+			continue
+		}
 		if x.Backend != BackendNative {
 			continue
 		}
