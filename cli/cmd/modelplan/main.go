@@ -98,6 +98,8 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
+  modelplan plugin install claude-code|codex
+                                       install through the host CLI; otherwise print its commands
   modelplan version
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
@@ -167,6 +169,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
+	}
+	if cmd == "plugin" {
+		return pluginCmd(fs.Args(), stdin, stdout, stderr, c)
 	}
 
 	if cmd == "publication" && (!c.json || fs.NArg() != 0) {
