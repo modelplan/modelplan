@@ -183,7 +183,7 @@ struct NativeFailure:Error {let message:String}
         for y in 0..<rendered.height { for x in 0..<rendered.width {
             let offset=y*rendered.bytesPerRow+x*4
             if bytes[offset+3]>0 {
-                try require(bytes[offset]>=bytes[offset+3]-1 && bytes[offset+1]==0 && bytes[offset+2]==0,"premultiplied source edge has no dark fringe")
+                try require(bytes[offset]>=bytes[offset+3]-1 && bytes[offset+1]==0 && bytes[offset+2]==0,"premultiplied source edge has no dark fringe: scale=\(scale) x=\(x) y=\(y) rgba=\(bytes[offset]),\(bytes[offset+1]),\(bytes[offset+2]),\(bytes[offset+3]) sourceSpace=\(String(describing:sourceControl.colorSpace?.name))")
             }
         } }
         let scaledView=DockInstrumentView(frame:.zero);scaledView.presentationBackingScale=scale
