@@ -15,11 +15,18 @@ import AppKit
     private var allowed = true
     private var cursorLayers:[String:CALayer] = [:]
     private let systemReduceMotion:@MainActor ()->Bool
-    private var cursorPresentationVisible = false
+    private let windowVisibility:@MainActor (RecordStripView)->Bool
     private var workspaceToken:NSObjectProtocol?,occlusionToken:NSObjectProtocol?
-    public init(provider:(any RecordStripRecipeProvider)? = nil,systemReduceMotion:(@MainActor ()->Bool)? = nil) {
+    public convenience init(provider:(any RecordStripRecipeProvider)? = nil,systemReduceMotion:(@MainActor ()->Bool)? = nil) {
+        self.init(provider:provider,systemReduceMotion:systemReduceMotion,windowVisibility:{ view in
+            view.window.map{$0.isVisible && $0.occlusionState.contains(.visible)} ?? false
+        })
+    }
+    /// Internal logical visibility seam; production admission always also requires an actual visible window.
+    init(provider:(any RecordStripRecipeProvider)? = nil,systemReduceMotion:(@MainActor ()->Bool)? = nil,
+         windowVisibility:@escaping @MainActor (RecordStripView)->Bool) {
         let selected = provider ?? NeutralRecordStripRecipe()
-        self.provider = selected;self.systemReduceMotion = systemReduceMotion ?? {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion};super.init(frame:CGRect(origin:.zero,size:selected.preferredSize(for:.compact)))
+        self.provider = selected;self.windowVisibility = windowVisibility;self.systemReduceMotion = systemReduceMotion ?? {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion};super.init(frame:CGRect(origin:.zero,size:selected.preferredSize(for:.compact)))
         wantsLayer = true
         workspaceToken = NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,object:nil,queue:.main) { [weak self] _ in
             MainActor.assumeIsolated { self?.updateCursor() }
@@ -57,7 +64,7 @@ import AppKit
         synchronizeControls();updateCursor();needsDisplay = true;invalidateIntrinsicContentSize()
     }
     public func setPresentationAllowed(_ allowed:Bool) {
-        self.allowed = allowed;cursorPresentationVisible = allowed && (window.map{$0.isVisible && $0.occlusionState.contains(.visible)} ?? true)
+        self.allowed = allowed
         if !allowed { refreshHover(nil) }
         updateAdmission();updateCursor();needsDisplay = true
     }
@@ -65,7 +72,7 @@ import AppKit
         allowed = false;input = nil;recipe = nil;hovered = nil;glyphMetrics = []
         for control in controls.values { control.retire() };controls = [:]
         for cursor in cursorLayers.values { cursor.removeAllAnimations();cursor.isHidden = true;cursor.removeFromSuperlayer() }
-        cursorLayers = [:];cursorPresentationVisible = false
+        cursorLayers = [:]
     }
     public func control(for recordID:String)->NSControl? { controls["row:"+recordID] }
     public var moreControl:NSControl? { controls["more"] }
@@ -136,7 +143,6 @@ import AppKit
         updateWindowVisibility()
     }
     private func updateWindowVisibility() {
-        cursorPresentationVisible = window.map{$0.isVisible && $0.occlusionState.contains(.visible)} ?? false
         updateCursor()
     }
     private func updateCursor() {
@@ -146,7 +152,7 @@ import AppKit
         for (id,cursor) in cursorLayers where !ids.contains(id) {
             cursor.removeAllAnimations();cursor.isHidden = true;cursor.removeFromSuperlayer();cursorLayers.removeValue(forKey:id)
         }
-        let visible = allowed && cursorPresentationVisible && !isHiddenOrHasHiddenAncestor && input?.windowClosed==false
+        let visible = allowed && windowVisibility(self) && !isHiddenOrHasHiddenAncestor && input?.windowClosed==false
         let reduced = input?.appearance.reduceMotion==true || systemReduceMotion()
         for placement in cursors {
             let cursor = cursorLayers[placement.recordID] ?? CALayer()

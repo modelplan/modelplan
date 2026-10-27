@@ -12,4 +12,6 @@ Only tool/project name areas produce native tooltips. Working-row speed help is 
 
 Providers can supply up to five decorative cursor placements in admitted working rows' elapsed cells, with optional blink durations. The leaf uses a discrete Core Animation opacity track; there is no refresh timer or display link. Current row layers retain their animation across data refresh. App or OS Reduce Motion makes them static. `windowClosed`, presentation pause, hide, occlusion, detach and stop remove their animation; closed/hidden cursors are hidden. The optional input `cursor` remains an explicit single-cursor override. All rectangles use recipe/view coordinates inside the matching elapsed cell.
 
+Production cursor playback also requires an actual visible, unoccluded window; caller admission alone cannot animate a detached view. Tests use an internal logical visibility seam without constructing windows.
+
 The host must pass the shutter's `windowClosed` state even while the lower record strip stays visible, and forward OS/Space presentation admission. The community provider supplies a neutral cursor; official placement/cadence remains private. `rasterImage` draws recipe content only; layer cursor/focus/actual-window behavior and paired Mac CPU still need acceptance. Source/unit observations never establish that CPU budget.

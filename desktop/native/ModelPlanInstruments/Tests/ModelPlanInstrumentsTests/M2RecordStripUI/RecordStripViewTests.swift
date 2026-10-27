@@ -146,7 +146,7 @@ import XCTest
         XCTAssertThrowsError(try view.configure(.init(presentation: full.presentation, density: .compact, appearance: .init())))
     }
     func testStaticCursorHasNoAnimationAndPausesWithPresentation() async throws {
-        let view = RecordStripView(); try view.configure(input([session("a")]))
+        let view = RecordStripView(windowVisibility:{_ in true}); try view.configure(input([session("a")]))
         let box = try XCTUnwrap(view.recipe?.rows.first?.fields[.age])
         try view.configure(input([session("a")], cursor: .init(recordID: "a", rect: CGRect(x: box.minX, y: box.minY + 2, width: 3, height: 10), visible: true)))
         view.setPresentationAllowed(true)
@@ -177,7 +177,7 @@ import XCTest
         XCTAssertTrue(control.accessibilityPerformPress())
     }
     func testRunningCursorsUseDiscreteLayerAnimationAndKeepTheirPhaseAcrossRefresh() async throws {
-        let view = RecordStripView(systemReduceMotion:{false})
+        let view = RecordStripView(systemReduceMotion:{false},windowVisibility:{_ in true})
         let value = input([session("a"),session("b"),session("c",working:false)])
         try view.configure(value);view.setPresentationAllowed(true)
         let layers = view.layer!.sublayers!.filter{$0.name?.hasPrefix("record.cursor.")==true}
@@ -195,8 +195,8 @@ import XCTest
         XCTAssertTrue(layers.allSatisfy{$0.isHidden && ($0.animationKeys()?.isEmpty ?? true) && $0.superlayer==nil})
     }
     func testCursorMotionHonorsAppSystemClosedHiddenAndDetachGuards() async throws {
-        var systemRM = false
-        let view = RecordStripView(systemReduceMotion:{systemRM}),value = input([session("a")])
+        var systemRM = false,visibleWindow = true
+        let view = RecordStripView(systemReduceMotion:{systemRM},windowVisibility:{_ in visibleWindow}),value = input([session("a")])
         try view.configure(value);view.setPresentationAllowed(true)
         let cursor = try XCTUnwrap(view.layer?.sublayers?.first)
         func assertStopped(hidden:Bool) { XCTAssertEqual(cursor.isHidden,hidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink")) }
@@ -210,7 +210,16 @@ import XCTest
         view.isHidden = true;assertStopped(hidden:true);view.isHidden = false
         XCTAssertNotNil(cursor.animation(forKey:"record.cursor.blink"))
         view.setPresentationAllowed(false);try view.configure(value);assertStopped(hidden:true)
-        view.setPresentationAllowed(true);view.viewDidMoveToWindow();assertStopped(hidden:true)
+        view.setPresentationAllowed(true);visibleWindow = false;view.viewDidMoveToWindow();assertStopped(hidden:true)
+        view.stop()
+    }
+    func testProductionCursorCannotResumeWithoutAVisibleWindow() async throws {
+        let view = RecordStripView(systemReduceMotion:{false}),value = input([session("a")])
+        try view.configure(value);view.setPresentationAllowed(true)
+        let cursor = try XCTUnwrap(view.layer?.sublayers?.first)
+        XCTAssertTrue(cursor.isHidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink"))
+        view.isHidden = true;view.isHidden = false;try view.configure(value);view.setPresentationAllowed(true)
+        XCTAssertTrue(cursor.isHidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink"))
         view.stop()
     }
     func testCursorAdmissionRejectsCompletedWrongCellAndInvalidCadenceAtomically() async throws {
