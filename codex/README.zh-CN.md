@@ -67,7 +67,7 @@ codex plugin add modelplan-codex@modelplan
 
 **关于这个钩子。** Codex 的钩子审核里它显示为 `UserPromptSubmit · Hook 1`，来源 `Plugin - modelplan-codex@modelplan`，命令 `sh "$PLUGIN_ROOT/hooks/modelplan-quota-hints.sh"`，超时 5 秒；Codex 0.157 不显示别的名称（`statusMessage` 只在运行时显示）。每次提交提示时，有新的额度提醒就显示给你（钩子的提示消息，不进 Codex 的上下文）；对话的第一条提示给 Codex 一份任务开始简报（`modelplan advise --hook codex`）。配套的 CLI 还没下载好时它什么都不说；如果下载失败，会说明原因，每周最多一次；CLI 第一次就绪时说一声。钩子本身不下载任何东西（由插件的服务下载），只写 `~/.cache/modelplan-codex`，也不改任何设置。允许方法：桌面端点输入框旁带黄点的钩子图标，确认来源是 `modelplan-codex` 后允许；CLI 里用 `/hooks`。从下一条提示开始生效，正在进行的对话也一样。提醒只随提示到达：一轮很长的任务进行中不会有新提醒，要等你的下一条消息；插件不声称持续监控。
 
-插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。想在终端里用 CLI，仍可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 自己安装；插件不需要它。
+插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。**高级用法：** 想单独在终端里用 CLI，可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 自己安装；插件不需要它。
 
 ### 更新与卸载
 
