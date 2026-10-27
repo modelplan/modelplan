@@ -70,6 +70,7 @@ import AppKit
     public var onAction:((HelpUIAction)->Void)? { didSet {
         card?.button.isEnabled=onAction != nil && card?.button.isHidden==false
         mapSource?.isEnabled=onAction != nil
+        secondaryMapSource?.isEnabled=onAction != nil
     } }
     public var onHintInput:((InstrumentHintInput)->Void)?
     /// A changed geometry result; upper composition alone checks actual visibility and confirms an offer.

@@ -125,6 +125,28 @@ import ModelPlanSettings
         for button in old { XCTAssertFalse(button.isEnabled);_ = button.accessibilityPerformPress() }
         XCTAssertTrue(facts.opened.isEmpty);XCTAssertNil(surface.view.window)
     }
+    func testAppFocusLossRetiresHeldAndDismissedOptionWithoutModifierUp()async throws {
+        let (surface,help,facts,_,_)=try await setup();defer{surface.dispose();help.dispose()}
+        surface.setOptionHelpHeld(true)
+        let old=help.onHelpAction,id=try XCTUnwrap(help.layer.input?.map.sourceActionID)
+        let buttons=help.layer.subviews.compactMap{$0 as? NSButton};XCTAssertEqual(buttons.count,2)
+        NotificationCenter.default.post(name:NSWindow.didResignKeyNotification,object:NSObject())
+        XCTAssertNotNil(help.layer.presentation?.mapSourceFrame,"unrelated windows do not own this surface")
+        NotificationCenter.default.post(name:NSApplication.didResignActiveNotification,object:nil)
+        old?(.mapSourceAction(actionID:id));XCTAssertTrue(facts.opened.isEmpty)
+        XCTAssertTrue(buttons.allSatisfy{!$0.isEnabled})
+        surface.requestFreshSelection?() // Return/feed refresh, with no missed modifier-up synthesized.
+        XCTAssertEqual(help.layer.input?.map.mode,.hidden)
+        XCTAssertNil(help.layer.presentation?.mapSourceFrame)
+        old?(.mapSourceAction(actionID:id));XCTAssertTrue(facts.opened.isEmpty)
+        XCTAssertTrue(buttons.allSatisfy{!$0.isEnabled})
+        surface.setOptionHelpHeld(true);XCTAssertNotNil(help.layer.presentation?.mapSourceFrame)
+        XCTAssertTrue(surface.mainScreen.handleEscape()) // Dismissal suppression also belongs to the lost focus.
+        NotificationCenter.default.post(name:NSApplication.didResignActiveNotification,object:nil)
+        surface.requestFreshSelection?();surface.setOptionHelpHeld(true)
+        XCTAssertNotNil(help.layer.presentation?.mapSourceFrame,"a new press must not inherit suppression from another focus")
+        XCTAssertTrue(help.host.hints.preferences.seen.isEmpty);XCTAssertNil(surface.view.window)
+    }
     func testOccupiedViewportDoesNotPublishSourceControls() {
         let map=CommunityOptionHelpLayout.map(viewport:.init(width:600,height:372),readings:[.init(x:0,y:0,width:600,height:372)],sourceTitle:"Unknown · About",dataTitle:"Data",about:"a",data:"b")
         XCTAssertNil(map.sourceFrame);XCTAssertNil(map.secondarySourceFrame)

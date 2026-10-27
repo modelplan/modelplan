@@ -77,6 +77,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
         self.openWebsite = openWebsite
         super.init()
+        // Process-local AppKit focus notifications; no activation, event monitor or global shortcut.
+        NotificationCenter.default.addObserver(self,selector:#selector(applicationLostFocus(_:)),
+            name:NSApplication.didResignActiveNotification,object:nil)
+        NotificationCenter.default.addObserver(self,selector:#selector(windowLostKey(_:)),
+            name:NSWindow.didResignKeyNotification,object:nil)
         (view as? InstrumentContainer)?.optionChanged = { [weak self] held in self?.setOptionHelpHeld(held) }
         let escape: () -> Bool = { [weak self] in self?.helpBinding?.consumeEscape() ?? false }
         mainScreen.onHelpEscape=escape;(view as? InstrumentContainer)?.escape=escape
@@ -98,6 +103,16 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         modelPicker.frame = .init(x: 0, y: 0, width: 600, height: 26)
         mainScreen.frame.origin = .init(x: 0, y: 32)
         view.setFrameSize(preferredContentSize)
+    }
+    @objc private func applicationLostFocus(_ notification: Notification) { retireFocusHelp() }
+    @objc private func windowLostKey(_ notification: Notification) {
+        guard let current=view.window,let window=notification.object as? NSWindow,window === current else { return }
+        retireFocusHelp()
+    }
+    private func retireFocusHelp() {
+        guard !retired,isPresented else { return }
+        // Retire held/dismissed state and callback ownership before the source's leave callout.
+        helpBinding?.suspend();mainScreen.leaveHelp()
     }
     public func bindHelp(_ composition: InstrumentHelpComposition) {
         guard !retired, helpBinding?.composition !== composition else { return }
@@ -149,6 +164,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public func closePresentation() { isPresented = false; mainScreen.closeForCockpit(); helpBinding?.suspend() }
     public func dispose() {
         guard !retired else { return }; retired = true; isPresented = false; helpGeneration &+= 1
+        NotificationCenter.default.removeObserver(self,name:NSApplication.didResignActiveNotification,object:nil)
+        NotificationCenter.default.removeObserver(self,name:NSWindow.didResignKeyNotification,object:nil)
         let binding = helpBinding; helpBinding = nil; binding?.dispose()
         modelPicker.target = nil; modelPicker.action = nil; modelPicker.isEnabled = false
         (view as? InstrumentContainer)?.optionChanged = nil;(view as? InstrumentContainer)?.escape=nil
