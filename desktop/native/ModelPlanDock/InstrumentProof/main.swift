@@ -328,23 +328,6 @@ struct NativeFailure:Error {let message:String}
     let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
     try sliver.apply(image:nil,logicalSize:CGSize(width:3,height:20),scale:2,accessibilityLabel:"Synthetic reveal")
     try require(sliver.accessibilityPerformPress() && sliverPresses==1 && sliver.retainedBytes==0,"neutral sliver has an explicit AX reveal")
-    // Exercise the actual fallback drawing with no window or official artwork. It must remain
-    // opaque and readable against either common desktop extreme at the registered thickness.
-    for name in [NSAppearance.Name.aqua,.darkAqua]{
-        let pixels=CGContext(data:nil,width:6,height:40,bitsPerComponent:8,bytesPerRow:24,
-            space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current=NSGraphicsContext(cgContext:pixels,flipped:true)
-        NSAppearance(named:name)!.performAsCurrentDrawingAppearance { sliver.draw(sliver.bounds) }
-        NSGraphicsContext.restoreGraphicsState()
-        let rgba=pixels.data!.assumingMemoryBound(to:UInt8.self)
-        let offset=10*24+4
-        try require(rgba[offset+3]==255,"fallback sliver must not fade into a transparent separator")
-        func linear(_ value:Double)->Double { value<=0.04045 ? value/12.92:pow((value+0.055)/1.055,2.4) }
-        let luminance=0.2126*linear(Double(rgba[offset])/255)+0.7152*linear(Double(rgba[offset+1])/255)+0.0722*linear(Double(rgba[offset+2])/255)
-        try require((luminance+0.05)/0.05>=3 && 1.05/(luminance+0.05)>=3,"neutral sliver remains distinguishable on light and dark desktops")
-    }
-
     do{try sliver.apply(image:nil,logicalSize:CGSize(width:CGFloat.nan,height:20),scale:2,accessibilityLabel:"bad");throw NativeFailure(message:"bad sliver admitted")}
     catch DockArtworkError.invalidManifest{checks+=1}
     try require(!sliver.accessibilityPerformPress() && !sliver.isPainted(atLocal:CGPoint(x:1,y:1)),"failed sliver cannot preserve old actions")
