@@ -30,6 +30,7 @@ public struct StaticDockGeometry {
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
     private let appearance: Appearance?
     private let currentDate: @MainActor () -> Date
+    private let createsNativePanels: Bool
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
@@ -37,26 +38,32 @@ public struct StaticDockGeometry {
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     private var permitted = false, retired = false, rendering = false, menuOpen = false
+    private var rebuildPending = false
+    private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
     private var fixedDisplayID: String?
     private var cardID: String?
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
     private let empty = NSTextField(wrappingLabelWithString: "No local subscriptions / 暂无本地订阅")
-    private let card = DockCardView(frame: .zero)
+    let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = NSButton(frame: .zero)
     private lazy var edge = DockEdgeController(read: { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) })
 
-    public init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date = { Date() }) {
-        self.appearance = appearance; self.currentDate = currentDate
+    public convenience init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date = { Date() }) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true)
+    }
+    /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
+    init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool) {
+        self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel("Open console / 打开控制台")
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
-            guard let self, self.permitted, !self.retired else { return }
+            guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
             case .subscription(let id), .notice(let id): self.showCard(id)
             case .overflow: self.showConsole?()
@@ -65,8 +72,7 @@ public struct StaticDockGeometry {
         dockView.permitsAction = { [weak self] _, source in self?.edge.acceptsPress(keyboardOrAccessibility: source == .accessibility) ?? false }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
-        card.onEnter = { [weak self] _, _ in self?.dismissCard(); self?.showConsole?() }
-        card.onDismiss = { [weak self] in self?.dismissCard() }
+        card.isHidden = true
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
     private func connectEdge() {
@@ -79,6 +85,7 @@ public struct StaticDockGeometry {
     }
     public func apply(_ value: SettingsApplication) {
         guard !retired, value.snapshot.revision >= (application?.snapshot.revision ?? 0) else { return }
+        inputGeneration &+= 1
         application = value
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
@@ -93,40 +100,63 @@ public struct StaticDockGeometry {
     }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard !retired else { return }
+        inputGeneration &+= 1
         self.snapshot = snapshot; self.diagnostics = diagnostics
         rebuild()
     }
     public func setPresentationAllowed(_ allowed: Bool) {
         guard !retired else { return }
+        inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
         else { edge.stop(); dismissCard(); panel?.orderOut(nil) }
     }
     private func rebuild() {
-        guard !retired, !rendering, application != nil else { return }
+        guard !retired, application != nil else { return }
+        rebuildPending = true
+        guard !rendering else { return }
         rendering = true
         defer { rendering = false }
+        while rebuildPending, !retired {
+            rebuildPending = false
+            rebuildPass(inputGeneration)
+        }
+    }
+    private func passIsCurrent(_ generation: UInt64) -> Bool {
+        guard !retired else { dockView.dispose(); return false }
+        guard inputGeneration == generation else { rebuildPending = true; return false }
+        return true
+    }
+    private func rebuildPass(_ generation: UInt64) {
+        let passPreferences = preferences
         let now = currentDate(), next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now)
-        model = next
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
+        guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
-        let order = (try? preferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
+        let order = (try? passPreferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
         let rows = order.compactMap { byID[$0] }.compactMap { input -> DockInstrumentReading? in
-            let value = preferences.applying(to: input)
-            return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(preferences.redBelow))
+            let value = passPreferences.applying(to: input)
+            return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
         }
         do {
-            if let appearance { geometry = try appearance(dockView, rows, preferences) }
+            if let appearance {
+                let candidate = try appearance(dockView, rows, passPreferences)
+                guard passIsCurrent(generation) else { return }
+                geometry = candidate
+            }
             else {
-                try dockView.applyCommunity(rows, locale: preferences.language.rawValue)
+                try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
                 geometry = .init(hoverRects: [dockView.bounds])
             }
         } catch {
+            guard passIsCurrent(generation) else { return }
             // A failed official renderer never leaves stale actionable pixels or fake readings.
-            try? dockView.applyCommunity(rows, locale: preferences.language.rawValue)
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
             geometry = .init(hoverRects: [dockView.bounds])
         }
+        guard passIsCurrent(generation) else { return }
+        model = next
         if rows.isEmpty && appearance == nil {
             dockView.setFrameSize(CGSize(width: 210, height: 60))
             empty.frame = dockView.bounds.insetBy(dx: 10, dy: 10)
@@ -141,6 +171,7 @@ public struct StaticDockGeometry {
         let edgeValue: DockEdge = preferences.dockEdge == .left ? .left : preferences.dockEdge == .bottom ? .bottom : .right
         if fixedDisplayID == nil, let screen = NSScreen.screens.first { fixedDisplayID = displayID(screen, index: 0) }
         edge.setPreference(.init(displayID: preferences.followActiveDisplay ? nil : fixedDisplayID, edge: edgeValue, alongFraction: edge.preference.alongFraction))
+        guard passIsCurrent(generation) else { return }
         if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
         if permitted { edge.start(); edge.refresh() }
     }
@@ -175,6 +206,7 @@ public struct StaticDockGeometry {
         return value
     }
     private func present(_ value: DockEdgePresentation) {
+        guard createsNativePanels else { return }
         guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
@@ -206,13 +238,29 @@ public struct StaticDockGeometry {
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() { guard permitted, !retired else { return }; edge.refresh() }
     private func showCard(_ id: String) {
-        guard permitted, !retired, preferences.showDock, let input = model?.inputs.first(where: { $0.id == id }),
+        guard permitted, !retired, preferences.showDock,
+              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
+              let input = model?.inputs.first(where: { $0.id == id }),
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
                 stateLabel: input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期",
                 enterLabel: "Console / 控制台", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
-        cardID = id
-        try? card.apply(content, pinned: true)
+        cardGeneration &+= 1
+        let token = cardGeneration, feed = inputGeneration
+        cardID = id; card.isHidden = false
+        card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
+        card.onEnter = { [weak self] id, revision in
+            guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
+            self.dismissCard()
+            guard self.permitted, !self.retired else { return }
+            self.showConsole?()
+        }
+        card.onDismiss = { [weak self] in
+            guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
+            self.dismissCard()
+        }
+        do { try card.apply(content, pinned: true) } catch { dismissCard(); return }
+        guard createsNativePanels else { return }
         if cardPanel == nil { cardPanel = makePanel() }
         guard let cardPanel, let anchor = panel?.frame, let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) }) else { return }
         let size = card.frame.size, safe = screen.visibleFrame
@@ -222,9 +270,21 @@ public struct StaticDockGeometry {
         cardPanel.setFrame(.init(x: max(safe.minX, min(x, safe.maxX-size.width)), y: max(safe.minY, min(y, safe.maxY-size.height)), width: size.width, height: size.height), display: true)
         cardPanel.orderFrontRegardless(); edge.refresh()
     }
-    private func dismissCard() { cardID = nil; cardPanel?.orderOut(nil) }
+    private func cardIsCurrent(_ id: String, revision: UInt64, token: UInt64, feed: UInt64) -> Bool {
+        guard permitted, !retired, !rendering, preferences.showDock, !card.isHidden,
+              cardID == id, cardGeneration == token, inputGeneration == feed,
+              application?.snapshot.revision == revision,
+              model?.inputs.contains(where: { $0.id == id }) == true,
+              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true else { return false }
+        return !createsNativePanels || cardPanel?.isVisible == true
+    }
+    private func dismissCard() {
+        cardGeneration &+= 1; cardID = nil; card.isHidden = true
+        card.dispose(); cardPanel?.orderOut(nil)
+    }
     public func close() {
-        guard !retired else { return }; retired = true; permitted = false
+        guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
+        dismissCard()
         NotificationCenter.default.removeObserver(self)
         edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
         dockView.dispose(); sliver.dispose(); card.dispose()

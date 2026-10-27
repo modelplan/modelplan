@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import AppKit
 import XCTest
 import ModelPlanCore
 import ModelPlanDock
@@ -169,6 +170,89 @@ import ModelPlanSettings
         XCTAssertEqual(adapt(try snapshot(accounts: [account("a", source: "codex", windows: [])])).inputs[0].vendorResourceKey, "openai")
         XCTAssertNil(adapt(try snapshot(accounts: [account("a", source: "my-tool", windows: [])])).inputs[0].vendorResourceKey)
         XCTAssertNil(adapt(try snapshot(accounts: [account("a", source: "codex", windows: []), account("a", source: "claude", windows: [])])).inputs[0].vendorResourceKey)
+    }
+
+    func testReentrantAppearanceReplacementFeedPublishesNewestRows() async throws {
+        let first = try snapshot(accounts: [account("a", windows: [window()])])
+        let replacement = try snapshot(accounts: [account("b", windows: [window()])])
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dock-reentrant-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var host: StaticDockPreviewHost!
+        var replaced = false, rowsSeen: [[String]] = []
+        var ready = StoreDiagnostics(); ready.personal = nil
+        host = StaticDockPreviewHost(appearance: { view, rows, _ in
+            if !replaced { replaced = true; host.render(snapshot: replacement, diagnostics: ready) }
+            try view.applyCommunity(rows)
+            rowsSeen.append(rows.map(\.subscriptionID))
+            return .init(hoverRects: [view.bounds])
+        }, currentDate: { self.now }, createsNativePanels: false)
+        let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json"))) { host.apply($0) }
+        host.render(snapshot: first, diagnostics: ready)
+        await coordinator.reload()
+        XCTAssertEqual(rowsSeen.last, ["b"], "nested feed must queue another pass")
+        host.close()
+    }
+    func testReentrantAppearanceSettingsAndCloseCannotPublishOldState() async throws {
+        let joined = try snapshot(accounts: [account("a", windows: [window()])])
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dock-reentrant-settings-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var context = SettingsPageContext(); context.subscriptions = adapt(joined).subscriptions
+        let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { _ in }
+        await coordinator.reload(); let original = try XCTUnwrap(coordinator.latest)
+        _ = try await coordinator.editor.commit(.alias(AliasDraft(subscriptionID: "a", committed: "new alias")))
+        let newer = try XCTUnwrap(coordinator.latest)
+        var host: StaticDockPreviewHost!, replaced = false, aliases: [String?] = []
+        host = StaticDockPreviewHost(appearance: { view, rows, _ in
+            if !replaced { replaced = true; host.apply(newer) }
+            try view.applyCommunity(rows); aliases.append(rows.first?.alias)
+            return .init(hoverRects: [view.bounds])
+        }, currentDate: { self.now }, createsNativePanels: false)
+        var ready = StoreDiagnostics(); ready.personal = nil
+        host.render(snapshot: joined, diagnostics: ready); host.apply(original)
+        XCTAssertEqual(aliases.last!, "new alias")
+        host.close()
+        var closing: StaticDockPreviewHost!
+        closing = StaticDockPreviewHost(appearance: { view, rows, _ in
+            closing.close(); try view.applyCommunity(rows)
+            return .init(hoverRects: [view.bounds])
+        }, currentDate: { self.now }, createsNativePanels: false)
+        closing.render(snapshot: joined, diagnostics: ready); closing.apply(original)
+        XCTAssertEqual(closing.dockView.accessibilityChildren()?.count ?? 0, 0, "appearance callout cannot resurrect a closed view")
+    }
+    private func retainedConsoleButton(in view: NSView) throws -> NSButton {
+        if let button = view as? NSButton, button.title == "Console / 控制台" { return button }
+        for child in view.subviews { if let value = try? retainedConsoleButton(in: child) { return value } }
+        throw NSError(domain: "missing-card-console-button", code: 1)
+    }
+    func testRetainedCardButtonCannotEnterAfterDockHideOrMembershipRemoval() async throws {
+        for hide in [true, false] {
+            let joined = try snapshot(accounts: [account("a", windows: [window()])])
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dock-retained-action-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            var context = SettingsPageContext(); context.subscriptions = adapt(joined).subscriptions
+            let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+            var opens = 0; host.showConsole = { opens += 1 }
+            let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { host.apply($0) }
+            await coordinator.reload()
+            var ready = StoreDiagnostics(); ready.personal = nil
+            host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
+            host.dockView.onAction?(.subscription("a"))
+            let enter = try XCTUnwrap(host.card.onEnter), revision = try XCTUnwrap(coordinator.latest).snapshot.revision
+            enter("other", revision); enter("a", revision + 1)
+            XCTAssertEqual(opens, 0, "identity/revision mismatches cannot enter")
+            let live = try retainedConsoleButton(in: host.card)
+            _ = (try XCTUnwrap(live.target as? NSObject)).perform(try XCTUnwrap(live.action), with: live)
+            XCTAssertEqual(opens, 1, "a current selector still enters once")
+            opens = 0
+            host.dockView.onAction?(.subscription("a"))
+            let button = try retainedConsoleButton(in: host.card)
+            let target = try XCTUnwrap(button.target as? NSObject), action = try XCTUnwrap(button.action)
+            if hide { _ = try await coordinator.editor.commit(.showDock(false)) }
+            else { host.render(snapshot: try snapshot(accounts: []), diagnostics: ready) }
+            _ = target.perform(action, with: button)
+            XCTAssertEqual(opens, 0, hide ? "held selector after hide" : "held selector after membership removal")
+            host.close()
+        }
     }
 
 }
