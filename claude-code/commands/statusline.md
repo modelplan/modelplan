@@ -3,7 +3,7 @@ description: Optionally display the ModelPlan status line (live effort, fast mod
 allowed-tools: Bash(sh:*), Read, Edit
 ---
 
-Goal: optionally display the `modelplan` CLI's `statusline` in Claude Code, with the user's consent. This is a display nicety, not the quota source: the CLI detects signed-in tools. It is never required to finish setup or use hints and commands.
+Goal: optionally display the `modelplan` CLI's `statusline` in Claude Code, with the user's consent. In the current release this optional display also records the local snapshot used for Claude Code quota; automatic detection is coming. Without a snapshot Claude quota stays unknown, while public advice and other sources still work.
 
 The CLI on this machine:
 
@@ -24,4 +24,4 @@ The CLI on this machine:
    "statusLine": { "type": "command", "command": "<cli> statusline", "padding": 0 }
    ```
 
-5. Tell the user: the optional display appears at once and reads the local cache without waiting on the network. It can supplement legacy readings when Claude Code passes usage windows, and nothing is uploaded. The CLI detects signed-in tools independently; a missing reading remains unknown. Turning automatic hints off in `/modelplan:setup` does not disable this display.
+5. Tell the user: the optional display appears at once and reads the local cache without waiting on the network. Today it records the Claude Code quota snapshot when usage windows are passed to it. Automatic detection is coming; without a snapshot, that quota is unknown. Nothing is uploaded. Turning automatic hints off in `/modelplan:setup` does not disable this display.

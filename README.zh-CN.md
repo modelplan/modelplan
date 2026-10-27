@@ -36,7 +36,7 @@ ModelPlan 用实时、可复核的公开数据回答，可在 Mac 仪表盘查�
 /plugin install modelplan@modelplan
 ```
 
-运行 `/modelplan:setup`，再使用 `/modelplan:plan`、`/modelplan:effort` 或 `/modelplan:lineup`。`/modelplan:setup automatic-hints off` 关闭自动提示，`on` 恢复。`/modelplan:statusline` 是**可选显示**，不是读取额度的前提。[详情](claude-code/)
+运行 `/modelplan:setup`，再使用 `/modelplan:plan`、`/modelplan:effort` 或 `/modelplan:lineup`。`/modelplan:setup automatic-hints off` 关闭自动提示，`on` 恢复。`/modelplan:statusline` 是**可选显示**。当前版本的 Claude Code 额度只来自它记录的本地快照，自动检测尚待推出。没有快照时 Claude 额度保持未知，公开模型建议仍可使用。[详情](claude-code/)
 
 </details>
 
@@ -58,7 +58,7 @@ codex plugin add modelplan-codex@modelplan
 npx skills add modelplan/modelplan
 ```
 
-问 Agent：「这个重构任务用哪个模型、开哪一档？」公开模型和档位问答无需 CLI。首次问到**自己的额度**且没有 CLI 时，Skill 只问一次是否安装锁定版本、核对校验值的 CLI 到 `~/.local/bin`；只在同意后安装，拒绝后不再询问。CLI 检测已登录的工具，无法读取的数据保持未知。
+问 Agent：「这个重构任务用哪个模型、开哪一档？」公开模型和档位问答无需 CLI。首次问到**自己的额度**且没有 CLI 时，Skill 只问一次是否安装锁定版本、核对校验值的 CLI 到 `~/.local/bin`；只在同意后安装，拒绝后不再询问。当前版本的 Claude Code 额度来自可选 ModelPlan 状态栏记录的本地快照，自动检测尚待推出；无法读取的数据保持未知。
 
 手动安装时，把 [`skills/model-plan`](skills/model-plan/) 复制到 Agent 的 skills 目录，例如 `~/.claude/skills/model-plan`。需要 shell 和匿名 HTTPS。
 
@@ -219,7 +219,7 @@ curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh
 modelplan lineup --dev anthropic --lang zh
 ```
 
-此独立安装器使用最新发布版并核对校验值，安装到 `~/.local/bin`，不改 shell 配置。Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。Go 用户可运行 `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。[CLI 文档](cli/) · [安装指南](docs/install.md)
+此独立安装器使用最新发布版并核对校验值，安装到 `~/.local/bin`，不改 shell 配置。Go 用户可运行 `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。[CLI 文档](cli/) · [安装指南](docs/install.md)
 
 ## 仓库结构
 

@@ -125,7 +125,7 @@ modelplan quota --json                              # when the CLI advertises `q
 python3 '<this skill directory>/scripts/quota.py'   # deprecated fallback during CLI auto-detection transition
 ```
 
-The CLI detects supported signed-in tools and returns only the quota data it can read. The deprecated Python fallback uses the legacy local files below and has fewer sources; do not require its Claude Code snapshot as setup for the CLI:
+The CLI returns readings supported by the installed release. Today Claude Code quota is available only from a snapshot recorded by the optional ModelPlan status line; automatic detection is coming. Without that snapshot, report Claude Code quota as unknown. The deprecated Python fallback reads the local files below and has fewer sources:
 
 | Source | File | Notes |
 | --- | --- | --- |
@@ -145,7 +145,7 @@ Measured speed (CLI 0.5.23+, not in the Skill reader): `modelplan history --json
 
 How the user turns readings on, when they ask or when it would change the advice:
 
-- **Claude Code**: the CLI detects signed-in tools and reports available local readings. Do not require `/modelplan:statusline` for quota. The optional status line displays readings and can supplement older CLI versions, but missing readings stay unknown; do not claim auto-detection succeeded without a report. The deprecated Python fallback reads only the legacy cached snapshot described above.
+- **Claude Code**: the current CLI reads the local snapshot recorded by `modelplan statusline`; automatic detection is coming. The status line remains optional. Offer `/modelplan:statusline` only if the user wants it, explaining that without a recorded snapshot their Claude Code quota is unknown today. Public model/effort advice and other sources still work. The deprecated Python fallback reads that same snapshot; neither reader currently detects a Claude sign-in automatically.
 - **Codex**: nothing to set up. Readings appear after the first turn of a ChatGPT-login session.
 - **Other plans**: create `~/.config/modelplan/local.json` with the schema below. Do not create or overwrite it unless asked.
 

@@ -28,9 +28,9 @@ Both plugins bundle the Skill and a pinned, SHA-256 checked CLI. There is no sep
 /modelplan:setup
 ```
 
-Use `/modelplan:setup automatic-hints off` or `on`. The status line is an **optional display**, not a quota source requirement. [Plugin guide](../claude-code/README.md)
+Use `/modelplan:setup automatic-hints off` or `on`. The status line is an **optional display**. Its local snapshot is currently the only source of Claude Code quota; automatic detection is coming. Without a snapshot, Claude quota stays unknown and public model advice still works. [Plugin guide](../claude-code/README.md)
 
-用上述 setup 命令的 `automatic-hints off` 或 `on` 关闭/开启提示。状态栏是**可选显示**，不是读取额度的前提。[插件指南](../claude-code/README.md)
+用上述 setup 命令的 `automatic-hints off` 或 `on` 关闭/开启提示。状态栏是**可选显示**。当前版本的 Claude Code 额度只来自它记录的本地快照，自动检测尚待推出。没有快照时 Claude 额度保持未知，公开模型建议仍可使用。[插件指南](../claude-code/README.md)
 
 **Codex:**
 
@@ -65,6 +65,6 @@ For terminal workflows and integrations only. The App and plugins already ship t
 curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
 ```
 
-This standalone installer downloads the latest release, verifies SHA-256, installs into `~/.local/bin`, and prints a PATH suggestion if needed without editing profiles. Windows users can download from [Releases](https://github.com/modelplan/modelplan/releases). [CLI guide](../cli/README.md)
+This standalone installer downloads the latest release, verifies SHA-256, installs into `~/.local/bin`, and prints a PATH suggestion if needed without editing profiles. [CLI guide](../cli/README.md)
 
-独立安装器下载最新发布版、核对 SHA-256，安装到 `~/.local/bin`；需要时只打印 PATH 建议，不改 shell 配置。Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。[CLI 指南](../cli/README.md)
+独立安装器下载最新发布版、核对 SHA-256，安装到 `~/.local/bin`；需要时只打印 PATH 建议，不改 shell 配置。[CLI 指南](../cli/README.md)

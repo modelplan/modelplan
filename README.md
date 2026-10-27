@@ -36,7 +36,7 @@ Plugins bundle the Skill and a pinned, checksum-checked CLI. **Automatic hints d
 /plugin install modelplan@modelplan
 ```
 
-Use `/modelplan:setup`, then `/modelplan:plan`, `/modelplan:effort` or `/modelplan:lineup`. `/modelplan:setup automatic-hints off` silences automatic hints; `on` restores them. `/modelplan:statusline` is an **optional display**, not a quota requirement. [More](claude-code/)
+Use `/modelplan:setup`, then `/modelplan:plan`, `/modelplan:effort` or `/modelplan:lineup`. `/modelplan:setup automatic-hints off` silences automatic hints; `on` restores them. `/modelplan:statusline` is an **optional display**. In the current release, its local snapshot is the only source of Claude Code quota; automatic detection is coming. Without that snapshot, Claude quota stays unknown and public model advice still works. [More](claude-code/)
 
 </details>
 
@@ -58,7 +58,7 @@ Ask Codex to check ModelPlan setup or turn automatic hints off/on. The existing 
 npx skills add modelplan/modelplan
 ```
 
-Ask your agent: *"Which model and effort fits this refactor?"* Public model and effort answers work without the CLI. The first time you ask about **your own quota** and the CLI is missing, the Skill asks once whether to install its pinned, checksum-checked CLI into `~/.local/bin`. It installs only after yes and never asks again after no. The CLI detects signed-in tools; unavailable readings stay unknown.
+Ask your agent: *"Which model and effort fits this refactor?"* Public model and effort answers work without the CLI. The first time you ask about **your own quota** and the CLI is missing, the Skill asks once whether to install its pinned, checksum-checked CLI into `~/.local/bin`. It installs only after yes and never asks again after no. In the current release, Claude Code quota comes from a local snapshot recorded by the optional ModelPlan status line; automatic Claude Code detection is coming. Unavailable readings stay unknown.
 
 To install by hand, copy [`skills/model-plan`](skills/model-plan/) into your agent's skills directory (for example `~/.claude/skills/model-plan`). It needs a shell and anonymous HTTPS.
 
@@ -219,7 +219,7 @@ curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh
 modelplan lineup --dev anthropic
 ```
 
-This standalone installer uses the latest release and verifies its checksum, installing into `~/.local/bin` without editing shell profiles. Windows: use [Releases](https://github.com/modelplan/modelplan/releases). Go users: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. [CLI documentation](cli/) · [Installation guide](docs/install.md)
+This standalone installer uses the latest release and verifies its checksum, installing into `~/.local/bin` without editing shell profiles. Go users: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. [CLI documentation](cli/) · [Installation guide](docs/install.md)
 
 ## Repository
 

@@ -15,11 +15,11 @@ ModelPlan's automatic in-agent help bundles the Skill and a checksum-checked CLI
 
 **任务开始简报**：每个会话第一条消息时，钩子交给 Claude 一份简短材料：Anthropic 各模型在 ★ 档的能力和相对成本（被更好选项压过的标“可跳过”）、普通任务的默认配置（已发布的最划算模型 ★ 档；它比最强模型低 3 分以上时改用最强的，现在是 Opus 5.5 ★Med，两者都是它）、当前模型各档相对当前档的分数和倍数，约 1200 字符。简报里没有额度数字：额度在给你看的提示里；你问到额度或某条提示时，Claude 会运行 `modelplan quota` 或 `modelplan advise` 查当前数据。额度偏紧时简报不提供升档选项。Claude 自己判断任务难度，只有当前设置明显不合适时才用一句话建议，不主动提额度，不会替你切换。每个会话只给一次；之后换到没介绍过的模型时，只补一行那个模型的档位对比，额度和档位变化不再重发。当前模型和档位来自状态栏为**本会话**记录的读数；状态栏记录的是别的会话时写“未知”。`MODELPLAN_TASK_BRIEF=off` 关闭。
 
-**插件自带 CLI**：插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本和各平台程序包的 SHA-256。装好或升级插件后，钩子在后台从 GitHub 下载这个版本到 `~/.cache/modelplan-cli/<版本>`，校验值和插件里写的完全一致才使用。所以不需要另外安装或升级 CLI。不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan` 保持不动，只在配套的那份还没下载好时临时使用。下载好后聊天里提示一次；下载失败会说明原因，每周最多一次。`MODELPLAN_PLUGIN_CLI=off` 关闭自动下载。Windows 不自动下载。
+**插件自带 CLI**：插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本和各平台程序包的 SHA-256。装好或升级插件后，钩子在后台从 GitHub 下载这个版本到 `~/.cache/modelplan-cli/<版本>`，校验值和插件里写的完全一致才使用。所以不需要另外安装或升级 CLI。不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan` 保持不动，只在配套的那份还没下载好时临时使用。下载好后聊天里提示一次；下载失败会说明原因，每周最多一次。`MODELPLAN_PLUGIN_CLI=off` 关闭自动下载。
 
 **自动提示（默认开启） / Automatic hints (default ON)**：运行 `/modelplan:setup automatic-hints off` 关闭，`/modelplan:setup automatic-hints on` 恢复。设置保存在 `~/.config/modelplan/claude-code/automatic-hints`；关闭后提示钩子完全不输出（包括设置通知和任务开始简报），命令和状态栏仍可使用。Use these setup commands to silence or restore the whole prompt hook; explicit commands and the optional status line keep working. `/modelplan:setup` reports the saved preference.
 
-**状态栏是可选显示，不是额度来源的前提。** CLI 检测已登录的工具；无法读取的额度显示为未知。无需安装状态栏，设置也可以完整。/ **The status line is OPTIONAL**, a display nicety rather than the quota source. The CLI detects signed-in tools; unavailable readings remain unknown.
+**状态栏是可选显示。** 当前版本的 Claude Code 额度只来自它记录的本机快照；自动检测尚未上线。没有快照时额度保持未知，公开模型/档位建议和其他来源仍可使用。/ **The status line is OPTIONAL.** Today Claude Code quota comes only from its recorded local snapshot; automatic detection is coming. Without a snapshot that quota stays unknown, while public advice and other sources still work.
 
 状态栏 Status line:
 
@@ -36,7 +36,7 @@ ModelPlan's automatic in-agent help bundles the Skill and a checksum-checked CLI
 - 终端不到 100 列（Claude Code 传入的 `COLUMNS`）时自动收成短的一行：不显示能力分，每周只显示剩余百分比。
 
 - 档位和 fast 状态来自 Claude Code 本身；★ 是 ModelPlan 的推荐档。
-- 额度：CLI 检测已登录的工具并读取可用数据。可选状态栏也可记录 Claude Code 传入的 5 小时 / 7 天用量，兼容旧版读数；无需依靠它获取额度。不上传任何东西。
+- 额度：当前 CLI 只读取可选状态栏记录的 Claude Code 5 小时 / 7 天快照；自动检测尚未上线。没有快照时额度未知。不上传任何东西。
 - 额度记录：状态栏和钩子运行时，CLI 还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history` 查看，保留 5 小时周期 28 天、每周周期 12 周；`MODELPLAN_HISTORY=off` 停止记录）。以后据此按你自己的几周用量建议默认档位。同时开多个会话时，用量算在最近刷新状态栏的那个会话的档位上。
 - 实测速度：状态栏和钩子运行时，CLI 还会读当前会话记录里的时间戳和 token 数（不读对话内容），按模型、档位和 Fast 统计输出 tok/s、首字延迟、每轮耗时和 token；`/modelplan:effort` 和 `modelplan history` 里显示，和 ★ 推荐档对比。每份记录只存本机，同样由 `MODELPLAN_HISTORY=off` 关闭。
 - `↑`：这个窗口重置前大概率用不完，升档不浪费。注意 Claude Code 的 fast 模式扣的是 usage credits（另付费），不占订阅额度，额度富余不是开 fast 的理由。`↓`：按当前速度会提前用完，保持 ★ 或降一档。`≈2时20分用完`：按最近 10–45 分钟的用量，这个窗口约 2 小时 20 分钟后用完，早于重置（只在 3 小时内会用完时显示，同时算作偏紧）。

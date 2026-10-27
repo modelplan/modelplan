@@ -61,6 +61,35 @@ cp "$TEST_ARCHIVE" "$out"
         return subprocess.run(["sh", str(self.skill / "scripts/install-cli.sh")],
                               env=self.env, capture_output=True, text=True, timeout=10)
 
+    def test_current_or_newer_cli_is_kept_without_downloading(self):
+        binary = self.home / ".local/bin/modelplan"
+        binary.parent.mkdir(parents=True)
+        # A fetch would fail its checksum; keeping an installation must return first.
+        for version in ("9.9.9", "9.9.10", "10.0.0", "10.0.0-dev", "9.9.9+build.1"):
+            with self.subTest(version=version):
+                body = '#!/bin/sh\necho "modelplan ' + version + '"\n'
+                binary.write_text(body)
+                binary.chmod(0o755)
+                before = binary.stat().st_mtime_ns
+                result = self.run_install("0" * 64)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("already installed (v" + version + ")\n", result.stdout)
+                self.assertEqual(body, binary.read_text())
+                self.assertEqual(before, binary.stat().st_mtime_ns)
+                self.assertFalse((self.home / ".cache/modelplan-cli").exists())
+
+    def test_older_cli_or_equal_prerelease_is_upgraded_to_pin(self):
+        binary = self.home / ".local/bin/modelplan"
+        binary.parent.mkdir(parents=True)
+        for version in ("9.9.8", "9.9.9-dev"):
+            with self.subTest(version=version):
+                binary.write_text('#!/bin/sh\necho "modelplan ' + version + '"\n')
+                binary.chmod(0o755)
+                result = self.run_install(self.checksum)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("modelplan 9.9.9", subprocess.check_output(
+                    [str(binary), "version"], text=True).strip())
+
     def test_installs_verified_pin_into_local_bin_without_profiles(self):
         result = self.run_install(self.checksum)
         self.assertEqual(0, result.returncode, result.stderr)
