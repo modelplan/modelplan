@@ -21,6 +21,7 @@ import (
 type RequestUsage struct {
 	Used      *int64 `json:"used"`
 	Limit     *int64 `json:"limit"`
+	Remaining *int64 `json:"remaining,omitempty"` // independently reported; never inferred as a limit
 	Unlimited bool   `json:"unlimited,omitempty"`
 	Reason    string `json:"reason,omitempty"`
 }
@@ -126,6 +127,7 @@ type Credits struct {
 	Unlimited  bool      `json:"unlimited,omitempty"`
 	Balance    *float64  `json:"balance,omitempty"`
 	Currency   string    `json:"currency,omitempty"` // explicit ISO currency for monetary wallets
+	Scope      string    `json:"scope,omitempty"`    // compiled wallet scope, never a personal identifier
 	Unit       string    `json:"unit,omitempty"`     // money | credits; absent for legacy readings
 	ObservedAt time.Time `json:"observedAt"`
 	AgeMinutes *int      `json:"ageMinutes,omitempty"`

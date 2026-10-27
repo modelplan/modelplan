@@ -23,13 +23,14 @@ type ReaderGrant struct {
 	Keychain           bool
 	KeychainPriorGrant bool
 	Interactive        bool
+	Region             string // locally selected region; an empty value uses the reader's safe default
 	Profiles           []ReaderProfile
 	// StillValid checks the consent generation immediately before publication.
 	StillValid func() bool
 }
 type ReaderProfile struct {
 	Root        string // locally admitted tool root, never a remotely supplied path
-	AccountFile string // optional locally admitted tool-owned metadata file
+	AccountFile string // optional locally admitted tool-owned account file; provider-specific
 }
 
 type readerMetadata struct {
@@ -38,6 +39,7 @@ type readerMetadata struct {
 	OrganizationKey string             `json:"organizationKey,omitempty"`
 	VerifiedAt      time.Time          `json:"verifiedAt,omitempty"`
 	Plan            string             `json:"plan,omitempty"`
+	ScopeKey        string             `json:"scopeKey,omitempty"`
 	PlanDetails     *readerPlanDetails `json:"planDetails,omitempty"`
 }
 
@@ -125,8 +127,8 @@ func readerHash(cache, domain, value string) string {
 }
 
 func readerAllowed(p Paths, provider string) (ReaderGrant, bool) {
-	mode := strings.ToLower(os.Getenv("MODELPLAN_READERS"))
-	if p.Cache == "" || p.ReaderAccess == nil || nativeOff() || mode == "off" || mode == "passive" {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
+	if p.Cache == "" || p.ReaderAccess == nil || nativeOff() || (mode != "" && mode != "automatic") {
 		return ReaderGrant{}, false
 	}
 	g, ok := p.ReaderAccess.Grants[provider]
@@ -165,15 +167,15 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 		return false
 	}
 	s, err := loadReaderState(p.Cache, provider)
-	if err != nil || now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
-		return false
-	}
-	return xSubscriptionDue(p.Cache, provider, now)
+	return err == nil && !now.Before(s.NextAttemptAt) && readerAttemptDue(p.Cache, provider, now) && nativeReaders[provider].budgetDue(p.Cache, now) && xSubscriptionDue(p.Cache, provider, now)
 }
 
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
+	if ctx.Err() != nil {
+		return errors.New("reader canceled")
+	}
 	g, allowed := readerAllowed(p, provider)
 	if !allowed {
 		return errors.New("saved-login consent required")
@@ -190,10 +192,10 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
 		return nil
 	}
-	if !xSubscriptionDue(p.Cache, provider, now) {
+	n := nativeReaders[provider]
+	if !n.budgetDue(p.Cache, now) || !xSubscriptionDue(p.Cache, provider, now) {
 		return nil
 	}
-	n := nativeReaders[provider]
 	profiles := g.Profiles
 	if len(profiles) == 0 {
 		profiles = n.Profiles()
@@ -232,6 +234,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return err
 	}
 	if err := reserveXSubscription(p.Cache, provider, now); err != nil {
+		return err
+	}
+	if err := n.reserveBudget(p.Cache, now); err != nil {
 		return err
 	}
 	s.NextProfile = (index + 1) % len(profiles)
@@ -282,6 +287,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		s.Entries = append(s.Entries, e)
 	} else {
 		s.Entries[entryIndex] = e
+	}
+	if err := n.finishBudget(p.Cache, s.NextAttemptAt); err != nil {
+		return err
 	}
 	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
 		return err
