@@ -16,11 +16,13 @@ import ModelPlanCore
     }
     try require((await cli.stats()).0.filter { $0 == .refreshAccount }.count == 1,
         "ticks and explicit refreshes respect five-minute attempt spacing")
+    let beforeBoundary = (await cli.stats()).0.count
     time.elapsed = 300; store.tick(); store.tick(); try await settle(store)
     let atBoundary = await cli.stats()
     try require(atBoundary.0.filter { $0 == .refreshAccount }.count == 2 && atBoundary.1 == 1,
         "exact five-minute boundary refreshes once without overlap")
-    try require(atBoundary.0.suffix(2) == [.refreshAccount, .desktop], "due refresh precedes next desktop read")
+    try require(Array(atBoundary.0.dropFirst(beforeBoundary).prefix(2)) == [.refreshAccount, .desktop],
+        "due refresh precedes next desktop read")
     // Attempt spacing uses elapsed time even if the wall clock jumps or the app resumes briefly.
     store.suspend(); time.wall = now.addingTimeInterval(-100); time.elapsed = 301
     store.resume(); try await settle(store)
