@@ -23,7 +23,7 @@ public enum DockEffectSampling: Equatable, Sendable { case stepped, interpolated
         for index in 0..<effect.frameCount {
             // Mid-interval avoids floating-point floor ambiguity in the existing discrete seek seam.
             effect.seekForCapture((Double(index) + 0.5) / Double(effect.frameCount))
-            guard let contents = effect.layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImageGetTypeID() else { return nil }
+            guard let contents = effect.layer.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else { return nil }
             frames.append(contents as! CGImage)
         }
         CATransaction.begin(); CATransaction.setDisableActions(true); defer { CATransaction.commit() }
