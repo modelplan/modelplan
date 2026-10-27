@@ -13,11 +13,24 @@ import AppKit
     private var controls:[String:RecordStripControl] = [:]
     private var hovered:RecordStripHover?
     private var allowed = true
-    private let cursorLayer = CALayer()
-    public init(provider:(any RecordStripRecipeProvider)? = nil) {
+    private var cursorLayers:[String:CALayer] = [:]
+    private let systemReduceMotion:@MainActor ()->Bool
+    private let windowVisibility:@MainActor (RecordStripView)->Bool
+    private var workspaceToken:NSObjectProtocol?,occlusionToken:NSObjectProtocol?
+    public convenience init(provider:(any RecordStripRecipeProvider)? = nil,systemReduceMotion:(@MainActor ()->Bool)? = nil) {
+        self.init(provider:provider,systemReduceMotion:systemReduceMotion,windowVisibility:{ view in
+            view.window.map{$0.isVisible && $0.occlusionState.contains(.visible)} ?? false
+        })
+    }
+    /// Internal logical visibility seam; production admission always also requires an actual visible window.
+    init(provider:(any RecordStripRecipeProvider)? = nil,systemReduceMotion:(@MainActor ()->Bool)? = nil,
+         windowVisibility:@escaping @MainActor (RecordStripView)->Bool) {
         let selected = provider ?? NeutralRecordStripRecipe()
-        self.provider = selected;super.init(frame:CGRect(origin:.zero,size:selected.preferredSize(for:.compact)))
-        wantsLayer = true;layer?.addSublayer(cursorLayer);cursorLayer.isHidden = true
+        self.provider = selected;self.windowVisibility = windowVisibility;self.systemReduceMotion = systemReduceMotion ?? {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion};super.init(frame:CGRect(origin:.zero,size:selected.preferredSize(for:.compact)))
+        wantsLayer = true
+        workspaceToken = NSWorkspace.shared.notificationCenter.addObserver(forName:NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,object:nil,queue:.main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateCursor() }
+        }
         setAccessibilityElement(false);setAccessibilityIdentifier("record.strip")
     }
     public required init?(coder:NSCoder) { return nil }
@@ -30,14 +43,19 @@ import AppKit
         guard identities.values.allSatisfy({[$0.fullToolName ?? "",$0.shortModelName ?? "",$0.fullModelName ?? ""].allSatisfy{$0.utf8.count<=4096} && $0.vendorInk?.valid != false}) else { throw EngineTableError.invalidRecipe }
         let selected = proposed.selectedID.flatMap { ids.contains($0) ? $0:nil }
         let candidate = RecordStripViewInput(presentation:proposed.presentation,density:proposed.density,appearance:proposed.appearance,
-            identities:identities,selectedID:selected,overflowSelected:proposed.overflowSelected,cursor:proposed.cursor)
+            identities:identities,selectedID:selected,overflowSelected:proposed.overflowSelected,cursor:proposed.cursor,windowClosed:proposed.windowClosed)
         let size = provider.preferredSize(for:proposed.density)
         let next = try provider.recipe(for:candidate,size:size,hover:admittedHover(hovered,ids:ids,hasMore:proposed.presentation.overflow>0))
         try next.validate()
         guard next.rows.compactMap(\.id)==lines.map(\.id),next.drawing.size==size,(next.more != nil) == (proposed.presentation.overflow > 0) else { throw EngineTableError.invalidRecipe }
-        if let cursor = candidate.cursor {
-            guard let row = next.rows.first(where:{$0.id==cursor.recordID}),!cursor.rect.isNull,!cursor.rect.isInfinite,
-                  cursor.rect.width>0,cursor.rect.height>0,row.frame.contains(cursor.rect) else { throw EngineTableError.invalidRecipe }
+        let cursors = candidate.cursor.map{[$0]} ?? next.cursors
+        guard cursors.count<=5,Set(cursors.map(\.recordID)).count==cursors.count else { throw EngineTableError.invalidRecipe }
+        for cursor in cursors {
+            guard let line = lines.first(where:{$0.id==cursor.recordID}),line.working,
+                  let cell = next.rows.first(where:{$0.id==cursor.recordID})?.fields[.age],
+                  [cursor.rect.minX,cursor.rect.minY,cursor.rect.width,cursor.rect.height].allSatisfy(\.isFinite),
+                  cursor.rect.width>0,cursor.rect.height>0,cell.contains(cursor.rect),
+                  cursor.blinkDuration.map({$0.isFinite && (0.1...60).contains($0)}) ?? true else { throw EngineTableError.invalidRecipe }
         }
         // Resolve resources before publishing data or changing the accessible target tree.
         _ = try EngineRecipeDrawing.raster(next.drawing,provider:provider,scale:1)
@@ -53,7 +71,8 @@ import AppKit
     public func stop() {
         allowed = false;input = nil;recipe = nil;hovered = nil;glyphMetrics = []
         for control in controls.values { control.retire() };controls = [:]
-        cursorLayer.removeAllAnimations();cursorLayer.isHidden = true
+        for cursor in cursorLayers.values { cursor.removeAllAnimations();cursor.isHidden = true;cursor.removeFromSuperlayer() }
+        cursorLayers = [:]
     }
     public func control(for recordID:String)->NSControl? { controls["row:"+recordID] }
     public var moreControl:NSControl? { controls["more"] }
@@ -104,22 +123,55 @@ import AppKit
         do {
             let next = try provider.recipe(for:input,size:old.drawing.size,hover:admitted);try next.validate()
             // Pointer state may change ink, never the navigation/tooltip target geometry.
-            guard next.rows==old.rows,next.more==old.more,next.drawing.size==old.drawing.size else { throw EngineTableError.invalidRecipe }
+            guard next.rows==old.rows,next.more==old.more,next.cursors==old.cursors,next.drawing.size==old.drawing.size else { throw EngineTableError.invalidRecipe }
             _ = try EngineRecipeDrawing.raster(next.drawing,provider:provider,scale:1)
-            recipe = next;hovered = admitted;needsDisplay = true
+            recipe = next;hovered = admitted;updateCursor();needsDisplay = true
         } catch { onRenderingFailure?(error) }
     }
     private func updateAdmission() {
         for control in controls.values { control.isEnabled = allowed && !isHiddenOrHasHiddenAncestor }
     }
     fileprivate var focusInk:CGColor { (recipe?.drawing.focusInk ?? .init(0.3,0.6,1)).cgColor }
-    private func updateCursor() {
-        CATransaction.begin();CATransaction.setDisableActions(true)
-        cursorLayer.isHidden = true;cursorLayer.removeAllAnimations()
-        if allowed,!isHiddenOrHasHiddenAncestor,let cursor = input?.cursor,cursor.visible,let ink = recipe?.cursorInk {
-            cursorLayer.frame = cursor.rect;cursorLayer.backgroundColor = ink.cgColor;cursorLayer.isHidden = false
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let occlusionToken { NotificationCenter.default.removeObserver(occlusionToken) };occlusionToken = nil
+        if let window {
+            occlusionToken = NotificationCenter.default.addObserver(forName:NSWindow.didChangeOcclusionStateNotification,object:window,queue:.main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateWindowVisibility() }
+            }
         }
-        CATransaction.commit()
+        updateWindowVisibility()
+    }
+    private func updateWindowVisibility() {
+        updateCursor()
+    }
+    private func updateCursor() {
+        let cursors = input?.cursor.map{[$0]} ?? recipe?.cursors ?? [],ids = Set(cursors.map(\.recordID))
+        CATransaction.begin();CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        for (id,cursor) in cursorLayers where !ids.contains(id) {
+            cursor.removeAllAnimations();cursor.isHidden = true;cursor.removeFromSuperlayer();cursorLayers.removeValue(forKey:id)
+        }
+        let visible = allowed && windowVisibility(self) && !isHiddenOrHasHiddenAncestor && input?.windowClosed==false
+        let reduced = input?.appearance.reduceMotion==true || systemReduceMotion()
+        for placement in cursors {
+            let cursor = cursorLayers[placement.recordID] ?? CALayer()
+            if cursor.superlayer==nil { cursor.name = "record.cursor."+placement.recordID;layer?.addSublayer(cursor);cursorLayers[placement.recordID] = cursor }
+            cursor.frame = placement.rect;cursor.backgroundColor = recipe?.cursorInk.cgColor;cursor.opacity = 1
+            cursor.isHidden = !visible || !placement.visible
+            if !cursor.isHidden,!reduced,let duration = placement.blinkDuration {
+                if cursor.animation(forKey:"record.cursor.blink")?.duration != duration {
+                    let animation = CAKeyframeAnimation(keyPath:"opacity")
+                    animation.values = [1,0,1];animation.keyTimes = [0,0.5,1]
+                    animation.duration = duration;animation.repeatCount = .infinity;animation.calculationMode = .discrete
+                    cursor.add(animation,forKey:"record.cursor.blink")
+                }
+            } else { cursor.removeAnimation(forKey:"record.cursor.blink") }
+        }
+    }
+    deinit {
+        if let workspaceToken { NSWorkspace.shared.notificationCenter.removeObserver(workspaceToken) }
+        if let occlusionToken { NotificationCenter.default.removeObserver(occlusionToken) }
     }
     private func synchronizeControls() {
         guard let input,let recipe else { return }

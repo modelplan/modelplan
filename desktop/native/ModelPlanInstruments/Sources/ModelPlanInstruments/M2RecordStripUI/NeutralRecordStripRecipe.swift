@@ -18,7 +18,7 @@ import CoreText
         let muted = EngineInk(input.appearance.dark ? NSColor.lightGray : .darkGray)
         let background = EngineInk(input.appearance.dark ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.95, alpha: 1))
         var commands: [EngineDrawingCommand] = [.fill(rect: CGRect(origin: .zero, size: size), radius: 4, ink: background)]
-        var rows: [RecordStripRowLayout] = []
+        var rows: [RecordStripRowLayout] = [], cursors: [RecordStripCursor] = []
         let widths: [Double] = [6, 78, 90, 60, 154, 94, 78]
         let fields = RecordStripField.allCases
         for (index, line) in input.presentation.lines.enumerated() {
@@ -28,6 +28,9 @@ import CoreText
                 boxes[field] = CGRect(x: x, y: frame.minY, width: width, height: frame.height); x += width + 4
             }
             rows.append(.init(id: line.id, frame: frame, fields: boxes))
+            if line.working,let cell = boxes[.age] {
+                cursors.append(.init(recordID:line.id,rect:CGRect(x:cell.maxX-5,y:cell.midY-5,width:5,height:10),visible:true,blinkDuration:1))
+            }
             if input.selectedID == line.id || hover == .row(line.id) {
                 commands.append(.fill(rect: frame, radius: 2, ink: .init(0.3, 0.5, 0.8, 0.2)))
             }
@@ -55,6 +58,6 @@ import CoreText
             commands.append(.text(.init(id: "record.more", variants: ["+\(input.presentation.overflow) ›"], rect: more,
                                        font: .init(size: 11), ink: foreground, alignment: .right)))
         }
-        return .init(drawing: .init(size: size, commands: commands, regions: [], focusInk: .init(0.3, 0.6, 1)), rows: rows, more: more)
+        return .init(drawing: .init(size: size, commands: commands, regions: [], focusInk: .init(0.3, 0.6, 1)), rows: rows, more: more, cursors:cursors)
     }
 }

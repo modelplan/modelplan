@@ -22,7 +22,10 @@ public struct CockpitStation {
 public struct CockpitStill {
     public let key: String
     public let image: CGImage
-    public init(key: String, image: CGImage) { self.key = key; self.image = image }
+    public let captureID:String?,rocketProjection:CockpitRocketProjection?
+    public init(key:String,image:CGImage,captureID:String? = nil,rocketProjection:CockpitRocketProjection? = nil) {
+        self.key = key;self.image = image;self.captureID = captureID;self.rocketProjection = rocketProjection
+    }
 }
 public struct CockpitSurfaceState {
     public let profile: CockpitProfile

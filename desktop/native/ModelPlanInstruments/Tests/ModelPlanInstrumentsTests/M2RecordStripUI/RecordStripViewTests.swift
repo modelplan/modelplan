@@ -146,9 +146,10 @@ import XCTest
         XCTAssertThrowsError(try view.configure(.init(presentation: full.presentation, density: .compact, appearance: .init())))
     }
     func testStaticCursorHasNoAnimationAndPausesWithPresentation() async throws {
-        let view = RecordStripView(); try view.configure(input([session("a")]))
-        let box = try XCTUnwrap(view.recipe?.rows.first?.fields[.tool])
+        let view = RecordStripView(windowVisibility:{_ in true}); try view.configure(input([session("a")]))
+        let box = try XCTUnwrap(view.recipe?.rows.first?.fields[.age])
         try view.configure(input([session("a")], cursor: .init(recordID: "a", rect: CGRect(x: box.minX, y: box.minY + 2, width: 3, height: 10), visible: true)))
+        view.setPresentationAllowed(true)
         let cursor = try XCTUnwrap(view.layer?.sublayers?.first)
         XCTAssertFalse(cursor.isHidden); XCTAssertTrue(cursor.animationKeys()?.isEmpty ?? true)
         view.setPresentationAllowed(false); XCTAssertTrue(cursor.isHidden)
@@ -175,6 +176,66 @@ import XCTest
         XCTAssertEqual(view.recipe?.drawing,old.drawing);XCTAssertEqual(failures,2)
         XCTAssertTrue(control.accessibilityPerformPress())
     }
+    func testRunningCursorsUseDiscreteLayerAnimationAndKeepTheirPhaseAcrossRefresh() async throws {
+        let view = RecordStripView(systemReduceMotion:{false},windowVisibility:{_ in true})
+        let value = input([session("a"),session("b"),session("c",working:false)])
+        try view.configure(value);view.setPresentationAllowed(true)
+        let layers = view.layer!.sublayers!.filter{$0.name?.hasPrefix("record.cursor.")==true}
+        XCTAssertEqual(layers.count,2)
+        XCTAssertFalse(layers.contains{$0.name=="record.cursor.c"})
+        for cursor in layers {
+            let animation = try XCTUnwrap(cursor.animation(forKey:"record.cursor.blink") as? CAKeyframeAnimation)
+            XCTAssertEqual(animation.duration,1);XCTAssertEqual(animation.repeatCount,.infinity)
+            XCTAssertEqual(animation.calculationMode,.discrete);XCTAssertEqual(animation.values as? [Int],[1,0,1])
+            XCTAssertEqual(animation.keyTimes,[0,0.5,1]);XCTAssertFalse(cursor.isHidden)
+        }
+        try view.configure(value)
+        XCTAssertTrue(layers[0] === view.layer!.sublayers![0])
+        view.stop()
+        XCTAssertTrue(layers.allSatisfy{$0.isHidden && ($0.animationKeys()?.isEmpty ?? true) && $0.superlayer==nil})
+    }
+    func testCursorMotionHonorsAppSystemClosedHiddenAndDetachGuards() async throws {
+        var systemRM = false,visibleWindow = true
+        let view = RecordStripView(systemReduceMotion:{systemRM},windowVisibility:{_ in visibleWindow}),value = input([session("a")])
+        try view.configure(value);view.setPresentationAllowed(true)
+        let cursor = try XCTUnwrap(view.layer?.sublayers?.first)
+        func assertStopped(hidden:Bool) { XCTAssertEqual(cursor.isHidden,hidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink")) }
+        systemRM = true;view.setPresentationAllowed(true);assertStopped(hidden:false);XCTAssertEqual(cursor.opacity,1)
+        systemRM = false
+        try view.configure(.init(presentation:value.presentation,density:value.density,appearance:.init(reduceMotion:true)))
+        assertStopped(hidden:false)
+        try view.configure(.init(presentation:value.presentation,density:value.density,appearance:.init(),windowClosed:true))
+        assertStopped(hidden:true)
+        try view.configure(value);XCTAssertNotNil(cursor.animation(forKey:"record.cursor.blink"))
+        view.isHidden = true;assertStopped(hidden:true);view.isHidden = false
+        XCTAssertNotNil(cursor.animation(forKey:"record.cursor.blink"))
+        view.setPresentationAllowed(false);try view.configure(value);assertStopped(hidden:true)
+        view.setPresentationAllowed(true);visibleWindow = false;view.viewDidMoveToWindow();assertStopped(hidden:true)
+        view.stop()
+    }
+    func testProductionCursorCannotResumeWithoutAVisibleWindow() async throws {
+        let view = RecordStripView(systemReduceMotion:{false}),value = input([session("a")])
+        try view.configure(value);view.setPresentationAllowed(true)
+        let cursor = try XCTUnwrap(view.layer?.sublayers?.first)
+        XCTAssertTrue(cursor.isHidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink"))
+        view.isHidden = true;view.isHidden = false;try view.configure(value);view.setPresentationAllowed(true)
+        XCTAssertTrue(cursor.isHidden);XCTAssertNil(cursor.animation(forKey:"record.cursor.blink"))
+        view.stop()
+    }
+    func testCursorAdmissionRejectsCompletedWrongCellAndInvalidCadenceAtomically() async throws {
+        let view = RecordStripView(),value = input([session("a"),session("b",working:false)])
+        try view.configure(value)
+        let age = try XCTUnwrap(view.recipe?.rows.first(where:{$0.id=="a"})?.fields[.age])
+        let tool = try XCTUnwrap(view.recipe?.rows.first(where:{$0.id=="a"})?.fields[.tool])
+        let done = try XCTUnwrap(view.recipe?.rows.first(where:{$0.id=="b"})?.fields[.age])
+        for cursor in [RecordStripCursor(recordID:"b",rect:done.insetBy(dx:2,dy:2),visible:true),
+                       .init(recordID:"a",rect:tool.insetBy(dx:2,dy:2),visible:true),
+                       .init(recordID:"a",rect:age.insetBy(dx:2,dy:2),visible:true,blinkDuration:.nan)] {
+            XCTAssertThrowsError(try view.configure(.init(presentation:value.presentation,density:value.density,appearance:.init(),cursor:cursor)))
+        }
+        XCTAssertEqual(view.input?.presentation.lines.map(\.id),["a","b"])
+        view.stop()
+    }
     func testNeutralRasterIsCompleteInBothLanguagesThemesScalesAndDensities() async throws {
         let view = RecordStripView()
         for full in [false, true] { for dark in [false, true] { for language in [InstrumentLanguage.english, .chinese] {
@@ -199,11 +260,11 @@ import XCTest
         let next = try neutral.recipe(for: input, size: size, hover: hover)
         if hover != nil && moveOnHover {
             let rows = next.rows.map { RecordStripRowLayout(id:$0.id,frame:$0.frame.offsetBy(dx:1,dy:0),fields:$0.fields.mapValues{$0.offsetBy(dx:1,dy:0)}) }
-            return .init(drawing:next.drawing,rows:rows,more:next.more)
+            return .init(drawing:next.drawing,rows:rows,more:next.more,cursors:next.cursors)
         }
         if hover != nil && missingOnHover {
             var drawing = next.drawing;drawing.commands.append(.image(resourceID:"missing",rect:CGRect(x:0,y:0,width:1,height:1),opacity:1))
-            return .init(drawing:drawing,rows:next.rows,more:next.more)
+            return .init(drawing:drawing,rows:next.rows,more:next.more,cursors:next.cursors)
         }
         return next
     }
