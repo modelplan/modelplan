@@ -102,7 +102,16 @@ public enum HelpUILayout {
                measure(title,frame.width,.button).height<=frame.height { sourceFrame=frame }
             else { unresolved.append("map.source") }
         }
-        let blocks=input.liveReadings+[header]+placed.map(\.1)+(sourceFrame.map { [$0] } ?? [])
+        var secondarySourceFrame:CGRect?
+        if input.map.secondarySourceActionID != nil || input.map.secondarySourceActionTitle != nil {
+            if let frame=input.map.secondarySourceFrame,let title=input.map.secondarySourceActionTitle,!title.isEmpty,title.utf8.count<=512,
+               let id=input.map.secondarySourceActionID,!id.isEmpty,id.utf8.count<=256,id != input.map.sourceActionID,
+               sourceFrame != nil,HelpUIGeometry.valid(frame),safe.contains(frame),
+               HelpUIGeometry.free(frame,from:input.liveReadings+[header]+placed.map(\.1)+(sourceFrame.map { [$0] } ?? [])),
+               measure(title,frame.width,.button).height<=frame.height { secondarySourceFrame=frame }
+            else { unresolved.append("map.secondarySource") }
+        }
+        let blocks=input.liveReadings+[header]+placed.map(\.1)+(sourceFrame.map { [$0] } ?? [])+(secondarySourceFrame.map { [$0] } ?? [])
         let labels=placed.map { item,frame -> HelpUIMapLabel in
             let starts=[CGPoint(x:frame.maxX+4,y:frame.midY),.init(x:frame.minX-4,y:frame.midY)]
             let ends=[CGPoint(x:item.anchor.minX-4,y:item.anchor.midY),.init(x:item.anchor.maxX+4,y:item.anchor.midY),
@@ -117,6 +126,6 @@ public enum HelpUILayout {
             return .init(id:item.id,text:item.text,anchorID:item.anchorID,frame:frame,leader:leader)
         }
         return .init(sessionID:input.sessionID,mapHeader:labels.isEmpty ? nil:header,mapLabels:labels,mapSourceFrame:labels.isEmpty ? nil:sourceFrame,
-                     unresolvedMapIDs:Array(Set(unresolved)).sorted())
+                     unresolvedMapIDs:Array(Set(unresolved)).sorted(), secondaryMapSourceFrame:labels.isEmpty ? nil:secondarySourceFrame)
     }
 }

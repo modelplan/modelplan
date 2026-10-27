@@ -170,3 +170,15 @@ Six new no-window regressions cover actual layer/coordinate binding, current-rec
 lifecycle cleanup, stale callbacks, reentrant close and application/provider release. Together with
 the eleven surface regressions they pass seventeen selected tests and compile/link CommunityApp.
 This change depends on PR193; preserve merge order and exact-head external gates.
+
+The Community entry also binds local Option modifier events to the same Help layer. Its neutral,
+MainScreen-only map uses the current recipe's actual anchors and reading/control/plot exclusions;
+when a free source-corner block cannot fit, no source controls are published and instruments do not move.
+The primary control shows actual publication age or an explicit unknown plus About, while the optional
+second control opens the published data-source link. Missing/future/non-finite publication dates stay unknown.
+No extra clock, dwell policy, first-use offer or seen/budget write is introduced. Escape, Option release,
+hide/close and replacement publication retire old actions; only current presented controls may call the
+injected public website opener. CommunityApp supplies the HTTPS modelplan.ai opener after user actions;
+headless tests inject a recorder and never open a browser. Existing comparison website intents use the same
+current-link fence. This partial community map is not the complete Cockpit/Dock map or physical/appearance
+acceptance, and it does not change the MainScreen profile or chart heights.

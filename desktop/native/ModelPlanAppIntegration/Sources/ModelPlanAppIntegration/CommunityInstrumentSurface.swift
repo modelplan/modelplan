@@ -11,7 +11,7 @@ import ModelPlanSettings
 public struct PublicationSourceStamp: Equatable, Sendable {
     public let publishedAt: Date?, observedAt: Date
     public init(publishedAt: Date?, observedAt: Date) {
-        self.publishedAt = publishedAt.flatMap { $0 <= observedAt ? $0 : nil }; self.observedAt = observedAt
+        self.publishedAt = publishedAt.flatMap { $0.timeIntervalSinceReferenceDate.isFinite && observedAt.timeIntervalSinceReferenceDate.isFinite && $0 <= observedAt ? $0 : nil }; self.observedAt = observedAt
     }
     public var age: TimeInterval? { publishedAt.map { observedAt.timeIntervalSince($0) } }
 }
@@ -21,10 +21,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public private(set) var current: CommunityInstrumentView?
     private var settings: SettingsApplication?
     private weak var help: InstrumentHelpComposition?
-    public init() {}
+    private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
+    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) { self.openWebsite = openWebsite }
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
-        let surface = CommunityInstrumentView()
+        let surface = CommunityInstrumentView(openWebsite: openWebsite)
         current = surface
         if let settings { surface.apply(settings) }
         if let help { surface.bindHelp(help) }
@@ -39,7 +40,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     }
 }
 
-@MainActor private final class InstrumentContainer: NSView { override var isFlipped: Bool { true } }
+@MainActor private final class InstrumentContainer: NSView {
+    var optionChanged: ((Bool) -> Void)?
+    override var isFlipped: Bool { true }
+    override func flagsChanged(with event: NSEvent) { optionChanged?(event.modifierFlags.contains(.option));super.flagsChanged(with:event) }
+}
 
 /// Live read-only public model/effort consumer using M3's existing native MainScreenView.
 /// This is not the complete four-region cockpit, Dock, renderer or an official appearance provider.
@@ -66,8 +71,20 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var helpGeneration: UInt64 = 0
     private var needsSelection = false
     public var instrumentLanguage: InstrumentLanguage { settings?.effective.language == .english ? .english : .chinese }
-    public override init() {
+    private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
+    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
+        self.openWebsite = openWebsite
         super.init()
+        (view as? InstrumentContainer)?.optionChanged = { [weak self] held in self?.setOptionHelpHeld(held) }
+        mainScreen.onIntents = { [weak self] intents in
+            guard let self,self.isPresented,!self.retired,!self.renderFailure else { return }
+            for intent in intents {
+                guard self.isPresented,!self.retired,!self.renderFailure else { return }
+                if case .openWebsite(let link)=intent,self.mainScreen.presentation?.websiteLinks.contains(link)==true {
+                    self.openWebsite(link)
+                }
+            }
+        }
         view.addSubview(modelPicker); view.addSubview(mainScreen); view.addSubview(status)
         mainScreen.appearance = nil
         modelPicker.target = self; modelPicker.action = #selector(pickedModel(_:))
@@ -86,9 +103,16 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         let binding = CommunityContextHelpBinding(composition: composition, source: mainScreen, container: view,
             active: { [weak self] in self?.isPresented == true && self?.retired == false },
             language: { [weak self] in self?.instrumentLanguage ?? .chinese },
-            accessibility: { [weak self] in (self?.settings?.effective.reduceMotion ?? true, self?.settings?.effective.reduceTransparency ?? true) })
+            accessibility: { [weak self] in (self?.settings?.effective.reduceMotion ?? true, self?.settings?.effective.reduceTransparency ?? true) },
+            publicationSource: { [weak self] in
+                guard let self else { return .init(publishedAt:nil,now:.distantPast,language:.chinese) }
+                return .init(publishedAt:self.sourceStamp.publishedAt,now:self.sourceStamp.observedAt,language:self.instrumentLanguage)
+            }, openWebsite: { [weak self] link in
+                guard let self,self.isPresented,!self.retired,!self.renderFailure else { return };self.openWebsite(link)
+            })
         helpBinding = binding; binding.install()
     }
+    public func setOptionHelpHeld(_ held: Bool) { guard !retired,isPresented,!renderFailure else { return };helpBinding?.setOptionHeld(held) }
     public func apply(_ application: SettingsApplication) {
         guard !retired, application.snapshot.revision >= (settings?.snapshot.revision ?? 0) else { return }
         let languageChanged = settings?.effective.language != application.effective.language
@@ -123,6 +147,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         guard !retired else { return }; retired = true; isPresented = false; helpGeneration &+= 1
         let binding = helpBinding; helpBinding = nil; binding?.dispose()
         modelPicker.target = nil; modelPicker.action = nil; modelPicker.isEnabled = false
+        (view as? InstrumentContainer)?.optionChanged = nil
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
         requestFreshSelection = nil; contentSizeChanged = nil
     }
