@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add the beta China-only Kimi Code saved-login reader with the existing device identity, one usage request and no credential refresh or device creation. Login and explicit-key routes share a persisted attempt floor/backoff; other quota durations retain labels and reset-past windows leave current projections.
+
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
 
 ## CLI v0.5.40, Codex plugin 0.15.32 and Claude Code plugin 0.7.31 (2026-10-26)

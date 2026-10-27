@@ -2,9 +2,17 @@ package quota
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"io"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,9 +20,10 @@ import (
 
 // Undocumented compatibility endpoint. Contract evidence: CodexBar (0827f30,
 // MIT) KimiModels/UsageFetcher and token-monitor (0c7dd85, MIT) kimi/limits.
-// Original implementation; no OAuth, cookies, enrichment, inference or key files.
+// Original implementation. The legacy explicit-key route is separate from the
+// consent-admitted, China-only saved-login route below; neither refreshes auth.
 var kimiHosts = map[string]string{"china": "https://api.kimi.com", "international": "https://api.kimi.ai"}
-var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi}
+var kimiReader = &nativeReader{Name: "Kimi Code", Regions: []string{"china", "international"}, KeyEnv: "KIMI_CODE_API_KEY", Fetch: fetchKimi, Managed: collectKimiLogin, Profiles: kimiLoginProfiles, Budget: &nativeReadBudget{Due: kimiBudgetDue, Reserve: kimiReserve, Finish: kimiFinish}}
 
 const KimiEndpointNotice = "Undocumented compatibility endpoint: GET /coding/v1/usages. Only the selected environment key is read; its value is never printed or stored. No Kimi credentials are refreshed or rewritten."
 
@@ -38,6 +47,7 @@ func fetchKimi(ctx context.Context, c *http.Client, region, key string, now time
 	}
 	// A redirect must never send the region's key to another host/path.
 	client := *c
+	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	var raw json.RawMessage
 	if err := getJSON(ctx, &client, host+"/coding/v1/usages", key, &raw); err != nil {
@@ -65,7 +75,19 @@ func parseKimi(b []byte, now time.Time) codexbarEntry {
 		if json.Unmarshal(raw, &v) != nil || v == nil {
 			return
 		}
-		w := Window{Kind: kindOf(minutes), WindowMinutes: minutes, ResetMode: "fixed", ObservedAt: now.UTC()}
+		kind := "unknown"
+		switch minutes {
+		case 300:
+			kind = "five_hour"
+		case 10080:
+			kind = "weekly"
+		case 43200:
+			kind = "monthly"
+		}
+		w := Window{Kind: kind, WindowMinutes: minutes, ResetMode: "fixed", ObservedAt: now.UTC()}
+		if w.Kind == "unknown" {
+			w.Limit = strconv.Itoa(minutes) + " minute quota"
+		}
 		for _, k := range []string{"reset_time", "resetTime", "reset_at", "resetAt"} {
 			var s string
 			if json.Unmarshal(v[k], &s) == nil {
@@ -141,7 +163,12 @@ func parseKimi(b []byte, now time.Time) codexbarEntry {
 			}
 		}
 	}
-	for _, m := range []int{300, 10080, 43200} {
+	minutes := make([]int, 0, len(by))
+	for m := range by {
+		minutes = append(minutes, m)
+	}
+	sort.Ints(minutes)
+	for _, m := range minutes {
 		if w, ok := by[m]; ok {
 			// Neither an expired window nor a malformed reset can imply a fresh tank.
 			if w.ResetsAt != nil && !w.ResetsAt.After(now) {
@@ -154,6 +181,201 @@ func parseKimi(b []byte, now time.Time) codexbarEntry {
 		e.Status, e.Error = "ok", ""
 	}
 	return e
+}
+
+// Saved-login approach/headers: CodexBar 0.81.0 KimiSettingsReader.swift (MIT),
+// ee890b5f392e70d6e20162d3e95cf9f1be265b60. Unlike that helper, never create a
+// device ID, import cookies, refresh auth or enrich through extra web endpoints.
+var kimiLoginHost = "https://api.kimi.com"
+var kimiLoginID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$`)
+
+func kimiLoginProfiles() []ReaderProfile {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	root := filepath.Join(home, ".kimi-code")
+	if override := os.Getenv("KIMI_CODE_HOME"); override != "" {
+		if !filepath.IsAbs(override) {
+			return nil
+		}
+		root = override
+	}
+	return []ReaderProfile{{Root: root}}
+}
+
+type kimiAttempt struct {
+	SchemaVersion int       `json:"schemaVersion"`
+	Next          time.Time `json:"nextAttemptAt"`
+}
+
+func kimiBudgetPath(cache string) string {
+	return filepath.Join(cache, "observed", "kimi-attempt-v1.json")
+}
+func kimiBudgetDue(cache string, now time.Time) bool {
+	b, status := readBounded(kimiBudgetPath(cache), 4096)
+	if status == "missing" {
+		return true
+	}
+	var s kimiAttempt
+	return status == "" && json.Unmarshal(b, &s) == nil && s.SchemaVersion == 1 && !now.Before(s.Next)
+}
+func kimiFinish(cache string, next time.Time) error {
+	path := kimiBudgetPath(cache)
+	if os.MkdirAll(filepath.Dir(path), 0o700) != nil {
+		return errors.New("Kimi usage budget unavailable")
+	}
+	b, _ := json.Marshal(kimiAttempt{SchemaVersion: 1, Next: next.UTC()})
+	if writeAtomic(path, append(b, '\n')) != nil {
+		return errors.New("Kimi usage budget unavailable")
+	}
+	return nil
+}
+func kimiReserve(cache string, now time.Time) error { return kimiFinish(cache, now.Add(5*time.Minute)) }
+
+func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	fail := func(state, notice string) readerOutcome {
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}}
+	}
+	if r.Grant.Region != "" && r.Grant.Region != "china" {
+		return fail("unavailable", "Kimi Code saved login is supported in China only")
+	}
+	for _, name := range []string{"KIMI_CODE_API_KEY", "KIMI_CODE_BASE_URL", "KIMI_CODE_OAUTH_HOST", "KIMI_OAUTH_HOST", "KIMI_AUTH_TOKEN", "kimi_auth_token"} {
+		if os.Getenv(name) != "" {
+			return fail("unavailable", "This Kimi Code selected login/endpoint is not supported yet")
+		}
+	}
+	path := filepath.Join(r.Profile.Root, "credentials", "kimi-code.json")
+	before, _ := os.Lstat(path)
+	b, status := readBounded(path, 64<<10)
+	var credential struct {
+		Access string          `json:"access_token"`
+		Expiry json.RawMessage `json:"expires_at"`
+	}
+	if status != "" || json.Unmarshal(b, &credential) != nil || credential.Access == "" || len(credential.Access) > 16<<10 || strings.ContainsAny(credential.Access, " \t\r\n") {
+		return fail("unavailable", "No supported Kimi Code saved login")
+	}
+	expires := kimiNumber(credential.Expiry, false)
+	if expires == nil || *expires <= float64(r.Now.Add(time.Minute).Unix()) {
+		out := fail("expired", "Open Kimi Code to refresh")
+		out.Entry.NextStep = out.Entry.Notice
+		return out
+	}
+	subject := ""
+	if parts := strings.Split(credential.Access, "."); len(parts) == 3 {
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return fail("unavailable", "Unsupported Kimi Code saved token")
+		}
+		var claims struct {
+			Subject string `json:"sub"`
+			Expiry  int64  `json:"exp"`
+		}
+		if json.Unmarshal(payload, &claims) != nil {
+			return fail("unavailable", "Unsupported Kimi Code saved token")
+		}
+		if claims.Expiry > 0 && claims.Expiry <= r.Now.Add(time.Minute).Unix() {
+			return fail("expired", "Open Kimi Code to refresh")
+		}
+		if kimiLoginID.MatchString(claims.Subject) {
+			subject = claims.Subject
+		}
+	}
+	deviceBytes, deviceStatus := readBounded(filepath.Join(r.Profile.Root, "device_id"), 1024)
+	device := strings.TrimSpace(string(deviceBytes))
+	if deviceStatus != "" || !kimiLoginID.MatchString(device) {
+		return fail("unavailable", "Kimi Code device identity is missing or unsupported; open Kimi Code")
+	}
+	credentialKey := readerHash(r.Paths.Cache, "kimi-login:credential", credential.Access)
+	if credentialKey == "" {
+		return fail("unavailable", "Identity key unavailable")
+	}
+	changed := r.Previous.Metadata.CredentialKey != "" && r.Previous.Metadata.CredentialKey != credentialKey
+	var raw json.RawMessage
+	state, retry := kimiLoginGet(ctx, c, credential.Access, device, &raw, r.Now)
+	if state != "" {
+		out := fail(state, "Kimi Code usage temporarily unavailable")
+		if state == "expired" || state == "denied" {
+			out.Entry.NextStep = "Open Kimi Code to refresh"
+		}
+		out.Invalidate = changed
+		out.RetryAfter = retry
+		return out
+	}
+	parsed := parseKimi(raw, r.Now)
+	usable := false
+	for _, w := range parsed.Windows {
+		if w.UsedPercent != nil {
+			usable = true
+		}
+	}
+	if parsed.Status != "ok" || !usable {
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Kimi Code quota format is not supported yet"}, Invalidate: changed}
+	}
+	after, err := os.Lstat(path)
+	if before == nil || err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Kimi Code sign-in changed during the read"}, Invalidate: true}
+	}
+	a := &Account{Source: "native:kimi", Via: "native", Plan: "Kimi Code (China)", ObservedAt: r.Now.UTC(), Windows: parsed.Windows}
+	meta := readerMetadata{CredentialKey: credentialKey, VerifiedAt: r.Now.UTC(), Plan: a.Plan}
+	if subject != "" {
+		meta.AccountKey = readerHash(r.Paths.Cache, "kimi-login:account-cn", subject)
+		if !IdentityOff() {
+			if ref := assignSubscription(r.Paths.Cache, "kimi-code-login:china", subject, r.Now); ref != "" {
+				a.Subscription = &Binding{Ref: ref, Status: "verified", Basis: "kimi-code-login:china", ObservedAt: r.Now.UTC()}
+			}
+		}
+	}
+	// Device ID is transport metadata, never proof of an account or subscription.
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
+}
+
+func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out any, now time.Time) (string, time.Time) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kimiLoginHost+"/coding/v1/usages", nil)
+	if err != nil {
+		return "unavailable", time.Time{}
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "modelplan")
+	req.Header.Set("X-Msh-Platform", "kimi_code_cli")
+	req.Header.Set("X-Msh-Version", "modelplan-native-beta")
+	req.Header.Set("X-Msh-Device-Id", device)
+	req.Header.Set("X-Msh-Device-Name", "ModelPlan usage reader")
+	req.Header.Set("X-Msh-Device-Model", runtime.GOOS+"/"+runtime.GOARCH)
+	req.Header.Set("X-Msh-Os-Version", runtime.GOOS)
+	client := *c
+	client.Jar = nil
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
+	if err != nil {
+		return "unavailable", time.Time{}
+	}
+	defer resp.Body.Close()
+	retry := time.Time{}
+	if resp.StatusCode == 429 || resp.StatusCode == 503 {
+		if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds > 0 && seconds <= 86400 {
+			retry = now.Add(time.Duration(seconds) * time.Second)
+		} else if at, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil && at.After(now) {
+			retry = at
+		}
+	}
+	switch resp.StatusCode {
+	case 200:
+	case 401:
+		return "expired", retry
+	case 403:
+		return "denied", retry
+	case 429:
+		return "rate-limited", retry
+	default:
+		return "unavailable", retry
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
+	if err != nil || len(b) > nativeMaxBody || json.Unmarshal(b, out) != nil {
+		return "unsupported_schema", retry
+	}
+	return "", retry
 }
 
 func kimiNumber(b json.RawMessage, integer bool) *float64 {
