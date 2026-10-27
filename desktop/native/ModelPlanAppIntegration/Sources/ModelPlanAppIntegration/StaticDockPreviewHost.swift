@@ -10,11 +10,15 @@ public struct StaticDockGeometry {
     public var hoverRects: [CGRect]
     public var sliverLength: CGFloat
     public var sliverThickness: CGFloat
+    public var sliverAlongAnchor: CGFloat?
+    public var sliverImage: CGImage?
+    public var sliverScale: Int
     public var consoleButton: CGRect?
     public var dragRegions: DockBackgroundDragRegions?
-    public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil) {
+    public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
+        self.sliverAlongAnchor = sliverAlongAnchor; self.sliverImage = sliverImage; self.sliverScale = sliverScale
     }
 }
 
@@ -38,6 +42,8 @@ public struct StaticDockGeometry {
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     private var permitted = false, retired = false, rendering = false, menuOpen = false
+    private var sliverPrepared = false
+    private var preparedSliverGeometrySize: CGSize?
     private var rebuildPending = false
     private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
@@ -72,6 +78,13 @@ public struct StaticDockGeometry {
         dockView.permitsAction = { [weak self] _, source in self?.edge.acceptsPress(keyboardOrAccessibility: source == .accessibility) ?? false }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
+        let refresh: () -> Void = { [weak self] in
+            guard let self, self.permitted, !self.retired else { return }
+            self.inputGeneration &+= 1
+            self.rebuild()
+        }
+        dockView.onNeedsFreshPresentation = refresh
+        sliver.onNeedsFreshPresentation = refresh
         card.isHidden = true
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
@@ -157,6 +170,13 @@ public struct StaticDockGeometry {
         }
         guard passIsCurrent(generation) else { return }
         model = next
+        if sliverPrepared {
+            let logical = sliverLogicalSize
+            // AppKit can round the owned window to whole backing pixels. A data-only
+            // update must keep that actual surface size until registered geometry changes.
+            let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
+            _ = try? prepareSliver(size: size)
+        }
         if rows.isEmpty && appearance == nil {
             dockView.setFrameSize(CGSize(width: 210, height: 60))
             empty.frame = dockView.bounds.insetBy(dx: 10, dy: 10)
@@ -184,7 +204,7 @@ public struct StaticDockGeometry {
         let layouts = displays.map { display in
             DockEdgeLayout(displayID: display.id, edge: selectedEdge, expandedSize: dockView.frame.size,
                 sliverLength: geometry.sliverLength, sliverThickness: geometry.sliverThickness,
-                hoverRects: geometry.hoverRects.isEmpty ? [dockView.bounds] : geometry.hoverRects)
+                hoverRects: geometry.hoverRects.isEmpty ? [dockView.bounds] : geometry.hoverRects, alongAnchor: geometry.sliverAlongAnchor)
         }
         var presence = DockPresence()
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
@@ -210,18 +230,33 @@ public struct StaticDockGeometry {
         guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
+        panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
         let content: NSView
         switch value.state {
         case .expanded: content = container
         case .sliver:
-            try? sliver.apply(image: nil, logicalSize: frame.size, scale: 1, accessibilityLabel: "Show Dock / 显示挂件")
-            content = sliver
+            do { content = try prepareSliver(size: panel.frame.size) }
+            catch { panel.orderOut(nil); return }
         case .suppressed: panel.orderOut(nil); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); dockView.menu = content.menu
-        panel.setFrame(frame, display: true); panel.orderFrontRegardless()
+        panel.displayIfNeeded(); panel.orderFrontRegardless()
+    }
+    private var sliverLogicalSize: CGSize {
+        preferences.dockEdge == .bottom ? CGSize(width: geometry.sliverLength, height: geometry.sliverThickness) : CGSize(width: geometry.sliverThickness, height: geometry.sliverLength)
+    }
+    /// Uses the same bounded view preparation in native presentation and no-window checks.
+    func prepareSliver(size: CGSize) throws -> DockSliverView {
+        guard !retired else { throw DockArtworkError.invalidManifest }
+        do {
+            let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
+            try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
+                             accessibilityLabel: "Show Dock / 显示挂件")
+            sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize
+            return sliver
+        } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
     private func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
@@ -236,7 +271,7 @@ public struct StaticDockGeometry {
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
-    @objc private func displaysChanged() { guard permitted, !retired else { return }; edge.refresh() }
+    @objc private func displaysChanged() { guard permitted, !retired else { return }; inputGeneration &+= 1; rebuild(); edge.refresh() }
     private func showCard(_ id: String) {
         guard permitted, !retired, preferences.showDock,
               (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
@@ -287,6 +322,7 @@ public struct StaticDockGeometry {
         dismissCard()
         NotificationCenter.default.removeObserver(self)
         edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
+        dockView.onNeedsFreshPresentation = nil
         dockView.dispose(); sliver.dispose(); card.dispose()
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil

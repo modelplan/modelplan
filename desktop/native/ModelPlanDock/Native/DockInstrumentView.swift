@@ -85,6 +85,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 MainActor.assumeIsolated {self?.invalidatePresentation()}
             }
         }
+        if window != nil{onNeedsFreshPresentation?()}
     }
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}

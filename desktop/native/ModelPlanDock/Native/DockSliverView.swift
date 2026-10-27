@@ -5,6 +5,7 @@ import CoreGraphics
 /// A small painted surface, not the16pt wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
+    public var onNeedsFreshPresentation:(()->Void)?
     public private(set) var retainedBytes=0
     private var image:CGImage?,alpha=[UInt8](),scale=1,failed=false
     public override var isFlipped:Bool{true}
@@ -33,6 +34,9 @@ import CoreGraphics
         return alpha[y*image.width+x]>0
     }
     public override func hitTest(_ point:NSPoint)->NSView?{onReveal != nil && isPainted(atLocal:convert(point,from:superview)) ? self:nil}
+    public override func viewDidMoveToWindow(){super.viewDidMoveToWindow();if window != nil{onNeedsFreshPresentation?()}}
+    public override func viewDidChangeBackingProperties(){super.viewDidChangeBackingProperties();onNeedsFreshPresentation?()}
+    public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();onNeedsFreshPresentation?()}
     public override func draw(_ dirtyRect:NSRect){
         guard !failed else{return}
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)}
@@ -41,5 +45,5 @@ import CoreGraphics
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){if !failed,!isHiddenOrHasHiddenAncestor{onReveal?()}}
-    public func dispose(){onReveal=nil;image=nil;alpha=[];retainedBytes=0}
+    public func dispose(){failed=true;onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0;needsDisplay=true}
 }

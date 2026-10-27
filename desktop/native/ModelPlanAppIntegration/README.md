@@ -184,3 +184,9 @@ current-link fence. This partial community map is not the complete Cockpit/Dock 
 acceptance, and it does not change the MainScreen profile or chart heights.
 The injected Help Escape callback runs before MainScreen comparison Back: one Escape dismisses held
 Option help without clearing its local trial, and the next Escape retains the original Back behavior.
+
+## Static preview presentation
+
+An appearance may supply bounded sliver pixels, their normalization scale and the registered along-axis anchor in `StaticDockGeometry`. The host keeps those pixels current when data changes without a frame change, uses the actual window's backing scale/rounded size, and reuses the existing event-driven refresh hooks for attachment, backing and theme changes. A disposed sliver retains neither actionable pixels nor a reveal action. This API contains no official palette or shape.
+
+New Settings defaults use a remaining-based critical threshold of 25 and leave active-display following off. The existing **below** comparison is retained (25 is not critical at a threshold of 25); explicit persisted thresholds, follow, collapse and sliver-alert choices are not rewritten. These defaults do not add display selection, dragging persistence, reader activation, or physical/multi-monitor acceptance.
