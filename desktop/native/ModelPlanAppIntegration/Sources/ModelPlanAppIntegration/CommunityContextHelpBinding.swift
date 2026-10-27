@@ -13,26 +13,56 @@ import ModelPlanSettings
     private var explanation: HelpExplanation?, sourceRect: CGRect?
     private var contextID = UUID().uuidString
     private let session = UUID()
-    private var retired = false
+    private var retired = false, optionHeld = false, optionDismissed = false
+    private let publicationSource: () -> InstrumentPublicationSource
+    private let openWebsite: (InstrumentWebsiteLink) -> Void
+    private var sourceActions: [String:InstrumentWebsiteLink] = [:]
+    private var actionGeneration: UInt64 = 0
     init(composition: InstrumentHelpComposition, source: MainScreenView, container: NSView,
          active: @escaping () -> Bool, language: @escaping () -> InstrumentLanguage,
-         accessibility: @escaping () -> (Bool, Bool)) {
+         accessibility: @escaping () -> (Bool, Bool),
+         publicationSource: @escaping () -> InstrumentPublicationSource,
+         openWebsite: @escaping (InstrumentWebsiteLink) -> Void) {
         self.composition = composition; self.source = source; self.container = container
         self.active = active; self.language = language; self.accessibility = accessibility
+        self.publicationSource = publicationSource;self.openWebsite = openWebsite
     }
     func install() {
         guard !retired, let source, let container, let composition else { return }
         container.addSubview(composition.layer)
         source.onHelpChange = { [weak self] explanation, rect in
             guard let self, !self.retired else { return }
-            self.explanation = explanation; self.sourceRect = rect; self.contextID = UUID().uuidString
+            self.explanation = self.optionHeld ? nil:explanation; self.sourceRect = self.optionHeld ? nil:rect; self.contextID = UUID().uuidString
             self.refresh()
         }
+        refresh()
+    }
+    private func installActions() {
+        guard let composition else { return };actionGeneration &+= 1;let token=actionGeneration
         composition.onHelpAction = { [weak self] action in
-            guard let self, !self.retired, self.active(),
-                  case .dismissContext(let id, _) = action, id == self.contextID else { return }
-            self.source?.leaveHelp()
+            guard let self, !self.retired, self.active(),self.actionGeneration==token else { return }
+            switch action {
+            case .dismissContext(let id, _) where id == self.contextID: self.source?.leaveHelp()
+            case .dismissMap: _ = self.consumeEscape()
+            case .mapSourceAction(let id):
+                guard self.optionHeld,let composition=self.composition,
+                      ((composition.layer.input?.map.sourceActionID==id && composition.layer.presentation?.mapSourceFrame != nil)
+                       || (composition.layer.input?.map.secondarySourceActionID==id && composition.layer.presentation?.secondaryMapSourceFrame != nil)),
+                      let link=self.sourceActions[id] else { return }
+                self.openWebsite(link)
+            default: break
+            }
         }
+    }
+    @discardableResult func consumeEscape() -> Bool {
+        guard !retired,active(),optionHeld else { return false }
+        optionDismissed=true;optionHeld=false;refresh();return true
+    }
+    func setOptionHeld(_ held: Bool) {
+        guard !retired,active() else { return }
+        if !held { optionDismissed=false }
+        guard !optionDismissed,optionHeld != held else { return }
+        optionHeld=held;explanation=nil;sourceRect=nil;contextID=UUID().uuidString
         refresh()
     }
     func refresh() {
@@ -54,13 +84,26 @@ import ModelPlanSettings
             liveReadings: readings, contextual: card)
         let (motion, transparency) = accessibility()
         input.reduceMotion = motion; input.reduceTransparency = transparency
+        sourceActions=[:]
+        if optionHeld,let anchor=recipe.regions.first {
+            let published=publicationSource(),epoch=UUID().uuidString
+            let about=epoch+".about",data=epoch+".data"
+            let sourceTitle=(published.age=="--" ? (language() == .chinese ? "发布时间未知":"Publication age unknown"):published.age)+" · "+published.links[0].title
+            sourceActions=[about:published.links[0],data:published.links[1]]
+            input.anchors=[.init(id:"community.main-screen",rect:source.convert(anchor.rect,to:layer))]
+            input.contextual=nil
+            input.map=CommunityOptionHelpLayout.map(viewport:input.viewport,readings:readings,
+                sourceTitle:sourceTitle,dataTitle:published.links[1].title,about:about,data:data)
+        }
+        guard active(),!retired else { return }
         // A generic public catalogue window is not evidence of a cockpit open or Dock reveal.
         // This binding supplies contextual Help only; no first-use copy, trial lease or offer.
+        installActions()
         do { try composition.update(input, content: [:], context: .init()) }
         catch { suspend() }
     }
     func suspend() {
-        guard !retired else { return }; explanation = nil; sourceRect = nil; contextID = UUID().uuidString
+        guard !retired else { return };actionGeneration &+= 1; optionHeld=false;optionDismissed=false;sourceActions=[:];explanation = nil; sourceRect = nil; contextID = UUID().uuidString
         composition?.suspend()
     }
     func dispose() {

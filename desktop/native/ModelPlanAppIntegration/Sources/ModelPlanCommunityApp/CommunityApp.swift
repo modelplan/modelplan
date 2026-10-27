@@ -8,7 +8,11 @@ import ModelPlanAppIntegration
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
-        let surfaces = CommunityInstrumentSurfaceProvider()
+        let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
+            guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
+                  url.user==nil,url.password==nil,url.port==nil else { return }
+            NSWorkspace.shared.open(url)
+        })
         let delegate = CommunityDelegate(surfaces: surfaces) { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)

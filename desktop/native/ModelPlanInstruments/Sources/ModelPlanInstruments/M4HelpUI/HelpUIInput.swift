@@ -45,6 +45,9 @@ public struct HelpUIMapInput: Equatable, Sendable {
     public var returnFocusID: String?
     public var sourceActionID: String?, sourceActionTitle: String?
     public var sourceFrame: CGRect?
+    /// Optional second public source link in the same host-supplied source corner.
+    public var secondarySourceActionID: String?, secondarySourceActionTitle: String?
+    public var secondarySourceFrame: CGRect?
     /// Current host facts not represented by P02's fixed directory, e.g. visible 0/1–6 shortcut facts.
     public var supplements: [HelpUIMapSupplement] = []
     public init(mode: HelpUIMapMode = .hidden, surface: HelpMapSurface = .cockpit,
@@ -105,10 +108,11 @@ public struct HelpUIPresentation: Equatable, Sendable {
     public let mapHeader: CGRect?
     public let mapLabels: [HelpUIMapLabel]
     public let mapSourceFrame: CGRect?
+    public let secondaryMapSourceFrame: CGRect?
     public let unresolvedMapIDs: [String]
     public let card: HelpUICardPlacement?
     public init(sessionID: UUID, mapHeader: CGRect? = nil, mapLabels: [HelpUIMapLabel] = [], mapSourceFrame: CGRect? = nil,
-                unresolvedMapIDs: [String] = [], card: HelpUICardPlacement? = nil) {
-        self.sessionID=sessionID;self.mapHeader=mapHeader;self.mapLabels=mapLabels;self.mapSourceFrame=mapSourceFrame;self.unresolvedMapIDs=unresolvedMapIDs;self.card=card
+                unresolvedMapIDs: [String] = [], card: HelpUICardPlacement? = nil, secondaryMapSourceFrame: CGRect? = nil) {
+        self.sessionID=sessionID;self.mapHeader=mapHeader;self.mapLabels=mapLabels;self.mapSourceFrame=mapSourceFrame;self.unresolvedMapIDs=unresolvedMapIDs;self.card=card;self.secondaryMapSourceFrame=secondaryMapSourceFrame
     }
 }

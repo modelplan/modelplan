@@ -61,6 +61,35 @@ import XCTest
         XCTAssertTrue(text(view).contains(title.metaphor+"\n"+title.dismissal))
         view.dispose()
     }
+    func testBothSourceButtonsTrackActionBindingWithoutChangingRenderInput() throws {
+        var input=M4HelpFixtures.map(.compact640,.english,full:false)
+        input.map.sourceActionID="about";input.map.sourceActionTitle="About"
+        input.map.sourceFrame = .init(x:8,y:600,width:200,height:22)
+        input.map.secondarySourceActionID="data";input.map.secondarySourceActionTitle="Data"
+        input.map.secondarySourceFrame = .init(x:220,y:600,width:200,height:22)
+        for initiallyBound in [false,true] {
+            let view=HelpUILayerView();var actions=[HelpUIAction]()
+            if initiallyBound { view.onAction={actions.append($0)} }
+            view.update(input)
+            let buttons=view.subviews.compactMap{$0 as? NSButton}
+            XCTAssertEqual(buttons.count,2)
+            if !initiallyBound {
+                XCTAssertTrue(buttons.allSatisfy{!$0.isEnabled})
+                view.onAction={actions.append($0)}
+            }
+            XCTAssertTrue(buttons.allSatisfy{$0.isEnabled})
+            let layouts=view.layoutCount;view.update(input);XCTAssertEqual(view.layoutCount,layouts)
+            for button in buttons { XCTAssertTrue(button.sendAction(button.action,to:button.target)) }
+            XCTAssertEqual(actions.count,2)
+            XCTAssertTrue(actions.contains(.mapSourceAction(actionID:"about")))
+            XCTAssertTrue(actions.contains(.mapSourceAction(actionID:"data")))
+            view.onAction=nil
+            XCTAssertTrue(buttons.allSatisfy{!$0.isEnabled})
+            let count=actions.count
+            for button in buttons { XCTAssertFalse(button.sendAction(button.action,to:button.target));_ = button.accessibilityPerformPress() }
+            XCTAssertEqual(actions.count,count);view.dispose()
+        }
+    }
     func testContextUsesCanonicalTwoLineContentAndUnboundLayerDoesNotTakeInput() throws {
         var input=M4HelpFixtures.hint();input.firstUse=nil
         let explanation=HelpCatalog(.english).explanation(.todaySpeed,context:.init(value:"58 t/s"))
