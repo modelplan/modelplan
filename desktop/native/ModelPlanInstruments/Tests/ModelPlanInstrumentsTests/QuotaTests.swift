@@ -40,6 +40,10 @@ final class QuotaTests: XCTestCase {
             XCTAssertEqual(QuotaLevel.of(threshold - 0.01, redBelow: threshold), .critical)
             XCTAssertEqual(QuotaLevel.of(threshold + 0.01, redBelow: threshold), .amber)
             XCTAssertEqual(QuotaLevel.of(nil, redBelow: threshold), .unknown)
+            let rows = QuotaRows(windows: [Fixtures.quota("q", .fiveHours, threshold)], now: now, redBelow: threshold)
+            XCTAssertEqual(rows.fiveHours?.level, .critical)
+            let above = QuotaRows(windows: [Fixtures.quota("q", .fiveHours, threshold + 0.01)], now: now, redBelow: threshold)
+            XCTAssertEqual(above.fiveHours?.level, .amber)
         }
     }
     func testF03OtherKeepsPeriodScopeAndStableTightestOverflow() {
