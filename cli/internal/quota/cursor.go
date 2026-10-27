@@ -26,7 +26,7 @@ import (
 // Independently written compatibility reader. Schema references: CodexBar
 // ee890b5 (MIT), Token Monitor e1c393c (MIT); see docs/cursor-native-quota.md.
 // Credentials exist only in memory. No refresh, credential copy or browser access.
-var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Collect: collectCursor}
+var cursorReader = &nativeReader{Name: "Cursor", Regions: []string{"global"}, Profiles: cursorProfiles, Managed: collectCursorAccount}
 var cursorHost = "https://cursor.com"
 var cursorRPCHost = "https://api2.cursor.sh"
 
@@ -54,7 +54,10 @@ func CursorReadPath(home string) string {
 // invalidates old-account quota without opening the credential again.
 func cursorState() string {
 	home, _ := os.UserHomeDir()
-	path := CursorReadPath(home)
+	return cursorStateAt(CursorReadPath(home))
+}
+
+func cursorStateAt(path string) string {
 	h := sha256.New()
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		fi, err := os.Stat(path + suffix)
@@ -80,11 +83,17 @@ type cursorSession struct{ token, user string }
 
 func readCursorSession(ctx context.Context, now time.Time) (cursorSession, error) {
 	home, _ := os.UserHomeDir()
-	path := CursorReadPath(home)
+	return readCursorSessionAt(ctx, CursorReadPath(home), now)
+}
+
+func readCursorSessionAt(ctx context.Context, path string, now time.Time) (cursorSession, error) {
+	// Keep the in-memory credential generation even when validation fails. It is
+	// used only for a keyed binding comparison, never for a compatibility call.
+	session := cursorSession{}
 	fail := func() (cursorSession, error) {
-		return cursorSession{}, errors.New("Cursor local sign-in unavailable or unsupported; sign in through Cursor, or select --backend codexbar")
+		return session, errors.New("Cursor local sign-in unavailable or unsupported; sign in through Cursor")
 	}
-	if fi, err := os.Stat(path); err != nil || !fi.Mode().IsRegular() {
+	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
 		return fail()
 	}
 	// Never create WAL sidecars. Immutable mode is safe only without live WAL.
@@ -138,6 +147,7 @@ func readCursorSession(ctx context.Context, now time.Time) (cursorSession, error
 		}
 	}
 	token := string(b)
+	session.token = token
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return fail()
@@ -155,8 +165,11 @@ func readCursorSession(ctx context.Context, now time.Time) (cursorSession, error
 		Sub string `json:"sub"`
 		Exp int64  `json:"exp"`
 	}
-	if json.Unmarshal(payload, &claims) != nil || claims.Exp <= now.Add(time.Minute).Unix() {
+	if json.Unmarshal(payload, &claims) != nil {
 		return fail()
+	}
+	if claims.Exp <= now.Add(time.Minute).Unix() {
+		return session, errors.New("expired")
 	}
 	sub := strings.Split(claims.Sub, "|")
 	user := sub[len(sub)-1]
@@ -164,39 +177,6 @@ func readCursorSession(ctx context.Context, now time.Time) (cursorSession, error
 		return fail()
 	}
 	return cursorSession{token: token, user: user}, nil
-}
-
-func collectCursor(ctx context.Context, c *http.Client, cache string, now time.Time) codexbarEntry {
-	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
-	defer cancel()
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC(), CursorState: cursorState()}
-	session, err := readCursorSession(ctx, now)
-	if err != nil {
-		e.Error = err.Error()
-		return e
-	}
-	var summary, plan, usage, requests json.RawMessage
-	if err = cursorJSON(ctx, c, "GET", cursorHost+"/api/usage-summary", session, false, &summary); err != nil {
-		e.Error = err.Error()
-		return e
-	}
-	// Plan classification must succeed before monthly and weekly usage can be mixed.
-	_ = cursorJSON(ctx, c, "POST", cursorHost+"/api/dashboard/get-plan-info", session, false, &plan)
-	merged := cursorMerged(plan)
-	if merged != nil && *merged {
-		_ = cursorJSON(ctx, c, "POST", cursorRPCHost+"/aiserver.v1.DashboardService/GetCurrentPeriodUsage", session, true, &usage)
-	} else if merged != nil {
-		_ = cursorJSON(ctx, c, "GET", cursorHost+"/api/usage?user="+url.QueryEscape(session.user), session, false, &requests)
-	}
-	parsed := parseCursor(summary, plan, usage, requests, now)
-	parsed.CursorState = e.CursorState
-	if e.CursorState == "" || cursorState() != e.CursorState {
-		parsed.Status, parsed.Error, parsed.Windows = "error", "Cursor sign-in state changed during refresh; retry required", nil
-	}
-	if parsed.Status == "ok" && !IdentityOff() {
-		parsed.SubscriptionRef = assignSubscription(cache, "cursor-auth", session.user, now)
-	}
-	return parsed
 }
 
 func cursorJSON(ctx context.Context, c *http.Client, method, endpoint string, s cursorSession, bearer bool, out any) error {
@@ -227,7 +207,7 @@ func cursorJSON(ctx context.Context, c *http.Client, method, endpoint string, s 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return errors.New("Cursor HTTP " + strconv.Itoa(resp.StatusCode))
+		return cursorResponseError{code: resp.StatusCode, retry: resp.Header.Get("Retry-After")}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
 	if err != nil || len(b) > nativeMaxBody {
@@ -418,4 +398,178 @@ func cursorMerged(raw []byte) *bool {
 		return &v
 	}
 	return nil
+}
+
+func cursorProfiles() []ReaderProfile {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	return []ReaderProfile{{Root: filepath.Dir(CursorReadPath(home))}}
+}
+
+type cursorResponseError struct {
+	code  int
+	retry string
+}
+
+func (e cursorResponseError) Error() string { return "Cursor HTTP " + strconv.Itoa(e.code) }
+
+func cursorAccountFailure(err error, now time.Time) readerOutcome {
+	out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor usage temporarily unavailable"}}
+	var response cursorResponseError
+	if errors.As(err, &response) {
+		switch response.code {
+		case 401:
+			out.Entry.Status = "expired"
+			out.Entry.NextStep = "Open Cursor to refresh"
+		case 403:
+			out.Entry.Status = "denied"
+			out.Entry.NextStep = "Open Cursor to refresh"
+		case 404:
+			out.Entry.Status = "unsupported_schema"
+			out.Entry.Notice = "This Cursor usage format is not supported yet"
+		case 429:
+			out.Entry.Status = "rate-limited"
+		}
+		if seconds, err := strconv.Atoi(response.retry); err == nil && seconds > 0 && seconds <= 86400 {
+			out.RetryAfter = now.Add(time.Duration(seconds) * time.Second)
+		} else if at, err := http.ParseTime(response.retry); err == nil && at.After(now) {
+			out.RetryAfter = at
+		}
+	} else if err.Error() == "unsupported Cursor response" {
+		out.Entry.Status = "unsupported_schema"
+		out.Entry.Notice = "This Cursor usage format is not supported yet"
+	}
+	return out
+}
+
+// At most plan + period usage, never the former summary/plan/legacy waterfall.
+// No credentials or local-store stats are read by the JSON/cache projection.
+func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	path := filepath.Join(r.Profile.Root, "state.vscdb")
+	stamp := cursorStateAt(path)
+	session, err := readCursorSessionAt(ctx, path, r.Now)
+	credentialKey := readerHash(r.Paths.Cache, "cursor:credential", session.token)
+	meta := r.Previous.Metadata
+	changed := meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
+	if err != nil {
+		out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "This Cursor saved-login type is not supported yet", NextStep: "Open Cursor to refresh"}, Invalidate: changed}
+		if err.Error() == "expired" {
+			out.Entry.Status = "expired"
+		}
+		return out
+	}
+	accountKey := readerHash(r.Paths.Cache, "cursor:account", session.user)
+	if credentialKey == "" || accountKey == "" {
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Identity key unavailable"}, Invalidate: meta.CredentialKey != ""}
+	}
+	changed = changed || (meta.AccountKey != "" && meta.AccountKey != accountKey)
+	cold := meta.CredentialKey != credentialKey || meta.AccountKey != accountKey || meta.PlanDetails == nil || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
+	if meta.PlanDetails != nil && meta.PlanDetails.ResetAt != nil && !meta.PlanDetails.ResetAt.After(r.Now) {
+		cold = true
+	}
+	if cold {
+		var raw json.RawMessage
+		if err := cursorJSON(ctx, c, "POST", cursorHost+"/api/dashboard/get-plan-info", session, false, &raw); err != nil {
+			out := cursorAccountFailure(err, r.Now)
+			out.Invalidate = changed
+			return out
+		}
+		plan, details := parseCursorPlan(raw)
+		if details == nil {
+			return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Cursor plan format is not supported yet"}, Invalidate: changed}
+		}
+		meta = readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: plan, PlanDetails: details}
+	}
+	var usage json.RawMessage
+	if err := cursorJSON(ctx, c, "POST", cursorRPCHost+"/aiserver.v1.DashboardService/GetCurrentPeriodUsage", session, true, &usage); err != nil {
+		out := cursorAccountFailure(err, r.Now)
+		out.Invalidate = changed
+		return out
+	}
+	windows, ok := parseCursorPeriod(usage, meta.PlanDetails, r.Now)
+	if !ok {
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
+	}
+	if stamp == "" || cursorStateAt(path) != stamp {
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
+	}
+	a := &Account{Source: "native:cursor", Via: "native", Plan: meta.Plan, ObservedAt: r.Now.UTC(), Windows: windows}
+	if !IdentityOff() {
+		ref := assignSubscription(r.Paths.Cache, "cursor-auth", session.user, r.Now)
+		if ref != "" {
+			a.Subscription = &Binding{Ref: ref, Status: "verified", Basis: "cursor-auth", ObservedAt: r.Now.UTC()}
+		}
+	}
+	notice := ""
+	if meta.PlanDetails.Unified {
+		a.SharedPool = unverifiedXSubscription()
+		notice = "Shared-pool link unverified"
+	}
+	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta, Notice: notice}}
+}
+
+func parseCursorPlan(raw []byte) (string, *readerPlanDetails) {
+	var p struct {
+		Merged json.RawMessage `json:"isMerged"`
+		Info   struct {
+			Name   string          `json:"planName"`
+			Period string          `json:"includedUsagePeriod"`
+			Reset  json.RawMessage `json:"includedUsageResetsAt"`
+			End    json.RawMessage `json:"billingCycleEnd"`
+		} `json:"planInfo"`
+	}
+	if json.Unmarshal(raw, &p) != nil {
+		return "", nil
+	}
+	var merged bool
+	// Cadence alone does not establish membership. Missing/null/invalid flags
+	// and a true flag with a non-weekly cadence leave membership unknown.
+	_ = json.Unmarshal(p.Merged, &merged)
+	minutes := map[string]int{"INCLUDED_USAGE_PERIOD_WEEKLY": 10080, "INCLUDED_USAGE_PERIOD_MONTHLY": 43200}[p.Info.Period]
+	if minutes == 0 {
+		return "", nil
+	}
+	details := &readerPlanDetails{Minutes: minutes, ResetAt: cursorEpoch(p.Info.Reset), Unified: merged && minutes == 10080}
+	if details.ResetAt == nil {
+		details.ResetAt = cursorEpoch(p.Info.End)
+	}
+	if details.ResetAt == nil {
+		var iso string
+		if json.Unmarshal(p.Info.Reset, &iso) == nil {
+			details.ResetAt = stamp(iso)
+		}
+	}
+	plan := ""
+	if details.Unified {
+		plan = "The X Subscription"
+	} else {
+		switch strings.ToLower(p.Info.Name) {
+		case "hobby", "pro", "pro+", "pro-plus", "ultra", "business", "teams", "plus", "premium", "super", "free":
+			plan = "Cursor " + strings.ToLower(p.Info.Name)
+		}
+	}
+	return plan, details
+}
+
+func parseCursorPeriod(raw []byte, details *readerPlanDetails, now time.Time) ([]Window, bool) {
+	if details == nil {
+		return nil, false
+	}
+	var usage struct {
+		Enabled *bool                      `json:"enabled"`
+		Plan    map[string]json.RawMessage `json:"planUsage"`
+	}
+	if json.Unmarshal(raw, &usage) != nil || (usage.Enabled != nil && !*usage.Enabled) {
+		return nil, false
+	}
+	pct := kimiNumber(usage.Plan["totalPercentUsed"], false)
+	if pct == nil || *pct > 100 {
+		return nil, false
+	}
+	if details.ResetAt != nil && !details.ResetAt.After(now) {
+		return nil, false
+	}
+	return []Window{{Kind: kindOf(details.Minutes), Limit: "Included", WindowMinutes: details.Minutes, ResetsAt: details.ResetAt, UsedPercent: pct, ObservedAt: now.UTC(), ResetMode: "fixed"}}, true
 }
