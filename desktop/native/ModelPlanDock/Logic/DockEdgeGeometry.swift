@@ -150,8 +150,10 @@ public enum DockEdgeGeometry {
             }
         }
         // If the preferred display has no usable exposed/registered edge, safely fall back to another display.
-        if candidates.isEmpty && !nearest,chosen != nil{
-            return try resolve(preference:.init(displayID:nil,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:pointer,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
+        if candidates.isEmpty && !nearest,let chosen{
+            // Automatic recovery is not a drag: keep the stored along-edge intent and use
+            // the chosen display as a stable distance anchor, never the moving pointer.
+            return try resolve(preference:.init(displayID:chosen.id,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:nil,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
         }
         let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
         if !alternatives.isEmpty{candidates=alternatives}
