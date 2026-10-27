@@ -137,4 +137,3 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
         .init(size:size,commands:[.text(.init(id:"reading",variants:["123"],rect:.init(x:0,y:0,width:80,height:20),font:.init(size:12),ink:.init(1,1,1),transitionDuration:0.08))],regions:[])
     }
 }
-
