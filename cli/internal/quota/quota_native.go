@@ -44,6 +44,8 @@ type nativeReader struct {
 
 // nativeReaders: the registry. A provider without one stays on CodexBar.
 var nativeReaders = map[string]*nativeReader{
+	"antigravity": antigravityReader,
+	"claude":      claudeAccountReader,
 	"zai":         zaiReader,
 	"kimi":        kimiReader,
 	"cursor":      cursorReader,
@@ -51,7 +53,6 @@ var nativeReaders = map[string]*nativeReader{
 	"opencodego":  opencodegoReader,
 	"kiro":        kiroReader,
 	"copilot":     copilotReader,
-	"antigravity": antigravityReader,
 }
 
 // NativeReader: the provider has a native reader, with its regions and default key variable.
