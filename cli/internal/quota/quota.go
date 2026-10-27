@@ -210,6 +210,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
+	CLIVersion                  string // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexBarFile                string // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string // ~/.config/modelplan/connections.json: which backend reads each provider

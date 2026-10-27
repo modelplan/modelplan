@@ -1,5 +1,15 @@
 # modelplan — Go thin client
 
+`modelplan connect --detected` offers detected tools in a pre-checked list with one
+confirmation. `--json` previews without changes. `--privacy automatic|passive`
+persists reader privacy; `MODELPLAN_READERS=passive|off` restricts it.
+`modelplan disconnect <tool|--all>` revokes permission and deletes cached readings.
+[Shared consent](../docs/cli-consent.md).
+
+`modelplan connect --detected` 预勾选已检测工具，只确认一次；`--json` 仅预览。
+`--privacy automatic|passive` 保存隐私级别，`MODELPLAN_READERS=passive|off` 进一步限制。
+`disconnect <工具|--all>` 撤销授权并删除缓存读数。[共享授权](../docs/cli-consent.md)。
+
 `modelplan detect [--json]` checks tool presence from the verified cached catalogue
 (built-in fallback before publication support), without credentials, network calls
 or tool launches. Detected does not mean signed in. [Detection contract](../docs/cli-detection.md).

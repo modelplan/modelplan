@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/connections"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -49,7 +50,21 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 			fmt.Fprintln(stderr, "connect:", err)
 			return exitUsage
 		}
-		if cmd == "connect" && !c.offline {
+		// An explicit legacy connect may re-enable a revoked tool, but never
+		// clears a remembered Keychain Deny or broadens catalogue consent.
+		if err := consent.Change(consent.Path(), func(current *consent.State) error { return consent.Set(current, prov, s.Enabled, "", "", time.Now()) }); err != nil {
+			fmt.Fprintln(stderr, err)
+			return exitErr
+		}
+		class := consent.ExplicitKey
+		if s.Backend == quota.BackendCodexBar {
+			class = consent.Bridge
+		} else if prov == "cursor" {
+			class = consent.Credential
+		} else if prov == "copilot" || prov == "kiro" {
+			class = consent.Runtime
+		}
+		if cmd == "connect" && !c.offline && consent.Allowed(prov, class) {
 			if s.Backend == quota.BackendNative {
 				_ = startDetached("connections", "refresh", "--quiet")
 			} else if quota.CodexBarFetchDue(st.Dir, time.Now()) {
@@ -105,7 +120,7 @@ func connectionsStatus(stdout, stderr io.Writer, p quota.Paths, c common, quiet 
 	if quiet {
 		return 0
 	}
-	r := quota.Read(p, time.Now())
+	r := quota.ReadPermitted(p, time.Now())
 	status := map[string]quota.SourceStatus{}
 	for _, s := range r.Sources {
 		status[s.Source] = s

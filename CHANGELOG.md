@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI `connect --detected` adds a pre-checked, single-confirmation consent chooser and read-only JSON preview, shared versioned per-tool grants, automatic/passive privacy (`MODELPLAN_READERS=passive|off`), persistent source denials, and one-time new-tool hints. `disconnect <tool|--all>` revokes first and deletes ModelPlan-owned readings while retaining other tools and request gates. Unreviewed helper routes and incompatible catalogue entries cannot admit readers.
+
 - CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.

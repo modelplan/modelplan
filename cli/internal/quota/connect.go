@@ -2,12 +2,20 @@ package quota
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 // Which reader serves each optional quota provider. ~/.config/modelplan/connections.json (optional,
@@ -130,6 +138,42 @@ func Selections(p Paths) ([]Selection, error) {
 		}
 		by[s.Provider] = x
 	}
+	policy, mode := consent.Current()
+	var publishedRoutes = map[string]struct {
+		preferred string
+		audited   bool
+		minCli    string
+	}{}
+	if d, _, err := publication.Load(&store.Store{Dir: p.Cache}); err == nil && d.Catalogue != nil {
+		for _, e := range d.Catalogue.Detectors {
+			publishedRoutes[e.ProviderID] = struct {
+				preferred string
+				audited   bool
+				minCli    string
+			}{e.Preferred, e.CodexBar.Audited, e.MinCLI}
+		}
+	}
+	for id, r := range policy.Tools {
+		if !r.Allowed {
+			if x, ok := by[id]; ok {
+				x.Backend = BackendOff
+				by[id] = x
+			}
+			continue
+		}
+		backend := r.Backend
+		if backend == "codexbar" {
+			backend = BackendCodexBar
+		}
+		if backend != BackendNative && backend != BackendCodexBar {
+			continue
+		}
+		x := by[id]
+		x.Provider = id
+		x.Backend = backend
+		x.Origin = "consent.json"
+		by[id] = x
+	}
 	out := make([]Selection, 0, len(by))
 	for _, x := range by {
 		x.Name = ProviderName(x.Provider)
@@ -185,10 +229,184 @@ func Selections(p Paths) ([]Selection, error) {
 				x.Blocked = "no-key"
 			}
 		}
+		class := consent.ExplicitKey
+		if x.Backend == BackendCodexBar {
+			class = consent.Bridge
+		} else if x.Provider == "cursor" {
+			class = consent.Credential
+		} else if x.Provider == "copilot" || x.Provider == "kiro" {
+			class = consent.Runtime
+		}
+		allowed := policy.Allows(x.Provider, class, mode)
+		if _, decided := policy.Tools[x.Provider]; !decided && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
+			allowed = true
+		}
+		if !allowed {
+			x.Blocked = "reader-consent-or-privacy"
+		}
+		if route, ok := publishedRoutes[x.Provider]; ok {
+			if route.preferred == "off" {
+				x.Blocked = "catalogue-off"
+			}
+			if x.Backend == BackendCodexBar && !route.audited {
+				x.Blocked = "codexbar-not-audited"
+			}
+		}
+		if x.Origin == "consent.json" && x.Backend == BackendCodexBar {
+			// No automatic native-to-helper fallback. A helper is selected only
+			// by an audited catalogue route explicitly accepted by the user.
+			route, ok := publishedRoutes[x.Provider]
+			audited := ok && route.preferred == "codexbar" && route.audited
+			if !audited {
+				x.Blocked = "codexbar-not-audited"
+			}
+		}
+		if route, ok := publishedRoutes[x.Provider]; ok && !detect.Compatible(p.CLIVersion, route.minCli) {
+			x.Blocked = "update-required"
+		}
 		out = append(out, x)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Provider < out[j].Provider })
 	return out, nil
+}
+
+// ReadPermitted is framework admission for existing readers. FEEDFIX owns the
+// implementations and will consume the same consent/generation contract in its
+// router. No credential-reading implementation lives here.
+func ReadPermitted(p Paths, now time.Time) Report {
+	s, mode := consent.Current()
+	r := Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
+	if mode == consent.Off {
+		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
+		return r
+	}
+	add := func(a []Account, st SourceStatus) {
+		r.Accounts = append(r.Accounts, a...)
+		r.Sources = append(r.Sources, st)
+	}
+	if s.Allows("claude", consent.Local, mode) {
+		add(readClaudeCode(p.Cache, p.ClaudeSession))
+	}
+	if s.Allows("codex", consent.Local, mode) {
+		add(readCodex(p.CodexHome, p.CodexThread))
+		if p.CodexHome != "" {
+			applyAccount(&r, p.Cache, now)
+		}
+	}
+	add(readLocal(p.LocalFile, now))
+	applyCodexBar(&r, p, now)
+	applyNative(&r, p, now)
+	for i := range r.Accounts {
+		Evaluate(&r.Accounts[i], now)
+	}
+	if !consent.CurrentGeneration(s.Generation) {
+		return Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Accounts: []Account{}, Sources: []SourceStatus{{Source: "readers", Status: "off", Reason: "consent-changed"}}}
+	}
+	return r
+}
+
+// ForgetTool deletes only ModelPlan-owned readings while holding the same cache
+// locks as the current readers. Attempt gates/identities are retained so revoke,
+// reconnect and catalogue rollback cannot reset a provider's request budget.
+func ForgetTool(p Paths, tool string) error {
+	if !consent.ValidTool(tool) {
+		return errors.New("invalid tool")
+	}
+	observed := filepath.Join(p.Cache, "observed")
+	if _, err := os.Stat(observed); os.IsNotExist(err) {
+		return nil
+	}
+	locks := []string{"native.lock", "codexbar.lock", "cycles.lock", "pace.lock", "speed.lock", "perf.lock"}
+	if tool == "codex" {
+		locks = append(locks, "codex-account.lock")
+	}
+	var releases []func()
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+	}()
+	for _, name := range locks {
+		path := filepath.Join(observed, name)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return errors.New("readings busy; retry disconnect")
+		}
+		f.Close()
+		releases = append(releases, func() { os.Remove(path) })
+	}
+	files := []string{}
+	if tool == "claude" {
+		files = append(files, "claude-code.json")
+	}
+	if tool == "codex" {
+		files = append(files, "codex-account.json")
+	}
+	for _, name := range files {
+		if err := os.Remove(filepath.Join(observed, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	for _, name := range []string{"native.json", "codexbar.json", "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json"} {
+		path := filepath.Join(observed, name)
+		f, err := os.Open(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		b, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+		f.Close()
+		if err != nil || len(b) > 4<<20 {
+			return errors.New("cached readings unreadable")
+		}
+		var doc map[string]json.RawMessage
+		if json.Unmarshal(b, &doc) != nil {
+			return errors.New("cached readings invalid")
+		}
+		keys := []string{"providers"}
+		if name == "cycles.json" || name == "pace.json" {
+			keys = []string{"cycles"}
+		}
+		if name == "speed.json" || name == "daily-long.json" {
+			keys = []string{"rows"}
+		}
+		if name == "perf.json" {
+			keys = []string{"rows", "sessions", "hourly", "live"}
+		}
+		for _, key := range keys {
+			if doc[key] == nil || string(doc[key]) == "null" {
+				continue
+			}
+			var rows []map[string]json.RawMessage
+			if json.Unmarshal(doc[key], &rows) != nil {
+				return errors.New("cached rows invalid")
+			}
+			kept := []map[string]json.RawMessage{}
+			for _, row := range rows {
+				var id string
+				if key == "providers" {
+					json.Unmarshal(row["provider"], &id)
+				} else {
+					json.Unmarshal(row["source"], &id)
+					id = strings.TrimPrefix(strings.TrimPrefix(id, "native:"), "codexbar:")
+					if id == "claude-code" {
+						id = "claude"
+					}
+				}
+				if id != tool {
+					kept = append(kept, row)
+				}
+			}
+			doc[key], _ = json.Marshal(kept)
+		}
+		b, _ = json.Marshal(doc)
+		if err := writeAtomic(path, append(b, '\n')); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // active: the providers whose selected backend is this one and runs.
