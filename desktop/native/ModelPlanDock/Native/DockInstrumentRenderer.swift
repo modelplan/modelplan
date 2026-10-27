@@ -42,7 +42,7 @@ public struct DockInstrumentSkin: Codable, Sendable {
     }
 }
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
-public struct DockRenderResult {public let image:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
+public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
 
 @MainActor public final class DockInstrumentRenderer {
     private let resources:DockArtworkStore
@@ -80,6 +80,8 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
             c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath()
         }
         for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect,preserveSourcePixels:true)}
+        // Retain only material/fixed art for a failed data/profile transaction, never old readings.
+        guard let backgroundImage = c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
         func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
             guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
@@ -197,6 +199,6 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
             }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
-        return DockRenderResult(image:result,metrics:metrics,scale:scale,effectsRendered:false)
+        return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false)
     }
 }

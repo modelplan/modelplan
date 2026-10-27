@@ -193,6 +193,31 @@ struct NativeFailure:Error {let message:String}
         try require(scaledView.renderedPixelSize==CGSize(width:96*scale,height:96*scale),"destination backing overrides a stale supplier scale")
         scaledView.dispose()
     }
+    // Reuse one offscreen backing context to expose alpha accumulation during repeated redraws.
+    let materialView=DockInstrumentView(frame:.zero)
+    try materialView.applyOfficial(skin:controlSkin,rows:[],renderer:controlRenderer,scale:1,locale:"en")
+    let materialContext=CGContext(data:nil,width:96,height:96,bitsPerComponent:8,bytesPerRow:384,
+        space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
+    func drawMaterial(_ view:DockInstrumentView)->Data {
+        NSGraphicsContext.saveGraphicsState();defer{NSGraphicsContext.restoreGraphicsState()}
+        NSGraphicsContext.current=NSGraphicsContext(cgContext:materialContext,flipped:true)
+        view.draw(view.bounds)
+        return Data(bytes:materialContext.data!,count:materialContext.bytesPerRow*materialContext.height)
+    }
+    let firstMaterial=drawMaterial(materialView)
+    for appearance in [NSAppearance.Name.aqua,.darkAqua,.aqua] {
+        materialView.appearance=NSAppearance(named:appearance)
+        materialView.isHidden=true;materialView.isHidden=false
+        try require(drawMaterial(materialView)==firstMaterial,"show/hide/theme redraw replaces rather than accumulates supplied material alpha")
+    }
+    var dataSkin=controlSkin;dataSkin.stations=skin.stations
+    try materialView.applyOfficial(skin:dataSkin,rows:[reading],renderer:controlRenderer,scale:1,locale:"en")
+    var brokenSkin=dataSkin;brokenSkin.fixedLayers[0].resource="missing"
+    do { try materialView.applyOfficial(skin:brokenSkin,rows:[reading],renderer:controlRenderer,scale:1,locale:"en");throw NativeFailure(message:"missing material accepted") }
+    catch DockArtworkError.missingResource { checks+=1 }
+    try require(drawMaterial(materialView)==firstMaterial,"failed refresh retains exact supplied background without stale quota text")
+    try require((materialView.accessibilityChildren() ?? []).isEmpty,"failed refresh retires stale instrument actions")
+    materialView.dispose()
     var staleInput=input;staleInput.dataState = .stale
     let staleReading=try DockInstrumentProjection.evaluate(staleInput,now:instant)
     var staleSkin=skin;staleSkin.stations[0].replacementResource="test";staleSkin.stations[0].readoutOpacity=0.6

@@ -62,7 +62,7 @@ import CoreGraphics
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();onNeedsFreshPresentation?()}
     public override func draw(_ dirtyRect:NSRect){
         guard !failed else{return}
-        if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)}
+        if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil)}
         else{NSColor.separatorColor.setFill();bounds.fill()}
     }
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}

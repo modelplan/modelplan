@@ -219,9 +219,13 @@ public struct StaticDockGeometry {
             }
         } catch {
             guard passIsCurrent(generation) else { return }
-            // A failed official renderer never leaves stale actionable pixels or fake readings.
-            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
-            geometry = .init(hoverRects: [dockView.bounds])
+            if appearance != nil {
+                // A transient official refresh must not replace the supplied hull with a theme rectangle.
+                dockView.retireOfficialPresentation()
+            } else {
+                try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+                geometry = .init(hoverRects: [dockView.bounds])
+            }
         }
         guard passIsCurrent(generation) else { return }
         model = next
@@ -279,7 +283,12 @@ public struct StaticDockGeometry {
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
         if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
-        if permitted { edge.start(); edge.refresh() }
+        if permitted {
+            edge.start(); edge.refresh()
+            // Pixel/material changes can leave the geometric presentation equal. Flush that
+            // same-frame refresh as well, including the sliver and current edge variant.
+            if let presentation = edge.presentation { present(presentation) }
+        }
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }

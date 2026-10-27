@@ -30,7 +30,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?
     public private(set) var workingLayerParents=[String:CALayer]()
-    private var image:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
+    private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
@@ -67,7 +67,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();self.locale=locale;community=true;failed=false;skin=nil;image=nil;alphaData=nil
+        resetVisuals();self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -90,7 +90,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
-            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;alphaData=result.image.dataProvider?.data
+            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size=skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
@@ -102,12 +102,19 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             }
             CATransaction.commit();refreshNodes();needsDisplay=true
         } catch {
-            failed=true;image=nil;alphaData=nil;readings=[:];orderedIDs=[];nodes=[:];setAccessibilityChildren([])
-            workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];needsDisplay=true
+            retireOfficialPresentation()
             throw error
         }
     }
-    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
+    /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
+    public func retireOfficialPresentation() {
+        resetVisuals(); community = false; failed = true
+        image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
+        readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
+        workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
+        needsDisplay = true
+    }
+    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
     private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
@@ -135,7 +142,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
-        if let image {NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil);return}
+        if let image {NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil);return}
+        // Official rasters include transparent/grain pixels: replace the backing contents,
+        // rather than accumulating alpha over the previous appearance on each redraw.
+        if !community { NSColor.clear.setFill(); bounds.fill(using: .copy); return }
         NSColor.windowBackgroundColor.setFill();bounds.fill()
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
