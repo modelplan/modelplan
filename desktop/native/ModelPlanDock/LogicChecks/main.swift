@@ -511,7 +511,7 @@ do {
         try expect(afterCockpit.menuNotice==nil && afterCockpit.dots.count==1 && afterCockpit.segments.count==1,"cockpit opens acknowledge menu only")
         try attention.acknowledge(.dockRevealed,signals:[signal],at:now)
         let afterDock=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
-        try expect(afterDock.dots.isEmpty && afterDock.segments.isEmpty,"genuine Dock reveal acknowledges sliver")
+        try expect(afterDock.dots.isEmpty && afterDock.menuNotice==nil && afterDock.segments.count==1 && afterDock.segments.first?.severity == .critical,"genuine Dock reveal acknowledges notices while preserving current quota state")
     }
     try test("B08 card data uses canonical quota truth and retains unknown versus zero"){
         var input=DockInstrumentInput(id:"a",name:"Synthetic",windows:[.init(id:"five",period:.fiveHour,label:"Short",remainingPercent:0,resetsAt:now.addingTimeInterval(100),durationSeconds:18000),.init(id:"week",period:.week,label:"Long",remainingPercent:nil,resetsAt:nil,durationSeconds:nil)])
