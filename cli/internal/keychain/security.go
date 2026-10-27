@@ -26,10 +26,14 @@ const (
 // Result contains a secret only on success. Callers keep it in transient memory;
 // only State and the fixed NextStep may reach logs, caches, doctor or the UI.
 type Result struct {
-	Value    []byte
+	Value    []byte `json:"-"`
 	State    string
 	NextStep string
 }
+
+// Diagnostics must never serialize or format the transient credential bytes.
+func (r Result) String() string   { return "keychain:" + r.State }
+func (r Result) GoString() string { return r.String() }
 
 // Policy comes from the shared consent layer. Interactive means an explicit
 // Settings/App refresh or CLI action, never a timer, resume or ordinary JSON read.
@@ -177,6 +181,7 @@ func runSecurity(ctx context.Context, executable string, args ...string) (Proces
 		return ProcessResult{}, errors.New("unavailable")
 	}
 	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd.WaitDelay = 250 * time.Millisecond
 	var out boundedOutput
 	cmd.Stdout = &out
 	// In particular do not attach stderr: it may contain item attributes/secrets.

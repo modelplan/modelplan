@@ -2,7 +2,9 @@ package keychain
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,6 +118,19 @@ func TestSecurityRequiresConsentAndPriorGrant(t *testing.T) {
 	p.Allowed = true
 	if r.ClaudeCredentials(context.Background(), p).State != ConfirmationNeeded || calls != 0 {
 		t.Fatal("background prompted without prior grant")
+	}
+}
+
+func TestSecurityResultCannotExposeSecretInDiagnostics(t *testing.T) {
+	r := Result{Value: []byte("synthetic-secret"), State: "ok"}
+	b, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{string(b), fmt.Sprintf("%v", r), fmt.Sprintf("%+v", r), fmt.Sprintf("%#v", r)} {
+		if strings.Contains(value, "synthetic-secret") || strings.Contains(value, "c3ludGhldGljLXNlY3JldA") {
+			t.Fatal("secret exposed in diagnostic formatting")
+		}
 	}
 }
 
