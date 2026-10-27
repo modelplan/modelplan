@@ -175,7 +175,16 @@ type Account struct {
 	// Pool: the allowance the session draws from when the account keeps more than one. Codex
 	// meters some models from their own allowance under another limit id (GPT Reserve is a weekly
 	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
-	Pool string `json:"pool,omitempty"`
+	Pool       string             `json:"pool,omitempty"`
+	SharedPool *SharedPoolBinding `json:"sharedPool,omitempty"`
+}
+
+// SharedPoolBinding describes eligibility without asserting a cross-tool account
+// link. An unverified pool is never additive capacity, even across different refs.
+type SharedPoolBinding struct {
+	Kind     string `json:"kind"`
+	Status   string `json:"status"`
+	Additive bool   `json:"additive"`
 }
 
 // InPool: the window meters the account's pool. An account without a window of its pool keeps
