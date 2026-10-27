@@ -49,12 +49,15 @@ type HistoryResult struct {
 	BytesRead       int64        `json:"bytesRead"`
 }
 type historyStored struct {
-	ScopeRef   string    `json:"scopeRef,omitempty"`
-	File       string    `json:"fileRef"`
-	CapturedAt time.Time `json:"capturedAt"`
-	At         time.Time `json:"at"`
-	Model      string    `json:"model,omitempty"`
-	Reason     string    `json:"reason,omitempty"`
+	// Safe capture-time scope is independent of live cursor retention. An
+	// explicit exclusion invalidates it permanently until a fresh root capture.
+	CapturedScope string    `json:"capturedScope,omitempty"`
+	ScopeRef      string    `json:"scopeRef,omitempty"`
+	File          string    `json:"fileRef"`
+	CapturedAt    time.Time `json:"capturedAt"`
+	At            time.Time `json:"at"`
+	Model         string    `json:"model,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
 	HistoryCounts
 }
 type historyCursor struct {
@@ -198,7 +201,7 @@ func ReadHistoryCache(cache, tool string, a HistoryAccess, now time.Time) Histor
 	r.NextAttemptAt = gate.Next
 	by := map[string]*HistoryRow{}
 	for _, entry := range s.Entries {
-		if tool == "grok" && s.Files[entry.ScopeRef].Decode.GrokScope != "root" {
+		if tool == "grok" && !historyGrokScopeEligible(s, entry) {
 			continue
 		}
 		if (!entry.At.IsZero() && (entry.At.After(now) || entry.At.Before(now.AddDate(0, 0, -35)))) || (entry.At.IsZero() && entry.CapturedAt.Before(now.AddDate(0, 0, -35))) {
@@ -323,6 +326,16 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 	return files, limited, err
 }
 
+// Absence/unreadability cannot erase known capture provenance. Positive
+// contradictory evidence still overrides a historical root classification.
+func historyGrokScopeEligible(s historyState, entry historyStored) bool {
+	current := s.Files[entry.ScopeRef].Decode.GrokScope
+	if entry.CapturedScope == "excluded" || current == "excluded" {
+		return false
+	}
+	return entry.CapturedScope == "root" || current == "root"
+}
+
 var historyAttempts sync.Map
 
 // RefreshHistory incrementally reads only the selected tool's authorised store.
@@ -368,6 +381,17 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	}
 	historyAttempts.Store(attemptKey, now)
 	s := historyReadState(cache, tool, a)
+	// Migrate schema-1 readings while their original safe scope cursor still
+	// exists, before discovery may prune it. No new provenance is guessed.
+	if tool == "grok" {
+		for id, entry := range s.Entries {
+			scope := s.Files[entry.ScopeRef].Decode.GrokScope
+			if scope == "excluded" || (scope == "root" && entry.CapturedScope == "") {
+				entry.CapturedScope = scope
+				s.Entries[id] = entry
+			}
+		}
+	}
 	s.BytesRead = 0
 	s.ValidationBytes = 0
 	s.Availability = "ok"
@@ -394,12 +418,21 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		for _, rel := range files {
 			live[historyHash(a.Key, "history/path/"+a.ProfileRef+"/"+tool, rel)] = true
 		}
+		if tool == "grok" && s.Availability == "ok" {
+			for _, entry := range s.Entries {
+				if historyGrokScopeEligible(s, entry) && !live[entry.File] {
+					s.Availability = "partial"
+					break
+				}
+			}
+		}
 		for key := range s.Files {
 			if !live[key] {
 				delete(s.Files, key)
 			}
 		}
 	}
+	verifiedGrokScopes := map[string]bool{}
 	for _, rel := range files {
 		if ctx.Err() != nil {
 			return ReadHistoryCache(cache, tool, a, now)
@@ -418,7 +451,7 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			summaryRel := filepath.Join(filepath.Dir(rel), "summary.json")
 			scopeRef = historyHash(a.Key, "history/path/"+a.ProfileRef+"/"+tool, summaryRel)
 			scope := s.Files[scopeRef].Decode.GrokScope
-			if scope != "root" {
+			if scope != "root" || !verifiedGrokScopes[scopeRef] {
 				if scope != "excluded" {
 					s.Availability = "partial"
 				}
@@ -441,6 +474,9 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			continue
 		}
 		if identity == cursor.FileRef && change == cursor.ChangeRef && info.Size() == cursor.Size && !cursor.Catchup {
+			if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "root" {
+				verifiedGrokScopes[fileKey] = true
+			}
 			if cursor.Status != "" && cursor.Status != "ok" && s.Availability == "ok" {
 				s.Availability = cursor.Status
 			}
@@ -477,6 +513,14 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 				}
 				return false
 			}
+			if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "excluded" {
+				for id, entry := range s.Entries {
+					if entry.ScopeRef == fileKey {
+						entry.CapturedScope = "excluded"
+						s.Entries[id] = entry
+					}
+				}
+			}
 			if !isJSONL {
 				for id, e := range s.Entries {
 					if e.File == fileKey {
@@ -506,7 +550,11 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 					markFile("partial")
 					return false
 				}
-				s.Entries[id] = historyStored{ScopeRef: scopeRef, File: fileKey, CapturedAt: now.UTC(), At: row.At, Model: row.Model, Reason: row.Unallocated, HistoryCounts: c}
+				capturedScope := ""
+				if tool == "grok" {
+					capturedScope = "root"
+				}
+				s.Entries[id] = historyStored{CapturedScope: capturedScope, ScopeRef: scopeRef, File: fileKey, CapturedAt: now.UTC(), At: row.At, Model: row.Model, Reason: row.Unallocated, HistoryCounts: c}
 			}
 			return true
 		}
@@ -572,6 +620,9 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		cursor.Size = info.Size()
 		cursor.Modified = info.ModTime()
 		s.Files[fileKey] = cursor
+		if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "root" {
+			verifiedGrokScopes[fileKey] = true
+		}
 	}
 	if ctx.Err() != nil || historyAdmission(tool, a) != "" {
 		return ReadHistoryCache(cache, tool, a, now)
