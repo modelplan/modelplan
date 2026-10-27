@@ -11,6 +11,8 @@ import AppKit
     public var onIntent: ((MainScreenIntent) -> Void)?
     public var onIntents: (([MainScreenIntent]) -> Void)?
     public var onHelpChange: ((HelpExplanation?, CGRect?) -> Void)?
+    /// The actual host may consume Escape for its Help layer before changing local comparison state.
+    public var onHelpEscape: (() -> Bool)?
     public var onHintInput: ((InstrumentHintInput) -> Void)?
     private var language: InstrumentLanguage = .chinese, compact = false
     private var bitmap: CGImage?, bitmapScale: Int?
@@ -97,6 +99,7 @@ import AppKit
     public func selectModel(_ id: String) { mutate { $0.selectModel(id) } }
     public func back() { mutate { $0.back() } }
     @discardableResult public func handleEscape() -> Bool {
+        if onHelpEscape?() == true { return true }
         guard controller.navigation.sourced != nil else { return false }
         mutate { $0.back() }
         return true
@@ -348,7 +351,7 @@ import AppKit
         controls.removeAll(); configureList(nil); setAccessibilityChildren([]); focusedID = nil; focus.path = nil
     }
     public func dispose() {
-        closeForCockpit(); onIntent = nil; onIntents = nil; onHelpChange = nil; onHintInput = nil
+        closeForCockpit(); onIntent = nil; onIntents = nil; onHelpChange = nil; onHintInput = nil; onHelpEscape = nil
     }
     public override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window == nil { suspend() }; refresh() }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); refresh() }
