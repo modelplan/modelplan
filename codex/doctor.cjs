@@ -164,8 +164,9 @@ async function host(row) {
         : (q.status + (q.reason ? ' · ' + q.reason : '')),
       a ? null : q.status === 'unavailable' ? T('安装 Python 3 或 modelplan CLI', 'Install Python 3 or the modelplan CLI') : T('用 ChatGPT 登录的 Codex 跑过一轮后才会有额度快照', 'A snapshot appears after one turn of a ChatGPT-login Codex session'));
     const adv = data.advice || {};
-    add('advice', adv.status === 'ok' ? 'ok' : 'info', T('可选：主动提醒', 'Optional: proactive hints'),
-      adv.status === 'ok' ? T('已启用', 'on') : T('未启用', 'off') + (adv.reason ? ' · ' + (REASONS[adv.reason] ? T(REASONS[adv.reason][0], REASONS[adv.reason][1]) : adv.reason) : ''),
+    add('automatic-hints', 'ok', T('自动提示', 'Automatic hints'), data.setup?.automaticHints === false ? T('已关闭；命令和面板仍可使用', 'off; commands and the panel still work') : T('开启（默认）', 'on (default)'));
+    add('advice', adv.status === 'ok' ? 'ok' : 'info', T('按需面板建议', 'On-demand panel advice'),
+      adv.status === 'ok' ? T('可用', 'available') : T('不可用', 'unavailable') + (adv.reason ? ' · ' + (REASONS[adv.reason] ? T(REASONS[adv.reason][0], REASONS[adv.reason][1]) : adv.reason) : ''),
       adv.status === 'ok' ? null : T('可选增强：安装或升级 modelplan CLI 0.4+；不影响面板和额度读取', 'Optional: install or upgrade the modelplan CLI 0.4+; the dashboard and quota work without it'));
   } catch (e) {
     add('mcp', 'fail', T('通过 Codex 启动插件', 'Start the plugin through Codex'), e.message, T('确认 Codex 可运行 `codex app-server`，或升级 Codex', 'Make sure `codex app-server` runs, or upgrade Codex'));
