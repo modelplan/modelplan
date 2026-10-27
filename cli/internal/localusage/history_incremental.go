@@ -72,6 +72,9 @@ type historyCursor struct {
 	Prefix       string             `json:"prefix"`
 	Tail         string             `json:"tail"`
 	Decode       historyDecodeState `json:"decode"`
+	// Projection-only bootstrap markers; no transcript data is retained.
+	OmittedPrefix bool `json:"omittedPrefix,omitempty"`
+	Align         bool `json:"align,omitempty"`
 }
 type historyState struct {
 	ValidationBytes int64                    `json:"validationBytes"`
@@ -80,6 +83,8 @@ type historyState struct {
 	Files           map[string]historyCursor `json:"files"`
 	Entries         map[string]historyStored `json:"entries"`
 	BytesRead       int64                    `json:"bytesRead"`
+	Projection      *ProjectionState         `json:"projection,omitempty"`
+	Complete        bool                     `json:"complete,omitempty"`
 }
 type historyGate struct {
 	SchemaVersion int `json:"schemaVersion"`
@@ -105,7 +110,7 @@ func historyAdmission(tool string, a HistoryAccess) string {
 	if !a.Allowed {
 		return "consent_required"
 	}
-	if mode != "" && mode != "automatic" && mode != "passive" {
+	if (a.Privacy != "" && a.Privacy != "automatic" && a.Privacy != "passive") || (mode != "" && mode != "automatic" && mode != "passive") {
 		return "privacy_blocked"
 	}
 	ref, err := hex.DecodeString(a.ProfileRef)
@@ -281,6 +286,10 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 	var files []string
 	var walk func(string, int) error
 	walk = func(rel string, depth int) error {
+		if len(files) >= 256 {
+			limited = true
+			return nil
+		}
 		dir, err := os.Open(filepath.Join(root, rel))
 		if err != nil {
 			return err
@@ -296,9 +305,12 @@ func historyDiscover(root, tool string) ([]string, bool, error) {
 				name := entry.Name()
 				next := filepath.Join(rel, name)
 				if entry.IsDir() {
-					if depth < historyDepth(tool) && name != "subagents" && name != "subagent" && !strings.HasPrefix(name, ".") {
+					if historyDescend(tool, next, depth) && name != "subagents" && name != "subagent" && !strings.HasPrefix(name, ".") {
 						if err := walk(next, depth+1); err != nil {
 							limited = true
+						}
+						if len(files) >= 256 {
+							return nil
 						}
 					}
 					continue
@@ -338,10 +350,34 @@ func historyGrokScopeEligible(s historyState, entry historyStored) bool {
 
 var historyAttempts sync.Map
 
+type historyCountReader struct {
+	io.Reader
+	bytes *int64
+}
+
+func (r historyCountReader) Read(b []byte) (int, error) {
+	n, err := r.Reader.Read(b)
+	*r.bytes += int64(n)
+	return n, err
+}
+
 // RefreshHistory incrementally reads only the selected tool's authorised store.
 // Immutable files are skipped, JSONL resumes at its last complete line, and
 // changed JSON snapshots replace keyed rows without rescanning other files.
 func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAccess, now time.Time) HistoryResult {
+	if tool == projectionTool {
+		return HistoryResult{Availability: "not_supported_yet"}
+	}
+	return refreshHistory(ctx, tool, root, cache, a, now, nil)
+}
+
+// The projection seam uses the same discovery, validation, complete-line cursor
+// advancement and atomic state writer as count-oriented history.
+func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAccess, now time.Time, projection *projectionRun) HistoryResult {
+	floor := 5 * time.Minute
+	if projection != nil {
+		floor = ProjectionInterval
+	}
 	if historyAdmission(tool, a) != "" || cache == "" {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
@@ -368,19 +404,22 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		return ReadHistoryCache(cache, tool, a, now)
 	}
 	attemptKey := cache + "/" + tool
-	if last, ok := historyAttempts.Load(attemptKey); ok && now.Sub(last.(time.Time)) < 5*time.Minute {
+	if last, ok := historyAttempts.Load(attemptKey); ok && now.Sub(last.(time.Time)) < floor {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
-	if now.Before(gate.Next) || now.Before(gate.At.Add(5*time.Minute)) {
+	if now.Before(gate.Next) || now.Before(gate.At.Add(floor)) {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
 	gate.At = now.UTC()
-	gate.Next = now.Add(5 * time.Minute).UTC()
+	gate.Next = now.Add(floor).UTC()
 	if !historySave(gatePath, gate) {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
 	historyAttempts.Store(attemptKey, now)
 	s := historyReadState(cache, tool, a)
+	if projection != nil {
+		projection.start(s.Projection)
+	}
 	// Migrate schema-1 readings while their original safe scope cursor still
 	// exists, before discovery may prune it. No new provenance is guessed.
 	if tool == "grok" {
@@ -432,10 +471,20 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			}
 		}
 	}
+	if projection != nil {
+		projection.discovery(files, !limited && err == nil, a)
+	}
 	verifiedGrokScopes := map[string]bool{}
 	for _, rel := range files {
+		if projection != nil && projection.failed {
+			break
+		}
 		if ctx.Err() != nil {
 			return ReadHistoryCache(cache, tool, a, now)
+		}
+		if projection != nil && projection.records >= projectionRecordLimit {
+			s.Availability = "partial"
+			break
 		}
 		if s.BytesRead >= 32<<20 {
 			s.Availability = "partial"
@@ -480,6 +529,10 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			if cursor.Status != "" && cursor.Status != "ok" && s.Availability == "ok" {
 				s.Availability = cursor.Status
 			}
+			if projection != nil {
+				projection.reset("", cursor.OmittedPrefix)
+				projection.file(rel, fileKey, cursor.Status == "ok", true)
+			}
 			f.Close()
 			continue
 		}
@@ -489,11 +542,30 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			s.ValidationBytes += count
 			return hash
 		}
-		if cursor.ChangeRef == "" || identity != cursor.FileRef || info.Size() < cursor.Offset || (change != cursor.ChangeRef && info.Size() <= cursor.Size) || validate(0, cursor.PrefixLength) != cursor.Prefix || validate(max(0, cursor.Offset-1024), min(cursor.Offset, 1024)) != cursor.Tail {
+		reset := ""
+		switch {
+		case cursor.ChangeRef == "":
+			reset = "initial"
+		case identity != cursor.FileRef:
+			reset = "replacement"
+		case info.Size() < cursor.Offset:
+			reset = "truncation"
+		case (change != cursor.ChangeRef && info.Size() <= cursor.Size) || validate(0, cursor.PrefixLength) != cursor.Prefix || validate(max(0, cursor.Offset-1024), min(cursor.Offset, 1024)) != cursor.Tail:
+			reset = "rewrite"
+		}
+		if reset != "" {
 			cursor = historyCursor{}
+			if projection != nil && info.Size() > projectionBootstrapBytes {
+				cursor.Offset = info.Size() - projectionBootstrapBytes
+				cursor.OmittedPrefix, cursor.Align = true, true
+			}
+		}
+		if projection != nil {
+			projection.reset(reset, cursor.OmittedPrefix)
 		}
 		cursor.FileRef = identity
 		fileStatus := "ok"
+		sourceChanged := false
 		parsedStart := s.BytesRead
 		markFile := func(status string) {
 			fileStatus = status
@@ -502,6 +574,9 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			}
 		}
 		apply := func(data []byte, sequence int64) bool {
+			if projection != nil {
+				return projection.line(rel, fileKey, data, sequence)
+			}
 			if !isJSONL {
 				cursor.Decode = historyDecodeState{}
 			}
@@ -560,14 +635,19 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		}
 		if isJSONL {
 			_, _ = f.Seek(cursor.Offset, io.SeekStart)
-			reader := bufio.NewReader(io.LimitReader(f, min(int64(8<<20), 32<<20-s.BytesRead)))
+			reader := bufio.NewReader(historyCountReader{Reader: io.LimitReader(f, min(int64(8<<20), 32<<20-s.BytesRead)), bytes: &s.BytesRead})
 			consumed := int64(0)
 			for consumed < 8<<20 && s.BytesRead < 32<<20 {
+				if ctx.Err() != nil {
+					break
+				}
+				if projection != nil && projection.records >= projectionRecordLimit {
+					break
+				}
 				line, err := reader.ReadBytes('\n')
 				consumed += int64(len(line))
-				s.BytesRead += int64(len(line))
 				if err != nil {
-					if len(line) > 0 {
+					if err != io.EOF || len(line) > 0 {
 						markFile("partial")
 					}
 					break
@@ -577,6 +657,13 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 					break
 				}
 				previous := cursor.Offset
+				if cursor.Align {
+					// Tail bootstrap starts at a byte boundary. Discard the first
+					// fragment and expose only complete subsequent records.
+					cursor.Offset += int64(len(line))
+					cursor.Align = false
+					continue
+				}
 				if !apply(line, previous) {
 					break
 				}
@@ -612,14 +699,30 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		}
 		cursor.Prefix = validate(0, cursor.PrefixLength)
 		cursor.Tail = validate(max(0, cursor.Offset-1024), min(cursor.Offset, 1024))
+		if projection != nil {
+			// A file that changed during recovery cannot establish a complete
+			// projection. Keep its initial generation so the next read retries.
+			after, err := f.Stat()
+			afterID, afterChange := historyMetadata(after, a.Key)
+			if err != nil || identity != afterID || change != afterChange {
+				markFile("partial")
+				sourceChanged = true
+			}
+		}
 		f.Close()
 		// Incomplete unchanged suffixes wait for source changes; bounded catch-up resumes.
-		cursor.Catchup = isJSONL && ((s.BytesRead-parsedStart >= 8<<20) || (s.BytesRead >= 32<<20)) && cursor.Offset < info.Size()
+		cursor.Catchup = sourceChanged || (isJSONL && ((s.BytesRead-parsedStart >= 8<<20) || (s.BytesRead >= 32<<20)) && cursor.Offset < info.Size())
+		if projection != nil && projection.records >= projectionRecordLimit && cursor.Offset < info.Size() {
+			cursor.Catchup = true
+		}
 		cursor.Status = fileStatus
 		cursor.ChangeRef = change
 		cursor.Size = info.Size()
 		cursor.Modified = info.ModTime()
 		s.Files[fileKey] = cursor
+		if projection != nil {
+			projection.file(rel, fileKey, fileStatus == "ok", false)
+		}
 		if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "root" {
 			verifiedGrokScopes[fileKey] = true
 		}
@@ -627,7 +730,14 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	if ctx.Err() != nil || historyAdmission(tool, a) != "" {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
-	if len(s.Entries) == 0 && s.Availability == "ok" {
+	if projection != nil {
+		if !projection.finish(&s, now) {
+			r := ReadHistoryCache(cache, tool, a, now)
+			r.Availability = "partial"
+			return r
+		}
+	}
+	if projection == nil && len(s.Entries) == 0 && s.Availability == "ok" {
 		s.Availability = "not_supported_yet"
 	}
 	for _, e := range s.Entries {
@@ -640,14 +750,20 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	}
 	if s.Availability == "ok" {
 		gate.Failures = 0
-		gate.Next = now.Add(5 * time.Minute).UTC()
+		gate.Next = now.Add(floor).UTC()
 	} else {
 		gate.Failures = min(gate.Failures+1, 4)
 		wait := time.Duration(10*(1<<(gate.Failures-1))) * time.Minute
 		if gate.Failures == 4 {
 			wait = time.Hour
 		}
+		if projection != nil {
+			wait = min(time.Duration(1<<gate.Failures)*floor, time.Minute)
+		}
 		gate.Next = now.Add(wait).UTC()
+	}
+	if ctx.Err() != nil || historyAdmission(tool, a) != "" {
+		return ReadHistoryCache(cache, tool, a, now)
 	}
 	if !historySave(historyPath(cache, tool, a), s) {
 		r := ReadHistoryCache(cache, tool, a, now)

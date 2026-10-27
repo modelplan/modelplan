@@ -84,6 +84,8 @@ func historyAllowed(tool, rel string) bool {
 	p := strings.Split(filepath.ToSlash(rel), "/")
 	name := p[len(p)-1]
 	switch tool {
+	case projectionTool:
+		return len(p) == 3 && p[0] == "projects" && projectionSessionName(name)
 	case "amp":
 		return len(p) == 1 && strings.HasPrefix(name, "T-") && strings.HasSuffix(name, ".json")
 	case "droid":
@@ -103,6 +105,8 @@ func historyAllowed(tool, rel string) bool {
 }
 func historyDepth(tool string) int {
 	switch tool {
+	case projectionTool:
+		return 2
 	case "amp":
 		return 0
 	case "copilot", "droid":
@@ -349,4 +353,13 @@ func decodeHistory(tool string, b []byte, jsonl bool, state *historyDecodeState)
 		return out, nil
 	}
 	return nil, fmt.Errorf("unsupported history")
+}
+
+// Projection discovery visits only projects/<encoded-project>, never other
+// Claude stores. Existing count-reader path rules retain their own bounds.
+func historyDescend(tool, rel string, depth int) bool {
+	if tool == projectionTool && depth == 0 {
+		return rel == "projects"
+	}
+	return depth < historyDepth(tool)
 }
