@@ -48,6 +48,9 @@ func TestDetectHasNoNetworkCommandsOrWrites(t *testing.T) {
 
 func TestDetectUsesVerifiedCatalogueAndRejectsInvalidReplacement(t *testing.T) {
 	isolateHome(t)
+	if err := os.Mkdir(filepath.Join(os.Getenv("HOME"), ".claude"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	cache := t.TempDir()
 	t.Setenv("MODELPLAN_CACHE", cache)
 	t.Setenv("PATH", t.TempDir())
@@ -59,7 +62,7 @@ func TestDetectUsesVerifiedCatalogueAndRejectsInvalidReplacement(t *testing.T) {
 		json.Unmarshal(doc["data"], &data)
 		data["detectorSchemaVersion"] = json.RawMessage("1")
 		data["detectorRevision"] = json.RawMessage("9")
-		data["detectors"] = json.RawMessage(`[{"providerId":"fixture","displayName":"Fixture","readerId":"native:fixture","preferred":"native","minCli":"0.1.0","beta":true,"detectionStatus":"signals","signals":[{"type":"future-rule"}]}]`)
+		data["detectors"] = json.RawMessage(`[{"providerId":"fixture","displayName":"Fixture","readerId":"native:fixture","preferred":"native","minCli":"0.1.0","beta":true,"detectionStatus":"signals","signals":[{"type":"future-rule"}]},{"providerId":"helper","displayName":"Audited fixture helper","readerId":"codexbar:helper","preferred":"codexbar","codexbar":{"audited":true,"accessClass":"standard"},"minCli":"0.1.0","beta":true,"detectionStatus":"signals","signals":[{"type":"path","value":".claude"}]}]`)
 		doc["data"] = publicationJSON(t, data)
 	})
 	st, err := store.Open()
@@ -86,5 +89,12 @@ func TestDetectUsesVerifiedCatalogueAndRejectsInvalidReplacement(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"catalogueRevision": 9`) || !strings.Contains(out.String(), `"catalogueSource": "publication"`) {
 		t.Fatal(out.String())
+	}
+	var report detect.Report
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Tools) != 2 || report.Tools[1].CodexBar.AccessClass != "standard" || report.Tools[1].Preferred != "codexbar" || report.Tools[1].Status != "detected" {
+		t.Fatal("canonical class lost through verified publication/command", out.String())
 	}
 }

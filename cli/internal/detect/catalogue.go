@@ -22,8 +22,8 @@ type Entry struct {
 	ReaderID    string `json:"readerId"`
 	Preferred   string `json:"preferred"`
 	CodexBar    struct {
-		Audited bool   `json:"audited"`
-		Access  string `json:"access,omitempty"`
+		Audited     bool   `json:"audited"`
+		AccessClass string `json:"accessClass,omitempty"`
 	} `json:"codexbar"`
 	MinCLI          string            `json:"minCli"`
 	Beta            bool              `json:"beta"`
@@ -37,7 +37,7 @@ func (e Entry) HelperStatus() string {
 	if !e.CodexBar.Audited {
 		return "codexbar-not-audited"
 	}
-	switch e.CodexBar.Access {
+	switch e.CodexBar.AccessClass {
 	case "standard", "browser-session":
 		return ""
 	case "not-read":

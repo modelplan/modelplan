@@ -14,14 +14,15 @@ malformed known catalogue fields before switching, keeping the last verified
 publication. An owner-authorised rollback may select an earlier revision.
 
 Entries carry `providerId`, `displayName`, `readerId`, `preferred`
-(`native|codexbar|off`), `codexbar: {audited: bool, access: standard|browser-session|not-read}`, `minCli`, `beta`,
+(`native|codexbar|off`), `codexbar: {audited: bool, accessClass: standard|browser-session|not-read}`, `minCli`, `beta`,
 `detectionStatus` and `signals`. Incompatible entries report `update-required`
 before probing. Fixture tests never clear beta. Routing is descriptive here:
 detection enables no reader and never introduces automatic CodexBar fallback.
 
-An unaudited helper route, a missing/unknown access class, or `not-read` is
-explicitly unsupported, with effective `preferred: off` in the report. This does
-not prevent detection or admission of another provider. `standard` is eligible
+The approved wire field is `codexbar.accessClass`; the unrecognised `access`
+key cannot grant a route. An unaudited helper route, a missing/unknown access
+class, or `not-read` is explicitly unsupported, with effective `preferred: off`
+in the report. This does not prevent detection or admission of another provider. `standard` is eligible
 for one-click consent only with an audit. `browser-session` needs separate,
 per-provider advanced consent and never belongs to the one-click grant.
 Detection never inspects browser directories, cookie stores or browser profiles.
@@ -57,3 +58,5 @@ Reports contain logical IDs and statuses, never matched paths or identities.
 不读取凭据内容、不启动工具、不联网、不写缓存。使用已核验的本地公开目录；
 尚未发布目录时使用内置回退。未知信号和规则被忽略；不能静默检查的信号保持未知，
 版本不足的条目提示更新。
+CodexBar 使用目录中的 `codexbar.accessClass`；缺失或为假的 `audited`、缺失或未知的
+访问类别以及 `not-read` 均显示不支持，路由为 `off`，不影响其他提供商。
