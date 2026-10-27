@@ -1,5 +1,12 @@
 # modelplan — Go thin client
 
+`modelplan detect [--json]` checks tool presence from the verified cached catalogue
+(built-in fallback before publication support), without credentials, network calls
+or tool launches. Detected does not mean signed in. [Detection contract](../docs/cli-detection.md).
+
+`modelplan detect [--json]` 使用已核验的本地目录（尚未发布时使用内置回退）检测工具是否存在；
+不读取凭据、不联网、不启动工具。检测到不代表已登录。[检测约定](../docs/cli-detection.md)。
+
 This is a read-only, anonymous, single static binary with no GUI. It reads the verified public publication, keeps the shared local cache (see [`../README.md`](../README.md)) and prints the hangar views in a terminal. The Claude Code and Codex plugins call it (their hooks run `advise --hook`), and the desktop menu-bar app will be built on it later. Install: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`).
 
 ```sh
