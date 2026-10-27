@@ -1,5 +1,9 @@
 # ModelPlan for Codex
 
+The Codex plugin provides automatic in-agent help and bundles the Skill and a pinned, checksum-checked CLI. **Automatic hints default to ON.** Ask Codex's ModelPlan setup to turn automatic hints off/on; setup runs `sh "<plugin root>/hooks/automatic-hints.sh" off` or `on` and verifies with `status`. The choice persists in `~/.config/modelplan/codex/automatic-hints`. Off silences the whole prompt hook, including notices and task briefs; explicit commands, tools and the panel keep working.
+
+The existing panel is **feature-frozen**. Its current features remain available; new visuals belong in the Mac App and the website.
+
 A compact, read-only GPT effort dashboard for Codex desktop, with a text fallback for Codex CLI. [中文](README.zh-CN.md)
 
 ## Install
@@ -41,12 +45,12 @@ The plugin's server needs Node.js 22 or newer. Codex starts `launch.cjs` with th
 2. the `node` Codex started the launcher with;
 3. Codex desktop's own runtime under `~/.cache/codex-runtimes/`, when this Codex installed one. It is optional and its layout is Codex's; the plugin does not assume it exists;
 4. other `node` entries on PATH;
-5. standard locations: Homebrew and `/usr/local/bin` on macOS, `/usr/local/bin` and `/usr/bin` on Linux, Program Files and nvm-windows on Windows;
+5. standard locations: Homebrew and `/usr/local/bin` on macOS, `/usr/local/bin` and `/usr/bin` on Linux;
 6. nvm, fnm, mise, asdf and Volta installs.
 
 The choice is made again at every start and never cached, so an upgraded or removed runtime is picked up by the next task. The launcher never changes PATH or your global Node. When nothing fits, both tools still register and answer with the list of runtimes checked and how to fix it.
 
-Limits: if Codex finds no `node` at all on its PATH, it cannot start the launcher and shows its own MCP startup error; install Node.js 22+ or make `node` visible to Codex. On Windows the Program Files and nvm-windows locations are covered; Codex desktop's runtime location there is unverified.
+Limits: if Codex finds no `node` at all on its PATH, it cannot start the launcher and shows its own MCP startup error; install Node.js 22+ or make `node` visible to Codex.
 
 ### What is required
 
@@ -57,7 +61,7 @@ Limits: if Codex finds no `node` at all on its PATH, it cannot start the launche
 | Python 3 | reading your quota until the plugin's CLI is there | quota shows as unavailable, with the reason |
 | The plugin's `modelplan` CLI (**fetched automatically**) | proactive hints (`modelplan advise`), the prompt hook, the Codex account reading; also the preferred quota reader | until it lands: no hints; the dashboard says why |
 
-**The plugin's CLI.** The plugin pins one `modelplan` CLI release in `cli-pin.json`: its version and the SHA-256 of each macOS and Linux archive. When Codex starts the plugin, its server fetches that release from GitHub in the background into `~/.cache/modelplan-cli/<version>` and uses it only if the archive's checksum equals the pinned one, so installing or updating the plugin is all there is to do; there is no separate CLI install or upgrade. Nothing else changes: no PATH, profile or sudo, and a `modelplan` you installed yourself (for the terminal) is left alone and used only while the plugin's copy is not there. `MODELPLAN_PLUGIN_CLI=off` turns fetching off. On Windows there is no automatic fetch; put a `modelplan` from [Releases](https://github.com/modelplan/modelplan/releases) on PATH.
+**The plugin's CLI.** The plugin pins one `modelplan` CLI release in `cli-pin.json`: its version and the SHA-256 of each macOS and Linux archive. When Codex starts the plugin, its server fetches that release from GitHub in the background into `~/.cache/modelplan-cli/<version>` and uses it only if the archive's checksum equals the pinned one, so installing or updating the plugin is all there is to do; there is no separate CLI install or upgrade. Nothing else changes: no PATH, profile or sudo, and a `modelplan` you installed yourself (for the terminal) is left alone and used only while the plugin's copy is not there. `MODELPLAN_PLUGIN_CLI=off` turns fetching off.
 
 **Turning on hints.** Hints need the plugin's CLI and the plugin's one hook, which Codex runs only after you allow it. The dashboard's NOW panel lists only what is not ready, each part on its own line: the CLI is still downloading, its download failed (why, with **Retry**), or you run an older one of your own meanwhile; the hook has not run on this machine yet, its definition changed and the new one has not run (Codex skips a changed hook until you review it again; in an open chat nothing says so), or its last run failed to compute hints (with the exit code, the error and the last success). Plugins cannot see whether a hook is trusted, so the panel reports when the hook last ran on this machine, from any chat, and how that run ended, never "trusted". When everything works it shows one line: setup complete, hints computed, and whether there is anything to flag. You can also ask Codex to "check ModelPlan setup" (the `setup` skill).
 
@@ -77,7 +81,7 @@ codex plugin remove modelplan-codex@modelplan
 codex plugin marketplace remove modelplan
 ```
 
-`plugin remove` deletes the plugin's cache. The public-data cache (`~/Library/Caches/modelplan`, `~/.cache/modelplan` or `%LOCALAPPDATA%\modelplan`) is shared with the CLI; delete it if you use neither.
+`plugin remove` deletes the plugin's cache. The public-data cache (`~/Library/Caches/modelplan` or `~/.cache/modelplan`) is shared with the CLI; delete it if you use neither.
 
 ## What you see
 

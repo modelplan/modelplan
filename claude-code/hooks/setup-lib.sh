@@ -2,8 +2,7 @@
 # ~/.cache/modelplan-claude-code: hook-ran (every start: the plugin version), hook-result (how the
 # run ended: ok, failed with exit code and error, or why the CLI was not asked), hook-ok (the last
 # run where the CLI computed hints), announced-<version> (the fetched CLI was announced),
-# notice-<kind> (last notice), notice-statusline-again (its second and last showing),
-# statusline-declined (the user said not now in /modelplan:setup).
+# notice-fetch (last fetch notice). Legacy status-line decline files may remain.
 here=${here:-$(dirname "$0")}
 state="$HOME/.cache/modelplan-claude-code"
 # The plugin's CLI: the release pinned in ../cli-pin.json, fetched by fetch-cli.sh.
@@ -31,7 +30,6 @@ statusline_set() { [ -f "$(snapshot)" ] || grep -q 'modelplan statusline' "$(set
 # notice <kind> [detail]: sets $msg, shown to the user only (the hook's systemMessage; the model
 # never hears of setup), and returns 0 when a notice is due.
 #   fetch       the plugin could not fetch its CLI (detail: why): at most once a week
-#   statusline  no Claude Code quota recorded: twice at most, a week apart, then never again
 notice() {
   kind=$1 detail=$2
   mkdir -p "$state" 2>/dev/null
@@ -40,15 +38,6 @@ notice() {
       recent "notice-$kind" 7 && return 1
       msg="ModelPlan：没能下载插件配套的 modelplan CLI $min_cli（$detail），额度提醒和任务开始简报暂不可用。运行 /modelplan:setup 重试。
 ModelPlan: could not fetch the plugin's modelplan CLI $min_cli ($detail), so quota hints and the task-start brief are off. Run /modelplan:setup to retry." ;;
-    statusline)
-      recent statusline-declined 90 && return 1
-      [ -f "$state/notice-statusline-again" ] && return 1
-      if [ -f "$state/notice-statusline" ]; then
-        recent notice-statusline 7 && return 1
-        : > "$state/notice-statusline-again" 2>/dev/null
-      fi
-      msg="ModelPlan：还没有记录到 Claude Code 的额度（要靠 ModelPlan 状态栏记录），额度提醒暂不可用。需要时运行 /modelplan:statusline 设置（可以保留你现在的状态栏），这条提示最多出现两次。
-ModelPlan: no Claude Code quota recorded yet (the ModelPlan status line records it), so quota hints are off. Run /modelplan:statusline when you want them (it can keep your own status line); this shows twice at most." ;;
   esac
   : > "$state/notice-$kind" 2>/dev/null
   return 0

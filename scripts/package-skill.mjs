@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const files = ["SKILL.md", "reference.md", "scripts/quota.py"];
+const files = ["SKILL.md", "reference.md", "scripts/quota.py", "cli-pin.json", "scripts/fetch-cli.sh", "scripts/install-cli.sh"];
 const removed = ["scripts/read-local.py"];
 const targets = ["claude-code/skills/model-plan", "codex/skills/model-plan"];
 const check = process.argv.includes("--check");

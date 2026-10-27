@@ -18,6 +18,8 @@ ModelPlan 用实时、可复核的公开数据回答，网页上能看，在 Cla
 
 ## 为什么用 ModelPlan
 
+[选择入口：Mac App、插件或 Skill](docs/product-surfaces.md)。
+
 大多数榜单只比各模型的**最高档**。但同一个模型从 Low 推到 Max，成本和耗时往往翻好几倍，能力只多几分。你真正在用的，是「某个模型的某一档」。
 
 - **★ 推荐档：** 给每个模型算出最值的档位，并且明确告诉你再升一档能多拿几分（`+4.8`）、要多花几倍（`×1.37`）。
@@ -71,14 +73,14 @@ codex plugin add modelplan-codex@modelplan
 </details>
 
 <details>
-<summary><b>modelplan 命令行</b>：macOS、Linux、Windows 单个静态可执行文件</summary>
+<summary><b>modelplan 命令行</b>：macOS、Linux 单个静态可执行文件</summary>
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
 modelplan lineup --dev anthropic --lang zh
 ```
 
-Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载；用 Go：`go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。装了它 Skill 和插件会更快，没装也能用。[详情](cli/)
+用 Go：`go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。装了它 Skill 和插件会更快，没装也能用。[详情](cli/)
 
 </details>
 
