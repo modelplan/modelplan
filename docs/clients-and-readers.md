@@ -20,7 +20,7 @@ Owner decisions, 2026-10-27. This is the reference for how the Mac App, the plug
 A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the App's bundled copy, and a standalone copy. They share one data directory (cache, consent, readings, history).
 
 - Every shared file carries a schema version. Changes are additive, and readers ignore unknown fields, so an older copy never breaks on a newer copy's files and the other way round.
-- One refresh lock per provider. Whichever process holds it calls the provider; the others read the cache. At most one usage call per provider every 5 minutes, with backoff on errors.
+- One refresh lock per provider. Whichever process holds it calls the provider; the others read the cache. At most one read per provider every 5 minutes (section 4), with backoff on errors.
 - A copy managed by a plugin or by the App never updates itself; its owner updates it (section 6).
 
 ## 3. Detection and consent
@@ -34,17 +34,18 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 
 **Head providers, native** (ours): Claude Code, Codex (desktop app, CLI, IDE), ZCode / GLM, Cursor (including The X Subscription's shared pool), Grok Build, GitHub Copilot, Gemini CLI.
 
-**Long tail:** every other provider CodexBar supports is read through the **bundled CodexBar CLI**. It is fetched at a pinned version with a SHA-256 check, under its MIT licence notice, and the user never installs it. It runs only for detected tools that have no native reader, under the same consent, which names CodexBar.
+**Long tail:** every other provider CodexBar supports is read through the **bundled CodexBar CLI**. It is fetched at a pinned version with a SHA-256 check, under its MIT licence notice, and the user never installs it. It runs only for detected tools that have no native reader, under the same consent, which names CodexBar, and only for providers whose CodexBar path is **audited** at the pinned version: no token refresh, no copy or cache of the tool's credentials, no launching the provider's CLI, no inference. Unaudited providers show "not yet supported". (CodexBar 0.81.0 refreshes some providers' tokens, launches provider CLIs and caches credentials in its own Keychain item, so the audit is per provider.)
 
 **Routing**, per provider, from the catalogue: `preferred: native | codexbar | off`.
 
-- **Native first.** If a native reader fails in a way that suggests an upstream change (an unexpected schema or an unexplained error, not an expired login), the CLI retries that provider through CodexBar when CodexBar supports it. The source is marked "via CodexBar (fallback)".
-- **Remote switch.** Flipping `preferred` in the catalogue moves every user within hours, for example to CodexBar while our fix ships. `off` is the kill switch if a provider must stop being read.
+- **Native first, no automatic CodexBar fallback for head providers** (coordinator decision after source review, 2026-10-27). CodexBar's head-provider paths refresh tokens or launch CLIs, which our safeguards forbid. A native reader that fails on an upstream change shows "temporarily unavailable" until our fix ships. A later CodexBar pin whose path for that provider passes the audit may be enabled as fallback through the catalogue.
+- **Remote switch.** Flipping `preferred` in the catalogue moves every user within hours, for example to an audited CodexBar path while our fix ships. `off` is the kill switch if a provider must stop being read.
 - **One reading per subscription.** Identities are keyed hashes, so a subscription reached through several tools (Codex app/CLI/IDE; Grok and Cursor on The X Subscription) is shown once, from one reader, with the source in the details.
 
 **Safeguards, all readers:**
 - Never refresh, rewrite, copy or move another tool's credentials. An expired login is reported as "open <tool> to refresh".
 - Never call inference or consume reset credits.
+- One **read** per provider every 5 minutes or more. A read is a fixed, documented set of at most two requests (for example Claude usage + profile, Cursor plan info + period usage, Gemini project + quota); stable metadata is cached for up to 24 hours, so most reads are one request.
 - Never print or store secret values; store only sanitised readings and keyed-hash identities.
 - Tell the user, in the consent text and the privacy page, that a tool's credential is sent to that tool's own provider to authenticate.
 - On macOS, read Keychain items through `/usr/bin/security`. "Always Allow" then attaches to Apple's stable binary rather than to each new ad-hoc-signed CLI build, so updates do not re-prompt.
@@ -81,7 +82,9 @@ The App's Settings offer "Install for Claude Code" and "Install for Codex". When
 
 ## 8. Open items
 
-- The X Subscription: whether the Cursor reader, a Grok Build reader, or both see the shared pool; how to de-duplicate (design note, FEEDFIX).
+- The X Subscription: both the Cursor and Grok Build readers can see the shared pool, but no provider ID proves two readings are the same seat yet. Until a verified common ID or link exists, they stay separate and labelled "shared-pool link unverified", never summed (FEEDFIX design note).
+- Claude Code session fields (`effort`, `usage.speed` on disk) are unconfirmed by a first-party source; the passive reader treats them as optional and stays beta until a sanitised fixture confirms them.
+- ZCode: no decryption of its encrypted credential store in v1.
 - Codex desktop app session-log location (M2 audit) for the passive path.
 - Privacy page and in-app consent wording, reviewed by the owner before the first credential-reading release.
 - Licence notices for CodexBar (MIT) and any Pulse-derived logic (Apache-2.0) in the CLI's `THIRD-PARTY-NOTICES.md` and the App's About → Licences.
