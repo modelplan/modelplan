@@ -23,6 +23,8 @@ final class DockPlacementGeometryTests: XCTestCase {
         let first = try place(preference, displays: [left, right], pointer: CGPoint(x: -500, y: 200))
         let same = try place(preference, displays: [left, right], pointer: CGPoint(x: -900, y: 500))
         let crossed = try place(preference, displays: [left, right], pointer: CGPoint(x: 500, y: 700))
+        let overMenuBar = try place(preference, displays: [left, right], pointer: CGPoint(x: -500, y: 890 - 200))
+        XCTAssertEqual(first, overMenuBar, "menu-bar space belongs to the same physical display")
         XCTAssertEqual(first, same); XCTAssertEqual(first.displayID, "left"); XCTAssertEqual(crossed.displayID, "right")
         XCTAssertEqual(first.alongFraction, 0.37, accuracy: 1e-9)
         XCTAssertEqual(crossed.alongFraction, 0.37, accuracy: 1e-9)

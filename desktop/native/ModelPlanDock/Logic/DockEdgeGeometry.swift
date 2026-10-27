@@ -142,7 +142,7 @@ public enum DockEdgeGeometry {
         let preferred=sorted.first{$0.id==preference.displayID}
         // A missing fixed display recovers to primary without following pointer motion.
         // nil identity is the explicit follow mode; the host resolves primary-only choices.
-        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.usableFrame.contains(p)}} : nil
+        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.frame.contains(p)}} : nil
         let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
         var candidates=[DockEdgePlacement]()
         for d in sorted where nearest || d.id==chosen?.id{

@@ -84,7 +84,10 @@ public struct StaticDockGeometry {
             case .overflow: self.showConsole?()
             }
         }
-        dockView.permitsAction = { [weak self] _, source in self?.edge.acceptsPress(keyboardOrAccessibility: source == .accessibility) ?? false }
+        dockView.permitsAction = { [weak self] _, source in
+            guard let self else { return false }
+            return self.acceptsInstrumentAction(from: self.dockView, source: source)
+        }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
         let refresh: () -> Void = { [weak self] in
@@ -209,7 +212,11 @@ public struct StaticDockGeometry {
                 do {
                     var candidate = try appearance(view, rows, oriented)
                     guard passIsCurrent(generation) else { return }
-                    view.onAction = dockView.onAction; view.permitsAction = dockView.permitsAction
+                    view.onAction = dockView.onAction
+                    view.permitsAction = { [weak self, weak view] _, source in
+                        guard let self, let view else { return false }
+                        return self.acceptsInstrumentAction(from: view, source: source)
+                    }
                     view.onNeedsFreshPresentation = dockView.onNeedsFreshPresentation
                     nextGeometries[orientation] = candidate; nextViews[orientation] = view
                 } catch { view.dispose() }
@@ -253,6 +260,10 @@ public struct StaticDockGeometry {
         guard let uuid = CGDisplayCreateUUIDFromDisplayID(number.uint32Value)?.takeRetainedValue() else { return "session.\(number)" }
         return CFUUIDCreateString(nil, uuid) as String
     }
+    private func acceptsInstrumentAction(from view: DockInstrumentView, source: DockActionSource) -> Bool {
+        guard !createsNativePanels || view.superview === container else { return false }
+        return edge.acceptsPress(keyboardOrAccessibility: source == .accessibility)
+    }
     private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
     private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
     private var presentationGeometry: StaticDockGeometry {
@@ -284,7 +295,7 @@ public struct StaticDockGeometry {
             consoleButton.isHidden = current.consoleButton == nil
             if let rect = current.consoleButton { consoleButton.frame = rect }
             let regions = current.dragRegions ?? view.registeredDragRegions(excluding: current.consoleButton.map { [$0] } ?? [])
-            if let regions { edge.install(on: view, regions: regions) }
+            if let regions { edge.dragRegions = regions; view.backgroundDragDelegate = edge }
             else { view.backgroundDragDelegate = nil; edge.dragRegions = nil }
             content = container
         case .sliver:
