@@ -19,18 +19,33 @@ at_least() {
     exit installed ~ /-/ ? 1 : 0
   }'
 }
-if [ -x "$dest/modelplan" ]; then
+keep_installed() {
+  [ -x "$dest/modelplan" ] || return 1
   current=$("$dest/modelplan" version </dev/null 2>/dev/null | awk '$1 == "modelplan" { sub(/^v/, "", $2); print $2; exit }')
   if [ -n "$current" ] && at_least "$current" "$version"; then
     printf 'already installed (v%s)\n' "$current"
-    exit 0
+    return 0
   fi
-fi
+  return 1
+}
+keep_installed && exit 0
 cli=$(MODELPLAN_PLUGIN_CLI= sh "$here/fetch-cli.sh") || exit 1
 mkdir -p "$dest"
 tmp=$(mktemp "$dest/.modelplan-XXXXXX")
-trap 'rm -f "$tmp"' EXIT
+locked=
+cleanup() {
+  rm -f "$tmp"
+  [ -z "$locked" ] || rmdir "$locked"
+}
+trap cleanup EXIT
 install -m 0755 "$cli" "$tmp"
+# Share the destination lock name with `modelplan update`. mkdir and O_EXCL
+# both refuse an existing file or directory, so neither updater can overlap.
+lock="$dest/modelplan.update.lock"
+mkdir "$lock" 2>/dev/null || { echo 'another CLI update is running' >&2; exit 1; }
+locked=$lock
+# Another installer may have completed while the pinned archive downloaded.
+keep_installed && exit 0
 mv -f "$tmp" "$dest/modelplan"
 printf 'Installed modelplan to %s/modelplan\n' "$dest"
 case ":$PATH:" in *":$dest:"*) ;; *) printf 'Add %s to your PATH.\n' "$dest" ;; esac

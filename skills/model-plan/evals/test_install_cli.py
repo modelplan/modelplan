@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import unittest
 
 
@@ -44,6 +45,10 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+if [ -n "${TEST_FETCH_STARTED:-}" ]; then
+  : > "$TEST_FETCH_STARTED"
+  while [ ! -f "$TEST_FETCH_RELEASE" ]; do sleep 0.05; done
+fi
 cp "$TEST_ARCHIVE" "$out"
 ''',
         }.items():
@@ -54,12 +59,78 @@ cp "$TEST_ARCHIVE" "$out"
                     "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
                     "TEST_ARCHIVE": str(self.archive), "MODELPLAN_PLUGIN_CLI": "off"}
 
-    def run_install(self, checksum):
+    def write_pin(self, checksum):
         (self.skill / "cli-pin.json").write_text(json.dumps({
             "version": "9.9.9", "release": "https://example.invalid/v9.9.9",
             "sha256": {"linux_amd64": checksum}}, indent=2) + "\n")
+
+    def run_install(self, checksum):
+        self.write_pin(checksum)
         return subprocess.run(["sh", str(self.skill / "scripts/install-cli.sh")],
                               env=self.env, capture_output=True, text=True, timeout=10)
+
+    def test_newer_cli_installed_during_download_is_kept(self):
+        self.write_pin(self.checksum)
+        started, release = self.root / "fetch-started", self.root / "fetch-release"
+        self.env.update(TEST_FETCH_STARTED=str(started), TEST_FETCH_RELEASE=str(release))
+        binary = self.home / ".local/bin/modelplan"
+        binary.parent.mkdir(parents=True)
+        binary.write_text('#!/bin/sh\necho "modelplan 9.9.8"\n')
+        binary.chmod(0o755)
+        process = subprocess.Popen(["sh", str(self.skill / "scripts/install-cli.sh")],
+                                   env=self.env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 5
+            while not started.exists() and process.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(started.exists(), "installer never reached blocked fetch")
+            # A concurrent updater finishes under the shared destination lock.
+            lock = binary.with_name("modelplan.update.lock")
+            lock.mkdir()
+            newer = binary.with_name("newer")
+            body = '#!/bin/sh\necho "modelplan 10.0.0+local"\n'
+            newer.write_text(body)
+            newer.chmod(0o755)
+            newer.replace(binary)
+            before = binary.stat().st_mtime_ns
+            lock.rmdir()
+            release.touch()
+            stdout, stderr = process.communicate(timeout=10)
+            self.assertEqual(0, process.returncode, stderr)
+            self.assertEqual("already installed (v10.0.0+local)\n", stdout)
+            self.assertEqual(body, binary.read_text())
+            self.assertEqual(before, binary.stat().st_mtime_ns)
+            self.assertFalse(lock.exists())
+            self.assertEqual([], list(binary.parent.glob(".modelplan-*")))
+        finally:
+            release.touch()
+            if process.poll() is None:
+                process.kill()
+            process.communicate(timeout=10)
+
+    def test_existing_destination_lock_prevents_replacement(self):
+        binary = self.home / ".local/bin/modelplan"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("older fixture")
+        lock = binary.with_name("modelplan.update.lock")
+        # The CLI updater uses an exclusive file; Skill copies use mkdir.
+        for directory in (False, True):
+            with self.subTest(directory=directory):
+                if directory:
+                    lock.mkdir()
+                else:
+                    lock.write_text("another update owns this lock")
+                result = self.run_install(self.checksum)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("another CLI update is running", result.stderr)
+                self.assertEqual("older fixture", binary.read_text())
+                self.assertTrue(lock.exists())
+                self.assertEqual([], list(binary.parent.glob(".modelplan-*")))
+                if directory:
+                    lock.rmdir()
+                else:
+                    lock.unlink()
 
     def test_current_or_newer_cli_is_kept_without_downloading(self):
         binary = self.home / ".local/bin/modelplan"
