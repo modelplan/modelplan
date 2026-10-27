@@ -66,10 +66,13 @@ import ModelPlanShell
         updateFeedVisibility()
     }
     func updateFeedVisibility() {
+        let appVisible = NSApp?.isHidden != true
         runtime?.store.setSurfacesVisible(
-            dock: (companion as? any CommunityCompanionVisibility)?.isVisible == true,
-            cockpit: window?.isVisible == true && window?.isMiniaturized == false)
+            dock: appVisible && (companion as? any CommunityCompanionVisibility)?.isVisible == true,
+            cockpit: appVisible && window?.isVisible == true && window?.isMiniaturized == false)
     }
+    public func applicationDidHide(_ notification: Notification) { updateFeedVisibility() }
+    public func applicationDidUnhide(_ notification: Notification) { updateFeedVisibility() }
     private func closeCompanion() {
         (companion as? any CommunityCompanionVisibility)?.visibilityChanged = nil
         companion?.setPresentationAllowed(false)
@@ -177,7 +180,7 @@ import ModelPlanShell
     public func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, closing === window else { return }
         restoreWindow = false
-        runtime?.store.setSurfacesVisible(dock: (companion as? any CommunityCompanionVisibility)?.isVisible == true, cockpit: false)
+        runtime?.store.setSurfacesVisible(dock: NSApp?.isHidden != true && (companion as? any CommunityCompanionVisibility)?.isVisible == true, cockpit: false)
         (overview as? any CommunityInstrumentSurface)?.closePresentation()
     }
     public func windowDidMiniaturize(_ notification: Notification) { updateFeedVisibility() }
