@@ -6,13 +6,13 @@ import CoreGraphics
 @MainActor public final class DockSliverView:NSView {
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public private(set) var retainedBytes=0
-    private var image:CGImage?,alpha=[UInt8](),scale=1,failed=false
+    private var image:CGImage?,alpha=[UInt8](),scale=1,failed=true
     public override var isFlipped:Bool{true}
     public override var acceptsFirstResponder:Bool{false}
-    public override init(frame:NSRect){super.init(frame:frame);setAccessibilityElement(true);setAccessibilityRole(.button);setAccessibilityLabel("Show subscriptions");setAccessibilityEnabled(false)}
+    public override init(frame:NSRect){super.init(frame:frame);setAccessibilityElement(false);setAccessibilityRole(.button);setAccessibilityEnabled(false)}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func apply(image:CGImage?,logicalSize:CGSize,scale:Int,accessibilityLabel:String)throws{
-        self.image=nil;alpha=[];retainedBytes=0;failed=true;setAccessibilityEnabled(false);needsDisplay=true
+        self.image=nil;alpha=[];retainedBytes=0;failed=true;setAccessibilityElement(false);setAccessibilityLabel(nil);setAccessibilityEnabled(false);needsDisplay=true
         guard (1...2).contains(scale),logicalSize.width.isFinite,logicalSize.height.isFinite,
             logicalSize.width>0,logicalSize.height>0,logicalSize.width<=4096,logicalSize.height<=4096 else{throw DockArtworkError.invalidManifest}
         let w=Int(ceil(logicalSize.width*CGFloat(scale))),h=Int(ceil(logicalSize.height*CGFloat(scale)))
@@ -24,7 +24,7 @@ import CoreGraphics
             let p=bytes.assumingMemoryBound(to:UInt8.self);alpha=(0..<(w*h)).map{p[$0*4+3]};self.image=normalized
             retainedBytes=normalized.bytesPerRow*normalized.height+alpha.count
         }
-        self.scale=scale;frame.size=logicalSize;failed=false;setAccessibilityEnabled(onReveal != nil);setAccessibilityLabel(accessibilityLabel)
+        self.scale=scale;frame.size=logicalSize;failed=false;setAccessibilityElement(true);setAccessibilityEnabled(onReveal != nil);setAccessibilityLabel(accessibilityLabel)
     }
     public func isPainted(atLocal point:CGPoint)->Bool{
         guard !failed,!isHiddenOrHasHiddenAncestor,bounds.contains(point),point.x.isFinite,point.y.isFinite else{return false}
@@ -41,5 +41,5 @@ import CoreGraphics
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){if !failed,!isHiddenOrHasHiddenAncestor{onReveal?()}}
-    public func dispose(){onReveal=nil;image=nil;alpha=[];retainedBytes=0}
+    public func dispose(){onReveal=nil;image=nil;alpha=[];retainedBytes=0;failed=true;setAccessibilityElement(false);setAccessibilityEnabled(false);setAccessibilityLabel(nil)}
 }

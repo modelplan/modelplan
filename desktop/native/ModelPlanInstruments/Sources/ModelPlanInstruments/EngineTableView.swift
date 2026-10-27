@@ -13,7 +13,9 @@ import CoreText
     public var onIntent: ((EngineTableIntent) -> Void)?
     public var onHelpChange: ((HelpExplanation?, CGRect?) -> Void)?
     public var onHintInput: ((InstrumentHintInput) -> Void)?
-    public var reducedMotion = false
+    public var reducedMotion = false {
+        didSet {if reducedMotion {textLayers.values.forEach{$0.removeAllAnimations()}}}
+    }
     private var input: [EngineColumn] = [], identities: [String: EngineTableIdentity] = [:]
     private var language: InstrumentLanguage = .chinese, clock = Date(timeIntervalSince1970: 0)
     private var page = 0, scope: InstrumentScope = .all

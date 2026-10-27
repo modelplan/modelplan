@@ -22,6 +22,12 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
 
+### Shareable diagnostics
+
+`modelplan doctor --share [--json]` prints a versioned, sanitised source/status report for an issue. It reads only bounded ModelPlan cache metadata, never starts readers or network requests, and creates no files. It excludes paths, hosts, raw errors, account/session/subscription identifiers, credential values and quota numbers. The report includes the sanitised `MODELPLAN_READERS` mode and keeps distinct cached failure/plan states, including denied, expired login, unsupported, estimated, stale, pay-as-you-go and organisation-managed; multiple accounts can contribute distinct states without exposing their aliases or refs. `cached` describes a local cache envelope, not a fresh provider reading or a live authentication check. Ordinary `doctor` output remains local and can contain paths; use `--share` for material you intend to paste.
+
+`modelplan doctor --share [--json]` 输出可贴到 issue 的版本化、脱敏来源/状态报告。只读取有限大小的 ModelPlan 缓存元数据，不启动读取器、不联网、不创建文件；不输出路径、主机、原始错误、账号/会话/订阅标识、凭据或额度数字。报告包含脱敏后的 `MODELPLAN_READERS` 模式，区分拒绝授权、登录过期、不支持、估算、过期读数、按量计费和组织管理等缓存状态；多个账号的不同状态保留，但不输出别名或引用。`cached` 仅表示本机有缓存封装，不证明实时读数或登录状态。普通 `doctor` 仍可能包含本机路径，要分享时请使用 `--share`。
+
 ### Public publication JSON
 
 `modelplan publication --json [--offline]` returns one versioned public-only object:
