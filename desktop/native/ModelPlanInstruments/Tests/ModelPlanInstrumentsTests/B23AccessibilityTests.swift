@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreText
 import XCTest
 @testable import ModelPlanInstruments
 
@@ -41,6 +42,17 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
 }
 
 @MainActor final class B23ChartTreeTests:XCTestCase {
+    func testReduceMotionImmediatelyStopsAnInFlightReadingWithoutChangingItsValue() throws {
+        let view=EngineTableView(recipeProvider:B23ReadingRecipe())
+        try view.update(columns:[],language:.english,now:Fixtures.now)
+        let reading=try XCTUnwrap(view.layer?.sublayers?.first(where:{$0.contents != nil}))
+        let fade=CABasicAnimation(keyPath:"opacity");fade.fromValue=0;fade.toValue=1;fade.duration=10
+        reading.add(fade,forKey:"reading");XCTAssertNotNil(reading.animation(forKey:"reading"))
+        let before=view.recipe
+        view.reducedMotion=true
+        XCTAssertNil(reading.animation(forKey:"reading"));XCTAssertEqual(view.recipe,before)
+        view.reducedMotion=false;XCTAssertNil(reading.animation(forKey:"reading"));view.dispose()
+    }
     func testChartChildrenSurviveLocaleAndHostThemeRefreshAndRetireOnBack() throws {
         let view=MainScreenView();view.onHelpChange={_,_ in}
         let publication=SelectionPublication(publicationID:"b23-synthetic",selectionRevision:"1")
@@ -67,5 +79,14 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
             view.removeFromSuperview()
         }
         view.back();XCTAssertNil(view.control(for:"compare.chart"));XCTAssertNil(first.accessibilityParent())
+    }
+}
+
+@MainActor private final class B23ReadingRecipe:EngineTableRecipeProvider {
+    let base=NeutralEngineTableRecipe()
+    func image(_ id:String)throws->CGImage{try base.image(id)}
+    func font(_ request:EngineFontRequest)throws->CTFont{try base.font(request)}
+    func recipe(for presentation:EngineTablePresentation,size:CGSize)throws->EngineTableRecipe{
+        .init(size:size,commands:[.text(.init(id:"reading",variants:["123"],rect:.init(x:0,y:0,width:80,height:20),font:.init(size:12),ink:.init(1,1,1),transitionDuration:0.08))],regions:[])
     }
 }
