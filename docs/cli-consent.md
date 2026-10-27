@@ -12,9 +12,18 @@ text version without prompting or writing.
 The catalogue's `codexbar: {audited, access}` distinguishes `standard`,
 `browser-session` and `not-read`. Audited standard access uses the tool's own
 login or an audited read-only CLI command that consumes no quota. It always runs
-with `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1`, overriding a conflicting inherited
-value. Missing/unknown classes, unaudited routes, token-refresh paths and
-`not-read` routes cannot run. API-key-only helper platforms are not offered.
+with `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1` **and** `cookieSource: off` in its
+generated CodexBar config. The environment gate alone does not block plaintext
+Firefox cookies or Safari cookies readable with Full Disk Access. Every usage
+invocation has a private temporary version-1 config containing only its explicit
+provider; inherited `CODEXBAR_CONFIG` is overridden and ambient cookie headers,
+tokens and hooks are never copied. The config is removed after success or failure;
+failure to create it prevents the helper launch. Missing/unknown classes,
+unaudited routes, token-refresh paths and `not-read` routes cannot run.
+API-key-only helper platforms are not offered. The config schema and environment
+override follow the pinned upstream
+[CodexBarConfig](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Config/CodexBarConfig.swift)
+and [CodexBarConfigStore](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Config/CodexBarConfigStore.swift).
 
 Browser-session tools appear in a separate **unchecked advanced group** and are
 never selected or enabled by the standard confirmation, even through a numeric
@@ -22,7 +31,10 @@ selection. Use `modelplan connect <tool> --browser-session` for one provider.
 That command explains the macOS browser **Safe Storage** prompt (the key unlocks
 that browser's saved sign-ins) and CodexBar's session-cookie cache in its own
 Keychain item, then asks once. Its JSON form is only a preview. Passive/off
-privacy cannot enable it. Detection never scans browser profiles or stores.
+privacy cannot enable it. Only a currently audited browser-session route with
+that explicit provider grant gets `cookieSource: auto`; other invocations keep
+`off`, even if a previous invocation had browser permission. Detection never
+scans browser profiles or stores.
 The `/usr/bin/security` rule applies to our own readers; the signed CodexBar
 helper may use its own Keychain access under this separate grant.
 
@@ -75,7 +87,7 @@ currently verified, audited `preferred: codexbar` entry. Native routes never
 automatically fall back to CodexBar for head providers. `minCli` gates admission
 after consent. FEEDFIX retains routing/reader implementation ownership. Shared
 refresh functions add framework admission/publication guards and the helper's
-access-class environment; provider HTTP/auth implementations remain untouched.
+access-class environment/config; provider HTTP/auth implementations remain untouched.
 `quota.Paths` supplies the invocation version and permitted reports carry a
 non-JSON generation for downstream cache writers. Beta is catalogue metadata and
 fixtures cannot clear it.
@@ -112,7 +124,10 @@ Passive 禁止自动导入工具凭据/钥匙串，Off 停止个人读取器。�
 调用间隔记录和原工具文件。新工具只提示一行；目录停用、未审核的 CodexBar 路由和
 不兼容 `minCli` 都不能越过本机授权。
 
-标准 CodexBar 路径需经审核，并强制关闭钥匙串访问；只允许工具自身登录或不消耗额度的
+标准 CodexBar 路径需经审核，并强制设置 `CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1` 和
+`cookieSource: off`；后者也阻止不需钥匙串解密的 Firefox/Safari cookie 导入。
+每次调用使用仅包含目标提供商的私有临时配置，覆盖继承的 `CODEXBAR_CONFIG`，退出后删除。
+只有经单独授权的浏览器会话提供商使用 `cookieSource: auto`。只允许工具自身登录或不消耗额度的
 只读 CLI 命令，不刷新 token。浏览器会话放在单独的高级未勾选组，标准确认绝不启用；
 用 `connect <工具> --browser-session` 单独查看 Safe Storage 和 CodexBar cookie 缓存说明并确认。
 忘记读数会按提供商清除该 cookie 缓存，失败则保留待清理标记以供显式重试。

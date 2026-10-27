@@ -7,14 +7,16 @@ persists reader privacy; `MODELPLAN_READERS=passive|off` restricts it.
 [Shared consent](../docs/cli-consent.md).
 
 Audited standard CodexBar access is included in the checked group with Keychain
-disabled. Browser-session tools stay in a separate unchecked advanced group;
+disabled and `cookieSource: off` in the generated helper config. Browser-session
+tools stay in a separate unchecked advanced group;
 `connect <tool> --browser-session` explains Safe Storage and the helper's cookie
-cache before its own confirmation. Forget also clears that provider's cookie
-cache. Not-read/token-refresh and API-key-only helper platforms are not offered.
+cache before its own confirmation; only that provider gets `cookieSource: auto`.
+Forget also clears that provider's cookie cache. Not-read/token-refresh and
+API-key-only helper platforms are not offered.
 Every `connect --json` is a preview; connecting starts no reader or refresh.
 
-标准 CodexBar 路径须经审核并关闭钥匙串；浏览器会话单列为高级未勾选组，
-用 `connect <工具> --browser-session` 查看 Safe Storage 和 cookie 缓存说明后单独确认。
+标准 CodexBar 路径须经审核并关闭钥匙串及 cookie 导入（`cookieSource: off`）；浏览器会话单列为高级未勾选组，
+用 `connect <工具> --browser-session` 查看 Safe Storage 和 cookie 缓存说明后单独确认，只有该提供商使用 `cookieSource: auto`。
 忘记读数也会按提供商清除 cookie 缓存；所有 `connect --json` 只预览，连接不启动读取器。
 
 `modelplan connect --detected` 预勾选已检测工具，只确认一次；`--json` 仅预览。

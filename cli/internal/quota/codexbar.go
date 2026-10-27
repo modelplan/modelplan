@@ -29,7 +29,7 @@ import (
 
 // CodexBar (github.com/steipete/CodexBar, MIT) reads usage for vendors whose meters sit behind
 // their own sign-ins. This client never handles those credentials: CodexBar's CLI finds them
-// through an audited access class. Standard access forces Keychain off; browser
+// through an audited access class. Standard access forces Keychain and cookie import off; browser
 // access requires a separate per-provider grant. We only parse its JSON. It runs for the
 // providers the user enabled in ~/.config/modelplan/codexbar.json, one provider per call, in the
 // background and at most every 10 minutes. The reading is cached in <cache>/observed/codexbar.json
@@ -509,12 +509,22 @@ func runCodexBar(ctx context.Context, bin, provider string, access ...string) ([
 	if len(access) == 1 {
 		class = access[0]
 	}
-	cmd.Env = codexBarEnvironment(class)
+	config, cleanup, err := codexBarUsageConfig(provider, class)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	for _, value := range codexBarEnvironment(class) {
+		if !strings.HasPrefix(value, "CODEXBAR_CONFIG=") {
+			cmd.Env = append(cmd.Env, value)
+		}
+	}
+	cmd.Env = append(cmd.Env, "CODEXBAR_CONFIG="+config)
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	var out bytes.Buffer
 	cmd.Stdout = &limited{w: &out, n: codexbarMaxOut}
-	err := cmd.Run()
+	err = cmd.Run()
 	if ctx.Err() != nil {
 		return out.Bytes(), errors.New("timed out")
 	}

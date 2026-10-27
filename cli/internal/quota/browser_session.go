@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -12,6 +13,44 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
+
+// The pinned helper reads CODEXBAR_CONFIG (CodexBarConfigStore.swift). Give each
+// usage invocation its own version-1 config, with only its explicit provider.
+// Never import an ambient config's cookies, tokens, hooks or provider settings.
+// KeychainAccessGate alone does not block Safari or plaintext Firefox cookies.
+func codexBarUsageConfig(provider, access string) (string, func(), error) {
+	if !consent.ValidTool(provider) || provider == "all" || provider == "both" {
+		return "", nil, errors.New("invalid single CodexBar provider")
+	}
+	cookieSource := "off"
+	if access == "browser-session" {
+		cookieSource = "auto"
+	}
+	type providerConfig struct {
+		ID           string `json:"id"`
+		Enabled      bool   `json:"enabled"`
+		CookieSource string `json:"cookieSource"`
+	}
+	config := struct {
+		Version   int              `json:"version"`
+		Providers []providerConfig `json:"providers"`
+	}{Version: 1, Providers: []providerConfig{{provider, true, cookieSource}}}
+	b, err := json.Marshal(config)
+	if err != nil {
+		return "", nil, err
+	}
+	dir, err := os.MkdirTemp("", "modelplan-codexbar-")
+	if err != nil {
+		return "", nil, errors.New("CodexBar usage config unavailable")
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	file := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(file, b, 0o600); err != nil {
+		cleanup()
+		return "", nil, errors.New("CodexBar usage config unavailable")
+	}
+	return file, cleanup, nil
+}
 
 func codexBarEnvironment(access string) []string {
 	env := []string{}

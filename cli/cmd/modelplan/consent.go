@@ -62,7 +62,7 @@ func choice(t detect.Tool, mode string) consentChoice {
 	case t.Preferred == "codexbar" && mode != consent.Automatic:
 		x.Status = "privacy-blocked"
 	case t.Preferred == "codexbar":
-		x.Access = "Via audited CodexBar with CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1: read this tool's own login or audited read-only, no-quota CLI command; no token refresh or browser import."
+		x.Access = "Via audited CodexBar with CODEXBAR_DISABLE_KEYCHAIN_ACCESS=1 and cookieSource=off: read this tool's own login or audited read-only, no-quota CLI command; no token refresh or browser import."
 		if t.CodexBar.Access == "browser-session" {
 			x.Group = "advanced"
 			x.Status = "browser-session-explicit-only"

@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,16 +13,131 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
-func TestHelperKeychainEnvironmentIsAccessScoped(t *testing.T) {
+func TestHelperCookieConfigAndKeychainAreAccessScoped(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("CODEXBAR_DISABLE_KEYCHAIN_ACCESS", "0")
 	dir := t.TempDir()
+	ambient := filepath.Join(dir, "ambient.json")
+	ambientJSON := []byte(`{"version":1,"providers":[{"id":"cursor","cookieSource":"auto","cookieHeader":"synthetic-cookie"},{"id":"windsurf","cookieSource":"auto"}],"hooks":{"enabled":true}}`)
+	if err := os.WriteFile(ambient, ambientJSON, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CODEXBAR_CONFIG", ambient)
+	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:1234")
 	bin := filepath.Join(dir, "helper")
-	os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s' \"$CODEXBAR_DISABLE_KEYCHAIN_ACCESS\"\n"), 0700)
-	for _, v := range []struct{ access, want string }{{"standard", "1"}, {"browser-session", "0"}, {"unknown", "1"}} {
-		out, err := runCodexBar(context.Background(), bin, "fixture", v.access)
-		if err != nil || string(out) != v.want {
-			t.Fatal(v, string(out), err)
+	script := `#!/bin/sh
+printf '%s\n' "$CODEXBAR_DISABLE_KEYCHAIN_ACCESS" "$CODEXBAR_CONFIG" "$HTTPS_PROXY"
+cat "$CODEXBAR_CONFIG"
+exit "$MODELPLAN_TEST_HELPER_EXIT"
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, exit := range []string{"0", "7"} {
+		t.Setenv("MODELPLAN_TEST_HELPER_EXIT", exit)
+		for _, v := range []struct{ access, keychain, cookies string }{{"standard", "1", "off"}, {"browser-session", "0", "auto"}, {"unknown", "1", "off"}, {"", "1", "off"}} {
+			out, err := runCodexBar(context.Background(), bin, "cursor", v.access)
+			if (err == nil) != (exit == "0") {
+				t.Fatalf("%+v exit %s: %v", v, exit, err)
+			}
+			parts := strings.SplitN(string(out), "\n", 4)
+			if len(parts) != 4 || parts[0] != v.keychain || parts[1] == ambient || parts[2] != "http://proxy.invalid:1234" {
+				t.Fatalf("%+v: %s", v, out)
+			}
+			var config struct {
+				Version   int              `json:"version"`
+				Providers []map[string]any `json:"providers"`
+			}
+			if err := json.Unmarshal([]byte(parts[3]), &config); err != nil {
+				t.Fatal(err, string(out))
+			}
+			if config.Version != 1 || len(config.Providers) != 1 {
+				t.Fatal("usage must select only its explicit provider", config)
+			}
+			p := config.Providers[0]
+			if len(p) != 3 || p["id"] != "cursor" || p["enabled"] != true || p["cookieSource"] != v.cookies || strings.Contains(parts[3], "synthetic-cookie") || strings.Contains(parts[3], "hooks") {
+				t.Fatalf("%+v: ambient config leaked or wrong cookie source: %s", v, parts[3])
+			}
+			if _, err := os.Stat(filepath.Dir(parts[1])); !os.IsNotExist(err) {
+				t.Fatal("temporary config retained after helper exit", err)
+			}
+		}
+	}
+	if b, err := os.ReadFile(ambient); err != nil || string(b) != string(ambientJSON) {
+		t.Fatal("ambient config changed", err)
+	}
+}
+
+func TestHelperUsageConfigIsPrivateAndFailsClosed(t *testing.T) {
+	isolateHome(t)
+	file, cleanup, err := codexBarUsageConfig("cursor", "standard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	for _, p := range []string{file, filepath.Dir(file)} {
+		info, err := os.Stat(p)
+		if err != nil || info.Mode().Perm()&0077 != 0 {
+			t.Fatal("usage config must be private", p, info, err)
+		}
+	}
+	for _, provider := range []string{"all", "both", "cursor,windsurf", "../cursor"} {
+		if _, _, err := codexBarUsageConfig(provider, "browser-session"); err == nil {
+			t.Fatal("accepted non-single provider", provider)
+		}
+	}
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
+	if out, err := runCodexBar(context.Background(), "/nonexistent/helper", "cursor"); err == nil || !strings.Contains(err.Error(), "config unavailable") || len(out) != 0 {
+		t.Fatal("helper must not run without its generated config", string(out), err)
+	}
+}
+
+func TestHelperRefreshCookieAutoRequiresCurrentBrowserRouteAndGrant(t *testing.T) {
+	isolateHome(t)
+	p := cbPaths(t, "cursor") // Synthetic audit only; not an upstream route certification.
+	cat := loadReaderCatalogue(p.Cache)
+	dir := t.TempDir()
+	bin, log := filepath.Join(dir, "helper"), filepath.Join(dir, "configs")
+	t.Setenv("MODELPLAN_TEST_HELPER_CONFIGS", log)
+	if err := os.WriteFile(bin, []byte(`#!/bin/sh
+cat "$CODEXBAR_CONFIG" >> "$MODELPLAN_TEST_HELPER_CONFIGS"
+printf '\n' >> "$MODELPLAN_TEST_HELPER_CONFIGS"
+printf '[]'
+`), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []struct {
+		access string
+		grant  bool
+		want   string
+	}{{"standard", false, "off"}, {"browser-session", false, ""}, {"browser-session", true, "auto"}, {"standard", true, "off"}} {
+		for i := range cat.Detectors {
+			if cat.Detectors[i].ProviderID == "cursor" {
+				cat.Detectors[i].CodexBar.Access = v.access
+			}
+		}
+		if err := consent.Change(consent.Path(), func(s *consent.State) error {
+			if err := consent.Set(s, "cursor", true, "codexbar:cursor", "codexbar", cbNow); err != nil {
+				return err
+			}
+			r := s.Tools["cursor"]
+			r.BrowserSession = v.grant
+			s.Tools["cursor"] = r
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.Remove(log)
+		err := RefreshCodexBar(context.Background(), p, bin, cbNow)
+		b, readErr := os.ReadFile(log)
+		if v.want == "" {
+			if err == nil || !os.IsNotExist(readErr) {
+				t.Fatal("browser helper ran without a separate grant", err, readErr)
+			}
+			continue
+		}
+		if err != nil || readErr != nil || !strings.Contains(string(b), `"cookieSource":"`+v.want+`"`) {
+			t.Fatal(v, string(b), err, readErr)
 		}
 	}
 }
