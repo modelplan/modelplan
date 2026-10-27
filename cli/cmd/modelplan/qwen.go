@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"io"
 	"time"
 )
 
 func qwenSnapshot(now time.Time) *qwenusage.Report {
-	if qwenusage.Configured() == "" {
+	if qwenusage.Configured() == "" || !consent.Allowed("qwen", consent.Local) {
 		return nil
 	}
 	r := qwenusage.Read(qwenusage.Configured(), now)
@@ -19,7 +20,12 @@ func qwenUsageCmd(out io.Writer, c common, path string) int {
 	if path == "" {
 		path = qwenusage.Configured()
 	}
-	r := qwenusage.Read(path, time.Now())
+	var r qwenusage.Report
+	if consent.Allowed("qwen", consent.Local) {
+		r = qwenusage.Read(path, time.Now())
+	} else {
+		r.Status = "off"
+	}
 	if c.json {
 		return printJSON(out, r)
 	}

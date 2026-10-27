@@ -226,21 +226,21 @@ func TestConnectCommands(t *testing.T) {
 	if len(list()) != 0 {
 		t.Fatal("nothing connected yet")
 	}
-	if code := run([]string{"connect", "zai", "--region", "bigmodel-cn"}, nil, io.Discard, io.Discard); code != 0 {
+	if code := run([]string{"connect", "zai", "--region", "bigmodel-cn"}, strings.NewReader("yes\n"), io.Discard, io.Discard); code != 0 {
 		t.Fatalf("connect exit %d", code)
 	}
 	c := list()
 	if len(c) != 1 || c[0]["backend"] != "native" || c[0]["region"] != "bigmodel-cn" || c[0]["keyEnv"] != "Z_AI_API_KEY" || c[0]["blocked"] != "no-key" {
 		t.Fatalf("connections = %v", c)
 	}
-	if len(started) == 0 || strings.Join(started[0], " ") != "connections refresh --quiet" {
+	if len(started) != 0 {
 		t.Fatalf("started = %v", started)
 	}
-	if code := run([]string{"connect", "cursor"}, nil, io.Discard, io.Discard); code != 0 {
+	if code := run([]string{"connect", "cursor"}, strings.NewReader("yes\n"), io.Discard, io.Discard); code != 0 {
 		t.Fatal("cursor native connect failed")
 	}
-	if code := run([]string{"connect", "cursor", "--backend", "codexbar"}, nil, io.Discard, io.Discard); code != 0 {
-		t.Fatal("cursor through CodexBar")
+	if code := run([]string{"connect", "cursor", "--backend", "codexbar"}, strings.NewReader("yes\n"), io.Discard, io.Discard); code != exitUsage {
+		t.Fatal("unaudited cursor helper accepted")
 	}
 	if code := run([]string{"disconnect", "zai"}, nil, io.Discard, io.Discard); code != 0 {
 		t.Fatal("disconnect")
@@ -249,7 +249,7 @@ func TestConnectCommands(t *testing.T) {
 	for _, x := range list() {
 		got[x["provider"].(string)] = x["backend"]
 	}
-	if got["zai"] != "off" || got["cursor"] != "codexbar-compat" {
+	if got["zai"] != "off" || got["cursor"] != "native" {
 		t.Fatalf("after disconnect = %v", got)
 	}
 	// codexbar enable cannot quietly override an explicit entry: it says which one decides.

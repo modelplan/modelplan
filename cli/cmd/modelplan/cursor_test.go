@@ -17,7 +17,7 @@ func TestCursorNativeConnectionConsent(t *testing.T) {
 		{"desktop", "snapshot", "--json", "--offline"},
 	} {
 		var out bytes.Buffer
-		if code := run(cmd, nil, &out, &out); code != 0 {
+		if code := run(cmd, strings.NewReader("yes\n"), &out, &out); code != 0 {
 			t.Fatal(code, out.String())
 		}
 		for _, want := range []string{"state.vscdb", "cursor.com", "api2.cursor.sh", "Undocumented"} {
@@ -27,7 +27,7 @@ func TestCursorNativeConnectionConsent(t *testing.T) {
 		}
 	}
 	var out bytes.Buffer
-	if code := run([]string{"connect", "cursor", "--backend", "codexbar", "--offline", "--json"}, nil, &out, &out); code != 0 || !strings.Contains(out.String(), "codexbar-compat") {
+	if code := run([]string{"connect", "cursor", "--backend", "codexbar", "--offline", "--json"}, nil, &out, &out); code != exitUsage || !strings.Contains(out.String(), "no audited") {
 		t.Fatal(code, out.String())
 	}
 	out.Reset()

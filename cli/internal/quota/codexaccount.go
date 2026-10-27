@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"os"
 	"os/exec"
@@ -119,28 +120,43 @@ func CodexBin(home string) string {
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
 // (or the failure, so a missing login is not retried for half an hour). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
+	admission, err := consent.ReaderLockContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer admission()
+	state, mode := consent.Current()
+	if !state.Allows("codex", consent.Runtime, mode) {
+		return errors.New("Codex reader not permitted")
+	}
+	commit := func(s *accountSnap) error {
+		return consent.Publish(state.Generation, func() error { return save(cache, s) })
+	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")
 	}
 	if codex == "" {
-		return save(cache, &accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
 	}
 	unlock, ok := lock(cache, now)
 	if !ok {
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
+	if !consent.CurrentGeneration(state.Generation) {
+		return errors.New("consent changed; refresh stopped")
+	}
 	ctx, cancel := context.WithTimeout(ctx, accountTimeout)
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil {
-		return errors.Join(err, save(cache, &accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: short(err.Error())}))
+		return errors.Join(err, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: short(err.Error())}))
 	}
 	s := snapFrom(resp, now)
 	if resp.identity != "" {
 		s.SubscriptionRef = assignSubscription(cache, "codex-account", resp.identity, now)
 	}
-	return save(cache, s)
+	return commit(s)
 }
 
 // short keeps an error message to one line of at most 160 bytes.

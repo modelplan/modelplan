@@ -125,7 +125,7 @@ func codexbarCmd(args []string, stdout, stderr io.Writer, st *store.Store, c com
 func codexbarStatus(stdout io.Writer, p quota.Paths, st *store.Store, home string, c common) int {
 	enabled := quota.CodexBarActive(p)
 	bin := quota.CodexBarBin(st.Dir, home)
-	r := quota.Read(p, time.Now())
+	r := quota.ReadPermitted(p, time.Now())
 	type row struct {
 		ID     string `json:"id"`
 		Name   string `json:"name"`
