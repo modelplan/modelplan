@@ -136,3 +136,59 @@ func TestCatalogueBoundsAndNoFalseDefault(t *testing.T) {
 		}
 	}
 }
+
+func TestHelperAuditAndAccessArePerProvider(t *testing.T) {
+	for _, v := range []struct{ audited, access, want string }{
+		{"false", `"standard"`, "codexbar-not-audited"},
+		{"missing", `"standard"`, "codexbar-not-audited"},
+		{"true", `"standard"`, "detected"},
+		{"true", `"browser-session"`, "detected"},
+		{"true", `"not-read"`, "codexbar-not-read"},
+		{"true", `"future-class"`, "codexbar-access-unknown"},
+		{"true", `null`, "codexbar-access-unknown"},
+	} {
+		t.Run(v.audited+v.access, func(t *testing.T) {
+			var c map[string]any
+			if err := json.Unmarshal([]byte(fixture), &c); err != nil {
+				t.Fatal(err)
+			}
+			entry := c["detectors"].([]any)[0].(map[string]any)
+			entry["preferred"] = "codexbar"
+			cb := map[string]any{}
+			if v.audited != "missing" {
+				cb["audited"] = v.audited == "true"
+			}
+			var access any
+			json.Unmarshal([]byte(v.access), &access)
+			if access != nil {
+				cb["access"] = access
+			}
+			entry["codexbar"] = cb
+			// A second audited standard provider must stay usable independently.
+			second := map[string]any{}
+			for k, value := range entry {
+				second[k] = value
+			}
+			second["providerId"] = "independent"
+			second["codexbar"] = map[string]any{"audited": true, "access": "standard"}
+			c["detectors"] = []any{entry, second}
+			b, _ := json.Marshal(c)
+			cat, err := ParseData(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			home := t.TempDir()
+			os.Mkdir(filepath.Join(home, ".claude"), 0700)
+			r := Run(cat, Env{Home: home}, "1.0.0", "fixture")
+			if r.Tools[0].Status != v.want || !r.Tools[0].Detected {
+				t.Fatal(r.Tools[0])
+			}
+			if v.want != "detected" && r.Tools[0].Preferred != "off" {
+				t.Fatal("unsafe helper route advertised")
+			}
+			if r.Tools[1].Status != "detected" || r.Tools[1].Preferred != "codexbar" {
+				t.Fatal("another provider was disabled", r.Tools[1])
+			}
+		})
+	}
+}

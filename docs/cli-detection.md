@@ -14,10 +14,20 @@ malformed known catalogue fields before switching, keeping the last verified
 publication. An owner-authorised rollback may select an earlier revision.
 
 Entries carry `providerId`, `displayName`, `readerId`, `preferred`
-(`native|codexbar|off`), `codexbar: {audited: bool}`, `minCli`, `beta`,
+(`native|codexbar|off`), `codexbar: {audited: bool, access: standard|browser-session|not-read}`, `minCli`, `beta`,
 `detectionStatus` and `signals`. Incompatible entries report `update-required`
 before probing. Fixture tests never clear beta. Routing is descriptive here:
 detection enables no reader and never introduces automatic CodexBar fallback.
+
+An unaudited helper route, a missing/unknown access class, or `not-read` is
+explicitly unsupported, with effective `preferred: off` in the report. This does
+not prevent detection or admission of another provider. `standard` is eligible
+for one-click consent only with an audit. `browser-session` needs separate,
+per-provider advanced consent and never belongs to the one-click grant.
+Detection never inspects browser directories, cookie stores or browser profiles.
+The reader audit may permit a read-only provider CLI launch that consumes no
+quota; detection still never launches that CLI. The `/usr/bin/security` rule
+belongs to ModelPlan's own readers, not the signed CodexBar helper.
 
 Signals are OR-ed. Initial evaluator forms and boundaries:
 
