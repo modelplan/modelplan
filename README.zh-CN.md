@@ -73,14 +73,14 @@ codex plugin add modelplan-codex@modelplan
 </details>
 
 <details>
-<summary><b>modelplan 命令行</b>：macOS、Linux、Windows 单个静态可执行文件</summary>
+<summary><b>modelplan 命令行</b>：macOS、Linux 单个静态可执行文件</summary>
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
 modelplan lineup --dev anthropic --lang zh
 ```
 
-Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载；用 Go：`go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。装了它 Skill 和插件会更快，没装也能用。[详情](cli/)
+用 Go：`go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。装了它 Skill 和插件会更快，没装也能用。[详情](cli/)
 
 </details>
 

@@ -12,7 +12,7 @@ New visual work belongs in the App and the website. The Codex plugin's existing 
 
 The Claude Code and Codex plugins bundle both the ModelPlan Skill and a pinned, checksum-checked CLI. They provide automatic hints inside the agent as well as explicit commands. Automatic hints default to on and can be turned off in setup. Turning them off silences the prompt hook; slash commands and the Codex panel remain usable.
 
-Claude Code's status line is an optional display for model, effort, quota, and reset information. It is a convenience, not a required quota source. The CLI detects signed-in tools and reports the readings it can obtain; unavailable readings stay unknown.
+Claude Code's status line is an optional display for model, effort, quota, and reset information. It is optional. In the current release it is the only source of the CLI's Claude Code quota snapshot; automatic Claude Code detection is coming. Without that snapshot Claude quota stays unknown, while public advice and other sources still work. Do not present the planned reader as already shipped.
 
 ## Skill: bring ModelPlan to any coding agent
 
