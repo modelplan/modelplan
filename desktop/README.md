@@ -1,6 +1,12 @@
-# ModelPlan desktop (preview)
+# ModelPlan Mac App (preview)
 
-A menu bar app for ModelPlan: which model and effort fit, your quota and resets, Codex Fast, switching back after a reset, and a better model when the one you use is beaten. Built with [Tauri](https://tauri.app). macOS first; the front end is written so iOS and Android can reuse it later.
+The human-facing ModelPlan dashboard sits alongside the **Skill → Skill + CLI → plugin** ladder. It shows models, efforts, personal quota and reset times and ships the CLI data engine. [Product roles](../docs/product-surfaces.md) · [Installation guide](../docs/install.md).
+
+Settings is the designated place to install the Claude Code and Codex plugins for automatic in-agent help. The current checkout has no shared `modelplan plugin install` command or wired Settings installer; use the host installation commands in the guide until that integration exists. The plugins bundle the Skill and CLI, and automatic hints can be turned off independently of this dashboard.
+
+Mac App 是给人看的仪表盘，与 Skill → Skill + CLI → 插件阶梯并行，自带 CLI 数据引擎。Settings 是插件安装入口；当前代码尚无统一插件安装命令或已接好的 Settings 安装功能，暂用安装指南中的宿主命令。插件自带 Skill 和 CLI，自动提示可单独关闭。
+
+Built with [Tauri](https://tauri.app). macOS first; the front end can be reused for other platforms later.
 
 **Status: early preview.** Builds are ad-hoc signed, not notarized. There is no auto-update yet.
 

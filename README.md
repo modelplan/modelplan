@@ -3,7 +3,7 @@
 <a href="https://modelplan.ai"><img src="docs/assets/banner.jpg" alt="ModelPlan: which coding model, at which effort, on which plan" width="100%"></a>
 
 **Which AI coding model should you use, at which reasoning effort, and is one more step up worth it?**<br>
-ModelPlan answers from live, checkable public data, on the web and inside Claude Code, Codex and your terminal.
+ModelPlan answers from live, checkable public data, in a Mac dashboard, through automatic in-agent help, and through a Skill for any coding agent.
 
 [![Release](https://img.shields.io/github/v/release/modelplan/modelplan?style=flat-square&color=df604c&label=release)](https://github.com/modelplan/modelplan/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/modelplan/modelplan/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/modelplan/modelplan/actions/workflows/ci.yml)
@@ -16,15 +16,61 @@ ModelPlan answers from live, checkable public data, on the web and inside Claude
 
 </div>
 
-## Why ModelPlan
+## Quick start
 
-[Choose an entry point: Mac App, plugins or Skill](docs/product-surfaces.md).
+Choose one of three entry points: **Mac App**, **plugins**, or **Skill**. [Product roles](docs/product-surfaces.md) · [Installation guide](docs/install.md)
+
+### Mac App — a dashboard for people
+
+See models, efforts, your quota and reset times together in the [Mac App preview](desktop/README.md#try-a-build). It includes the CLI data engine; no terminal installation is needed. Plugin installation belongs in the App's Settings. The current preview still needs that installer integration, so use the host commands below meanwhile.
+
+### Plugins — automatic help inside Claude Code or Codex
+
+Plugins bundle the Skill and a pinned, checksum-checked CLI. **Automatic hints default to on and can be turned off**; explicit commands and the existing panel keep working.
+
+<details>
+<summary><b>Claude Code plugin</b></summary>
+
+```text
+/plugin marketplace add modelplan/modelplan
+/plugin install modelplan@modelplan
+```
+
+Use `/modelplan:setup`, then `/modelplan:plan`, `/modelplan:effort` or `/modelplan:lineup`. `/modelplan:setup automatic-hints off` silences automatic hints; `on` restores them. `/modelplan:statusline` is an **optional display**, not a quota requirement. [More](claude-code/)
+
+</details>
+
+<details>
+<summary><b>Codex plugin</b></summary>
+
+```sh
+codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
+codex plugin add modelplan-codex@modelplan
+```
+
+Ask Codex to check ModelPlan setup or turn automatic hints off/on. The existing panel remains available and is feature-frozen; new visuals go to the App and website. Requires Node.js 22+, found automatically when available. [More](codex/)
+
+</details>
+
+### Skill — answers on demand in any coding agent
+
+```sh
+npx skills add modelplan/modelplan
+```
+
+Ask your agent: *"Which model and effort fits this refactor?"* Public model and effort answers work without the CLI. The first time you ask about **your own quota** and the CLI is missing, the Skill asks once whether to install its pinned, checksum-checked CLI into `~/.local/bin`. It installs only after yes and never asks again after no. The CLI detects signed-in tools; unavailable readings stay unknown.
+
+To install by hand, copy [`skills/model-plan`](skills/model-plan/) into your agent's skills directory (for example `~/.claude/skills/model-plan`). It needs a shell and anonymous HTTPS.
+
+The ladder is **Skill → Skill + CLI → plugin**. The App sits alongside it as the dashboard for people. Standalone CLI installation is [Advanced](#advanced-standalone-cli).
+
+## Why ModelPlan
 
 Most leaderboards compare every model at its **top** setting. But inside one model, going from Low to Max often costs several times more and takes several times longer, for a few points of ability. What you actually run is a model *at an effort*.
 
 - **★ Recommended effort.** Every model gets its best-value effort, and you see exactly what one more step up buys (`+4.8 ability`) and costs (`×1.37`).
 - **A leaderboard at that effort.** Models are ranked at their own ★ effort, the setup you would really use, with cost per reference coding task and task time beside ability. Outclassed models (costlier and no stronger) are called out, and if you are on one, the CLI tells you once what to switch to: Fable 5.1 → Opus 5.5 (+2.5 points at ×0.52), GPT-6 Astra → GPT-6.1 Sol (about the same at ×0.18).
-- **Your own quota.** The Skill and CLI read your local Claude Code and Codex 5-hour and weekly windows (never uploaded). The CLI also reads ZCode's and OpenCode's (V2) local databases, read-only, for tokens per day, session and project. The CLI also keeps a local history of how much of each window you used and under which model and effort (`modelplan history`), the basis for suggesting a default effort from your own weeks, and measures your own speed per model, effort and Fast: output tok/s, time to first token, turn time and tokens, against ★ (`modelplan effort`, `modelplan history`; read from the harness logs' timestamps and token counts only). Plenty left before a reset? Step up, or turn on Codex Fast. Tight, or a recent burst that would use it up within three hours? Stay at ★ or step down, with the time it runs out. After a reset, it reminds you once to go back to the model and effort you used before (and to turn Codex Fast off).
+- **Your own quota.** The shared CLI reads your local Claude Code and Codex 5-hour and weekly windows (never uploaded). The CLI also reads ZCode's and OpenCode's (V2) local databases, read-only, for tokens per day, session and project. The CLI also keeps a local history of how much of each window you used and under which model and effort (`modelplan history`), the basis for suggesting a default effort from your own weeks, and measures your own speed per model, effort and Fast: output tok/s, time to first token, turn time and tokens, against ★ (`modelplan effort`, `modelplan history`; read from the harness logs' timestamps and token counts only). Plenty left before a reset? Step up, or turn on Codex Fast. Tight, or a recent burst that would use it up within three hours? Stay at ★ or step down, with the time it runs out. After a reset, it reminds you once to go back to the model and effort you used before (and to turn Codex Fast off).
 
 - **Gemini CLI local usage (optional).** `modelplan usage gemini enable` allows read-only tokens/model/day/session accounting from Gemini’s own local chat history. `modelplan usage gemini` displays it; `disable` stops it. No credentials or remote quota are read, and no host is called. Missing counters stay `--`.
 
@@ -36,60 +82,7 @@ Most leaderboards compare every model at its **top** setting. But inside one mod
 
 `modelplan connect copilot` opts in to monthly premium-request usage from the installed, signed-in Copilot runtime (`account.getQuota`), without starting a session or importing tokens. `modelplan disconnect copilot` disables it. If the runtime is missing or incompatible, explicitly choose the existing bridge with `modelplan connect copilot --backend codexbar`; its sign-in remains in CodexBar. `modelplan connections` discloses the runtime command, host boundary and credential handling.
 - **Plans and windows.** Coding plan prices and quotas by maker, model and price band; off-peak hours, peaks and public quota resets on a week calendar.
-- **In your tools.** One open-source Skill for any agent, plugins for Claude Code and Codex, and a single-binary CLI, all reading the same verified publication as the website.
-
-## Quick start
-
-**The Skill** works in Claude Code, Codex, Cline, Amp and 15+ other agents:
-
-```sh
-npx skills add modelplan/modelplan
-```
-
-Then ask your agent: *"Which model and effort should I use for this refactor?"* or *"My 5-hour window resets in 40 minutes, should I step up?"*
-
-<details>
-<summary><b>Claude Code plugin</b>: the Skill, <code>/modelplan:*</code> commands and a status line</summary>
-
-```text
-/plugin marketplace add modelplan/modelplan
-/plugin install modelplan@modelplan
-```
-
-The plugin fetches its own `modelplan` CLI (a pinned release, checksum-checked) in the background, so there is nothing else to install or upgrade; `/modelplan:setup` checks each part. Commands: `/modelplan:plan`, `/modelplan:effort`, `/modelplan:lineup`, and `/modelplan:statusline` to add the status line (asks before changing your settings). [More](claude-code/)
-
-</details>
-
-<details>
-<summary><b>Codex plugin</b>: the Skill plus a GPT effort dashboard</summary>
-
-```sh
-codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
-codex plugin add modelplan-codex@modelplan
-```
-
-Ask Codex to *"Open the ModelPlan dashboard"*. Needs Node.js 22+, found automatically when Codex has one. Setup check, optional CLI and uninstall: [more](codex/)
-
-</details>
-
-<details>
-<summary><b>modelplan CLI</b>: a single static binary for macOS, Linux and Windows</summary>
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
-modelplan lineup --dev anthropic
-```
-
-Windows: download from [Releases](https://github.com/modelplan/modelplan/releases). With Go: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. The Skill and plugins use it when it is installed and work without it. [More](cli/)
-
-</details>
-
-<details>
-<summary><b>Skill by hand</b></summary>
-
-Copy [`skills/model-plan`](skills/model-plan/) into `~/.claude/skills/model-plan` or your agent's skills directory. It needs only a shell and anonymous HTTPS.
-
-</details>
+- **In your tools.** A Mac App for people, plugins for automatic in-agent help, and a Skill for any coding agent, all using the CLI data engine and reading the same verified publication as the website.
 
 ## What you get
 
@@ -111,7 +104,7 @@ Move the throttle and see ability, cost and task time for every native effort; s
 <tr>
 <td width="56%" valign="top">
 
-**Claude Code status line**: live model and effort, 5-hour and weekly usage, the reset countdown, and a hint when it is worth acting (`↑High ×1.37` before a reset with allowance left, `↓` when a window is tight, `↺★` after a reset).
+**Optional Claude Code status line**: live model and effort, 5-hour and weekly usage, the reset countdown, and a hint when it is worth acting (`↑High ×1.37` before a reset with allowance left, `↓` when a window is tight, `↺★` after a reset).
 
 <img src="docs/assets/statusline-en.png" alt="Claude Code status line">
 
@@ -154,11 +147,12 @@ flowchart LR
   P --> W["modelplan.ai"]
   P --> A["Read-only API<br/>/v1/client · llms.txt"]
   A --> K["Skill"]
-  A --> C["modelplan CLI"]
-  C --> CC["Claude Code plugin<br/>status line · hooks"]
-  C --> CX["Codex plugin<br/>dashboard · hooks"]
+  A --> C["Shared CLI data engine"]
+  C --> CC["Claude Code plugin<br/>automatic help · optional status line"]
+  C --> M["Mac App<br/>dashboard for people"]
+  C --> CX["Codex plugin<br/>automatic help · existing panel"]
   Q["Your quota files<br/>(stay on your machine)"] --> C
-  Q --> K
+  C --> K
 ```
 
 Every client reads only ModelPlan's verified public publication and the quota files your harness already writes locally. Rankings, verdicts and multipliers come from the publication; clients never compute their own. Formulas and sources: [METHODOLOGY.md](METHODOLOGY.md).
@@ -216,15 +210,26 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 
 </details>
 
+## Advanced: standalone CLI
+
+The CLI is the shared data engine shipped with the App and plugins, and installed by the Skill only with consent. Install it separately only for terminal workflows or integrations:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
+modelplan lineup --dev anthropic
+```
+
+This standalone installer uses the latest release and verifies its checksum, installing into `~/.local/bin` without editing shell profiles. Windows: use [Releases](https://github.com/modelplan/modelplan/releases). Go users: `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`. [CLI documentation](cli/) · [Installation guide](docs/install.md)
+
 ## Repository
 
 | | Directory | What it is |
 | --- | --- | --- |
-| **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
-| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session |
-| Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
-| Desktop app (preview) | [`desktop/`](desktop/) | A macOS menu bar app: the quota left and the current hint in the menu bar, a popover with your sessions, quota and effort curves, and a notification once per piece of advice. Unsigned builds for now |
-| `modelplan` CLI | [`cli/`](cli/) | Single static binary: `lineup`, `effort`, `models`, `quota`, `advise`, `statusline`, `sync`, `doctor` |
+| Mac App (preview) | [`desktop/`](desktop/) | Dashboard for people, with plugin installation assigned to Settings; ships the CLI engine |
+| Claude Code plugin | [`claude-code/`](claude-code/) | Automatic in-agent help, bundled Skill + CLI, explicit slash commands and an optional status line |
+| Codex plugin | [`codex/`](codex/) | Automatic in-agent help, bundled Skill + CLI, and the existing feature-frozen panel |
+| ModelPlan Skill | [`skills/model-plan/`](skills/model-plan/) | Any coding agent; public answers on demand and one consent-based CLI offer for personal quota |
+| `modelplan` CLI (Advanced) | [`cli/`](cli/) | Shared data engine; standalone terminal installation is an advanced option |
 | Open data | [`data/`](data/) | The reviewed data behind the site: plan tiers, prices, quota metering, calendars, model identities and effort policies. Mirrored from modelplan.ai on every change, one pull request each |
 | Methodology | [`METHODOLOGY.md`](METHODOLOGY.md) | How ability, cost, time and the ★ effort are worked out, and the sources |
 

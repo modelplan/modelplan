@@ -3,7 +3,7 @@
 <a href="https://modelplan.ai/?lang=zh"><img src="docs/assets/banner-zh.jpg" alt="ModelPlan：用哪个模型、开哪一档、买哪个套餐" width="100%"></a>
 
 **写代码用哪个 AI 模型、开哪一档推理、再往上推一档值不值？**<br>
-ModelPlan 用实时、可复核的公开数据回答，网页上能看，在 Claude Code、Codex 和终端里也能直接用。
+ModelPlan 用实时、可复核的公开数据回答，可在 Mac 仪表盘查看，通过插件获得 Agent 内的自动帮助，也可在任何 coding agent 中使用 Skill。
 
 [![Release](https://img.shields.io/github/v/release/modelplan/modelplan?style=flat-square&color=df604c&label=release)](https://github.com/modelplan/modelplan/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/modelplan/modelplan/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/modelplan/modelplan/actions/workflows/ci.yml)
@@ -16,15 +16,61 @@ ModelPlan 用实时、可复核的公开数据回答，网页上能看，在 Cla
 
 </div>
 
-## 为什么用 ModelPlan
+## 快速开始
 
-[选择入口：Mac App、插件或 Skill](docs/product-surfaces.md)。
+选择三个入口之一：**Mac App、插件、Skill**。[产品分工](docs/product-surfaces.md) · [安装指南](docs/install.md)
+
+### Mac App — 给人看的仪表盘
+
+在 [Mac App 预览版](desktop/README.md#try-a-build) 一起看模型、档位、自己的额度和重置时间。App 自带 CLI 数据引擎，无需另在终端安装。插件安装入口放在 App 的 Settings；当前预览版仍需接好安装集成，暂时使用下面的宿主命令。
+
+### 插件 — Claude Code 和 Codex 内的自动帮助
+
+插件自带 Skill 和锁定版本、核对 SHA-256 的 CLI。**自动提示默认开启，可以关闭**；关闭后显式命令和已有面板仍可使用。
+
+<details>
+<summary><b>Claude Code 插件</b></summary>
+
+```text
+/plugin marketplace add modelplan/modelplan
+/plugin install modelplan@modelplan
+```
+
+运行 `/modelplan:setup`，再使用 `/modelplan:plan`、`/modelplan:effort` 或 `/modelplan:lineup`。`/modelplan:setup automatic-hints off` 关闭自动提示，`on` 恢复。`/modelplan:statusline` 是**可选显示**，不是读取额度的前提。[详情](claude-code/)
+
+</details>
+
+<details>
+<summary><b>Codex 插件</b></summary>
+
+```sh
+codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
+codex plugin add modelplan-codex@modelplan
+```
+
+让 Codex 检查 ModelPlan 设置，或关闭/开启自动提示。已有面板保留并冻结功能，新视觉功能放在 App 和网站。需要 Node.js 22+，存在兼容运行时时会自动查找。[详情](codex/README.zh-CN.md)
+
+</details>
+
+### Skill — 在任何 coding agent 中按需问答
+
+```sh
+npx skills add modelplan/modelplan
+```
+
+问 Agent：「这个重构任务用哪个模型、开哪一档？」公开模型和档位问答无需 CLI。首次问到**自己的额度**且没有 CLI 时，Skill 只问一次是否安装锁定版本、核对校验值的 CLI 到 `~/.local/bin`；只在同意后安装，拒绝后不再询问。CLI 检测已登录的工具，无法读取的数据保持未知。
+
+手动安装时，把 [`skills/model-plan`](skills/model-plan/) 复制到 Agent 的 skills 目录，例如 `~/.claude/skills/model-plan`。需要 shell 和匿名 HTTPS。
+
+使用阶梯是 **Skill → Skill + CLI → 插件**；App 在旁边提供给人看的仪表盘。单独安装 CLI 属于[高级用法](#高级用法单独安装-cli)。
+
+## 为什么用 ModelPlan
 
 大多数榜单只比各模型的**最高档**。但同一个模型从 Low 推到 Max，成本和耗时往往翻好几倍，能力只多几分。你真正在用的，是「某个模型的某一档」。
 
 - **★ 推荐档：** 给每个模型算出最值的档位，并且明确告诉你再升一档能多拿几分（`+4.8`）、要多花几倍（`×1.37`）。
 - **推荐档下的榜单：** 每个模型都按自己的 ★ 推荐档上榜，也就是你实际会用的配置；能力旁边同时列出单个参考编程任务的成本和耗时，被超越的模型（更贵又不更强）会直接标出来；你正好在用这样的模型时，命令行会提醒一次该换哪个：Fable 5.1 → Opus 5.5（能力 +2.5 分，成本 ×0.52），GPT-6 Astra → GPT-6.1 Sol（能力相当，成本 ×0.18）。
-- **结合你的额度：** Skill 和命令行读取本机 Claude Code、Codex 的 5 小时和每周额度（只在本机读，不上传）。命令行还会只读打开 ZCode 和 OpenCode（V2）的本地数据库，按天、会话和项目统计 token。命令行还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history`），以后据此按你自己的使用情况建议默认档位；还会实测你自己在各模型、档位和 Fast 下的速度：输出 tok/s、首字延迟、每轮耗时和 token，并和 ★ 推荐档对比（`modelplan effort`、`modelplan history` 查看；只读日志里的时间戳和 token 数）。快重置还剩很多？升一档，或开 Codex Fast。额度紧，或最近用得猛、3 小时内就会用完？守住 ★ 或降一档，并告诉你大约多久用完。重置之后，提醒你一次换回之前用的模型和档位（Codex 开了 Fast 也会提醒关掉）。
+- **结合你的额度：** 共享 CLI 读取本机 Claude Code、Codex 的 5 小时和每周额度（只在本机读，不上传）。命令行还会只读打开 ZCode 和 OpenCode（V2）的本地数据库，按天、会话和项目统计 token。命令行还会在本机记下每个额度周期用到多少、花在哪个模型和档位上（`modelplan history`），以后据此按你自己的使用情况建议默认档位；还会实测你自己在各模型、档位和 Fast 下的速度：输出 tok/s、首字延迟、每轮耗时和 token，并和 ★ 推荐档对比（`modelplan effort`、`modelplan history` 查看；只读日志里的时间戳和 token 数）。快重置还剩很多？升一档，或开 Codex Fast。额度紧，或最近用得猛、3 小时内就会用完？守住 ★ 或降一档，并告诉你大约多久用完。重置之后，提醒你一次换回之前用的模型和档位（Codex 开了 Fast 也会提醒关掉）。
 
 - **Gemini CLI 本机用量（可选）：** `modelplan usage gemini enable` 启用只读统计 Gemini 自己的本机聊天历史，按模型、日期和会话显示 token。用 `modelplan usage gemini` 查看，`disable` 关闭。不读取凭据或远程额度，不访问任何主机；缺失计数显示为 `--`。
 
@@ -36,60 +82,7 @@ ModelPlan 用实时、可复核的公开数据回答，网页上能看，在 Cla
 
 `modelplan connect copilot` 可选启用已登录的 Copilot 运行时，通过 `account.getQuota` 读取每月高级请求用量，不创建会话、不导入 token。`modelplan disconnect copilot` 关闭读取。运行时缺失或不兼容时，可显式选择现有桥接：`modelplan connect copilot --backend codexbar`，登录仍由 CodexBar 保管。`modelplan connections` 显示运行时命令、主机边界和凭据处理方式。
 - **套餐与时段：** 按厂商、模型、价位比较 Coding 套餐的价格和额度；优惠时段、高峰时段和官方额度重置放在周历上。
-- **在你的工具里：** 一个开源 Skill 适配各种 Agent，另有 Claude Code 和 Codex 插件、单文件命令行，和网站读同一份已核验的公开数据。
-
-## 快速开始
-
-**Skill**：Claude Code、Codex、Cline、Amp 等 20 多个 Agent 都能用：
-
-```sh
-npx skills add modelplan/modelplan
-```
-
-然后问你的 Agent：「这个重构任务用哪个模型、开哪一档？」或者「我的 5 小时额度 40 分钟后重置，要不要升档？」
-
-<details>
-<summary><b>Claude Code 插件</b>：Skill、<code>/modelplan:*</code> 命令和状态栏</summary>
-
-```text
-/plugin marketplace add modelplan/modelplan
-/plugin install modelplan@modelplan
-```
-
-插件会在后台自动下载配套的 `modelplan` CLI（锁定版本、核对校验值），不需要另外安装或升级；`/modelplan:setup` 可逐项检查。命令：`/modelplan:plan`、`/modelplan:effort`、`/modelplan:lineup`，以及 `/modelplan:statusline`（添加状态栏，改设置前会先问你）。[详情](claude-code/)
-
-</details>
-
-<details>
-<summary><b>Codex 插件</b>：Skill 加 GPT 档位面板</summary>
-
-```sh
-codex plugin marketplace add modelplan/modelplan --sparse .agents --sparse codex
-codex plugin add modelplan-codex@modelplan
-```
-
-对 Codex 说「打开 ModelPlan 看板」。需要 Node.js 22+，Codex 自带时会自动使用。安装检查、可选 CLI 与卸载：[详情](codex/README.zh-CN.md)
-
-</details>
-
-<details>
-<summary><b>modelplan 命令行</b>：macOS、Linux、Windows 单个静态可执行文件</summary>
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
-modelplan lineup --dev anthropic --lang zh
-```
-
-Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载；用 Go：`go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。装了它 Skill 和插件会更快，没装也能用。[详情](cli/)
-
-</details>
-
-<details>
-<summary><b>手动安装 Skill</b></summary>
-
-把 [`skills/model-plan`](skills/model-plan/) 复制到 `~/.claude/skills/model-plan` 或你所用 Agent 的 skills 目录。只需要 shell 和匿名 HTTPS。
-
-</details>
+- **在你的工具里：** Mac App 是给人看的仪表盘，插件提供 Agent 内的自动帮助，Skill 适配各种 coding agent；共享 CLI 数据引擎，和网站读同一份已核验的公开数据。
 
 ## 能做什么
 
@@ -111,7 +104,7 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 <tr>
 <td width="56%" valign="top">
 
-**Claude Code 状态栏**：实时显示模型和档位、5 小时与每周用量、重置倒计时；值得动手时给出提示（快重置还有余量时 `↑High ×1.37`，额度紧时 `↓`，重置后 `↺★`）。
+**Claude Code 可选状态栏**：实时显示模型和档位、5 小时与每周用量、重置倒计时；值得动手时给出提示（快重置还有余量时 `↑High ×1.37`，额度紧时 `↓`，重置后 `↺★`）。
 
 <img src="docs/assets/statusline-zh.png" alt="Claude Code 状态栏">
 
@@ -122,7 +115,7 @@ Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载�
 </td>
 <td width="44%" valign="top">
 
-**Codex 面板**：GPT 模型按 ★ 推荐档比较、带 ⚡ 开关的档位曲线、你的 Codex 额度和官方重置公告。
+**Codex 现有面板（功能冻结）**：GPT 模型按 ★ 推荐档比较、带 ⚡ 开关的档位曲线、你的 Codex 额度和官方重置公告。
 
 <img src="docs/assets/codex-zh.jpg" alt="Codex 里的 ModelPlan 面板">
 
@@ -154,11 +147,12 @@ flowchart LR
   P --> W["modelplan.ai"]
   P --> A["只读 API<br/>/v1/client · llms.txt"]
   A --> K["Skill"]
-  A --> C["modelplan 命令行"]
-  C --> CC["Claude Code 插件<br/>状态栏 · hooks"]
-  C --> CX["Codex 插件<br/>面板 · hooks"]
+  A --> C["共享 CLI 数据引擎"]
+  C --> CC["Claude Code 插件<br/>自动帮助 · 可选状态栏"]
+  C --> M["Mac App<br/>给人看的仪表盘"]
+  C --> CX["Codex 插件<br/>自动帮助 · 已有面板"]
   Q["你的额度文件<br/>（只留在本机）"] --> C
-  Q --> K
+  C --> K
 ```
 
 所有客户端只读取 ModelPlan 已核验的公开发布，以及你的工具本来就写在本机的额度文件。排名、结论和倍数都来自发布数据，客户端从不自己排名。公式与来源见 [METHODOLOGY.zh-CN.md](METHODOLOGY.zh-CN.md)。
@@ -216,15 +210,26 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 
 </details>
 
+## 高级用法：单独安装 CLI
+
+CLI 是 App 和插件自带的数据引擎，Skill 也会在征得同意后安装。只有终端工作流或集成需要单独安装：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh
+modelplan lineup --dev anthropic --lang zh
+```
+
+此独立安装器使用最新发布版并核对校验值，安装到 `~/.local/bin`，不改 shell 配置。Windows 从 [Releases](https://github.com/modelplan/modelplan/releases) 下载。Go 用户可运行 `go install github.com/modelplan/modelplan/cli/cmd/modelplan@latest`。[CLI 文档](cli/) · [安装指南](docs/install.md)
+
 ## 仓库结构
 
 | | 目录 | 说明 |
 | --- | --- | --- |
-| **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
-| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及一个 prompt hook：新提示只显示给你，Claude 每个会话只收一份简短的任务开始简报 |
-| Codex 插件 | [`codex/`](codex/) | Skill 和 GPT 档位面板：⚡ Fast / Ultrafast 开关、你的 Codex 额度、官方重置公告 |
-| 桌面版（预览） | [`desktop/`](desktop/) | macOS 菜单栏应用：菜单栏显示剩余额度和当前提示，弹窗里看会话、额度和档位曲线，每条提醒只通知一次。目前是未签名的测试构建 |
-| `modelplan` 命令行 | [`cli/`](cli/) | 单个静态可执行文件：`lineup`、`effort`、`models`、`quota`、`advise`、`statusline`、`sync`、`doctor` |
+| Mac App（预览） | [`desktop/`](desktop/) | 给人看的仪表盘，插件安装入口放在 Settings；自带 CLI 引擎 |
+| Claude Code 插件 | [`claude-code/`](claude-code/) | Agent 内的自动帮助，自带 Skill + CLI、显式命令和可选状态栏 |
+| Codex 插件 | [`codex/`](codex/) | Agent 内的自动帮助，自带 Skill + CLI，保留功能冻结的已有面板 |
+| ModelPlan Skill | [`skills/model-plan/`](skills/model-plan/) | 适配任何 coding agent；按需回答公开问题，问到个人额度时只询问一次是否安装 CLI |
+| `modelplan` CLI（高级） | [`cli/`](cli/) | 共享数据引擎；单独在终端安装属于高级选项 |
 | 开放数据 | [`data/`](data/) | 网站背后经过审核的数据：套餐档位、价格、额度计量、日历、模型身份和档位策略。每次变化从 modelplan.ai 同步过来，一次一个 PR |
 | 方法与来源 | [`METHODOLOGY.zh-CN.md`](METHODOLOGY.zh-CN.md) | 能力、成本、耗时和 ★ 推荐档怎么算，以及数据源 |
 

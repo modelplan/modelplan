@@ -1,6 +1,12 @@
-# modelplan — Go thin client
+# modelplan — shared CLI data engine
 
-This is a read-only, anonymous, single static binary with no GUI. It reads the verified public publication, keeps the shared local cache (see [`../README.md`](../README.md)) and prints the hangar views in a terminal. The Claude Code and Codex plugins call it (their hooks run `advise --hook`), and the desktop menu-bar app will be built on it later. Install: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`).
+Start with the [Mac App, plugins or Skill](../docs/product-surfaces.md): the App is a dashboard for people, plugins provide automatic in-agent help, and the Skill works in any coding agent. The App and plugins ship this CLI; the standalone Skill asks once before installing it for your own quota.
+
+**Advanced: standalone installation.** For terminal workflows or integrations, use `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`; no shell profile edits). See the [installation guide](../docs/install.md).
+
+**高级：单独安装。** 优先选择 [Mac App、插件或 Skill](../docs/product-surfaces.md)。App 和插件自带 CLI；独立 Skill 问到个人额度时只询问一次，征得同意后再安装。终端工作流和集成才需要单独安装，安装器核对校验值，放入 `~/.local/bin`，不改 shell 配置。
+
+The CLI verifies the public publication, manages the shared local cache and supplies data to all surfaces. It also provides terminal views for advanced users. There is currently no `modelplan plugin install claude-code|codex` command; App Settings needs a supported plugin-installer integration.
 
 ```sh
 cd cli
