@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: MIT -->
 # D590: automatic agent usage detection
 
-**Design for owner review · aligned with PR213 on 2026-10-27 · implementation awaits approval.**
+**Design approved in direction · coordinator corrections on 2026-10-27 · documentation revision before Step B.**
 
 [Clients, readers and updates][ARCH] is authoritative (PR213, `docs/clients-and-readers`, reviewed through section 9 at `1666e474df18fe976b016ce2bf3eb251773cf59e`). This note specifies FEEDFIX’s reader/catalogue contracts under it; it does not create a second client architecture.
 
-Goal: recognise tools already used on the Mac without installing a ModelPlan status line, requesting a pasted API key, or installing another monitor. Use native readers for Claude Code, Codex, ZCode/GLM, Cursor, **Grok Build**, GitHub Copilot and Gemini CLI. For every other CodexBar-supported provider, automatically use the bundled, pinned CodexBar CLI **when its tool is detected and has consent**. Native readers are preferred; upstream-change failures can use the supported CodexBar fallback, and the catalogue can select `native | codexbar | off`. Build on existing readers and [PR209](https://github.com/modelplan/modelplan/pull/209). Based on the supplied October 23 research and primary sources below; no real credentials or authenticated usage endpoints were accessed.
+Goal: recognise tools already used on the Mac without installing a ModelPlan status line, requesting a pasted API key, or installing another monitor. Use native readers for Claude Code, Codex, ZCode/GLM, Cursor, **Grok Build**, GitHub Copilot and Gemini CLI. **Automatic CodexBar fallback is OFF for all seven head providers.** Long-tail tools use the bundled helper only after detection, consent and a passing safety audit of that exact provider/source/pin; unaudited routes are **“not yet supported.”** Catalogue `native | codexbar | off` preferences cannot bypass this admission rule. Build on existing readers and [PR209](https://github.com/modelplan/modelplan/pull/209). Based on the supplied October 23 research and primary sources below; no real credentials or authenticated usage endpoints were accessed. This coordinator safety decision supersedes earlier automatic-fallback language in this note/PR213.
 
 The [reader contract appendix](agent-reader-contracts.md) defines the pinned CodexBar field translations, every-provider daily upgrade gate and failure-state contract. It is part of this design, not an implementation or live-account acceptance claim.
 
@@ -33,9 +33,22 @@ Consent text: **“Allow ModelPlan on this macOS user account—App, plugins and
 
 - After consent, read only the selected profile’s allowed fields. On macOS FEEDFIX invokes **`/usr/bin/security`** directly with fixed argument arrays (`find-generic-password`, the selected service/account, `-w` for the authorised value read), no shell or alternative binary. Capture its stdout only in bounded private memory; never forward/log it or credential-bearing stderr. Show the genuine macOS prompt; “Always Allow” applies to Apple’s stable binary rather than each ad-hoc CLI. Deny is persisted for that tool/source by CLIJIT across every CLI copy; it is **never automatically re-prompted**, including after restart, update, rename or fallback. Only an explicit Settings Retry permits another interactive attempt. No `dump-keychain`, whole-store scans or prompt loop; background refresh never starts a new interactive grant. [Upstream security reader][SEC]
 - Never refresh (even in memory), rewrite, move, delete or copy another tool's credentials into a store. No login/repair, settings changes, key/device-ID creation, inference, turns, warm-ups, reset-credit consumption or browser-cookie harvesting. Expired/rejected tokens mean `open <tool> to refresh`; reread after owner-tool state changes.
-- One usage call/provider/**300 seconds minimum**, shared across processes, tools, manual refresh, resume, native and fallback. Persist a ModelPlan-owned attempt gate/lock; use monotonic timing and conservative restart/clock-rollback handling. Errors back off 10/20/40/60 minutes or longer `Retry-After`; authentication failures wait for tool-state changes. Nothing bypasses the five-minute floor.
-- Reserve before I/O, failures included. Metadata consumes the same network budget; local RPC handshakes do not. No same-cycle endpoint/fallback waterfall. Allowlist HTTPS hosts/paths, reject redirects/custom destinations, bound reads/processes/responses. App-scheduled refresh runs only while Dock/sliver or cockpit is visible and awake; preserve its one-child scheduler and read-only desktop reads. Standalone/plugin requests use the same CLI consent and provider gates without requiring the App to be open.
+- One **provider read** per **300 seconds minimum**, shared across processes, tools, accounts, manual refresh, resume, native and admitted bridge paths. A read is one bounded transaction producing one consistent reading, not one HTTP request. Persist a ModelPlan-owned attempt gate/lock; use monotonic timing and conservative restart/clock-rollback handling. Errors back off 10/20/40/60 minutes or longer `Retry-After`; authentication failures wait for tool-state changes. Nothing bypasses the five-minute floor.
+- Reserve the read before I/O, failures included. Its endpoint allowance is fixed below; no automatic HTTP retries, same-cycle source waterfall or requests beyond that allowance. Local RPC handshakes do not consume HTTP allowance. Allowlist HTTPS hosts/paths, reject redirects/custom destinations, bound reads/processes/responses. App-scheduled refresh runs only while Dock/sliver or cockpit is visible and awake; preserve its one-child scheduler and read-only desktop reads. Standalone/plugin requests use the same CLI consent and provider gates without requiring the App to be open.
 - Secrets stay transient in memory, never output/logs/cache/receipts. Persist/display identities only as installation-keyed HMACs, separated by billing authority/region/account/workspace (common authority for a verified shared pool). No raw identities or plain hashes. Cache sanitised last-good readings with original age; errors never make them fresh. Account switches invalidate bindings. Passed resets, missing/stale/unbound readings and local token totals never imply fresh quota or entitlement.
+
+### Per-provider read budget
+
+| Provider | Maximum calls in one admitted read | Stable metadata |
+| --- | --- | --- |
+| Claude Code | **2**: `/api/oauth/usage` + `/api/oauth/profile` | Profile/identity binding, up to 24 h; usually usage only. No query-variant retry or extra reset-credit request. |
+| Cursor | **2**: `get-plan-info` + `GetCurrentPeriodUsage` | Plan/merged status and period, up to 24 h; usually period usage only. Replace today's three-call summary/plan/unified sequence; no additional `/api/usage-summary` or `/api/usage` waterfall. |
+| Gemini CLI | **2**: `loadCodeAssist` + `retrieveUserQuota` | Code Assist project/tier, up to 24 h; usually quota only. No Cloud Resource Manager discovery. |
+| Codex, ZCode/GLM, Grok Build, Copilot, Kimi and each admitted long-tail reader | **1** usage HTTP request or tool-owned quota RPC | Use local identity/metadata where available; no additional remote identity/discovery call. A route needing more remains unsupported until explicitly redesigned. |
+
+Cache stable metadata **up to 24 hours**, keyed to the same profile, credential-generation fingerprint and account/workspace binding; invalidate it on any switch, expiry, denial, revocation or contradictory provider evidence. Persist only sanitised metadata and keyed identity hashes; raw project/account selectors remain transient or are reread from their authorised tool-owned source. If a new process cannot reconstruct a required selector, use the metadata request within the same two-call allowance. Never persist a secret or raw identity merely to achieve the one-request fast path.
+
+One read assembles fresh usage with valid same-binding cached metadata, or obtains both in that transaction. Never fetch identity in one five-minute slot and splice it onto another slot's usage, borrow stale/ambiguous metadata, or make a third call after failure. Failed identity validation leaves fresh usage unbound and the previous verified reading aged; it does not refresh the old subscription. Record request-count, binding invalidation and partial-failure fixtures for every multi-call reader.
 
 ## Section 9 reader admission and display
 
@@ -56,39 +69,43 @@ FEEDFIX owns one router under the shared provider lock and attempt gate. Catalog
 
 | Catalogue `preferred` | Effective behaviour |
 | --- | --- |
-| `native` | Use the native reader first. For a detected long-tail tool with no native implementation, use its supported bundled CodexBar reader. A typed `upstream-schema-change` or unexplained non-auth upstream error makes CodexBar eligible when supported. |
-| `codexbar` | Bypass native and use the pinned CodexBar reader under existing consent; report the catalogue preference. This is the remote switch while a native fix ships. |
+| `native` | Use native. Head upstream-change errors retain the aged reading and safe error; **never automatically run CodexBar**. A long-tail tool without native code can use the helper only when its exact route has `codexbar.audited:true` and a matching verified pin. |
+| `codexbar` | An explicit catalogue selection still requires the exact provider/source/pin safety audit and consent. All head bridge entries start unaudited/disabled; a remote preference alone cannot enable them. |
 | `off` | Stop new provider/credential reads and pending fallback, retaining only correctly aged historical display. It is not a consent revocation; explicit disconnect deletes readings. |
 
-A fallback reports **“via CodexBar (fallback)”** and its native failure reason; it replaces the selected reading, never adds another subscription. Expired/rejected login, missing consent/credential, permission denial, rate limiting and ordinary network failures do not trigger cross-reader credential hunting. Preserve `open <tool> to refresh`, backoff or the applicable unavailable reason. Once native is repaired and preferred again, retry native when due.
+An admitted bridge reports **“via CodexBar”** (and “fallback” only for an explicitly admitted non-head fallback); it replaces the selected reading, never adds another subscription. Expired/rejected login, missing consent/credential, permission denial, rate limiting and ordinary network failures do not trigger cross-reader credential hunting. Preserve `open <tool> to refresh`, backoff or the applicable unavailable reason. Once native is repaired and preferred again, retry native when due.
 
-**Retry timing:** upstream-change fallback is automatic but not a second usage call in the same five-minute window. Reserve both readers through the same gate; schedule the retry at the later of the next eligible slot and error backoff. A catalogue switch does not clear either timestamp. One child at a time; only one successful source is selected per subscription.
+**Retry timing:** no automatic head fallback. Any admitted non-head source change waits for the later of the next eligible provider read and error backoff; never start a second reader inside the failed read. A catalogue switch does not clear either timestamp. One child at a time; only one successful source is selected per subscription.
 
 **Helper pin:** the verified publication’s `codexbar` version/platform SHA-256 **replaces the compiled pin** as active authority. `cli/internal/quota/codexbar-pin.json` (currently 0.81.0) is only a bootstrap/last-good compatibility seed during migration. FEEDFIX owns bounded fetching, extraction, atomic verified-cache activation and invocation; CLIJIT supplies the admitted pin from its publication consumer. A checksum/fetch failure keeps the last verified catalogue/provider binding, helper and reading, never an unverified binary or arbitrary PATH copy. Ship its MIT notice in `cli/THIRD-PARTY-NOTICES.md` and App About → Licences. No user install; one provider/explicit source per bounded private JSON child, never `--provider all`.
 
-Coverage is the complete pinned CodexBar registry, not today’s five-entry map. Audit every source against the safeguards: generic `--source auto` can renew tokens, cache secrets or make multiple requests. Require tested read-only/one-request behaviour, including `/usr/bin/security` for helper Keychain reads (never a direct-framework fallthrough); any necessary upstream safe mode/attributed compatibility build is a **tested CodexBar release/pin update**, not a reason to freeze the pin in ModelPlan or demand a CLI release for every helper update. Unsupported access modes stay detected with a precise reason. Native fallback obeys the same constraints. Existing native Kimi/other readers and local Qwen accounting remain available. Translation must include encoded credits/balances, spend/cost, request counts and estimated confidence, not only percentage lanes; preserve useful no-window accounts. Untranslatable output is **“not supported yet”**. The [appendix](agent-reader-contracts.md#pinned-codexbar-json-not-ui-assumptions) specifies exact 0.81.0 source fields and additive destinations.
+Detection/translation contract coverage spans the complete pinned registry; **runtime eligibility does not**. At 0.81.0, CodexBar can refresh credentials, enumerate projects, launch provider CLIs and cache credentials under its own Keychain service; its default Keychain reader uses Security.framework. A checksum and JSON-output flag do not make it safe. Audit each provider's complete selected call graph, including failure paths: **no refresh, credential copy/cache, provider CLI launch, inference, browser import or direct-framework Keychain access**; one usage call for long-tail readers. Record evidence and exact pin in `detectors[].codexbar`; false/missing audit means no invocation and “not yet supported.” No long-tail route is declared safe by this note. A future safe upstream release can be admitted per provider after audit/tests; do not execute today's unsafe route while awaiting it. [Pinned audit and available controls](agent-reader-contracts.md#codexbar-0810-safety-audit).
+
+Existing native Kimi/other readers and local Qwen accounting remain available under the same safeguards. Translation must include encoded credits/balances, spend/cost, request counts and estimated confidence, not only percentage lanes; preserve useful no-window accounts. Untranslatable output is **“not supported yet”**. The [appendix](agent-reader-contracts.md#pinned-codexbar-json-not-ui-assumptions) specifies exact 0.81.0 source fields and additive destinations; successful translation is not a safety audit.
 
 ## Provider plan, in implementation order
 
 **Access** supplies CLIJIT/App consent descriptions; **S/M/L** estimates reader work. FEEDFIX ships reader policy/Keychain plumbing with Claude; CLIJIT independently supplies consent, detection and command integration.
 
-### 1. Claude Code — M
+### 1. Claude Code — M, beta
 
-**Detect/source:** `claude`, `~/.claude` or the configured `CLAUDE_CONFIG_DIR`; after consent, read its `.credentials.json` (`claudeAiOauth`) or macOS Keychain service `Claude Code-credentials`, respecting profile-specific naming. **Usage:** `GET https://api.anthropic.com/api/oauth/usage`, bearer plus `anthropic-beta: oauth-2025-04-20`; existing grant needs usage/profile access (`user:profile`). Scope: returned five-hour/weekly/model windows and extra spend, separately; compatibility endpoint, not Admin API. **Expiry:** check access-token expiry/scopes; apply shared backoff and owner refresh guidance. **Never:** install a status line, run `/usage`/`/status` in a PTY, use inference-only grants, read Claude Desktop cookies or rotate OAuth. **Access:** “Read Claude Code's saved sign-in, with a possible macOS Keychain prompt, and authenticate to Anthropic to read account usage.” [C]
+**Detect/source:** `claude`, Claude Code project records or its `.credentials.json` under the authorised `CLAUDE_CONFIG_DIR` (default `~/.claude`). After consent, read `claudeAiOauth` from the selected plaintext file or the proven literal default Keychain service `Claude Code-credentials`. Directory-keyed Keychain names are not guessed: v1 keychain-only custom profiles stay undetectable/unsupported until an evidenced typed derivation ships. Claude Desktop's bundle ID alone does not detect Claude Code. **Usage:** beta compatibility endpoints `GET https://api.anthropic.com/api/oauth/usage` and `/api/oauth/profile`, bearer plus `anthropic-beta: oauth-2025-04-20`; require `user:profile`. **Source is CodexBar 0.81.0, not an official supported quota API contract**: it appends `?cedar_ember=1` to usage and uses profile for identity. Native v1 uses the base usage route, without query retry or extra reset calls. One read is at most usage + profile (2); cache sanitised profile binding up to 24 h. Scope: returned five-hour/weekly/model windows and extra spend, not Admin API. **Expiry:** reject expired/insufficient-scope credentials; shared backoff and `open Claude Code to refresh`. **Never:** plugin/status-line dependency, delegated refresh, CLI/PTY probes, inference-only grants, browser-cookie import or OAuth rotation. **Access:** “Read Claude Code's saved sign-in, with a possible macOS Keychain prompt, and authenticate to Anthropic to read account usage and verify its account identity.” [Pinned CodexBar endpoint evidence][C], [fetcher][CO]
 
-**Passive session state — separate M PR:** read Claude Code's own `projects/**/*.jsonl` under each authorised `CLAUDE_CONFIG_DIR` (default `~/.claude`), independently of login quota. Project only the newest eligible assistant turn per session: `message.model`, top-level `effort`, and observed `message.usage.speed`; absent fields remain unknown. Select the newest interactive session as **`recent-thread`**, or **`current-thread`** only when an explicit caller session selector matches. Retain only model/effort/Fast and a keyed-hash session key, plus the existing observation/attribution metadata; project labels follow the existing preference. No message content, raw IDs or transcript paths are stored. The plugin hook and status line are optional extra sources that **override nothing**, including unknown session fields. No installation, launch, subscription binding or quota fetch is needed to read local state. See [field evidence, selection rules and synthetic fixtures](agent-reader-contracts.md#claude-code-passive-current-session-reader). Additional consent line: **“Read Claude Code's local session records for model, effort and Fast state; message contents stay unrecorded and nothing is sent.”**
+**Passive session state — separate M PR, beta:** independently scan the selected root's `projects/**/*.jsonl`; retain the newest eligible assistant turn per session, selecting an evidenced interactive session as **`recent-thread`**, or **`current-thread`** only for a matching explicit caller selector. `message.model` is the model candidate. **Top-level `effort` and `message.usage.speed` are hypotheses pending the owner's sanitised first-party fixture**; optional versioned adapters may be enabled only after that evidence, and until then both values stay unknown even if a synthetic example contains them. No settings/default inference. Retain only model/effort/Fast and a keyed session hash plus existing observation/attribution metadata; project labels follow the existing preference. No message content, raw IDs or paths are stored. Optional hooks/status-line snapshots override nothing, including unknown fields. See [evidence limits, selection and synthetic tests](agent-reader-contracts.md#claude-code-passive-current-session-reader). Additional consent line: **“Read Claude Code's local session records for model, effort and Fast state; message contents stay unrecorded and nothing is sent.”**
 
 ### 2. Codex app / CLI / IDE — S; HTTP fallback M
 
-**Detect/source:** Codex app, `codex`, known IDE extension manifests and `$CODEX_HOME`/`~/.codex` metadata. Prefer item 1's `codex app-server`: handshake, `account/read` with `refreshToken:false`, and `account/rateLimits/read`; credentials stay with Codex. Bind reported account/workspace; app, CLI and IDE may differ. If RPC is unavailable, a later budgeted attempt may read that home's `auth.json` OAuth access token and account selector. **Usage:** RPC windows/reset-credit inventory; fallback `GET https://chatgpt.com/backend-api/wham/usage` with matching account context. **Expiry:** stale HTTP tokens require opening Codex; no delegated renewal. **Never:** refresh-token exchange, external OpenCode auth import, account switching, separate reset-credit requests or consumption. **Access:** “Ask Codex for account usage using its sign-in; if needed, read its saved access token to authenticate to OpenAI.” [X]
+**Detect/source:** `codex`, Codex app/known IDE extension installation metadata and authorised `$CODEX_HOME`/`~/.codex` metadata. Prefer item 1's tool-owned `codex app-server`: handshake, `account/read` with `refreshToken:false`, and **`account/rateLimits/read` with `excludeResetCreditDetails:true`**. Local account identity/setup RPC is distinct from the single quota RPC per admitted read. Credentials stay with Codex. Bind the returned account/workspace; app, CLI and IDE can differ. If RPC is unavailable, a later admitted read may use only that home's fresh `auth.json` access token/account selector. **Usage:** rate-limit windows and actual wire **`credits{hasCredits,unlimited,balance}`**; `usageCredits` is only ModelPlan's cache/JSON name. The reset-credit count can still be returned, but omitted details mean unknown expiry; no follow-up lookup. HTTP fallback: one `GET https://chatgpt.com/backend-api/wham/usage` with matching context. **Expiry:** open Codex to refresh; no delegated renewal. **Never:** refresh-token exchange, OpenCode auth import, account switching, reset-credit detail requests or redemption. **Access:** “Ask Codex for account usage using its sign-in; if needed, read its saved access token to authenticate to OpenAI.” [X], [RPC parameter schema][CP]
 
-### 3. ZCode / GLM — L
+**Open item — M2 audit:** actual Codex Desktop/IDE session roots and their relationship to CLI homes remain unverified. Installed app/extension metadata does not prove a rollout path, current session or shared login. Do not claim alternate-root auto-discovery, read arbitrary candidate directories or infer membership from the existing present-but-unbound observation. Keep this gap visible until the bounded M2 source/location audit establishes the supported layouts.
 
-**Detect/source:** ZCode app/CLI and `~/.zcode/v2`; honour `ZCODE_DATA_BASE_DIR`. After consent, resolve selected family/plan in `setting.json`/`config.json`, then its account entry in `credentials.json` (versioned encrypted envelope); older `options.apiKey` mirrors require evidence they belong to the current account. **Usage:** selected Coding Plan key → `GET https://api.z.ai/api/monitor/usage/quota/limit` or mainland `https://open.bigmodel.cn/api/monitor/usage/quota/limit`; returned token/MCP windows only. Team selections need verified tenant selectors or remain unavailable. ZCode Start Plan JWT → `GET https://zcode.z.ai/api/v1/zcode-plan/billing/balance`, a separate balance, never GLM remaining quota. **Expiry:** reread current selection; fail closed on unknown encryption/schema or ambiguous account; owner refresh guidance on refusal. **Never:** key creation, stale-account fallback, sending a global key to China, or treating a generic API key as Coding Plan membership. **Access:** “Read ZCode's selected account credential and authenticate only to its matching Z.ai/BigModel service for quota or balance.” [Discovery][Z], [endpoint code][ZU]
+### 3. ZCode / GLM — L, beta; restricted v1
+
+**Detect/source:** ZCode app/CLI and `~/.zcode/v2`, honouring the locally approved `ZCODE_DATA_BASE_DIR`. After consent, inspect only selected family/account/plan metadata in `setting.json`/`config.json`. **No decryption of `credentials.json` in v1**, and no reproduction of its key derivation: the encrypted-envelope approach is evidenced only by third-party Token Monitor. A plaintext `options.apiKey` or other proven tool-owned plaintext source is usable **only with evidence it is the current selected account's Coding Plan key**, matching family, region and account/tenant. A generic/stale/unbound API key or keychain-only/encrypted login is **“unsupported for now”**, without a request to paste a key. **Usage:** one `GET https://api.z.ai/api/monitor/usage/quota/limit` or mainland `https://open.bigmodel.cn/api/monitor/usage/quota/limit`, selected by proven region; returned token/MCP windows only. **These endpoint/auth details are third-party-sourced from Token Monitor**, not a verified first-party ZCode contract. Team selections without a verified tenant are unsupported. Its separate `https://zcode.z.ai/api/v1/zcode-plan/billing/balance` Start Plan route is third-party research only; encrypted JWT extraction/balance reading is outside v1. **Expiry:** reject uncertain/expired credentials; open ZCode to refresh. **Never:** decrypt/derive keys, stale-account fallback, key creation, global-to-China forwarding, or infer Coding Plan entitlement from a generic key. **Access:** “Read a verified plaintext key for ZCode's current Coding Plan account and authenticate only to its matching Z.ai/BigModel quota service.” [Third-party discovery][Z], [third-party endpoints][ZU]
 
 ### 4. Cursor — M
 
-**Detect/source:** Cursor app and `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`; after consent, query only `ItemTable`'s `cursorAuth/accessToken`, read-only with bounded WAL handling. **Usage:** existing native reader's `GET https://cursor.com/api/usage-summary`; unified plans may instead use `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`, with an in-memory derived session. Select one endpoint per slot; legacy `/api/usage` and plan metadata must wait for later slots. Scope is the signed-in user's returned included pool/spend, not a team Admin API. **Expiry:** reject expired/sealed tokens; open Cursor to refresh. **Never:** decrypt browser stores, query conversations, sum incompatible plan pools or retain the session. **Access:** “Read Cursor's saved sign-in and authenticate to Cursor for your account's usage.” [U]
+**Detect/source:** Cursor app and `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`; after consent, query only `ItemTable`'s `cursorAuth/accessToken`, read-only with bounded WAL handling. **Usage:** at most **2 requests in one read**: `POST https://cursor.com/api/dashboard/get-plan-info` and `POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage`, with an in-memory derived session. Cache same-binding plan/merged metadata up to 24 h so most reads request usage only. This replaces the current summary + plan + unified three-call flow; no extra `/api/usage-summary` or legacy `/api/usage` retry. Scope: the signed-in user's returned included pool/spend, not a team Admin API. Unsupported legacy response shapes remain unsupported rather than borrowing another slot's usage. **Expiry:** reject expired/sealed tokens; open Cursor to refresh. **Never:** browser-store decryption, conversation reads, mixed plan pools, persisted session tokens or automatic CodexBar fallback. **Access:** “Read Cursor's saved sign-in and authenticate to Cursor for your account's plan and usage.” [U], [existing native routes][CU]
 
 ### 5. Grok (Grok Build) — M; shared identity integration L
 
@@ -98,9 +115,9 @@ Coverage is the complete pinned CodexBar registry, not today’s five-entry map.
 
 **Detect/source:** `copilot` or installed Copilot extension manifests. Reuse native `copilot --headless --no-auto-update --stdio`, negotiated handshake then **`account.getQuota`**, with runtime-owned authentication; no credential file is needed. **Usage/scope:** documented SDK server RPC, including premium-interaction entitlement/reset when supplied. **Expiry:** unavailable auth/capability → open Copilot to refresh; no session or login is created. IDE-only installation does not prove an installed CLI: selected extension credential-store compatibility remains unverified and must fail visibly, without asking users to install a runtime. **Never:** import an unrelated `gh` login, initiate device flow, use org billing APIs as personal quota, or invoke a turn. **Access:** “Ask your installed Copilot runtime to authenticate to GitHub and return account quota.” [G]
 
-### 7. Gemini CLI — M
+### 7. Gemini CLI — M, beta
 
-**Detect/source:** `gemini` and `~/.gemini`; after consent, fresh `~/.gemini/oauth_creds.json` access token/expiry (honour verified tool overrides). **Usage:** `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`; model bucket remaining fractions/reset, scoped to the OAuth Code Assist account/project. If project discovery requires `:loadCodeAssist`, that uses a separate budgeted slot; no Cloud Resource Manager account enumeration. API-key/Vertex modes and unsupported tiers remain separate/unavailable rather than inferred. **Expiry:** `expiry_date` safety margin, then open Gemini CLI to refresh. **Never:** Google OAuth refresh, extract client secrets, change login mode or substitute Antigravity. **Access:** “Read Gemini CLI's saved access token and authenticate to Google Code Assist for its account/project quota.” [E]
+**Detect/source:** `gemini` and `~/.gemini`; after consent, read only a fresh `~/.gemini/oauth_creds.json` access token/expiry under verified tool overrides. **Usage:** at most **2 requests in one read**: `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` for project/tier when needed, then `:retrieveUserQuota` for model-bucket fractions/reset. Cache same-binding stable project/tier metadata up to 24 h; normally only quota is fetched. Missing project after the allowed discovery step means unsupported, not Cloud Resource Manager enumeration. API-key/Vertex modes and unsupported tiers remain separate/unavailable. **Expiry:** `expiry_date` safety margin, then open Gemini CLI to refresh. **Never:** Google OAuth refresh, extract client secrets, enumerate projects, change login mode, launch a provider CLI via CodexBar or substitute Antigravity. **Access:** “Read Gemini CLI's saved access token and authenticate to Google Code Assist for its account/project and quota.” [Pinned CodexBar source, including excluded behaviours][E]
 
 ### 8. Kimi (existing native reader) — M
 
@@ -119,8 +136,8 @@ ZCode/GLM exposes a distinct MCP/tool quota shape. For other heads, using MCP do
 | Native head | Windows / scoped lanes | Credits, spend and per-request plans |
 | --- | --- | --- |
 | **Claude Code** | `five_hour` → 5h; `seven_day` and returned Opus/Sonnet/model weeks → weekly with scoped label; other returned windows keep duration/label. | Returned extra-usage spend/limit → spend meter with actual currency/reset; provider-issued prepaid credits/reset inventory only if supplied and translatable. Request counts only when actually returned; never infer from tokens, prices or percentages. |
-| **Codex app/CLI/IDE** | Each `rateLimitsByLimitId` primary/secondary maps by `windowDurationMins`; normal 300 → 5h, 10080 → weekly; monthly/other only if supplied. Preserve limit IDs/model reserve pools independently. | `usageCredits`/credit wallet → credits/balance; monthly credit caps separate from wallet; reset inventory → cards, never currency. No request quota invented for token-based limits. |
-| **ZCode / GLM** | `TOKENS_LIMIT`/`CREDIT_LIMIT` unit+number maps 5h/weekly/monthly/other; `TIME_LIMIT` MCP/tool quotas remain labelled (monthly only under the documented monthly marker/contract). | Actual MCP/API used/limit/remaining counts → requests with the true unit; token counters are not request counters. Start Plan balance is a wallet, not GLM remaining quota. No sum of overlapping tool/model quotas. |
+| **Codex app/CLI/IDE** | Each `rateLimitsByLimitId` primary/secondary maps by `windowDurationMins`; normal 300 → 5h, 10080 → weekly; monthly/other only if supplied. Preserve limit IDs/model reserve pools independently. | Wire `credits{hasCredits,unlimited,balance}` → credits/balance (`usageCredits` is our JSON name); monthly credit caps separate from wallet; returned reset count → cards with unknown expiry when details are excluded, never currency. No request quota invented for token-based limits. |
+| **ZCode / GLM** | `TOKENS_LIMIT`/`CREDIT_LIMIT` unit+number maps 5h/weekly/monthly/other; `TIME_LIMIT` MCP/tool quotas remain labelled (monthly only under the documented monthly marker/contract). | Actual MCP/API used/limit/remaining counts → requests with the true unit; token counters are not request counters. Start Plan balance would be a separate wallet, not GLM remaining quota; its encrypted-source reader is outside v1. No sum of overlapping tool/model quotas. |
 | **Cursor** | Legacy included usage is monthly; confirmed merged X Subscription included usage is weekly with its reset, never stale monthly-summary zeroes. Preserve named Auto/Other-model lanes where returned. | Legacy request plans → requests used/limit, with unlimited/unknown explicit; actual on-demand spend/caps and returned prepaid balance remain separate. Member-invisible team pools are organisation-managed, not 100% remaining. |
 | **Grok Build** | `currentPeriod.type/start/end` sets weekly/monthly/other; `creditUsagePercent` is the included pool. Legacy monthly credits never become a new X Subscription window by name alone. | Returned prepaid credit/cash units → balance; legacy used/limit cap → typed budget. API-key mode is pay-as-you-go where established, never a subscription percentage. No per-request quota without counters. |
 | **GitHub Copilot** | Returned quota cycle/reset supplies monthly or other; premium interactions, chat/completions stay separately labelled when exposed. | `account.getQuota` request counters → `requests`; newer credit-denominated entitlement remains credits, not rounded requests. Preserve explicit unlimited. Unavailable organisation entitlement is managed/unknown, not zero. |
@@ -134,28 +151,63 @@ FEEDFIX owns the schema, typed contract and first attributed catalogue port. CLI
 {
   "detectorSchemaVersion": 1,
   "detectorRevision": 1,
-  "detectors": [{
-    "providerId": "claude",
-    "displayName": "Claude Code",
-    "readerId": "native:claude-code",
-    "preferred": "native",
-    "minCli": "0.6.0",
-    "beta": true,
-    "detectionStatus": "signals",
-    "signals": [
-      {"type": "bundleId", "value": "com.anthropic.claudefordesktop"},
-      {"type": "path", "value": ".claude/.credentials.json"},
-      {"type": "keychainItem", "name": "Claude Code-credentials"},
-      {"type": "command", "name": "claude"}
-    ],
-    "provenance": [{
-      "repository": "steipete/CodexBar",
-      "commit": "ee890b5f392e70d6e20162d3e95cf9f1be265b60",
-      "path": "Sources/CodexBar/SettingsStore+ProviderDetection.swift",
-      "license": "MIT",
-      "noticeId": "codexbar-mit"
-    }]
-  }],
+  "detectors": [
+    {
+      "providerId": "claude",
+      "displayName": "Claude Code",
+      "readerId": "native:claude-code",
+      "preferred": "native",
+      "minCli": "0.6.0",
+      "beta": true,
+      "detectionStatus": "signals",
+      "signals": [
+        {
+          "id": "claude-default-file",
+          "type": "path",
+          "value": ".claude/.credentials.json"
+        },
+        {
+          "id": "claude-default-keychain",
+          "type": "keychainItem",
+          "name": "Claude Code-credentials",
+          "derivation": "literal"
+        },
+        {
+          "id": "claude-cli",
+          "type": "command",
+          "name": "claude"
+        }
+      ],
+      "provenance": [
+        {
+          "signalIds": [
+            "claude-default-file",
+            "claude-default-keychain"
+          ],
+          "repository": "steipete/CodexBar",
+          "commit": "ee890b5f392e70d6e20162d3e95cf9f1be265b60",
+          "path": "Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/ClaudeOAuthCredentials.swift",
+          "license": "MIT",
+          "noticeId": "codexbar-mit"
+        },
+        {
+          "signalIds": [
+            "claude-cli"
+          ],
+          "repository": "steipete/CodexBar",
+          "commit": "ee890b5f392e70d6e20162d3e95cf9f1be265b60",
+          "path": "Sources/CodexBar/SettingsStore+ProviderDetection.swift",
+          "license": "MIT",
+          "noticeId": "codexbar-mit"
+        }
+      ],
+      "codexbar": {
+        "audited": false,
+        "pin": null,
+        "automaticFallback": false
+      }
+    }
+  ],
   "codexbar": {
     "version": "0.81.0",
     "sha256": {
@@ -172,7 +224,11 @@ FEEDFIX owns the schema, typed contract and first attributed catalogue port. CLI
 }
 ```
 
-**Types:** positive safe-integer schema/revision; bounded literal IDs/names; semantic version strings; per-platform lowercase 64-hex SHA-256 for exact release archives. Include all supported platforms in real pins; an absent platform is unavailable, never guessed. A detector requires provider/display/reader IDs, `preferred` enum, **`minCli`**, **`beta`**, signals and provenance. `readerId` is a logical compiled-native or `codexbar:<provider>` selector, never an executable/path/flag. New CodexBar provider IDs can arrive with a tested new helper pin and detector; they are not blocked by a release-frozen five-provider allowlist. Resolve only the verified helper’s supported IDs/capabilities and that provider’s passing translation contract. `codexbar.providerOverrides` optionally maps an ID to a full `{version,sha256}` pin or `null` (bridge unavailable); otherwise use the verified default. A failing provider holds its previous pin while other providers advance. `minCli` gates override-aware routing; an older copy must not ignore a hold and use the new default. Provenance is attribution, never instructions to open paths or fetch URLs.
+**Types:** positive safe-integer schema/revision; bounded literal IDs/names; semantic version strings; per-platform lowercase 64-hex SHA-256 for exact release archives. Include all supported platforms in real pins; an absent platform is unavailable, never guessed. A detector requires provider/display/reader IDs, `preferred` enum, **`minCli`**, **`beta`**, signals and provenance. `readerId` is a logical compiled-native or `codexbar:<provider>` selector, never an executable/path/flag. New CodexBar provider IDs can arrive with a tested new helper pin and detector; they are not blocked by a release-frozen five-provider allowlist. Resolve only the verified helper’s supported IDs/capabilities and that provider’s passing translation contract **and safety audit**. `codexbar.providerOverrides` optionally maps an ID to a full `{version,sha256}` pin or `null` (bridge unavailable); otherwise use the verified default. A failing provider holds its previous pin while other providers advance. `minCli` gates override-aware routing; an older copy must not ignore a hold and use the new default. Every signal has a stable `id`; provenance names its exact `signalIds` and the source file actually containing that signal. Provenance is attribution, never instructions to open paths or fetch URLs.
+
+**Provider safety admission:** each `detectors[].codexbar` requires `audited` (Boolean, absent = false), `pin` (null when unaudited, otherwise full `{version,sha256}`), and `automaticFallback` (false for every head). A true audit also records a bounded `source` enum (`api` or `oauth`, never `auto`/`cli`/`web`) and evidence containing reviewed repository/commit/source paths and safety-test IDs. It authorises only that audited provider/platform/source and exact artifact hash. Match it against the root/default or `providerOverrides` selection; mismatch means unavailable, never downgrade to an unaudited route. New pin/source/call-graph changes invalidate the audit until reviewed. Green translation fixtures alone cannot set `audited:true`. No provider is implicitly eligible by appearing in the registry; no safe path is claimed by the example.
+
+**Detection provenance correction:** `SettingsStore+ProviderDetection.swift` contains CLI lookup and the **Claude Desktop** bundle signal, not Claude Code's `.credentials.json` or Keychain signals. The latter two come from `ClaudeOAuthCredentials.swift` as shown. Do **not** port `com.anthropic.claudefordesktop` as a Claude Code installation signal or evidence of its saved login. Detect Claude Desktop separately if later supported; it does not pre-check Claude Code by itself.
 
 **Additive compatibility:** older CLI copies ignore unknown fields and unknown signal types, as PR213 requires. Unsupported readers/minimum versions yield an upgrade/unavailable status. Signals are OR-ed presence hints; unknown types are inert, and no recognised true signal means no detection. Bound to 256 KiB, 512 entries and 16 signals/entry; reject malformed known values and duplicate/conflicting IDs. `detectionStatus:"no-safe-signal"` permits an empty signal list and a stable reason for web-only/manual-key providers; never invent an installation. No script, regex, shell expansion, arbitrary command, credential query or executable predicate is accepted.
 
@@ -180,7 +236,7 @@ FEEDFIX owns the schema, typed contract and first attributed catalogue port. CLI
 | --- | --- |
 | `bundleId` | OS registration lookup for a bounded literal app ID, no launch. |
 | `path` | Presence of a documented **home-relative tool path**, not arbitrary filesystem access. Allowed classes: tool-owned dotfiles/directories, `.config/<tool>/…`, and `Library/Application Support/<tool>/…`, with reviewed literal paths recorded in the catalogue documentation. Reject absolute paths, `..`, expansion/globbing, protected unrelated homes and symlink escape. A moved path within the documented set is a catalogue change; new access classes require evaluator support/consent, not remote code. |
-| `keychainItem` | Bounded provider-owned service/account **name** presence only, no value or prompt; unknown if a silent check cannot establish presence. Renames within the documented item class are data updates. The value reader later uses FEEDFIX’s `/usr/bin/security` adapter after consent. |
+| `keychainItem` | Bounded provider-owned service/account **name** presence only, no value or prompt; unknown if a silent check cannot establish presence. `derivation` is a closed enum: **`literal` only in v1**. No free-text formula, placeholder substitution or directory hashing rule is accepted. Claude custom profiles requiring directory-keyed item names are **undetectable by Keychain in v1**, never probed via the default/global item. Their approved plaintext-file/session signals can still work. A future directory derivation requires evidenced compiled enum support plus `minCli`; unknown rules are inert. The value reader uses `/usr/bin/security` only after consent. |
 | `command` | Locate/stat one validated CLI basename in documented install directories/PATH. No shell, args, execution, or login-shell discovery. |
 
 First-port completeness covers every CodexBar registry ID by inspecting descriptors/credential locators as well as detection code, preserving per-signal commit/path and full MIT notice. Its pinned first-run chooser detects only four providers and defaults to Codex on no match; do not port that false-positive default. The seed is reviewable bootstrap metadata; publication remains the canonical update source. [Registry][CR], [chooser][CD], [licence][CL].
@@ -193,7 +249,7 @@ The same schema defines `cli.latest` and checksums, but **CLIJIT** owns their up
 
 FEEDFIX extends `TestLiveCodexBarContract` from five hardcoded providers to **every candidate registry provider**, plus still-active old pins. Safe unsigned-in binary smoke checks and synthetic sign-in success/error fixtures together cover the complete set, with explicit test-mode labels; missing/unsupported shapes are not passes. Validate actual translated monetary/count/window/confidence semantics, not just an error envelope. No real credentials, host Keychain, login, inference or authenticated vendor calls in tests.
 
-Run that provider/platform/source matrix in the **daily** monitor. A failed provider alone holds its last verified version/hash/mapping via `providerOverrides`; others advance in one reviewed proposal. New providers with no passing version stay “not supported yet.” Keep all referenced old binaries. Artifact/signature/checksum failure blocks the unverified artifact, not permission to run it; rollback keeps the last verified catalogue and artifact binding. See [the detailed gate contract](agent-reader-contracts.md#every-provider-daily-contract-gate).
+Run that provider/platform/source matrix in the **daily** monitor. A failed provider alone holds its last verified version/hash/mapping **and safety audit** via `providerOverrides`; others advance in one reviewed proposal. Every registry provider remains in the matrix, but unsafe/unaudited routes use source/fixture checks only and stay runtime-disabled; coverage is not permission to invoke them. New providers with no passing version stay “not supported yet.” Keep all referenced old binaries. Artifact/signature/checksum failure blocks the unverified artifact, not permission to run it; rollback keeps the last verified catalogue and artifact binding. See [the detailed gate contract](agent-reader-contracts.md#every-provider-daily-contract-gate).
 
 ## One X Subscription, multiple tool readings
 
@@ -205,15 +261,15 @@ Run that provider/platform/source matrix in the **daily** monitor. A failed prov
 
 **Evidence limit:** the inspected Grok billing DTO contains no subscription/seat ID, and Cursor exposes its own `sub`; Grok auth has `user_id` and principal/team fields, but the source does not prove equality or a cross-product mapping. `isMerged`, equal percentages/reset dates, same email, or both apps being installed cannot prove they are the same subscription; xAI explicitly allows unifying accounts with **different emails**. A verified common-ID/link contract is therefore a Step B prerequisite for guaranteed automatic merging. Without it, label source evidence “shared-pool link unverified,” keep it out of additive subscription totals, and do not fabricate one verified ref or silently combine different accounts. If IDs prove distinct seats/legacy plans, keep separate subscriptions. [Account-unification rules][XU]
 
-FEEDFIX coordinates both readers under one conservative xAI/Cursor budget during link discovery, then one canonical shared-pool gate once linked; select **one** route under `preferred` per five minutes (fallback/alternate only in a later eligible slot). Metadata/link requests consume that same gate. Merging aliases merges attempt timestamps conservatively; account/workspace switches invalidate evidence. Never unify accounts at the provider, move tokens between tools, or use public catalogue metadata to assert personal membership.
+FEEDFIX coordinates both readers under one conservative xAI/Cursor budget during link discovery, then one canonical shared-pool gate once linked; select **one native route** per five minutes. Cursor may use its two-call plan + usage transaction; Grok has one billing call. Any future remote link lookup must fit an explicitly approved read budget, not silently add a request or splice usage across slots. Automatic CodexBar fallback remains off for both heads. Merging aliases merges attempt timestamps conservatively; account/workspace switches invalidate evidence. Never unify accounts at the provider, move tokens between tools, or use public catalogue metadata to assert personal membership.
 
 ## Feedback, review and delivery
 
 CLIJIT/App surfaces show **[Missing your tool? Tell us](https://github.com/modelplan/modelplan/issues/new?template=feature.yml&title=Tool%20detection%20request)** in onboarding, the empty state and Settings. Ask only tool name, platform and version; never attach credential paths/contents, identities, tokens or personal feed JSON automatically. Opening the form is explicit; submission is the user's action.
 
-Review this note before Step B; then FEEDFIX opens one provider PR in native-head order, **`[D590] Auto-detect <provider> usage`**. CLIJIT integrates the DTO/status/cancellation interfaces through its own files. Changes to a boundary are handed off before either lane edits a shared path. FEEDFIX tests readers/routing and shape translation, persistent-denial enforcement, privacy admission, proxy propagation, beta metadata, per-account identity aliases with shared locks, dynamic per-provider pins/rollback and every-provider contract gates using synthetic homes, injected subprocesses, fake RPC and `httptest` only. CLIJIT tests detect/consent/revocation/doctor/update/plugin-install and publication consumption, including inert unknown signals and unsafe-path rejection, against the same contract fixtures. App lanes test presentation/visibility wiring. The translation/gate requirements in [agent-reader-contracts.md](agent-reader-contracts.md) are acceptance criteria for those PRs. No real credentials or vendor usage calls; this update changes documentation only.
+Direction is approved; complete these coordinator corrections before any Step B provider PR. FEEDFIX then opens one provider PR in native-head order, **`[D590] Auto-detect <provider> usage`**. CLIJIT integrates the DTO/status/cancellation interfaces through its own files. Changes to a boundary are handed off before either lane edits a shared path. FEEDFIX tests readers/routing and shape translation, persistent-denial enforcement, privacy admission, proxy propagation, beta metadata, per-account identity aliases with shared locks, dynamic per-provider pins/rollback and every-provider contract gates using synthetic homes, injected subprocesses, fake RPC and `httptest` only. CLIJIT tests detect/consent/revocation/doctor/update/plugin-install and publication consumption, including inert unknown signals and unsafe-path rejection, against the same contract fixtures. App lanes test presentation/visibility wiring. The translation/gate requirements in [agent-reader-contracts.md](agent-reader-contracts.md) are acceptance criteria for those PRs. No real credentials or vendor usage calls; this update changes documentation only.
 
-The passive Claude session reader gets its **own** implementation PR after design approval: **`[D590] Read Claude Code session state passively`**, separate from the Claude login quota reader. FEEDFIX owns proposed `cli/internal/quota/claudesession.go`, `claudesession_test.go` and handwritten `testdata/claude-sessions/`; source integration stays in quota-owned files. CLIJIT owns any caller/profile selector wiring. Neither implementation depends on the plugin/status line, and the passive PR tests with both entirely absent.
+The passive Claude session reader gets its **own** implementation PR after the coordinator corrections: **`[D590] Read Claude Code session state passively`**, separate from the Claude login quota reader. FEEDFIX owns proposed `cli/internal/quota/claudesession.go`, `claudesession_test.go` and handwritten `testdata/claude-sessions/`; source integration stays in quota-owned files. CLIJIT owns any caller/profile selector wiring. Neither implementation depends on the plugin/status line, and the passive PR tests with both entirely absent.
 
 ## Evidence and licensing
 
@@ -221,12 +277,12 @@ Inspected CodexBar `0827f30…` and Token Monitor `0c7dd85…` root licences are
 
 Sources inspected 2026-10-27 (xAI product docs are live; code links pinned): [CodexBar licence][CBL], [Token Monitor licence][TML], [Pulse licence][PL] and [third-party notices][PN]; [Pulse discovery][PD]. Provider references:
 
-[C]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/docs/claude.md
+[C]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/docs/claude.md
 [X]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/docs/codex.md
 [Z]: https://github.com/Javis603/token-monitor/blob/0c7dd855d3697ba0cd3ed47a3d52f8f187cc0e23/src/shared/providers/zai/zcodeDiscovery.js
 [U]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/docs/cursor.md
 [G]: https://github.com/github/copilot-sdk/blob/26536883459ba4cb23c735db8cb3de2c7b899d88/docs/features/usage-and-billing.md
-[E]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/docs/gemini.md
+[E]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/docs/gemini.md
 [K]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/docs/kimi.md
 [Q]: https://github.com/QwenLM/qwen-code/blob/5cb982da6a073ce967ae17f46ee106e968054c7f/docs/users/features/commands.md
 [CBL]: https://github.com/steipete/CodexBar/blob/0827f30bfcecf08ade05ea878b147184ec6515dc/LICENSE
@@ -253,3 +309,6 @@ Sources inspected 2026-10-27 (xAI product docs are live; code links pinned): [Co
 
 [ARCH]: https://github.com/modelplan/modelplan/blob/docs/clients-and-readers/docs/clients-and-readers.md
 [SEC]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/ClaudeOAuthCredentials+SecurityCLIReader.swift
+
+[CO]: https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/ClaudeOAuthUsageFetcher.swift
+[CP]: https://github.com/openai/codex/blob/a5ef02e56147c4c3da493655fd5e2c64db13210f/codex-rs/app-server-protocol/schema/typescript/v2/GetAccountRateLimitsParams.ts
