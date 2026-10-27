@@ -122,13 +122,13 @@ func TestClaudeAccountReadBudgetCadenceAndCache(t *testing.T) {
 	if err := RefreshNative(context.Background(), p, claudeTestNow.Add(5*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(paths[2:], " ") != "/api/oauth/usage /api/oauth/organizations/synthetic-org-001/prepaid/credits" {
+	if strings.Join(paths[2:], " ") != "/api/oauth/usage" {
 		t.Fatal(paths)
 	}
 	s, _ = loadReaderState(p.Cache, "claude")
 	a = s.Entries[0].Account
-	if a.Credits == nil || a.Credits.Currency != "USD" || *a.Credits.Balance != 76.65 {
-		t.Fatal("prepaid mapping")
+	if a.Credits != nil || !strings.Contains(s.Entries[0].Notice, "not supported yet") {
+		t.Fatal("unverified prepaid mapping exposed a balance")
 	}
 	// A cache projection works after tool files disappear, without a consent
 	// callback, HTTP, process launch or refreshed capture timestamp.
@@ -139,7 +139,7 @@ func TestClaudeAccountReadBudgetCadenceAndCache(t *testing.T) {
 	p.ReaderAccess = nil
 	r := Report{}
 	applyManaged(&r, p, "claude", claudeTestNow.Add(5*time.Hour))
-	if len(r.Accounts) != 1 || len(r.Accounts[0].Windows) != 4 || !r.Accounts[0].ObservedAt.Equal(claudeTestNow.Add(5*time.Minute)) || len(paths) != 4 {
+	if len(r.Accounts) != 1 || len(r.Accounts[0].Windows) != 4 || !r.Accounts[0].ObservedAt.Equal(claudeTestNow.Add(5*time.Minute)) || len(paths) != 3 {
 		t.Fatal("cache read touched tool or retained reset window")
 	}
 	assertClaudeCachePrivate(t, p.Cache)

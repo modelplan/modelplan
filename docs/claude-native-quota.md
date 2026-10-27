@@ -50,7 +50,7 @@ header `oauth-2025-04-20`; the undocumented OAuth contract is sourced from
 
 One provider read has **at most two requests**. A cold read uses
 `/api/oauth/profile` plus `/api/oauth/usage`. With valid cached profile metadata,
-usage uses one slot. The second slot may read
+usage uses one slot. Once its schema is verified, the second slot may read
 `/api/oauth/organizations/{org}/prepaid/credits` when current Claude-owned local
 account metadata matches the cached account and org hashes. There is no org/project
 enumeration. Without this binding the wallet is skipped. A cold read never adds
@@ -63,12 +63,14 @@ major units (the source amounts are cents); there is no guessed reset timestamp.
 No MCP/request quota is invented when the response provides none. Plans explicitly
 returning null windows remain valid readings without invented allowances.
 
-The prepaid OAuth route is an owner-requested **beta** contract. Its synthetic
-`amount`/`currency` fixture follows CodexBar's web prepaid parser shape, rather
-than asserting a documented first-party OAuth schema. Only explicit USD amounts
-in cents are translated to a monetary balance (`currency=USD`, `unit=money`). A
-404, unknown shape or other currency is unsupported, never zero. A retained wallet
-keeps its own original capture time independently of a newer quota reading.
+The prepaid OAuth route is an owner-requested **beta** contract. The approved
+note requires a sanitised response establishing its field names and units before
+any balance mapping is accepted. CodexBar's web `amount`/`currency` shape is not
+sufficient evidence for this OAuth route. Until the owner supplies that contract,
+the component reports **not supported yet** and makes no prepaid request. There
+is no guessed currency, minor-unit divisor or zero balance. Usage/profile and
+Keychain behavior remain independently available. A later verified implementation
+must age retained wallets independently of newer quota readings.
 
 ## Cache, cadence and verification
 

@@ -191,7 +191,9 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		wallet, walletState, walletRetry := readClaudeCredits(ctx, c, organization, oauth.AccessToken, r.Now)
 		if walletState == "" {
 			a.Credits = wallet
-		} else if walletState != "not-supported" {
+		} else if walletState == "not-supported" {
+			entry.Notice = "Prepaid balance not supported yet; OAuth contract verification pending"
+		} else {
 			entry.Notice = "Prepaid balance unavailable; previous capture retained"
 		}
 		if walletRetry.After(retry) {
