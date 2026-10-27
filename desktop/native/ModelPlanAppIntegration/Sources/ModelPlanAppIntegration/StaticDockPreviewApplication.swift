@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanSettings
+import ModelPlanCore
 import ModelPlanCommunityHost
 
 /// Explicit self-test entry; it never replaces the normal Community launch or production updater.
 @MainActor public enum StaticDockPreviewApplication {
-    public static func run(appearance: StaticDockPreviewHost.Appearance? = nil) {
+    public static func run(appearance: StaticDockPreviewHost.Appearance? = nil,
+                           transport: (any CLITransport)? = nil, statusItemTitle: String = "ModelPlan",
+                           settingsURL: URL? = nil) {
         let dock = StaticDockPreviewHost(appearance: appearance)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url = URL(string: link.url), url.scheme == "https", url.host == "modelplan.ai",
@@ -17,13 +20,14 @@ import ModelPlanCommunityHost
             value.reduceMotion = true; value.entranceAccepted = false
             return value
         }
-        let delegate = CommunityDelegate(surfaces: surfaces, companion: dock) { gate in
+        let delegate = CommunityDelegate(surfaces: surfaces, companion: dock, transport: transport,
+                                         statusItemTitle: statusItemTitle) { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)
-            let store = try SettingsStore(url: support.appendingPathComponent("ModelPlan/DockSelfTest/settings-v1.json"))
+            let store = try SettingsStore(url: settingsURL ?? support.appendingPathComponent("ModelPlan/DockSelfTest/settings-v1.json"))
             var context = SettingsPageContext()
             context.capabilities.login = .unavailable
-            context.about.appVersion = "0.1.0-selftest.1"
+            context.about.appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "self-test"
             let application = SettingsApplicationCoordinator(store: store, context: context, environment: environment()) { value in
                 dock.apply(value); surfaces.apply(value)
                 let name: NSAppearance.Name? = value.snapshot.preferences.theme == .system ? nil : value.snapshot.preferences.theme == .day ? .aqua : .darkAqua
