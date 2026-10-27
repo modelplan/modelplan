@@ -6,6 +6,7 @@ import ModelPlanShell
 @MainActor public final class CommunityDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var status: NSStatusItem?
     private let surfaces: any NativeSurfaceProvider
+    private let companion: (any CommunityCompanionSurface)?
     private let makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)?
     private var settings: (any CommunitySettingsIntegration)?
     private var settingsItem: NSMenuItem?
@@ -17,8 +18,9 @@ import ModelPlanShell
     private var restoreWindow = false
     private var terminating = false
     public init(surfaces: any NativeSurfaceProvider,
+                companion: (any CommunityCompanionSurface)? = nil,
                 makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)? = nil) {
-        self.surfaces = surfaces; self.makeSettings = makeSettings; super.init()
+        self.surfaces = surfaces; self.companion = companion; self.makeSettings = makeSettings; super.init()
     }
     /// Initialization does not start the CLI, events or application; the normal launch route calls this once.
     func configureSettings(_ gate: LifecycleCoordinator) -> NSMenuItem? {
@@ -37,6 +39,24 @@ import ModelPlanShell
         return settingsItem
     }
     func suspendSettings() { settings?.suspend() }
+    /// Called only by the normal launch route, after the shared Settings integration is configured.
+    func configureCompanion(_ gate: LifecycleCoordinator) {
+        companion?.showConsole = { [weak self, weak gate] in
+            guard gate?.canPresent == true else { return }
+            self?.showStatus()
+        }
+        companion?.showSettings = { [weak self, weak gate] in
+            guard gate?.canPresent == true, let self, !self.terminating, let item = self.settingsItem,
+                  item.isEnabled, let action = item.action else { return }
+            NSApplication.shared.sendAction(action, to: item.target, from: item)
+        }
+        companion?.setPresentationAllowed(gate.canPresent)
+    }
+    private func closeCompanion() {
+        companion?.setPresentationAllowed(false)
+        companion?.showConsole = nil; companion?.showSettings = nil
+        companion?.close()
+    }
     /// A status-item menu alone is not the app's Command-comma responder menu.
     func applicationMenu(settingsItem: NSMenuItem) -> NSMenu {
         let root = NSMenu(), applicationItem = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
@@ -68,13 +88,15 @@ import ModelPlanShell
         self.runtime = runtime
         runtime.store.onChange = { [weak self] in self?.render() }
         runtime.lifecycle.onPresentationChange = { [weak self] allowed in
-            guard let self else { return }
+            guard let self, !self.terminating else { return }
             if !allowed {
+                self.companion?.setPresentationAllowed(false)
                 self.restoreWindow = self.window?.isVisible == true; self.window?.orderOut(nil)
                 self.suspendSettings()
                 (self.overview as? any CommunityInstrumentSurface)?.suspendPresentation()
             } else {
                 self.render()
+                self.companion?.setPresentationAllowed(true)
                 if self.restoreWindow { self.window?.orderFront(nil); self.restoreWindow = false; (self.overview as? any CommunityInstrumentSurface)?.resumePresentation() }
             }
         }
@@ -89,10 +111,12 @@ import ModelPlanShell
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu; status = item
         if let settingsItem { NSApplication.shared.mainMenu = applicationMenu(settingsItem: settingsItem) }
+        configureCompanion(runtime.lifecycle)
+        render()
         runtime.start()
     }
     @objc private func showStatus() {
-        guard let runtime, runtime.lifecycle.canPresent else { return }
+        guard let runtime, !terminating, runtime.lifecycle.canPresent else { return }
         if window == nil {
             let surface = surfaces.makeOverview(); overview = surface
             if let consumer = surface as? any CommunityInstrumentSurface {
@@ -118,8 +142,10 @@ import ModelPlanShell
         (overview as? any CommunityInstrumentSurface)?.resumePresentation()
     }
     private func render() {
-        guard let runtime else { return }
-        overview?.render(snapshot: runtime.store.view(), diagnostics: runtime.store.diagnostics)
+        guard let runtime, !terminating else { return }
+        let snapshot = runtime.store.view(), diagnostics = runtime.store.diagnostics
+        companion?.render(snapshot: snapshot, diagnostics: diagnostics)
+        overview?.render(snapshot: snapshot, diagnostics: diagnostics)
         if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
             let selection = runtime.modelSelection.evaluate(scope: .all, selectedID: consumer.selectedModelID,
                                                             language: consumer.instrumentLanguage)
@@ -135,6 +161,7 @@ import ModelPlanShell
         guard let runtime else { return .terminateNow }
         guard !terminating else { return .terminateLater }
         terminating = true
+        closeCompanion()
         (overview as? any CommunityInstrumentSurface)?.suspendPresentation()
         Task { await runtime.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
