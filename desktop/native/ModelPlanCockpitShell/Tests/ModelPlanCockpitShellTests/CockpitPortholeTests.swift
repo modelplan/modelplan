@@ -60,6 +60,22 @@ import XCTest
         XCTAssertEqual(calls,1);view.setEnlarged(false);XCTAssertTrue(view.accessibilityPerformPress());XCTAssertEqual(calls,2)
         view.stop();XCTAssertFalse(view.requestEnlarge())
     }
+    func testOnlyMatchingSecondOpeningClickIsConsumedOnce() throws {
+        let view = CockpitPortholeView();try view.configure(state());view.setPresentationAllowed(true)
+        view.onEnlargeRequest = {_ in true}
+        let first = CockpitPortholeGesture(timestamp:1,windowPoint:CGPoint(x:50,y:50),clickCount:1,windowNumber:7)
+        XCTAssertTrue(view.requestEnlarge(trigger:.field,atLocalPoint:CGPoint(x:50,y:50),gesture:first))
+        XCTAssertFalse(view.consumeOpeningContinuation(.init(timestamp:1.1,windowPoint:.zero,clickCount:1,windowNumber:7),doubleClickInterval:0.5))
+        XCTAssertFalse(view.consumeOpeningContinuation(.init(timestamp:1.1,windowPoint:.zero,clickCount:2,windowNumber:8),doubleClickInterval:0.5))
+        XCTAssertTrue(view.consumeOpeningContinuation(.init(timestamp:1.2,windowPoint:first.windowPoint,clickCount:2,windowNumber:7),doubleClickInterval:0.5))
+        XCTAssertFalse(view.consumeOpeningContinuation(.init(timestamp:1.3,windowPoint:first.windowPoint,clickCount:2,windowNumber:7),doubleClickInterval:0.5))
+        view.setEnlarged(false)
+        XCTAssertTrue(view.requestEnlarge(gesture:first))
+        XCTAssertFalse(view.consumeOpeningContinuation(.init(timestamp:2,windowPoint:first.windowPoint,clickCount:2,windowNumber:7),doubleClickInterval:0.5))
+        view.setEnlarged(false);view.onEnlargeRequest = {_ in false}
+        XCTAssertFalse(view.requestEnlarge(gesture:first))
+        XCTAssertFalse(view.consumeOpeningContinuation(.init(timestamp:1.2,windowPoint:first.windowPoint,clickCount:2,windowNumber:7),doubleClickInterval:0.5))
+    }
     func testGuardsKeepRendererDefaultOffAndRejectHiddenClosedAndAperture() throws {
         let view = CockpitPortholeView();var calls = 0;view.onEnlargeRequest = {_ in calls += 1;return true}
         try view.configure(state());XCTAssertFalse(view.requestEnlarge());view.setPresentationAllowed(true)

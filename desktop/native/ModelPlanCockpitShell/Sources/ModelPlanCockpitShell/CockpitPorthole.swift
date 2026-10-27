@@ -33,8 +33,9 @@ public struct CockpitRocketProjection: Equatable, Sendable {
 public enum CockpitPortholeTrigger: Sendable { case field, zoom, keyboard, accessibility }
 public struct CockpitPortholeGesture: Sendable {
     public let timestamp:Double,windowPoint:CGPoint,clickCount:Int
-    public init(timestamp:Double,windowPoint:CGPoint,clickCount:Int) {
-        self.timestamp = timestamp;self.windowPoint = windowPoint;self.clickCount = clickCount
+    public let windowNumber:Int?
+    public init(timestamp:Double,windowPoint:CGPoint,clickCount:Int,windowNumber:Int? = nil) {
+        self.timestamp = timestamp;self.windowPoint = windowPoint;self.clickCount = clickCount;self.windowNumber = windowNumber
     }
 }
 public struct CockpitPortholeIntent: Sendable {
@@ -65,6 +66,7 @@ public struct CockpitPortholeState {
     public private(set) var state:CockpitPortholeState?
     public private(set) var opening = false
     private var allowed = false
+    private var openingGesture:CockpitPortholeGesture?
     public override init(frame:NSRect) {
         super.init(frame:frame);setAccessibilityElement(true);setAccessibilityRole(.button);setAccessibilityIdentifier("cockpit.field")
     }
@@ -81,8 +83,8 @@ public struct CockpitPortholeState {
         // Refreshing metadata must not reset an already accepted opening.
     }
     public func setPresentationAllowed(_ allowed:Bool) { self.allowed = allowed }
-    public func setEnlarged(_ enlarged:Bool) { opening = enlarged }
-    public func stop() { allowed = false;opening = false;state = nil }
+    public func setEnlarged(_ enlarged:Bool) { opening = enlarged;if !enlarged { openingGesture = nil } }
+    public func stop() { allowed = false;opening = false;openingGesture = nil;state = nil }
     private var admitted:Bool { allowed && !isHiddenOrHasHiddenAncestor && state?.closed==false && state?.interactive==true && state?.rendererAvailable==true }
     /// The existing zoom key can call the same route. No field runtime is constructed here.
     @discardableResult public func requestEnlarge(trigger:CockpitPortholeTrigger = .zoom,atLocalPoint:CGPoint? = nil,
@@ -100,15 +102,26 @@ public struct CockpitPortholeState {
             }
         }
         // Latch before calling the host so reentrant, double-click and key paths cannot double-open.
-        opening = true
+        opening = true;openingGesture = gesture
         let accepted = onEnlargeRequest(.init(focusModelID:focus,captureID:state.still?.captureID,trigger:trigger,gesture:gesture))
-        if !accepted { opening = false }
+        if !accepted { opening = false;openingGesture = nil }
         return accepted
+    }
+    /// Call before the existing backdrop-close action. Native clickCount supplies the system's
+    /// spatial multi-click classification; no invented distance threshold or timer is introduced.
+    public func consumeOpeningContinuation(_ next:CockpitPortholeGesture,doubleClickInterval:Double = NSEvent.doubleClickInterval)->Bool {
+        guard opening,let first = openingGesture,first.clickCount==1,next.clickCount==2,
+              let window = first.windowNumber,window==next.windowNumber,
+              first.timestamp.isFinite,next.timestamp.isFinite,doubleClickInterval.isFinite,doubleClickInterval>=0 else { return false }
+        let elapsed = next.timestamp-first.timestamp
+        guard elapsed>=0 else { return false }
+        if elapsed>doubleClickInterval { openingGesture = nil;return false }
+        openingGesture = nil;return true
     }
     public override func mouseDown(with event:NSEvent) {
         guard event.buttonNumber==0 else { return }
         _ = requestEnlarge(trigger:.field,atLocalPoint:convert(event.locationInWindow,from:nil),
-            gesture:.init(timestamp:event.timestamp,windowPoint:event.locationInWindow,clickCount:event.clickCount))
+            gesture:.init(timestamp:event.timestamp,windowPoint:event.locationInWindow,clickCount:event.clickCount,windowNumber:event.windowNumber))
     }
     public override func keyDown(with event:NSEvent) {
         if [36,49,76].contains(event.keyCode) { _ = requestEnlarge(trigger:.keyboard) } else { super.keyDown(with:event) }
