@@ -6,7 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-- Add the beta native Claude Code account quota reader, admitted through the shared consent interface: OAuth usage/profile and a bounded `/usr/bin/security` adapter that persists Deny and confirmation-needed states. Prepaid credits stay unavailable pending the verified OAuth response contract. No credential refresh or inference calls; command/consent wiring belongs to the CLI framework.
+- Add the beta native Claude Code account quota reader, admitted through the shared consent interface: OAuth usage/profile and a bounded `/usr/bin/security` adapter that persists Deny and confirmation-needed states. Prepaid credits are omitted from v1; only evidenced usage windows and extra-usage spend/limit are read. No credential refresh or inference calls; command/consent wiring belongs to the CLI framework.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
 

@@ -65,8 +65,6 @@ func claudeTestServer(t *testing.T, status *int, paths *[]string) {
 			name = "profile.json"
 		case "/api/oauth/usage":
 			name = "usage.json"
-		case "/api/oauth/organizations/synthetic-org-001/prepaid/credits":
-			name = "prepaid.json"
 		default:
 			t.Error("unexpected endpoint")
 			w.WriteHeader(400)
@@ -127,7 +125,7 @@ func TestClaudeAccountReadBudgetCadenceAndCache(t *testing.T) {
 	}
 	s, _ = loadReaderState(p.Cache, "claude")
 	a = s.Entries[0].Account
-	if a.Credits != nil || !strings.Contains(s.Entries[0].Notice, "not supported yet") {
+	if a.Credits != nil {
 		t.Fatal("unverified prepaid mapping exposed a balance")
 	}
 	// A cache projection works after tool files disappear, without a consent
@@ -278,4 +276,21 @@ func assertClaudeCachePrivate(t *testing.T, root string) {
 		}
 		return nil
 	})
+}
+
+func TestClaudeDoesNotForwardCredentialOnRedirect(t *testing.T) {
+	isolateHome(t)
+	forwarded := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { forwarded = true }))
+	defer target.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
+	defer srv.Close()
+	old := claudeOAuthHost
+	claudeOAuthHost = srv.URL
+	defer func() { claudeOAuthHost = old }()
+	var profile claudeOAuthProfile
+	state, _ := claudeGet(context.Background(), srv.Client(), "/api/oauth/profile", "synthetic-token", &profile, claudeTestNow)
+	if forwarded || state == "" {
+		t.Fatal("credential followed a redirect")
+	}
 }

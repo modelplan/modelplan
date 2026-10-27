@@ -132,7 +132,6 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != "" && meta.CredentialKey != credentialKey
 	cold := meta.CredentialKey != credentialKey || meta.AccountKey == "" || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
-	organization := ""
 	var binding *Binding
 	if cold {
 		var profile claudeOAuthProfile
@@ -160,7 +159,6 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		if !IdentityOff() && r.Previous.Account != nil {
 			binding = r.Previous.Account.Subscription
 		}
-		organization = claudeLocalOrganization(r.Profile.AccountFile, r.Paths.Cache, meta)
 	}
 	var usage map[string]json.RawMessage
 	state, retry := claudeGet(ctx, c, "/api/oauth/usage", oauth.AccessToken, &usage, r.Now)
@@ -177,28 +175,9 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		return out
 	}
 	a := &Account{Source: "claude-code", Plan: meta.Plan, Via: "native", ObservedAt: r.Now.UTC(), Windows: windows, Subscription: binding}
-	// A wallet is independently aged. Never combine quota slots or carry a wallet
-	// across a changed credential/account binding.
-	if !changed && r.Previous.Account != nil && r.Previous.Metadata.AccountKey == meta.AccountKey {
-		a.Credits = r.Previous.Account.Credits
-	}
 	entry := readerEntry{Status: "ok", Account: a, Metadata: meta}
 	if len(windows) == 0 {
 		entry.Notice = "This plan does not publish quota windows"
-	}
-	// Cold reads spend their second slot on identity, not a third prepaid request.
-	if !cold && organization != "" {
-		wallet, walletState, walletRetry := readClaudeCredits(ctx, c, organization, oauth.AccessToken, r.Now)
-		if walletState == "" {
-			a.Credits = wallet
-		} else if walletState == "not-supported" {
-			entry.Notice = "Prepaid balance not supported yet; OAuth contract verification pending"
-		} else {
-			entry.Notice = "Prepaid balance unavailable; previous capture retained"
-		}
-		if walletRetry.After(retry) {
-			retry = walletRetry
-		}
 	}
 	return readerOutcome{Entry: entry, RetryAfter: retry}
 }
@@ -223,27 +202,6 @@ func (p claudeOAuthProfile) ids() (string, string) {
 		o = p.OrganizationUUID
 	}
 	return a, o
-}
-
-func claudeLocalOrganization(path, cache string, m readerMetadata) string {
-	if path == "" {
-		return ""
-	}
-	b, status := readBounded(path, 1<<20)
-	var v struct {
-		OAuthAccount struct {
-			AccountUUID      string `json:"accountUuid"`
-			OrganizationUUID string `json:"organizationUuid"`
-		} `json:"oauthAccount"`
-	}
-	if status != "" || json.Unmarshal(b, &v) != nil {
-		return ""
-	}
-	a, o := v.OAuthAccount.AccountUUID, v.OAuthAccount.OrganizationUUID
-	if !claudeID.MatchString(a) || !claudeID.MatchString(o) || readerHash(cache, "claude:account", a) != m.AccountKey || readerHash(cache, "claude:organization", o) != m.OrganizationKey {
-		return ""
-	}
-	return o
 }
 
 func claudePlan(s string) string {
@@ -279,6 +237,7 @@ func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, n
 	req.Header.Set("anthropic-beta", "oauth-2025-04-20")
 	req.Header.Set("User-Agent", "modelplan")
 	client := *c
+	client.Jar = nil
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {

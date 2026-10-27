@@ -50,11 +50,8 @@ header `oauth-2025-04-20`; the undocumented OAuth contract is sourced from
 
 One provider read has **at most two requests**. A cold read uses
 `/api/oauth/profile` plus `/api/oauth/usage`. With valid cached profile metadata,
-usage uses one slot. Once its schema is verified, the second slot may read
-`/api/oauth/organizations/{org}/prepaid/credits` when current Claude-owned local
-account metadata matches the cached account and org hashes. There is no org/project
-enumeration. Without this binding the wallet is skipped. A cold read never adds
-a third request. Usage windows always come from one usage response.
+usage uses one slot. V1 makes no prepaid or organisation-enumeration request.
+Usage windows always come from one usage response.
 
 `five_hour` maps to `five_hour`; `seven_day` and model-specific Opus/Sonnet windows
 map to `weekly`, with labels for model-specific limits. OAuth apps and Cowork have
@@ -63,14 +60,13 @@ major units (the source amounts are cents); there is no guessed reset timestamp.
 No MCP/request quota is invented when the response provides none. Plans explicitly
 returning null windows remain valid readings without invented allowances.
 
-The prepaid OAuth route is an owner-requested **beta** contract. The approved
-note requires a sanitised response establishing its field names and units before
-any balance mapping is accepted. CodexBar's web `amount`/`currency` shape is not
-sufficient evidence for this OAuth route. Until the owner supplies that contract,
-the component reports **not supported yet** and makes no prepaid request. There
-is no guessed currency, minor-unit divisor or zero balance. Usage/profile and
-Keychain behavior remain independently available. A later verified implementation
-must age retained wallets independently of newer quota readings.
+**TODO (later, not v1):** prepaid credits are omitted by the owner's decision on
+2026-10-27. No sanitised response exists for
+`/api/oauth/organizations/{org}/prepaid/credits`, and development must not call it
+with real credentials. Add a mapping only after a sanitised fixture establishes
+the OAuth response fields and units. CodexBar's web shape is insufficient. V1
+exposes only evidenced usage windows and extra-usage spend/limit, with no guessed
+wallet or zero balance.
 
 ## Cache, cadence and verification
 
