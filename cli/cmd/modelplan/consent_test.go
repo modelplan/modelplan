@@ -255,7 +255,7 @@ func TestPublishedAuditGateAndPassivePolicy(t *testing.T) {
 				json.Unmarshal(doc["data"], &data)
 				data["detectorSchemaVersion"] = json.RawMessage("1")
 				data["detectorRevision"] = json.RawMessage("3")
-				data["detectors"] = publicationJSON(t, []any{map[string]any{"providerId": "cursor", "displayName": "Cursor", "readerId": "native:cursor", "preferred": v.preferred, "codexbar": map[string]any{"audited": v.audited, "access": "standard"}, "minCli": "0.1.0", "beta": true, "detectionStatus": "signals", "signals": []any{map[string]string{"type": "path", "value": ".cursor"}}}})
+				data["detectors"] = publicationJSON(t, []any{map[string]any{"providerId": "cursor", "displayName": "Cursor", "readerId": "native:cursor", "preferred": v.preferred, "codexbar": map[string]any{"audited": v.audited, "accessClass": "standard"}, "minCli": "0.1.0", "beta": true, "detectionStatus": "signals", "signals": []any{map[string]string{"type": "path", "value": ".cursor"}}}})
 				doc["data"] = publicationJSON(t, data)
 			})
 			st, err := store.Open()
