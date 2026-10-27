@@ -50,6 +50,12 @@ echo '{"model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percen
   | ./dist/modelplan statusline --preview   # a sample line, nothing recorded
 ```
 
+### Shareable diagnostics
+
+`modelplan doctor --share [--json]` prints a versioned, sanitised source/status report for an issue. It reads only bounded ModelPlan cache metadata, never starts readers or network requests, and creates no files. It excludes paths, hosts, raw errors, account/session/subscription identifiers, credential values and quota numbers. The report includes the sanitised `MODELPLAN_READERS` mode and keeps distinct cached failure/plan states, including denied, expired login, unsupported, estimated, stale, pay-as-you-go and organisation-managed; multiple accounts can contribute distinct states without exposing their aliases or refs. `cached` describes a local cache envelope, not a fresh provider reading or a live authentication check. Ordinary `doctor` output remains local and can contain paths; use `--share` for material you intend to paste.
+
+`modelplan doctor --share [--json]` 输出可贴到 issue 的版本化、脱敏来源/状态报告。只读取有限大小的 ModelPlan 缓存元数据，不启动读取器、不联网、不创建文件；不输出路径、主机、原始错误、账号/会话/订阅标识、凭据或额度数字。报告包含脱敏后的 `MODELPLAN_READERS` 模式，区分拒绝授权、登录过期、不支持、估算、过期读数、按量计费和组织管理等缓存状态；多个账号的不同状态保留，但不输出别名或引用。`cached` 仅表示本机有缓存封装，不证明实时读数或登录状态。普通 `doctor` 仍可能包含本机路径，要分享时请使用 `--share`。
+
 ### Public publication JSON
 
 `modelplan publication --json [--offline]` returns one versioned public-only object:
@@ -192,3 +198,11 @@ JSON snapshots, JSONL full-message records and legacy `$set.messages` checkpoint
 `modelplan connect minimax` reads only `MINIMAX_CODING_API_KEY` (or `--key-env NAME`). `--region international` (default) uses `api.minimax.io`; `--region china` uses `api.minimaxi.com`. Current Token Plan JSON is primary, with legacy JSON fallback on the same host for endpoint/auth rejection. No cross-region probing, browser/config/token-file reads, refresh, credential storage, balance or inference. Missing entitlement and unsupported values stay unknown. Connections/desktop disclose the selected variable, host and documentation status. [Method, privacy and limitations](../docs/minimax-quota.md).
 
 `modelplan connect minimax` 仅读取 `MINIMAX_CODING_API_KEY` 或 `--key-env NAME` 指定变量。`--region international`（默认）/ `china` 分别调用国际/国内 API 主机，不跨地区尝试。优先读取 Token Plan JSON，仅在端点或授权拒绝时回退同主机旧接口。不读取浏览器或凭据文件，不刷新或保存 key，不调用余额、推理接口。缺失权益或无效值保持未知；诊断披露变量、主机及文档状态。[详情](../docs/minimax-quota.md)。
+
+## Plugin installation for App Settings
+
+`modelplan plugin install claude-code|codex [--json]` runs the documented marketplace-add and plugin-install commands through the host CLI when `claude` or `codex` is on PATH. It uses fixed argument arrays without a shell, inherits the App-provided environment (including proxy settings), and stops if a step fails. The App obtains its one confirmation before invoking this explicit installation command. No quota readers, consent records or publication cache are touched.
+
+When the host CLI is unavailable, it prints the commands and documentation link instead. `--offline` always prints a plan without executing anything; `--json` returns a versioned result (`installed`, `instructions`, `planned` or `failed`), routing host output to stderr so stdout remains valid JSON.
+
+`modelplan plugin install claude-code|codex [--json]` 在 PATH 中存在 `claude` 或 `codex` 时，通过宿主 CLI 运行文档中的市场添加和插件安装命令。使用固定参数数组、不经过 shell，继承 App 传入的环境和代理；某一步失败就停止。App 在调用这个显式命令之前取得一次确认。不触碰额度读取器、授权记录或发布缓存。没有宿主 CLI 时打印命令和文档链接；`--offline` 只打印计划，`--json` 返回版本化结果，宿主输出转到 stderr，保持 stdout 为有效 JSON。

@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 import ModelPlanDock
 import ModelPlanSettings
+import ModelPlanInstruments
 @testable import ModelPlanAppIntegration
 
 @MainActor final class SettingsApplicationTests: XCTestCase {
@@ -13,6 +14,34 @@ import ModelPlanSettings
         return directory.appendingPathComponent("preferences.json")
     }
 
+    func testSavedThresholdFeedsBothDockAndActualSubscriptionConsumer() async throws {
+        let url = try file(), store = try SettingsStore(url: url)
+        try await store.update { $0.redBelow = 16 }
+        let restored = try SettingsStore(url: url)
+        let coordinator = SettingsApplicationCoordinator(store: restored) { _ in }
+        await coordinator.reload()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var dockInput = DockInstrumentInput(id: "sample", name: "Synthetic", windows: [
+            .init(id: "q", period: .fiveHour, label: "5h", remainingPercent: 20,
+                  resetsAt: now.addingTimeInterval(3600), durationSeconds: 18000)])
+        dockInput.dataState = .fresh
+        let input = SubscriptionNowInput(id: "sample", header: nil, windows: [
+            .init(id: "q", period: .fiveHours, remaining: 20, resetsAt: now.addingTimeInterval(3600))])
+        for threshold in [16,25] {
+            if threshold == 25 { try await coordinator.commit(.redBelow(25)) }
+            let application = try XCTUnwrap(coordinator.latest)
+            let before = try Data(contentsOf: url)
+            let detail = application.subscriptionNowSnapshot(inputs: [input], scope: .subscription("sample"), at: now, calendar: Calendar(identifier: .gregorian))
+            let row = try XCTUnwrap(detail.accounts.first?.rows.first { $0.id.hasSuffix(".window.q") })
+            XCTAssertEqual(row.level, threshold == 16 ? .amber : .critical)
+            XCTAssertEqual(detail.accounts.first?.summary.level, row.level)
+            XCTAssertEqual(try application.dockReading(for: dockInput, at: now).status, threshold == 16 ? .warning : .critical)
+            XCTAssertEqual(application.snapshot.preferences.redBelow, threshold)
+            XCTAssertEqual(try Data(contentsOf: url), before, "projection must not rewrite the saved threshold")
+            let saved = await restored.snapshot()
+            XCTAssertEqual(saved.preferences.redBelow, threshold)
+        }
+    }
     func testRestoreDoesNotWriteOrEmitAUserCommit() async throws {
         let url = try file(), store = try SettingsStore(url: url)
         var applications = [SettingsApplication]()

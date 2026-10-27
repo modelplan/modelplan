@@ -21,7 +21,7 @@ private enum HistFixture {
     }
     static func nowSnapshot(calendar:Calendar = Fixtures.calendar())->SubscriptionNowSnapshot {
         .init(inputs:[.init(id:"a",header:.init(name:"Synthetic Alpha",plan:"Example",glyphID:nil,evidence:.init()),windows:[])],scope:.subscription("a"),
-            now:now,language:.english,calendar:calendar)
+            now:now,language:.english,calendar:calendar,redBelow:25)
     }
 }
 final class SubscriptionHistoryTests:XCTestCase {

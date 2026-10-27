@@ -82,3 +82,9 @@ npm run build:official   # node build.mjs --official: theme, logo and branding f
 ```
 
 The official visuals in `official-visuals/` are not part of this repository's MIT grant: you may read them and build the official app for your own use, but forks and redistributed builds must ship the community edition. `node build.mjs --visual-package <dir>` still assembles an external package that lies outside this checkout. See [source policy](../docs/source-policy.md) and [licensing map](../LICENSING.md). Historical MIT visual portions retain their grants. Rebuild from a full checkout including `reader/`; a sparse plugin install runs its existing bundled runtime without rebuilding.
+
+## Plugin installation from Settings
+
+After the App obtains one confirmation, Settings can call `modelplan plugin install claude-code|codex [--json]`. The CLI runs the documented marketplace/install commands when the host CLI is on PATH; otherwise it returns those commands and the documentation link. It inherits the App-supplied environment, including proxy settings. `--offline` returns a plan without executing the host. Wiring this command to the Settings button is an App integration task.
+
+App 取得一次确认后，Settings 可调用 `modelplan plugin install claude-code|codex [--json]`。宿主 CLI 在 PATH 中时运行文档中的安装命令，否则返回命令和文档链接。继承 App 传入的环境和代理；`--offline` 只返回计划，不执行宿主。Settings 按钮接线由 App 集成完成。

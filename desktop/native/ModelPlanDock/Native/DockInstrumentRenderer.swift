@@ -42,7 +42,7 @@ public struct DockInstrumentSkin: Codable, Sendable {
     }
 }
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
-public struct DockRenderResult {public let image:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
+public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
 
 @MainActor public final class DockInstrumentRenderer {
     private let resources:DockArtworkStore
@@ -64,21 +64,24 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
               let c=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,
                 space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else{throw DockArtworkError.invalidManifest}
         c.translateBy(x:0,y:CGFloat(height));c.scaleBy(x:CGFloat(scale),y:-CGFloat(scale))
-        c.translateBy(x:-skin.bounds.minX,y:-skin.bounds.minY);c.setAllowsAntialiasing(true)
+        c.translateBy(x:-skin.bounds.minX,y:-skin.bounds.minY)
+        c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
         func ink(_ name:String) throws -> CGColor {guard let v=skin.palette[name],v.valid else{throw DockArtworkError.invalidManifest};return v.cg}
-        func image(_ resource:String,_ rect:CGRect) throws {
+        func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false) throws {
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
             let size=Int(ceil(max(rect.width,rect.height)*CGFloat(scale)))
-            let image=try resources.image(resource,maximumPixelSize:max(1,size))
+            let image=try resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
             // Image pixels and logical geometry are distinct; no nominal @2x relabelling.
             guard image.width>=Int(ceil(rect.width*CGFloat(scale))),image.height>=Int(ceil(rect.height*CGFloat(scale))) else{throw DockArtworkError.corruptResource(resource)}
-            c.saveGState();c.translateBy(x:rect.minX,y:rect.maxY);c.scaleBy(x:1,y:-1)
+            c.saveGState();c.clip(to:rect);c.translateBy(x:rect.minX,y:rect.maxY);c.scaleBy(x:1,y:-1)
             c.draw(image,in:CGRect(origin:.zero,size:rect.size));c.restoreGState()
         }
         if !skin.bodyPolygon.isEmpty {
             c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath()
         }
-        for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect)}
+        for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect,preserveSourcePixels:true)}
+        // Retain only material/fixed art for a failed data/profile transaction, never old readings.
+        guard let backgroundImage = c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
         func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
             guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
@@ -196,6 +199,6 @@ public struct DockRenderResult {public let image:CGImage;public let metrics:[Doc
             }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
-        return DockRenderResult(image:result,metrics:metrics,scale:scale,effectsRendered:false)
+        return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false)
     }
 }

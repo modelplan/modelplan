@@ -19,6 +19,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detach"
+	"github.com/modelplan/modelplan/cli/internal/diagnostics"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
@@ -104,6 +105,9 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
+  modelplan doctor --share             sanitised cache source/status report; no readers or network
+  modelplan plugin install claude-code|codex
+                                       install through the host CLI; otherwise print its commands
   modelplan version
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
@@ -176,8 +180,24 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
+	share := fs.Bool("share", false, "doctor: print only sanitised cache source/status information")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
+	}
+	if *share {
+		if cmd != "doctor" || fs.NArg() != 0 {
+			fmt.Fprintln(stderr, "usage: modelplan doctor --share [--json]")
+			return exitUsage
+		}
+		st, err := store.Locate()
+		if err != nil {
+			fmt.Fprintln(stderr, "doctor --share: cache location unavailable / 无法定位缓存")
+			return exitErr
+		}
+		return printJSON(stdout, diagnostics.Collect(st.Dir, version))
+	}
+	if cmd == "plugin" {
+		return pluginCmd(fs.Args(), stdin, stdout, stderr, c)
 	}
 
 	if cmd == "publication" && (!c.json || fs.NArg() != 0) {

@@ -134,13 +134,16 @@ public enum DockEdgeGeometry {
             }
         };return true
     }
-    public static func resolve(preference:DockEdgePreference,displays:[DockDisplayArea],layouts:[DockEdgeLayout],pointer:CGPoint?,primaryID:String?,nearest:Bool=false,cornerClearance:CGFloat=24,wakeDepth:CGFloat=16)throws->DockEdgePlacement?{
+    public static func resolve(preference:DockEdgePreference,displays:[DockDisplayArea],layouts:[DockEdgeLayout],pointer:CGPoint?,primaryID:String?,nearest:Bool=false,cornerClearance:CGFloat=24,wakeDepth:CGFloat=20)throws->DockEdgePlacement?{
         try validate(displays:displays,layouts:layouts)
         guard preference.alongFraction.isFinite,cornerClearance.isFinite,cornerClearance>=0,wakeDepth.isFinite,wakeDepth>0,
               pointer.map({$0.x.isFinite && $0.y.isFinite}) ?? true else{throw DockEdgeError.invalidGeometry}
         let sorted=displays.sorted{$0.id<$1.id}
         let preferred=sorted.first{$0.id==preference.displayID}
-        let chosen=preferred ?? pointer.flatMap{p in sorted.first{$0.usableFrame.contains(p)}} ?? sorted.first{$0.id==primaryID} ?? sorted.first
+        // A missing fixed display recovers to primary without following pointer motion.
+        // nil identity is the explicit follow mode; the host resolves primary-only choices.
+        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.frame.contains(p)}} : nil
+        let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
         var candidates=[DockEdgePlacement]()
         for d in sorted where nearest || d.id==chosen?.id{
             for edge in allowedEdges{
@@ -150,13 +153,15 @@ public enum DockEdgeGeometry {
             }
         }
         // If the preferred display has no usable exposed/registered edge, safely fall back to another display.
-        if candidates.isEmpty && !nearest,chosen != nil{
-            return try resolve(preference:.init(displayID:nil,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:pointer,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
+        if candidates.isEmpty && !nearest,let chosen{
+            // Automatic recovery is not a drag: keep the stored along-edge intent and use
+            // the chosen display as a stable distance anchor, never the moving pointer.
+            return try resolve(preference:.init(displayID:chosen.id,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:nil,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
         }
         let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
         if !alternatives.isEmpty{candidates=alternatives}
         if !nearest,let exact=candidates.first(where:{$0.edge==preference.edge}){return exact}
-        guard let target=pointer ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
+        guard let target=(nearest ? pointer:nil) ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
         func distance(_ c:DockEdgePlacement)->CGFloat{
             let x=max(c.sliverFrame.minX,min(c.sliverFrame.maxX,target.x)),y=max(c.sliverFrame.minY,min(c.sliverFrame.maxY,target.y))
             return hypot(target.x-x,target.y-y)
