@@ -10,3 +10,9 @@ import ModelPlanCore
     func setPresentationAllowed(_ allowed: Bool)
     func close()
 }
+
+/// Companions with native windows report visibility separately from permission to present.
+@MainActor public protocol CommunityCompanionVisibility: CommunityCompanionSurface {
+    var isVisible: Bool { get }
+    var visibilityChanged: (() -> Void)? { get set }
+}

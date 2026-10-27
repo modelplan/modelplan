@@ -59,9 +59,19 @@ import ModelPlanShell
                   item.isEnabled, let action = item.action else { return }
             NSApplication.shared.sendAction(action, to: item.target, from: item)
         }
+        (companion as? any CommunityCompanionVisibility)?.visibilityChanged = { [weak self] in
+            self?.updateFeedVisibility()
+        }
         companion?.setPresentationAllowed(gate.canPresent)
+        updateFeedVisibility()
+    }
+    func updateFeedVisibility() {
+        runtime?.store.setSurfacesVisible(
+            dock: (companion as? any CommunityCompanionVisibility)?.isVisible == true,
+            cockpit: window?.isVisible == true && window?.isMiniaturized == false)
     }
     private func closeCompanion() {
+        (companion as? any CommunityCompanionVisibility)?.visibilityChanged = nil
         companion?.setPresentationAllowed(false)
         companion?.showConsole = nil; companion?.showSettings = nil
         companion?.close()
@@ -103,10 +113,12 @@ import ModelPlanShell
                 self.restoreWindow = self.window?.isVisible == true; self.window?.orderOut(nil)
                 self.suspendSettings()
                 (self.overview as? any CommunityInstrumentSurface)?.suspendPresentation()
+                self.updateFeedVisibility()
             } else {
                 self.render()
                 self.companion?.setPresentationAllowed(true)
                 if self.restoreWindow { self.window?.orderFront(nil); self.restoreWindow = false; (self.overview as? any CommunityInstrumentSurface)?.resumePresentation() }
+                self.updateFeedVisibility()
             }
         }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -149,6 +161,7 @@ import ModelPlanShell
         guard runtime.lifecycle.canPresent else { return }
         window?.makeKeyAndOrderFront(nil)
         (overview as? any CommunityInstrumentSurface)?.resumePresentation()
+        updateFeedVisibility()
     }
     private func render() {
         guard let runtime, !terminating else { return }
@@ -164,8 +177,11 @@ import ModelPlanShell
     public func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, closing === window else { return }
         restoreWindow = false
+        runtime?.store.setSurfacesVisible(dock: (companion as? any CommunityCompanionVisibility)?.isVisible == true, cockpit: false)
         (overview as? any CommunityInstrumentSurface)?.closePresentation()
     }
+    public func windowDidMiniaturize(_ notification: Notification) { updateFeedVisibility() }
+    public func windowDidDeminiaturize(_ notification: Notification) { updateFeedVisibility() }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let runtime else { return .terminateNow }
         guard !terminating else { return .terminateLater }
