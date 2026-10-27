@@ -103,7 +103,7 @@ public struct StaticDockGeometry {
         else { edge.stop(); dismissCard(); panel?.orderOut(nil) }
     }
     private func rebuild() {
-        guard !retired, !rendering else { return }
+        guard !retired, !rendering, application != nil else { return }
         rendering = true
         defer { rendering = false }
         let now = currentDate(), next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now)

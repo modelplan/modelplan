@@ -150,10 +150,11 @@ import ModelPlanSettings
         var ready = StoreDiagnostics(); ready.personal = nil
         host.render(snapshot: joined, diagnostics: ready)
         XCTAssertNil(host.dockView.window)
-        XCTAssertEqual(host.dockView.accessibilityChildren()?.count, 2)
+        XCTAssertEqual(host.dockView.accessibilityChildren()?.count ?? 0, 0, "no editable default pixels before authoritative Settings restore")
         var context = SettingsPageContext(); context.subscriptions = adapt(joined).subscriptions
         let coordinator = SettingsApplicationCoordinator(store: store, context: context) { host.apply($0) }
         await coordinator.reload()
+        XCTAssertEqual(host.dockView.accessibilityChildren()?.count, 2)
         let original = try XCTUnwrap(coordinator.latest)
         _ = try await coordinator.editor.commit(.visible("a", false))
         XCTAssertEqual(host.dockView.accessibilityChildren()?.count, 1)

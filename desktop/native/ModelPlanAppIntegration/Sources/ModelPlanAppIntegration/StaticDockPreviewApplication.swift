@@ -26,8 +26,6 @@ import ModelPlanCommunityHost
             context.about.appVersion = "0.1.0-selftest.1"
             let application = SettingsApplicationCoordinator(store: store, context: context, environment: environment()) { value in
                 dock.apply(value); surfaces.apply(value)
-                // The console LCD stays dark; only its surrounding AppKit controls follow theme.
-                surfaces.current?.mainScreen.appearance = NSAppearance(named: .darkAqua)
                 let name: NSAppearance.Name? = value.snapshot.preferences.theme == .system ? nil : value.snapshot.preferences.theme == .day ? .aqua : .darkAqua
                 if NSApplication.shared.appearance?.name != name { NSApplication.shared.appearance = name.flatMap { NSAppearance(named: $0) } }
             }
