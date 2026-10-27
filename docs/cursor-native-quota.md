@@ -33,7 +33,9 @@ allowance is guessed when these two contracts do not establish it. An actual
 provider zero stays zero. Unsupported spend/per-request shapes require verified
 contracts within the same budget, not extra fallback calls.
 
-Eligible merged weekly plans get `sharedPool={kind:"x-subscription",status:"unverified",additive:false}`
+Only an explicit `isMerged:true` together with a weekly period establishes merged membership.
+Missing/null/invalid or contradictory flags retain the observed cadence without
+claiming X Subscription membership. Eligible merged weekly plans get `sharedPool={kind:"x-subscription",status:"unverified",additive:false}`
 and **Shared-pool link unverified**. Keep Cursor and Grok subscription references
 separate until a verified common billing/seat ID or provider link exists. Equal
 percentages, resets, emails or installed apps are not link evidence. Unverified
@@ -41,7 +43,11 @@ pools must not be added as separate capacity. During link discovery, a conservat
 shared Cursor/Grok gate permits one native route per five minutes, without remote
 link lookup requests. There is no provider-side account unification or token move.
 
-The provider-wide floor spans profiles/processes. Unchanged readings stretch to
+Effective account/source JSON includes `beta:true` on success, stale captures and
+unavailable states. The provider-wide floor spans profiles/processes, Forget,
+reconnect and new grants. A separate non-personal reservation at
+`observed/reader-attempts/cursor.json` holds only the next permitted attempt time;
+purge reading/identity files without deleting that reservation. Unchanged readings stretch to
 10/15/30 minutes; errors back off to 10/20/40/60 minutes and honor longer Retry-After.
 Failures retain the last good capture and its age; reset-past windows are dropped.
 Changed credentials cannot inherit an unverified old binding. Ordinary/JSON
@@ -53,7 +59,8 @@ Protocol evidence: [existing compatibility reader](https://github.com/modelplan/
 CodexBar 0.81.0 ee890b5 (MIT), Token Monitor e1c393c (MIT). Fixtures are handwritten,
 not captured accounts or copied code. Shared admission/cache machinery is reused
 from PR225; this independently based provider PR can merge after that foundation.
-CLIJIT must consume the additive shared-pool DTO before enabling the new reader.
+CLIJIT must consume `beta` and enforce the non-additive shared-pool DTO before
+enabling the new reader; an unverified pool never adds capacity.
 
 ## 简体中文
 
@@ -69,3 +76,7 @@ CLIJIT must consume the additive shared-pool DTO before enabling the new reader.
 确认合并周额度时标记“共享额度关联未验证”；公共 ID 或提供方关联证据出现前不与 Grok
 合并，也不当作可相加的第二份额度。Cursor 与 Grok 暂共用保守的五分钟门限。
 测试仅使用合成 SQLite 文件和本地 HTTP 服务，不读取真实凭据或访问真实提供方账号。
+
+套餐只有明确的 `isMerged:true` 加周周期才标为 X Subscription；缺失、空值或矛盾标志只保留已知周期。
+成功、过期缓存和不可用输出都保留 `beta:true`。忘记数据、重新连接或更换授权不会重置请求间隔；
+独立预算文件只保存下次允许时间，不保存账号或读数。同一登录失败保留原采集时间，无法确认或变更的登录不继承旧账号数字。

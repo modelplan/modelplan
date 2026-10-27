@@ -165,7 +165,7 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 		return false
 	}
 	s, err := loadReaderState(p.Cache, provider)
-	if err != nil || now.Before(s.NextAttemptAt) {
+	if err != nil || now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
 		return false
 	}
 	return xSubscriptionDue(p.Cache, provider, now)
@@ -187,7 +187,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if err != nil {
 		return err
 	}
-	if now.Before(s.NextAttemptAt) {
+	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
 		return nil
 	}
 	if !xSubscriptionDue(p.Cache, provider, now) {
@@ -228,6 +228,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		}
 	}
 	s.AttemptedAt, s.NextAttemptAt = now.UTC(), now.Add(5*time.Minute).UTC()
+	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
+		return err
+	}
 	if err := reserveXSubscription(p.Cache, provider, now); err != nil {
 		return err
 	}
@@ -279,6 +282,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		s.Entries = append(s.Entries, e)
 	} else {
 		s.Entries[entryIndex] = e
+	}
+	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
+		return err
 	}
 	return saveReaderState(p.Cache, s)
 }
@@ -335,7 +341,7 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 	}
 	s, err := loadReaderState(p.Cache, provider)
 	if err != nil {
-		r.Sources = append(r.Sources, SourceStatus{Source: "native:" + provider, Status: "unavailable", Reason: "reader cache unavailable"})
+		r.Sources = append(r.Sources, SourceStatus{Beta: true, Source: "native:" + provider, Status: "unavailable", Reason: "reader cache unavailable"})
 		return
 	}
 	if len(s.Entries) == 0 {
@@ -356,12 +362,13 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 	}
 	seen := map[string]bool{}
 	for _, e := range s.Entries {
-		st := SourceStatus{Source: "native:" + provider, Status: e.Status, Reason: e.Notice}
+		st := SourceStatus{Beta: true, Source: "native:" + provider, Status: e.Status, Reason: e.Notice}
 		if e.NextStep != "" {
 			st.Reason = e.NextStep
 		}
 		if e.Account != nil {
 			a := *e.Account
+			a.Beta = true
 			a.Windows = append([]Window(nil), a.Windows...)
 			pruneReaderWindows(&a, now)
 			key := e.ProfileKey
@@ -391,6 +398,19 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 func ForgetReader(cache, provider string) error {
 	if n := nativeReaders[provider]; n == nil || n.Managed == nil {
 		return errors.New("unknown managed reader")
+	}
+	unlock, ok := lockFile(readerPath(cache, provider)+".lock", time.Now(), time.Minute)
+	if !ok {
+		return errors.New("another provider read is running")
+	}
+	defer unlock()
+	s, err := loadReaderState(cache, provider)
+	if err != nil {
+		return err
+	}
+	// Also migrate a reservation written by an older reader before purging it.
+	if err := reserveReaderAttempt(cache, provider, s.NextAttemptAt); err != nil {
+		return err
 	}
 	if err := os.Remove(readerPath(cache, provider)); err != nil && !os.IsNotExist(err) {
 		return errors.New("reader cache unavailable")

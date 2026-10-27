@@ -87,8 +87,11 @@ func readCursorSession(ctx context.Context, now time.Time) (cursorSession, error
 }
 
 func readCursorSessionAt(ctx context.Context, path string, now time.Time) (cursorSession, error) {
+	// Keep the in-memory credential generation even when validation fails. It is
+	// used only for a keyed binding comparison, never for a compatibility call.
+	session := cursorSession{}
 	fail := func() (cursorSession, error) {
-		return cursorSession{}, errors.New("Cursor local sign-in unavailable or unsupported; sign in through Cursor, or select --backend codexbar")
+		return session, errors.New("Cursor local sign-in unavailable or unsupported; sign in through Cursor")
 	}
 	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
 		return fail()
@@ -144,6 +147,7 @@ func readCursorSessionAt(ctx context.Context, path string, now time.Time) (curso
 		}
 	}
 	token := string(b)
+	session.token = token
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return fail()
@@ -165,7 +169,7 @@ func readCursorSessionAt(ctx context.Context, path string, now time.Time) (curso
 		return fail()
 	}
 	if claims.Exp <= now.Add(time.Minute).Unix() {
-		return cursorSession{}, errors.New("expired")
+		return session, errors.New("expired")
 	}
 	sub := strings.Split(claims.Sub, "|")
 	user := sub[len(sub)-1]
@@ -446,20 +450,21 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	path := filepath.Join(r.Profile.Root, "state.vscdb")
 	stamp := cursorStateAt(path)
 	session, err := readCursorSessionAt(ctx, path, r.Now)
+	credentialKey := readerHash(r.Paths.Cache, "cursor:credential", session.token)
+	meta := r.Previous.Metadata
+	changed := meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
 	if err != nil {
-		out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "This Cursor saved-login type is not supported yet", NextStep: "Open Cursor to refresh"}}
+		out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "This Cursor saved-login type is not supported yet", NextStep: "Open Cursor to refresh"}, Invalidate: changed}
 		if err.Error() == "expired" {
 			out.Entry.Status = "expired"
 		}
 		return out
 	}
-	credentialKey := readerHash(r.Paths.Cache, "cursor:credential", session.token)
 	accountKey := readerHash(r.Paths.Cache, "cursor:account", session.user)
 	if credentialKey == "" || accountKey == "" {
-		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Identity key unavailable"}}
+		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Identity key unavailable"}, Invalidate: meta.CredentialKey != ""}
 	}
-	meta := r.Previous.Metadata
-	changed := (meta.CredentialKey != "" && meta.CredentialKey != credentialKey) || (meta.AccountKey != "" && meta.AccountKey != accountKey)
+	changed = changed || (meta.AccountKey != "" && meta.AccountKey != accountKey)
 	cold := meta.CredentialKey != credentialKey || meta.AccountKey != accountKey || meta.PlanDetails == nil || meta.VerifiedAt.After(r.Now) || r.Now.Sub(meta.VerifiedAt) >= 24*time.Hour
 	if meta.PlanDetails != nil && meta.PlanDetails.ResetAt != nil && !meta.PlanDetails.ResetAt.After(r.Now) {
 		cold = true
@@ -507,7 +512,8 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 
 func parseCursorPlan(raw []byte) (string, *readerPlanDetails) {
 	var p struct {
-		Info struct {
+		Merged json.RawMessage `json:"isMerged"`
+		Info   struct {
 			Name   string          `json:"planName"`
 			Period string          `json:"includedUsagePeriod"`
 			Reset  json.RawMessage `json:"includedUsageResetsAt"`
@@ -517,12 +523,15 @@ func parseCursorPlan(raw []byte) (string, *readerPlanDetails) {
 	if json.Unmarshal(raw, &p) != nil {
 		return "", nil
 	}
-	merged := cursorMerged(raw)
+	var merged bool
+	// Cadence alone does not establish membership. Missing/null/invalid flags
+	// and a true flag with a non-weekly cadence leave membership unknown.
+	_ = json.Unmarshal(p.Merged, &merged)
 	minutes := map[string]int{"INCLUDED_USAGE_PERIOD_WEEKLY": 10080, "INCLUDED_USAGE_PERIOD_MONTHLY": 43200}[p.Info.Period]
-	if merged == nil || minutes == 0 {
+	if minutes == 0 {
 		return "", nil
 	}
-	details := &readerPlanDetails{Minutes: minutes, ResetAt: cursorEpoch(p.Info.Reset), Unified: *merged && minutes == 10080}
+	details := &readerPlanDetails{Minutes: minutes, ResetAt: cursorEpoch(p.Info.Reset), Unified: merged && minutes == 10080}
 	if details.ResetAt == nil {
 		details.ResetAt = cursorEpoch(p.Info.End)
 	}
