@@ -186,10 +186,11 @@ struct NativeFailure:Error {let message:String}
     let effectsSkin=try JSONDecoder().decode(DockInstrumentSkin.self,from:JSONSerialization.data(withJSONObject:combined))
     let working=try (0..<6).map{index->DockInstrumentReading in
         let id="work-\(index)"
-        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,20,10][index%3],resetsAt:nil,durationSeconds:nil)])
+        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,30,10][index%3],resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.working=DockWorkingSignal(subscriptionID:id,bindingVerified:true,fresh:true,observedOutput:true)
         return try DockInstrumentProjection.evaluate(input,now:instant)
     }
+    try require(Set(working.map(\.status)) == Set([DockQuotaStatus.normal,.warning,.critical]),"cache fixture must exercise three quota-state variants")
     var hiddenReadout=skin;hiddenReadout.stations[0].showsReadout=false
     let hiddenResult=try renderer.render(skin:hiddenReadout,readings:["sub":reading],scale:2)
     try require(!hiddenResult.metrics.contains{$0.text==reading.readout},"percentage-off omits only visible quota text")
@@ -205,7 +206,7 @@ struct NativeFailure:Error {let message:String}
     try require(driver.activeIDs.count==6 && driver.animatingIDs.count==6,"six distinct native consumers")
     try require(effectsView.layerUsesCoreImageFilters,"screen compositing uses the public native filter path")
     try require(pool.activeLeaseCount==6 && pool.atlasCount==3 && provider.draws==27,"three variants share counted leases, no per-ID atlas")
-    try require(pool.decodedBytes==3_981_312 && pool.decodedBytes<=EffectResourcePool.maximumBytes,"L64 strongest-hover uses exact shared budget")
+    try require(pool.decodedBytes==3_981_312 && pool.decodedBytes<=EffectResourcePool.maximumBytes,"64 pt strongest-hover stress case uses exact shared budget")
     driver.seekForCapture(0.5);try require(driver.animatingIDs.isEmpty && pool.activeLeaseCount==6,"capture keeps counted lease without copied atlas")
     try effectsView.applyCommunity([]);pool.purgeUnleased();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"profile reset stops consumers before purging")
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
