@@ -49,8 +49,14 @@ public struct StaticDockGeometry {
 
 /// Self-test host. Reuses the Dock projection/edge controller and the application's one feed/store.
 /// No working effects, entrance animation, global input monitor, reader activation or service registration.
-@MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionSurface, NSMenuDelegate {
+@MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionVisibility, NSMenuDelegate {
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
+    public private(set) var isVisible = false
+    public var visibilityChanged: (() -> Void)?
+    private func reportVisibility(_ visible: Bool) {
+        guard visible != isVisible else { return }
+        isVisible = visible; visibilityChanged?()
+    }
     public var showConsole: (() -> Void)?
     public var showSettings: (() -> Void)?
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -378,7 +384,7 @@ public struct StaticDockGeometry {
     }
     private func present(_ value: DockEdgePresentation) {
         guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); outlinePanel?.orderOut(nil); return }
+        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
         panel.setFrame(frame, display: false)
@@ -400,8 +406,8 @@ public struct StaticDockGeometry {
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
-            catch { panel.orderOut(nil); return }
-        case .suppressed: panel.orderOut(nil); outlinePanel?.orderOut(nil); return
+            catch { panel.orderOut(nil); reportVisibility(false); return }
+        case .suppressed: panel.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
@@ -411,6 +417,7 @@ public struct StaticDockGeometry {
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { outlinePanel?.orderOut(nil) }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
+        reportVisibility(panel.isVisible)
     }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
@@ -498,6 +505,7 @@ public struct StaticDockGeometry {
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; outlinePanel?.orderOut(nil); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
+        reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }
