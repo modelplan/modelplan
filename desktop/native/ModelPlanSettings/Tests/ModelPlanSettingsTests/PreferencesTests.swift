@@ -18,9 +18,9 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.theme, .system); XCTAssertEqual(p.size, .medium)
         XCTAssertEqual(p.motion, .system); XCTAssertEqual(p.transparency, .system)
         XCTAssertEqual(p.percentageMode, .remaining); XCTAssertTrue(p.showPercentages)
-        XCTAssertEqual(p.redBelow, 16); XCTAssertTrue(p.sliverAlert)
+        XCTAssertEqual(p.redBelow, 25); XCTAssertTrue(p.sliverAlert)
         XCTAssertTrue(p.showDock); XCTAssertTrue(p.autoHide); XCTAssertEqual(p.revealMilliseconds, 150)
-        XCTAssertFalse(p.showOverFullscreen); XCTAssertTrue(p.followActiveDisplay)
+        XCTAssertFalse(p.showOverFullscreen); XCTAssertFalse(p.followActiveDisplay)
         XCTAssertEqual(p.menuDisplay, .icon); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
         XCTAssertEqual(p.notifications.kinds, Set(NotificationKind.allCases))
@@ -53,6 +53,15 @@ final class PreferencesTests: XCTestCase {
         for forbidden in ["login", "screenCapture", "authorization", "sourceStatus", "cliOutput", "apiKey", "cookie"] {
             XCTAssertFalse(text.contains("\"" + forbidden + "\""))
         }
+    }
+    func testNewDefaultsDoNotOverwriteExplicitSavedChoices() throws {
+        let data = Data("{\"redBelow\":16,\"followActiveDisplay\":true,\"autoHide\":false,\"sliverAlert\":false}".utf8)
+        let stored = try JSONDecoder().decode(SettingsPreferences.self, from: data)
+        let restored = try JSONDecoder().decode(SettingsPreferences.self, from: JSONEncoder().encode(stored))
+        XCTAssertEqual(restored.redBelow, 16)
+        XCTAssertTrue(restored.followActiveDisplay)
+        XCTAssertFalse(restored.autoHide)
+        XCTAssertFalse(restored.sliverAlert)
     }
     func testInvalidAndStaleTransactionsLeaveDiskAndMemoryIntact() async throws {
         let url = try file(), store = try SettingsStore(url: url)

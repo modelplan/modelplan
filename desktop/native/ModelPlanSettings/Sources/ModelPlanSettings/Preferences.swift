@@ -63,14 +63,14 @@ public struct SettingsPreferences: Codable, Sendable {
     public var transparency: AccessibilityPreference = .system
     public var percentageMode: PercentageMode = .remaining
     public var showPercentages = true
-    public var redBelow = 16
+    public var redBelow = 25
     public var sliverAlert = true
     public var showDock = true
     public var autoHide = true
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false
-    public var followActiveDisplay = true
+    public var followActiveDisplay = false
     public var dockEdge: SettingsDockEdge = .right
     public var readerConsent = ReaderConsent()
     public var helpHints = FirstUseHintPreferences()
