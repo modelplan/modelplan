@@ -377,6 +377,22 @@ do {
         try expect(fallback.displayID != "a","fully surrounded display falls back without removing it from topology")
         try expect(DockEdgeGeometry.canWake(at:CGPoint(x:fallback.wakeFrame.midX,y:fallback.wakeFrame.midY),placement:fallback,displays:all),"fallback remains exposed in full topology")
     }
+    try test("B07 non-drag fallback preserves position while pointer moves"){
+        let a=DockDisplayArea(id:"a",frame:CGRect(x:0,y:0,width:1000,height:800),visibleFrame:CGRect(x:0,y:0,width:1000,height:800))
+        let b=DockDisplayArea(id:"b",frame:CGRect(x:1000,y:0,width:1000,height:800),visibleFrame:CGRect(x:1000,y:0,width:1000,height:800))
+        // The preview registers its selected edge only. A's right edge is an internal seam.
+        let selected=layouts([a,b]).filter{$0.edge == .right}
+        for pinned in [Optional("a"),nil]{
+            let preference=DockEdgePreference(displayID:pinned,edge:.right,alongFraction:0.4)
+            let lower=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:500,y:180),primaryID:"a")!
+            let upper=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:500,y:620),primaryID:"a")!
+            try expect(lower.displayID == "b" && upper.displayID == "b","fallback uses an exposed registered display")
+            try expect(lower.frame == upper.frame && lower.sliverFrame == upper.sliverFrame,"ordinary pointer motion must not vertically move expanded dock or sliver")
+            try expect(abs(lower.alongFraction-0.4)<0.0001,"fallback preserves stored along-edge intent")
+            let drop=try DockEdgeGeometry.resolve(preference:preference,displays:[a,b],layouts:selected,pointer:CGPoint(x:1999,y:620),primaryID:"a",nearest:true)!
+            try expect(drop.frame != lower.frame,"an explicit nearest drag/drop may change along-edge position")
+        }
+    }
     try test("B07 migration/drop: missing display, top normalization and no floating"){
         let f=CGRect(x:0,y:0,width:1000,height:800),d=DockDisplayArea(id:"primary",frame:f,visibleFrame:f)
         let top=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top),displays:[d],layouts:layouts([d]),pointer:nil,primaryID:d.id)!
