@@ -131,7 +131,7 @@ public struct StaticDockGeometry {
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { edge.stop(); dismissCard(); panel?.orderOut(nil) }
+        else { edge.stop(); dismissCard(); panel?.orderOut(nil); outlinePanel?.orderOut(nil) }
     }
     private func rebuild() {
         guard !retired, application != nil else { return }
@@ -267,7 +267,7 @@ public struct StaticDockGeometry {
     }
     private func present(_ value: DockEdgePresentation) {
         guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); return }
+        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); outlinePanel?.orderOut(nil); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
         panel.setFrame(frame, display: false)
@@ -290,7 +290,7 @@ public struct StaticDockGeometry {
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { panel.orderOut(nil); return }
-        case .suppressed: panel.orderOut(nil); return
+        case .suppressed: panel.orderOut(nil); outlinePanel?.orderOut(nil); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
