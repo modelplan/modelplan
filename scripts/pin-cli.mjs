@@ -1,5 +1,5 @@
-// Pins the plugins to a CLI release: writes cli-pin.json (version, release URL and the SHA-256 of
-// each macOS/Linux archive, from the release's checksums.txt) into both plugins.
+// Pins the plugins and Skill to a CLI release: writes cli-pin.json (version, release URL and the SHA-256 of
+// each macOS/Linux archive, from the release's checksums.txt), including bundled Skill copies.
 //   node scripts/pin-cli.mjs v0.5.10   pin that release
 //   node scripts/pin-cli.mjs --check   the pins agree and match the release's checksums (CI)
 import { readFile, writeFile } from "node:fs/promises";
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const targets = ["claude-code/cli-pin.json", "codex/cli-pin.json"];
+const targets = ["claude-code/cli-pin.json", "codex/cli-pin.json", "skills/model-plan/cli-pin.json", "claude-code/skills/model-plan/cli-pin.json", "codex/skills/model-plan/cli-pin.json"];
 const keys = ["darwin_arm64", "darwin_amd64", "linux_arm64", "linux_amd64"];
 const repo = "https://github.com/modelplan/modelplan/releases/download";
 
@@ -29,7 +29,7 @@ const render = p => `{\n  "version": "${p.version}",\n  "release": "${p.release}
 const arg = process.argv[2];
 if (arg === "--check") {
   const pins = await Promise.all(targets.map(t => readFile(path.join(root, t), "utf8")));
-  if (new Set(pins).size !== 1) throw Error("the plugins pin different CLI releases");
+  if (new Set(pins).size !== 1) throw Error("the plugins and Skill pin different CLI releases");
   const pin = JSON.parse(pins[0]);
   if (render(await pinFor("v" + pin.version)) !== pins[0]) throw Error(`cli-pin.json does not match release v${pin.version}`);
   console.log(`CLI pin v${pin.version} matches its release`);

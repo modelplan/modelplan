@@ -588,6 +588,132 @@
       "mustNot": [
         "Claim a public reset restored this user's balance."
       ]
+    },
+    {
+      "id": "own-quota-cli-first-use",
+      "prompt": "What is my own quota? The CLI is missing and I have not been asked before.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": null,
+        "installReply": null
+      },
+      "expected": {
+        "installationPrompt": true,
+        "runInstaller": false
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
+    },
+    {
+      "id": "own-quota-cli-accepted",
+      "prompt": "Yes, install the ModelPlan CLI for my quota.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": null,
+        "installReply": "yes"
+      },
+      "expected": {
+        "installationPrompt": false,
+        "runInstaller": true
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
+    },
+    {
+      "id": "own-quota-cli-refused",
+      "prompt": "No, do not install it. Can you still help with my quota?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": null,
+        "installReply": "no"
+      },
+      "expected": {
+        "installationPrompt": false,
+        "runInstaller": false
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
+    },
+    {
+      "id": "own-quota-cli-refused-next-session",
+      "prompt": "What is my quota? This is a new conversation; I declined the CLI previously.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": "declined",
+        "installReply": null
+      },
+      "expected": {
+        "installationPrompt": false,
+        "runInstaller": false
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
+    },
+    {
+      "id": "model-choice-without-cli",
+      "prompt": "Which test-maker model and effort fits a routine formatting fix? I have no CLI.",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": null,
+        "installReply": null
+      },
+      "expected": {
+        "installationPrompt": false,
+        "runInstaller": false
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
+    },
+    {
+      "id": "own-quota-cli-prior-acceptance",
+      "prompt": "I accepted installation earlier but it failed. What is my quota?",
+      "input": {
+        "synthetic": true,
+        "now": "2026-10-27T12:00:00Z",
+        "sourceUrl": "https://example.com/client",
+        "clientFixture": "client",
+        "cliAvailable": false,
+        "cliInstallChoice": "accepted",
+        "installReply": null
+      },
+      "expected": {
+        "installationPrompt": false,
+        "runInstaller": false
+      },
+      "mustNot": [
+        "Run the installer without a yes or repeat an installation question after a refusal.",
+        "Claim automatic Claude Code detection is available in the current CLI, or require the optional status line for public model/effort advice."
+      ]
     }
   ],
   "fixtures": "fixtures.json"

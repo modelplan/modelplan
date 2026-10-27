@@ -4,6 +4,8 @@ import Foundation
 /// App-owned choices only. No case grants service permission or performs an OS/reader operation.
 public enum SettingsB21Edit: Sendable {
     case showDock(Bool), autoHide(Bool), reveal(Int), magnification(HoverMagnification)
+    case dockDisplay(String?), dockPosition(Double)
+    case dockPlacement(displayID: String, edge: SettingsDockEdge, alongFraction: Double)
     case fullscreen(Bool), activeDisplay(Bool), dockEdge(SettingsDockEdge)
     case login(Bool), automaticUpdates(Bool), menuDisplay(MenuDisplay), language(SettingsLanguage)
     case shortcut(ShortcutAction, ShortcutChord), opening(OpeningPreference), countdown(Int)
@@ -11,7 +13,7 @@ public enum SettingsB21Edit: Sendable {
     case visible(String, Bool), alias(AliasDraft), readerConsent(OptionalReaderID, Bool), resetHints
 
     public static let keys: Set<SettingKey> = [
-        .showDock, .autoHide, .reveal, .magnification, .fullscreen, .activeDisplay, .dockEdge, .order,
+        .showDock, .autoHide, .reveal, .magnification, .fullscreen, .activeDisplay, .dockEdge, .dockDisplay, .dockPosition, .order,
         .login, .automaticUpdates, .menuDisplay, .language, .openShortcut, .dockShortcut, .opening, .countdown,
         .visible, .alias, .optionalReaders, .resetHints,
     ]
@@ -23,6 +25,8 @@ public enum SettingsB21Edit: Sendable {
         case .magnification: if let v = HoverMagnification(rawValue: value) { self = .magnification(v); return }
         case .fullscreen: if let v = Bool(value) { self = .fullscreen(v); return }
         case .activeDisplay: if let v = Bool(value) { self = .activeDisplay(v); return }
+        case .dockDisplay: self = .dockDisplay(value == "primary" ? nil : value); return
+        case .dockPosition: if let v = Double(value), v.isFinite, (0...1).contains(v) { self = .dockPosition(v); return }
         case .dockEdge: if let v = SettingsDockEdge(rawValue: value) { self = .dockEdge(v); return }
         case .login: if let v = Bool(value) { self = .login(v); return }
         case .automaticUpdates: if let v = Bool(value) { self = .automaticUpdates(v); return }
@@ -55,6 +59,10 @@ public enum SettingsB21Edit: Sendable {
         case .fullscreen(let v): p.showOverFullscreen = v
         case .activeDisplay(let v): p.followActiveDisplay = v
         case .dockEdge(let v): p.dockEdge = v
+        case .dockDisplay(let v): p.dockDisplayID = v; p.followActiveDisplay = false
+        case .dockPosition(let v): p.dockAlongFraction = v
+        case .dockPlacement(let displayID, let edge, let fraction):
+            p.dockDisplayID = displayID; p.dockEdge = edge; p.dockAlongFraction = fraction
         case .login(let v): p.openAtLogin = v
         case .automaticUpdates(let v): p.automaticUpdates = v
         case .menuDisplay(let v): p.menuDisplay = v

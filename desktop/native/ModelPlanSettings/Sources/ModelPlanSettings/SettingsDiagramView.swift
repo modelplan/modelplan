@@ -109,7 +109,8 @@ import QuartzCore
             line(.init(x: 71, y: 20.5), .init(x: 67, y: 24.5))
             line(.init(x: 84.5, y: 9), .init(x: 84.5, y: 31), selected: collapsed)
         case .size(let selectedSize):
-            for (index, item) in [(SettingsSize.small, CGFloat(44)), (.medium, 52), (.large, 64)].enumerated() {
+            let sizes = SettingsSize.allCases.map { ($0, $0.nozzleDiameter) }
+            for (index, item) in sizes.enumerated() {
                 let x = CGFloat(index) * 32 + 16, selected = item.0 == selectedSize
                 ring(.init(x: x, y: 16), radius: item.1 / 5.5, selected: selected)
                 label(item.0.rawValue, x: x, selected: selected)

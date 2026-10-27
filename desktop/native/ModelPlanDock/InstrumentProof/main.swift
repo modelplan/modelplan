@@ -146,6 +146,78 @@ struct NativeFailure:Error {let message:String}
         try require(result.metrics.contains{$0.text=="25%" && $0.advance>0},"native CoreText data rendering")
         try require(!result.effectsRendered,"static capture does not claim pooled effects")
     }
+    for diameter:CGFloat in [36,44,52] {
+        let scaledView=DockInstrumentView(frame:.zero);scaledView.requestedNozzleDiameter=diameter
+        try scaledView.applyOfficial(skin:skin,rows:[reading],renderer:renderer,scale:2,locale:"en")
+        let factor=diameter/24
+        try require(scaledView.presentedNozzleDiameters==[diameter],"requested S/M/L nozzle size reaches the actual rendered recipe")
+        try require(abs(scaledView.frame.width-96*factor)<0.0001,"full hull envelope scales with the nozzle")
+        let scaled=try skin.scaled(by:factor)
+        try require(abs(scaled.stations[0].outer.width-2*factor)<0.0001 && abs(scaled.text.size-11*factor)<0.0001,"rings and text share the geometry scale")
+        scaledView.dispose()
+    }
+    // Neutral precomposited control: preserve source alpha, downsample once at destination scale.
+    let controlContext=CGContext(data:nil,width:180,height:180,bitsPerComponent:8,bytesPerRow:720,
+        space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
+    controlContext.setShouldAntialias(true)
+    // Declare the fixture in the same sRGB space; generic RGB color matching may add green.
+    controlContext.setFillColor(CGColor(colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!,components:[1,0,0,1])!)
+    controlContext.fillEllipse(in:CGRect(x:9,y:9,width:162,height:162))
+    let controlURL=root.appendingPathComponent("neutral-control.png")
+    let controlWriter=CGImageDestinationCreateWithURL(controlURL as CFURL,"public.png" as CFString,1,nil)!
+    CGImageDestinationAddImage(controlWriter,controlContext.makeImage()!,nil)
+    try require(CGImageDestinationFinalize(controlWriter),"neutral source control PNG")
+    let controlData=try Data(contentsOf:controlURL)
+    let controlFile=DockResourceFile(path:"neutral-control.png",sha256:SHA256.hash(data:controlData).map{String(format:"%02x",$0)}.joined(),bytes:controlData.count)
+    let controlStore=try DockArtworkStore(root:root,manifest:DockResourceManifest(files:["control":controlFile]))
+    let sourceControl=try controlStore.image("control",maximumPixelSize:23,preserveSourcePixels:true)
+    try require(sourceControl.width==180 && sourceControl.height==180,"control keeps original pixels until final composition")
+    try require(try controlStore.image("control",maximumPixelSize:46,preserveSourcePixels:true) === sourceControl,"source control has one counted cache entry across backing scales")
+    var controlSkin=skin;controlSkin.bodyPolygon=[];controlSkin.stations=[]
+    controlSkin.fixedLayers=try JSONDecoder().decode([DockBitmapLayer].self,from:Data(#"[{"resource":"control","rect":[[13.25,9.5],[22.5,22.5]]}]"#.utf8))
+    let controlRenderer=DockInstrumentRenderer(resources:controlStore)
+    for scale in [1,2] {
+        let rendered=try controlRenderer.render(skin:controlSkin,readings:[:],scale:scale).image
+        let pixels=rendered.dataProvider!.data!,bytes=CFDataGetBytePtr(pixels)!
+        let alphas=(0..<rendered.height).flatMap { y in (0..<rendered.width).map { x in bytes[y*rendered.bytesPerRow+x*4+3] } }
+        try require(alphas.contains{ $0>0 && $0<255 },"fractional control edge retains antialias coverage at 1x and 2x")
+        try require(bytes[3]==0,"source transparent margin stays transparent")
+        for y in 0..<rendered.height { for x in 0..<rendered.width {
+            let offset=y*rendered.bytesPerRow+x*4
+            if bytes[offset+3]>0 {
+                try require(bytes[offset]>=bytes[offset+3]-1 && bytes[offset+1]==0 && bytes[offset+2]==0,"premultiplied source edge has no dark fringe: scale=\(scale) x=\(x) y=\(y) rgba=\(bytes[offset]),\(bytes[offset+1]),\(bytes[offset+2]),\(bytes[offset+3]) sourceSpace=\(String(describing:sourceControl.colorSpace?.name))")
+            }
+        } }
+        let scaledView=DockInstrumentView(frame:.zero);scaledView.presentationBackingScale=scale
+        try scaledView.applyOfficial(skin:controlSkin,rows:[],renderer:controlRenderer,scale:3-scale,locale:"en")
+        try require(scaledView.renderedPixelSize==CGSize(width:96*scale,height:96*scale),"destination backing overrides a stale supplier scale")
+        scaledView.dispose()
+    }
+    // Reuse one offscreen backing context to expose alpha accumulation during repeated redraws.
+    let materialView=DockInstrumentView(frame:.zero)
+    try materialView.applyOfficial(skin:controlSkin,rows:[],renderer:controlRenderer,scale:1,locale:"en")
+    let materialContext=CGContext(data:nil,width:96,height:96,bitsPerComponent:8,bytesPerRow:384,
+        space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
+    func drawMaterial(_ view:DockInstrumentView)->Data {
+        NSGraphicsContext.saveGraphicsState();defer{NSGraphicsContext.restoreGraphicsState()}
+        NSGraphicsContext.current=NSGraphicsContext(cgContext:materialContext,flipped:true)
+        view.draw(view.bounds)
+        return Data(bytes:materialContext.data!,count:materialContext.bytesPerRow*materialContext.height)
+    }
+    let firstMaterial=drawMaterial(materialView)
+    for appearance in [NSAppearance.Name.aqua,.darkAqua,.aqua] {
+        materialView.appearance=NSAppearance(named:appearance)
+        materialView.isHidden=true;materialView.isHidden=false
+        try require(drawMaterial(materialView)==firstMaterial,"show/hide/theme redraw replaces rather than accumulates supplied material alpha")
+    }
+    var dataSkin=controlSkin;dataSkin.stations=skin.stations
+    try materialView.applyOfficial(skin:dataSkin,rows:[reading],renderer:controlRenderer,scale:1,locale:"en")
+    var brokenSkin=dataSkin;brokenSkin.fixedLayers[0].resource="missing"
+    do { try materialView.applyOfficial(skin:brokenSkin,rows:[reading],renderer:controlRenderer,scale:1,locale:"en");throw NativeFailure(message:"missing material accepted") }
+    catch DockArtworkError.missingResource { checks+=1 }
+    try require(drawMaterial(materialView)==firstMaterial,"failed refresh retains exact supplied background without stale quota text")
+    try require((materialView.accessibilityChildren() ?? []).isEmpty,"failed refresh retires stale instrument actions")
+    materialView.dispose()
     var staleInput=input;staleInput.dataState = .stale
     let staleReading=try DockInstrumentProjection.evaluate(staleInput,now:instant)
     var staleSkin=skin;staleSkin.stations[0].replacementResource="test";staleSkin.stations[0].readoutOpacity=0.6
@@ -186,10 +258,11 @@ struct NativeFailure:Error {let message:String}
     let effectsSkin=try JSONDecoder().decode(DockInstrumentSkin.self,from:JSONSerialization.data(withJSONObject:combined))
     let working=try (0..<6).map{index->DockInstrumentReading in
         let id="work-\(index)"
-        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,20,10][index%3],resetsAt:nil,durationSeconds:nil)])
+        var input=DockInstrumentInput(id:id,name:"Synthetic",windows:[DockQuotaWindowInput(id:"short",period:.fiveHour,label:"5h",remainingPercent:[70.0,30,10][index%3],resetsAt:nil,durationSeconds:nil)])
         input.dataState = .fresh;input.working=DockWorkingSignal(subscriptionID:id,bindingVerified:true,fresh:true,observedOutput:true)
         return try DockInstrumentProjection.evaluate(input,now:instant)
     }
+    try require(Set(working.map(\.status)) == Set([DockQuotaStatus.normal,.warning,.critical]),"cache fixture must exercise three quota-state variants")
     var hiddenReadout=skin;hiddenReadout.stations[0].showsReadout=false
     let hiddenResult=try renderer.render(skin:hiddenReadout,readings:["sub":reading],scale:2)
     try require(!hiddenResult.metrics.contains{$0.text==reading.readout},"percentage-off omits only visible quota text")
@@ -205,7 +278,7 @@ struct NativeFailure:Error {let message:String}
     try require(driver.activeIDs.count==6 && driver.animatingIDs.count==6,"six distinct native consumers")
     try require(effectsView.layerUsesCoreImageFilters,"screen compositing uses the public native filter path")
     try require(pool.activeLeaseCount==6 && pool.atlasCount==3 && provider.draws==27,"three variants share counted leases, no per-ID atlas")
-    try require(pool.decodedBytes==3_981_312 && pool.decodedBytes<=EffectResourcePool.maximumBytes,"L64 strongest-hover uses exact shared budget")
+    try require(pool.decodedBytes==3_981_312 && pool.decodedBytes<=EffectResourcePool.maximumBytes,"64 pt strongest-hover stress case uses exact shared budget")
     driver.seekForCapture(0.5);try require(driver.animatingIDs.isEmpty && pool.activeLeaseCount==6,"capture keeps counted lease without copied atlas")
     try effectsView.applyCommunity([]);pool.purgeUnleased();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"profile reset stops consumers before purging")
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
@@ -294,7 +367,7 @@ struct NativeFailure:Error {let message:String}
     edgeDriver.onClearRecordedLocks={locks in edgeClears.append(locks);edgeEnv.presence.recordedLocks.subtract(locks)}
     edgeDriver.start()
     try require(edgeDriver.presentation?.state == .sliver && edgeScheduler.deadline==0.15,"wake dwell starts at first geometry sample")
-    try require(edgeDriver.presentation?.paintedFrame?.width==3 && edgeDriver.presentation?.placement?.wakeFrame.width==16,"wake rectangle is not an input panel")
+    try require(edgeDriver.presentation?.paintedFrame?.width==3 && edgeDriver.presentation?.placement?.wakeFrame.width==20,"wake rectangle is not an input panel")
     let staleEdgeTimer=edgeScheduler.saved[0]
     edgeTime=0.149;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .sliver,"no early reveal")
     edgeTime=0.15;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .expanded && edgeReveals==1,"one genuine deadline reveal")

@@ -101,6 +101,8 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
   modelplan doctor                     show base URL, cache and publication state
   modelplan doctor --share             sanitised cache source/status report; no readers or network
   modelplan update                     explicitly update a standalone/Skill copy from the verified publication pin
+  modelplan plugin install claude-code|codex
+                                       install through the host CLI; otherwise print its commands
   modelplan version
 
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
@@ -186,6 +188,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if cmd == "update" {
 		return updateCmd(fs.Args(), stdout, stderr, c)
+	}
+	if cmd == "plugin" {
+		return pluginCmd(fs.Args(), stdin, stdout, stderr, c)
 	}
 
 	if cmd == "publication" && (!c.json || fs.NArg() != 0) {

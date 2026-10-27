@@ -7,7 +7,13 @@ public enum SettingsError: Error, Equatable {
     case unsupportedSchema, invalidPreference, tooLarge, invalidCatalogue, staleRevision, invalidTime
 }
 public enum SettingsTheme: String, Codable, CaseIterable, Sendable { case system, day, night }
-public enum SettingsSize: String, Codable, CaseIterable, Sendable { case small = "S", medium = "M", large = "L" }
+public enum SettingsSize: String, Codable, CaseIterable, Sendable {
+    case small = "S", medium = "M", large = "L"
+    public var nozzleDiameter: CGFloat {
+        let table = DockNozzleDiameters.current
+        switch self { case .small: return table.small; case .medium: return table.medium; case .large: return table.large }
+    }
+}
 public enum AccessibilityPreference: String, Codable, CaseIterable, Sendable { case system, on }
 public enum PercentageMode: String, Codable, CaseIterable, Sendable { case remaining, used }
 public enum PercentagePin: String, Codable, CaseIterable, Sendable { case auto, fiveHour = "5h", week }
@@ -63,15 +69,19 @@ public struct SettingsPreferences: Codable, Sendable {
     public var transparency: AccessibilityPreference = .system
     public var percentageMode: PercentageMode = .remaining
     public var showPercentages = true
-    public var redBelow = 16
+    public var redBelow = 25
     public var sliverAlert = true
     public var showDock = true
     public var autoHide = true
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false
-    public var followActiveDisplay = true
+    public var followActiveDisplay = false
     public var dockEdge: SettingsDockEdge = .right
+    /// Durable display UUID; nil selects the primary display. Temporary recovery never overwrites it.
+    public var dockDisplayID: String?
+    /// Global bottom-to-top on sides, left-to-right on bottom, independent of display dimensions.
+    public var dockAlongFraction: Double = 0.5
     public var readerConsent = ReaderConsent()
     public var helpHints = FirstUseHintPreferences()
     /// App-owned choice, never the observed SMAppService state. Missing v1 fields default on.
@@ -96,7 +106,7 @@ public struct SettingsPreferences: Codable, Sendable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
         case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
-        case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, readerConsent, helpHints
+        case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, dockDisplayID, dockAlongFraction, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
     public init(from decoder: Decoder) throws {
@@ -122,11 +132,14 @@ public struct SettingsPreferences: Codable, Sendable {
         onboarding = try value(.onboarding, onboarding)
         dockEdge = try value(.dockEdge, dockEdge); readerConsent = try value(.readerConsent, readerConsent)
         helpHints = try value(.helpHints, helpHints)
+        dockDisplayID = try c.decodeIfPresent(String.self, forKey: .dockDisplayID)
+        dockAlongFraction = try value(.dockAlongFraction, dockAlongFraction)
         try validate()
     }
     public func validate() throws {
         func validID(_ id: String) -> Bool { !id.isEmpty && id.utf8.count <= 256 && !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
-        guard [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
+        guard dockAlongFraction.isFinite, (0...1).contains(dockAlongFraction), dockDisplayID.map(validID) ?? true,
+              [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
               [150, 200, 250].contains(beatMilliseconds), openShortcut.isValid, dockShortcut.isValid,
               openShortcut != dockShortcut, subscriptionSettings.count <= 1000, subscriptions.order.count <= 1000,
               subscriptions.hiddenIDs.count <= 1000, subscriptions.order.allSatisfy(validID),

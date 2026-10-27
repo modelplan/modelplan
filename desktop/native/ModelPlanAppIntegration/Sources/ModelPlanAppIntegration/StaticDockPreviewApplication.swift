@@ -33,9 +33,15 @@ import ModelPlanCommunityHost
                 let name: NSAppearance.Name? = value.snapshot.preferences.theme == .system ? nil : value.snapshot.preferences.theme == .day ? .aqua : .darkAqua
                 if NSApplication.shared.appearance?.name != name { NSApplication.shared.appearance = name.flatMap { NSAppearance(named: $0) } }
             }
-            dock.commitPlacement = { [weak application] next, _ in
+            dock.commitDisplayPlacement = { [weak application] displayID, next, fraction in
                 guard let application else { return }
-                Task { try? await application.editor.commit(.dockEdge(next)) }
+                Task { try? await application.editor.commit(.dockPlacement(displayID: displayID, edge: next, alongFraction: fraction)) }
+            }
+            dock.displayChoicesChanged = { [weak application] displays in
+                guard let application else { return }
+                var current = application.editor.context
+                current.displays = displays
+                application.update(context: current)
             }
             dock.catalogueChanged = { [weak application] subscriptions in
                 guard let application else { return }

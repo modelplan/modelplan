@@ -54,7 +54,7 @@ public struct DockInstrumentReading: Sendable {
 
 /// Truth/identity projection only. Fixed artwork/ring geometry belongs to the injected appearance source.
 public enum DockInstrumentProjection {
-    public static func evaluate(_ input: DockInstrumentInput, now: Date, redBelow: Double = 16) throws -> DockInstrumentReading {
+    public static func evaluate(_ input: DockInstrumentInput, now: Date, redBelow: Double = 25) throws -> DockInstrumentReading {
         guard !input.id.isEmpty, input.windows.allSatisfy({!$0.id.isEmpty}), Set(input.windows.map(\.id)).count==input.windows.count else {throw DockLogicError.invalidCatalogue}
         guard now.timeIntervalSinceReferenceDate.isFinite, redBelow.isFinite, (0...100).contains(redBelow) else {throw DockLogicError.invalidTime}
         func value(_ w: DockQuotaWindowInput) -> Double? {
@@ -64,7 +64,7 @@ public enum DockInstrumentProjection {
         }
         func status(_ r: Double?) -> DockQuotaStatus {
             guard let r else{return .unknown}
-            return r==0 || r<redBelow ? .critical : r<41 ? .warning : .normal
+            return r<=redBelow ? .critical : r<41 ? .warning : .normal
         }
         let sorted=input.windows.enumerated().sorted { a,b in
             let x=a.element.orderingHint,y=b.element.orderingHint
