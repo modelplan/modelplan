@@ -45,12 +45,12 @@ codex plugin add modelplan-codex@modelplan
 2. Codex 启动启动器所用的 `node`；
 3. Codex 桌面端自带的运行时（`~/.cache/codex-runtimes/` 下，仅当该客户端安装过）。它是可选候选，目录结构属于 Codex，插件不假设它一定存在；
 4. PATH 中的其他 `node`；
-5. 常见位置：macOS 的 Homebrew 和 `/usr/local/bin`，Linux 的 `/usr/local/bin`、`/usr/bin`，Windows 的 Program Files 和 nvm-windows；
+5. 常见位置：macOS 的 Homebrew 和 `/usr/local/bin`，Linux 的 `/usr/local/bin`、`/usr/bin`；
 6. nvm、fnm、mise、asdf、Volta 安装的版本。
 
 每次启动都会重新选择，不缓存结果，所以升级或删除运行时后，下一个任务会自动重新发现。启动器不会修改 PATH 或全局 Node。全部候选都不可用时，两个工具仍会注册，调用时返回已检查的运行时列表和处理方法。
 
-限制：如果 Codex 的 PATH 中完全没有 `node`，Codex 无法启动启动器，会显示它自己的 MCP 启动错误；请安装 Node.js 22+ 或让 Codex 能找到 `node`。Windows 上覆盖了 Program Files 和 nvm-windows，Codex 桌面端运行时在 Windows 上的位置尚未验证。
+限制：如果 Codex 的 PATH 中完全没有 `node`，Codex 无法启动启动器，会显示它自己的 MCP 启动错误；请安装 Node.js 22+ 或让 Codex 能找到 `node`。
 
 ### 必需与可选
 
@@ -61,7 +61,7 @@ codex plugin add modelplan-codex@modelplan
 | Python 3 | 插件配套的 CLI 就绪前读取本机额度 | 额度显示为不可用，并说明原因 |
 | 插件配套的 `modelplan` CLI（**自动下载**） | 主动提醒（`modelplan advise`）、提示钩子、Codex 账号读数；也是首选的额度读取器 | 下载好之前没有提醒；看板会说明原因 |
 
-**插件配套的 CLI。** 插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本，写明它的版本号和各个 macOS、Linux 程序包的 SHA-256。Codex 启动插件时，插件的服务会在后台从 GitHub 下载这个版本，放到 `~/.cache/modelplan-cli/<版本>`，只有校验值和插件里写的完全一致才使用。所以安装或升级插件就够了，不需要另外安装或升级 CLI。不改其他任何东西：不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan`（给终端用的）保持不动，只在配套的那份还没下载好时临时使用。`MODELPLAN_PLUGIN_CLI=off` 可关闭自动下载。Windows 不自动下载，请从 [Releases](https://github.com/modelplan/modelplan/releases) 下载 `modelplan` 放到 PATH 中。
+**插件配套的 CLI。** 插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本，写明它的版本号和各个 macOS、Linux 程序包的 SHA-256。Codex 启动插件时，插件的服务会在后台从 GitHub 下载这个版本，放到 `~/.cache/modelplan-cli/<版本>`，只有校验值和插件里写的完全一致才使用。所以安装或升级插件就够了，不需要另外安装或升级 CLI。不改其他任何东西：不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan`（给终端用的）保持不动，只在配套的那份还没下载好时临时使用。`MODELPLAN_PLUGIN_CLI=off` 可关闭自动下载。
 
 **开启主动提醒。** 主动提醒需要插件配套的 CLI，以及插件唯一的钩子（Codex 只在你允许后运行）。看板的 NOW 面板只列出没就绪的部分，每项一行：CLI 正在下载、下载失败（附原因和 **重试**），或者暂时在用你自己装的旧版本；钩子在本机还没运行过；钩子定义变了、新定义还没运行（Codex 会跳过有变化的钩子，直到你重新审核；正在进行的对话里没有提示）；或者上一次运行没能算出提醒（附退出码、错误和最近一次成功时间）。插件看不到钩子是否已授权，所以面板只说钩子最近一次在本机（任一对话）什么时候运行、结果如何，不会写“已授权”。全部正常时只显示一行：设置完整、提醒计算正常，以及当前有没有要提醒的事。也可以直接让 Codex “检查 ModelPlan 设置”（`setup` 技能）。
 
@@ -81,7 +81,7 @@ codex plugin remove modelplan-codex@modelplan
 codex plugin marketplace remove modelplan
 ```
 
-`plugin remove` 会删除插件缓存。公开数据缓存（`~/Library/Caches/modelplan`、`~/.cache/modelplan` 或 `%LOCALAPPDATA%\modelplan`）与 CLI 共用，两者都不用时可以手动删除。
+`plugin remove` 会删除插件缓存。公开数据缓存（`~/Library/Caches/modelplan`、`~/.cache/modelplan`）与 CLI 共用，两者都不用时可以手动删除。
 
 ## 看板内容
 

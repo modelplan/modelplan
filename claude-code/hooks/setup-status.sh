@@ -30,7 +30,7 @@ if m=$(ago "$snap"); then
 elif grep -q 'modelplan statusline' "$(settings_file)" 2>/dev/null; then
   echo "statusline: set in $(settings_file), no reading recorded yet (it records once the interactive status line renders)"
 else
-  echo "statusline: optional display, not set up (/modelplan:statusline); the CLI detects signed-in tools"
+  echo "statusline: optional display, not set up (/modelplan:statusline); Claude quota needs an available local snapshot; automatic detection is coming"
 fi
 # Other plans read through CodexBar (optional): the CLI reports its own config and cache.
 if [ -n "$cli" ] && [ -n "$cliv" ] && at_least "$cliv" 0.5.13; then

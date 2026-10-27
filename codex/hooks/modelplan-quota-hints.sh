@@ -7,7 +7,11 @@
 # (systemMessage); only the task-start brief goes to the model. The hook itself downloads
 # nothing; it writes only ~/.cache/modelplan-codex.
 # Off silences the entire prompt hook, including setup notices and task briefs.
-[ "$(cat "$HOME/.config/modelplan/codex/automatic-hints" 2>/dev/null)" = off ] && exit 0
+if [ "$(cat "$HOME/.config/modelplan/codex/automatic-hints" 2>/dev/null)" = off ]; then
+  # Drain the host's input so a silent hook cannot cause a broken pipe.
+  cat >/dev/null 2>&1
+  exit 0
+fi
 here=$(dirname "$0")
 state="$HOME/.cache/modelplan-codex"
 # Records, for the dashboard (all on this machine, from whichever chat ran last):
