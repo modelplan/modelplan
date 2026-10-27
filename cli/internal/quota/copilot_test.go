@@ -45,7 +45,10 @@ func TestCopilotHelperProcess(t *testing.T) {
 		switch req.Method {
 		case "connect":
 		case "auth.getStatus":
-			result = `{"isAuthenticated":true,"authType":"user"}`
+			result = os.Getenv("MODELPLAN_TEST_COPILOT_AUTH_STATUS")
+			if result == "" {
+				result = `{"isAuthenticated":true,"authType":"user"}`
+			}
 		case "account.getQuota":
 			result = copilotQuota
 		default:

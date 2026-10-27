@@ -48,6 +48,7 @@ type copilotState struct {
 	Failures        int            `json:"failures"`
 	Availability    string         `json:"availability"`
 	LoginGeneration string         `json:"loginGeneration,omitempty"`
+	GoodGeneration  string         `json:"goodGeneration,omitempty"`
 	Good            *codexbarEntry `json:"lastGood,omitempty"`
 }
 
@@ -121,7 +122,7 @@ func copilotAdmission(ctx context.Context) (CopilotAccess, string) {
 // windows disappear without changing the original capture time or stored read.
 func ReadCopilotCache(ctx context.Context, cache string, now time.Time) CopilotResult {
 	r := CopilotResult{Beta: true, Confidence: "exact", Freshness: "unknown"}
-	_, blocked := copilotAdmission(ctx)
+	access, blocked := copilotAdmission(ctx)
 	if blocked != "" {
 		r.Availability = blocked
 		r.NextStep = copilotNext(blocked)
@@ -129,10 +130,20 @@ func ReadCopilotCache(ctx context.Context, cache string, now time.Time) CopilotR
 	}
 	s := loadCopilotState(cache)
 	r.Availability = s.Availability
-	if r.Availability == "" {
+	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
 	}
 	r.NextAttemptAt = s.NextAt
+	// A last-good reading belongs only to its capture generation. Cache-only
+	// requests for a new generation must not expose the preceding login's quota.
+	// Older unbound cache entries remain usable only by the legacy empty scope.
+	if s.Good != nil && s.GoodGeneration != access.LoginGeneration {
+		if r.Availability == "ok" {
+			r.Availability = "stale"
+		}
+		r.NextStep = copilotNext(r.Availability)
+		return r
+	}
 	r.NextStep = copilotNext(r.Availability)
 	if s.Good != nil && !s.Good.ObservedAt.IsZero() && !s.Good.ObservedAt.After(now) {
 		r.ObservedAt = s.Good.ObservedAt
@@ -151,11 +162,28 @@ func ReadCopilotCache(ctx context.Context, cache string, now time.Time) CopilotR
 	}
 	return r
 }
-func copilotCachedEntry(s copilotState, now time.Time) codexbarEntry {
+func copilotCachedEntry(s copilotState, now time.Time, generation string) codexbarEntry {
+	availability := s.Availability
+	if s.LoginGeneration != generation {
+		availability = "stale"
+	}
+	if s.Good != nil && s.GoodGeneration != generation {
+		if availability == "ok" {
+			availability = "stale"
+		}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext(availability)}
+	}
 	if s.Good == nil {
-		return codexbarEntry{Status: "error", Error: copilotNext(s.Availability)}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext(s.Availability)}
 	}
 	e := *s.Good
+	// The native dispatcher must receive the latest attempt's availability,
+	// independently of the retained historical payload. It persists this error
+	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
+	if availability != "ok" {
+		e.Status = "error"
+		e.Error = copilotNext(availability)
+	}
 	e.Windows = nil
 	for _, w := range s.Good.Windows {
 		if w.ResetsAt == nil || w.ResetsAt.After(now) {
@@ -172,40 +200,44 @@ var copilotAttempts sync.Map
 func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := copilotAdmission(ctx)
 	if blocked != "" {
-		return codexbarEntry{Status: "error", Error: copilotNext(blocked)}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext(blocked)}
 	}
 	if cache == "" {
-		return codexbarEntry{Status: "error", Error: "Copilot cache unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "Copilot cache unavailable"}
 	}
 	unlock, ok := lockFile(filepath.Join(cache, "observed", "copilot.lock"), time.Now(), 2*nativeTimeout)
 	if !ok {
-		return copilotCachedEntry(loadCopilotState(cache), now)
+		return copilotCachedEntry(loadCopilotState(cache), now, access.LoginGeneration)
 	}
 	defer unlock()
 	s := loadCopilotState(cache)
 	if last, ok := copilotAttempts.Load(cache); ok && now.Sub(last.(time.Time)) < 5*time.Minute {
-		return copilotCachedEntry(s, now)
+		return copilotCachedEntry(s, now, access.LoginGeneration)
 	}
 	if now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(5*time.Minute)) {
-		return copilotCachedEntry(s, now)
+		return copilotCachedEntry(s, now, access.LoginGeneration)
 	}
-	if s.Availability == "expired_login" && s.LoginGeneration == access.LoginGeneration {
-		return copilotCachedEntry(s, now)
+	// A supplied generation permits an authentication hold until a proven tool
+	// state change/Settings Retry. Legacy dispatch has no generation handoff:
+	// retry only after its persisted adaptive backoff, never hold it forever.
+	if s.Availability == "expired_login" && access.LoginGeneration != "" && s.LoginGeneration == access.LoginGeneration {
+		return copilotCachedEntry(s, now, access.LoginGeneration)
 	}
 	s.AttemptAt = now.UTC()
 	s.NextAt = now.Add(5 * time.Minute).UTC()
 	s.LoginGeneration = access.LoginGeneration
 	if !saveCopilotState(cache, s) {
-		return codexbarEntry{Status: "error", Error: "Copilot attempt gate unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "Copilot attempt gate unavailable"}
 	}
 	copilotAttempts.Store(cache, now)
 	e := fetchCopilot(ctx, nil, "local", "", now)
 	// CLIJIT cancels in-flight reads on revocation. Never republish their result.
 	if _, blocked := copilotAdmission(ctx); ctx.Err() != nil || blocked != "" {
-		return codexbarEntry{Status: "error", Error: copilotNext("consent_required")}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext("consent_required")}
 	}
 	if e.Status == "ok" {
 		s.Good = &e
+		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0
 		s.Availability = "ok"
 		s.NextAt = now.Add(10 * time.Minute).UTC()
@@ -224,7 +256,7 @@ func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.
 		}
 	}
 	if !saveCopilotState(cache, s) {
-		return codexbarEntry{Status: "error", Error: "Copilot result cache unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "Copilot result cache unavailable"}
 	}
-	return copilotCachedEntry(s, now)
+	return copilotCachedEntry(s, now, access.LoginGeneration)
 }
