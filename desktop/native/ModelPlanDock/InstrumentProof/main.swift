@@ -159,7 +159,9 @@ struct NativeFailure:Error {let message:String}
     // Neutral precomposited control: preserve source alpha, downsample once at destination scale.
     let controlContext=CGContext(data:nil,width:180,height:180,bitsPerComponent:8,bytesPerRow:720,
         space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue|CGImageAlphaInfo.premultipliedLast.rawValue)!
-    controlContext.setShouldAntialias(true);controlContext.setFillColor(CGColor(red:1,green:0,blue:0,alpha:1))
+    controlContext.setShouldAntialias(true)
+    // Declare the fixture in the same sRGB space; generic RGB color matching may add green.
+    controlContext.setFillColor(CGColor(colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!,components:[1,0,0,1])!)
     controlContext.fillEllipse(in:CGRect(x:9,y:9,width:162,height:162))
     let controlURL=root.appendingPathComponent("neutral-control.png")
     let controlWriter=CGImageDestinationCreateWithURL(controlURL as CFURL,"public.png" as CFString,1,nil)!
