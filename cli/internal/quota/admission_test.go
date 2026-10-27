@@ -142,3 +142,53 @@ exec "$MODELPLAN_TEST_HELPER_INNER" "$@"
 		t.Fatal("revoked helper admitted")
 	}
 }
+
+func TestCodexRuntimeRevocationFencesPublication(t *testing.T) {
+	isolateHome(t)
+	p := Paths{Cache: t.TempDir()}
+	inner, _ := fakeCodex(t, acctResponse)
+	dir := t.TempDir()
+	bin, started, release := filepath.Join(dir, "paused-codex"), filepath.Join(dir, "started"), filepath.Join(dir, "release")
+	t.Setenv("MODELPLAN_TEST_HELPER_STARTED", started)
+	t.Setenv("MODELPLAN_TEST_HELPER_RELEASE", release)
+	t.Setenv("MODELPLAN_TEST_HELPER_INNER", inner)
+	script := `#!/bin/sh
+: > "$MODELPLAN_TEST_HELPER_STARTED"
+while [ ! -f "$MODELPLAN_TEST_HELPER_RELEASE" ]; do sleep 0.01; done
+exec "$MODELPLAN_TEST_HELPER_INNER" "$@"
+`
+	os.WriteFile(bin, []byte(script), 0700)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer os.WriteFile(release, nil, 0600)
+	done := make(chan error, 1)
+	go func() { done <- RefreshCodexAccount(ctx, p.Cache, bin, acctNow) }()
+	for {
+		if _, err := os.Stat(started); err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			t.Fatal("runtime did not enter")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "codex", false, "", "", time.Now()) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := ForgetTool(p, "codex"); err == nil {
+		t.Fatal("cleanup succeeded during runtime read")
+	}
+	os.WriteFile(release, nil, 0600)
+	if err := <-done; err == nil || !strings.Contains(err.Error(), "consent changed") {
+		t.Fatal("stale runtime result published", err)
+	}
+	if _, err := os.Stat(accountPath(p.Cache)); !os.IsNotExist(err) {
+		t.Fatal("stale runtime cache written")
+	}
+	if err := ForgetTool(p, "codex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RefreshCodexAccount(ctx, p.Cache, bin, acctNow); err == nil {
+		t.Fatal("revoked runtime re-admitted")
+	}
+}
