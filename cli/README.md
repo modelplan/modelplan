@@ -111,6 +111,16 @@ Only `premium_interactions` becomes a monthly window. JSON adds `windows[].reque
 Wire/schema reference: [official Copilot SDK usage and billing](https://github.com/github/copilot-sdk/blob/538675843887643ce471c874a3a9870ebda3f6f4/docs/features/usage-and-billing.md). The wrapper and fixtures are independently written; no external implementation or new dependency is included. Live account acceptance and enterprise host behavior are unverified.
 
 
+## Explicit standalone CLI updates
+
+`modelplan update [--json]` updates only standalone or Skill-installed copies. Plugin cache copies (including symlinks) and App bundles are refused before any network/cache work; update those through their owner. No other command updates the executable.
+
+The command refreshes/verifies the publication (with a last-verified-cache fallback on network failure), reads `client.data.cli.latest` and `cli.sha256["os/arch"]` from FEEDFIX's catalogue design, and downloads that exact release archive from GitHub Releases. It never asks GitHub for “latest”, accepts a download URL from metadata or guesses a missing platform checksum. Until the publication carries a supported pin, it reports unavailable and leaves the binary alone. Older/equal pins do not downgrade a newer CLI.
+
+The archive must match its SHA-256 before bounded tar/ZIP extraction. Invalid checksums, unsafe archive entries, truncation, cancellation and failed staging keep the current executable. A successful replacement keeps the previous binary at `<executable>.previous`. A per-executable lock prevents overlapping updates; the updater never deletes the verified catalogue or reader/helper caches. Publication/download HTTP honors the App-supplied proxy environment. `--offline` refuses without network or executable changes.
+
+`modelplan update [--json]` 只更新独立或 Skill 安装的副本；插件缓存（包括符号链接）和 App 包内的副本在联网/访问缓存前拒绝，请通过其管理方更新。其他命令绝不更新可执行文件。仅从已校验发布中的 `cli.latest` 和按 `os/arch` 索引的 SHA-256 选择准确版本，不查 GitHub 的 latest API、不接受元数据 URL、不猜缺失校验值；发布尚无该字段时明确报告不可用。校验、归档、取消或暂存失败保留现有文件，成功后在 `.previous` 保留上一个副本，不删除已校验目录/读取器缓存。HTTP 继承 App 传入的代理；离线模式不更新。
+
 ## Layout
 
 | Package | Role |
