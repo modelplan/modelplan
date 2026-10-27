@@ -223,10 +223,19 @@ public struct StaticDockGeometry {
         guard passIsCurrent(generation) else { return }
         model = next
         if rows.isEmpty && appearance == nil {
-            dockView.setFrameSize(CGSize(width: 210, height: 60))
-            empty.frame = dockView.bounds.insetBy(dx: 10, dy: 10)
+            let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
+            dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
+            empty.font = .systemFont(ofSize: 13 * factor)
+            empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
             if empty.superview == nil { dockView.addSubview(empty) }
         } else { empty.removeFromSuperview() }
+        if appearance == nil {
+            geometry.hoverRects = [dockView.bounds]
+            let scales = sliverParameters.sizeScales
+            let factor = passPreferences.size == .small ? scales.small : passPreferences.size == .large ? scales.large : scales.medium
+            try? geometry.registerSliver(hullBounds: dockView.bounds, expandedSize: dockView.frame.size,
+                                        edge: passPreferences.dockEdge, parameters: sliverParameters, scale: factor)
+        }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
         if let rect = geometry.consoleButton { consoleButton.frame = rect }

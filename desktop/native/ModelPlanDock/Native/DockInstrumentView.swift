@@ -134,7 +134,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
             let value=[r.alias ?? r.name,r.readout].joined(separator:"  ")
-            (value as NSString).draw(at:CGPoint(x:12,y:CGFloat(index)*communityRowHeight+14 * communityRowHeight / 44),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12 * communityRowHeight / 44,weight:.regular),.foregroundColor:NSColor.labelColor])
+            (value as NSString).draw(at:CGPoint(x:12 * communityRowHeight / 44,y:CGFloat(index)*communityRowHeight+14 * communityRowHeight / 44),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12 * communityRowHeight / 44,weight:.regular),.foregroundColor:NSColor.labelColor])
         }
     }
     private func stationRect(_ id:String)->CGRect? {
