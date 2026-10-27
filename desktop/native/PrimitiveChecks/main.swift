@@ -14,9 +14,22 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     try check(predicate(), message)
 }
 
-@MainActor func awaitCautionDeadline(_ caution: CautionControl, in mode: CFRunLoopMode) throws {
+// Read-only diagnostics for the transferred-binary runtime; never advance/validate the control.
+@MainActor func cautionTrackingRunLoopSnapshot(_ mode: CFRunLoopMode) -> String {
+    let current: CFRunLoop = CFRunLoopGetCurrent()
+    let main: CFRunLoop = CFRunLoopGetMain()
+    let now = CFAbsoluteTimeGetCurrent()
+    func nextTimer(_ loop: CFRunLoop) -> String {
+        let next = CFRunLoopGetNextTimerFireDate(loop, mode)
+        return next == 0 ? "none" : String(format: "%.6f", next - now)
+    }
+    return "mainThread=\(Thread.isMainThread), currentIsMain=\(CFEqual(current, main)), currentMode=\(String(describing: CFRunLoopCopyCurrentMode(current))), nextCurrent=\(nextTimer(current)), nextMain=\(nextTimer(main))"
+}
+
+@MainActor func awaitCautionDeadline(_ caution: CautionControl, in mode: CFRunLoopMode, label: String = "unlabelled") throws {
     let started = ProcessInfo.processInfo.systemUptime
     let end = started + 0.25
+    let before = cautionTrackingRunLoopSnapshot(mode)
     var activations = 0, exits: [String] = []
     func completed() -> Bool {
         caution.cautionState.mode == .steadyUnacknowledged && caution.animationDuration == nil
@@ -32,6 +45,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         guard result == .stopped else { break }
     }
     let waited = ProcessInfo.processInfo.systemUptime - started
+    fputs("DIAG caution tracking: case=\(label); before={\(before)}; after={\(cautionTrackingRunLoopSnapshot(mode))}\n", stderr)
     try check(completed(), "caution deadline deferred over tracking mode: activations=\(activations), exits=\(exits), waited=\(waited), state=\(caution.cautionState.mode), animation=\(String(describing: caution.animationDuration))")
 }
 
@@ -53,7 +67,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
                 stopped = true; CFRunLoopStop(CFRunLoopGetMain())
             }
         }
-        try awaitCautionDeadline(caution, in: mode)
+        try awaitCautionDeadline(caution, in: mode, label: interrupted ? "interrupted" : "normal")
         try check(!interrupted || stopped, "tracking regression did not interrupt the activation")
     }
     // A cancelled callback must still fail; the wait may not validate state itself.
@@ -63,7 +77,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     suspended.update([CautionCondition(id: "cancelled", severity: .amber)], profile: RenderProfile())
     time = 9.9; suspended.validate(); suspended.suspend(); time = 10.2
     var rejected = false
-    do { try awaitCautionDeadline(suspended, in: mode) } catch { rejected = true }
+    do { try awaitCautionDeadline(suspended, in: mode, label: "suspended-negative-control") } catch { rejected = true }
     try check(rejected && suspended.cautionState.mode == .blinking, "tracking check accepted a missing deadline callback")
 }
 
@@ -151,7 +165,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         time = 10.2
         let mode = CFRunLoopMode(rawValue: "NSEventTrackingRunLoopMode" as CFString)
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), mode)
-        try awaitCautionDeadline(row.caution, in: mode)
+        try awaitCautionDeadline(row.caution, in: mode, label: "integrated-row")
         try cautionTrackingDeadlineChecks()
         row.caution.update([red], profile: profile); let deadline = row.caution.cautionState.deadline
         row.caution.suspend(); time += 2; row.caution.validate()
