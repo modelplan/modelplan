@@ -11,6 +11,8 @@ import AppKit
     public var onIntent: ((MainScreenIntent) -> Void)?
     public var onIntents: (([MainScreenIntent]) -> Void)?
     public var onHelpChange: ((HelpExplanation?, CGRect?) -> Void)?
+    /// The actual host may consume Escape for its Help layer before changing local comparison state.
+    public var onHelpEscape: (() -> Bool)?
     public var onHintInput: ((InstrumentHintInput) -> Void)?
     private var language: InstrumentLanguage = .chinese, compact = false
     private var bitmap: CGImage?, bitmapScale: Int?
@@ -97,6 +99,7 @@ import AppKit
     public func selectModel(_ id: String) { mutate { $0.selectModel(id) } }
     public func back() { mutate { $0.back() } }
     @discardableResult public func handleEscape() -> Bool {
+        if onHelpEscape?() == true { return true }
         guard controller.navigation.sourced != nil else { return false }
         mutate { $0.back() }
         return true
@@ -348,7 +351,7 @@ import AppKit
         controls.removeAll(); configureList(nil); setAccessibilityChildren([]); focusedID = nil; focus.path = nil
     }
     public func dispose() {
-        closeForCockpit(); onIntent = nil; onIntents = nil; onHelpChange = nil; onHintInput = nil
+        closeForCockpit(); onIntent = nil; onIntents = nil; onHelpChange = nil; onHintInput = nil; onHelpEscape = nil
     }
     public override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); if window == nil { suspend() }; refresh() }
     public override func viewDidChangeBackingProperties() { super.viewDidChangeBackingProperties(); refresh() }
@@ -364,6 +367,7 @@ import AppKit
     weak var owner: MainScreenView?
     var region: MainScreenHitRegion
     private var pointerAction: MainScreenAction?
+    private var detailNodes=[String:NSAccessibilityElement]()
     private var currentOwner: MainScreenView? { guard let owner, owner.control(for: region.id) === self, owner.owns(self) else { return nil }; return owner }
     init(owner: MainScreenView, region: MainScreenHitRegion) { self.owner = owner; self.region = region; super.init(frame: region.rect); focusRingType = .none; configure(region) }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
@@ -374,11 +378,26 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {}
     func configure(_ r: MainScreenHitRegion) {
         region = r; frame = r.rect; isEnabled = r.enabled
-        setAccessibilityElement(true); setAccessibilityIdentifier(r.id); setAccessibilityRole(r.role == .button ? .button : .image)
-        setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled); setAccessibilityValue(r.value)
+        setAccessibilityElement(true); setAccessibilityIdentifier(r.id)
+        setAccessibilityRole(!r.accessibilityDetails.isEmpty ? .group:r.role == .button ? .button:.staticText)
+        setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled);setAccessibilityValue(r.value)
+        let retained=Set(r.accessibilityDetails.map(\.id))
+        for id in Array(detailNodes.keys) where !retained.contains(id) {
+            let node=detailNodes.removeValue(forKey:id);node?.setAccessibilityElement(false);node?.setAccessibilityParent(nil)
+        }
+        setAccessibilityChildren(r.accessibilityDetails.map { item in
+            let node=detailNodes[item.id] ?? NSAccessibilityElement();detailNodes[item.id]=node
+            node.setAccessibilityElement(true);node.setAccessibilityRole(.staticText);node.setAccessibilityParent(self)
+            node.setAccessibilityIdentifier(r.id+"."+item.id);node.setAccessibilityLabel(item.label);node.setAccessibilityValue(item.value)
+            node.setAccessibilityFrameInParentSpace(bounds);return node
+        })
         toolTip = nil
     }
-    func retire() { owner = nil; pointerAction = nil; isEnabled = false; nextKeyView = nil; setAccessibilityEnabled(false); setAccessibilityElement(false) }
+    func retire() {
+        owner = nil; pointerAction = nil; isEnabled = false; nextKeyView = nil; setAccessibilityEnabled(false); setAccessibilityElement(false)
+        for node in detailNodes.values {node.setAccessibilityElement(false);node.setAccessibilityParent(nil)}
+        detailNodes.removeAll();setAccessibilityChildren([])
+    }
     override func becomeFirstResponder() -> Bool { guard acceptsFirstResponder, let owner = currentOwner else { return false }; owner.reveal(region.id); owner.focusChanged(region.id); return true }
     override func resignFirstResponder() -> Bool { currentOwner?.focusChanged(nil); return true }
     override func mouseDown(with event: NSEvent) { guard region.enabled, let owner = currentOwner else { return }; pointerAction = region.action; owner.pointerMode(); if acceptsFirstResponder { window?.makeFirstResponder(self) } }

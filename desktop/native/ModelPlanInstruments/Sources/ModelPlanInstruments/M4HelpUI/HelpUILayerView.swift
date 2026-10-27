@@ -70,6 +70,7 @@ import AppKit
     public var onAction:((HelpUIAction)->Void)? { didSet {
         card?.button.isEnabled=onAction != nil && card?.button.isHidden==false
         mapSource?.isEnabled=onAction != nil
+        secondaryMapSource?.isEnabled=onAction != nil
     } }
     public var onHintInput:((InstrumentHintInput)->Void)?
     /// A changed geometry result; upper composition alone checks actual visibility and confirms an offer.
@@ -85,6 +86,8 @@ import AppKit
     private var card:HelpUICardView?,retiringCard:HelpUICardView?
     private var mapSource:HelpUIActionButton?
     private var mapSourceID:String?
+    private var secondaryMapSource:HelpUIActionButton?
+    private var secondaryMapSourceID:String?
     public override var isFlipped:Bool { true }
     public override var acceptsFirstResponder:Bool { onAction != nil && (presentation?.mapHeader != nil || presentation?.card != nil) }
     public init(recipeProvider:HelpUIRecipeProvider?=nil,elapsed:(()->Double)?=nil) {
@@ -137,6 +140,13 @@ import AppKit
         var frames:[CGRect] = candidate.mapLabels.map(\.frame)
         if let header=candidate.mapHeader { frames.append(header) }
         if let source=candidate.mapSourceFrame { frames.append(source) }
+        if let source=candidate.secondaryMapSourceFrame {
+            guard input.map.mode != .hidden,candidate.mapSourceFrame != nil,
+                  input.map.secondarySourceFrame==source,input.map.secondarySourceActionID != nil,
+                  input.map.secondarySourceActionTitle != nil,
+                  HelpUIGeometry.free(source,from:candidate.mapLabels.map(\.frame)+(candidate.mapHeader.map { [$0] } ?? [])+(candidate.mapSourceFrame.map { [$0] } ?? [])) else { return .init(sessionID:input.sessionID,unresolvedMapIDs:["invalidRecipe"]) }
+            frames.append(source)
+        }
         if let card=candidate.card { frames.append(card.frame) }
         let safe=HelpUIGeometry.safe(input.viewport)
         guard candidate.sessionID==input.sessionID,candidate.mapLabels.count<=32,
@@ -180,6 +190,18 @@ import AppKit
             }
             mapSource?.title=text;mapSource?.frame=frame;mapSource?.font=buttonFont;mapSource?.isEnabled=onAction != nil
         } else { retireMapSource() }
+        if let frame=result.secondaryMapSourceFrame,let id=input.map.secondarySourceActionID,let text=input.map.secondarySourceActionTitle {
+            if secondaryMapSourceID != id {
+                retireSecondaryMapSource();let button=HelpUIActionButton(frame:frame)
+                secondaryMapSource=button;secondaryMapSourceID=id;addSubview(button)
+                button.invoke={ [weak self,weak button] sender in
+                    guard let self,let button,self.secondaryMapSource === button,sender === button,
+                          self.input?.active==true,self.input?.map.secondarySourceActionID==id,self.presentation?.secondaryMapSourceFrame != nil else { return }
+                    self.onAction?(.mapSourceAction(actionID:id))
+                }
+            }
+            secondaryMapSource?.title=text;secondaryMapSource?.frame=frame;secondaryMapSource?.font=buttonFont;secondaryMapSource?.isEnabled=onAction != nil
+        } else { retireSecondaryMapSource() }
         setAccessibilityLabel(catalog.title)
     }
     private func applyCard(_ result:HelpUIPresentation,input:HelpUIRenderInput,token:UInt64) {
@@ -221,7 +243,8 @@ import AppKit
         }
     }
     private func removeRetiringCard() { retiringCard?.layer?.removeAllAnimations();retiringCard?.removeFromSuperview();retiringCard=nil }
-    private func retireMapSource() { mapSource?.retire();mapSource?.removeFromSuperview();mapSource=nil;mapSourceID=nil }
+    private func retireSecondaryMapSource() { secondaryMapSource?.retire();secondaryMapSource?.removeFromSuperview();secondaryMapSource=nil;secondaryMapSourceID=nil }
+    private func retireMapSource() { mapSource?.retire();mapSource?.removeFromSuperview();mapSource=nil;mapSourceID=nil;retireSecondaryMapSource() }
     private func clearMap() {
         header.isHidden=true
         for label in labels.values { label.removeFromSuperview() };labels.removeAll();retireMapSource()
@@ -294,6 +317,7 @@ import AppKit
         let local=convert(point,from:superview)
         if presentation?.mapHeader != nil {
             if let button=mapSource,button.frame.contains(local),button.isEnabled { return button }
+            if let button=secondaryMapSource,button.frame.contains(local),button.isEnabled { return button }
             return input?.map.mode == .latched && bounds.contains(local) ? self:nil
         }
         guard let card,!card.retired,card.frame.contains(local) else { return nil }

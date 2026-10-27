@@ -153,7 +153,7 @@ import CoreText
                             }
                         }
                     }
-                    regions.append(.init(id:"compare.chart",rect:slot,label:compare.chartDescription,help:compare.help,role:.readout,tabStop:false))
+                    regions.append(.init(id:"compare.chart",rect:slot,label:compare.chartDescription,help:compare.help,role:.readout,tabStop:false,accessibilityDetails:compare.accessibilityDetails(for:chart)))
                 }
             }
             let count=compare.efforts.count,ladderStart=screen.minX+40,keyWidth=(screen.width-114)/Double(max(1,count))

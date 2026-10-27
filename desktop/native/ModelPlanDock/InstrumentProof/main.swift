@@ -475,7 +475,9 @@ struct NativeFailure:Error {let message:String}
         let font=try fonts.font("mono",size:11,weight:400)
         try require((CTFontCopyPostScriptName(font) as String)=="JetBrainsMono-Regular","actual Regular instance, not the first Thin descriptor")
     }
-    let receipt:[String:Any]=["schemaVersion":1,"checks":checks,"result":"passed","fixtureOnly":true,
+    let b23Checks=try b23CardAccessibilityChecks();checks+=b23Checks
+    print("PASS \(b23Checks) B23 card AX/localized-copy/stable-control checks (offscreen metadata only)")
+    let receipt:[String:Any]=["schemaVersion":1,"checks":checks,"b23AccessibilityChecks":b23Checks,"result":"passed","fixtureOnly":true,
         "physicalInputAccepted":false,"officialPixelAccepted":false,"effectsAccepted":false,"uiLaunched":false]
     try JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("native-checks.json"),options:.atomic)
     print("PASS \(checks) native resource/raster/font checks (synthetic; no visual or input acceptance)")
