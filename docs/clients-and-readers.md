@@ -45,7 +45,7 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 
 **Routing**, per provider, from the catalogue: `preferred: native | codexbar | off`.
 
-- **Native first, no automatic CodexBar fallback for head providers** (coordinator decision after source review, 2026-10-27). CodexBar's head-provider paths refresh tokens or launch CLIs, which our safeguards forbid. A native reader that fails on an upstream change shows "temporarily unavailable" until our fix ships. A later CodexBar pin whose path for that provider passes the audit may be enabled as fallback through the catalogue.
+- **Native first; CodexBar fallback only through an audited path.** Head providers follow the same audit as the long tail: fallback is allowed for a provider only when CodexBar's path for it is in the standard class (no token refresh). At 0.81.0 CodexBar's Claude, Codex, Gemini and Grok paths refresh tokens and Copilot uses CodexBar's own GitHub login, so those have no fallback; Cursor's local-app path may qualify after the audit. Without an eligible path, a native reader that fails on an upstream change shows "temporarily unavailable" until our fix ships.
 - **Remote switch.** Flipping `preferred` in the catalogue moves every user within hours, for example to an audited CodexBar path while our fix ships. `off` is the kill switch if a provider must stop being read.
 - **One reading per subscription.** Identities are keyed hashes, so a subscription reached through several tools (Codex app/CLI/IDE; Grok and Cursor on The X Subscription) is shown once, from one reader, with the source in the details.
 
