@@ -435,3 +435,47 @@ segments use static hatching; shared focus/hover/AX help lists every supplied
 part. Missing history paints no cycle bars, and credits have no history API.
 This adds no reader, schema, scorer, persistence, polling or hint policy. Official
 chart registration/palette and physical/performance evidence remain separate.
+
+## Effort, Destinations and public links
+
+`EffortPageSnapshot` projects `EffortPagePresentation`, preserving the injected
+selector's publication identity, ordered membership, availability notices and
+older badges. It adds no legacy switch, frontier solver or ranking policy.
+Published ability/cost points form the neutral chart when their supplied bases
+are compatible; unavailable scores leave the catalog/effort labels readable.
+Exact comparison actions require the existing exact selection join. Point
+activation opens the single local comparison and leaves the real setting intact.
+
+`DestinationsPageSnapshot` reuses supplied 7/30-day project rankings and the
+existing scoped/running-first session projection. Combined totals never become
+an account amount without the existing attribution rule. Project names are
+removed from projects, timeline, details and help when hidden; opaque IDs remain
+routing keys. Started/ended instants remain supplied facts; last-seen age is not
+an invented end timestamp. Session rates use their own fresh configuration and
+60-second gate. Projects/Timeline and their backing ranges live in the existing
+`MainScreenLocation`. `locationChanged(location, temporary:)` distinguishes a
+sourced patch from the underlying location; Back restores its original choices.
+The host owns global location persistence. Timeline and record producers may use
+the existing `open(.session(id), from:)` seam; shared embedding remains host-owned.
+
+Comparison traces now run across every published effort on a log2 CURRENT-ratio
+axis. One resolver supplies table, Standard/Fast samples and marker values. The
+domain always includes all supported speeds, independent of Try/Fast selection;
+unknown current/time, zero and missing values stay gaps rather than normalizing
+against the recommendation. Ability, cost and time keep distinct line styles,
+with endpoint names, role marker patterns and cost/time-only Fast overlays.
+Effort-key centers align with the graph's effort positions. The existing slot
+presence rule remains 34 points high and 160 wide. Link/header content consumes
+no chart layout height, and the fader's ability bars/caps/travel remain unchanged.
+Known short recommendation bars use an internal gold frame and separate blue
+stroke; unavailable ability placeholders acquire no invented marker rectangle.
+All/vendor key underlines share geometry with neutral white for All.
+
+`InstrumentWebsiteLink` retains the approved public routes, canonical model ID,
+`_blank` target and `noopener noreferrer` policy. `openWebsite(link)` is only a
+user-action intent; the host owns validation/opening and this target makes no
+network request. Comparison links use the header and Effort links share one
+bottom-axis gutter. `InstrumentPublicationSource` exposes supplied publication
+age/About/data links for the host-owned Option source corner. It creates no
+reader/timer or artificial fixed age; integrating that corner into Help UI is a
+composition concern, with no Settings dependency or duplicate hint state here.

@@ -53,10 +53,10 @@ final class ComparisonPresentationTests: XCTestCase {
         for column in p.columns where !column.unlit {
             let profile = try XCTUnwrap(geometry.profiles.first { $0.configuration == column.configuration })
             for (i, cell) in column.cells.enumerated() {
-                if let ratio = cell.chartRatio {
+                if let ratio = cell.chartRatio,ratio>0 {
                     let point = try XCTUnwrap(profile.points[i])
                     XCTAssertEqual(point.ratio, ratio)
-                    XCTAssertEqual((geometry.plot.maxY - point.point.y) / geometry.plot.height * geometry.axis.maximum, ratio, accuracy: 1e-12)
+                    XCTAssertEqual(pow(2,Double(geometry.axis.maximumPower)-(point.point.y-geometry.plot.minY)/geometry.plot.height*Double(geometry.axis.maximumPower-geometry.axis.minimumPower)),ratio,accuracy:1e-12)
                     if cell.metric != .ability { XCTAssertEqual(cell.text, ComparisonPresentation.multiple(ratio)) }
                 } else { XCTAssertNil(profile.points[i]) }
             }
@@ -212,9 +212,9 @@ final class MainScreenControllerTests: XCTestCase {
                 XCTAssertFalse(r.commands.contains { if case .text(let t) = $0 { return t.id == "compare.1.effort" || t.id.hasPrefix("compare.1.metric.") }; return false })
             }
             let chart = try XCTUnwrap(r.chart)
-            XCTAssertEqual(chart, p.chartGeometry(in: chart.plot))
+            XCTAssertEqual(chart, p.chartGeometry(in:chart.plot,labelBounds:r.regions.first{$0.id=="compare.chart"}!.rect))
             let drawn = r.commands.compactMap { command -> [CGPoint]? in if case .polyline(let points, _, _, _) = command { return points }; return nil }
-            for profile in chart.profiles { for segment in profile.segments where segment.count>1 { XCTAssertTrue(drawn.contains(segment.map(\.point))) } }
+            for profile in chart.traces { for segment in profile.segments where segment.count>1 { XCTAssertTrue(drawn.contains(segment.map(\.point))) } }
             XCTAssertEqual(view.presentation?.footer.count, 2); XCTAssertNil(view.control(for: "screen.footer.1"))
             XCTAssertTrue(view.presentation!.pageKeys.allSatisfy { !$0.lit })
             for scale in [1,2] { XCTAssertEqual(try view.rasterImage(scale: scale).width, 600 * scale) }

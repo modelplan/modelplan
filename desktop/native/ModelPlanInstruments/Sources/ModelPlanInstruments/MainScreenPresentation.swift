@@ -12,6 +12,7 @@ public struct MainScreenPageKeyDisplay: Equatable, Sendable {
     public let lit: Bool
 }
 public struct MainScreenPresentation: Equatable, Sendable {
+    public var websiteLinks:[InstrumentWebsiteLink] {comparison?.websiteLinks ?? effort?.links ?? []}
     public let language: InstrumentLanguage
     public let compact: Bool
     public let pageKeys: [MainScreenPageKeyDisplay]
@@ -20,6 +21,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
     public let lines: [String]
     public let backLine: String?
     public let footer: [MainScreenFooterDisplay]
+    public let effort:EffortPageSnapshot?,destinations:DestinationsPageDisplay?,session:DestinationSessionDisplay?
     public let history:SubscriptionHistoryDisplay?
     public let subscription: SubscriptionNowDisplay?
     public let overview: OverviewPageDisplay?
@@ -41,7 +43,7 @@ public struct MainScreenPresentation: Equatable, Sendable {
         if let trial = controller.trial, let input = controller.input(trial.modelID) {
             let compare = ComparisonPresentation(model: input.model, nameVariants: input.nameVariants,
                 trial: trial.configuration, publicationUsable: controller.publicationUsable, language: language)
-            history=nil; subscription = nil; overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
+            effort=nil;destinations=nil;session=nil;history=nil; subscription = nil; overview = nil; comparison = compare; titleVariants = compare.titleVariants; lines = compare.notes; backLine = nil
             footer = [.back(back), compare.fastAvailable
                 ? .fast(modelID: input.model.id, title: chinese ? "快速" : "Fast", off: chinese ? "关" : "off", on: chinese ? "开" : "on",
                         selected: compare.trialFast, help: HelpCatalog(language).explanation(.comparison, context: .init(fact: compare.notes.joined(separator: " · "))))
@@ -91,6 +93,23 @@ public struct MainScreenPresentation: Equatable, Sendable {
                 }
                 slots[2] = .blank
             } else {subscription=nil;history=nil}
+            if pageOptionsAllowed,payload == nil,nav.location.page == .effort,let data=page?.effort,data.language == language,
+               data.matches(controller.selection,publication:controller.publication,usable:controller.publicationUsable) {effort=data.selecting(nav.selectedModelID)} else{effort=nil}
+            if pageOptionsAllowed,payload == nil,nav.location.page == .destinations,let data=page?.destinations,data.language == language {
+                destinations=data.display(location:nav.location)
+                func option(_ id:String,_ selected:String)->MainScreenFooterDisplay {
+                    guard let o=page?.options.compactMap({$0}).first(where:{$0.id==id}) else{return .blank}
+                    return .option(.init(id:o.id,choices:o.choices,selectedValue:selected,help:o.help))
+                }
+                slots[0]=option("destinations.mode",nav.location.destinationsMode == .projects ? "proj":"time")
+                slots[1]=nav.location.destinationsMode == .projects ? option("destinations.days",nav.location.projectPeriod == .days7 ? "7":"30"):
+                    option("destinations.time",nav.location.timelineRange == .today ? "today":"7d")
+                slots[2] = .blank
+            } else{destinations=nil}
+            if payload == nil,let content=nav.sourced?.content,case .session(let id)=content,let data=controller.pages.first(where:{$0.page == .destinations})?.destinations,
+               data.scope==nav.scope,data.language==language {
+                let matches=data.details.filter{$0.id==id};session=matches.count==1 ? matches[0]:nil
+            } else{session=nil}
             footer = slots
         }
     }

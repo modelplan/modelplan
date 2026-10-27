@@ -2,6 +2,8 @@
 import AppKit
 
 public enum MainScreenAction: Equatable, Sendable {
+    case inspectEffort(modelID:String,key:String),session(String)
+    case website(InstrumentWebsiteLink)
     case subscriptionScope(String)
     case overviewAlerts, overviewInformation(String)
     case page(MainScreenPage), back

@@ -30,6 +30,10 @@ import CoreText
                   _ alignment: EngineTextAlignment = .left, _ weight: Double = 400) {
             commands.append(.text(.init(id: id, variants: variants, rect: rect, font: .init(size: fontSize, weight: weight), ink: color, alignment: alignment)))
         }
+        func underline(_ rect:CGRect,_ color:EngineInk,_ selected:Bool) {
+            commands.append(.fill(rect:CGRect(x:rect.minX+8,y:rect.maxY-6,width:max(1,rect.width-16),height:3),radius:0,
+                ink:.init(color.red,color.green,color.blue,selected ? 1:0.22)))
+        }
         func key(_ id: String, _ rect: CGRect, _ title: String, _ explanation: HelpExplanation, _ intent: EngineTableIntent,
                  selected: Bool = false, enabled: Bool = true, label: String? = nil, nameTooltipTarget: EngineNameTooltipTarget? = nil) {
             commands.append(.fill(rect: rect.insetBy(dx: 1, dy: 1), radius: 0, ink: surface))
@@ -40,11 +44,13 @@ import CoreText
         }
         let all = CGRect(x: 0, y: 0, width: left - 4, height: keyHeight)
         key("engine.all", all, p.allLabel, p.allKeyHelp, .selectScope(.all), selected: p.scope == .all, label: p.allKeyLabel)
+        underline(all,EngineInk(NSColor.white),p.scope == .all)
         for i in 0..<p.tracks {
             let keyRect = CGRect(x: left + CGFloat(i) * width, y: 0, width: width, height: keyHeight)
             if let col = p.columns[i] {
                 let scope: InstrumentScope = col.selected ? .all : .subscription(col.id)
                 key("engine.subscription." + col.id, keyRect, col.identity.shortName, col.keyHelp, .selectScope(scope), selected: col.selected, label: col.keyLabel, nameTooltipTarget: .subscriptionKey(col.id))
+                underline(keyRect,accent,col.selected)
             } else {
                 key("engine.empty.\(p.page * 6 + i).key", keyRect, "—", help.explanation(.control, context: .init(fact: p.addLabel)), .openSubscriptionsSettings)
             }
