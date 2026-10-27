@@ -5,6 +5,7 @@
 package connections
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -294,6 +295,11 @@ func Qwen() Connection {
 		History: Level{Status: "off", Reason: "not-enabled"}, Authorization: Level{Status: "off", Reason: qwenusage.ExportEnv},
 		Quota: Level{Status: "not-applicable", Reason: "local-usage-only"}, Reads: []string{"env:" + qwenusage.ExportEnv},
 		Network: "none", Privacy: "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten."}
+	if !consent.Allowed("qwen", consent.Local) {
+		c.Authorization = Level{Status: "off", Reason: "reader-consent-or-privacy"}
+		c.History = Level{Status: "off", Reason: "reader-consent-or-privacy"}
+		return c
+	}
 	if p := qwenusage.Configured(); p != "" {
 		c.Reads = append(c.Reads, p)
 		c.Authorization = Level{Status: "yes", Via: "user-selected-export"}

@@ -87,7 +87,9 @@ func zaiServer(t *testing.T) (*[]string, func()) {
 
 func nativePaths(t *testing.T) Paths {
 	dir := t.TempDir()
-	return Paths{Cache: filepath.Join(dir, "cache"), CodexBarFile: filepath.Join(dir, "codexbar.json"), ConnectionsFile: filepath.Join(dir, "connections.json")}
+	p := Paths{Cache: filepath.Join(dir, "cache"), CodexBarFile: filepath.Join(dir, "codexbar.json"), ConnectionsFile: filepath.Join(dir, "connections.json")}
+	auditFixtureHelpers(t, &p)
+	return p
 }
 
 func TestNativeZaiRefresh(t *testing.T) {

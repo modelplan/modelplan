@@ -209,11 +209,12 @@ type SourceStatus struct {
 }
 
 type Report struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	EvaluatedAt   time.Time      `json:"evaluatedAt"`
-	Accounts      []Account      `json:"accounts"`
-	Sources       []SourceStatus `json:"sources"`
-	Note          string         `json:"note"`
+	ConsentGeneration uint64         `json:"-"` // framework fence for downstream cache writers
+	SchemaVersion     int            `json:"schemaVersion"`
+	EvaluatedAt       time.Time      `json:"evaluatedAt"`
+	Accounts          []Account      `json:"accounts"`
+	Sources           []SourceStatus `json:"sources"`
+	Note              string         `json:"note"`
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -225,6 +226,7 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
+	CLIVersion                  string // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexBarFile                string        // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string        // ~/.config/modelplan/connections.json: which backend reads each provider

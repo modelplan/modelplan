@@ -15,7 +15,7 @@ func TestKimiConnectionConsentAndDisclosures(t *testing.T) {
 	defer func() { startDetached = old }()
 	startDetached = func(...string) error { t.Fatal("offline connection started process"); return nil }
 	var out bytes.Buffer
-	if code := run([]string{"connect", "kimi", "--offline", "--region", "international", "--key-env", "SYNTHETIC_KIMI_KEY", "--lang", "en"}, nil, &out, &out); code != 0 {
+	if code := run([]string{"connect", "kimi", "--offline", "--region", "international", "--key-env", "SYNTHETIC_KIMI_KEY", "--lang", "en"}, strings.NewReader("yes\n"), &out, &out); code != 0 {
 		t.Fatal(code, out.String())
 	}
 	for _, want := range []string{"SYNTHETIC_KIMI_KEY", "https://api.kimi.ai", "Undocumented", "No key was read or request sent", "docs/kimi-code-quota.md"} {

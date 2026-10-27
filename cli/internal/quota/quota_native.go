@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"net/http"
 	"os"
@@ -192,6 +193,15 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if !nativePrivacyAllows() || ctx.Err() != nil {
 		return errors.New("personal readers are suspended")
 	}
+	admission, err := consent.ReaderLockContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer admission()
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		return err
+	}
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
@@ -234,6 +244,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	}
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	for _, x := range on {
+		if !consent.CurrentGeneration(state.Generation) {
+			return errors.New("consent changed; refresh stopped")
+		}
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
 		if !n.budgetDue(p.Cache, now) {
@@ -277,7 +290,7 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	return writeAtomic(nativePath(p.Cache), append(b, '\n'))
+	return consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) })
 }
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
