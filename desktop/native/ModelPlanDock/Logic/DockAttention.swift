@@ -105,7 +105,6 @@ public enum DockNoticeSurface: Hashable, Sendable { case sliver, dock, menu }
 
 /// Tracks semantic acknowledgements only. Renderers decide positions/colours, and explicitly consume first appearance.
 public struct DockAttentionState: Sendable {
-    private var alertAcknowledgements: [String: DockAlertSeverity] = [:]
     private var sliverAcknowledgements = Set<DockNoticeKey>(), menuAcknowledgements = Set<DockNoticeKey>()
     private var appeared: [DockNoticeSurface: Set<DockNoticeKey>] = [:]
     private var activeKeys = Set<DockNoticeKey>()
@@ -115,12 +114,6 @@ public struct DockAttentionState: Sendable {
         guard now.timeIntervalSinceReferenceDate.isFinite else { throw DockLogicError.invalidTime }
         let ids = signals.map(\.id)
         guard !ids.contains(""), Set(ids).count == ids.count else { throw DockLogicError.invalidCatalogue }
-        let available = Set(ids)
-        alertAcknowledgements = alertAcknowledgements.filter { available.contains($0.key) }
-        for s in signals where s.dataState == .fresh {
-            // Unknown/stale is not evidence of improvement and cannot lower an acknowledged alert.
-            if let acknowledged = alertAcknowledgements[s.id], s.alert < acknowledged { alertAcknowledgements[s.id] = s.alert }
-        }
         activeKeys = Set(signals.flatMap { DockNoticeProjection.candidates(for: $0, at: now).map(\.key) })
         // Preserve acknowledgements across a transient stale/unavailable read, but never display that data.
         // Retention uses the original deadlines; expiration/removal still retires every retained key.
@@ -134,7 +127,6 @@ public struct DockAttentionState: Sendable {
     public mutating func acknowledgeDockOpen(_ signals: [DockSubscriptionSignal], at now: Date) throws {
         try reconcile(signals, at: now)
         for s in signals {
-            if s.dataState == .fresh { alertAcknowledgements[s.id] = s.alert }
             if let n = DockNoticeProjection.selected(for: s, at: now) { sliverAcknowledgements.insert(n.key); menuAcknowledgements.insert(n.key) }
         }
     }
@@ -151,7 +143,7 @@ public struct DockAttentionState: Sendable {
         try reconcile(signals, at: now)
         var segments = [DockSliverSegment](), dots = [DockSliverDot](), menu: DockNotice?
         for s in signals {
-            if sliverAlerts, s.dataState == .fresh, s.alert > (alertAcknowledgements[s.id] ?? .none), let station = stations[s.id] {
+            if sliverAlerts, s.dataState == .fresh, s.alert > .none, let station = stations[s.id] {
                 segments.append(DockSliverSegment(subscriptionID: s.id, stationID: station, severity: s.alert))
             }
             if let n = DockNoticeProjection.selected(for: s, at: now) {

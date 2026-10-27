@@ -36,6 +36,8 @@ final class B20ConsumerRegressionTests: XCTestCase {
         let restoredStore = try SettingsStore(url: url)
         let restored = await restoredStore.snapshot().preferences
         let effective = EffectiveSettings(restored, environment: .init())
+        XCTAssertEqual(restored.redBelow, 20, "inclusive comparison must not migrate the saved number")
+        XCTAssertEqual(effective.redBelow, 20)
         XCTAssertFalse(effective.showPercentages)
         XCTAssertFalse(effective.sliverAlert)
         XCTAssertEqual(SettingsDiagrams.inputs(restored, orderedIDs: ["sample"])[1],
@@ -44,7 +46,7 @@ final class B20ConsumerRegressionTests: XCTestCase {
         // Hiding numbers and choosing used quota must not invert or disable critical status.
         for (remaining, expectedText, expectedStatus) in [
             (19.0, "81%", DockQuotaStatus.critical),
-            (20.0, "80%", .warning),
+            (20.0, "80%", .critical),
             (21.0, "79%", .warning),
         ] {
             let reading = try DockInstrumentProjection.evaluate(

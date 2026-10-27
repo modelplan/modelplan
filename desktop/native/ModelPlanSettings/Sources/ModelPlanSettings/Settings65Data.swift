@@ -43,7 +43,7 @@ public enum Settings65Homes {
     public static let dock: [SettingsGroupDefinition] = [
         .init(id: "display", title: .init("Display", "显示"), keys: [.showDock,.autoHide,.reveal,.magnification,.size]),
         .init(id: "numbers", title: .init("Numbers", "数字"), keys: [.showPercentages,.percentageMode,.percentagePin,.redBelow,.sliverAlert]),
-        .init(id: "location", title: .init("Position", "位置"), keys: [.dockEdge,.fullscreen,.captureHiding,.activeDisplay]),
+        .init(id: "location", title: .init("Position", "位置"), keys: [.dockDisplay,.dockEdge,.dockPosition,.fullscreen,.captureHiding,.activeDisplay]),
         .init(id: "sequence", title: .init("Order", "顺序"), keys: [.order]),
     ]
     public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.opening,.countdown])
@@ -63,7 +63,7 @@ public struct SettingsDiagramPolicy: Equatable, Sendable {
     public let changesControlGeometry = false
     public init(reduceMotion: Bool) { duration = reduceMotion ? 0 : 0.4; selectedEndState = reduceMotion }
     public static let width: Double = 96, height: Double = 40, stroke: Double = 1
-    public static let sizeRatio = [44,52,64]
+    public static var sizeRatio: [Int] { SettingsSize.allCases.map { Int($0.nozzleDiameter) } }
     public static let quotaArcFraction = 0.7
     public static let clockwiseFromTwelve = true
 }

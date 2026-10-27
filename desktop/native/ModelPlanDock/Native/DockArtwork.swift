@@ -45,12 +45,13 @@ public struct DockResourceManifest: Codable, Sendable {
         return (url,data)
     }
     public func checkedURL(_ id:String) throws -> URL {try checkedResource(id).0}
-    public func image(_ id:String, maximumPixelSize:Int) throws -> CGImage {
+    public func image(_ id:String, maximumPixelSize:Int, preserveSourcePixels:Bool = false) throws -> CGImage {
         guard (1...4096).contains(maximumPixelSize) else{throw DockArtworkError.invalidManifest}
-        let key=id+"@"+String(maximumPixelSize);age &+= 1
+        let isVector = manifest.files[id]?.path.lowercased().hasSuffix(".svg") == true
+        let key = id + (preserveSourcePixels && !isVector ? "@source" : "@" + String(maximumPixelSize));age &+= 1
         if var entry=images[key]{entry.age=age;images[key]=entry;return entry.image}
         let (_,data)=try checkedResource(id)
-        if manifest.files[id]?.path.lowercased().hasSuffix(".svg") == true {
+        if isVector {
             let size=try DockStaticSVG.size(data),pixels=try DockStaticSVG.pixelSize(size,maximumPixelSize:maximumPixelSize)
             try makeRoom(for:((pixels.width*4+63)/64)*64*pixels.height)
             let image=try DockStaticSVG.image(data,size:size,maximumPixelSize:maximumPixelSize),bytes=image.bytesPerRow*image.height
@@ -61,11 +62,17 @@ public struct DockResourceManifest: Codable, Sendable {
             let properties=CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [CFString:Any],
             let width=properties[kCGImagePropertyPixelWidth] as? Int,let height=properties[kCGImagePropertyPixelHeight] as? Int,
             width>0,height>0,width<=4096,height<=4096,width*height<=16_777_216 else{throw DockArtworkError.corruptResource(id)}
-        let ratio=min(1,Double(maximumPixelSize)/Double(max(width,height)))
+        let ratio=preserveSourcePixels ? 1 : min(1,Double(maximumPixelSize)/Double(max(width,height)))
         let estimate=((Int(ceil(Double(width)*ratio))*4+63)/64)*64*Int(ceil(Double(height)*ratio))
         try makeRoom(for:estimate)
-        guard let image=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,
-            kCGImageSourceThumbnailMaxPixelSize:maximumPixelSize,kCGImageSourceShouldCacheImmediately:true] as CFDictionary) else{throw DockArtworkError.corruptResource(id)}
+        let decoded: CGImage?
+        if preserveSourcePixels {
+            decoded = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately:true] as CFDictionary)
+        } else {
+            decoded = CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,
+                kCGImageSourceThumbnailMaxPixelSize:maximumPixelSize,kCGImageSourceShouldCacheImmediately:true] as CFDictionary)
+        }
+        guard let image = decoded else { throw DockArtworkError.corruptResource(id) }
         let bytes=image.bytesPerRow*image.height;try makeRoom(for:bytes)
         images[key]=Cached(image:image,bytes:bytes,age:age);decodedBytes+=bytes;peakDecodedBytes=max(decodedBytes,peakDecodedBytes)
         return image

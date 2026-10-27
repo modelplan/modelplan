@@ -32,7 +32,7 @@ final class Settings65DataTests: XCTestCase {
         XCTAssertEqual(SettingsDiagrams.inputs(p, orderedIDs: [], lastChangedSubscriptionID: "missing").last, .quotaWindow(subscriptionID: nil, pin: .auto))
         XCTAssertEqual(SettingsDiagramPolicy(reduceMotion: false).duration, 0.4)
         XCTAssertFalse(SettingsDiagramPolicy(reduceMotion: false).loops); XCTAssertFalse(SettingsDiagramPolicy(reduceMotion: false).changesControlGeometry)
-        XCTAssertEqual(SettingsDiagramPolicy.sizeRatio, [44,52,64]); XCTAssertTrue(SettingsDiagramPolicy.clockwiseFromTwelve)
+        XCTAssertEqual(SettingsDiagramPolicy.sizeRatio, [36,44,52]); XCTAssertTrue(SettingsDiagramPolicy.clockwiseFromTwelve)
         var playback = SettingsDiagramPlayback(); try playback.trigger(at: 1, reduceMotion: false)
         XCTAssertEqual(try playback.progress(at: 1), 0); XCTAssertEqual(try playback.progress(at: 1.2), 0.5, accuracy: 1e-9)
         XCTAssertEqual(try playback.progress(at: 1.4), 1); XCTAssertEqual(try playback.progress(at: 100), 1)

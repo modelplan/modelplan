@@ -334,7 +334,7 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     one.stop(); two.stop(); pool.purgeUnleased()
     one.configure(request: request, provider: source, working: false)
     try check(!one.isAvailable && pool.decodedBytes == 0, "inactive effect allocated a frame atlas")
-    for scale in [1, 2] { for points in [44, 52, 64] { for magnification in [1.0, 1.15, 1.5] {
+    for scale in [1, 2] { for points in [36, 44, 52] { for magnification in [1.0, 1.15, 1.5] {
         let r = EffectFrameRequest(profile: RenderProfile(scale: scale), points: points, magnification: magnification, variant: "red")
         one.configure(request: r, provider: source, working: true)
         try check(one.isAvailable && (try imageInfo(one.layer)).0 == Int(ceil(Double(points * scale) * magnification)), "S/M/L density matrix upscaled or refused")

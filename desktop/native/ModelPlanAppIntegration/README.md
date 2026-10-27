@@ -184,3 +184,9 @@ current-link fence. This partial community map is not the complete Cockpit/Dock 
 acceptance, and it does not change the MainScreen profile or chart heights.
 The injected Help Escape callback runs before MainScreen comparison Back: one Escape dismisses held
 Option help without clearing its local trial, and the next Escape retains the original Back behavior.
+
+## Static preview presentation
+
+An appearance may supply bounded sliver pixels, their normalization scale and the registered along-axis anchor in `StaticDockGeometry`. The host keeps those pixels current when data changes without a frame change, uses the actual window's backing scale/rounded size, and reuses the existing event-driven refresh hooks for attachment, backing and theme changes. A disposed sliver retains neither actionable pixels nor a reveal action. This API contains no official palette or shape.
+
+New/missing Settings choices use a remaining-based critical threshold of 25 and leave active-display following off. Critical status uses **remaining <= threshold** for new and saved choices alike: exactly 25 is critical at threshold 25, and exactly 16 is critical at a saved threshold of 16. Stored numeric thresholds and explicit follow, collapse and sliver-alert choices are never rewritten. Use SettingsApplication.dockReading and SettingsApplication.subscriptionNowSnapshot to forward the same effective threshold to both consumers. SubscriptionNowSnapshot requires an explicit redBelow argument; standalone callers without Settings must choose their policy explicitly rather than silently overriding saved choices. Display selection and dragging persistence are added by the stacked placement change. Reader activation and physical/multi-monitor acceptance remain separate.

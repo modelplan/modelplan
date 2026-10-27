@@ -202,6 +202,13 @@ import AppKit
             guard let popup = choices[id] else { continue }
             subscriptionLabels[id]?.stringValue = label
             popup.configure(value: value, options: options, key: key, language: language)
+            if key == .dockDisplay {
+                for item in popup.itemArray {
+                    guard let raw = item.representedObject as? String, raw != "primary" else { continue }
+                    item.title = context.displays.first { $0.id == raw }?.name
+                        ?? SettingsWords.text("Disconnected display", "已断开的显示器", language)
+                }
+            }
             popup.isEnabled = enabled && !saving
             if key == .countdown { popup.isEnabled = popup.isEnabled && holdAvailable && p.opening == .hold }
             if key == .opening { popup.itemArray.first { $0.representedObject as? String == "hold" }?.isEnabled = holdAvailable }

@@ -58,7 +58,7 @@ import XCTest
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         do { try await editor.commit(.theme(.night)); XCTFail("failed write accepted") } catch {}
         XCTAssertEqual(commits, 0); XCTAssertFalse(editor.isSaving)
-        XCTAssertEqual(editor.snapshot?.preferences.redBelow, 16)
+        XCTAssertEqual(editor.snapshot?.preferences.redBelow, 25)
         XCTAssertEqual(editor.snapshot?.preferences.theme, .system)
     }
     func testContextAndEnvironmentUpdatesDoNotWriteOrPretendToCommit() async throws {

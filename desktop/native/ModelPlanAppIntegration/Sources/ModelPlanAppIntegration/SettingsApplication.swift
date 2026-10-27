@@ -2,6 +2,7 @@
 import Foundation
 import ModelPlanDock
 import ModelPlanSettings
+import ModelPlanInstruments
 
 /// Why committed truth is being forwarded. Restore/environment/context are not user-service intents.
 public enum SettingsApplicationReason: Equatable, Sendable {
@@ -14,6 +15,14 @@ public struct SettingsApplication: Sendable {
     public let effective: EffectiveSettings
     public let context: SettingsPageContext
     public let reason: SettingsApplicationReason
+
+    /// The subscription consumer uses the same committed threshold as the Dock.
+    public func subscriptionNowSnapshot(inputs: [SubscriptionNowInput], scope: InstrumentScope, at now: Date,
+                                        calendar: Calendar, initialDays: Int = 7) -> SubscriptionNowSnapshot {
+        .init(inputs: inputs, scope: scope, now: now,
+              language: effective.language == .english ? .english : .chinese, calendar: calendar,
+              redBelow: Double(effective.redBelow), initialDays: initialDays)
+    }
 
     /// Reuse the existing quota projection; used-percent display never changes remaining-based status.
     public func dockReading(for input: DockInstrumentInput, at now: Date) throws -> DockInstrumentReading {

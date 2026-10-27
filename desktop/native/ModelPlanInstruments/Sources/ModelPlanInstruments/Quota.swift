@@ -18,9 +18,9 @@ public enum QuotaPeriod: Equatable, Sendable {
 public enum QuotaLevel: Int, Comparable, Sendable {
     case unknown, healthy, amber, critical
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
-    public static func of(_ remaining: Double?) -> Self {
-        guard let remaining = percentage(remaining) else { return .unknown }
-        return remaining < 16 ? .critical : remaining < 41 ? .amber : .healthy
+    public static func of(_ remaining: Double?, redBelow: Double = 25) -> Self {
+        guard let remaining = percentage(remaining), redBelow.isFinite, (0...100).contains(redBelow) else { return .unknown }
+        return remaining <= redBelow ? .critical : remaining < 41 ? .amber : .healthy
     }
 }
 public enum QuotaPublicReset: Equatable, Sendable { case announced(Date?), confirmedAwaitingReading }
@@ -58,11 +58,11 @@ public struct QuotaCell: Sendable {
     public let runsOutAt: Date?
     public let publicReset: QuotaPublicReset?
 
-    public init(_ input: InstrumentQuota, now: Date) {
+    public init(_ input: InstrumentQuota, now: Date, redBelow: Double = 25) {
         id = input.id; period = input.period; scope = input.scope
         let passed = input.resetsAt.map { $0 <= now } ?? false
         remaining = input.readable && !passed ? percentage(input.remaining) : nil
-        level = .of(remaining)
+        level = .of(remaining, redBelow: redBelow)
         litSegments = remaining.map { $0 == 0 ? 0 : max(1, min(10, Int(($0 / 10).rounded()))) }
         resetsAt = input.readable && !passed ? input.resetsAt : nil
         runsOutAt = input.readable && !passed ? input.runsOutAt.flatMap {
@@ -85,13 +85,13 @@ public struct QuotaRows: Sendable {
     public var tightestOther: QuotaCell? { other.first }
     public var otherOverflow: Int { max(0, other.count - 1) }
 
-    public init(windows: [InstrumentQuota], now: Date) {
+    public init(windows: [InstrumentQuota], now: Date, redBelow: Double = 25) {
         let first = windows.firstIndex { $0.scope == nil && $0.period == .fiveHours }
         let second = windows.firstIndex { $0.scope == nil && $0.period == .weekly }
-        fiveHours = first.map { QuotaCell(windows[$0], now: now) }
-        weekly = second.map { QuotaCell(windows[$0], now: now) }
+        fiveHours = first.map { QuotaCell(windows[$0], now: now, redBelow: redBelow) }
+        weekly = second.map { QuotaCell(windows[$0], now: now, redBelow: redBelow) }
         other = windows.enumerated().filter { $0.offset != first && $0.offset != second }
-            .map { ($0.offset, QuotaCell($0.element, now: now)) }
+            .map { ($0.offset, QuotaCell($0.element, now: now, redBelow: redBelow)) }
             .sorted { a, b in
                 let x = a.1.remaining ?? .infinity, y = b.1.remaining ?? .infinity
                 return x == y ? a.0 < b.0 : x < y

@@ -13,7 +13,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, feedback, licenses
-    case dockEdge, detectedReaders, optionalReaders
+    case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
 }
 public enum SettingAvailability: Equatable, Sendable {
@@ -64,7 +64,12 @@ public struct SettingsLicenseNotice: Equatable, Sendable {
         self.component = component; self.license = license; self.text = text
     }
 }
+public struct SettingsDisplayChoice: Equatable, Sendable {
+    public let id: String, name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+}
 public struct SettingsPageContext: Sendable {
+    public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var capabilities = SettingsCapabilities()
     public var shortcutObservations: [SettingsShortcutObservation] = []
@@ -115,7 +120,7 @@ public enum SettingsCatalogue {
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
         .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, five-hour or weekly window per subscription.","为每个订阅选择最紧张、5小时或周窗口。"),
-        .init(.redBelow,"Critical threshold","变红阈值","Threshold uses remaining quota even when displaying used quota.","即使显示已用额度，阈值仍按剩余额度判断。"),
+        .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
         .init(.sliverAlert,"Sliver alert color","隐藏条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
         .init(.showDock,"Show dock","显示挂件","Show or hide the desktop dock.","显示或隐藏桌面挂件。"),
         .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),
@@ -123,6 +128,8 @@ public enum SettingsCatalogue {
         .init(.magnification,"Hover magnification","悬停放大","Choose none, subtle or strong.","选择不放大、轻微或明显。"),
         .init(.fullscreen,"Show over full-screen apps","全屏应用上显示","Off by default.","默认关闭。"),
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
+        .init(.dockDisplay,"Display","显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
+        .init(.dockPosition,"Along-edge position","沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
         .init(.dockEdge,"Dock edge","挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader observations.","本地读取器的只读观测。"),
         .init(.optionalReaders,"Optional readers","可选读取器","Off by default; saves consent only.","默认关闭；只保存同意选择。"),
@@ -221,6 +228,15 @@ public enum SettingsCatalogue {
             .subscriptions(subs.map { .init(id: $0.id, name: $0.name.value(p.language), plan: $0.plan, value: transform($0), options: options) })
         }
         switch k {
+        case .dockDisplay:
+            var options = ["primary"] + c.displays.map(\.id).filter { $0 != "primary" }
+            if let saved = p.dockDisplayID, !options.contains(saved) { options.append(saved) }
+            return .choice(p.dockDisplayID ?? "primary", options: options)
+        case .dockPosition:
+            let selected = String(p.dockAlongFraction)
+            var options = stride(from: 0, through: 100, by: 5).map { String(Double($0) / 100) }
+            if !options.contains(selected) { options.append(selected) }
+            return .choice(selected, options: options)
         case .dockEdge: return choices(p.dockEdge)
         case .detectedReaders: return .readers(ReaderSetting.project(consent: p.readerConsent, observations: c.readerObservations).filter { $0.consent == nil })
         case .optionalReaders: return .readers(ReaderSetting.project(consent: p.readerConsent, observations: c.readerObservations).filter { $0.consent != nil })
