@@ -64,6 +64,7 @@ type historyCursor struct {
 	ChangeRef    string             `json:"changeRef"`
 	Status       string             `json:"status"`
 	Catchup      bool               `json:"catchup"`
+	Retry        bool               `json:"retry,omitempty"`
 	Offset       int64              `json:"offset"`
 	Size         int64              `json:"size"`
 	Modified     time.Time          `json:"modified"`
@@ -522,7 +523,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			s.Availability = "not_supported_yet"
 			continue
 		}
-		if identity == cursor.FileRef && change == cursor.ChangeRef && info.Size() == cursor.Size && !cursor.Catchup {
+		if identity == cursor.FileRef && change == cursor.ChangeRef && info.Size() == cursor.Size && !cursor.Catchup && !cursor.Retry {
 			if tool == "grok" && filepath.Base(rel) == "summary.json" && cursor.Decode.GrokScope == "root" {
 				verifiedGrokScopes[fileKey] = true
 			}
@@ -566,6 +567,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		cursor.FileRef = identity
 		fileStatus := "ok"
 		sourceChanged := false
+		retrySource := false
 		parsedStart := s.BytesRead
 		markFile := func(status string) {
 			fileStatus = status
@@ -634,40 +636,45 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			return true
 		}
 		if isJSONL {
-			_, _ = f.Seek(cursor.Offset, io.SeekStart)
-			reader := bufio.NewReader(historyCountReader{Reader: io.LimitReader(f, min(int64(8<<20), 32<<20-s.BytesRead)), bytes: &s.BytesRead})
-			consumed := int64(0)
-			for consumed < 8<<20 && s.BytesRead < 32<<20 {
-				if ctx.Err() != nil {
-					break
-				}
-				if projection != nil && projection.records >= projectionRecordLimit {
-					break
-				}
-				line, err := reader.ReadBytes('\n')
-				consumed += int64(len(line))
-				if err != nil {
-					if err != io.EOF || len(line) > 0 {
-						markFile("partial")
+			if _, err := f.Seek(cursor.Offset, io.SeekStart); err != nil {
+				markFile("partial")
+				retrySource = true
+			} else {
+				reader := bufio.NewReader(historyCountReader{Reader: io.LimitReader(f, min(int64(8<<20), 32<<20-s.BytesRead)), bytes: &s.BytesRead})
+				consumed := int64(0)
+				for consumed < 8<<20 && s.BytesRead < 32<<20 {
+					if ctx.Err() != nil {
+						break
 					}
-					break
-				}
-				if len(line) > 1<<20 {
-					markFile("not_supported_yet")
-					break
-				}
-				previous := cursor.Offset
-				if cursor.Align {
-					// Tail bootstrap starts at a byte boundary. Discard the first
-					// fragment and expose only complete subsequent records.
+					if projection != nil && projection.records >= projectionRecordLimit {
+						break
+					}
+					line, err := reader.ReadBytes('\n')
+					consumed += int64(len(line))
+					if err != nil {
+						retrySource = err != io.EOF
+						if err != io.EOF || len(line) > 0 {
+							markFile("partial")
+						}
+						break
+					}
+					if len(line) > 1<<20 {
+						markFile("not_supported_yet")
+						break
+					}
+					previous := cursor.Offset
+					if cursor.Align {
+						// Tail bootstrap starts at a byte boundary. Discard the first
+						// fragment and expose only complete subsequent records.
+						cursor.Offset += int64(len(line))
+						cursor.Align = false
+						continue
+					}
+					if !apply(line, previous) {
+						break
+					}
 					cursor.Offset += int64(len(line))
-					cursor.Align = false
-					continue
 				}
-				if !apply(line, previous) {
-					break
-				}
-				cursor.Offset += int64(len(line))
 			}
 			if cursor.Offset < info.Size() && fileStatus == "ok" {
 				markFile("partial")
@@ -684,6 +691,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 				if fileStatus == "ok" {
 					markFile("partial")
 				}
+				cursor.Retry = err != nil
 				cursor.Size = info.Size()
 				cursor.ChangeRef = change
 				cursor.Status = fileStatus
@@ -710,7 +718,9 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 			}
 		}
 		f.Close()
-		// Incomplete unchanged suffixes wait for source changes; bounded catch-up resumes.
+		// Incomplete unchanged suffixes wait for source changes. Transient I/O
+		// failures remain retryable independently of bounded catch-up.
+		cursor.Retry = retrySource
 		cursor.Catchup = sourceChanged || (isJSONL && ((s.BytesRead-parsedStart >= 8<<20) || (s.BytesRead >= 32<<20)) && cursor.Offset < info.Size())
 		if projection != nil && projection.records >= projectionRecordLimit && cursor.Offset < info.Size() {
 			cursor.Catchup = true

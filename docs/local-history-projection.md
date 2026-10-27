@@ -57,12 +57,18 @@ entries, 256 files, 4096 delivered records, 8 MiB per file and 32 MiB per refres
 Hitting a limit yields incomplete recovery; committed decoder/cursor progress
 resumes on the next eligible refresh. Context cancellation stops reads and
 prevents publication. A file changing during recovery also reports incomplete
-and is rechecked on the next attempt.
+and is rechecked on the next attempt. Transient Read/Seek failures persist a
+separate retry marker so an unchanged source can recover after backoff, including
+a restart; an incomplete EOF fragment waits for a source change.
 
 On incomplete byte recovery or reducer `Incomplete`, sanitized decoder progress
 and cursors commit together, while the previous good Snapshot, ObservedAt and
 CapturedAt remain unchanged. On a complete final reduction the snapshot can be
 replaced or cleared; unchanged snapshots retain their original capture time.
+Exhaustive discovery of an accessible root with no eligible files reports complete
+empty recovery (`not_detected` availability), letting the reducer clear its
+selection and frontier atomically with cursor pruning. A missing/unreadable root
+is incomplete discovery and retains the original-age last good snapshot.
 Reducer errors, invalid output or cancellation abort the state/cursor transaction.
 The reservation remains. This lets the next attempt replay uncommitted lines.
 

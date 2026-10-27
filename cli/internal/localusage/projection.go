@@ -288,7 +288,8 @@ func (p *projectionRun) file(rel, ref string, complete, unchanged bool) {
 	p.call(b)
 }
 func (p *projectionRun) finish(s *historyState, now time.Time) bool {
-	complete := p.discoveryComplete && s.Availability == "ok"
+	// Conclusive absence can clear a projection; an inaccessible root cannot.
+	complete := p.discoveryComplete && (s.Availability == "ok" || (s.Availability == "not_detected" && len(p.live) == 0))
 	if !p.call(ProjectionBatch{Final: true, RecoveryComplete: complete, LiveFileRefs: p.live, PrefixOmitted: p.anyOmitted}) || !validProjection(p.state, now) {
 		return false
 	}
