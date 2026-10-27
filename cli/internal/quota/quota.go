@@ -103,6 +103,7 @@ const RunsOutTight = 180
 // the caller named it, else recent-thread, the newest interactive thread on this machine), and
 // observedAt when that thread last reported it. An empty effort means the turn context named none.
 type Harness struct {
+	SessionKey  string     `json:"sessionKey,omitempty"` // keyed hash, never a raw session ID or path
 	Model       string     `json:"model,omitempty"`
 	Effort      string     `json:"effort,omitempty"`
 	FastMode    *bool      `json:"fastMode,omitempty"`
@@ -232,6 +233,7 @@ func Read(p Paths, now time.Time) Report {
 	}
 	applyCodexBar(&r, p, now)
 	applyNative(&r, p, now)
+	applyClaudeSessions(&r, p.Cache, p.ClaudeSession)
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}
