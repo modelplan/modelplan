@@ -37,7 +37,8 @@ import CoreGraphics
                 ] {
                     let source = vertical ? CGRect(x: 0, y: start, width: sourceCross, height: length)
                                           : CGRect(x: start, y: 0, width: length, height: sourceCross)
-                    let target = vertical ? CGRect(x: 0, y: targetStart, width: CGFloat(targetCross), height: targetLength)
+                    // CGImage cropping starts at its top row; CGContext destinations use bottom-up Y.
+                    let target = vertical ? CGRect(x: 0, y: CGFloat(h) - targetStart - targetLength, width: CGFloat(targetCross), height: targetLength)
                                           : CGRect(x: targetStart, y: 0, width: targetLength, height: CGFloat(targetCross))
                     guard let piece = image.cropping(to: source) else { throw DockArtworkError.invalidManifest }
                     c.draw(piece, in: target)
