@@ -9,7 +9,7 @@ Answer with live ModelPlan data (modelplan.ai), never with remembered rankings o
 
 ## 1. Get the data
 
-With the `modelplan` CLI (`command -v modelplan`, else `~/.local/bin/modelplan`, where its installer puts it):
+With the `modelplan` CLI (`command -v modelplan`, else `~/.local/bin/modelplan` or the bundled plugin copy at `~/.cache/modelplan-cli/modelplan`):
 
 ```sh
 modelplan sync                                   # once per answer; later reads are offline
@@ -26,9 +26,23 @@ curl -fsS --max-time 20 https://modelplan.ai/v1/client
 python3 '<this skill directory>/scripts/quota.py'
 ```
 
-What only the CLI adds, so say "unknown" rather than improvise it: `advise` (hints that remember what was already said, "switch back" after a reset to the configuration used before the hint, a cheaper model that scores as high when a window is tight), Codex's own account reading with reset credits, Claude Code's quota (only the CLI's status line records it), the local quota history and the user's measured speed per model, effort and Fast (`modelplan history`, `modelplan effort`), and a hash-verified local copy of the publication. When the user asks about their own quota, resets or speed and the CLI is missing, mention once, in one sentence, what it would add and how to install it: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`, nothing else changed; Windows: https://github.com/modelplan/modelplan/releases). Never install it yourself. Do not bring it up for model or effort questions, which the public data answers fully, nor again after the user declined it (a ModelPlan plugin may already have asked).
+The CLI detects signed-in tools and adds local quota readings, remembered `advise` hints, account reset credits when available, quota history, measured speed and a hash-verified publication cache. A missing reading is unknown; a status line is optional and is not a prerequisite for asking about quota. The Python helper above is **deprecated**; keep it only as a temporary fallback until CLI auto-detection lands for every supported tool.
 
-`quota` reports one account per source: Claude Code (recorded by the ModelPlan status line), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace`, its own `ageMinutes` and, with recent readings, `runsOutInMinutes` (used up that soon at the recent rate, before the reset; say it as "at the recent rate", never as a forecast), and each account a `headroom` and a `harness` model/effort when known. `harness.attribution` says whose model and effort these are: `current-thread` only when the reader ran inside this thread (Codex: it matched `CODEX_THREAD_ID`; Claude Code: the status line last rendered for this `CLAUDE_CODE_SESSION_ID`); `recent-thread` is another conversation's (Codex: the newest interactive thread on the machine; Claude Code: the session the status line rendered for last). Claude Code's usage windows are the account's either way. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
+### Own quota: ask once before installing
+
+For model or effort questions, use public data without an installation prompt. When the user asks about **their own quota** and no CLI is available, first read `~/.config/modelplan/cli-install-choice` if present and respect any earlier answer in this conversation or a plugin. With no prior answer, ask once: **“Install the ModelPlan CLI? It is checksum-checked and installs into ~/.local/bin.”** Wait for an explicit yes; asking is not permission to install.
+
+Record the answer as `accepted` or `declined` in `~/.config/modelplan/cli-install-choice` (create its parent directory if needed). After a no, never ask again, including in future sessions; continue with public data and available fallback readings, and mark unknown quota as unknown. If the choice cannot be saved, remember it in the conversation and explain that it was not persisted. A later explicit request to install is a new yes. A previous acceptance followed by an unavailable CLI is an installation problem to report, not a reason to repeat the question or retry silently.
+
+Only after a yes, run:
+
+```sh
+sh '<this skill directory>/scripts/install-cli.sh'
+```
+
+It uses this Skill's `cli-pin.json` and the same checksum-verifying fetcher as the plugins, then installs into `~/.local/bin`. It does not edit PATH or shell profiles. Use the full installed path if PATH does not include it. On failure report the script's error; do not claim installation succeeded or install from another source without the user's request. Windows users can use the published release at https://github.com/modelplan/modelplan/releases.
+
+`quota` reports one account per source: Claude Code (detected locally by the CLI), Codex (its own session logs) and plans the user typed into `~/.config/modelplan/local.json`. Each window has `usedPercent`, `resetsInMinutes`, `pace`, its own `ageMinutes` and, with recent readings, `runsOutInMinutes` (used up that soon at the recent rate, before the reset; say it as "at the recent rate", never as a forecast), and each account a `headroom` and a `harness` model/effort when known. `harness.attribution` says whose model and effort these are: `current-thread` only when the reader ran inside this thread (Codex: it matched `CODEX_THREAD_ID`; Claude Code: the status line last rendered for this `CLAUDE_CODE_SESSION_ID`); `recent-thread` is another conversation's (Codex: the newest interactive thread on the machine; Claude Code: the session the status line rendered for last). Claude Code's usage windows are the account's either way. Say "latest local reading, this conversation unknown" for it, and give its `observedAt`. A window missing from the report was not seen, not proven absent.
 
 ## 2. Pick the model and effort
 

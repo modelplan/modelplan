@@ -18,6 +18,8 @@ ModelPlan answers from live, checkable public data, on the web and inside Claude
 
 ## Why ModelPlan
 
+[Choose an entry point: Mac App, plugins or Skill](docs/product-surfaces.md).
+
 Most leaderboards compare every model at its **top** setting. But inside one model, going from Low to Max often costs several times more and takes several times longer, for a few points of ability. What you actually run is a model *at an effort*.
 
 - **★ Recommended effort.** Every model gets its best-value effort, and you see exactly what one more step up buys (`+4.8 ability`) and costs (`×1.37`).
