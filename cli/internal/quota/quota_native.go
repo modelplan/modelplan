@@ -95,6 +95,8 @@ func legacyNativeReader(p Paths, provider string) bool {
 // nativeReaders: the registry. A provider without one stays on CodexBar.
 var nativeReaders = map[string]*nativeReader{
 	"antigravity": antigravityReader,
+	"grok":        grokReader,
+	"gemini":      geminiReader,
 	"claude":      claudeAccountReader,
 	"zai":         zaiReader,
 	"kimi":        kimiReader,

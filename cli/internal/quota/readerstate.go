@@ -30,7 +30,7 @@ type ReaderGrant struct {
 }
 type ReaderProfile struct {
 	Root        string // locally admitted tool root, never a remotely supplied path
-	AccountFile string // optional locally admitted tool-owned metadata file
+	AccountFile string // optional locally admitted tool-owned account file; provider-specific
 }
 
 type readerMetadata struct {
@@ -39,6 +39,7 @@ type readerMetadata struct {
 	OrganizationKey string             `json:"organizationKey,omitempty"`
 	VerifiedAt      time.Time          `json:"verifiedAt,omitempty"`
 	Plan            string             `json:"plan,omitempty"`
+	ScopeKey        string             `json:"scopeKey,omitempty"`
 	PlanDetails     *readerPlanDetails `json:"planDetails,omitempty"`
 }
 
