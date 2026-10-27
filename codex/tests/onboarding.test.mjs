@@ -16,6 +16,40 @@ const home = () => mkdtemp(join(tmpdir(), 'modelplan-codex-'));
 const pinnedDir = h => join(h, '.cache/modelplan-cli', pin.version);
 const hook = (h, input = '{"session_id":"t"}') => execFileSync('sh', [join(root, 'hooks/modelplan-quota-hints.sh')], { env: { PATH: '/usr/bin:/bin', HOME: h, PLUGIN_ROOT: root }, input, encoding: 'utf8' });
 
+test('automatic hints persist off/on while explicit quota and panel advice still work', async () => {
+  const h = await home();
+  const setting = value => execFileSync('sh', [join(root, 'hooks/automatic-hints.sh'), value], {
+    env: { PATH: '/usr/bin:/bin', HOME: h }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  try {
+    assert.equal(setting('status'), 'automatic-hints: on\n');
+    setting('off');
+    assert.equal(hook(h), '', 'off is silent even before the CLI is available');
+    await assert.rejects(stat(join(h, '.cache/modelplan-codex')), 'disabled hook writes nothing');
+    const own = await put(pinnedDir(h), script(pin.version));
+    assert.equal(hook(h), '');
+    await assert.rejects(stat(join(h, 'args')), 'disabled hook never executes the CLI');
+    const { setupStatus } = await import('../setup.mjs');
+    const state = await setupStatus({ home: h, find: () => own });
+    assert.equal(state.automaticHints, false);
+    const { readQuota, readAdvice } = await import('../quota.mjs');
+    const expected = await readFile(new URL('../../cli/internal/quota/testdata/expected.json', import.meta.url), 'utf8');
+    const quota = await readQuota({ cli: own, exec: async () => expected });
+    assert.equal(quota.status, 'ok', 'explicit panel quota reads remain available');
+    const advice = await readAdvice({ cli: own, exec: async () => JSON.stringify({ schemaVersion: 1, events: [] }) });
+    assert.equal(advice.status, 'ok', 'explicit panel advice remains available');
+    const { renderQuota } = await import('../render.mjs');
+    const text = renderQuota(quota, 'en', advice, state);
+    assert.match(text, /Automatic hints are off; commands and the panel still work/);
+    assert.doesNotMatch(text, /allow it|not verified|Setup complete/);
+    setting('on');
+    assert.equal((await setupStatus({ home: h, find: () => own })).automaticHints, true);
+    assert.deepEqual(JSON.parse(hook(h)), { hints: 1 }, 'turning on restores prompt hints');
+    assert.throws(() => setting('invalid'));
+    assert.equal(setting('status'), 'automatic-hints: on\n');
+  } finally { await rm(h, { recursive: true }); }
+});
+
 test('the native manifest is what Codex reads: no Agent Plugins $schema, hooks and onboarding resolve', async () => {
   const manifest = JSON.parse(await readFile(join(root, '.codex-plugin/plugin.json'), 'utf8'));
   const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));

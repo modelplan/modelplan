@@ -75,9 +75,10 @@ export async function codexbarStatus({ exec = run, cli } = {}) {
 }
 
 export async function setupStatus({ home = homedir(), definition, ...opts } = {}) {
-  const [cli, hook] = await Promise.all([cliStatus({ home, ...opts }), hookStatus({ home, definition })]);
+  const [cli, hook, preference] = await Promise.all([cliStatus({ home, ...opts }), hookStatus({ home, definition }),
+    readFile(join(home, ".config/modelplan/codex/automatic-hints"), "utf8").catch(() => "on")]);
   const codexbar = cli.status === 'ok' || cli.status === 'outdated' ? await codexbarStatus({ exec: opts.exec, cli: cli.path }) : null;
-  return { cli, hook, codexbar };
+  return { cli, hook, codexbar, automaticHints: preference.trim() !== "off" };
 }
 
 // Codex keeps each plugin version in its own directory (…/modelplan-codex/<version>) and an open
