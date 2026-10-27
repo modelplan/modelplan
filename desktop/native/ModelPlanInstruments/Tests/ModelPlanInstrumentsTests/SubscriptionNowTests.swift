@@ -17,7 +17,7 @@ private enum SubFixture {
             reserve:reserve,credits:credits,usage:usage ?? [self.usage(),self.usage(.days30,detail:.init(input:200,output:300,cacheRead:0,cacheWrite:4000))])
     }
     static func snapshot(_ inputs:[SubscriptionNowInput],scope:InstrumentScope = .subscription("a"),now:Date = now,language:InstrumentLanguage = .english,calendar:Calendar = Fixtures.calendar())->SubscriptionNowSnapshot {
-        .init(inputs:inputs,scope:scope,now:now,language:language,calendar:calendar)
+        .init(inputs:inputs,scope:scope,now:now,language:language,calendar:calendar,redBelow:25)
     }
     static func row(_ snapshot:SubscriptionNowSnapshot,_ suffix:String,days:String = "7")->SubscriptionNowRow {
         snapshot.display(daysKey:days).rows.first{$0.id.hasSuffix(suffix)}!
@@ -43,6 +43,21 @@ final class SubscriptionNowTests:XCTestCase {
         XCTAssertFalse(SubFixture.row(snapshot,"window.passed").value.contains("100%"))
         let stale=SubFixture.snapshot([SubFixture.input(windows:windows,evidence:.init(freshness:.stale))])
         XCTAssertFalse(SubFixture.row(stale,"window.monthly").value.contains("0%"))
+    }
+    func testConfiguredThresholdReachesTheActualSubscriptionSnapshot() {
+        let input = SubFixture.input(windows: [.init(id: "q", period: .fiveHours, remaining: 20)])
+        for (threshold, expected) in [(16.0, QuotaLevel.amber), (25.0, .critical)] {
+            let snapshot = SubscriptionNowSnapshot(inputs: [input], scope: .subscription("a"), now: SubFixture.now,
+                language: .english, calendar: Fixtures.calendar(), redBelow: threshold)
+            XCTAssertEqual(SubFixture.row(snapshot, "window.q").level, expected)
+            XCTAssertEqual(snapshot.accounts[0].summary.level, expected)
+        }
+        for threshold in [16.0, 25] {
+            let exact = SubFixture.input(windows: [.init(id: "q", period: .fiveHours, remaining: threshold)])
+            let snapshot = SubscriptionNowSnapshot(inputs: [exact], scope: .subscription("a"), now: SubFixture.now,
+                language: .english, calendar: Fixtures.calendar(), redBelow: threshold)
+            XCTAssertEqual(SubFixture.row(snapshot, "window.q").level, .critical)
+        }
     }
     func testClockUpdateExpiresSameReadingAndDoesNotInventSourceTTL() {
         let now=SubFixture.now,evidence=InstrumentEvidence(observedAt:now.addingTimeInterval(-360),validUntil:now.addingTimeInterval(10))

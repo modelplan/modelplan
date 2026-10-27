@@ -84,7 +84,7 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
     public let initialDays: Int
     public let language:InstrumentLanguage
     public let calendar:Calendar
-    public init(inputs:[SubscriptionNowInput],scope:InstrumentScope,now:Date,language:InstrumentLanguage,calendar:Calendar,initialDays:Int = 7) {
+    public init(inputs:[SubscriptionNowInput],scope:InstrumentScope,now:Date,language:InstrumentLanguage,calendar:Calendar,redBelow:Double,initialDays:Int = 7) {
         self.language=language;self.calendar=calendar
         self.scope=scope;self.initialDays=initialDays==30 ? 30:7
         let format=InstrumentFormat(language),zh=language == .chinese,catalog=HelpCatalog(language)
@@ -102,7 +102,7 @@ public struct SubscriptionNowSnapshot: Equatable, Sendable {
             let windows=QuotaRows(windows:input.windows.map { w in
                 .init(id:w.id,period:w.period,scope:w.scope,remaining:w.remaining,resetsAt:w.resetsAt,durationMinutes:w.durationMinutes,
                     readable:w.readable && usable,runsOutAt:w.runsOutAt,publicReset:w.publicReset)
-            },now:now)
+            },now:now,redBelow:redBelow)
             let all=[windows.fiveHours,windows.weekly].compactMap{$0}+windows.other
             let status=usable ? "":zh ? " · 读数不可用":" · Reading unavailable"
             let age=format.age(input.evidence.observedAt ?? input.header?.evidence.observedAt,now:now)
