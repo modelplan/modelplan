@@ -117,6 +117,38 @@ import CryptoKit
             if scene.id == .aliasCancel || scene.id == .imeCancel{guard fixtures.filter({scene.allowedFixtures.contains($0.id)}).allSatisfy({$0.subscriptionCount>0}) else{throw SettingsScenarioInputError.invalidScene}}
             if scene.id == .imeCancel{guard profiles.first(where:{$0.id==scene.profile})!.locale=="zh-CN" else{throw SettingsScenarioInputError.invalidScene}}
             for step in scene.steps{try Self.validate(step,evidence:scene.evidence,paneIDs:paneIDs)}
+            try Self.validatePlan(scene,paneIDs:paneIDs)
+        }
+    }
+    private static func validatePlan(_ scene:SettingsShortScenario,paneIDs:[String])throws {
+        let allowed:Set<SettingsScenarioAction>
+        switch scene.id{
+        case .panes:allowed=[.visitPane,.checkpoint]
+        case .search:allowed=[.visitPane,.search,.checkpoint]
+        case .popups:allowed=[.visitPane,.choosePopup,.checkpoint]
+        case .aliasCancel:allowed=[.visitPane,.beginAliasDraft,.cancelAliasDraft,.checkpoint]
+        case .firstRun:allowed=[.prepareFirstRun,.checkpoint]
+        default:allowed=[.awaitHuman,.checkpoint]
+        }
+        guard scene.steps.allSatisfy({allowed.contains($0.action)}) else{throw SettingsScenarioInputError.invalidScene}
+        if scene.id == .panes{
+            guard scene.steps.count==paneIDs.count*2 else{throw SettingsScenarioInputError.invalidScene}
+            for index in paneIDs.indices{guard scene.steps[index*2].pane==paneIDs[index],scene.steps[index*2+1].action == .checkpoint else{throw SettingsScenarioInputError.invalidScene}}
+        }
+        if scene.id == .search{let values=scene.steps.filter{$0.action == .search}.compactMap(\.value);guard values.contains(where:{!$0.isEmpty}),values.last=="" else{throw SettingsScenarioInputError.invalidScene}}
+        if scene.id == .popups{guard scene.steps.contains(where:{$0.action == .choosePopup}) else{throw SettingsScenarioInputError.invalidScene}}
+        if scene.id == .aliasCancel{
+            guard scene.steps.filter({$0.action == .beginAliasDraft}).count==1,scene.steps.filter({$0.action == .cancelAliasDraft}).count==1,
+                  scene.steps.firstIndex(where:{$0.action == .beginAliasDraft})! < scene.steps.firstIndex(where:{$0.action == .cancelAliasDraft})! else{throw SettingsScenarioInputError.invalidScene}
+        }
+        if scene.id == .firstRun{guard scene.steps.first?.action == .prepareFirstRun,scene.steps.filter({$0.action == .prepareFirstRun}).count==1 else{throw SettingsScenarioInputError.invalidScene}}
+        var pane="general"
+        for step in scene.steps{
+            if step.action == .visitPane{pane=step.pane!}
+            if step.action == .beginAliasDraft{guard pane=="subscriptions" else{throw SettingsScenarioInputError.invalidScene}}
+            if step.action == .choosePopup{
+                guard let key=SettingKey(rawValue:step.key!),SettingsStructure.task65.panes.first(where:{$0.groups.contains(where:{$0.keys.contains(key)})})?.id==pane else{throw SettingsScenarioInputError.invalidScene}
+            }
         }
     }
     private static func validate(_ step:SettingsScenarioStep,evidence:SettingsScenarioEvidence,paneIDs:[String])throws {

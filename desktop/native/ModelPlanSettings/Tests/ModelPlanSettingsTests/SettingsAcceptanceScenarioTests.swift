@@ -35,6 +35,9 @@ import XCTest
         XCTAssertThrowsError(try edited{value in var fixtures=value["fixtures"] as! [[String:Any]];fixtures[0]["path"]="Fixtures/../settings.json";value["fixtures"]=fixtures})
         XCTAssertThrowsError(try edited{value in var profiles=value["profiles"] as! [[String:Any]];profiles[0]["physicalTopologyEstablished"]=true;value["profiles"]=profiles})
         XCTAssertThrowsError(try edited{value in var scenes=value["scenarios"] as! [[String:Any]];scenes[1]["id"]=scenes[0]["id"];value["scenarios"]=scenes})
+        XCTAssertThrowsError(try edited{value in var scenes=value["scenarios"] as! [[String:Any]];scenes[1]["steps"]=[["action":"prepareFirstRun"],["action":"checkpoint","checkpoint":"wrong-surface"]];value["scenarios"]=scenes})
+        XCTAssertThrowsError(try edited{value in var scenes=value["scenarios"] as! [[String:Any]];var steps=scenes[2]["steps"] as! [[String:Any]];steps[0]=["action":"visitPane","pane":"dock"];scenes[2]["steps"]=steps;value["scenarios"]=scenes})
+        XCTAssertThrowsError(try edited{value in var scenes=value["scenarios"] as! [[String:Any]];var steps=scenes[3]["steps"] as! [[String:Any]];steps.removeAll{$0["action"] as? String=="cancelAliasDraft"};scenes[3]["steps"]=steps;value["scenarios"]=scenes})
     }
     func testFixtureHashAndRuntimeBindingChangesCannotReuseInputIdentity()throws{
         let catalog=try catalog(),scene=catalog.scenarios.first{$0.id == .search}!,reference=catalog.fixtures[0]
