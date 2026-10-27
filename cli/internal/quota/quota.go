@@ -125,6 +125,8 @@ type Card struct {
 type Credits struct {
 	Unlimited  bool      `json:"unlimited,omitempty"`
 	Balance    *float64  `json:"balance,omitempty"`
+	Currency   string    `json:"currency,omitempty"` // explicit ISO currency for monetary wallets
+	Unit       string    `json:"unit,omitempty"`     // money | credits; absent for legacy readings
 	ObservedAt time.Time `json:"observedAt"`
 	AgeMinutes *int      `json:"ageMinutes,omitempty"`
 }
@@ -151,7 +153,8 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	Source     string    `json:"source"` // claude-code | codex | user | codexbar:<provider>
+	Beta       bool      `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source     string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string    `json:"plan,omitempty"`
 	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time `json:"observedAt"`
@@ -170,7 +173,16 @@ type Account struct {
 	// Pool: the allowance the session draws from when the account keeps more than one. Codex
 	// meters some models from their own allowance under another limit id (GPT Reserve is a weekly
 	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
-	Pool string `json:"pool,omitempty"`
+	Pool       string             `json:"pool,omitempty"`
+	SharedPool *SharedPoolBinding `json:"sharedPool,omitempty"`
+}
+
+// SharedPoolBinding describes eligibility without asserting a cross-tool account
+// link. An unverified pool is never additive capacity, even across different refs.
+type SharedPoolBinding struct {
+	Kind     string `json:"kind"`
+	Status   string `json:"status"`
+	Additive bool   `json:"additive"`
 }
 
 // InPool: the window meters the account's pool. An account without a window of its pool keeps
@@ -188,6 +200,7 @@ func (a *Account) InPool(w *Window) bool {
 }
 
 type SourceStatus struct {
+	Beta   bool   `json:"beta,omitempty"`
 	Source string `json:"source"`
 	Status string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema; CodexBar also: stale | estimated | unavailable
 	Reason string `json:"reason,omitempty"`
@@ -213,10 +226,11 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 type Paths struct {
 	CLIVersion                  string // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
-	CodexBarFile                string // ~/.config/modelplan/codexbar.json: providers read through CodexBar
-	ConnectionsFile             string // ~/.config/modelplan/connections.json: which backend reads each provider
-	CodexThread                 string // the calling Codex thread, when known (CODEX_THREAD_ID)
-	ClaudeSession               string // the calling Claude Code session, when known
+	CodexBarFile                string        // ~/.config/modelplan/codexbar.json: providers read through CodexBar
+	ConnectionsFile             string        // ~/.config/modelplan/connections.json: which backend reads each provider
+	CodexThread                 string        // the calling Codex thread, when known (CODEX_THREAD_ID)
+	ClaudeSession               string        // the calling Claude Code session, when known
+	ReaderAccess                *ReaderAccess // explicit shared-consent admission for saved-login readers
 }
 
 // Read gathers every available source and evaluates it at now.
