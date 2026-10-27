@@ -18,8 +18,9 @@ const maxCacheBytes = 1 << 20
 var versionRE = regexp.MustCompile(`^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(-[a-z0-9.-]{1,40})?$`)
 
 type Source struct {
-	Source string `json:"source"`
-	Status string `json:"status"`
+	Source   string `json:"source"`
+	Status   string `json:"status"`
+	NextStep string `json:"nextStep,omitempty"`
 }
 
 type Report struct {
@@ -54,7 +55,7 @@ func Collect(cache, version string) Report {
 	if status == "cached" && state.PublicationID == "" {
 		status = "empty"
 	}
-	r.Publication = Source{Source: "publication-cache", Status: status}
+	r.Publication = shareSource("publication-cache", status)
 	for _, item := range []struct{ name, file string }{
 		{"claude-code", "claude-code.json"},
 		{"codex-account", "codex-account.json"},
@@ -77,7 +78,7 @@ func Collect(cache, version string) Report {
 		if status == "cached" && envelope.Status != "" {
 			status = safeStatus(envelope.Status)
 		}
-		r.Sources = append(r.Sources, Source{Source: item.name, Status: status})
+		r.Sources = append(r.Sources, shareSource(item.name, status))
 		if cacheStatus != "cached" || (item.name != "native" && item.name != "codexbar") {
 			continue
 		}
@@ -90,7 +91,7 @@ func Collect(cache, version string) Report {
 					// Several accounts can have different states. Preserve every state
 					// without sharing an account's ref, alias or number of readings.
 					if !seen[status] {
-						r.Sources = append(r.Sources, Source{Source: item.name + ":" + id, Status: status})
+						r.Sources = append(r.Sources, shareSource(item.name+":"+id, status))
 						seen[status] = true
 					}
 				}
@@ -98,6 +99,35 @@ func Collect(cache, version string) Report {
 		}
 	}
 	return r
+}
+
+func shareSource(source, status string) Source {
+	s := Source{Source: source, Status: status}
+	switch status {
+	case "ok", "cached":
+	case "denied":
+		s.NextStep = "retry-in-settings"
+	case "expired_login":
+		s.NextStep = "open-tool-to-refresh"
+	case "not_detected":
+		s.NextStep = "check-tool-installation"
+	case "unsupported":
+		s.NextStep = "check-supported-tools"
+	case "estimated":
+		s.NextStep = "treat-as-estimate"
+	case "stale":
+		s.NextStep = "refresh-when-eligible"
+	case "pay_as_you_go":
+		s.NextStep = "open-provider-billing"
+	case "org_managed":
+		s.NextStep = "contact-organisation"
+	default:
+		s.NextStep = "check-setup"
+		if source == "publication-cache" {
+			s.NextStep = "run-sync"
+		}
+	}
+	return s
 }
 
 func safeStatus(status string) string {

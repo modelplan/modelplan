@@ -56,6 +56,12 @@ func TestShareKeepsDistinctAccountStatesWithoutIdentities(t *testing.T) {
 		if source.Source == "codex-account" && source.Status != "expired_login" {
 			t.Fatalf("lost source failure state: %+v", source)
 		}
+		if source.Status == "denied" && source.NextStep != "retry-in-settings" {
+			t.Fatalf("denial could re-prompt automatically: %+v", source)
+		}
+		if source.Status == "expired_login" && source.NextStep != "open-tool-to-refresh" {
+			t.Fatalf("login failure lost its next step: %+v", source)
+		}
 		if source.Source == "native:cursor" {
 			states = append(states, source.Status)
 		}
