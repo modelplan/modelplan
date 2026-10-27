@@ -6,6 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add the beta China-only Kimi Code saved-login reader with the existing device identity, one usage request and no credential refresh or device creation. Login and explicit-key routes share a persisted attempt floor/backoff; other quota durations retain labels and reset-past windows leave current projections.
 - Add the beta native Grok Build saved-session reader: one read-only billing request for included periods and separate prepaid USD balance, with shared-consent admission, backoff and conservative Cursor/Grok spacing. Shared-pool links remain unverified; no refresh, login launch, inference or automatic account merging.
 - Add the beta native Gemini CLI OAuth-file quota reader, with explicit shared consent, at most Code Assist metadata + quota per read, separately aged Google One AI credits and model/request counters. No OAuth refresh, project enumeration, inference or CodexBar fallback; unsupported login modes make no request.
 - Add the beta native Claude Code account quota reader, admitted through the shared consent interface: OAuth usage/profile and a bounded `/usr/bin/security` adapter that persists Deny and confirmation-needed states. Prepaid credits are omitted from v1; only evidenced usage windows and extra-usage spend/limit are read. No credential refresh or inference calls; command/consent wiring belongs to the CLI framework.

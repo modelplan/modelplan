@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,6 +41,55 @@ type nativeReader struct {
 	Fetch    func(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry
 	Managed  func(context.Context, *http.Client, readerContext) readerOutcome
 	Profiles func() []ReaderProfile
+	Budget   *nativeReadBudget
+}
+
+// Shared by saved-login and existing explicitly configured key routes. Callers
+// hold native.lock while reserving/finishing; Due reads ModelPlan state only.
+type nativeReadBudget struct {
+	Due     func(string, time.Time) bool
+	Reserve func(string, time.Time) error
+	Finish  func(string, time.Time) error
+}
+
+func (n *nativeReader) budgetDue(cache string, now time.Time) bool {
+	return n.Budget == nil || n.Budget.Due(cache, now)
+}
+func (n *nativeReader) reserveBudget(cache string, now time.Time) error {
+	if n.Budget == nil {
+		return nil
+	}
+	return n.Budget.Reserve(cache, now)
+}
+func (n *nativeReader) finishBudget(cache string, next time.Time) error {
+	if n.Budget == nil {
+		return nil
+	}
+	return n.Budget.Finish(cache, next)
+}
+
+func nativePrivacyAllows() bool {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
+	return mode == "" || mode == "automatic" || mode == "passive"
+}
+
+func legacyNativeReader(p Paths, provider string) bool {
+	n := nativeReaders[provider]
+	if n == nil {
+		return true
+	}
+	if n.Managed == nil {
+		return true
+	}
+	if n.Fetch == nil {
+		return false
+	}
+	if p.ReaderAccess != nil {
+		if _, exists := p.ReaderAccess.Grants[provider]; exists {
+			return false
+		}
+	}
+	return true
 }
 
 // nativeReaders: the registry. A provider without one stays on CodexBar.
@@ -91,6 +141,9 @@ func loadNative(cache string) *nativeSnap {
 
 // NativeDue: a native provider runs and its cached reading is missing or old enough.
 func NativeDue(p Paths, now time.Time) bool {
+	if !nativePrivacyAllows() {
+		return false
+	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && managedDue(p, provider, now) {
 			return true
@@ -99,7 +152,7 @@ func NativeDue(p Paths, now time.Time) bool {
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
-		if nativeReaders[x.Provider].Managed == nil {
+		if legacyNativeReader(p, x.Provider) && nativeReaders[x.Provider].budgetDue(p.Cache, now) {
 			legacy = append(legacy, x)
 		}
 	}
@@ -116,7 +169,7 @@ func NativeDue(p Paths, now time.Time) bool {
 		by[e.Provider] = e
 	}
 	for _, x := range on {
-		if nativeReaders[x.Provider].Managed != nil {
+		if !nativeReaders[x.Provider].budgetDue(p.Cache, now) {
 			continue
 		}
 		e, ok := by[x.Provider]
@@ -136,10 +189,13 @@ var nativeClient = &http.Client{Timeout: nativeTimeout}
 
 // RefreshNative asks each native provider once and caches the sanitised readings. One at a time.
 func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
+	if !nativePrivacyAllows() || ctx.Err() != nil {
+		return errors.New("personal readers are suspended")
+	}
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
-		if nativeReaders[x.Provider].Managed == nil {
+		if legacyNativeReader(p, x.Provider) {
 			legacy = append(legacy, x)
 		}
 	}
@@ -170,14 +226,26 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		return nil
 	}
 	home, _ := os.UserHomeDir()
+	previous := map[string]codexbarEntry{}
+	if old := loadNative(p.Cache); old != nil {
+		for _, entry := range old.Providers {
+			previous[entry.Provider] = entry
+		}
+	}
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	for _, x := range on {
-		key := os.Getenv(x.KeyEnv)
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
-		if n.Managed != nil {
+		if !n.budgetDue(p.Cache, now) {
+			if old, ok := previous[x.Provider]; ok {
+				s.Providers = append(s.Providers, old)
+			}
 			continue
 		}
+		if err := n.reserveBudget(p.Cache, now); err != nil {
+			return err
+		}
+		key := os.Getenv(x.KeyEnv)
 		if n.Collect != nil {
 			e = n.Collect(ctx, nativeClient, p.Cache, now)
 		} else {
@@ -195,6 +263,13 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		}
 		if e.Error != "" {
 			e.Error = clean(e.Error, home)
+		}
+		next := now.Add(NativeEvery)
+		if e.Status != "ok" {
+			next = now.Add(nativeRetryAfter)
+		}
+		if err := n.finishBudget(p.Cache, next); err != nil {
+			return err
 		}
 		s.Providers = append(s.Providers, e)
 	}
@@ -244,15 +319,21 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
-	for provider, n := range nativeReaders {
-		if n.Managed != nil {
-			applyManaged(r, p, provider, now)
-		}
-	}
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})
 		return
+	}
+	legacySelections := map[string]bool{}
+	for _, s := range ss {
+		if legacyNativeReader(p, s.Provider) {
+			legacySelections[s.Provider] = true
+		}
+	}
+	for provider, n := range nativeReaders {
+		if n.Managed != nil && !legacySelections[provider] {
+			applyManaged(r, p, provider, now)
+		}
 	}
 	s := loadNative(p.Cache)
 	by := map[string]codexbarEntry{}
@@ -262,7 +343,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 	}
 	for _, x := range ss {
-		if n := nativeReaders[x.Provider]; n != nil && n.Managed != nil {
+		if n := nativeReaders[x.Provider]; n != nil && !legacyNativeReader(p, x.Provider) {
 			continue
 		}
 		if x.Backend != BackendNative {
@@ -296,6 +377,11 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		default:
 			st.Status = "ok"
 			windows := append([]Window(nil), e.Windows...)
+			if x.Provider == "kimi" {
+				a := Account{Windows: windows}
+				pruneReaderWindows(&a, now)
+				windows = a.Windows
+			}
 			basis := "api-key"
 			if x.Provider == "cursor" {
 				basis = "cursor-auth"
