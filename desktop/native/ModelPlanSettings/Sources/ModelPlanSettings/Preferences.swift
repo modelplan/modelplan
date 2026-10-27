@@ -7,7 +7,13 @@ public enum SettingsError: Error, Equatable {
     case unsupportedSchema, invalidPreference, tooLarge, invalidCatalogue, staleRevision, invalidTime
 }
 public enum SettingsTheme: String, Codable, CaseIterable, Sendable { case system, day, night }
-public enum SettingsSize: String, Codable, CaseIterable, Sendable { case small = "S", medium = "M", large = "L" }
+public enum SettingsSize: String, Codable, CaseIterable, Sendable {
+    case small = "S", medium = "M", large = "L"
+    public var nozzleDiameter: CGFloat {
+        let table = DockNozzleDiameters.current
+        switch self { case .small: return table.small; case .medium: return table.medium; case .large: return table.large }
+    }
+}
 public enum AccessibilityPreference: String, Codable, CaseIterable, Sendable { case system, on }
 public enum PercentageMode: String, Codable, CaseIterable, Sendable { case remaining, used }
 public enum PercentagePin: String, Codable, CaseIterable, Sendable { case auto, fiveHour = "5h", week }

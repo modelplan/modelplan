@@ -7,16 +7,16 @@ import ModelPlanSettings
 
 @MainActor final class StaticDockPresentationTests: XCTestCase {
     func testSliverUsesRegisteredHullSpanAndAnchorAtEverySizeAndEdge() throws {
-        for factor: CGFloat in [44.0 / 52, 1, 64.0 / 52] {
+        for factor: CGFloat in [36.0 / 44, 1, 52.0 / 44] {
             for edge in SettingsDockEdge.allCases {
                 let vertical = edge != .bottom
-                let hull = CGRect(x: 10 * factor, y: 10 * factor,
-                                  width: (vertical ? 60 : 147.3962) * factor,
-                                  height: (vertical ? 147.3962 : 60) * factor)
-                let size = CGSize(width: (vertical ? 81 : 167) * factor, height: (vertical ? 167 : 81) * factor)
+                let hull = CGRect(x: 10 * 44 / 52 * factor, y: 10 * 44 / 52 * factor,
+                                  width: (vertical ? 60 : 147.3962) * 44 / 52 * factor,
+                                  height: (vertical ? 147.3962 : 60) * 44 / 52 * factor)
+                let size = CGSize(width: (vertical ? 81 : 167) * 44 / 52 * factor, height: (vertical ? 167 : 81) * 44 / 52 * factor)
                 var geometry = StaticDockGeometry(hoverRects: [])
                 try geometry.registerSliver(hullBounds: hull, expandedSize: size, edge: edge, scale: factor)
-                XCTAssertEqual(geometry.sliverLength, 147.3962 * factor, accuracy: 0.0001)
+                XCTAssertEqual(geometry.sliverLength, 147.3962 * 44 / 52 * factor, accuracy: 0.0001)
                 XCTAssertEqual(geometry.sliverThickness, 4 * factor, accuracy: 0.0001)
                 XCTAssertEqual(try XCTUnwrap(geometry.sliverAlongAnchor),
                                vertical ? size.height - hull.midY : hull.midX, accuracy: 0.0001)
@@ -28,8 +28,8 @@ import ModelPlanSettings
                     hoverRects: [], alongAnchor: geometry.sliverAlongAnchor)
                 let placement = try XCTUnwrap(DockEdgeGeometry.resolve(preference: .init(displayID: display.id, edge: dockEdge),
                     displays: [display], layouts: [layout], pointer: nil, primaryID: display.id))
-                XCTAssertEqual(vertical ? placement.wakeFrame.width : placement.wakeFrame.height, 16)
-                XCTAssertEqual(vertical ? placement.sliverFrame.height : placement.sliverFrame.width, 147.3962 * factor, accuracy: 0.0001)
+                XCTAssertEqual(vertical ? placement.wakeFrame.width : placement.wakeFrame.height, 20)
+                XCTAssertEqual(vertical ? placement.sliverFrame.height : placement.sliverFrame.width, 147.3962 * 44 / 52 * factor, accuracy: 0.0001)
                 XCTAssertTrue(display.visibleFrame.contains(placement.sliverFrame))
             }
         }

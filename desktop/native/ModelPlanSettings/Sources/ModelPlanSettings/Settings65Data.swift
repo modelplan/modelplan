@@ -63,7 +63,7 @@ public struct SettingsDiagramPolicy: Equatable, Sendable {
     public let changesControlGeometry = false
     public init(reduceMotion: Bool) { duration = reduceMotion ? 0 : 0.4; selectedEndState = reduceMotion }
     public static let width: Double = 96, height: Double = 40, stroke: Double = 1
-    public static let sizeRatio = [44,52,64]
+    public static var sizeRatio: [Int] { SettingsSize.allCases.map { Int($0.nozzleDiameter) } }
     public static let quotaArcFraction = 0.7
     public static let clockwiseFromTwelve = true
 }

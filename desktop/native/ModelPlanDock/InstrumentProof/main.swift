@@ -146,6 +146,16 @@ struct NativeFailure:Error {let message:String}
         try require(result.metrics.contains{$0.text=="25%" && $0.advance>0},"native CoreText data rendering")
         try require(!result.effectsRendered,"static capture does not claim pooled effects")
     }
+    for diameter:CGFloat in [36,44,52] {
+        let scaledView=DockInstrumentView(frame:.zero);scaledView.requestedNozzleDiameter=diameter
+        try scaledView.applyOfficial(skin:skin,rows:[reading],renderer:renderer,scale:2,locale:"en")
+        let factor=diameter/24
+        try require(scaledView.presentedNozzleDiameters==[diameter],"requested S/M/L nozzle size reaches the actual rendered recipe")
+        try require(abs(scaledView.frame.width-96*factor)<0.0001,"full hull envelope scales with the nozzle")
+        let scaled=try skin.scaled(by:factor)
+        try require(abs(scaled.stations[0].outer.width-2*factor)<0.0001 && abs(scaled.text.size-11*factor)<0.0001,"rings and text share the geometry scale")
+        scaledView.dispose()
+    }
     var staleInput=input;staleInput.dataState = .stale
     let staleReading=try DockInstrumentProjection.evaluate(staleInput,now:instant)
     var staleSkin=skin;staleSkin.stations[0].replacementResource="test";staleSkin.stations[0].readoutOpacity=0.6
@@ -270,7 +280,7 @@ struct NativeFailure:Error {let message:String}
     edgeDriver.onClearRecordedLocks={locks in edgeClears.append(locks);edgeEnv.presence.recordedLocks.subtract(locks)}
     edgeDriver.start()
     try require(edgeDriver.presentation?.state == .sliver && edgeScheduler.deadline==0.15,"wake dwell starts at first geometry sample")
-    try require(edgeDriver.presentation?.paintedFrame?.width==3 && edgeDriver.presentation?.placement?.wakeFrame.width==16,"wake rectangle is not an input panel")
+    try require(edgeDriver.presentation?.paintedFrame?.width==3 && edgeDriver.presentation?.placement?.wakeFrame.width==20,"wake rectangle is not an input panel")
     let staleEdgeTimer=edgeScheduler.saved[0]
     edgeTime=0.149;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .sliver,"no early reveal")
     edgeTime=0.15;edgeScheduler.fire();try require(edgeDriver.presentation?.state == .expanded && edgeReveals==1,"one genuine deadline reveal")

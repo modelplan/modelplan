@@ -2,6 +2,11 @@
 import Foundation
 import CoreGraphics
 
+public struct DockNozzleDiameters: Equatable, Sendable {
+    public static let current = DockNozzleDiameters(small: 36, medium: 44, large: 52)
+    public var small: CGFloat, medium: CGFloat, large: CGFloat
+    public init(small: CGFloat, medium: CGFloat, large: CGFloat) { self.small = small; self.medium = medium; self.large = large }
+}
 public enum DockSliverLength: Equatable, Sendable { case fullSpan, fixed(CGFloat) }
 public struct DockSliverScaleTable: Equatable, Sendable {
     public var small: CGFloat, medium: CGFloat, large: CGFloat
@@ -10,8 +15,9 @@ public struct DockSliverScaleTable: Equatable, Sendable {
 /// Geometry policy only. Suppliers continue to own the artwork and its registration.
 public struct DockSliverParameters: Equatable, Sendable {
     // Change the approved geometry here; tracking depth is physical and never size-scaled.
-    public static let current = DockSliverParameters(visibleThickness: 4, visibleLength: .fullSpan, trackingDepth: 16,
-        sizeScales: .init(small: 44.0 / 52, medium: 1, large: 64.0 / 52))
+    public static let current = DockSliverParameters(visibleThickness: 4, visibleLength: .fullSpan, trackingDepth: 20,
+        sizeScales: .init(small: DockNozzleDiameters.current.small / DockNozzleDiameters.current.medium, medium: 1,
+                          large: DockNozzleDiameters.current.large / DockNozzleDiameters.current.medium))
     public var visibleThickness: CGFloat, visibleLength: DockSliverLength, trackingDepth: CGFloat
     public var sizeScales: DockSliverScaleTable
     public init(visibleThickness: CGFloat, visibleLength: DockSliverLength, trackingDepth: CGFloat, sizeScales: DockSliverScaleTable) {

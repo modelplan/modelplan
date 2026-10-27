@@ -134,7 +134,7 @@ public enum DockEdgeGeometry {
             }
         };return true
     }
-    public static func resolve(preference:DockEdgePreference,displays:[DockDisplayArea],layouts:[DockEdgeLayout],pointer:CGPoint?,primaryID:String?,nearest:Bool=false,cornerClearance:CGFloat=24,wakeDepth:CGFloat=16)throws->DockEdgePlacement?{
+    public static func resolve(preference:DockEdgePreference,displays:[DockDisplayArea],layouts:[DockEdgeLayout],pointer:CGPoint?,primaryID:String?,nearest:Bool=false,cornerClearance:CGFloat=24,wakeDepth:CGFloat=20)throws->DockEdgePlacement?{
         try validate(displays:displays,layouts:layouts)
         guard preference.alongFraction.isFinite,cornerClearance.isFinite,cornerClearance>=0,wakeDepth.isFinite,wakeDepth>0,
               pointer.map({$0.x.isFinite && $0.y.isFinite}) ?? true else{throw DockEdgeError.invalidGeometry}

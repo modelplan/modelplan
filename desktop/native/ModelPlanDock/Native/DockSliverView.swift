@@ -2,7 +2,7 @@
 import AppKit
 import CoreGraphics
 
-/// A small painted surface, not the16pt wake target. Appearance pixels are externally supplied.
+/// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public var onNeedsFreshPresentation:(()->Void)?

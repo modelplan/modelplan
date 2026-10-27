@@ -22,6 +22,20 @@ public struct StaticDockGeometry {
         self.sliverAlongAnchor = sliverAlongAnchor; self.sliverImage = sliverImage; self.sliverScale = sliverScale
     }
 
+    @MainActor public mutating func scaleRegistration(by factor: CGFloat) {
+        func rect(_ r: CGRect) -> CGRect {
+            .init(x: r.minX * factor, y: r.minY * factor, width: r.width * factor, height: r.height * factor)
+        }
+        hoverRects = hoverRects.map(rect); sliverLength *= factor; sliverThickness *= factor
+        sliverAlongAnchor = sliverAlongAnchor.map { $0 * factor }; consoleButton = consoleButton.map(rect)
+        if let regions = dragRegions {
+            var transform = CGAffineTransform(scaleX: factor, y: factor)
+            if let body = regions.body.copy(using: &transform) {
+                dragRegions = .init(body: body, grips: regions.grips.compactMap { $0.copy(using: &transform) },
+                                    excludedControls: regions.excludedControls.map(rect))
+            }
+        }
+    }
     public mutating func registerSliver(hullBounds: CGRect, expandedSize: CGSize, edge: SettingsDockEdge,
                                        parameters: DockSliverParameters = .current, scale: CGFloat = 1) throws {
         guard !hullBounds.isNull, !hullBounds.isEmpty else { throw DockEdgeError.invalidGeometry }
@@ -186,11 +200,14 @@ public struct StaticDockGeometry {
             let value = passPreferences.applying(to: input)
             return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
         }
+        dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
+        alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
         do {
             if let appearance {
                 let candidate = try appearance(dockView, rows, passPreferences)
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
+                geometry.scaleRegistration(by: dockView.appliedGeometryScale)
                 try registerSliver(&geometry, view: dockView, preferences: passPreferences)
             }
             else {
@@ -222,6 +239,7 @@ public struct StaticDockGeometry {
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
                     var candidate = try appearance(view, rows, oriented)
+                    candidate.scaleRegistration(by: view.appliedGeometryScale)
                     try registerSliver(&candidate, view: view, preferences: oriented)
                     guard passIsCurrent(generation) else { return }
                     view.onAction = dockView.onAction

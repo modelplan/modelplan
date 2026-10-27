@@ -184,17 +184,24 @@ do {
         try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"stale personal notices withheld")
         s.reset=reset();try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .resetAnnounced,"dated public reset does not fabricate personal quota")
     }
-    try test("sliver segment acknowledgement, improvement/worsening and no unknown downgrade") {
+    try test("sliver quota state persists independently of one-shot acknowledgements") {
         var state=DockAttentionState(), signals=[fresh("a",.warning),fresh("b",.critical),fresh("c"),fresh("d")]
         let stations=Dictionary(uniqueKeysWithValues:signals.map{($0.id,"station-"+$0.id)})
-        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.subscriptionID)==["a","b"],"only affected segments")
-        try state.acknowledgeDockOpen(signals,at:now);try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.isEmpty,"open acknowledges current ranks")
-        signals[0].alert = .critical;try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.subscriptionID)==["a"],"later worsening returns")
-        signals[1].dataState = .stale;_=try state.project(signals,stationBySubscription:stations,at:now)
-        signals[1].dataState = .fresh;try expect(!(try state.project(signals,stationBySubscription:stations,at:now).segments.contains{$0.subscriptionID=="b"}),"unknown is not improvement")
-        signals[1].alert = .none;_=try state.project(signals,stationBySubscription:stations,at:now)
-        signals[1].alert = .warning;try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.contains{$0.subscriptionID=="b"},"real improvement then worsening recurs")
-        try expect(try state.project(signals,stationBySubscription:stations,sliverAlerts:false,at:now).segments.isEmpty,"setting disables segments")
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.subscriptionID)==["a","b"],"only current affected segments")
+        try state.acknowledgeDockOpen(signals,at:now)
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.severity)==[.warning,.critical],"revealing does not clear current quota state")
+        signals[0].alert = .critical
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.count==2,"worsening updates without hiding another subscription")
+        signals[1].dataState = .stale
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.subscriptionID)==["a"],"stale personal quota color is withheld")
+        signals[1].dataState = .fresh
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.count==2,"fresh unchanged quota is shown after recovery")
+        signals[1].alert = .none
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.map(\.subscriptionID)==["a"],"real improvement clears only its segment")
+        signals[1].alert = .warning
+        try state.acknowledgeDockOpen(signals,at:now)
+        try expect(try state.project(signals,stationBySubscription:stations,at:now).segments.count==2,"repeated reveal cannot acknowledge away persistent quota state")
+        try expect(try state.project(signals,stationBySubscription:stations,sliverAlerts:false,at:now).segments.isEmpty,"saved explicit off disables segments")
     }
     try test("overflow identity, selected-event acknowledgement and menu tie order") {
         var signals=(0..<7).map{fresh("s\($0)")};signals[5].alert = .warning;signals[6].alert = .critical
@@ -365,7 +372,7 @@ do {
             try expect(d.usableFrame.contains(p.frame) && d.usableFrame.contains(p.sliverFrame) && d.usableFrame.contains(p.wakeFrame),"all painted/wake frames stay usable")
             let thickness=edge == .bottom ? p.sliverFrame.height:p.sliverFrame.width
             let wake=edge == .bottom ? p.wakeFrame.height:p.wakeFrame.width
-            try expect(abs(thickness-3*scale)<0.0001 && wake==16,"registered sliver scales, physical wake does not")
+            try expect(abs(thickness-3*scale)<0.0001 && wake==20,"registered sliver scales, physical wake does not")
             let along=edge == .bottom ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
             try expect(along>=24,"physical hot-corner clearance")
             try expect(p.edge != .top,"top never emitted")
