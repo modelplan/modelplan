@@ -7,6 +7,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Add the beta native Gemini CLI OAuth-file quota reader, with explicit shared consent, at most Code Assist metadata + quota per read, separately aged Google One AI credits and model/request counters. No OAuth refresh, project enumeration, inference or CodexBar fallback; unsupported login modes make no request.
+- Add the beta native Claude Code account quota reader, admitted through the shared consent interface: OAuth usage/profile and a bounded `/usr/bin/security` adapter that persists Deny and confirmation-needed states. Prepaid credits are omitted from v1; only evidenced usage windows and extra-usage spend/limit are read. No credential refresh or inference calls; command/consent wiring belongs to the CLI framework.
 - Cursor's beta saved-login reader uses at most plan-info + period-usage per read, with explicit shared-consent admission, a five-minute floor, cached metadata and last-good capture retention. Eligible X Subscription pools stay labelled link-unverified and non-additive until a verified common ID exists.
 - CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.
 
