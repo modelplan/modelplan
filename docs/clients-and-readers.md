@@ -49,6 +49,8 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 - Tell the user, in the consent text and the privacy page, that a tool's credential is sent to that tool's own provider to authenticate.
 - On macOS, read Keychain items through `/usr/bin/security`. "Always Allow" then attaches to Apple's stable binary rather than to each new ad-hoc-signed CLI build, so updates do not re-prompt.
 
+**No prerequisite installs (owner, firm):** nothing may require the plugin or the Claude Code status line. Claude Code's current model, effort and Fast state are read passively from its own local session records, the same way Codex rollouts are read. The status line and plugin hooks are optional extra sources only.
+
 Codex needs no credential: `codex app-server` reports the account's windows (`quota --refresh-account`). The App runs that refresh on start, on resume and every 5 minutes while a Dock or cockpit is visible.
 
 ## 5. The detector catalogue (data, not code)
