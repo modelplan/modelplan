@@ -36,12 +36,7 @@ import CoreGraphics
     public override func draw(_ dirtyRect:NSRect){
         guard !failed else{return}
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)}
-        else{
-            // Separators are translucent and can disappear on the desktop behind a clear panel.
-            // The neutral fallback stays opaque, with >=3:1 contrast against black and white;
-            // supplied appearance pixels and the registered painted/hit footprint are unchanged.
-            NSColor(srgbRed:0.5,green:0.5,blue:0.5,alpha:1).setFill();bounds.fill()
-        }
+        else{NSColor.separatorColor.setFill();bounds.fill()}
     }
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
