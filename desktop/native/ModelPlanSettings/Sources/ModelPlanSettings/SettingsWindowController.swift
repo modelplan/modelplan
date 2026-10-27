@@ -32,6 +32,8 @@ enum SettingsWords {
         case "quick": pair = ("Always quick", "始终快速打开")
         default: pair = (raw, raw)
         }
+        if key == .dockDisplay && raw == "primary" { return text("Primary display", "主显示器", language) }
+        if key == .dockPosition, let fraction = Double(raw) { return String(format: "%.1f %%", fraction * 100) }
         if key == .redBelow { return raw + " %" }
         if key == .reveal || key == .countdown { return raw + " ms" }
         return text(pair.0, pair.1, language)

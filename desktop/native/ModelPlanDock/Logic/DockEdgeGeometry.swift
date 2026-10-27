@@ -140,7 +140,10 @@ public enum DockEdgeGeometry {
               pointer.map({$0.x.isFinite && $0.y.isFinite}) ?? true else{throw DockEdgeError.invalidGeometry}
         let sorted=displays.sorted{$0.id<$1.id}
         let preferred=sorted.first{$0.id==preference.displayID}
-        let chosen=preferred ?? pointer.flatMap{p in sorted.first{$0.usableFrame.contains(p)}} ?? sorted.first{$0.id==primaryID} ?? sorted.first
+        // A missing fixed display recovers to primary without following pointer motion.
+        // nil identity is the explicit follow mode; the host resolves primary-only choices.
+        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.usableFrame.contains(p)}} : nil
+        let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
         var candidates=[DockEdgePlacement]()
         for d in sorted where nearest || d.id==chosen?.id{
             for edge in allowedEdges{

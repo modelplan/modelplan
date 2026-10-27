@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreGraphics
 import ModelPlanCore
 import ModelPlanDock
 import ModelPlanSettings
@@ -20,6 +21,7 @@ public struct StaticDockGeometry {
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
         self.sliverAlongAnchor = sliverAlongAnchor; self.sliverImage = sliverImage; self.sliverScale = sliverScale
     }
+
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
@@ -31,6 +33,8 @@ public struct StaticDockGeometry {
     public var showConsole: (() -> Void)?
     public var showSettings: (() -> Void)?
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
+    public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
+    public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
     private let appearance: Appearance?
     private let currentDate: @MainActor () -> Date
@@ -47,7 +51,12 @@ public struct StaticDockGeometry {
     private var rebuildPending = false
     private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
-    private var fixedDisplayID: String?
+    private var lastDisplayChoices: [SettingsDisplayChoice] = []
+    private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
+    private var edgeViews: [DockEdge: DockInstrumentView] = [:]
+    private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
+    private var outlinePanel: NSPanel?
+    private let outlineView = DockSnapOutlineView()
     private var cardID: String?
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
@@ -92,7 +101,7 @@ public struct StaticDockGeometry {
         edge.onPresent = { [weak self] value in self?.present(value) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
-            self.fixedDisplayID = value.displayID
+            if let id = value.displayID { self.commitDisplayPlacement?(id, next, value.alongFraction) }
             self.commitPlacement?(next, value.alongFraction)
         }
     }
@@ -141,6 +150,11 @@ public struct StaticDockGeometry {
         return true
     }
     private func rebuildPass(_ generation: UInt64) {
+        let choices = NSScreen.screens.enumerated().map { index, screen in
+            SettingsDisplayChoice(id: displayID(screen, index: index), name: screen.localizedName)
+        }
+        if choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
+        guard passIsCurrent(generation) else { return }
         let passPreferences = preferences
         let now = currentDate(), next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now)
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
@@ -185,12 +199,28 @@ public struct StaticDockGeometry {
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
         if let rect = geometry.consoleButton { consoleButton.frame = rect }
-        // Cross-edge drag requires every registered edge recipe; this preview changes edge in Settings.
-        dockView.backgroundDragDelegate = nil
-        edge.dragRegions = nil
-        let edgeValue: DockEdge = preferences.dockEdge == .left ? .left : preferences.dockEdge == .bottom ? .bottom : .right
-        if fixedDisplayID == nil, let screen = NSScreen.screens.first { fixedDisplayID = displayID(screen, index: 0) }
-        edge.setPreference(.init(displayID: preferences.followActiveDisplay ? nil : fixedDisplayID, edge: edgeValue, alongFraction: edge.preference.alongFraction))
+        let selected = nativeEdge(passPreferences.dockEdge)
+        var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
+        // Resolve every orientation before tracking. Pointer samples reuse prepared geometry/pixels.
+        if createsNativePanels, let appearance {
+            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
+                var oriented = passPreferences
+                oriented.dockEdge = settingsEdge(orientation)
+                do {
+                    var candidate = try appearance(view, rows, oriented)
+                    guard passIsCurrent(generation) else { return }
+                    view.onAction = dockView.onAction; view.permitsAction = dockView.permitsAction
+                    view.onNeedsFreshPresentation = dockView.onNeedsFreshPresentation
+                    nextGeometries[orientation] = candidate; nextViews[orientation] = view
+                } catch { view.dispose() }
+            }
+        }
+        edgeGeometries = nextGeometries; edgeViews = nextViews
+        let primary = NSScreen.screens.first.map { displayID($0, index: 0) } ?? "primary-unavailable"
+        let selectedID = passPreferences.dockDisplayID ?? primary
+        let preference = DockEdgePreference(displayID: passPreferences.followActiveDisplay ? nil : selectedID,
+            edge: selected, alongFraction: passPreferences.dockAlongFraction)
+        if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
         if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
         if permitted { edge.start(); edge.refresh() }
@@ -200,11 +230,14 @@ public struct StaticDockGeometry {
         let displays = screens.enumerated().map { index, screen in
             DockDisplayArea(id: displayID(screen, index: index), frame: screen.frame, visibleFrame: screen.visibleFrame)
         }
-        let selectedEdge: DockEdge = preferences.dockEdge == .left ? .left : preferences.dockEdge == .bottom ? .bottom : .right
-        let layouts = displays.map { display in
-            DockEdgeLayout(displayID: display.id, edge: selectedEdge, expandedSize: dockView.frame.size,
-                sliverLength: geometry.sliverLength, sliverThickness: geometry.sliverThickness,
-                hoverRects: geometry.hoverRects.isEmpty ? [dockView.bounds] : geometry.hoverRects, alongAnchor: geometry.sliverAlongAnchor)
+        let layouts = displays.flatMap { display in
+            edgeGeometries.compactMap { orientation, geometry -> DockEdgeLayout? in
+                guard let view = edgeViews[orientation] else { return nil }
+                return DockEdgeLayout(displayID: display.id, edge: orientation, expandedSize: view.frame.size,
+                    sliverLength: geometry.sliverLength, sliverThickness: geometry.sliverThickness,
+                    hoverRects: geometry.hoverRects.isEmpty ? [view.bounds] : geometry.hoverRects,
+                    alongAnchor: geometry.sliverAlongAnchor)
+            }
         }
         var presence = DockPresence()
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
@@ -216,7 +249,14 @@ public struct StaticDockGeometry {
             pointer: pointer ?? NSEvent.mouseLocation, presence: presence, cardFrame: cardPanel?.isVisible == true ? cardPanel?.frame : nil)
     }
     private func displayID(_ screen: NSScreen, index: Int) -> String {
-        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? "display.\(index)"
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return "session.\(index)" }
+        guard let uuid = CGDisplayCreateUUIDFromDisplayID(number.uint32Value)?.takeRetainedValue() else { return "session.\(number)" }
+        return CFUUIDCreateString(nil, uuid) as String
+    }
+    private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
+    private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
+    private var presentationGeometry: StaticDockGeometry {
+        edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
     }
     private func makePanel() -> NSPanel {
         let value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -234,23 +274,44 @@ public struct StaticDockGeometry {
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
         let content: NSView
         switch value.state {
-        case .expanded: content = container
+        case .expanded:
+            let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
+            let view = edgeViews[orientation] ?? dockView
+            for child in container.subviews where child is DockInstrumentView && child !== view { child.removeFromSuperview() }
+            if view.superview !== container { container.addSubview(view, positioned: .below, relativeTo: consoleButton) }
+            container.setFrameSize(view.frame.size)
+            let current = edgeGeometries[orientation] ?? geometry
+            consoleButton.isHidden = current.consoleButton == nil
+            if let rect = current.consoleButton { consoleButton.frame = rect }
+            let regions = current.dragRegions ?? view.registeredDragRegions(excluding: current.consoleButton.map { [$0] } ?? [])
+            if let regions { edge.install(on: view, regions: regions) }
+            else { view.backgroundDragDelegate = nil; edge.dragRegions = nil }
+            content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { panel.orderOut(nil); return }
         case .suppressed: panel.orderOut(nil); return
         }
         if panel.contentView !== content { panel.contentView = content }
-        content.menu = menu(); dockView.menu = content.menu
+        content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
+        if let preview = value.snapPreview, let view = edgeViews[preview.edge], let path = view.registeredHullPath {
+            if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
+            outlineView.path = path
+            outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
+        } else { outlinePanel?.orderOut(nil) }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
     }
     private var sliverLogicalSize: CGSize {
-        preferences.dockEdge == .bottom ? CGSize(width: geometry.sliverLength, height: geometry.sliverThickness) : CGSize(width: geometry.sliverThickness, height: geometry.sliverLength)
+        let current = presentationGeometry
+        return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)) == .bottom
+            ? CGSize(width: current.sliverLength, height: current.sliverThickness)
+            : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
     func prepareSliver(size: CGSize) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
         do {
+            let geometry = presentationGeometry
             let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
                              accessibilityLabel: "Show Dock / 显示挂件")
@@ -323,8 +384,9 @@ public struct StaticDockGeometry {
         NotificationCenter.default.removeObserver(self)
         edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
         dockView.onNeedsFreshPresentation = nil
-        dockView.dispose(); sliver.dispose(); card.dispose()
+        dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
+        edgeViews = [:]; edgeGeometries = [:]; outlinePanel?.orderOut(nil); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
-        showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil
+        showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }

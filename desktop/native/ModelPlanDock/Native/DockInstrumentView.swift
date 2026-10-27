@@ -23,6 +23,24 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
+    public var registeredHullPath: CGPath? {
+        guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
+        let path = CGMutablePath()
+        path.addLines(between: skin.bodyPolygon.map { CGPoint(x: $0.x - skin.bounds.minX, y: $0.y - skin.bounds.minY) })
+        path.closeSubpath(); return path
+    }
+    public func registeredDragRegions(excluding controls: [CGRect]) -> DockBackgroundDragRegions? {
+        guard let skin, let path = registeredHullPath else { return nil }
+        var excluded = controls
+        for station in skin.stations {
+            excluded.append(CGRect(x: station.centre.x - station.diameter / 2 - skin.bounds.minX,
+                y: station.centre.y - station.diameter / 2 - skin.bounds.minY, width: station.diameter, height: station.diameter))
+            excluded.append(station.readout.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
+            excluded.append(station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
+            if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)) }
+        }
+        return DockBackgroundDragRegions(body: path, excludedControls: excluded)
+    }
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
     private var workspaceObserver:NSObjectProtocol?
