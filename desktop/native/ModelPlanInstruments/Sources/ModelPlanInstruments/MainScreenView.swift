@@ -380,7 +380,8 @@ import AppKit
         region = r; frame = r.rect; isEnabled = r.enabled
         setAccessibilityElement(true); setAccessibilityIdentifier(r.id)
         setAccessibilityRole(!r.accessibilityDetails.isEmpty ? .group:r.role == .button ? .button:r.role == .choice ? .radioButton:.staticText)
-        setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled); setAccessibilityValue(r.value)
+        setAccessibilityLabel(r.label); setAccessibilityHelp(r.help.accessibleDescription); setAccessibilityEnabled(r.enabled)
+        if r.role == .choice {setAccessibilityValue(r.value=="1")} else {setAccessibilityValue(r.value)}
         let retained=Set(r.accessibilityDetails.map(\.id))
         for id in Array(detailNodes.keys) where !retained.contains(id) {
             let node=detailNodes.removeValue(forKey:id);node?.setAccessibilityElement(false);node?.setAccessibilityParent(nil)

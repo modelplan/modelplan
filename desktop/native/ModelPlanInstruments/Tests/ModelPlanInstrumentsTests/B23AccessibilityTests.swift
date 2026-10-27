@@ -55,6 +55,14 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
 }
 
 @MainActor final class B23ChartTreeTests:XCTestCase {
+    func testChoiceRoleExposesBooleanSelectedState() throws {
+        let provider=B23ChoiceRecipe(),view=MainScreenView(recipeProvider:provider)
+        try view.update(inputs:[],selection:nil,publication:nil,publicationUsable:false,language:.english,compact:false)
+        let control=try XCTUnwrap(view.control(for:"choice"))
+        XCTAssertEqual(control.accessibilityRole(),.radioButton)
+        XCTAssertEqual((control.accessibilityValue() as? NSNumber)?.boolValue,true)
+        view.closeForCockpit()
+    }
     func testReducedMotionRemovesATrialGhostWithoutItsRetirementFade() throws {
         _ = NSApplication.shared
         let view=FaderBankView();view.onHelpChange={_,_ in};view.reducedMotion=true
@@ -120,5 +128,15 @@ final class B23ComparisonAccessibilityTests:XCTestCase {
     func font(_ request:EngineFontRequest)throws->CTFont{try base.font(request)}
     func recipe(for presentation:EngineTablePresentation,size:CGSize)throws->EngineTableRecipe{
         .init(size:size,commands:[.text(.init(id:"reading",variants:["123"],rect:.init(x:0,y:0,width:80,height:20),font:.init(size:12),ink:.init(1,1,1),transitionDuration:0.08))],regions:[])
+    }
+}
+
+@MainActor private final class B23ChoiceRecipe:MainScreenRecipeProvider {
+    let base=NeutralEngineTableRecipe()
+    func image(_ id:String)throws->CGImage{try base.image(id)}
+    func font(_ request:EngineFontRequest)throws->CTFont{try base.font(request)}
+    func minimumSize(for presentation:MainScreenPresentation)->CGSize{.init(width:100,height:100)}
+    func recipe(for presentation:MainScreenPresentation,size:CGSize)throws->MainScreenRecipe{
+        .init(size:size,commands:[],regions:[.init(id:"choice",rect:.init(x:0,y:0,width:40,height:20),label:"Selected option",help:.init(title:"Choice",body:"Synthetic"),role:.choice,value:"1")])
     }
 }
