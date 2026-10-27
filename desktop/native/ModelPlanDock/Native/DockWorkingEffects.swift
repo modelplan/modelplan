@@ -48,7 +48,7 @@ public struct DockEffectRotation: Equatable, Sendable {
         var effectiveProfile=profile
         effectiveProfile.reduceMotion = profile.reduceMotion || systemReduceMotion()
         view.onVisualReset={[weak self] in self?.stop()}
-        if compositing == .screen && !view.layerUsesCoreImageFilters {view.layerUsesCoreImageFilters=true}
+        if (compositing == .screen || sampling == .interpolatedCandidate) && !view.layerUsesCoreImageFilters {view.layerUsesCoreImageFilters=true}
         let rows=Dictionary(uniqueKeysWithValues:readings.map{($0.subscriptionID,$0)})
         let epoch=hostTime();guard epoch.isFinite else{throw DockArtworkError.invalidManifest}
         CATransaction.begin();CATransaction.setDisableActions(true);defer{CATransaction.commit()}
