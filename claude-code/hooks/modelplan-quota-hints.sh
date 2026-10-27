@@ -6,6 +6,8 @@
 # object and never blocks the prompt. Setup notices and quota hints are shown to the user only
 # (systemMessage); only the task-start brief goes to the model. Writes ~/.cache/modelplan-claude-code and, through
 # fetch-cli.sh, ~/.cache/modelplan-cli; changes no setting. MODELPLAN_PLUGIN_CLI=off: no fetch.
+# Off silences the entire prompt hook, including setup notices and task briefs.
+[ "$(cat "$HOME/.config/modelplan/claude-code/automatic-hints" 2>/dev/null)" = off ] && exit 0
 here=$(dirname "$0")
 . "$here/setup-lib.sh"
 input=$(cat)
@@ -53,6 +55,5 @@ if [ -z "$cliv" ] || ! at_least "$cliv" "$min_cli"; then
   else hints; fi
   exit 0
 fi
-! statusline_set && notice statusline "" && add "$msg"
 hints
 exit 0

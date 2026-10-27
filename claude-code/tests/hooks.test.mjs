@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,25 +103,38 @@ test('fetching off: a CLI the user installed is used, and nothing is said', asyn
   await rm(home, { recursive: true });
 });
 
-test('the status-line notice is shown to the user only, twice at most, a week apart', async () => {
+test('automatic hints default on, persist off/on, and leave explicit commands available', async () => {
+  const { home, sh, state, pinned } = await setup({ fetch: true });
+  try {
+    assert.equal(sh('automatic-hints.sh', '', ['status']), 'automatic-hints: on\n');
+    assert.equal(sh('automatic-hints.sh', '', ['off']), 'automatic-hints: off\n');
+    assert.equal(sh('modelplan-quota-hints.sh'), '', 'no output even with a missing CLI');
+    await assert.rejects(stat(state), 'off does not run or fetch a CLI');
+    await pinned();
+    assert.equal(sh('modelplan-quota-hints.sh'), '', 'off survives a new hook invocation');
+    await assert.rejects(stat(join(home, 'args')), 'CLI not called by disabled hook');
+    assert.match(sh('setup-status.sh', ''), /^automatic-hints: off$/m);
+    assert.match(sh('setup-status.sh', ''), /^hints: off by choice/m);
+    assert.deepEqual(JSON.parse(sh('run-cli.sh', '', ['lineup', '--json'])), { hints: 1 });
+    assert.equal(await readFile(join(home, 'args'), 'utf8'), 'lineup\n--json\n');
+    assert.equal(sh('automatic-hints.sh', '', ['on']), 'automatic-hints: on\n');
+    assert.deepEqual(JSON.parse(sh('modelplan-quota-hints.sh')), { hints: 1 });
+    assert.throws(() => sh('automatic-hints.sh', '', ['invalid']));
+    assert.equal(sh('automatic-hints.sh', '', ['status']), 'automatic-hints: on\n');
+  } finally { await rm(home, { recursive: true }); }
+});
+
+test('an absent status line is optional and never nags during prompts', async () => {
   const { home, sh, state, pinned } = await setup();
-  await pinned();
-  await mkdir(state, { recursive: true });
-  await writeFile(join(state, `announced-${pin.version}`), '');
-  const say = prompt => { sh('modelplan-quota-hints.sh', JSON.stringify({ session_id: 's', prompt })); return readFile(join(home, 'args'), 'utf8'); };
-  const shown = args => args.split('\n').slice(0, 4).join(' ') === 'advise --hook claude-code --add-system';
-  const first = await say('first');
-  assert.ok(shown(first));
-  assert.match(first, /\/modelplan:statusline[\s\S]*twice at most/);
-  assert.doesNotMatch(first, /--add-context/, 'the model is not asked to ask');
-  assert.equal(await say('不用了'), 'advise\n--hook\nclaude-code\n', 'not again within the week');
-  const old = new Date(Date.now() - 8 * 864e5);
-  await utimes(join(state, 'notice-statusline'), old, old);
-  assert.ok(shown(await say('next')), 'once more a week later');
-  await utimes(join(state, 'notice-statusline'), old, old);
-  assert.equal(await say('next'), 'advise\n--hook\nclaude-code\n', 'and then never');
-  assert.equal(execFileSync('sh', [join(root, 'hooks/decline.sh'), 'statusline'], { env: { PATH: '/usr/bin:/bin', HOME: home }, encoding: 'utf8' }), 'recorded: statusline declined for 90 days\n');
-  await rm(home, { recursive: true });
+  try {
+    await pinned();
+    await mkdir(state, { recursive: true });
+    await writeFile(join(state, `announced-${pin.version}`), '');
+    assert.deepEqual(JSON.parse(sh('modelplan-quota-hints.sh')), { hints: 1 });
+    assert.equal(await readFile(join(home, 'args'), 'utf8'), 'advise\n--hook\nclaude-code\n');
+    assert.match(sh('setup-status.sh', ''), /^statusline: optional display, not set up/m);
+    assert.match(sh('setup-status.sh', ''), /^hints: computed on the last run/m);
+  } finally { await rm(home, { recursive: true }); }
 });
 
 test('a failing CLI run is recorded with its exit code and never shown as working', async () => {

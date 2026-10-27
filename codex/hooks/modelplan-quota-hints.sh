@@ -6,6 +6,8 @@
 # object and never blocks the prompt. Setup notices and quota hints are shown to the user only
 # (systemMessage); only the task-start brief goes to the model. The hook itself downloads
 # nothing; it writes only ~/.cache/modelplan-codex.
+# Off silences the entire prompt hook, including setup notices and task briefs.
+[ "$(cat "$HOME/.config/modelplan/codex/automatic-hints" 2>/dev/null)" = off ] && exit 0
 here=$(dirname "$0")
 state="$HOME/.cache/modelplan-codex"
 # Records, for the dashboard (all on this machine, from whichever chat ran last):

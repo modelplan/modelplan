@@ -1,5 +1,9 @@
 # ModelPlan Codex 插件
 
+Codex 插件提供 Agent 内的自动帮助，自带 Skill 和锁定版本、核对 SHA-256 的 CLI。**自动提示默认开启。** 让 Codex 的 ModelPlan 设置关闭或开启自动提示；设置会运行 `sh "<插件目录>/hooks/automatic-hints.sh" off` 或 `on`，再用 `status` 验证。选择保存在 `~/.config/modelplan/codex/automatic-hints`。关闭后提示钩子完全不输出（包括通知和任务简报）；显式命令、工具和面板仍可使用。
+
+现有面板**功能冻结**，保留全部已有功能；新视觉功能放在 Mac App 和网站。
+
 在 Codex 桌面端用紧凑看板比较 GPT 模型和推理档位；Codex CLI 返回相同口径的文字。[English](README.md)
 
 ## 安装

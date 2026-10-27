@@ -1,5 +1,9 @@
 # ModelPlan for Codex
 
+The Codex plugin provides automatic in-agent help and bundles the Skill and a pinned, checksum-checked CLI. **Automatic hints default to ON.** Ask Codex's ModelPlan setup to turn automatic hints off/on; setup runs `sh "<plugin root>/hooks/automatic-hints.sh" off` or `on` and verifies with `status`. The choice persists in `~/.config/modelplan/codex/automatic-hints`. Off silences the whole prompt hook, including notices and task briefs; explicit commands, tools and the panel keep working.
+
+The existing panel is **feature-frozen**. Its current features remain available; new visuals belong in the Mac App and the website.
+
 A compact, read-only GPT effort dashboard for Codex desktop, with a text fallback for Codex CLI. [中文](README.zh-CN.md)
 
 ## Install
