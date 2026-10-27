@@ -357,3 +357,104 @@ func TestHistoryGrokExcludesInclusiveChildAndForkCopies(t *testing.T) {
 		t.Fatal("raw parent ID persisted")
 	}
 }
+
+func TestHistoryGrokLastGoodScopeSurvivesMissingOrUnreadableSource(t *testing.T) {
+	for _, kind := range []string{"summary_missing", "usage_missing", "session_missing", "summary_unreadable", "summary_unreadable_changed_usage", "usage_unreadable", "summary_malformed", "legacy_scope_session_missing"} {
+		t.Run(kind, func(t *testing.T) {
+			a := historyTestAccess(t)
+			root, cache := t.TempDir(), t.TempDir()
+			session := filepath.Join(root, "project/session")
+			summary := filepath.Join(session, "summary.json")
+			usage := filepath.Join(session, "usage.json")
+			fixtureFile(t, summary, `{"info":{},"created_at":"2026-10-23T09:00:00Z","num_messages":1}`)
+			fixtureFile(t, usage, `{"turns":[{"turnNumber":1,"endedAt":"2026-10-23T10:00:00Z","modelUsage":{"grok-test":{"inputTokens":10}}}]}`)
+			first := RefreshHistory(context.Background(), "grok", root, cache, a, testNow)
+			if first.Availability != "ok" || len(first.Rows) != 1 || *first.Rows[0].Input != 10 {
+				t.Fatal(first)
+			}
+			switch kind {
+			case "summary_missing":
+				if err := os.Remove(summary); err != nil {
+					t.Fatal(err)
+				}
+			case "usage_missing":
+				if err := os.Remove(usage); err != nil {
+					t.Fatal(err)
+				}
+			case "session_missing", "legacy_scope_session_missing":
+				if kind == "legacy_scope_session_missing" {
+					path := historyPath(cache, "grok", a)
+					b, _ := os.ReadFile(path)
+					var doc map[string]any
+					if err := json.Unmarshal(b, &doc); err != nil {
+						t.Fatal(err)
+					}
+					for _, entry := range doc["entries"].(map[string]any) {
+						delete(entry.(map[string]any), "capturedScope")
+					}
+					b, _ = json.Marshal(doc)
+					if err := os.WriteFile(path, b, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.RemoveAll(session); err != nil {
+					t.Fatal(err)
+				}
+			case "summary_unreadable", "summary_unreadable_changed_usage", "usage_unreadable":
+				if kind == "summary_unreadable_changed_usage" {
+					fixtureFile(t, usage, `{"turns":[{"turnNumber":1,"endedAt":"2026-10-23T10:01:00Z","modelUsage":{"grok-test":{"inputTokens":20}}}]}`)
+				}
+				blocked := summary
+				if kind == "usage_unreadable" {
+					blocked = usage
+				}
+				old := historyOpenSource
+				t.Cleanup(func() { historyOpenSource = old })
+				historyOpenSource = func(path string) (historySource, os.FileInfo, error) {
+					if path == blocked {
+						return nil, nil, os.ErrPermission
+					}
+					return old(path)
+				}
+			case "summary_malformed":
+				fixtureFile(t, summary, `{"info":`)
+			}
+			r := RefreshHistory(context.Background(), "grok", root, cache, a, testNow.Add(5*time.Minute))
+			if r.Availability == "ok" || r.Freshness != "stale" || len(r.Rows) != 1 || *r.Rows[0].Input != 10 || !r.ObservedAt.Equal(first.ObservedAt) {
+				t.Fatalf("last-good scope/age lost: %+v", r)
+			}
+			cached := ReadHistoryCache(cache, "grok", a, testNow.Add(6*time.Minute))
+			if len(cached.Rows) != 1 || *cached.Rows[0].Input != 10 || !cached.ObservedAt.Equal(first.ObservedAt) || cached.Freshness != "stale" {
+				t.Fatal(cached)
+			}
+		})
+	}
+}
+
+func TestHistoryGrokContradictoryScopeStaysExcludedAfterDisappearance(t *testing.T) {
+	for _, scope := range []string{`"parent_session_id":"private-parent-canary"`, `"session_kind":"subagent"`, `"session_kind":"subagent_fork"`, `"hidden":true`} {
+		t.Run(scope, func(t *testing.T) {
+			a := historyTestAccess(t)
+			root, cache := t.TempDir(), t.TempDir()
+			session := filepath.Join(root, "project/session")
+			summary := filepath.Join(session, "summary.json")
+			fixtureFile(t, summary, `{"info":{},"created_at":"2026-10-23T09:00:00Z","num_messages":1}`)
+			fixtureFile(t, filepath.Join(session, "usage.json"), `{"turns":[{"turnNumber":1,"endedAt":"2026-10-23T10:00:00Z","modelUsage":{"grok-test":{"inputTokens":10}}}]}`)
+			if r := RefreshHistory(context.Background(), "grok", root, cache, a, testNow); len(r.Rows) != 1 {
+				t.Fatal(r)
+			}
+			fixtureFile(t, summary, `{"info":{},"created_at":"2026-10-23T09:00:00Z","num_messages":1,`+scope+`}`)
+			r := RefreshHistory(context.Background(), "grok", root, cache, a, testNow.Add(5*time.Minute))
+			if len(r.Rows) != 0 || !r.ObservedAt.IsZero() {
+				t.Fatal("contradictory scope retained eligible counts", r)
+			}
+			if err := os.RemoveAll(session); err != nil {
+				t.Fatal(err)
+			}
+			r = RefreshHistory(context.Background(), "grok", root, cache, a, testNow.Add(15*time.Minute))
+			if len(r.Rows) != 0 || !r.ObservedAt.IsZero() {
+				t.Fatal("excluded copy resurrected after cursor pruning", r)
+			}
+		})
+	}
+}

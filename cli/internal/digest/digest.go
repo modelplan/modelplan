@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/lineup"
 	"sort"
 	"strings"
@@ -103,7 +104,9 @@ type MultiplierHorizon struct {
 	Selection string `json:"selection"`
 }
 type Digest struct {
+	Catalogue         *detect.Catalogue `json:"-"`
 	publication       publicationFields
+	CLIUpdate         json.RawMessage    `json:"cli,omitempty"` // optional verified update pin; decoded only by explicit update
 	PublicationID     string             `json:"publicationId"`
 	ProjectionVersion string             `json:"projectionVersion,omitempty"`
 	Multipliers       []MultiplierWindow `json:"multipliers"`
@@ -204,6 +207,11 @@ func Parse(component string, b []byte) (*Digest, error) {
 		return nil, errors.New("client: unsupported schema")
 	}
 	var d Digest
+	var catalogueErr error
+	d.Catalogue, catalogueErr = detect.ParseData(raw.Data)
+	if catalogueErr != nil {
+		return nil, fmt.Errorf("client: %w", catalogueErr)
+	}
 	if err := json.Unmarshal(raw.Data, &d); err != nil {
 		return nil, err
 	}

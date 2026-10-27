@@ -51,7 +51,12 @@ filenames/depth and no symlink components. A file contributes at most 8 MiB per
 read; a transaction parses at most 32 MiB, and at most 20000 projected entries are
 retained. Dated history expires after 35 days. Undated captures also expire after
 35 days without inventing a usage day. Source timestamps retain their original
-age; failed or unchanged reads never make old usage newly observed.
+age; failed or unchanged reads never make old usage newly observed. Grok readings
+retain their safe capture-time root classification independently of live cursor
+discovery, so missing or unreadable sources retain aged last-good data with an
+unavailable current status. Positive fork/subagent/hidden-session evidence
+invalidates eligibility even if that source later disappears. New Grok captures
+still require a currently verified root summary.
 
 The cache contains only validated numeric counters, model/day metadata, safe
 coverage codes and installation-keyed HMAC references/checkpoints. It contains
