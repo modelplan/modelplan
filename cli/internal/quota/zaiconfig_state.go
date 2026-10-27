@@ -47,6 +47,7 @@ type zaiConfigState struct {
 	Failures        int            `json:"failures"`
 	Availability    string         `json:"availability"`
 	LoginGeneration string         `json:"loginGeneration,omitempty"`
+	GoodGeneration  string         `json:"goodGeneration,omitempty"`
 	Good            *codexbarEntry `json:"lastGood,omitempty"`
 }
 
@@ -119,7 +120,7 @@ func zaiConfigAdmission(ctx context.Context) (ZaiConfigAccess, string) {
 // windows disappear without changing the original capture time or stored read.
 func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiConfigResult {
 	r := ZaiConfigResult{Beta: true, Confidence: "exact", Freshness: "unknown"}
-	_, blocked := zaiConfigAdmission(ctx)
+	access, blocked := zaiConfigAdmission(ctx)
 	if blocked != "" {
 		r.Availability = blocked
 		r.NextStep = zaiConfigNext(blocked)
@@ -127,10 +128,20 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 	}
 	s := loadZaiConfigState(cache)
 	r.Availability = s.Availability
-	if r.Availability == "" {
+	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
 	}
 	r.NextAttemptAt = s.NextAt
+	// A last-good reading belongs only to its capture generation. Cache-only
+	// requests for a new generation must not expose the preceding login's quota.
+	// Older unbound cache entries remain usable only by the legacy empty scope.
+	if s.Good != nil && s.GoodGeneration != access.LoginGeneration {
+		if r.Availability == "ok" {
+			r.Availability = "stale"
+		}
+		r.NextStep = zaiConfigNext(r.Availability)
+		return r
+	}
 	r.NextStep = zaiConfigNext(r.Availability)
 	if s.Good != nil && !s.Good.ObservedAt.IsZero() && !s.Good.ObservedAt.After(now) {
 		r.ObservedAt = s.Good.ObservedAt
@@ -149,11 +160,28 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 	}
 	return r
 }
-func zaiConfigCachedEntry(s zaiConfigState, now time.Time) codexbarEntry {
+func zaiConfigCachedEntry(s zaiConfigState, now time.Time, generation string) codexbarEntry {
+	availability := s.Availability
+	if s.LoginGeneration != generation {
+		availability = "stale"
+	}
+	if s.Good != nil && s.GoodGeneration != generation {
+		if availability == "ok" {
+			availability = "stale"
+		}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(availability)}
+	}
 	if s.Good == nil {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext(s.Availability)}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(s.Availability)}
 	}
 	e := *s.Good
+	// The native dispatcher must receive the latest attempt's availability,
+	// independently of the retained historical payload. It persists this error
+	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
+	if availability != "ok" {
+		e.Status = "error"
+		e.Error = zaiConfigNext(availability)
+	}
 	e.Windows = nil
 	for _, w := range s.Good.Windows {
 		if w.ResetsAt == nil || w.ResetsAt.After(now) {
@@ -170,40 +198,44 @@ var zaiConfigAttempts sync.Map
 func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := zaiConfigAdmission(ctx)
 	if blocked != "" {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext(blocked)}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
 	}
 	if cache == "" {
-		return codexbarEntry{Status: "error", Error: "ZaiConfig cache unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig cache unavailable"}
 	}
 	unlock, ok := lockFile(filepath.Join(cache, "observed", "zai.lock"), time.Now(), 2*nativeTimeout)
 	if !ok {
-		return zaiConfigCachedEntry(loadZaiConfigState(cache), now)
+		return zaiConfigCachedEntry(loadZaiConfigState(cache), now, access.LoginGeneration)
 	}
 	defer unlock()
 	s := loadZaiConfigState(cache)
 	if last, ok := zaiConfigAttempts.Load(cache); ok && now.Sub(last.(time.Time)) < 5*time.Minute {
-		return zaiConfigCachedEntry(s, now)
+		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
 	}
 	if now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(5*time.Minute)) {
-		return zaiConfigCachedEntry(s, now)
+		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
 	}
-	if s.Availability == "expired_login" && s.LoginGeneration == access.LoginGeneration {
-		return zaiConfigCachedEntry(s, now)
+	// A supplied generation permits an authentication hold until a proven tool
+	// state change/Settings Retry. Legacy dispatch has no generation handoff:
+	// retry only after its persisted adaptive backoff, never hold it forever.
+	if s.Availability == "expired_login" && access.LoginGeneration != "" && s.LoginGeneration == access.LoginGeneration {
+		return zaiConfigCachedEntry(s, now, access.LoginGeneration)
 	}
 	s.AttemptAt = now.UTC()
 	s.NextAt = now.Add(5 * time.Minute).UTC()
 	s.LoginGeneration = access.LoginGeneration
 	if !saveZaiConfigState(cache, s) {
-		return codexbarEntry{Status: "error", Error: "ZaiConfig attempt gate unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig attempt gate unavailable"}
 	}
 	zaiConfigAttempts.Store(cache, now)
 	e := fetchZaiConfig(ctx, nativeClient, "local", "", now)
 	// CLIJIT cancels in-flight reads on revocation. Never republish their result.
 	if _, blocked := zaiConfigAdmission(ctx); ctx.Err() != nil || blocked != "" {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext("consent_required")}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
 	}
 	if e.Status == "ok" {
 		s.Good = &e
+		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0
 		s.Availability = "ok"
 		s.NextAt = now.Add(10 * time.Minute).UTC()
@@ -222,7 +254,7 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 		}
 	}
 	if !saveZaiConfigState(cache, s) {
-		return codexbarEntry{Status: "error", Error: "ZaiConfig result cache unavailable"}
+		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig result cache unavailable"}
 	}
-	return zaiConfigCachedEntry(s, now)
+	return zaiConfigCachedEntry(s, now, access.LoginGeneration)
 }

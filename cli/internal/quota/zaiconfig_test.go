@@ -125,3 +125,75 @@ func TestZaiConfigConsentPassiveCadenceAndRedaction(t *testing.T) {
 		t.Fatal("cache read requested")
 	}
 }
+
+func TestZaiConfigCapturedGenerationSurvivesRegionSwitch(t *testing.T) {
+	isolateHome(t)
+	calls := 0
+	fail := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if fail {
+			w.WriteHeader(401)
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25}]}}`))
+	}))
+	defer server.Close()
+	global, cn, client := zaiHosts["global"], zaiHosts["bigmodel-cn"], nativeClient
+	t.Cleanup(func() { zaiHosts["global"] = global; zaiHosts["bigmodel-cn"] = cn; nativeClient = client })
+	zaiHosts["global"], zaiHosts["bigmodel-cn"], nativeClient = server.URL, server.URL, server.Client()
+	sourceA := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-A-canary"}}`)}
+	sourceB := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://open.bigmodel.cn/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-B-canary"}}`)}
+	ctxA := WithZaiConfigAccess(context.Background(), ZaiConfigAccess{Allowed: true, LoginGeneration: strings.Repeat("a", 64)})
+	ctxB := WithZaiConfigAccess(context.Background(), ZaiConfigAccess{Allowed: true, LoginGeneration: strings.Repeat("b", 64)})
+	cache := t.TempDir()
+	r := RefreshConfiguredZai(ctxA, cache, sourceA, now)
+	if r.Reading == nil || calls != 1 {
+		t.Fatal(r)
+	}
+	next := r.NextAttemptAt
+	if r := ReadZaiConfigCache(ctxB, cache, now.Add(time.Minute)); r.Reading != nil {
+		t.Fatal("A quota exposed to B cache read", r)
+	}
+	if r := RefreshConfiguredZai(ctxB, cache, sourceB, now.Add(time.Minute)); r.Reading != nil || calls != 1 || !r.NextAttemptAt.Equal(next) {
+		t.Fatal("region switch bypassed floor or rebound quota", r)
+	}
+	fail = true
+	r = RefreshConfiguredZai(ctxB, cache, sourceB, now.Add(10*time.Minute))
+	if r.Reading != nil || r.Availability != "expired_login" || calls != 2 {
+		t.Fatal(r)
+	}
+	s := loadZaiConfigState(cache)
+	if s.GoodGeneration != strings.Repeat("a", 64) || s.LoginGeneration != strings.Repeat("b", 64) || !s.Good.ObservedAt.Equal(now) {
+		t.Fatal(s)
+	}
+	// A's separately scoped historical reading remains at its original age.
+	r = ReadZaiConfigCache(ctxA, cache, now.Add(10*time.Minute))
+	if r.Reading == nil || !r.ObservedAt.Equal(now) || r.Freshness != "stale" {
+		t.Fatal(r)
+	}
+}
+func TestZaiConfigSameGenerationFailureRetainsOriginalAge(t *testing.T) {
+	isolateHome(t)
+	fail := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			w.WriteHeader(401)
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25}]}}`))
+	}))
+	defer server.Close()
+	host, client := zaiHosts["global"], nativeClient
+	t.Cleanup(func() { zaiHosts["global"] = host; nativeClient = client })
+	zaiHosts["global"], nativeClient = server.URL, server.Client()
+	source := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-canary"}}`)}
+	ctx := WithZaiConfigAccess(context.Background(), ZaiConfigAccess{Allowed: true, LoginGeneration: strings.Repeat("a", 64)})
+	cache := t.TempDir()
+	RefreshConfiguredZai(ctx, cache, source, now)
+	fail = true
+	r := RefreshConfiguredZai(ctx, cache, source, now.Add(10*time.Minute))
+	if r.Reading == nil || !r.ObservedAt.Equal(now) || r.Freshness != "stale" || r.Availability != "expired_login" {
+		t.Fatal(r)
+	}
+}
