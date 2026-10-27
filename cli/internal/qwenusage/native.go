@@ -8,11 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -32,32 +30,38 @@ type DailyUsage struct {
 	Totals
 }
 type NativeReport struct {
-	Source        string       `json:"source"`
-	Measurement   string       `json:"measurement"`
-	Timezone      string       `json:"timezone"`
-	Availability  string       `json:"availability"`
-	Freshness     string       `json:"freshness"`
-	Beta          bool         `json:"beta"`
-	NextStep      string       `json:"nextStep"`
-	ObservedAt    time.Time    `json:"observedAt,omitempty"`
-	NextAttemptAt time.Time    `json:"nextAttemptAt,omitempty"`
-	Rows          []DailyUsage `json:"rows"`
-	BytesRead     int64        `json:"bytesRead"`
+	ValidationBytes int64        `json:"validationBytes"`
+	Source          string       `json:"source"`
+	Measurement     string       `json:"measurement"`
+	Timezone        string       `json:"timezone"`
+	Availability    string       `json:"availability"`
+	Freshness       string       `json:"freshness"`
+	Beta            bool         `json:"beta"`
+	NextStep        string       `json:"nextStep"`
+	ObservedAt      time.Time    `json:"observedAt,omitempty"`
+	NextAttemptAt   time.Time    `json:"nextAttemptAt,omitempty"`
+	Rows            []DailyUsage `json:"rows"`
+	BytesRead       int64        `json:"bytesRead"`
 }
 type nativeSummary struct {
 	At     time.Time         `json:"at"`
 	Models map[string]Totals `json:"models"`
 }
 type nativeState struct {
-	SchemaVersion int                      `json:"schemaVersion"`
-	Offset        int64                    `json:"offset"`
-	FileRef       string                   `json:"fileRef"`
-	PrefixLength  int64                    `json:"prefixLength"`
-	Prefix        string                   `json:"prefix"`
-	Tail          string                   `json:"tail"`
-	Availability  string                   `json:"availability"`
-	Summaries     map[string]nativeSummary `json:"summaries"`
-	BytesRead     int64                    `json:"bytesRead"`
+	ValidationBytes int64                    `json:"validationBytes"`
+	SourceSize      int64                    `json:"sourceSize"`
+	ChangeRef       string                   `json:"changeRef"`
+	CursorStatus    string                   `json:"cursorStatus"`
+	Catchup         bool                     `json:"catchup"`
+	SchemaVersion   int                      `json:"schemaVersion"`
+	Offset          int64                    `json:"offset"`
+	FileRef         string                   `json:"fileRef"`
+	PrefixLength    int64                    `json:"prefixLength"`
+	Prefix          string                   `json:"prefix"`
+	Tail            string                   `json:"tail"`
+	Availability    string                   `json:"availability"`
+	Summaries       map[string]nativeSummary `json:"summaries"`
+	BytesRead       int64                    `json:"bytesRead"`
 }
 type nativeGate struct {
 	SchemaVersion int `json:"schemaVersion"`
@@ -178,31 +182,6 @@ func nativeReadRegular(path string, limit int64) ([]byte, error) {
 	return b, err
 }
 
-// Stable inode/device values are transient; only their keyed reference persists.
-func nativeFileRef(fi os.FileInfo, key []byte) string {
-	v := reflect.ValueOf(fi.Sys())
-	if v.Kind() == reflect.Pointer {
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return ""
-	}
-	dev, ino := v.FieldByName("Dev"), v.FieldByName("Ino")
-	if !dev.IsValid() || !ino.IsValid() || !dev.CanUint() || !ino.CanUint() {
-		return ""
-	}
-	return nativeHash(key, "qwen/file", fmt.Sprintf("%d:%d", dev.Uint(), ino.Uint()))
-}
-func nativeSegment(f *os.File, key []byte, start, length int64) string {
-	if length == 0 {
-		return ""
-	}
-	b := make([]byte, length)
-	if _, err := f.ReadAt(b, start); err != nil {
-		return ""
-	}
-	return nativeHash(key, "qwen/checkpoint", string(b))
-}
 func nativeLoad(cache string, a NativeAccess) nativeState {
 	s := nativeState{}
 	if !nativeJSON(nativeCachePath(cache, a), &s, 8<<20) || s.SchemaVersion != 1 || s.Offset < 0 || s.PrefixLength < 0 || s.PrefixLength > 1024 || len(s.Summaries) > 20000 {
@@ -229,6 +208,7 @@ func ReadNativeCache(cache string, a NativeAccess, now time.Time) NativeReport {
 		r.Availability = "stale"
 	}
 	r.BytesRead = s.BytesRead
+	r.ValidationBytes = s.ValidationBytes
 	gate := nativeGate{}
 	nativeJSON(filepath.Join(cache, "observed", "qwen-usage-gate-v1.json"), &gate, 4096)
 	r.NextAttemptAt = gate.Next
@@ -357,21 +337,33 @@ func RefreshNative(ctx context.Context, root, cache string, a NativeAccess, now 
 	nativeAttempts.Store(cache, now)
 	s := nativeLoad(cache, a)
 	s.BytesRead = 0
+	s.ValidationBytes = 0
 	for ref, summary := range s.Summaries {
 		if summary.At.Before(now.AddDate(0, 0, -35)) {
 			delete(s.Summaries, ref)
 		}
 	}
 	s.Availability = "not_detected"
-	f, err := nativeOpen(filepath.Join(root, "usage_record.jsonl"))
+	f, err := nativeOpenSource(filepath.Join(root, "usage_record.jsonl"))
 	if err == nil {
 		defer f.Close()
 		fi, _ := f.Stat()
-		ref := nativeFileRef(fi, a.Key)
-		if ref == "" {
+		ref, change := nativeMetadata(fi, a.Key)
+		validate := func(start, length int64) string {
+			digest, n := nativeSegment(f, a.Key, start, length)
+			s.ValidationBytes += n
+			return digest
+		}
+		if ref == "" || change == "" {
 			s.Availability = "not_supported_yet"
+		} else if ref == s.FileRef && change == s.ChangeRef && fi.Size() == s.SourceSize && !s.Catchup {
+			// A complete unchanged generation needs no source content reads.
+			s.Availability = s.CursorStatus
+			if s.Availability == "" {
+				s.Availability = "stale"
+			}
 		} else {
-			if s.FileRef != ref || fi.Size() < s.Offset || nativeSegment(f, a.Key, 0, s.PrefixLength) != s.Prefix || nativeSegment(f, a.Key, max(0, s.Offset-1024), min(s.Offset, 1024)) != s.Tail {
+			if s.ChangeRef == "" || s.FileRef != ref || fi.Size() < s.Offset || (change != s.ChangeRef && fi.Size() <= s.SourceSize) || validate(0, s.PrefixLength) != s.Prefix || validate(max(0, s.Offset-1024), min(s.Offset, 1024)) != s.Tail {
 				s.Offset = 0
 				s.PrefixLength = 0
 				s.Prefix = ""
@@ -421,8 +413,12 @@ func RefreshNative(ctx context.Context, root, cache string, a NativeAccess, now 
 			if s.PrefixLength == 0 {
 				s.PrefixLength = min(s.Offset, 1024)
 			}
-			s.Prefix = nativeSegment(f, a.Key, 0, s.PrefixLength)
-			s.Tail = nativeSegment(f, a.Key, max(0, s.Offset-1024), min(s.Offset, 1024))
+			s.Prefix = validate(0, s.PrefixLength)
+			s.Tail = validate(max(0, s.Offset-1024), min(s.Offset, 1024))
+			s.SourceSize = fi.Size()
+			s.ChangeRef = change
+			s.CursorStatus = s.Availability
+			s.Catchup = s.BytesRead >= 4<<20 && s.Offset < fi.Size()
 		}
 	} else if !os.IsNotExist(err) {
 		s.Availability = "denied"

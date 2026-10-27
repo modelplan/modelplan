@@ -150,3 +150,128 @@ func TestQwenNativeNoTranscriptFallbackAndBounds(t *testing.T) {
 		t.Fatal(r)
 	}
 }
+
+type qwenCountedSource struct {
+	nativeSource
+	content *int64
+	darwin  bool
+}
+
+func (f qwenCountedSource) Read(b []byte) (int, error) {
+	n, err := f.nativeSource.Read(b)
+	*f.content += int64(n)
+	return n, err
+}
+func (f qwenCountedSource) ReadAt(b []byte, at int64) (int, error) {
+	n, err := f.nativeSource.ReadAt(b, at)
+	*f.content += int64(n)
+	return n, err
+}
+func (f qwenCountedSource) Stat() (os.FileInfo, error) {
+	fi, err := f.nativeSource.Stat()
+	if err != nil || !f.darwin {
+		return fi, err
+	}
+	return qwenDarwinInfo{FileInfo: fi}, nil
+}
+
+type qwenDarwinInfo struct{ os.FileInfo }
+
+func (fi qwenDarwinInfo) Sys() any {
+	return &struct {
+		Dev       int32
+		Ino       uint64
+		Ctimespec struct{ Sec, Nsec int64 }
+	}{Dev: -17, Ino: 123, Ctimespec: struct{ Sec, Nsec int64 }{fi.ModTime().Unix(), int64(fi.ModTime().Nanosecond())}}
+}
+func TestQwenDarwinSignedDeviceAndSyntheticSource(t *testing.T) {
+	a := qwenNativeAccess(t)
+	root, cache := t.TempDir(), t.TempDir()
+	path := filepath.Join(root, "usage_record.jsonl")
+	put(t, path, []byte(qwenSummary("session", "qwen-model", 10, now)))
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	darwin := qwenDarwinInfo{FileInfo: fi}
+	ref := nativeFileRef(darwin, a.Key)
+	if ref == "" || ref != nativeFileRef(darwin, a.Key) || strings.Contains(ref, "-17") {
+		t.Fatal("signed Darwin device rejected or disclosed", ref)
+	}
+	old := nativeOpenSource
+	t.Cleanup(func() { nativeOpenSource = old })
+	var content int64
+	nativeOpenSource = func(path string) (nativeSource, error) {
+		f, err := nativeOpen(path)
+		if err != nil {
+			return nil, err
+		}
+		return qwenCountedSource{nativeSource: f, content: &content, darwin: true}, nil
+	}
+	r := RefreshNative(context.Background(), root, cache, a, now)
+	if r.Availability != "ok" || len(r.Rows) != 1 || *r.Rows[0].TotalTokens != 10 {
+		t.Fatal(r)
+	}
+}
+func TestQwenUnchangedSourceHasZeroContentIO(t *testing.T) {
+	a := qwenNativeAccess(t)
+	root, cache := t.TempDir(), t.TempDir()
+	path := filepath.Join(root, "usage_record.jsonl")
+	first := qwenSummary("one", "qwen-model", 10, now)
+	put(t, path, []byte(first))
+	old := nativeOpenSource
+	t.Cleanup(func() { nativeOpenSource = old })
+	var content int64
+	nativeOpenSource = func(path string) (nativeSource, error) {
+		f, err := nativeOpen(path)
+		if err != nil {
+			return nil, err
+		}
+		return qwenCountedSource{nativeSource: f, content: &content}, nil
+	}
+	RefreshNative(context.Background(), root, cache, a, now)
+	content = 0
+	r := RefreshNative(context.Background(), root, cache, a, now.Add(5*time.Minute))
+	if content != 0 || r.BytesRead != 0 || r.ValidationBytes != 0 {
+		t.Fatal("unchanged source content reread", content, r)
+	}
+	second := qwenSummary("two", "qwen-model", 5, now)
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	_, _ = f.WriteString(second)
+	f.Close()
+	content = 0
+	r = RefreshNative(context.Background(), root, cache, a, now.Add(10*time.Minute))
+	if *r.Rows[0].TotalTokens != 15 || r.BytesRead != int64(len(second)) || r.ValidationBytes == 0 || content != r.BytesRead+r.ValidationBytes {
+		t.Fatal("append/validation I/O unaccounted", content, r)
+	}
+}
+func TestQwenSameSizeMiddleRewriteCannotStayCurrent(t *testing.T) {
+	a := qwenNativeAccess(t)
+	root, cache := t.TempDir(), t.TempDir()
+	path := filepath.Join(root, "usage_record.jsonl")
+	var lines []string
+	for i := 0; i < 30; i++ {
+		lines = append(lines, qwenSummary(fmt.Sprintf("session-%02d", i), "qwen-model", 10, now))
+	}
+	original := strings.Join(lines, "")
+	put(t, path, []byte(original))
+	r := RefreshNative(context.Background(), root, cache, a, now)
+	if *r.Rows[0].TotalTokens != 300 {
+		t.Fatal(r)
+	}
+	info, _ := os.Stat(path)
+	lines[15] = qwenSummary("session-15", "qwen-model", 20, now)
+	changed := strings.Join(lines, "")
+	if len(original) != len(changed) || original[:1024] != changed[:1024] || original[len(original)-1024:] != changed[len(changed)-1024:] {
+		t.Fatal("fixture must preserve size and endpoints")
+	}
+	// Separate filesystem timestamp quanta while preserving mtime below;
+	// this exercises the ctime signal independently of size/prefix/tail/mtime.
+	time.Sleep(2 * time.Millisecond)
+	put(t, path, []byte(changed))
+	_ = os.Chtimes(path, info.ModTime(), info.ModTime())
+	r = RefreshNative(context.Background(), root, cache, a, now.Add(5*time.Minute))
+	if r.Availability != "ok" || len(r.Rows) != 1 || *r.Rows[0].TotalTokens != 310 || r.BytesRead == 0 {
+		t.Fatal("middle rewrite served stale totals as current", r)
+	}
+}
