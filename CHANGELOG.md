@@ -7,6 +7,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Cursor's beta saved-login reader uses at most plan-info + period-usage per read, with explicit shared-consent admission, a five-minute floor, cached metadata and last-good capture retention. Eligible X Subscription pools stay labelled link-unverified and non-additive until a verified common ID exists.
+- CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
 
