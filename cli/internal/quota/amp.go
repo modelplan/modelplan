@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -57,11 +58,20 @@ var ampBin = func() string {
 	return p
 }
 var ampCommand = runAmpUsage
+var ampArtifact = ampVerifiedArtifact
+
+type ampArtifactKey struct{}
 
 func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "usage", "--no-color")
+	artifact, ok := ctx.Value(ampArtifactKey{}).(*os.File)
+	if !ok || artifact == nil || ampExecPath() == "" {
+		return nil, errors.New("verified Amp execution unavailable")
+	}
+	cmd := exec.CommandContext(ctx, ampExecPath(), "usage", "--no-color")
+	cmd.Args[0] = bin
+	cmd.ExtraFiles = []*os.File{artifact}
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
 	cmd.WaitDelay = time.Second
@@ -168,6 +178,7 @@ func ampAdmission(ctx context.Context) (AmpAccess, string) {
 }
 
 type ampState struct {
+	GoodGeneration  string    `json:"goodGeneration,omitempty"`
 	LoginGeneration string    `json:"loginGeneration,omitempty"`
 	SchemaVersion   int       `json:"schemaVersion"`
 	AttemptAt       time.Time `json:"attemptAt"`
@@ -200,7 +211,7 @@ func saveAmp(cache string, s ampState) bool {
 // inferred reset/expiry: stale money remains explicitly aged at its capture time.
 func ReadAmpCache(ctx context.Context, cache string, now time.Time) AmpResult {
 	r := AmpResult{Beta: true, Confidence: "exact", Freshness: "unknown", Pools: []AmpPool{}}
-	_, blocked := ampAdmission(ctx)
+	access, blocked := ampAdmission(ctx)
 	if blocked != "" {
 		r.Availability = blocked
 		r.NextStep = ampNext(blocked)
@@ -208,10 +219,17 @@ func ReadAmpCache(ctx context.Context, cache string, now time.Time) AmpResult {
 	}
 	s := loadAmp(cache)
 	r.Availability = s.Availability
-	if r.Availability == "" {
+	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
 	}
 	r.NextAttemptAt = s.NextAt
+	if s.GoodGeneration != access.LoginGeneration {
+		if r.Availability == "ok" {
+			r.Availability = "stale"
+		}
+		r.NextStep = ampNext(r.Availability)
+		return r
+	}
 	r.NextStep = ampNext(r.Availability)
 	if !s.ObservedAt.IsZero() && !s.ObservedAt.After(now) {
 		r.ObservedAt = s.ObservedAt
@@ -248,7 +266,7 @@ func RefreshAmp(ctx context.Context, cache string, now time.Time) AmpResult {
 	if now.Before(s.NextAt) || now.Before(s.AttemptAt.Add(5*time.Minute)) {
 		return ReadAmpCache(ctx, cache, now)
 	}
-	if s.Availability == "expired_login" && s.LoginGeneration == access.LoginGeneration {
+	if s.Availability == "expired_login" && access.LoginGeneration != "" && s.LoginGeneration == access.LoginGeneration {
 		return ReadAmpCache(ctx, cache, now)
 	}
 	s.LoginGeneration = access.LoginGeneration
@@ -264,8 +282,10 @@ func RefreshAmp(ctx context.Context, cache string, now time.Time) AmpResult {
 		s.Availability = "not_supported_yet"
 		// SHA binds the audited executable, not an account identity. Bound hashing;
 		// credential files and their digests never enter this check or the cache.
-		if ampAuditedBinary(bin, access.AuditedSHA256) {
-			raw, err := ampCommand(ctx, bin)
+		if artifact, err := ampArtifact(bin, access.AuditedSHA256); err == nil {
+			defer artifact.Close()
+			commandCtx := context.WithValue(ctx, ampArtifactKey{}, artifact)
+			raw, err := ampCommand(commandCtx, bin)
 			text := strings.ToLower(string(raw))
 			if strings.Contains(text, "not logged in") || strings.Contains(text, "please log in") || strings.Contains(text, "unauthorized") {
 				s.Availability = "expired_login"
@@ -273,6 +293,7 @@ func RefreshAmp(ctx context.Context, cache string, now time.Time) AmpResult {
 				if pools, valid := parseAmpUsage(raw); valid {
 					s.Pools = pools
 					s.ObservedAt = now.UTC()
+					s.GoodGeneration = access.LoginGeneration
 					s.Availability = "ok"
 				} else {
 					s.Availability = "upstream_changed"
@@ -299,31 +320,50 @@ func RefreshAmp(ctx context.Context, cache string, now time.Time) AmpResult {
 	}
 	return ReadAmpCache(ctx, cache, now)
 }
-func ampAuditedBinary(path, want string) bool {
+
+// Seal a private anonymous snapshot before hashing, then execute that exact
+// descriptor. Replacing or modifying the installed path cannot alter these bytes.
+func ampVerifiedArtifact(path, want string) (*os.File, error) {
 	expected, err := hex.DecodeString(want)
 	if err != nil || len(expected) != sha256.Size {
-		return false
+		return nil, errors.New("Amp artifact unaudited")
 	}
-	info, err := os.Stat(path)
+	source, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("Amp artifact unavailable")
+	}
+	defer source.Close()
+	info, err := source.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 256<<20 {
-		return false
+		return nil, errors.New("Amp artifact unavailable")
 	}
-	f, err := os.Open(path)
+	artifact, err := ampSealedArtifact(source)
+	if err != nil {
+		return nil, errors.New("sealed Amp execution unavailable")
+	}
+	fail := func() (*os.File, error) {
+		artifact.Close()
+		return nil, errors.New("Amp artifact does not match audit")
+	}
+	var magic [4]byte
+	if _, err := artifact.ReadAt(magic[:], 0); err != nil || magic != [4]byte{0x7f, 'E', 'L', 'F'} {
+		return fail()
+	}
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(artifact, 256<<20+1))
+	if err != nil || n > 256<<20 || !bytes.Equal(h.Sum(nil), expected) {
+		return fail()
+	}
+	if _, err := artifact.Seek(0, io.SeekStart); err != nil {
+		return fail()
+	}
+	return artifact, nil
+}
+func ampAuditedBinary(path, want string) bool {
+	artifact, err := ampVerifiedArtifact(path, want)
 	if err != nil {
 		return false
 	}
-	defer f.Close()
-	var magic [4]byte
-	if _, err := io.ReadFull(f, magic[:]); err != nil {
-		return false
-	}
-	if magic != [4]byte{0x7f, 'E', 'L', 'F'} && magic != [4]byte{0xcf, 0xfa, 0xed, 0xfe} && magic != [4]byte{0xfe, 0xed, 0xfa, 0xcf} && magic != [4]byte{0xca, 0xfe, 0xba, 0xbe} {
-		return false
-	}
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		return false
-	}
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(f, 256<<20+1))
-	return err == nil && n <= 256<<20 && bytes.Equal(h.Sum(nil), expected)
+	artifact.Close()
+	return true
 }

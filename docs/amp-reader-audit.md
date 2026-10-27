@@ -36,3 +36,12 @@ results. The reader stays beta until verified on an opted-in real account.
 
 No upstream code, account fixture, package dependency or licensed binary is
 included in the repository. Tests use handwritten text and injected subprocesses.
+
+The execution binding is now an immutable anonymous descriptor: on Linux the
+selected native executable is copied into RAM, sealed against writes/growth/
+shrinkage, hashed **after sealing**, then executed through its inherited fd. A
+path replacement or in-place update cannot change the verified bytes. No large
+artifact is retained on disk. This uses the already pinned `x/sys/unix` module;
+no dependency version or lock changed. Other platforms fail closed until an
+equivalent immutable execution primitive and runtime audit are admitted. Future
+runtime safety qualification must cover this exact invocation context as well.

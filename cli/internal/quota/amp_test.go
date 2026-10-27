@@ -9,6 +9,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ func TestAmpMoneyPools(t *testing.T) {
 }
 func TestAmpAdmissionAuditAndCache(t *testing.T) {
 	isolateHome(t)
+	fakeAmpArtifact(t)
 	bin := filepath.Join(t.TempDir(), "amp")
 	body := []byte("\x7fELFsynthetic-test-only")
 	_ = os.WriteFile(bin, body, 0700)
@@ -117,8 +119,87 @@ func TestAmpCommandNoInputUpdatesOrThread(t *testing.T) {
 	if os.WriteFile(path, []byte(body), 0700) != nil {
 		t.Fatal("write")
 	}
-	out, err := runAmpUsage(context.Background(), path)
+	if runtime.GOOS != "linux" {
+		t.Skip("immutable descriptor execution is Linux-only until audited")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	ctx := context.WithValue(context.Background(), ampArtifactKey{}, file)
+	out, err := runAmpUsage(ctx, path)
 	if err != nil || !strings.Contains(string(out), "$10 remaining") {
 		t.Fatal(err, string(out))
+	}
+}
+
+// This injected constructor is used only with an injected non-executing command.
+func fakeAmpArtifact(t *testing.T) {
+	t.Helper()
+	old := ampArtifact
+	t.Cleanup(func() { ampArtifact = old })
+	ampArtifact = func(path, want string) (*os.File, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(b)
+		if hex.EncodeToString(sum[:]) != want {
+			return nil, errors.New("synthetic unaudited artifact")
+		}
+		return os.Open(path)
+	}
+}
+func TestAmpCapturedGenerationDoesNotFollowAttempt(t *testing.T) {
+	isolateHome(t)
+	fakeAmpArtifact(t)
+	bin := filepath.Join(t.TempDir(), "amp")
+	body := []byte("synthetic-audited-file")
+	_ = os.WriteFile(bin, body, 0700)
+	sum := sha256.Sum256(body)
+	t.Setenv("MODELPLAN_AMP", bin)
+	old := ampCommand
+	t.Cleanup(func() { ampCommand = old })
+	calls := 0
+	fail := false
+	ampCommand = func(context.Context, string) ([]byte, error) {
+		calls++
+		if fail {
+			return nil, errors.New("synthetic failure")
+		}
+		return []byte("Paid: $10 remaining"), nil
+	}
+	a := AmpAccess{Allowed: true, AuditedSHA256: hex.EncodeToString(sum[:]), LoginGeneration: strings.Repeat("a", 64)}
+	b := a
+	b.LoginGeneration = strings.Repeat("b", 64)
+	ctxA := WithAmpAccess(context.Background(), a)
+	ctxB := WithAmpAccess(context.Background(), b)
+	cache := t.TempDir()
+	r := RefreshAmp(ctxA, cache, now)
+	if len(r.Pools) != 1 || calls != 1 {
+		t.Fatal(r)
+	}
+	next := r.NextAttemptAt
+	if r := ReadAmpCache(ctxB, cache, now.Add(time.Minute)); len(r.Pools) != 0 || !r.ObservedAt.IsZero() {
+		t.Fatal("A balance exposed to B", r)
+	}
+	r = RefreshAmp(ctxB, cache, now.Add(time.Minute))
+	if len(r.Pools) != 0 || calls != 1 || !r.NextAttemptAt.Equal(next) {
+		t.Fatal("generation bypassed floor", r)
+	}
+	fail = true
+	r = RefreshAmp(ctxB, cache, now.Add(10*time.Minute))
+	if len(r.Pools) != 0 || !r.ObservedAt.IsZero() || calls != 2 {
+		t.Fatal("failed B attempt rebound A balance", r)
+	}
+	s := loadAmp(cache)
+	if s.GoodGeneration != a.LoginGeneration || s.LoginGeneration != b.LoginGeneration || !s.ObservedAt.Equal(now) {
+		t.Fatal(s)
+	}
+	// A's failure remains an aged A reading, including if B never succeeded.
+	r = ReadAmpCache(ctxA, cache, now.Add(10*time.Minute))
+	if len(r.Pools) != 1 || !r.ObservedAt.Equal(now) || r.Freshness != "stale" {
+		t.Fatal(r)
 	}
 }
