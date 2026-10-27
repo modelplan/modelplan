@@ -68,20 +68,30 @@ import ModelPlanSettings
         XCTAssertFalse(surface.isPainted(atLocal: CGPoint(x: 3, y: 19)))
     }
 
-    func testNewDefaultsReachExistingProjectionWithTheDocumentedBoundary() async throws {
+    func testNewAndSavedThresholdsAreInclusiveWithoutChangingStoredNumbers() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("dock-defaults-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
-        let c = SettingsApplicationCoordinator(store: try SettingsStore(url: folder.appendingPathComponent("settings.json"))) { _ in }
+        let url = folder.appendingPathComponent("settings.json")
+        let c = SettingsApplicationCoordinator(store: try SettingsStore(url: url)) { _ in }
         await c.reload()
-        let app = try XCTUnwrap(c.latest), now = Date(timeIntervalSince1970: 1_800_000_000)
-        XCTAssertFalse(app.snapshot.preferences.followActiveDisplay)
-        for (remaining, expected) in [(24.0, DockQuotaStatus.critical), (25.0, .warning)] {
-            var input = DockInstrumentInput(id: "fixture", name: "Synthetic only", windows: [
-                .init(id: "reported", period: .fiveHour, label: "5h", remainingPercent: remaining,
-                      resetsAt: now.addingTimeInterval(300), durationSeconds: 18000)])
-            input.dataState = .fresh
-            XCTAssertEqual(try app.dockReading(for: input, at: now).status, expected,
-                           "keep the existing below-threshold comparison; do not silently make it inclusive")
+        XCTAssertEqual(c.latest?.snapshot.preferences.redBelow, 25)
+        XCTAssertFalse(try XCTUnwrap(c.latest).snapshot.preferences.followActiveDisplay)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for threshold in [25, 16] {
+            try await c.commit(.redBelow(threshold))
+            let app = try XCTUnwrap(c.latest)
+            for remaining in [Double(threshold) - 0.01, Double(threshold), Double(threshold) + 0.01] {
+                var input = DockInstrumentInput(id: "fixture", name: "Synthetic only", windows: [
+                    .init(id: "reported", period: .fiveHour, label: "5h", remainingPercent: remaining,
+                          resetsAt: now.addingTimeInterval(300), durationSeconds: 18000)])
+                input.dataState = .fresh
+                let reading = try app.dockReading(for: input, at: now)
+                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .warning)
+                XCTAssertEqual(reading.outer?.status, reading.status)
+            }
+            let restarted = try SettingsStore(url: url)
+            let saved = await restarted.snapshot()
+            XCTAssertEqual(saved.preferences.redBelow, threshold)
         }
     }
 

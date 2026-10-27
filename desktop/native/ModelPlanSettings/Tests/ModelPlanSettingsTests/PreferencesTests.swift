@@ -63,6 +63,23 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(restored.autoHide)
         XCTAssertFalse(restored.sliverAlert)
     }
+    func testExplicitDefaultsSurviveRestartAndUnrelatedEdits() async throws {
+        for threshold in [10, 16, 20, 25] {
+            let url = try file(), store = try SettingsStore(url: url)
+            try await store.update { p in
+                p.redBelow = threshold; p.size = .small; p.dockEdge = .left
+                p.followActiveDisplay = true; p.autoHide = false
+                p.sliverAlert = false; p.showOverFullscreen = true
+            }
+            let restarted = try SettingsStore(url: url)
+            try await restarted.update { $0.language = .english }
+            let snapshot = await restarted.snapshot()
+            let saved = snapshot.preferences
+            XCTAssertEqual(saved.redBelow, threshold); XCTAssertEqual(saved.size, .small)
+            XCTAssertEqual(saved.dockEdge, .left); XCTAssertTrue(saved.followActiveDisplay)
+            XCTAssertFalse(saved.autoHide); XCTAssertFalse(saved.sliverAlert); XCTAssertTrue(saved.showOverFullscreen)
+        }
+    }
     func testInvalidAndStaleTransactionsLeaveDiskAndMemoryIntact() async throws {
         let url = try file(), store = try SettingsStore(url: url)
         try await store.update { $0.redBelow = 20 }

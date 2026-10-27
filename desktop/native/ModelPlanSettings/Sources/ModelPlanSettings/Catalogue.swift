@@ -115,7 +115,7 @@ public enum SettingsCatalogue {
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
         .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, five-hour or weekly window per subscription.","为每个订阅选择最紧张、5小时或周窗口。"),
-        .init(.redBelow,"Critical threshold","变红阈值","Threshold uses remaining quota even when displaying used quota.","即使显示已用额度，阈值仍按剩余额度判断。"),
+        .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
         .init(.sliverAlert,"Sliver alert color","隐藏条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
         .init(.showDock,"Show dock","显示挂件","Show or hide the desktop dock.","显示或隐藏桌面挂件。"),
         .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),

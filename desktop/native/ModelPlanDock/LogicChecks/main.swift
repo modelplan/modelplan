@@ -278,7 +278,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
-        for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.warning),(40.0,.warning),(41.0,.normal)] {
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.critical),(25.0,.critical),(25.01,.warning),(40.0,.warning),(41.0,.normal)] {
             let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
             var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
             let p=try DockInstrumentProjection.evaluate(i,now:now)
@@ -293,6 +293,20 @@ do {
         try expect(old.dataState == .stale && old.readout=="--" && old.outer?.fraction==nil && old.litTimePoints(positions:37)==nil,"stale is neither zero nor full")
         i.dataState = .fresh;i.windows[0].resetsAt=now
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
+    }
+    try test("configured critical thresholds include equality for saved and new choices") {
+        for threshold in [10.0, 16, 20, 25] {
+            for remaining in [threshold - 0.01, threshold, threshold + 0.01] {
+                let window = DockQuotaWindowInput(id:"quota",period:.fiveHour,label:"Quota",remainingPercent:remaining,resetsAt:nil,durationSeconds:nil)
+                var input = DockInstrumentInput(id:"sub",name:"Synthetic",windows:[window]);input.dataState = .fresh
+                for used in [false,true] {
+                    input.showUsedPercent = used
+                    let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
+                    let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
+                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold")
+                }
+            }
+        }
     }
     try test("B06 working effect requires distinct matching fresh observed output") {
         for n in [0,1,2,6] {

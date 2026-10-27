@@ -25,7 +25,7 @@ final class QuotaTests: XCTestCase {
 
     func testF02ThresholdsAndTenSegments() {
         for (value, level, lit) in [(0.0, QuotaLevel.critical, 0), (0.1, .critical, 1), (15, .critical, 2),
-                                     (16, .amber, 2), (40, .amber, 4), (41, .healthy, 4), (100, .healthy, 10)] {
+                                     (16, .critical, 2), (25, .critical, 3), (25.01, .amber, 3), (40, .amber, 4), (41, .healthy, 4), (100, .healthy, 10)] {
             let cell = QuotaCell(Fixtures.quota("q", .fiveHours, value), now: now)
             XCTAssertEqual(cell.level, level); XCTAssertEqual(cell.litSegments, lit)
         }
@@ -34,6 +34,14 @@ final class QuotaTests: XCTestCase {
         }
     }
 
+    func testEveryConfiguredCriticalThresholdIsInclusive() {
+        for threshold in [10.0, 16, 20, 25] {
+            XCTAssertEqual(QuotaLevel.of(threshold, redBelow: threshold), .critical)
+            XCTAssertEqual(QuotaLevel.of(threshold - 0.01, redBelow: threshold), .critical)
+            XCTAssertEqual(QuotaLevel.of(threshold + 0.01, redBelow: threshold), .amber)
+            XCTAssertEqual(QuotaLevel.of(nil, redBelow: threshold), .unknown)
+        }
+    }
     func testF03OtherKeepsPeriodScopeAndStableTightestOverflow() {
         let rows = QuotaRows(windows: [Fixtures.quota("month", .monthly, 70), Fixtures.quota("5h", .fiveHours, 80),
                                       Fixtures.quota("scope", .weekly, 10, scope: "Model A"), Fixtures.quota("unknown", .daily, nil),
