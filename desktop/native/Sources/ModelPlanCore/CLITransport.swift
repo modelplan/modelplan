@@ -3,15 +3,22 @@ import Foundation
 import Darwin
 
 public enum CLICommand: String, Sendable, CaseIterable {
-    case desktop, publicationOffline, publication
+    case desktop, refreshAccount, publicationOffline, publication
     public var arguments: [String] {
         switch self {
         case .desktop: return ["desktop", "--json", "--read-only"]
+        case .refreshAccount: return ["quota", "--refresh-account", "--quiet"]
         case .publicationOffline: return ["publication", "--json", "--offline"]
         case .publication: return ["publication", "--json"]
         }
     }
-    public var timeout: TimeInterval { self == .desktop ? 20 : self == .publicationOffline ? 10 : 30 }
+    public var timeout: TimeInterval {
+        switch self {
+        case .desktop, .refreshAccount: return 20
+        case .publicationOffline: return 10
+        case .publication: return 30
+        }
+    }
 }
 public struct CommandResult: Sendable {
     public let exitCode: Int32
@@ -30,7 +37,7 @@ public protocol CLITransport: Sendable {
 }
 
 /// One slot belongs to the transport until the owned child has exited, including cancellation.
-/// The executable is an explicit bundle path. No shell, PATH lookup, management or refresh command.
+/// The executable is an explicit bundle path. No shell, PATH lookup or management command.
 public actor ProcessCLITransport: CLITransport {
     private let executable: URL
     private let environment: [String: String]?
