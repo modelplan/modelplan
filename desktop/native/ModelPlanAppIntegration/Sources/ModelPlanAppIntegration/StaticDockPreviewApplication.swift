@@ -9,7 +9,7 @@ import ModelPlanCommunityHost
     public static func run(appearance: StaticDockPreviewHost.Appearance? = nil,
                            transport: (any CLITransport)? = nil, statusItemTitle: String = "ModelPlan",
                            settingsURL: URL? = nil) {
-        let dock = StaticDockPreviewHost(appearance: appearance)
+        let dock = StaticDockPreviewHost(purpose: .selfTest, appearance: appearance)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url = URL(string: link.url), url.scheme == "https", url.host == "modelplan.ai",
                   url.user == nil, url.password == nil, url.port == nil else { return }

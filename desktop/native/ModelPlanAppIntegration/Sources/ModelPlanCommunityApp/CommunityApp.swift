@@ -9,12 +9,12 @@ import ModelPlanCore
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
-        let dock = StaticDockPreviewHost()
+        let dock = ProductionDockFactory.community()
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        // Disabled until packaging verifies a containing consent-API release and its fixtures.
-        let consent = CommunityCLIConsentPort(transport: readOnly)
+        // Only a consistent containing bundle for the reviewed release may expose the consent API.
+        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let preferenceURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("ModelPlan/Native/community-v1.json")
@@ -23,12 +23,14 @@ import ModelPlanCore
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
         })
-        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, transport: transport) { gate in
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, consentBackend: backend, transport: transport) { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
-            let application = SettingsApplicationCoordinator(store: store,
+            var context = SettingsPageContext()
+            if consent.availability.canInspect { context.about.cliVersion = CommunityConsentBundleIdentity.version }
+            let application = SettingsApplicationCoordinator(store: store, context: context,
                 environment: SettingsWindowController.systemEnvironment()) { transaction in
                 dock.apply(transaction)
                 surfaces.apply(transaction)
@@ -65,7 +67,7 @@ import ModelPlanCore
                     return help
                 })
             return try CommunityApplicationFactory.connectSettings(base: base, application: application,
-                backend: backend, canPresent: { [weak gate] in gate?.canPresent == true })
+                backend: backend, placementSource: dock, canPresent: { [weak gate] in gate?.canPresent == true })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }

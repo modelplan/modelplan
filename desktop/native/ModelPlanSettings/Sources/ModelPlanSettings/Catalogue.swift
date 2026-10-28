@@ -84,6 +84,7 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
 public struct SettingsPageContext: Sendable {
+    public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var capabilities = SettingsCapabilities()
@@ -143,9 +144,9 @@ public enum SettingsCatalogue {
         .init(.magnification,"Hover magnification","悬停放大","Choose none, subtle or strong.","选择不放大、轻微或明显。"),
         .init(.fullscreen,"Show over full-screen apps","全屏应用上显示","Off by default.","默认关闭。"),
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
-        .init(.dockDisplay,"Display","显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
-        .init(.dockPosition,"Along-edge position","沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
-        .init(.dockEdge,"Dock edge","挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
+        .init(.dockDisplay,"Preferred display","偏好显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
+        .init(.dockPosition,"Preferred along-edge position","偏好沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
+        .init(.dockEdge,"Preferred Dock edge","偏好挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader observations.","本地读取器的只读观测。"),
         .init(.optionalReaders,"Local reader choices","本地读取器选择","Legacy app choices only; not shared CLI authorization.","仅为旧版本地选择，不代表 CLI 共享授权。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
@@ -214,8 +215,13 @@ public enum SettingsCatalogue {
                             .appending(contentsOf: sub.modelNames + sub.toolNames).contains { normalized($0).contains(query) }
                     }
                     guard baseMatches || (perSubscription && !subs.isEmpty) else { return nil }
+                    let subtitle: SettingsText
+                    if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
+                        let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
+                        subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)
+                    } else { subtitle = d.subtitle }
                     return .init(key: key, paneID: pane.id, groupID: group.id, paneTitle: pane.title,
-                                 groupTitle: group.title, title: d.title, subtitle: d.subtitle,
+                                 groupTitle: group.title, title: d.title, subtitle: subtitle,
                                  availability: availability(key, c), value: value(key, p, c, subs))
                 }
             }
