@@ -335,7 +335,7 @@ import ModelPlanDock
         XCTAssertTrue(handler.isBackgroundMoving)
         XCTAssertEqual(host.edgePresentation?.snapPreview?.edge, .left,
             "The actual neutral factory must register a left destination, not just its starting edge")
-        XCTAssertNotNil(host.dockView.registeredHullPath, "The actual neutral pixels have an exact move-outline path")
+        XCTAssertNotNil(host.dockView.registeredMoveOutlinePath, "The actual neutral pixels have an exact move-outline path")
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: drop)
         for _ in 0..<1000 where app.editor.snapshot?.preferences.dockEdge != .left { await Task.yield() }
         let saved = await store.snapshot()
