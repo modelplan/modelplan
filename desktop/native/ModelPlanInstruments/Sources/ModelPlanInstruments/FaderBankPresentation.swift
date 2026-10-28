@@ -79,8 +79,8 @@ public struct FaderBankPresentation: Equatable, Sendable {
                 favoriteIDs: [String] = [], trial: FaderTrial? = nil, sourceModelID: String? = nil, draggingModelID: String? = nil,
                 dragPosition: Double? = nil, previewModelID: String? = nil, previewEffort: String? = nil,
                 publicationUsable: Bool, language: InstrumentLanguage,
-                compact: Bool, showProjectNames: Bool = true, now: Date) {
-        let ordered = Self.ordered(inputs: publicationUsable ? inputs : [], favoriteIDs: favoriteIDs)
+                compact: Bool, showProjectNames: Bool = true, now: Date, catalogueOnly: Bool = false) {
+        let ordered = Self.ordered(inputs: publicationUsable || catalogueOnly ? inputs : [], favoriteIDs: favoriteIDs)
         let page = FaderBank(models: ordered.map(\.model), bank: requestedBank)
         bank = page.bank; bankCount = page.count; self.language = language; self.compact = compact
         let chinese = language == .chinese, format = InstrumentFormat(language), help = HelpCatalog(language)
@@ -93,7 +93,7 @@ public struct FaderBankPresentation: Equatable, Sendable {
             let model = input.model
             var seen = Set<String>()
             let efforts = model.efforts.filter { seen.insert($0.key).inserted }
-            let current = model.current.flatMap { config in efforts.contains { $0.key == config.effort } ? config : nil }
+            let current = publicationUsable ? model.current.flatMap { config in efforts.contains { $0.key == config.effort } ? config : nil } : nil
             let tried = trial.flatMap { $0.modelID == model.id ? $0.configuration : nil }
             let comparison = EffortComparison(model: model, trial: tried, publicationUsable: publicationUsable)
             let validTrial = comparison.panels.first { $0.role == .trial }?.configuration
@@ -105,7 +105,7 @@ public struct FaderBankPresentation: Equatable, Sendable {
             let recPosition = position(model.recommended)
             let real = position(current?.effort) ?? recPosition ?? 0.5
             var sessionIDs = Set<String>()
-            let sessions = input.sessions.filter { $0.model == model.id && $0.evidence.usable(at: now) && sessionIDs.insert($0.id).inserted }
+            let sessions = publicationUsable ? input.sessions.filter { $0.model == model.id && $0.evidence.usable(at: now) && sessionIDs.insert($0.id).inserted } : []
             let values = efforts.compactMap { $0.ability.value }
             let bases = Set(efforts.compactMap { $0.ability.value == nil ? nil : $0.ability.basis })
             let compatible = bases.count == 1 && efforts.filter { $0.ability.value != nil }.allSatisfy { $0.ability.basis != nil }
@@ -138,15 +138,15 @@ public struct FaderBankPresentation: Equatable, Sendable {
             }.joined(separator: "; ")
             let indicator = model.name + " · " + (validTrial != nil ? (chinese ? "在试" : "trying") : selected ? (chinese ? "已选" : "selected") : (chinese ? "未选" : "not selected"))
                 + (fast ? (chinese ? " · 快速" : " · Fast") : "") + (summaries.isEmpty ? "" : " · " + summaries)
-            let drag = draggingModelID == model.id ? dragPosition.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil } : nil
+            let drag = publicationUsable && draggingModelID == model.id ? dragPosition.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil } : nil
             var vendorIDs = Set<String>()
             let vendors = input.vendors.filter { vendorIDs.insert($0.subscriptionID).inserted }
             let variants = ([model.name] + input.nameVariants).filter { !$0.isEmpty }
             return FaderChannelDisplay(id: model.id, name: model.name, nameVariants: variants, vendors: vendors, efforts: levels,
-                selected: selected, favorite: favoriteIDs.contains(model.id), sourceHighlighted: sourceModelID == model.id, current: current, trial: validTrial,
+                selected: selected, favorite: favoriteIDs.contains(model.id), sourceHighlighted: publicationUsable && sourceModelID == model.id, current: current, trial: validTrial,
                 realPosition: real, parked: current == nil, recommendedPosition: recPosition,
                 ghostPosition: validTrial?.effort == current?.effort ? nil : position(validTrial?.effort), dragPosition: drag,
-                previewPosition: previewModelID == model.id && previewEffort != (validTrial?.effort ?? current?.effort) ? position(previewEffort) : nil,
+                previewPosition: publicationUsable && previewModelID == model.id && previewEffort != (validTrial?.effort ?? current?.effort) ? position(previewEffort) : nil,
                 indicatorTone: tone, fastIndicator: fast, state: lcd.state,
                 stateVariants: language == .english && lcd.state == "Try = current" ? [lcd.state, "Try = Now"] : [lcd.state], recommendation: lcd.recommendation,
                 costMultiple: lcd.multiple, costBasis: basis, lcdHelp: help.explanation(.effortLCD, context: .init(fact: fact)),

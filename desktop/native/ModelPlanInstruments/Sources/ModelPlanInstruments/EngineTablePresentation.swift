@@ -67,16 +67,19 @@ public struct EngineTablePresentation: Equatable, Sendable {
     public let previousLabel: String
     public let nextLabel: String
     public let language: InstrumentLanguage
+    public let membershipKnowledge: InstrumentMembershipKnowledge
     public var hasReserve: Bool { labels.count == 5 }
 
     public init(columns: [EngineColumn], identities: [String: EngineTableIdentity] = [:], requestedPage: Int,
-                scope: InstrumentScope, language: InstrumentLanguage, now: Date) {
+                scope: InstrumentScope, language: InstrumentLanguage, now: Date,
+                membershipKnowledge: InstrumentMembershipKnowledge = .unknown) {
         let format = InstrumentFormat(language), help = HelpCatalog(language)
         let chinese = language == .chinese
         let model = EnginePage(columns: columns, page: requestedPage)
         page = model.page; pageCount = model.pageCount; tracks = model.columns.count
         totalSubscriptions = columns.count
         self.scope = scope; self.language = language
+        self.membershipKnowledge = membershipKnowledge
         let reserves = model.columns.contains { $0?.reserve != nil }
         labels = [format.rowName(.fiveHours), format.rowName(.weekly), format.rowName(.other), chinese ? "今日" : "Today"]
             + (reserves ? [chinese ? "储备" : "Reserve"] : [])
@@ -86,7 +89,7 @@ public struct EngineTablePresentation: Equatable, Sendable {
         allKeyLabel = allKey
         allKeyHelp = help.explanation(.engine, context: .init(fact: allKey))
         addLabel = chinese ? "＋ 添加订阅" : "＋ Add a subscription"
-        emptyLabel = columns.isEmpty ? (chinese ? "未检测到订阅 · modelplan doctor" : "No subscriptions found · modelplan doctor") : nil
+        emptyLabel = columns.isEmpty ? membershipKnowledge.emptyLabel(language: language) : nil
         previousLabel = chinese ? "上一页订阅" : "Previous subscriptions"
         nextLabel = chinese ? "下一页订阅" : "Next subscriptions"
         self.columns = model.columns.enumerated().map { slot, column in

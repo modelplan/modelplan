@@ -16,6 +16,7 @@ public enum FaderTiming {
 public struct FaderBankController: Sendable {
     public private(set) var inputs: [FaderChannelInput] = []
     public private(set) var publicationUsable = false
+    public private(set) var catalogueOnly = false
     public private(set) var bank = 0
     public private(set) var selectedModelID: String?
     public private(set) var favoriteIDs: [String] = []
@@ -28,13 +29,16 @@ public struct FaderBankController: Sendable {
     private var press: Press?
     public var nextDeadline: Double? { press.flatMap { $0.completed ? nil : $0.deadline } }
     public init() {}
-    public var ordered: [FaderChannelInput] { FaderBankPresentation.ordered(inputs: publicationUsable ? inputs : [], favoriteIDs: favoriteIDs) }
+    public var ordered: [FaderChannelInput] { FaderBankPresentation.ordered(inputs: publicationUsable || catalogueOnly ? inputs : [], favoriteIDs: favoriteIDs) }
     public var bankCount: Int { max(1, (ordered.count + 2) / 3) }
     private func model(_ id: String) -> InstrumentModel? { publicationUsable ? inputs.first { $0.model.id == id }?.model : nil }
 
     @discardableResult public mutating func update(inputs: [FaderChannelInput], publicationUsable: Bool,
-                                                   favoriteIDs: [String]? = nil, selectedModelID: String? = nil) -> [FaderIntent] {
+                                                   favoriteIDs: [String]? = nil, selectedModelID: String? = nil,
+                                                   catalogueOnly: Bool = false) -> [FaderIntent] {
         self.inputs = inputs; self.publicationUsable = publicationUsable
+        self.catalogueOnly = catalogueOnly && !publicationUsable
+        if !publicationUsable { cancelGesture() }
         if let favoriteIDs { self.favoriteIDs = favoriteIDs.reduce(into: []) { if !$0.contains($1) { $0.append($1) } } }
         if let selectedModelID { self.selectedModelID = selectedModelID }
         bank = min(bank, bankCount - 1)

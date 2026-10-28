@@ -19,6 +19,7 @@ import CoreText
     private var input: [EngineColumn] = [], identities: [String: EngineTableIdentity] = [:]
     private var language: InstrumentLanguage = .chinese, clock = Date(timeIntervalSince1970: 0)
     private var page = 0, scope: InstrumentScope = .all
+    private var membershipKnowledge: InstrumentMembershipKnowledge = .unknown
     private var controls: [String: EngineRegionControl] = [:], focusID: String?
     private var dwell = HelpDwell(), dwellTimer: Timer?, helpPopover: NSPopover?
     private var tracking: NSTrackingArea?
@@ -45,12 +46,15 @@ import CoreText
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
     public func update(columns: [EngineColumn], identities: [String: EngineTableIdentity] = [:], language: InstrumentLanguage,
-                       now: Date, page: Int? = nil, scope: InstrumentScope? = nil) throws {
+                       now: Date, page: Int? = nil, scope: InstrumentScope? = nil,
+                       membershipKnowledge: InstrumentMembershipKnowledge = .unknown) throws {
         let candidate = EngineTablePresentation(columns: columns, identities: identities, requestedPage: page ?? self.page,
-                                                scope: scope ?? self.scope, language: language, now: now)
+                                                scope: scope ?? self.scope, language: language, now: now,
+                                                membershipKnowledge: membershipKnowledge)
         if candidate == presentation && recipe?.size == bounds.size && textLayerScale == currentTextScale {
             input = columns; self.identities = identities; self.language = language; clock = now
             self.page = candidate.page; self.scope = candidate.scope
+            self.membershipKnowledge = membershipKnowledge
             return
         }
         var next: EngineTableRecipe!
@@ -67,6 +71,7 @@ import CoreText
         let oldOrder = keyboardOrder
         input = columns; self.identities = identities; self.language = language; clock = now
         self.page = candidate.page; self.scope = candidate.scope
+        self.membershipKnowledge = membershipKnowledge
         presentation = candidate; recipe = next; renderError = nil
         commitTextLayers(textUpdate, initial: old == nil)
         synchronizeRegions(next.regions, previousOrder: oldOrder)
@@ -78,7 +83,7 @@ import CoreText
     public override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         guard presentation != nil else { return }
-        do { try update(columns: input, identities: identities, language: language, now: clock) }
+        do { try update(columns: input, identities: identities, language: language, now: clock, membershipKnowledge: membershipKnowledge) }
         catch { renderError = String(describing: error) }
     }
     public override func draw(_ dirtyRect: NSRect) {
@@ -101,8 +106,8 @@ import CoreText
             switch intent {
             case .changePage(let p):
                 guard p >= 0, p < (presentation?.pageCount ?? 0) else { return }
-                try update(columns: input, identities: identities, language: language, now: clock, page: p)
-            case .selectScope(let scope): try update(columns: input, identities: identities, language: language, now: clock, scope: scope)
+                try update(columns: input, identities: identities, language: language, now: clock, page: p, membershipKnowledge: membershipKnowledge)
+            case .selectScope(let scope): try update(columns: input, identities: identities, language: language, now: clock, scope: scope, membershipKnowledge: membershipKnowledge)
             case .openSubscriptionsSettings: break
             }
             onIntent?(intent)
