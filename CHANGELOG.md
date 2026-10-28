@@ -6,7 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-- Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Cache-only caller selection respects consent/privacy and requires no plugin or status line; no independent cursor or quota-network schedule.
+- Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Production admission supports Automatic/Passive consent and cache-only caller selection without a plugin or status line. Background progress and excluded worker metadata cannot change the selected main branch or its classification; no independent cursor or quota-network schedule.
 
 - CLI production paths now admit consented native saved-login readers, carrying local profiles, selected region, bounded Keychain policy and revocation-fenced publication into quota, hooks and desktop feeds. Explicit `MODELPLAN_READERS=automatic` preserves saved privacy; runtime imports stay blocked in Passive. Wire incremental local-history refresh and the optional desktop `localHistory` feed, add an explicit GLM configuration source, and include the newer captures in Forget while preserving request gates and Keychain Deny.
   CLI 生产路径现将共享授权接入原生登录读取器、钩子与桌面，保留本机来源、地区、钥匙串期限及撤销写入保护；显式 automatic 保留已保存的隐私设置。接入增量本机历史与桌面可选字段，GLM 配置来源需显式选择；忘记读数保留请求间隔和钥匙串拒绝状态。

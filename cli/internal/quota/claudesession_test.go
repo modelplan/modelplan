@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/keychain"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -587,6 +591,275 @@ func TestClaudeSessionReducerUncertaintyAndBounds(t *testing.T) {
 			}
 			if bytes.Contains(state.Decoder, []byte("PRIVATE-")) || bytes.Contains(state.Decoder, []byte("raw-node")) {
 				t.Fatal("raw frontier escaped")
+			}
+		})
+	}
+}
+
+func TestClaudeSessionProgressCannotSelectAbandonedBranch(t *testing.T) {
+	for _, incremental := range []bool{false, true} {
+		t.Run(fmt.Sprintf("persisted=%v", incremental), func(t *testing.T) {
+			a := sessionAccess(t)
+			root, cache := t.TempDir(), t.TempDir()
+			path := filepath.Join(root, "projects", "p", "session-main.jsonl")
+			at := claudeSessionNow.Add(-time.Minute)
+			batch := sessionBatch("session-main", "cli", at, "claude-opus-5-5")
+			branch := sessionRow("branch-sonnet", "assistant", "session-main", "claude-sonnet-4-6", "low", "fast", at.Add(10*time.Second), nil)
+			resume, _ := json.Marshal(map[string]any{"type": "user", "uuid": "resume-main", "parentUuid": "assistant", "sessionId": "session-main", "timestamp": at.Add(20 * time.Second).Format(time.RFC3339Nano)})
+			batch.Records = append(batch.Records, branch, resume)
+			progress, _ := json.Marshal(map[string]any{"type": "progress", "uuid": "delayed-progress", "parentUuid": "branch-sonnet", "sessionId": "session-main", "timestamp": at.Add(30 * time.Second).Format(time.RFC3339Nano)})
+			before := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+			if before.Selected == nil || before.Selected.Model != "claude-opus-5-5" {
+				t.Fatal("resume setup failed")
+			}
+			if !incremental {
+				batch.Records = append(batch.Records, progress)
+				after := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+				if !reflect.DeepEqual(before, after) {
+					t.Fatal("progress changed resumed selection, fields, classification or observation")
+				}
+			} else {
+				writeClaudeSession(t, path, batch.Records...)
+				first := RefreshClaudeSessions(context.Background(), root, cache, a, claudeSessionNow)
+				prior := sessionSelected(t, cache, a, "", claudeSessionNow)
+				appendClaudeSession(t, path, append(progress, '\n'))
+				// Each refresh constructs a new reducer and reloads the persisted frontier.
+				after := RefreshClaudeSessions(context.Background(), root, cache, a, claudeSessionNow.Add(5*time.Second))
+				selected := sessionSelected(t, cache, a, "", claudeSessionNow.Add(5*time.Second))
+				if !after.Complete || !reflect.DeepEqual(prior, selected) || !bytes.Equal(first.Snapshot, after.Snapshot) || !after.ObservedAt.Equal(first.ObservedAt) || !after.CapturedAt.Equal(first.CapturedAt) {
+					t.Fatal("persisted progress changed resumed state or capture age")
+				}
+				assertClaudeSessionCachePrivate(t, cache)
+			}
+		})
+	}
+}
+
+func TestClaudeSessionExcludedRecordsCannotReclassifyMain(t *testing.T) {
+	exclusions := []map[string]any{{"isSidechain": true, "agentId": "synthetic-worker"}, {"agentId": "synthetic-worker"}, {"teamName": "synthetic-team"}, {"isMeta": true}, {"isCompactSummary": true}, {"isApiErrorMessage": true}, {"error": "synthetic-error"}, {"synthetic": true}}
+	for i, extra := range exclusions {
+		for _, entrypoint := range []string{"sdk-ts", "claude-vscode"} {
+			t.Run(fmt.Sprintf("%d/%s", i, entrypoint), func(t *testing.T) {
+				a := sessionAccess(t)
+				root, cache := t.TempDir(), t.TempDir()
+				path := filepath.Join(root, "projects", "p", "session-main.jsonl")
+				batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+				extra["entrypoint"], extra["sessionKind"] = entrypoint, "daemon-worker"
+				model := "claude-sonnet-4-6"
+				if extra["synthetic"] == true {
+					model = "<synthetic>"
+				}
+				ignored := sessionRow("ignored-worker", "assistant", "session-main", model, "low", "fast", claudeSessionNow, extra)
+				before := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+				writeClaudeSession(t, path, batch.Records...)
+				first := RefreshClaudeSessions(context.Background(), root, cache, a, claudeSessionNow)
+				prior := sessionSelected(t, cache, a, "", claudeSessionNow)
+				batch.Records = append(batch.Records, ignored)
+				after := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+				if !reflect.DeepEqual(before, after) {
+					t.Error("excluded record changed main-session projection")
+				}
+				appendClaudeSession(t, path, append(ignored, '\n'))
+				refreshed := RefreshClaudeSessions(context.Background(), root, cache, a, claudeSessionNow.Add(5*time.Second))
+				projection, _ := ReadClaudeSessions(cache, a, "", claudeSessionNow.Add(5*time.Second))
+				if !refreshed.Complete || projection.Selected == nil || !reflect.DeepEqual(prior, *projection.Selected) || !bytes.Equal(first.Snapshot, refreshed.Snapshot) || !refreshed.ObservedAt.Equal(first.ObservedAt) || !refreshed.CapturedAt.Equal(first.CapturedAt) {
+					t.Error("excluded append reclassified persisted main session or changed capture age")
+				}
+				assertClaudeSessionCachePrivate(t, cache)
+			})
+		}
+	}
+}
+
+func TestClaudeSessionProgressAncestryAndGenuineHeadlessClassification(t *testing.T) {
+	a := sessionAccess(t)
+	batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+	progress, _ := json.Marshal(map[string]any{"type": "progress", "uuid": "progress-link", "parentUuid": "assistant", "sessionId": "session-main", "timestamp": claudeSessionNow.Format(time.RFC3339Nano)})
+	// An eligible main record may point through an otherwise ignored progress node.
+	user, _ := json.Marshal(map[string]any{"type": "user", "uuid": "user-through-progress", "parentUuid": "progress-link", "sessionId": "session-main", "timestamp": claudeSessionNow.Format(time.RFC3339Nano)})
+	batch.Records = append(batch.Records, progress, user)
+	r := ProjectClaudeSessions(a, []ClaudeSessionBatch{batch}, "", claudeSessionNow)
+	if r.Selected == nil || r.Selected.Model != "claude-opus-5-5" {
+		t.Fatal("progress broke valid main ancestry")
+	}
+	for _, classification := range []map[string]any{{"entrypoint": "sdk-ts"}, {"sessionKind": "daemon"}, {"sessionKind": "daemon-worker"}} {
+		row := sessionRow("headless-main", "user-through-progress", "session-main", "claude-sonnet-4-6", "low", "fast", claudeSessionNow, classification)
+		headless := batch
+		headless.Records = append(append([][]byte{}, batch.Records...), row)
+		projected := ProjectClaudeSessions(a, []ClaudeSessionBatch{headless}, "", claudeSessionNow)
+		if projected.Selected != nil {
+			t.Fatal("genuine main-session SDK/daemon became interactive")
+		}
+	}
+}
+
+func TestClaudeSessionProductionAdmissionRefreshCacheAndForget(t *testing.T) {
+	for _, custom := range []bool{false, true} {
+		t.Run(fmt.Sprintf("custom=%v", custom), func(t *testing.T) {
+			isolateHome(t)
+			t.Setenv("MODELPLAN_NATIVE", "")
+			t.Setenv("MODELPLAN_HISTORY", "")
+			t.Setenv("MODELPLAN_READERS", "passive")
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
+			t.Setenv("CLAUDE_CODE_SESSION_ID", "session-main")
+			home, _ := os.UserHomeDir()
+			root := filepath.Join(home, ".claude")
+			if custom {
+				root = filepath.Join(home, "custom-claude")
+				t.Setenv("CLAUDE_CONFIG_DIR", root)
+			}
+			cache := t.TempDir()
+			path := filepath.Join(root, "projects", "p", "session-main.jsonl")
+			batch := sessionBatch("session-main", "cli", claudeSessionNow.Add(-time.Minute), "claude-opus-5-5")
+			writeClaudeSession(t, path, batch.Records...)
+			paths := func() Paths { return ProductionPaths(cache, "1.0.0") }
+			before := paths()
+			if before.ClaudeSessionAccess != nil || NativeDue(before, claudeSessionNow) {
+				t.Fatal("production local reader admitted before consent")
+			}
+			productionConsent(t, "claude", true)
+			p := paths()
+			if p.ClaudeSessionAccess == nil || p.ClaudeSessionRoot != root || p.ClaudeSessionAccess.Privacy != "passive" {
+				t.Fatal("missing production passive-session admission")
+			}
+			if _, err := os.Stat(localusage.SettingsPath(home)); !os.IsNotExist(err) {
+				t.Fatal("read-only constructor created identity key")
+			}
+			if len(p.ReaderAccess.Grants) != 0 || !NativeDue(p, claudeSessionNow) {
+				t.Fatal("session admission depended on credential admission")
+			}
+			keylessPaths := p
+			// Both vendor/Keychain adapters would fail the test if the local route
+			// attempted account collection. No synthetic login or plugin is installed.
+			vendorCalls, keychainCalls := 0, 0
+			oldClient, oldSecurity := nativeClient, claudeSecurity
+			nativeClient = &http.Client{Transport: productionTransport(func(*http.Request) (*http.Response, error) {
+				vendorCalls++
+				return nil, errors.New("unexpected vendor call")
+			})}
+			claudeSecurity = func(context.Context, string, ...string) (keychain.ProcessResult, error) {
+				keychainCalls++
+				return keychain.ProcessResult{}, errors.New("unexpected Keychain call")
+			}
+			t.Cleanup(func() { nativeClient = oldClient; claudeSecurity = oldSecurity })
+			if err := RefreshNative(context.Background(), p, claudeSessionNow); err != nil {
+				t.Fatal(err)
+			}
+			p = paths()
+			if p.ClaudeSessionAccess == nil || len(p.ClaudeSessionAccess.Key) != 32 || !claudeKeyedRef(p.ClaudeSessionAccess.ProfileRef) {
+				t.Fatal("shared installation key/profile not admitted")
+			}
+			selected := sessionSelected(t, cache, *p.ClaudeSessionAccess, "session-main", claudeSessionNow)
+			if selected.Attribution != "current-thread" {
+				t.Fatal("production caller not selected")
+			}
+			prior := assertClaudeSessionCachePrivate(t, cache)
+			report := ReadPermitted(p, claudeSessionNow.Add(time.Second))
+			found := false
+			for _, account := range report.Accounts {
+				if account.Source == "claude-code" && account.Harness != nil && account.Harness.Model == "claude-opus-5-5" {
+					found = true
+				}
+			}
+			if !found || vendorCalls != 0 || keychainCalls != 0 {
+				t.Fatal("production cache report missing or invoked account adapters")
+			}
+			if !reflect.DeepEqual(prior, assertClaudeSessionCachePrivate(t, cache)) {
+				t.Fatal("production cache-only report wrote state")
+			}
+			if NativeDue(paths(), claudeSessionNow.Add(time.Second)) {
+				t.Fatal("production scheduling ignored projection floor")
+			}
+			if !NativeDue(paths(), claudeSessionNow.Add(5*time.Second)) {
+				t.Fatal("network quota floor blocked local projection")
+			}
+			// Keychain denial does not revoke local transcript consent.
+			if err := consent.Deny(consent.Path(), "claude", "keychain"); err != nil {
+				t.Fatal(err)
+			}
+			if paths().ClaudeSessionAccess == nil {
+				t.Fatal("Keychain Deny blocked credential-free session")
+			}
+			t.Setenv("MODELPLAN_READERS", "automatic")
+			automatic := paths()
+			if automatic.ClaudeSessionAccess == nil {
+				t.Fatal("Automatic mode lost local session admission")
+			}
+			if err := RefreshNative(context.Background(), automatic, claudeSessionNow.Add(5*time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if vendorCalls != 0 || keychainCalls != 0 {
+				t.Fatal("local refresh bypassed account/Keychain denial")
+			}
+			t.Setenv("MODELPLAN_READERS", "passive")
+			// Include the independent account attempt gates in the retained set.
+			prior = assertClaudeSessionCachePrivate(t, cache)
+			// Even previously constructed Paths must lose access after revocation.
+			productionConsent(t, "claude", false)
+			if NativeDue(p, claudeSessionNow.Add(time.Hour)) || NativeDue(keylessPaths, claudeSessionNow.Add(time.Hour)) {
+				t.Fatal("stale production grant scheduled reads")
+			}
+			projected, _ := ReadClaudeSessions(cache, *p.ClaudeSessionAccess, "session-main", claudeSessionNow)
+			if projected.Selected != nil {
+				t.Fatal("stale production access exposed a revoked snapshot")
+			}
+			if err := ForgetTool(paths(), "claude"); err != nil {
+				t.Fatal(err)
+			}
+			productionConsent(t, "claude", true)
+			fresh := paths()
+			projected, _ = ReadClaudeSessions(cache, *fresh.ClaudeSessionAccess, "session-main", claudeSessionNow.Add(time.Second))
+			if projected.Selected != nil || NativeDue(fresh, claudeSessionNow.Add(time.Second)) {
+				t.Fatal("Forget/reconnect restored snapshot or reset projection gate")
+			}
+			after := assertClaudeSessionCachePrivate(t, cache)
+			for name, body := range prior {
+				if strings.Contains(filepath.Base(name), "gate") && after[name] != body {
+					t.Fatal("production Forget changed projection gate")
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeSessionProductionAdmissionVetoes(t *testing.T) {
+	for _, tc := range []struct{ name, mode, denial, preferred, min, root string }{
+		{name: "off", mode: "off"}, {name: "invalid privacy", mode: "invalid"}, {name: "local denied", denial: consent.Local}, {name: "disabled route", preferred: "off"}, {name: "helper route", preferred: "codexbar"}, {name: "requires update", preferred: "native", min: "99.0.0"}, {name: "relative root", root: "relative"}, {name: "symlink root", root: "symlink"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateHome(t)
+			t.Setenv("MODELPLAN_READERS", tc.mode)
+			t.Setenv("MODELPLAN_NATIVE", "")
+			t.Setenv("MODELPLAN_HISTORY", "")
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
+			home, _ := os.UserHomeDir()
+			root := filepath.Join(home, ".claude")
+			if tc.root == "symlink" {
+				if err := os.Symlink(t.TempDir(), root); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.MkdirAll(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if tc.root == "relative" {
+				t.Setenv("CLAUDE_CONFIG_DIR", "relative")
+			}
+			productionConsent(t, "claude", true)
+			if tc.denial != "" {
+				if err := consent.Deny(consent.Path(), "claude", tc.denial); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.preferred != "" {
+				old := loadReaderCatalogue
+				loadReaderCatalogue = func(string) *detect.Catalogue {
+					return &detect.Catalogue{Detectors: []detect.Entry{{ProviderID: "claude", ReaderID: "native:claude", Preferred: tc.preferred, MinCLI: tc.min}}}
+				}
+				t.Cleanup(func() { loadReaderCatalogue = old })
+			}
+			p := ProductionPaths(t.TempDir(), "1.0.0")
+			if p.ClaudeSessionAccess != nil {
+				t.Fatal("vetoed source admitted")
 			}
 		})
 	}

@@ -28,6 +28,12 @@ func HistoryProviders() []string {
 
 func productionHistoryRoot(home, tool string) string {
 	switch tool {
+	case "claude":
+		root := os.Getenv("CLAUDE_CONFIG_DIR")
+		if root == "" {
+			root = filepath.Join(home, ".claude")
+		}
+		return root
 	case "amp":
 		root := os.Getenv("XDG_DATA_HOME")
 		if root == "" {
@@ -158,14 +164,23 @@ func ProductionHistoryDue(home, cache string, now time.Time) bool {
 // ForgetProductionHistory removes all of this tool's derived profile captures,
 // preserving its shared request gate and the installation identity key.
 func ForgetProductionHistory(cache, tool string) error {
-	if _, ok := historyDepths[tool]; !ok {
-		return nil
-	}
 	unlock, err := consent.ReaderLock()
 	if err != nil {
 		return err
 	}
 	defer unlock()
+	return ForgetProductionHistoryLocked(cache, tool)
+}
+
+// ForgetProductionHistoryLocked is the same purge for callers already holding
+// consent.ReaderLock, such as quota.ForgetTool. It still acquires the engine's
+// own lock and preserves the shared reservation and installation identity key.
+func ForgetProductionHistoryLocked(cache, tool string) error {
+	if tool == "claude" {
+		tool = projectionTool
+	} else if _, ok := historyDepths[tool]; !ok {
+		return nil
+	}
 	_, lockPath := historyGatePaths(cache, tool)
 	if _, err := os.Stat(filepath.Dir(lockPath)); os.IsNotExist(err) {
 		return nil

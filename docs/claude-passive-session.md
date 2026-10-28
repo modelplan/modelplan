@@ -20,15 +20,26 @@ profile-scoped HMAC, so a caller change requires no ingestion or write.
 caller cancels and joins in-flight work. It removes derived state/cursors even
 after consent revocation, preserving the shared engine's local reservation.
 
-CLIJIT supplies authorized roots, `localusage.HistoryAccess`, caller selection and
-explicit refresh scheduling, including suspension while hidden/asleep. Quota
-`Paths.ClaudeSessionAccess` admits cache-only projection into `Read`: session state
-can produce an account with no quota windows when no plugin/status-line/account
-snapshot exists. When an account exists, native session fields replace optional
-hook metadata as a whole, including clearing unknown values. The session reader
-does not collect quota or require a status line/plugin. Missing access grants
-nothing; consent, denial, Automatic/Passive-only and `MODELPLAN_READERS` gates
-apply before ingestion and cache presentation.
+`ProductionPaths` supplies the admitted default or absolute custom
+`CLAUDE_CONFIG_DIR` root, profile-scoped local access and optional caller selector.
+It checks explicit current consent, the native route/catalogue version and root
+safety in Automatic and Passive modes. Construction and `ReadPermitted` are
+cache-only and never create the installation key. An explicit production refresh
+creates/reuses the shared local-history key, then invokes the same projection
+engine through `RefreshNative`; `NativeDue` uses its local reservation. Account
+quota and Keychain admission remain independent. The existing production Forget
+path removes all Claude projection profiles under the shared engine lock, including
+past custom roots, while retaining its reservation and installation key. Stale
+consent generations cannot read, schedule or publish a projection. CLI/App callers
+retain responsibility for hidden/asleep suspension.
+
+`Paths.ClaudeSessionAccess` admits cache-only projection into `Read` and
+`ReadPermitted`: session state can produce an account with no quota windows when
+no plugin/status-line/account snapshot exists. When an account exists, native
+session fields replace optional hook metadata as a whole, including clearing
+unknown values. Missing access grants nothing; consent, denial,
+Automatic/Passive-only, `MODELPLAN_READERS` and `MODELPLAN_HISTORY` gates apply
+before ingestion and cache presentation.
 
 ## Fields and selection
 
@@ -48,7 +59,10 @@ not freshen the snapshot. Later incomplete blocks do not splice or freshen the
 previous turn. A resumed branch can select an earlier assistant across refreshes.
 
 Sidechains, agent/team workers, metadata/compaction and synthetic/error responses
-are excluded. SDK/daemon sessions and unclassified origins cannot displace a
+are excluded before main-session classification. Their SDK/daemon/origin metadata
+cannot reclassify or invalidate the main session. Progress supplies only keyed
+ancestry links when needed by an eligible child; it cannot select/suppress a
+conversation leaf, change origin, or freshen the observation/capture time. SDK/daemon sessions and unclassified origins cannot displace a
 confirmed CLI/IDE/desktop recent session. An explicit matching caller is labelled
 `current-thread`; a fallback is `recent-thread` and an unmatched caller is reported.
 No file mtime or foreground-process inspection establishes activity.

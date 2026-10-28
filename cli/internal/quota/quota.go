@@ -235,6 +235,7 @@ type Paths struct {
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
 	ClaudeSession               string                    // the calling Claude Code session, when known
+	ClaudeSessionRoot           string                    // transient locally admitted profile root, never persisted
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 }
@@ -254,7 +255,6 @@ func Read(p Paths, now time.Time) Report {
 	}
 	applyCodexBar(&r, p, now)
 	applyNative(&r, p, now)
-	applyClaudeSessions(&r, p, now)
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}

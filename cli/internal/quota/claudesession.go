@@ -169,30 +169,6 @@ func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile
 		file.Invalid = true
 		return
 	}
-	if row.Session != "" && row.Session != session {
-		file.Invalid = true
-		return
-	}
-	switch row.Entrypoint {
-	case "sdk-cli", "sdk-ts", "sdk-py":
-		file.Excluded = true
-	case "cli", "claude-vscode", "claude-desktop":
-		value := "cli"
-		if row.Entrypoint == "claude-vscode" {
-			value = "vscode"
-		}
-		if row.Entrypoint == "claude-desktop" {
-			value = "desktop"
-		}
-		if file.Origin != "" && file.Origin != value {
-			file.Invalid = true
-			file.Excluded = true
-		}
-		file.Origin = value
-	}
-	if row.SessionKind == "daemon" || row.SessionKind == "daemon-worker" {
-		file.Excluded = true
-	}
 	if row.Sidechain || row.Meta || row.Compact || row.Agent != "" || row.Team != "" || row.APIError || (len(row.Error) > 0 && string(row.Error) != "null") || claudeFieldString(row.Message.Model) == "<synthetic>" {
 		return
 	}
@@ -201,14 +177,51 @@ func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile
 	default:
 		return
 	}
+	// Progress is retained only as a keyed ancestry link for eligible children.
+	// Its timestamp and classification cannot select/reclassify a conversation.
+	if row.Type != "progress" {
+		if row.Session != "" && row.Session != session {
+			file.Invalid = true
+			return
+		}
+		switch row.Entrypoint {
+		case "sdk-cli", "sdk-ts", "sdk-py":
+			file.Excluded = true
+		case "cli", "claude-vscode", "claude-desktop":
+			value := "cli"
+			if row.Entrypoint == "claude-vscode" {
+				value = "vscode"
+			}
+			if row.Entrypoint == "claude-desktop" {
+				value = "desktop"
+			}
+			if file.Origin != "" && file.Origin != value {
+				file.Invalid = true
+				file.Excluded = true
+			}
+			file.Origin = value
+		}
+		if row.SessionKind == "daemon" || row.SessionKind == "daemon-worker" {
+			file.Excluded = true
+		}
+	} else if row.Session != "" && row.Session != session {
+		return
+	}
 	if !claudeSessionOpaque.MatchString(row.ID) || (row.Parent != "" && !claudeSessionOpaque.MatchString(row.Parent)) {
+		if row.Type == "progress" {
+			return
+		}
 		file.Invalid = true
 		return
 	}
-	at, err := time.Parse(time.RFC3339Nano, row.Timestamp)
-	if err != nil || at.After(now) {
-		file.Invalid = true
-		return
+	var at time.Time
+	if row.Type != "progress" {
+		parsed, err := time.Parse(time.RFC3339Nano, row.Timestamp)
+		if err != nil || parsed.After(now) {
+			file.Invalid = true
+			return
+		}
+		at = parsed.UTC()
 	}
 	node := claudeSessionNode{ID: keyed("node", row.ID), Parent: keyed("node", row.Parent), Message: keyed("message", row.Message.ID), Kind: row.Type, At: at.UTC(), Index: len(file.Nodes)}
 	if row.Type == "assistant" {
@@ -226,6 +239,9 @@ func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile
 	for _, old := range file.Nodes {
 		if old.ID != node.ID {
 			continue
+		}
+		if node.Kind == "progress" && (old.Kind != "progress" || old.Parent != node.Parent) {
+			return
 		}
 		if old.Parent != node.Parent {
 			file.Invalid = true
@@ -250,14 +266,30 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 		nodes[node.ID] = node
 	}
 	parents := map[string]bool{}
+	mainNodes := 0
 	for _, node := range nodes {
-		if node.Parent != "" {
-			parents[node.Parent] = true
+		if node.Kind == "progress" {
+			continue
+		}
+		mainNodes++
+		// Only an eligible main child removes an ancestor from leaf candidacy.
+		// Follow neutral progress links without letting background progress
+		// suppress a conversation leaf on another branch.
+		parent := node.Parent
+		seen := map[string]bool{}
+		for parent != "" && !seen[parent] {
+			seen[parent] = true
+			ancestor, ok := nodes[parent]
+			if !ok || ancestor.Kind != "progress" {
+				parents[parent] = true
+				break
+			}
+			parent = ancestor.Parent
 		}
 	}
 	var leaf *claudeSessionNode
 	for id, node := range nodes {
-		if parents[id] {
+		if node.Kind == "progress" || parents[id] {
 			continue
 		}
 		if leaf == nil || node.At.After(leaf.At) || (node.At.Equal(leaf.At) && node.Index > leaf.Index) {
@@ -266,7 +298,7 @@ func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidat
 		}
 	}
 	if leaf == nil {
-		return nil, len(nodes) == 0 && !partial
+		return nil, mainNodes == 0 && !partial
 	}
 	var selected *claudeSessionNode
 	seen := map[string]bool{}
@@ -382,6 +414,9 @@ func ProjectClaudeSessions(a localusage.HistoryAccess, batches []ClaudeSessionBa
 }
 
 func claudeSessionAdmission(a localusage.HistoryAccess) string {
+	if a.StillValid != nil && !a.StillValid() {
+		return "consent_required"
+	}
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	if mode == "off" || a.Privacy == "off" {
 		return "off"
