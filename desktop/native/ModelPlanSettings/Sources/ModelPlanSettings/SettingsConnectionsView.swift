@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 
-@MainActor private final class ConnectionButton: NSButton {
+@MainActor final class ConnectionButton: NSButton {
     var invoke: (() -> Void)?
     init(title: String, identifier: String, invoke: @escaping () -> Void) {
         super.init(frame: .zero)
@@ -64,15 +64,28 @@ import AppKit
             addArrangedSubview(button(.init("Check component in About", "在关于中检查组件"), id: "connections.componentHelp",
                 enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
         } else { label(SettingsConnectionPresentation.status(controller.phase)) }
+        let cleanupReported = !(controller.snapshot?.pendingCleanupTools.isEmpty ?? true)
+        let cleanupUnverified = controller.phase == .failed(.cleanupReadbackUnavailable)
+        if cleanupReported || cleanupUnverified {
+            label(.init("The last Forget reported unfinished cache cleanup. The app cannot verify manual cookie cleanup. Read the CLI disconnect instructions; any credential-related approval stays separate. A later explicit Forget can verify completion.",
+                        "上次忘记读数报告缓存清理未完成；应用无法核验手动cookie清理。请阅读CLI disconnect说明，任何凭据相关批准都需单独确认；随后可再次主动确认忘记读数来核验完成情况。"))
+            addArrangedSubview(button(.init("View manual cleanup instructions in About", "在关于中查看手动清理说明"), id: "connections.cleanupHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        }
+        if case .failed = controller.phase, !cleanupReported && !cleanupUnverified {
+            addArrangedSubview(button(.init("Check component and instructions in About", "在关于中检查组件与说明"), id: "connections.requestHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        }
         if preferenceFailed { label(.init("Could not save visibility. The previous setting is retained.", "无法保存可见性；已保留原设置。")) }
         addArrangedSubview(button(.init("Check detected tools", "检查已检测工具"), id: "connections.detect",
                                   enabled: controller.availability.canInspect && !controller.isBusy) { [weak self] in
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
-            label(.init("Canonical reading mode: " + snapshot.mode.rawValue, "规范读取模式：" + snapshot.mode.rawValue))
+            let mode = SettingsConnectionPresentation.readingMode(snapshot.mode)
+            label(.init("Usage reading mode: " + mode.english, "用量读取模式：" + mode.chinese))
             if let preview = snapshot.consentPreview { label(preview.notice) }
-            if firstRun && intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
+            if intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }
             toolGroup(snapshot.standardTools, advanced: false)
             if firstRun {
@@ -162,11 +175,25 @@ import AppKit
                 : SettingsText(value.providerHosts.joined(separator: ", "), value.providerHosts.joined(separator: ", "))
             label(.init("Provider hosts: " + hosts.english, "服务商主机：" + hosts.chinese))
             label(.init("Recorded Keychain permission: " + value.keychain.rawValue, "已记录钥匙串权限：" + value.keychain.rawValue))
+            if !advanced && value.keychainEligible {
+                let keychain = button(.init("Allow Claude Code Keychain access", "允许 Claude Code 访问钥匙串"),
+                    id: "connections.keychain.claude", enabled: controller.canConnect(.claude, access: .standard)
+                        && intent?.selected.contains(.claude) == true) { [weak self] in
+                    guard let self, var intent = self.intent else { return }
+                    intent.selectKeychain(.claude, enabled: !intent.keychainAllowedTools.contains(.claude))
+                    self.intent = intent; self.controller.invalidateConfirmation(); self.render()
+                }
+                keychain.setButtonType(.switch)
+                keychain.state = intent?.keychainAllowedTools.contains(.claude) == true ? .on : .off
+                addArrangedSubview(keychain)
+                label(.init("Optional. macOS may ask for approval when reading Claude Code usage. Leaving this unchecked keeps the recorded Keychain choice.",
+                            "可选。读取 Claude Code 用量时 macOS 可能请求批准；不勾选会保留已记录的钥匙串选择。"))
+            }
             if firstRun && !advanced {
                 let choice = button(.init("Choose " + value.tool.title, "选择 " + value.tool.title),
                     id: "connections.choose." + value.tool.rawValue, enabled: !controller.isBusy && value.canRequestConnection) { [weak self] in
                     guard let self, var intent = self.intent else { return }
-                    intent.select(value.tool, enabled: !intent.selected.contains(value.tool)); self.intent = intent; self.render()
+                    intent.select(value.tool, enabled: !intent.selected.contains(value.tool)); self.intent = intent; self.controller.invalidateConfirmation(); self.render()
                 }
                 choice.setButtonType(.switch); choice.state = intent?.selected.contains(value.tool) == true ? .on : .off
                 addArrangedSubview(choice)
@@ -176,7 +203,11 @@ import AppKit
             let connect = button(advanced ? .init("Enable browser session…", "开启浏览器会话…") : .init("Connect…", "连接…"),
                 id: "connections.connect." + value.tool.rawValue,
                 enabled: controller.canConnect(value.tool, access: value.access)) { [weak self] in
-                self?.controller.request(.connect(value.tool, value.access))
+                guard let self else { return }
+                if value.keychainEligible {
+                    self.controller.request(.applyStandardConsent(allow: [value.tool], deny: [],
+                        keychainAllow: self.intent?.orderedKeychainTools.filter { $0 == value.tool } ?? []))
+                } else { self.controller.request(.connect(value.tool, value.access)) }
             }
             let disconnect = forgetButton(value.tool)
             addArrangedSubview(NSStackView(views: [connect, disconnect]))

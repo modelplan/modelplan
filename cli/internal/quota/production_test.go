@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -153,6 +154,88 @@ func TestProductionKeychainPolicy(t *testing.T) {
 	p = ProductionPaths(p.Cache, "1.0.0")
 	if p.ReaderAccess.Grants["claude"].Keychain || InteractiveReaders(p).ReaderAccess.Grants["claude"].Interactive {
 		t.Fatal("persisted Deny re-enabled")
+	}
+}
+
+func TestProductionUnsetClaudeKeychainNamesCauseAndSettingsAction(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS Keychain remedy")
+	}
+	testProductionUnsetClaudeKeychainNotice(t)
+}
+
+func TestProductionUnsetClaudeKeychainOnLinuxKeepsSavedLoginNotice(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux saved-login notice")
+	}
+	testProductionUnsetClaudeKeychainNotice(t)
+}
+
+func testProductionUnsetClaudeKeychainNotice(t *testing.T) {
+	t.Helper()
+	_ = claudeTestPaths(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+		if err := consent.Set(s, "claude", true, "native:claude", "native", claudeTestNow); err != nil {
+			return err
+		}
+		r := s.Tools["claude"]
+		consent.SetKeychain(&r, "")
+		s.Tools["claude"] = r
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, requests := 200, []string{}
+	claudeTestServer(t, &status, &requests)
+	old := claudeSecurity
+	claudeSecurity = func(context.Context, string, ...string) (keychain.ProcessResult, error) {
+		t.Fatal("unset Keychain choice invoked Keychain")
+		return keychain.ProcessResult{}, nil
+	}
+	t.Cleanup(func() { claudeSecurity = old })
+	p := ProductionPaths(t.TempDir(), "1.0.0")
+	if grant := p.ReaderAccess.Grants["claude"]; grant.Keychain || grant.KeychainConsent != "unset" {
+		t.Fatal("production discarded the unset cause", grant)
+	}
+	if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadReaderState(p.Cache, "claude")
+	wantStatus, wantNotice, wantNextStep := "unavailable", "No supported Claude Code saved login", ""
+	if runtime.GOOS == "darwin" {
+		wantStatus, wantNotice, wantNextStep = "consent_required", consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
+	}
+	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != wantStatus || s.Entries[0].Notice != wantNotice || s.Entries[0].NextStep != wantNextStep {
+		t.Fatal("missing login notice/remedy does not match platform", s, err)
+	}
+	r := ReadPermitted(p, claudeTestNow)
+	found := false
+	wantReason := wantNotice
+	if wantNextStep != "" {
+		wantReason = wantNextStep
+	}
+	for _, source := range r.Sources {
+		if source.Source == "native:claude" && source.Status == wantStatus && source.Reason == wantReason {
+			found = true
+		}
+	}
+	if !found || len(requests) != 0 {
+		t.Fatal("cached readback lost next step or made provider calls", r, requests)
+	}
+	// File-based Claude logins do not need Keychain: their read must still work.
+	writeClaudeCredential(t, root, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	if err := RefreshNative(context.Background(), p, claudeTestNow.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, err = loadReaderState(p.Cache, "claude")
+	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != "ok" || s.Entries[0].Notice != "" || s.Entries[0].NextStep != "" || len(requests) != 2 {
+		t.Fatal("unset Keychain choice blocked a file-based login", s, err, requests)
 	}
 }
 

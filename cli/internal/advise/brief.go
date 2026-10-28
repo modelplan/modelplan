@@ -36,8 +36,9 @@ type Brief struct {
 	Speed         *Speed      `json:"speed,omitempty"`
 	// Plan: the declared plan paying for a model on another vendor's endpoint, and what it
 	// charges for each model it meters now.
-	Plan      *Plan      `json:"plan,omitempty"`
-	PlanRates []PlanRate `json:"planRates,omitempty"`
+	Plan           *Plan            `json:"plan,omitempty"`
+	PlanRates      []PlanRate       `json:"planRates,omitempty"`
+	BillingContext []BillingContext `json:"billingContext,omitempty"`
 }
 
 type BriefModel struct {
@@ -102,6 +103,7 @@ func TaskStart(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time
 			models = append(models, m)
 		}
 	}
+	b.BillingContext = Billing(d, r, models, now)
 	if len(b.Models) == 0 {
 		return nil
 	}

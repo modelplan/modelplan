@@ -34,6 +34,9 @@ public struct CommunityConsentToolFacts: Sendable {
         guard parts.count == 2, ["native", "codexbar"].contains(String(parts[0])) else { return false }
         return Self.knownTool(String(parts[1])) == tool
     }
+    var keychainEligible: Bool {
+        eligible && id == "claude" && backend == "native" && ["native:claude", "native:claude-code"].contains(readerId)
+    }
     var mayDeny: Bool { tool != nil && accessClass == .standard && detected }
 }
 /// Values decoded by M0 from `consent --json`; exact text is supplied, not reconstructed or translated.
@@ -60,7 +63,7 @@ public struct CommunityConsentPreviewFacts: Sendable {
         let present = Set(tools.compactMap(\.tool))
         var rows = (previous?.tools ?? []).map { prior in
             var row = prior
-            if !present.contains(row.tool) { row.presence = .unknown; row.authorization = .unknown; row.consentEligible = false }
+            if !present.contains(row.tool) { row.presence = .unknown; row.authorization = .unknown; row.consentEligible = false; row.keychainEligible = false }
             return row
         }
         var unknown = previous?.unrecognizedTools ?? []
@@ -76,7 +79,7 @@ public struct CommunityConsentPreviewFacts: Sendable {
             row.authorization = value.allowed ? .allowed : .noConsent
             row.access = value.accessClass == .browserSession ? .browserSession : .standard
             row.consentEligible = value.eligible
-            row.keychain = value.keychain; row.providerHosts = value.hosts
+            row.keychain = value.keychain; row.keychainEligible = value.keychainEligible; row.providerHosts = value.hosts
             if mode == .off { row.connection = .off }
             rows.removeAll { $0.tool == tool }; rows.append(row)
         }
@@ -93,14 +96,19 @@ public struct CommunityConsentGrantPayload: Encodable, Sendable {
     public let expectGeneration: UInt64
     public let consentTextVersion: Int
     public let allow: [String], deny: [String]
-    /// No Keychain opt-in is collected by this slice. Empty is deliberate, never inferred from presence.
-    public let keychain: [String: CommunityConsentKeychainDecision] = [:]
+    /// Only a separately checked Claude row can add allow; omission never denies or erases a prior choice.
+    public let keychain: [String: CommunityConsentKeychainDecision]
     public init(preview: CommunityConsentPreviewFacts, allow: [SettingsConnectionTool], deny: [SettingsConnectionTool],
                 request: SettingsConnectionRequestContext) throws {
         let selected = allow + deny
         guard request.expectedConsentGeneration == preview.generation, request.consentTextVersion == preview.consentTextVersion,
               !selected.isEmpty, Set(selected).count == selected.count,
               allow.isEmpty || preview.mode == .automatic || preview.mode == .passive else { throw SettingsConnectionFailure.stale }
+        guard Set(request.keychainAllow).count == request.keychainAllow.count,
+              request.keychainAllow.allSatisfy({ tool in tool == .claude && allow.contains(tool)
+                  && preview.tools.contains { $0.tool == tool && $0.keychainEligible } })
+        else { throw SettingsConnectionFailure.unavailable }
+        self.keychain = request.keychainAllow.isEmpty ? [:] : ["claude": .allow]
         var ids: [SettingsConnectionTool: String] = [:]
         for tool in selected {
             guard let value = preview.tools.first(where: { $0.tool == tool }),

@@ -4,6 +4,7 @@ package render
 
 import (
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/advise"
 	"io"
 	"math"
 	"sort"
@@ -140,7 +141,11 @@ func (s Style) Tag(l *lineup.Lineup, r *lineup.Row, name func(string) string) st
 }
 
 // Lineup prints the WHICH ENGINE panel for one developer.
-func (s Style) Lineup(w io.Writer, d *digest.Digest, dev string) error {
+func (s Style) Lineup(w io.Writer, d *digest.Digest, dev string, billing ...[]advise.BillingContext) error {
+	var cs []advise.BillingContext
+	if len(billing) > 0 {
+		cs = billing[0]
+	}
 	ms := d.Developer(dev)
 	l := d.Lineup(dev)
 	if l == nil {
@@ -192,7 +197,7 @@ func (s Style) Lineup(w io.Writer, d *digest.Digest, dev string) error {
 			pad(name(r.ID), 18), s.c(gold, pad(eff, 8)),
 			s.c(dim, s.T.Ability), s.c(hi, fmt.Sprintf("%5.1f", r.Ability)), s.c(amber, bar(r.Ability/aMax, 12)),
 			s.c(dim, s.T.Cost), s.c(cost, pad(X(r.CostRelative), 6)), s.c(cost, fuel),
-			s.Tag(l, r, name))
+			s.Tag(l, r, name)+s.BillingSuffix(cs, m.ID))
 	}
 	return nil
 }

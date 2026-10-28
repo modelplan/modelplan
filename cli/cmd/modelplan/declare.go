@@ -16,7 +16,7 @@ import (
 // ~/.config/modelplan/local.json (--remove takes it out). With the publication at hand, the plan
 // and generation must be ones it meters, and a plan metered more than one way needs the
 // generation, so advice never runs on a guess.
-func declareCmd(args []string, stdout, stderr io.Writer, st *store.Store, c common, remove bool) int {
+func declareCmd(args []string, stdout, stderr io.Writer, st *store.Store, c common, remove bool, regions ...string) int {
 	if len(args) < 1 || len(args) > 2 {
 		fmt.Fprintln(stderr, "usage: modelplan declare <planId> [generation]   |   modelplan declare --remove <planId>")
 		return exitUsage
@@ -41,7 +41,7 @@ func declareCmd(args []string, stdout, stderr io.Writer, st *store.Store, c comm
 		}
 	}
 	p := quotaPaths(st)
-	if err := quota.DeclarePlan(p.LocalFile, plan, gen, remove); err != nil {
+	if err := quota.DeclarePlan(p.LocalFile, plan, gen, remove, regions...); err != nil {
 		fmt.Fprintln(stderr, "declare:", err)
 		return exitErr
 	}

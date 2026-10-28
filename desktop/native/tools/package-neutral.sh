@@ -7,6 +7,8 @@ app_package="$native_root/ModelPlanAppIntegration"
 archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.txt}
 output_dir=${2:?Pass a new local output directory}
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
+public_source=$(git -C "$repo_root" rev-parse HEAD)
+if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
@@ -51,6 +53,9 @@ cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
+python3 "$native_root/tools/write-consent-bundle-identity.py" --app "$app" --public-source "$public_source" \
+    --arm64-input "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" \
+    --x86-64-input "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan"
 codesign --force --sign - --options runtime "$app"
 codesign --verify --deep --strict "$app"
 printf '%s\n' "$app"

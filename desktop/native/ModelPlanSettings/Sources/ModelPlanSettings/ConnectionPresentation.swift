@@ -11,6 +11,14 @@ public enum SettingsConnectionPresentation {
         case .unavailable: return .init("Usage consent is unavailable in this build. Check component status in About.", "此构建暂不能请求用量授权，请在关于中检查组件状态。")
         }
     }
+    public static func readingMode(_ value: SettingsReadingMode) -> SettingsText {
+        switch value {
+        case .automatic: return .init("Automatic reading", "自动读取")
+        case .passive: return .init("Passive reading", "被动读取")
+        case .off: return .init("Reading disabled", "已停用读取")
+        case .unknown: return .init("Not verified", "尚未核验")
+        }
+    }
     public static func presence(_ value: SettingsToolPresence) -> SettingsText {
         switch value {
         case .detected: return .init("Detected", "已检测到")
@@ -54,13 +62,17 @@ public enum SettingsConnectionPresentation {
     }
     public static func confirmation(_ action: SettingsConnectionAction) -> SettingsText {
         switch action {
-        case .applyStandardConsent(let tools, let denied):
+        case .applyStandardConsent(let tools, let denied, let keychain):
             if !denied.isEmpty {
                 let names = denied.map(\.title).joined(separator: ", ")
-                return .init("Revoke access and Forget cached readings for \(names)? This deletes scoped readings; it is separate from choosing tools to allow.",
-                             "撤销 \(names) 的权限并忘记缓存读数？这会删除其范围内读数，与选择允许的工具分开。")
+                return .init("Revoke access and Forget cached readings for \(names)? This deletes supported scoped readings; browser-cookie cleanup may remain pending and require separate manual approval.",
+                             "撤销 \(names) 的权限并忘记缓存读数？这会删除可支持的范围内读数；浏览器缓存清理可能待完成，并需要单独手动批准。")
             }
             let names = tools.map(\.title).joined(separator: ", ")
+            if !keychain.isEmpty {
+                return .init("Allow shared usage reading for \(names), including Claude Code Keychain access? macOS may ask for approval. Omitted tools and other recorded Keychain choices stay unchanged; browser sessions are excluded.",
+                             "允许共享读取 \(names) 的用量，并允许 Claude Code 访问钥匙串？macOS 可能请求批准。未选择工具和其他已记录的钥匙串选择保持不变，不包括浏览器会话。")
+            }
             return .init("Allow shared usage reading for \(names)? These choices request consent, not activation. Omitted tools and recorded Keychain choices stay unchanged; browser sessions are excluded.",
                          "允许共享读取 \(names) 的用量？这些选择仅请求授权，不表示已启用读取；未选择工具和已记录的钥匙串选择保持不变，不包括浏览器会话。")
         case .connect(let tool, .browserSession):
@@ -85,14 +97,17 @@ public enum SettingsConnectionPresentation {
         case .awaitingConfirmation(let confirmation): return self.confirmation(confirmation.action)
         case .running: return .init("Request in progress…", "请求处理中…")
         case .cancelled: return .init("Request cancelled. An already accepted external action may still complete.", "请求已取消；已被外部接受的操作仍可能完成。")
+        case .cleanupPending: return .init("Current permissions were read back. Cached-reading cleanup is still incomplete; review the manual cleanup instructions.", "已核验当前权限；缓存读数清理尚未完成，请查看手动清理说明。")
         case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
         case .failed(let code):
             switch code {
+            case .mutationReadbackUnavailable: return .init("The request was accepted, but current permissions could not be verified. No current permission or completed cleanup is assumed. Open About before retrying.", "请求已被接受，但无法核验当前权限；不认定当前授权或清理已完成。请在关于中查看说明后再重试。")
+            case .cleanupReadbackUnavailable: return .init("The CLI reported unfinished cleanup, but current access could not be verified. Check detected tools and review the manual cleanup instructions.", "CLI报告清理未完成，但无法核验当前权限。请重新检查工具，并查看手动清理说明。")
             case .unavailable: return .init("This action is unavailable. Check CLI support and current permissions.", "此操作不可用，请检查 CLI 支持和当前权限。")
             case .stale: return .init("Tools or consent changed. Review the current text and choices before trying again.", "工具或授权已变化，请检查当前说明和选择后重试。")
             case .invalidResponse: return .init("The returned state could not be verified. No successful permission or installation is assumed.", "无法核验返回状态，不认定授权或安装成功。")
             case .cancelled: return .init("Request cancelled. Review current permissions before retrying.", "请求已取消，重试前请检查当前权限。")
-            case .requestFailed: return .init("The action did not complete with a verified result. Review its current state.", "操作未返回可核验结果，请检查当前状态。")
+            case .requestFailed: return .init("The component did not return a verified result. Open About to check the component and instructions before retrying.", "组件未返回可核验结果。请在关于中检查组件与说明，再决定是否重试。")
             }
         case .pluginResult(let result):
             switch result.status {

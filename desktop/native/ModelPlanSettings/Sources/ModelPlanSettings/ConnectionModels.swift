@@ -47,17 +47,18 @@ public struct SettingsConnectionToolState: Equatable, Sendable {
     public var beta: Bool
     public var consentEligible: Bool?
     public var keychain: SettingsRecordedKeychain
+    public var keychainEligible: Bool
     public var providerHosts: [String]
     public init(tool: SettingsConnectionTool, presence: SettingsToolPresence = .unknown,
                 authorization: SettingsSharedAuthorization = .unknown,
                 connection: SettingsToolConnectionState = .unknown, quota: SettingsToolQuotaState = .unknown,
                 support: SettingsToolSupport = .unknown, binding: SettingsSubscriptionBinding = .unknown,
                 access: SettingsConnectionAccess = .standard, beta: Bool = false, consentEligible: Bool? = nil,
-                keychain: SettingsRecordedKeychain = .unknown, providerHosts: [String] = []) {
+                keychain: SettingsRecordedKeychain = .unknown, keychainEligible: Bool = false, providerHosts: [String] = []) {
         self.tool = tool; self.presence = presence; self.authorization = authorization
         self.connection = connection; self.quota = quota; self.support = support
         self.binding = binding; self.access = access; self.beta = beta; self.consentEligible = consentEligible
-        self.keychain = keychain; self.providerHosts = providerHosts
+        self.keychain = keychain; self.keychainEligible = keychainEligible; self.providerHosts = providerHosts
     }
     /// Draft selection is not a grant, including when detect/preview says selected=true.
     public var canRequestConnection: Bool { presence == .detected && (consentEligible ?? (support != .detectedOnly && support != .unknown)) }
@@ -101,9 +102,12 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
     public let unrecognizedTools: [SettingsUnrecognizedTool]
     public let consentPreview: SettingsConsentPreview?
     public let mode: SettingsReadingMode
+    /// Matched receipt metadata only; never evidence of current permission or completed deletion.
+    public let pendingCleanupTools: Set<SettingsConnectionTool>
     public init(consentGeneration: UInt64? = nil, tools: [SettingsConnectionToolState] = [],
                 subscriptions: [SettingsVerifiedSubscription] = [], unrecognizedTools: [SettingsUnrecognizedTool] = [],
-                consentPreview: SettingsConsentPreview? = nil, mode: SettingsReadingMode = .unknown) throws {
+                consentPreview: SettingsConsentPreview? = nil, mode: SettingsReadingMode = .unknown,
+                pendingCleanupTools: Set<SettingsConnectionTool> = []) throws {
         if let preview = consentPreview {
             guard (1...1_000_000).contains(preview.textVersion),
                   [preview.notice.english, preview.notice.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 }),
@@ -133,7 +137,19 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
         self.consentGeneration = consentGeneration; self.tools = tools; self.subscriptions = subscriptions
         self.unrecognizedTools = unrecognizedTools
         self.consentPreview = consentPreview
-        self.mode = mode
+        self.mode = mode; self.pendingCleanupTools = pendingCleanupTools
+    }
+    public func withPendingCleanup(_ tools: Set<SettingsConnectionTool>) throws -> Self {
+        try .init(consentGeneration: consentGeneration, tools: self.tools, subscriptions: subscriptions,
+                  unrecognizedTools: unrecognizedTools, consentPreview: consentPreview, mode: mode, pendingCleanupTools: tools)
+    }
+    func withoutVerifiedConsent() throws -> Self {
+        let unknown = tools.map { value -> SettingsConnectionToolState in
+            var next = value; next.authorization = .unknown; next.connection = .unknown
+            next.consentEligible = false; next.keychain = .unknown; next.keychainEligible = false; return next
+        }
+        return try .init(tools: unknown, subscriptions: subscriptions, unrecognizedTools: unrecognizedTools,
+                         mode: .unknown, pendingCleanupTools: pendingCleanupTools)
     }
     private static func validReference(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -162,13 +178,13 @@ public struct SettingsPluginInstallResult: Equatable, Sendable {
     public var isInstalled: Bool { status == .installed }
 }
 public enum SettingsConnectionFailure: String, Error, Sendable {
-    case unavailable, requestFailed, invalidResponse, stale, cancelled
+    case unavailable, requestFailed, invalidResponse, stale, cancelled, cleanupReadbackUnavailable, mutationReadbackUnavailable
 }
 public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)
     case disconnect(SettingsConnectionTool)
     case installPlugin(SettingsPluginTool)
-    case applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool])
+    case applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], keychainAllow: [SettingsConnectionTool] = [])
 }
 public struct SettingsConnectionConfirmation: Equatable, Sendable {
     public let id: UUID
@@ -180,9 +196,11 @@ public struct SettingsConnectionRequestContext: Equatable, Sendable {
     /// The host must revalidate this against its shared consent before admitting an effect.
     public let expectedConsentGeneration: UInt64?
     public let consentTextVersion: Int?
-    public init(id: UUID, expectedConsentGeneration: UInt64?, consentTextVersion: Int? = nil) {
+    /// Explicit per-request opt-in only; omission preserves the recorded Keychain choice.
+    public let keychainAllow: [SettingsConnectionTool]
+    public init(id: UUID, expectedConsentGeneration: UInt64?, consentTextVersion: Int? = nil, keychainAllow: [SettingsConnectionTool] = []) {
         self.id = id; self.expectedConsentGeneration = expectedConsentGeneration
-        self.consentTextVersion = consentTextVersion
+        self.consentTextVersion = consentTextVersion; self.keychainAllow = keychainAllow
     }
 }
 
