@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Desktop, quota, advice and online hooks explicitly schedule due native readers in one locked detached worker. The first read after a JSON consent grant is immediately due; quiet scheduled refreshes preserve provider budgets, background Keychain policy and generation fences. Offline/read-only paths start nothing.
+  桌面、额度、建议及在线钩子显式调度到期的原生读取器，跨进程锁保证仅有一个后台任务。JSON 授权后首次读取立即到期；静默后台刷新保留提供方间隔、后台钥匙串策略与授权代次保护，离线及只读模式不启动任务。
+
 - CLI consent read/grant responses add `hostDetails` with bare DNS hostnames and separate notes, while preserving existing `hosts` display labels.
   CLI 授权读取和提交响应新增 `hostDetails`，分别返回裸 DNS 主机名与说明，保留现有 `hosts` 展示文本。
 
