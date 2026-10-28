@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -111,7 +112,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		if len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
 			return fail("unavailable", "No supported Claude Code saved login")
 		}
-		if !r.Grant.Keychain && r.Grant.KeychainConsent == "unset" {
+		if runtime.GOOS == "darwin" && !r.Grant.Keychain && r.Grant.KeychainConsent == "unset" {
 			out := fail("consent_required", consent.ClaudeKeychainUnsetNotice)
 			out.Entry.NextStep = consent.ClaudeKeychainNextStep
 			return out

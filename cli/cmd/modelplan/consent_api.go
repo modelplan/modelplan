@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -101,7 +102,7 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 			AccessClass: consentAccess(t), Detected: true,
 			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
 			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts}
-		if row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
+		if runtime.GOOS == "darwin" && row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
 			consent.KeychainSupported(t.ProviderID, t.Preferred, t.ReaderID) && r.KeyEnv == "" && !r.BrowserSession {
 			row.Notice, row.NextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
 		}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -157,6 +158,21 @@ func TestProductionKeychainPolicy(t *testing.T) {
 }
 
 func TestProductionUnsetClaudeKeychainNamesCauseAndSettingsAction(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS Keychain remedy")
+	}
+	testProductionUnsetClaudeKeychainNotice(t)
+}
+
+func TestProductionUnsetClaudeKeychainOnLinuxKeepsSavedLoginNotice(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux saved-login notice")
+	}
+	testProductionUnsetClaudeKeychainNotice(t)
+}
+
+func testProductionUnsetClaudeKeychainNotice(t *testing.T) {
+	t.Helper()
 	_ = claudeTestPaths(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	home, _ := os.UserHomeDir()
@@ -191,13 +207,21 @@ func TestProductionUnsetClaudeKeychainNamesCauseAndSettingsAction(t *testing.T) 
 		t.Fatal(err)
 	}
 	s, err := loadReaderState(p.Cache, "claude")
-	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != "consent_required" || s.Entries[0].Notice != consent.ClaudeKeychainUnsetNotice || s.Entries[0].NextStep != "Allow Keychain for Claude Code in Settings" {
-		t.Fatal("missing Keychain choice blamed the saved login", s, err)
+	wantStatus, wantNotice, wantNextStep := "unavailable", "No supported Claude Code saved login", ""
+	if runtime.GOOS == "darwin" {
+		wantStatus, wantNotice, wantNextStep = "consent_required", consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
+	}
+	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != wantStatus || s.Entries[0].Notice != wantNotice || s.Entries[0].NextStep != wantNextStep {
+		t.Fatal("missing login notice/remedy does not match platform", s, err)
 	}
 	r := ReadPermitted(p, claudeTestNow)
 	found := false
+	wantReason := wantNotice
+	if wantNextStep != "" {
+		wantReason = wantNextStep
+	}
 	for _, source := range r.Sources {
-		if source.Source == "native:claude" && source.Status == "consent_required" && source.Reason == consent.ClaudeKeychainNextStep {
+		if source.Source == "native:claude" && source.Status == wantStatus && source.Reason == wantReason {
 			found = true
 		}
 	}

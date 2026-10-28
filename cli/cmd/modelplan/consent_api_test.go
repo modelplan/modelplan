@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -108,8 +109,12 @@ func TestConsentReadbackExplainsUnsetClaudeKeychainChoice(t *testing.T) {
 	check := func(tools []consentTool) {
 		t.Helper()
 		claude, codex := apiTools(tools)["claude"], apiTools(tools)["codex"]
-		if !claude.Allowed || claude.Keychain != "unset" || claude.Notice != consent.ClaudeKeychainUnsetNotice || claude.NextStep != "Allow Keychain for Claude Code in Settings" {
-			t.Fatal("unset readback hid missing choice/Settings action", claude)
+		wantNotice, wantNextStep := "", ""
+		if runtime.GOOS == "darwin" {
+			wantNotice, wantNextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
+		}
+		if !claude.Allowed || claude.Keychain != "unset" || claude.Notice != wantNotice || claude.NextStep != wantNextStep {
+			t.Fatal("unset readback remedy does not match platform", claude)
 		}
 		if codex.Notice != "" || codex.NextStep != "" {
 			t.Fatal("unused Keychain permission got a notice", codex)
