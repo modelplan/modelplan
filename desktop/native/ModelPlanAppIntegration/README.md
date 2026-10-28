@@ -214,3 +214,13 @@ entry and fails when the cockpit/field mount or required supplier frames are
 removed. Its window/lifecycle delivery is synthetic; it does not launch the app,
 read a real account, take a capture or exercise a renderer. It covers persistence
 failure/retry and latest-scope restoration through the real mounted host.
+
+The supplier must also provide `CommunityCockpitInstrumentRecipes` (engines,
+faders and main screen) and `containsFieldPoint(point, currentScope)`. The normal
+factory injects all three providers before constructing the instrument views.
+The normal leaf checks the supplied aperture for pointer hits before its children;
+points use local Y-down coordinates and the same current scope/theme/profile/scale
+as the displayed still. The public neutral supplier explicitly provides its own
+rectangle. A private supplier must provide its exact aperture and compact-capable
+recipes; the neutral minimum sizes are not relaxed. Compact injection tests use
+empty synthetic recipes and do not prove official paint or a real matte.

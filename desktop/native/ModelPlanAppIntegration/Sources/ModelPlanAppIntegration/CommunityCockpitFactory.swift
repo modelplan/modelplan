@@ -20,19 +20,41 @@ public struct CommunityFieldScope: Equatable, Sendable {
     }
 }
 
+/// Required drawing providers travel with the same supplier as its frame contract.
+@MainActor public struct CommunityCockpitInstrumentRecipes {
+    public let engines: any EngineTableRecipeProvider
+    public let faders: any FaderBankRecipeProvider
+    public let mainScreen: any MainScreenRecipeProvider
+    public init(engines: any EngineTableRecipeProvider, faders: any FaderBankRecipeProvider,
+                mainScreen: any MainScreenRecipeProvider) {
+        self.engines = engines; self.faders = faders; self.mainScreen = mainScreen
+    }
+    public static func neutral() -> Self {
+        .init(engines: NeutralEngineTableRecipe(), faders: NeutralFaderBankRecipe(), mainScreen: NeutralMainScreenRecipe())
+    }
+}
+
 /// Private suppliers provide their own frozen shell/frames and current-scope still admission.
 /// The community edition uses the complete neutral provider below, without private resources.
 @MainActor public struct CommunityCockpitSupply {
     public let skin: any CockpitShellSkin
+    public let recipes: CommunityCockpitInstrumentRecipes
+    /// Local porthole points, Y down, before root scale; must match the displayed supplier aperture.
+    public let containsFieldPoint: (CGPoint, CommunityFieldScope) -> Bool
     public let frames: (CockpitSurfaceLayout) throws -> InstrumentSurfaceFrames
     public let still: (CommunityFieldScope) throws -> CockpitStill?
-    public init(skin: any CockpitShellSkin,
+    public init(skin: any CockpitShellSkin, recipes: CommunityCockpitInstrumentRecipes,
+                containsFieldPoint: @escaping (CGPoint, CommunityFieldScope) -> Bool,
                 frames: @escaping (CockpitSurfaceLayout) throws -> InstrumentSurfaceFrames,
                 still: @escaping (CommunityFieldScope) throws -> CockpitStill?) {
-        self.skin = skin; self.frames = frames; self.still = still
+        self.skin = skin; self.recipes = recipes; self.containsFieldPoint = containsFieldPoint
+        self.frames = frames; self.still = still
     }
     public static func neutral() -> Self {
-        .init(skin: CommunityCockpitSkin(), frames: { layout in
+        .init(skin: CommunityCockpitSkin(), recipes: .neutral(),
+              containsFieldPoint: { point, scope in
+                  CGRect(x: 0, y: 0, width: scope.viewport.width, height: scope.viewport.height).contains(point)
+              }, frames: { layout in
             guard let e = layout.slots[.engines], let c = layout.slots[.console] else { throw InstrumentSurfaceError.invalidFrames }
             return try .init(engines: e.size, console: c.size,
                 mainScreen: .init(x: 0, y: 0, width: 600, height: c.height),
@@ -117,7 +139,9 @@ public struct CommunityFieldScope: Equatable, Sendable {
         let shell = CockpitShellSurface(skin: supply.skin)
         try shell.configure(.init(profile: .full, closed: false, appearance: .init()))
         let composition = CockpitInstrumentComposition(mainScreen: mainScreen, shell: shell,
-            provider: CommunityCockpitInputs(), frames: {
+            provider: CommunityCockpitInputs(),
+            engineTable: EngineTableView(frame: .zero, recipeProvider: supply.recipes.engines),
+            faders: FaderBankView(frame: .zero, recipeProvider: supply.recipes.faders), frames: {
                 guard let layout = shell.surfaceLayout else { throw InstrumentSurfaceError.invalidFrames }
                 return try supply.frames(layout)
             })

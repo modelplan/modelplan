@@ -47,6 +47,18 @@ import ModelPlanField
     }
 }
 
+/// The normal leaf applies the same supplier aperture to every pointer hit, including children.
+@MainActor private final class CommunityFieldNormalView: NSStackView {
+    var containsFieldPoint: (CGPoint, CGSize) -> Bool = { _, _ in false }
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        guard !isHiddenOrHasHiddenAncestor, local.x.isFinite, local.y.isFinite,
+              bounds.contains(local), containsFieldPoint(local, bounds.size) else { return nil }
+        return super.hitTest(point)
+    }
+}
+
 /// Required production host, retained by the real cockpit composition. One existing PreferenceFile.
 @MainActor public final class CommunityCockpitField: NSObject, FieldPickerProductionHost {
     public let picker: FieldFleetPickerView
@@ -59,7 +71,8 @@ import ModelPlanField
     private let supply: CommunityCockpitSupply
     private let preferences: PreferenceFile?
     private let window: any CommunityFieldWindow
-    private let normal = NSStackView(), comparison = CommunityFieldComparison(frame: .zero)
+    private let normal = CommunityFieldNormalView(), comparison = CommunityFieldComparison(frame: .zero)
+    public var normalFieldView: NSView { normal }
     private let enlarge = NSButton(), closeButton = NSButton()
     private let status = NSTextField(wrappingLabelWithString: "")
     private let fieldStatus = NSTextField(wrappingLabelWithString: "")
@@ -73,6 +86,10 @@ import ModelPlanField
         super.init()
         binding = FieldPickerProductionBinding(view: picker, host: self, locale: .english)
         binding.onFailure = { [weak self] error in self?.showFailure(error) }
+        normal.containsFieldPoint = { [weak self] point, _ in
+            guard let scope = self?.currentScope else { return false }
+            return supply.containsFieldPoint(point, scope)
+        }
         normal.orientation = .vertical; normal.alignment = .leading
         enlarge.title = "Enlarge / 放大"; enlarge.target = self; enlarge.action = #selector(openAction); enlarge.isEnabled = false
         enlarge.setAccessibilityIdentifier("cockpit.field.enlarge")

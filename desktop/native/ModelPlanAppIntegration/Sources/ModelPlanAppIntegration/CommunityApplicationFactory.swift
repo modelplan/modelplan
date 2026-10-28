@@ -17,7 +17,7 @@ import ModelPlanSettings
         let supply = supply ?? .neutral()
         return CommunityInstrumentSurfaceProvider(openWebsite: openWebsite, makeCockpit: { main in
             try CommunityCockpitFactory.make(mainScreen: main, supply: supply, preferences: preferences, window: makeFieldWindow?() ?? CommunityFieldPanel())
-        })
+        }, makeMainScreen: { MainScreenView(recipeProvider: supply.recipes.mainScreen) })
     }
 
     public static func connectSettings(base: CommunitySettingsSession,

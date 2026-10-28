@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreText
+import ModelPlanInstruments
 import XCTest
 import ModelPlanCore
 import ModelPlanField
@@ -11,6 +13,36 @@ import ModelPlanCockpitShell
     var shown = 0, hidden = 0
     func show(content: NSView, onClose: @escaping () -> Void) { shown += 1 }
     func hide() { hidden += 1 }
+}
+/// Synthetic sizes below the neutral minimums, with no official geometry/paint or private assets.
+@MainActor private final class CompactTestSkin: CockpitShellSkin {
+    func layout(for state: CockpitSurfaceState) throws -> CockpitSurfaceLayout {
+        .init(rootSize: .init(width: 510, height: 540), drawableBounds: .init(x: 0, y: 0, width: 510, height: 540),
+            slots: [.window: .init(x: 0, y: 0, width: 510, height: 100),
+                    .engines: .init(x: 0, y: 110, width: 510, height: 220),
+                    .console: .init(x: 0, y: 340, width: 510, height: 200)], expectedStillKey: nil)
+    }
+    func backdrop(for state: CockpitSurfaceState, layout: CockpitSurfaceLayout, matchingStill: CGImage?) throws -> CGImage {
+        try NeutralCockpitShellSkin().backdrop(for: state, layout: layout, matchingStill: matchingStill)
+    }
+    func stationLayers(for state: CockpitSurfaceState, layout: CockpitSurfaceLayout) throws -> [CALayer] { [] }
+    func discardTransientResources() {}
+}
+@MainActor private final class CompactTestRecipes: EngineTableRecipeProvider, FaderBankRecipeProvider, MainScreenRecipeProvider {
+    var engines: [CGSize] = [], faders: [CGSize] = [], main: [CGSize] = []
+    func font(_ request: EngineFontRequest) throws -> CTFont { try NeutralEngineTableRecipe().font(request) }
+    func image(_ id: String) throws -> CGImage { throw EngineTableError.missingResource(id) }
+    func recipe(for presentation: EngineTablePresentation, size: CGSize) throws -> EngineTableRecipe {
+        engines.append(size); return .init(size: size, commands: [], regions: [])
+    }
+    func recipe(for presentation: FaderBankPresentation, size: CGSize) throws -> FaderBankRecipe {
+        faders.append(size); return .init(size: size, commands: [], regions: [], caps: [])
+    }
+    func recipe(for presentation: MainScreenPresentation, size: CGSize) throws -> MainScreenRecipe {
+        main.append(size); return .init(size: size, commands: [], regions: [])
+    }
+    func minimumSize(for presentation: FaderBankPresentation) -> CGSize { .init(width: 200, height: 200) }
+    func minimumSize(for presentation: MainScreenPresentation) -> CGSize { .init(width: 300, height: 200) }
 }
 @MainActor final class CommunityFieldProductionWiringTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -49,7 +81,7 @@ import ModelPlanCockpitShell
         let window = RecordingFieldWindow()
         var scopes: [[String]] = []
         let neutral = CommunityCockpitSupply.neutral()
-        let supply = CommunityCockpitSupply(skin: neutral.skin, frames: neutral.frames, still: { scope in
+        let supply = CommunityCockpitSupply(skin: neutral.skin, recipes: neutral.recipes, containsFieldPoint: neutral.containsFieldPoint, frames: neutral.frames, still: { scope in
             scopes.append(scope.admittedPublicIDs); return nil
         })
         let provider = CommunityApplicationFactory.makeSurfaces(supply: supply, preferences: preferences, makeFieldWindow: { window })
@@ -129,7 +161,7 @@ import ModelPlanCockpitShell
         defer { try? FileManager.default.removeItem(at: directory) }
         let neutral = CommunityCockpitSupply.neutral(), window = RecordingFieldWindow()
         var failStill = false
-        let supply = CommunityCockpitSupply(skin: neutral.skin, frames: neutral.frames, still: { _ in
+        let supply = CommunityCockpitSupply(skin: neutral.skin, recipes: neutral.recipes, containsFieldPoint: neutral.containsFieldPoint, frames: neutral.frames, still: { _ in
             if failStill { throw FieldPickerConnectionError.disconnected }; return nil
         })
         let provider = CommunityApplicationFactory.makeSurfaces(supply: supply,
@@ -147,9 +179,57 @@ import ModelPlanCockpitShell
         failStill = false; field.setPresented(true); try field.open()
         XCTAssertNil(field.binding.lastError)
     }
+    private func compactSupply(_ recipes: CommunityCockpitInstrumentRecipes) -> CommunityCockpitSupply {
+        .init(skin: CompactTestSkin(), recipes: recipes,
+            containsFieldPoint: { point, scope in
+                CGRect(x: 0, y: 0, width: scope.viewport.width, height: scope.viewport.height).insetBy(dx: 20, dy: 20).contains(point)
+            },
+            frames: { _ in try .init(engines: .init(width: 510, height: 220), console: .init(width: 510, height: 200),
+                mainScreen: .init(x: 210, y: 0, width: 300, height: 200), faders: .init(x: 0, y: 0, width: 200, height: 200)) },
+            still: { _ in nil })
+    }
+    func testSameFactoryInjectsAllInstrumentRecipesWithExactSupplierFrames() async throws {
+        let recipes = CompactTestRecipes()
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: compactSupply(.init(engines: recipes, faders: recipes, mainScreen: recipes)))
+        let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        defer { surface.dispose() }
+        render(surface, publication: try publication()); surface.resumePresentation()
+        let composition = try XCTUnwrap(surface.cockpitComposition)
+        XCTAssertTrue(surface.mainScreen === composition.surface.mainScreen)
+        XCTAssertTrue(surface.mainScreen.recipeProvider === recipes)
+        XCTAssertTrue(composition.surface.engineTable.recipeProvider === recipes)
+        XCTAssertTrue(composition.surface.faders.recipeProvider === recipes)
+        // Synthetic presentation delivery forces the actual recipe path without an App/Window.
+        try composition.surface.setPresentationAllowed(true)
+        XCTAssertEqual(recipes.engines.last, .init(width: 510, height: 220))
+        XCTAssertEqual(recipes.main.last, .init(width: 300, height: 200))
+        XCTAssertEqual(recipes.faders.last, .init(width: 200, height: 200))
+    }
+    func testCompactSupplierCannotSilentlyRelaxTheNeutralMinimum() async throws {
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: compactSupply(.neutral()))
+        let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        defer { surface.dispose() }
+        render(surface, publication: try publication()); surface.resumePresentation()
+        let composition = try XCTUnwrap(surface.cockpitComposition)
+        XCTAssertThrowsError(try composition.surface.setPresentationAllowed(true))
+        XCTAssertNil(composition.surface.mainScreen.recipe)
+    }
+    func testActualNormalLeafUsesSupplierApertureBeforeChildHits() async throws {
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: compactSupply(.neutral()))
+        let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        defer { surface.dispose() }
+        render(surface, publication: try publication()); surface.resumePresentation()
+        let field = try XCTUnwrap(surface.cockpitComposition?.field)
+        let leaf = field.normalFieldView
+        XCTAssertTrue(leaf.isFlipped)
+        let outside = leaf.convert(.init(x: 1, y: 1), to: leaf.superview)
+        let inside = leaf.convert(.init(x: leaf.bounds.midX, y: leaf.bounds.midY), to: leaf.superview)
+        XCTAssertNil(leaf.hitTest(outside), "The rectangular slot must not admit clipped supplier corners")
+        XCTAssertNotNil(leaf.hitTest(inside))
+    }
     func testMissingSupplierPortFailsActualFactoryAndCannotClaimConnected() async throws {
         let neutral = CommunityCockpitSupply.neutral()
-        let supply = CommunityCockpitSupply(skin: neutral.skin, frames: { _ in throw FieldPickerConnectionError.disconnected }, still: neutral.still)
+        let supply = CommunityCockpitSupply(skin: neutral.skin, recipes: neutral.recipes, containsFieldPoint: neutral.containsFieldPoint, frames: { _ in throw FieldPickerConnectionError.disconnected }, still: neutral.still)
         let provider = CommunityApplicationFactory.makeSurfaces(supply: supply, makeFieldWindow: { RecordingFieldWindow() })
         let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
         defer { surface.dispose() }

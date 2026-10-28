@@ -22,14 +22,16 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var settings: SettingsApplication?
     private weak var help: InstrumentHelpComposition?
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
+    private let makeMainScreen: (@MainActor () -> MainScreenView)?
     private let makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)?
     public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in },
-                makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)? = nil) {
-        self.openWebsite = openWebsite; self.makeCockpit = makeCockpit
+                makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)? = nil,
+                makeMainScreen: (@MainActor () -> MainScreenView)? = nil) {
+        self.openWebsite = openWebsite; self.makeCockpit = makeCockpit; self.makeMainScreen = makeMainScreen
     }
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
-        let surface = CommunityInstrumentView(openWebsite: openWebsite)
+        let surface = CommunityInstrumentView(mainScreen: makeMainScreen?(), openWebsite: openWebsite)
         if let makeCockpit {
             do {
                 let composition = try makeCockpit(surface.mainScreen)
@@ -63,7 +65,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 /// This is not the complete four-region cockpit, Dock, renderer or an official appearance provider.
 @MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface, CommunityPublicCatalogueConsumer {
     public let view: NSView = InstrumentContainer()
-    public let mainScreen = MainScreenView()
+    public let mainScreen: MainScreenView
     public let modelPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     public private(set) var orderedModelIDs: [String] = []
     public private(set) var selectedModelID: String?
@@ -92,8 +94,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var needsSelection = false
     public var instrumentLanguage: InstrumentLanguage { settings?.effective.language == .english ? .english : .chinese }
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
-    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
-        self.openWebsite = openWebsite
+    public init(mainScreen suppliedMainScreen: MainScreenView? = nil, openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
+        self.mainScreen = suppliedMainScreen ?? MainScreenView(); self.openWebsite = openWebsite
         super.init()
         // Process-local AppKit focus notifications; no activation, event monitor or global shortcut.
         NotificationCenter.default.addObserver(self,selector:#selector(applicationLostFocus(_:)),
