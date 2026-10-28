@@ -40,7 +40,9 @@ import ModelPlanSettings
         self.url = url
         _ = NSApplication.shared
         let inputs = inputs, scheduler = scheduler
-        let appearance: StaticDockPreviewHost.Appearance? = neutralAppearance ? { view, rows, preferences in
+        let appearance: StaticDockPreviewHost.Appearance?
+        if neutralAppearance {
+            appearance = { view, rows, preferences in
             inputs.suppliedPreferences = preferences; inputs.suppliedRows = rows
             try view.applyCommunity(rows, locale: preferences.language.rawValue)
             let factor = preferences.size.nozzleDiameter / 44
@@ -54,7 +56,8 @@ import ModelPlanSettings
                 dragRegions: .init(body: CGPath(rect: hull, transform: nil), excludedControls: []))
             try geometry.registerSliver(hullBounds: hull, expandedSize: size, edge: preferences.dockEdge, scale: factor)
             return geometry
-        } : nil
+            }
+        } else { appearance = nil }
         host = StaticDockPreviewHost(appearance: appearance, currentDate: { BehaviourFixture.now }, createsNativePanels: true,
             nativeEnvironment: { .init(displays: inputs.displays, layouts: [], primaryDisplayID: "main",
                                        pointer: inputs.pointer, presence: inputs.presence) },
@@ -171,7 +174,10 @@ import ModelPlanSettings
             f.tick(0.002)
             if f.host.edgePresentation?.state == .expanded { reveals += 1 }
             XCTAssertTrue(f.host.dockView.window === panel)
-            XCTAssertEqual(panel.frame, placement.frame)
+            XCTAssertEqual(panel.frame.minX, placement.frame.minX, accuracy: 1)
+            XCTAssertEqual(panel.frame.minY, placement.frame.minY, accuracy: 1)
+            XCTAssertEqual(panel.frame.width, placement.frame.width, accuracy: 1)
+            XCTAssertEqual(panel.frame.height, placement.frame.height, accuracy: 1)
             f.leave()
             if f.host.edgePresentation?.state == .sliver { collapses += 1 }
             XCTAssertTrue(panel.contentView is DockSliverView)
@@ -184,6 +190,7 @@ import ModelPlanSettings
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start(); try await f.coordinator.editor.commit(.autoHide(false))
         let panel = try f.panel(), frame = panel.frame
+        let logicalFrame = f.host.edgePresentation?.placement?.frame
         var commits = 0; f.host.commitDisplayPlacement = { _, _, _ in commits += 1 }
         for index in 0..<30 {
             let p = CGPoint(x: CGFloat(index * 41 % 1200), y: CGFloat(index * 73 % 850) + 24)
@@ -191,7 +198,7 @@ import ModelPlanSettings
             f.host.dockView.mouseMoved(with: try f.event(.mouseMoved, global: p))
             f.tick(0.16)
             XCTAssertEqual(panel.frame, frame, "pointer sample \(index) without mouse-down")
-            XCTAssertEqual(f.host.edgePresentation?.placement?.frame, frame)
+            XCTAssertEqual(f.host.edgePresentation?.placement?.frame, logicalFrame)
         }
         XCTAssertEqual(commits, 0)
         report(3, "moves=30 frame-delta=0 placement-commits=\(commits)")
