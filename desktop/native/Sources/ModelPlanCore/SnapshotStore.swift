@@ -109,20 +109,28 @@ public struct StoreDiagnostics: Sendable {
         if time.elapsed >= publicationDue { enqueue(.publication) }
         onChange?(); kick(); arm()
     }
-    public func view() -> JoinedSnapshot? {
+    public func view() -> JoinedSnapshot? { view(at: time.wall) }
+    private func view(at now: Date) -> JoinedSnapshot? {
         guard let personal else { return nil }
-        if let deadline = knownDeadline, deadline <= time.wall { expiryRefreshNeeded = true }
-        var projection = PersonalProjection.evaluate(personal, now: time.wall, ledger: &ledger)
+        if let deadline = knownDeadline, deadline <= now { expiryRefreshNeeded = true }
+        var projection = PersonalProjection.evaluate(personal, now: now, ledger: &ledger)
         knownDeadline = projection.nextDeadline
         if suspended || !personalUsable { projection = projection.stale(reason: suspended ? "suspended" : "personal-read-unavailable") }
         return JoinedSnapshot.make(personal: personal, presentation: projection, publication: publication, publicUsable: publicUsable)
     }
     /// A dated public catalog is independent of account availability and of the scored join.
-    public func modelSelectionFeeds() -> ModelSelectionFeeds {
-        let current = view()
-        return ModelSelectionFeeds(publication: publication, personal: personal,
+    public func modelSelectionFeeds() -> ModelSelectionFeeds { selectionFeeds(for: view()) }
+    private func selectionFeeds(for current: JoinedSnapshot?) -> ModelSelectionFeeds {
+        ModelSelectionFeeds(publication: publication, personal: personal,
             personalUsable: current?.presentation.actionable == true,
             publicIsLastGood: !publicUsable || diagnostics.publicationWarning)
+    }
+    /// Capture all host/selector facts before any rendering callout can change store state.
+    public func observation() -> SnapshotObservation {
+        let now = time.wall
+        let current = view(at: now)
+        return SnapshotObservation(observedAt: now, snapshot: current,
+            selectionFeeds: selectionFeeds(for: current), diagnostics: diagnostics)
     }
     /// Test/termination hook: cancellation is complete only after this returns.
     public func stopAndWait() async { suspend(); await worker?.value }
