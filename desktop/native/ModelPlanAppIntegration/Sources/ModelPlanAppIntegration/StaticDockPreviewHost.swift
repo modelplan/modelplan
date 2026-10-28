@@ -447,13 +447,20 @@ public struct StaticDockGeometry {
     private func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
         if let model {
+            let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
+            if let emptyStatus {
+                let status = NSMenuItem(title: emptyStatus, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                status.setAccessibilityIdentifier("dock.empty-reader-status-menu")
+                menu.addItem(status)
+            }
             for (index, text) in CommunityReaderStatusPresentation.menuLines(model, english: preferences.language == .english).enumerated() {
                 let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
                 status.isEnabled = false
                 status.setAccessibilityIdentifier("dock.reader-status.\(index)")
                 menu.addItem(status)
             }
-            if !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
+            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
         }
         for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
