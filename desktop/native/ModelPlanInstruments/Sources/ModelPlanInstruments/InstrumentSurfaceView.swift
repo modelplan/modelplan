@@ -71,7 +71,7 @@ import AppKit
             if faders.frame != frames.faders { faders.frame = frames.faders }
             guard current(token) else { return }
             try engineTable.update(columns: input.columns, identities: input.identities, language: input.language,
-                                   now: input.now, scope: input.scope)
+                                   now: input.now, scope: input.scope, membershipKnowledge: input.membershipKnowledge)
             guard current(token) else { return }
             try mainScreen.update(inputs: input.channels, selection: input.selection, publication: input.publication,
                 publicationUsable: input.publicationUsable, language: input.language, compact: input.compact,
@@ -79,7 +79,8 @@ import AppKit
             guard current(token) else { return }
             try faders.update(inputs: input.channels, publicationUsable: input.publicationUsable,
                 language: input.language, compact: input.compact, now: input.now, favoriteIDs: input.favoriteIDs,
-                selectedModelID: mainScreen.controller.navigation.selectedModelID, showProjectNames: input.showProjectNames)
+                selectedModelID: mainScreen.controller.navigation.selectedModelID, showProjectNames: input.showProjectNames,
+                catalogueOnly: input.selection?.publicDefaultFallback == true)
             guard current(token) else { return }
             // nil in update is "no override"; mirror explicit removals through the existing setter.
             try faders.setTrial(mainScreen.controller.trial)

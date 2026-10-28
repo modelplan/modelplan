@@ -42,9 +42,10 @@ import CoreText
 
     public func update(inputs: [FaderChannelInput], publicationUsable: Bool, language: InstrumentLanguage, compact: Bool,
                        now: Date, favoriteIDs: [String]? = nil, selectedModelID: String? = nil,
-                       trial: FaderTrial? = nil, showProjectNames: Bool = true) throws {
+                       trial: FaderTrial? = nil, showProjectNames: Bool = true, catalogueOnly: Bool = false) throws {
         var state = controller
-        let changes = state.update(inputs: inputs, publicationUsable: publicationUsable, favoriteIDs: favoriteIDs, selectedModelID: selectedModelID)
+        let changes = state.update(inputs: inputs, publicationUsable: publicationUsable, favoriteIDs: favoriteIDs,
+                                   selectedModelID: selectedModelID, catalogueOnly: catalogueOnly)
         if publicationUsable, let trial, !state.setTrial(trial) { throw EngineTableError.invalidRecipe }
         try publish(state, language: language, compact: compact, now: now, showProjectNames: showProjectNames)
         changes.forEach { onIntent?($0) }
@@ -58,7 +59,8 @@ import CoreText
         let p = FaderBankPresentation(inputs: state.inputs, requestedBank: state.bank, selectedModelID: state.selectedModelID,
             favoriteIDs: state.favoriteIDs, trial: state.trial, sourceModelID: state.sourceHighlightID, draggingModelID: state.draggingModelID, dragPosition: state.dragPosition,
             previewModelID: state.previewModelID, previewEffort: state.previewEffort,
-            publicationUsable: state.publicationUsable, language: language, compact: compact, showProjectNames: showProjectNames, now: now)
+            publicationUsable: state.publicationUsable, language: language, compact: compact, showProjectNames: showProjectNames,
+            now: now, catalogueOnly: state.catalogueOnly)
         if !force, p == presentation, recipe?.size == bounds.size, surfaceScale == scale {
             controller = state; self.now = now; return
         }
@@ -334,7 +336,7 @@ import CoreText
         let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
     }
     private func beginFaderRest(at point: CGPoint) {
-        guard hintPointerEligible(), controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
+        guard controller.publicationUsable, hintPointerEligible(), controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
               let region = recipe?.regions.first(where: { $0.role == .slider && $0.enabled && $0.rect.contains(point) }),
               let id = region.modelID else { return }
         let at = elapsed(); guard at.isFinite else { return }

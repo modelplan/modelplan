@@ -46,12 +46,14 @@ public struct InstrumentSurfaceInput: Sendable {
     public let favoriteIDs: [String]
     public let pages: [MainScreenPageContent], sourcedBodies: [MainScreenSourcedBody]
     public let readers: [InstrumentReaderObservation]
+    public let membershipKnowledge: InstrumentMembershipKnowledge
     public init(observationID: String, columns: [EngineColumn], identities: [String: EngineTableIdentity] = [:],
                 channels: [FaderChannelInput], selection: InjectedModelSelection?, publication: SelectionPublication?,
                 publicationUsable: Bool, scope: InstrumentScope, language: InstrumentLanguage, now: Date,
                 compact: Bool, favoriteIDs: [String] = [], showProjectNames: Bool = true,
                 pages: [MainScreenPageContent] = [], sourcedBodies: [MainScreenSourcedBody] = [],
-                readers: [InstrumentReaderObservation] = []) throws {
+                readers: [InstrumentReaderObservation] = [],
+                membershipKnowledge: InstrumentMembershipKnowledge = .unknown) throws {
         guard !observationID.isEmpty, now.timeIntervalSinceReferenceDate.isFinite,
               Set(columns.map(\.id)).count == columns.count,
               Set(channels.map { $0.model.id }).count == channels.count,
@@ -76,5 +78,6 @@ public struct InstrumentSurfaceInput: Sendable {
         self.publicationUsable = publicationUsable; self.scope = scope; self.language = language; self.now = now
         self.compact = compact; self.favoriteIDs = favoriteIDs; self.showProjectNames = showProjectNames
         self.pages = pages; self.sourcedBodies = sourcedBodies; self.readers = readers
+        self.membershipKnowledge = membershipKnowledge
     }
 }
