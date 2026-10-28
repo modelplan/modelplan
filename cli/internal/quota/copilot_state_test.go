@@ -304,14 +304,23 @@ func TestCopilotLegacyNativeRecoveryKeepsBackoff(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("auth recovery bypassed backoff")
 	}
-	if err := RefreshNative(ctx, p, now.Add(20*time.Minute)); err != nil {
+	// The dispatcher retains its own thirty-minute failure backoff even when
+	// the runtime's shorter gate has expired.
+	if err := RefreshNative(ctx, p, now.Add(39*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if st := copilotNativeStatus(t, p, now.Add(20*time.Minute)); st.Status != "ok" {
+	after, _ = os.ReadFile(log)
+	if !bytes.Equal(before, after) {
+		t.Fatal("shared native backoff bypassed")
+	}
+	if err := RefreshNative(ctx, p, now.Add(40*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if st := copilotNativeStatus(t, p, now.Add(40*time.Minute)); st.Status != "ok" {
 		t.Fatal(st)
 	}
 	s := loadCopilotState(p.Cache)
-	if s.Good == nil || !s.Good.ObservedAt.Equal(now.Add(20*time.Minute)) || s.Availability != "ok" {
+	if s.Good == nil || !s.Good.ObservedAt.Equal(now.Add(40*time.Minute)) || s.Availability != "ok" {
 		t.Fatal(s)
 	}
 }
