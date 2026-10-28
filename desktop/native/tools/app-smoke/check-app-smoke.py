@@ -28,9 +28,11 @@ def assertions(report, helper, home, *, expect_unverified=False):
     api = report.get('consentAPIAvailable')
     status = report.get('firstRunConnectionStatus')
     reason = report.get('connectionAvailabilityReason')
+    # Raw identifiers use ASCII boundaries so adjacent CJK prose cannot hide them.
     human_status = (isinstance(status, str) and bool(status.strip())
                     and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', status.strip()) is None
-                    and re.search(r'\bcomponent_?(?:missing|updating|unverified)\b', status, re.IGNORECASE) is None
+                    and re.search(r'\bcomponent_?(?:missing|updating|unverified)\b', status,
+                                  re.IGNORECASE | re.ASCII) is None
                     and 'unavailable: unavailable' not in status.lower())
     help_text = report.get('cliHelp', '')
     # Global flags are printed even for unknown subcommands. Require an advertised command

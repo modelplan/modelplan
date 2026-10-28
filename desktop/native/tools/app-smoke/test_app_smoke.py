@@ -91,6 +91,22 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.report['firstRunConnectionStatus'] = '此构建的授权组件尚未核验，请在关于中检查 CLI 支持。'
         self.assertTrue(all(self.results(expect_unverified=True).values()))
 
+    def test_raw_codes_adjoining_chinese_are_rejected(self):
+        self.unverified_report()
+        for status in [
+            '此构建componentUnverified尚未核验，请在关于中检查 CLI 支持。',
+            'componentUnverified此构建尚未核验，请在关于中检查 CLI 支持。',
+            '此构建尚未核验，请在关于中检查 CLI 支持componentUnverified',
+            '此构建component_unverified尚未核验，请在关于中检查 CLI 支持。',
+            'component_unverified此构建尚未核验，请在关于中检查 CLI 支持。',
+            '此构建尚未核验，请在关于中检查 CLI 支持component_unverified',
+        ]:
+            with self.subTest(status=status):
+                self.report['firstRunConnectionStatus'] = status
+                result = self.results(expect_unverified=True)
+                self.assertFalse(result['first-run-status'])
+                self.assertFalse(result['unverified-status'])
+
     def test_unverified_ci_cannot_pass_with_verified_or_available_consent(self):
         self.assertFalse(self.results(expect_unverified=True)['unverified-consent'])
         self.unverified_report()
