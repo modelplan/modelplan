@@ -54,13 +54,17 @@ public enum SettingsConnectionPresentation {
     }
     public static func confirmation(_ action: SettingsConnectionAction) -> SettingsText {
         switch action {
-        case .applyStandardConsent(let tools, let denied):
+        case .applyStandardConsent(let tools, let denied, let keychain):
             if !denied.isEmpty {
                 let names = denied.map(\.title).joined(separator: ", ")
                 return .init("Revoke access and Forget cached readings for \(names)? This deletes scoped readings; it is separate from choosing tools to allow.",
                              "撤销 \(names) 的权限并忘记缓存读数？这会删除其范围内读数，与选择允许的工具分开。")
             }
             let names = tools.map(\.title).joined(separator: ", ")
+            if !keychain.isEmpty {
+                return .init("Allow shared usage reading for \(names), including Claude Code Keychain access? macOS may ask for approval. Omitted tools and other recorded Keychain choices stay unchanged; browser sessions are excluded.",
+                             "允许共享读取 \(names) 的用量，并允许 Claude Code 访问钥匙串？macOS 可能请求批准。未选择工具和其他已记录的钥匙串选择保持不变，不包括浏览器会话。")
+            }
             return .init("Allow shared usage reading for \(names)? These choices request consent, not activation. Omitted tools and recorded Keychain choices stay unchanged; browser sessions are excluded.",
                          "允许共享读取 \(names) 的用量？这些选择仅请求授权，不表示已启用读取；未选择工具和已记录的钥匙串选择保持不变，不包括浏览器会话。")
         case .connect(let tool, .browserSession):

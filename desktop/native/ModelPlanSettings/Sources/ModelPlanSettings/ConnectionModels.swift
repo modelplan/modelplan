@@ -47,17 +47,18 @@ public struct SettingsConnectionToolState: Equatable, Sendable {
     public var beta: Bool
     public var consentEligible: Bool?
     public var keychain: SettingsRecordedKeychain
+    public var keychainEligible: Bool
     public var providerHosts: [String]
     public init(tool: SettingsConnectionTool, presence: SettingsToolPresence = .unknown,
                 authorization: SettingsSharedAuthorization = .unknown,
                 connection: SettingsToolConnectionState = .unknown, quota: SettingsToolQuotaState = .unknown,
                 support: SettingsToolSupport = .unknown, binding: SettingsSubscriptionBinding = .unknown,
                 access: SettingsConnectionAccess = .standard, beta: Bool = false, consentEligible: Bool? = nil,
-                keychain: SettingsRecordedKeychain = .unknown, providerHosts: [String] = []) {
+                keychain: SettingsRecordedKeychain = .unknown, keychainEligible: Bool = false, providerHosts: [String] = []) {
         self.tool = tool; self.presence = presence; self.authorization = authorization
         self.connection = connection; self.quota = quota; self.support = support
         self.binding = binding; self.access = access; self.beta = beta; self.consentEligible = consentEligible
-        self.keychain = keychain; self.providerHosts = providerHosts
+        self.keychain = keychain; self.keychainEligible = keychainEligible; self.providerHosts = providerHosts
     }
     /// Draft selection is not a grant, including when detect/preview says selected=true.
     public var canRequestConnection: Bool { presence == .detected && (consentEligible ?? (support != .detectedOnly && support != .unknown)) }
@@ -168,7 +169,7 @@ public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)
     case disconnect(SettingsConnectionTool)
     case installPlugin(SettingsPluginTool)
-    case applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool])
+    case applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], keychainAllow: [SettingsConnectionTool] = [])
 }
 public struct SettingsConnectionConfirmation: Equatable, Sendable {
     public let id: UUID
@@ -180,9 +181,11 @@ public struct SettingsConnectionRequestContext: Equatable, Sendable {
     /// The host must revalidate this against its shared consent before admitting an effect.
     public let expectedConsentGeneration: UInt64?
     public let consentTextVersion: Int?
-    public init(id: UUID, expectedConsentGeneration: UInt64?, consentTextVersion: Int? = nil) {
+    /// Explicit per-request opt-in only; omission preserves the recorded Keychain choice.
+    public let keychainAllow: [SettingsConnectionTool]
+    public init(id: UUID, expectedConsentGeneration: UInt64?, consentTextVersion: Int? = nil, keychainAllow: [SettingsConnectionTool] = []) {
         self.id = id; self.expectedConsentGeneration = expectedConsentGeneration
-        self.consentTextVersion = consentTextVersion
+        self.consentTextVersion = consentTextVersion; self.keychainAllow = keychainAllow
     }
 }
 

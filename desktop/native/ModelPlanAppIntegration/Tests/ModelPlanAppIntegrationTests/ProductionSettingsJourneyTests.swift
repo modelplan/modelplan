@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 import ModelPlanCore
 import ModelPlanDock
-import ModelPlanSettings
+@testable import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class ProductionSettingsJourneyTests: XCTestCase {
@@ -13,17 +13,21 @@ import ModelPlanSettings
     private final class Port: CommunityConsentCommandPort {
         var availability: SettingsConnectionAvailability = .unverified
         var reads = 0, grants = 0, granted = false
+        var toolID = "codex", keychainState = "unset"
+        var expectedKeychain: [String: String] = [:]
+        var recordKeychain = true
         func readCanonicalConsent() async throws -> ConsentPreview {
             reads += 1
             return try FeedDecoder.consentPreview(Data("""
-            {"generation":\(granted ? 2 : 1),"consentTextVersion":2,"mode":"automatic","consentText":{"en":"Synthetic consent","zh":"合成授权"},"tools":[{"id":"codex","displayName":"Codex","accessClass":"standard","detected":true,"allowed":\(granted),"backend":"native","readerId":"native:codex","keychain":"unset","hosts":["example.test"]}]}
+            {"generation":\(granted ? 2 : 1),"consentTextVersion":2,"mode":"automatic","consentText":{"en":"Synthetic consent","zh":"合成授权"},"tools":[{"id":"\(toolID)","displayName":"Synthetic tool","accessClass":"standard","detected":true,"allowed":\(granted),"backend":"native","readerId":"native:\(toolID)","keychain":"\(keychainState)","hosts":["example.test"]}]}
             """.utf8))
         }
         func applyConsentJSON(_ payload: Data) async throws {
             let value = try XCTUnwrap(JSONSerialization.jsonObject(with: payload) as? [String: Any])
-            XCTAssertEqual(value["allow"] as? [String], ["codex"])
+            XCTAssertEqual(value["allow"] as? [String], [toolID])
             XCTAssertEqual(value["deny"] as? [String], [])
-            XCTAssertEqual((value["keychain"] as? [String: String])?.count, 0)
+            XCTAssertEqual(value["keychain"] as? [String: String], expectedKeychain)
+            if recordKeychain, expectedKeychain["claude"] == "allow" { keychainState = "allowed" }
             grants += 1; granted = true
         }
     }
@@ -96,6 +100,77 @@ import ModelPlanSettings
         XCTAssertEqual(port.reads, 0); XCTAssertEqual(port.grants, 0)
         XCTAssertEqual(firstRun.panes.count, 1)
         entry.flow.dispose()
+    }
+    private func control(_ view: NSView, _ id: String) throws -> ConnectionButton {
+        func find(_ view: NSView) -> ConnectionButton? {
+            if let button = view as? ConnectionButton, button.accessibilityIdentifier() == id { return button }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return try XCTUnwrap(find(view), "Missing actual mounted control: " + id)
+    }
+    func testClaudeKeychainChoiceMountsFromActualFactoryAndOnlyExplicitOptInIsSent() async throws {
+        for recordsChoice in [true, false] {
+            let app = SettingsApplicationCoordinator(store: try store(), apply: { _ in })
+            let port = Port(); port.toolID = "claude"; port.recordKeychain = recordsChoice
+            port.expectedKeychain = ["claude": "allow"]
+            port.availability = .init(canInspect: true, canGrant: true, canForget: true)
+            let firstRun = Surface()
+            var mounted: SettingsConnectionsView?
+            let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {})
+            let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(port),
+                placementSource: Placement(), canPresent: { true }, makeFirstRun: { editor in
+                    XCTAssertTrue(editor === app.editor)
+                    mounted = SettingsConnectionsView(editor: editor, firstRun: true)
+                    return firstRun
+                })
+            await entry.restorePreferences()
+            let view = try XCTUnwrap(mounted)
+            let choice = try control(view, "connections.keychain.claude")
+            XCTAssertEqual(choice.state, .off); XCTAssertEqual(port.grants, 0)
+            choice.invoke?()
+            XCTAssertEqual(try control(view, "connections.keychain.claude").state, .on)
+            XCTAssertEqual(port.grants, 0, "Checking is a draft, never a Keychain read or grant")
+            try control(view, "connections.allowSelected").invoke?()
+            guard case .awaitingConfirmation(let confirmation) = app.editor.connections.phase else { return XCTFail("Missing exact confirmation") }
+            XCTAssertTrue(SettingsConnectionPresentation.confirmation(confirmation.action).english.contains("Keychain"))
+            XCTAssertEqual(port.grants, 0)
+            try control(view, "connections.confirm").invoke?()
+            for _ in 0..<1000 where port.grants == 0 || app.editor.connections.isBusy { await Task.yield() }
+            XCTAssertEqual(port.grants, 1); XCTAssertEqual(port.reads, 3)
+            XCTAssertEqual(app.editor.connections.snapshot?.tools.first?.keychain, recordsChoice ? .allowed : .unset)
+            XCTAssertEqual(app.editor.connections.phase, recordsChoice ? .idle : .failed(.invalidResponse))
+            await app.editor.connections.confirm(confirmation.id); XCTAssertEqual(port.grants, 1)
+            XCTAssertNil(view.window, "Construction proof must not open a real window")
+            entry.flow.dispose()
+        }
+    }
+    func testClaudeKeychainChangedDraftAndUncheckedNormalSettingsNeverGrantOrDenyIt() async throws {
+        let app = SettingsApplicationCoordinator(store: try store(), apply: { _ in })
+        await app.reload()
+        _ = try await app.editor.completeFirstRun(options: .init(preferences: app.editor.snapshot!.preferences),
+            action: .done, host: .standalone, expectedRevision: app.editor.snapshot!.revision)
+        let port = Port(); port.toolID = "claude"; port.keychainState = "allowed"
+        port.availability = .init(canInspect: true, canGrant: true, canForget: true)
+        let surface = Surface(); var mounted: SettingsConnectionsView?
+        let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { editor in
+            mounted = SettingsConnectionsView(editor: editor); return surface
+        })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(port),
+            placementSource: Placement(), canPresent: { true }, makeFirstRun: { _ in XCTFail("Completed setup must use normal Settings"); return Surface() })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences(); await entry.flow.perform(.connections)
+        let view = try XCTUnwrap(mounted)
+        XCTAssertEqual(try control(view, "connections.keychain.claude").state, .off, "Recorded allow never becomes a new checked intention")
+        try control(view, "connections.keychain.claude").invoke?()
+        try control(view, "connections.connect.claude").invoke?()
+        guard case .awaitingConfirmation(let old) = app.editor.connections.phase else { return XCTFail("Missing confirmation") }
+        try control(view, "connections.keychain.claude").invoke?()
+        await app.editor.connections.confirm(old.id); XCTAssertEqual(port.grants, 0, "Editing the checkbox invalidates its old confirmation")
+        try control(view, "connections.connect.claude").invoke?()
+        try control(view, "connections.confirm").invoke?()
+        for _ in 0..<1000 where port.grants == 0 || app.editor.connections.isBusy { await Task.yield() }
+        XCTAssertEqual(port.grants, 1); XCTAssertEqual(port.keychainState, "allowed", "An unchecked choice is omitted, never deny/Forget")
+        XCTAssertEqual(app.editor.connections.phase, .idle); XCTAssertNil(view.window)
     }
     func testActualHostThroughSameFactoryKeepsObservedPlacementSynchronizedWithoutPersistingRecovery() async throws {
         let store = try store()

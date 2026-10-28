@@ -87,4 +87,27 @@ final class ConsentContractTests: XCTestCase {
         XCTAssertEqual(String(data: try JSONEncoder().encode(CommunityConsentKeychainDecision.allow), encoding: .utf8), "\"allow\"")
         XCTAssertEqual(String(data: try JSONEncoder().encode(CommunityConsentKeychainDecision.deny), encoding: .utf8), "\"deny\"")
     }
+    func testExplicitClaudeKeychainAllowsOnlySupportedSelectedNativeTool() throws {
+        let request = SettingsConnectionRequestContext(id: UUID(), expectedConsentGeneration: 12, consentTextVersion: 3, keychainAllow: [.claude])
+        let facts = try preview([tool("claude")])
+        XCTAssertTrue(try facts.projecting().tools[0].keychainEligible)
+        let payload = try CommunityConsentGrantPayload(preview: facts, allow: [.claude], deny: [], request: request)
+        XCTAssertEqual(payload.keychain["claude"], .allow)
+        for (allow, deny) in [([SettingsConnectionTool](), [SettingsConnectionTool.claude]), ([.codex], [])] {
+            XCTAssertThrowsError(try CommunityConsentGrantPayload(preview: facts, allow: allow, deny: deny, request: request))
+        }
+        for value in [tool("claude", access: .browserSession), tool("claude", detected: false), tool(),
+                      CommunityConsentToolFacts(id: "claude", displayName: "Synthetic", accessClass: .standard,
+                          detected: true, allowed: false, backend: "codexbar", readerId: "codexbar:claude", keychain: .unset)] {
+            let preview = try self.preview([value])
+            XCTAssertFalse(try preview.projecting().tools[0].keychainEligible)
+            XCTAssertThrowsError(try CommunityConsentGrantPayload(preview: preview, allow: [.claude], deny: [], request: request))
+        }
+        var intent = SettingsConnectionIntent(snapshot: try facts.projecting())
+        XCTAssertTrue(intent.orderedKeychainTools.isEmpty)
+        intent.selectKeychain(.codex, enabled: true); XCTAssertTrue(intent.orderedKeychainTools.isEmpty)
+        intent.selectKeychain(.claude, enabled: true); XCTAssertEqual(intent.orderedKeychainTools, [.claude])
+        intent.select(.claude, enabled: false); XCTAssertTrue(intent.orderedKeychainTools.isEmpty)
+    }
+
 }
