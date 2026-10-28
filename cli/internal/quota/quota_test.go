@@ -417,3 +417,21 @@ func TestResetFreshnessAcrossSources(t *testing.T) {
 		})
 	}
 }
+
+func TestDeclaredPlanRegionPreserved(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "local.json")
+	if err := DeclarePlan(path, "synthetic-pro", "legacy", false, "china"); err != nil {
+		t.Fatal(err)
+	}
+	got := DeclaredPlans(path, time.Now())
+	if len(got) != 1 || got[0].Region != "china" || got[0].Generation != "legacy" {
+		t.Fatalf("declared=%+v", got)
+	}
+	if err := DeclarePlan(path, "synthetic-pro", "new", false); err != nil {
+		t.Fatal(err)
+	}
+	got = DeclaredPlans(path, time.Now())
+	if len(got) != 1 || got[0].Region != "china" {
+		t.Fatalf("region lost=%+v", got)
+	}
+}

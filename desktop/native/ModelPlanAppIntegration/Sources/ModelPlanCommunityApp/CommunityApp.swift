@@ -13,7 +13,6 @@ import ModelPlanCore
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        // Only a consistent containing bundle for the reviewed release may expose the consent API.
         let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
@@ -26,8 +25,7 @@ import ModelPlanCore
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
-            var context = SettingsPageContext()
-            if consent.availability.canInspect { context.about.cliVersion = CommunityConsentBundleIdentity.version }
+            let context = CommunityApplicationFactory.makeSettingsContext(bundle: Bundle.main.bundleURL, availability: consent.availability)
             let application = SettingsApplicationCoordinator(store: store, context: context,
                 environment: SettingsWindowController.systemEnvironment()) { transaction in
                 dock.apply(transaction)
@@ -64,8 +62,8 @@ import ModelPlanCore
                     surfaces.bindHelp(help)
                     return help
                 })
-            return try CommunityApplicationFactory.connectSettings(base: base, application: application,
-                backend: backend, placementSource: dock, canPresent: { [weak gate] in gate?.canPresent == true })
+            return try CommunityApplicationFactory.connectSettings(base: base, application: application, backend: backend, placementSource: dock,
+                canPresent: { [weak gate] in gate?.canPresent == true })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }

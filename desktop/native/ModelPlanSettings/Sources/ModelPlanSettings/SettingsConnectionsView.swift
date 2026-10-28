@@ -64,13 +64,26 @@ import AppKit
             addArrangedSubview(button(.init("Check component in About", "在关于中检查组件"), id: "connections.componentHelp",
                 enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
         } else { label(SettingsConnectionPresentation.status(controller.phase)) }
+        let cleanupReported = !(controller.snapshot?.pendingCleanupTools.isEmpty ?? true)
+        let cleanupUnverified = controller.phase == .failed(.cleanupReadbackUnavailable)
+        if cleanupReported || cleanupUnverified {
+            label(.init("The last Forget reported unfinished cache cleanup. The app cannot verify manual cookie cleanup. Read the CLI disconnect instructions; any credential-related approval stays separate. A later explicit Forget can verify completion.",
+                        "上次忘记读数报告缓存清理未完成；应用无法核验手动cookie清理。请阅读CLI disconnect说明，任何凭据相关批准都需单独确认；随后可再次主动确认忘记读数来核验完成情况。"))
+            addArrangedSubview(button(.init("View manual cleanup instructions in About", "在关于中查看手动清理说明"), id: "connections.cleanupHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        }
+        if case .failed = controller.phase, !cleanupReported && !cleanupUnverified {
+            addArrangedSubview(button(.init("Check component and instructions in About", "在关于中检查组件与说明"), id: "connections.requestHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        }
         if preferenceFailed { label(.init("Could not save visibility. The previous setting is retained.", "无法保存可见性；已保留原设置。")) }
         addArrangedSubview(button(.init("Check detected tools", "检查已检测工具"), id: "connections.detect",
                                   enabled: controller.availability.canInspect && !controller.isBusy) { [weak self] in
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
-            label(.init("Canonical reading mode: " + snapshot.mode.rawValue, "规范读取模式：" + snapshot.mode.rawValue))
+            let mode = SettingsConnectionPresentation.readingMode(snapshot.mode)
+            label(.init("Usage reading mode: " + mode.english, "用量读取模式：" + mode.chinese))
             if let preview = snapshot.consentPreview { label(preview.notice) }
             if intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }

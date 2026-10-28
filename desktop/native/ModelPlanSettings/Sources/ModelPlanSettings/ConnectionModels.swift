@@ -102,9 +102,12 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
     public let unrecognizedTools: [SettingsUnrecognizedTool]
     public let consentPreview: SettingsConsentPreview?
     public let mode: SettingsReadingMode
+    /// Matched receipt metadata only; never evidence of current permission or completed deletion.
+    public let pendingCleanupTools: Set<SettingsConnectionTool>
     public init(consentGeneration: UInt64? = nil, tools: [SettingsConnectionToolState] = [],
                 subscriptions: [SettingsVerifiedSubscription] = [], unrecognizedTools: [SettingsUnrecognizedTool] = [],
-                consentPreview: SettingsConsentPreview? = nil, mode: SettingsReadingMode = .unknown) throws {
+                consentPreview: SettingsConsentPreview? = nil, mode: SettingsReadingMode = .unknown,
+                pendingCleanupTools: Set<SettingsConnectionTool> = []) throws {
         if let preview = consentPreview {
             guard (1...1_000_000).contains(preview.textVersion),
                   [preview.notice.english, preview.notice.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 }),
@@ -134,7 +137,19 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
         self.consentGeneration = consentGeneration; self.tools = tools; self.subscriptions = subscriptions
         self.unrecognizedTools = unrecognizedTools
         self.consentPreview = consentPreview
-        self.mode = mode
+        self.mode = mode; self.pendingCleanupTools = pendingCleanupTools
+    }
+    public func withPendingCleanup(_ tools: Set<SettingsConnectionTool>) throws -> Self {
+        try .init(consentGeneration: consentGeneration, tools: self.tools, subscriptions: subscriptions,
+                  unrecognizedTools: unrecognizedTools, consentPreview: consentPreview, mode: mode, pendingCleanupTools: tools)
+    }
+    func withoutVerifiedConsent() throws -> Self {
+        let unknown = tools.map { value -> SettingsConnectionToolState in
+            var next = value; next.authorization = .unknown; next.connection = .unknown
+            next.consentEligible = false; next.keychain = .unknown; next.keychainEligible = false; return next
+        }
+        return try .init(tools: unknown, subscriptions: subscriptions, unrecognizedTools: unrecognizedTools,
+                         mode: .unknown, pendingCleanupTools: pendingCleanupTools)
     }
     private static func validReference(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -163,7 +178,7 @@ public struct SettingsPluginInstallResult: Equatable, Sendable {
     public var isInstalled: Bool { status == .installed }
 }
 public enum SettingsConnectionFailure: String, Error, Sendable {
-    case unavailable, requestFailed, invalidResponse, stale, cancelled
+    case unavailable, requestFailed, invalidResponse, stale, cancelled, cleanupReadbackUnavailable, mutationReadbackUnavailable
 }
 public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)

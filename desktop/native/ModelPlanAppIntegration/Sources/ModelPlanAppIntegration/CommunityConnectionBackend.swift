@@ -19,10 +19,17 @@ public extension CommunityConsentCommandPort {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
     private var revision: UInt64 = 0
+    private weak var presentationEditor: SettingsEditor?
+    private var generationFloor: UInt64 = 0
+    private var pendingCleanup = Set<SettingsConnectionTool>()
     /// Composition routes this into the existing runtime store, never a second producer or timer.
     public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
+    }
+    func bindPresentation(to editor: SettingsEditor) throws {
+        guard presentationEditor == nil || presentationEditor === editor else { throw CommunityConnectionWiringError.differentApplication }
+        presentationEditor = editor
     }
     public var settingsConnectionAvailability: SettingsConnectionAvailability { port.availability }
     public func detect() async throws -> SettingsConnectionSnapshot {
@@ -31,8 +38,10 @@ public extension CommunityConsentCommandPort {
         let gate = await desktop.invalidateConsent()
         let value = try await port.readCanonicalConsent()
         try check(token)
+        guard value.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
         let facts = try CommunityConsentPreviewFacts(canonical: value)
-        let snapshot = try facts.projecting()
+        let snapshot = try facts.projecting(over: presentationEditor?.connections.snapshot).withPendingCleanup(pendingCleanup)
+        generationFloor = value.generation
         guard await desktop.installCanonicalReadback(value, revision: gate) else { throw SettingsConnectionFailure.stale }
         try check(token)
         onCanonicalReadback?(value)
@@ -51,15 +60,37 @@ public extension CommunityConsentCommandPort {
         let gate = await desktop.invalidateConsent()
         let before = try await port.readCanonicalConsent()
         try check(token)
+        guard before.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
         let payload = try CommunityConsentGrantPayload(preview: .init(canonical: before), allow: allow, deny: deny, request: request)
         let bytes = try JSONEncoder().encode(payload)
         try check(token)
-        try await port.applyConsentJSON(bytes)
+        var cleanup: CommunityConsentCleanupPending?
+        do { try await port.applyConsentJSON(bytes) }
+        catch let issue as CommunityConsentCleanupPending {
+            try check(token)
+            let facts = try CommunityConsentPreviewFacts(canonical: before)
+            let selected = Set(issue.toolIDs)
+            let known = Set(facts.tools.filter { selected.contains($0.id) }.compactMap(\.tool))
+            guard issue.requestID == request.id, !deny.isEmpty, allow.isEmpty,
+                  issue.generation >= before.generation, !selected.isEmpty, selected.count == issue.toolIDs.count,
+                  known.count == selected.count, known.isSubset(of: Set(deny)) else { throw SettingsConnectionFailure.invalidResponse }
+            cleanup = issue; pendingCleanup.formUnion(known); generationFloor = max(generationFloor, issue.generation)
+        }
         try check(token)
-        // A successful or replayed receipt is not current canonical permission.
-        let after = try await port.readCanonicalConsent()
+        // A receipt is not current permission, including committed revocation with pending cleanup.
+        let after: ConsentPreview
+        do { after = try await port.readCanonicalConsent() }
+        catch {
+            try check(token)
+            throw cleanup == nil ? SettingsConnectionFailure.mutationReadbackUnavailable : SettingsConnectionFailure.cleanupReadbackUnavailable
+        }
         try check(token)
-        let snapshot = try CommunityConsentPreviewFacts(canonical: after).projecting()
+        guard after.generation >= generationFloor else {
+            throw cleanup == nil ? SettingsConnectionFailure.mutationReadbackUnavailable : SettingsConnectionFailure.cleanupReadbackUnavailable
+        }
+        if cleanup == nil { pendingCleanup.subtract(deny) }
+        generationFloor = after.generation
+        let snapshot = try CommunityConsentPreviewFacts(canonical: after).projecting(over: presentationEditor?.connections.snapshot).withPendingCleanup(pendingCleanup)
         guard await desktop.installCanonicalReadback(after, revision: gate) else { throw SettingsConnectionFailure.stale }
         try check(token)
         onCanonicalReadback?(after)

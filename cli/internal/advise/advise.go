@@ -800,7 +800,7 @@ func rateEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 	plan := a.Plan
 	p := planOf(a, d)
 	if p == nil {
-		p = &Plan{ID: plan, Generation: a.Generation, d: d, rules: map[string]bool{}}
+		p = &Plan{ID: plan, Generation: a.Generation, Region: a.Region, d: d, rules: map[string]bool{}}
 	}
 	if d.MultiplierHorizon == nil {
 		return nil
@@ -839,8 +839,8 @@ func rateEvents(a *quota.Account, d *digest.Digest, now time.Time) []Event {
 		match := func(w *digest.MultiplierWindow) bool {
 			return p.appliesTo(w) && (len(w.Models) == 0 || contains(w.Models, model))
 		}
-		from, fs := rateAt(d.Multipliers, match, now)
-		next, ns := rateAt(d.Multipliers, match, b)
+		from, fs := publishedRate(p.timeDigest(), match, now)
+		next, ns := publishedRate(p.timeDigest(), match, b)
 		if next == nil || (from != nil && *from == *next) {
 			continue
 		}
