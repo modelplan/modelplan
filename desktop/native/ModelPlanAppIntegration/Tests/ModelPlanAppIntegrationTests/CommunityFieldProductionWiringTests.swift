@@ -124,6 +124,29 @@ import ModelPlanCockpitShell
         XCTAssertEqual(column.quotas.other.first?.remaining, 60)
         XCTAssertNil(column.todayTokens, "Do not copy source-wide usage into a subscription")
     }
+    func testSuspensionHidesOwnedPanelEvenWhenScopeSupplierFails() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let neutral = CommunityCockpitSupply.neutral(), window = RecordingFieldWindow()
+        var failStill = false
+        let supply = CommunityCockpitSupply(skin: neutral.skin, frames: neutral.frames, still: { _ in
+            if failStill { throw FieldPickerConnectionError.disconnected }; return nil
+        })
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: supply,
+            preferences: PreferenceFile(url: directory.appendingPathComponent("ui.json")), makeFieldWindow: { window })
+        let surface = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        defer { surface.dispose() }
+        render(surface, publication: try publication()); surface.resumePresentation()
+        let field = try XCTUnwrap(surface.cockpitComposition?.field)
+        field.setPresented(true); try field.open()
+        let hides = window.hidden; failStill = true
+        field.setPresented(false)
+        XCTAssertGreaterThan(window.hidden, hides, "Suspension must hide the actual owned panel despite recovery failure")
+        XCTAssertNotNil(field.binding.recoveryError)
+        XCTAssertThrowsError(try field.open(), "Hidden retry controls cannot reopen the field")
+        failStill = false; field.setPresented(true); try field.open()
+        XCTAssertNil(field.binding.lastError)
+    }
     func testMissingSupplierPortFailsActualFactoryAndCannotClaimConnected() async throws {
         let neutral = CommunityCockpitSupply.neutral()
         let supply = CommunityCockpitSupply(skin: neutral.skin, frames: { _ in throw FieldPickerConnectionError.disconnected }, still: neutral.still)

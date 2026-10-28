@@ -121,7 +121,12 @@ import ModelPlanField
     public func setPresented(_ allowed: Bool) {
         guard !disposed, allowed != presented else { return }
         presented = allowed; enlarge.isEnabled = allowed && catalogue != nil && preferences != nil
-        if !allowed, !binding.isProcessing { do { try closeIfNeeded() } catch { showFailure(error) } }
+        if !allowed {
+            // OS/owner suspension hides the owned panel even if still recovery fails.
+            // The binding retains its error/retry state for the next explicit visible entry.
+            defer { window.hide() }
+            if !binding.isProcessing { do { try closeIfNeeded() } catch { showFailure(error) } }
+        }
     }
     public func open() throws {
         guard presented, !disposed, preferences != nil else { throw FieldPickerConnectionError.disconnected }
