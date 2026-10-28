@@ -38,6 +38,188 @@ import ModelPlanSettings
         var ready = StoreDiagnostics(); ready.personal = nil
         return CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics ?? ready, now: now)
     }
+    func testReaderDiagnosticsUseDecodedCurrentZeroWithoutAddingMembership() throws {
+        let joined = try readerSnapshot(accounts: [account("real", source: "codex", windows: [window(remaining: 0)])],
+            extras: ["sources": [["source": "codex", "status": "ok"]]])
+        var ready = StoreDiagnostics(); ready.personal = nil
+        let result = CommunityDockSnapshot(snapshot: joined, diagnostics: ready, now: now,
+            readerFacts: [.init(providerID: "codex", consent: .allowed, beta: true)])
+        XCTAssertEqual(result.inputs.map(\.id), ["real"])
+        XCTAssertEqual(result.inputs[0].windows[0].remainingPercent, 0)
+        XCTAssertEqual(result.readerDiagnostics.first?.freshness, .fresh)
+        XCTAssertEqual(result.readerDiagnostics.first?.english, "A current local reading is available.")
+        XCTAssertEqual(result.readerDiagnostics.first?.beta, true)
+        XCTAssertNil(result.emptyDiagnostic)
+        XCTAssertNil(result.unavailableReason)
+    }
+    func testReaderExplicitConnectionGapHasEmptyCopyWithoutInventingRowOrDenial() throws {
+        var ready = StoreDiagnostics(); ready.personal = nil
+        let result = CommunityDockSnapshot(snapshot: nil, diagnostics: ready, now: now,
+            readerFacts: [.init(providerID: "claude", blockedCode: "not-connected-yet")])
+        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        XCTAssertEqual(result.emptyDiagnostic?.english, "Reader connection is not complete yet.")
+        XCTAssertEqual(result.emptyDiagnostic?.consent, .unknown)
+        XCTAssertEqual(result.emptyDiagnostic?.detection, .unknown)
+        XCTAssertEqual(result.unavailableReason, "personal-not-loaded", "legacy raw contract is unchanged")
+    }
+    func testReaderUnboundStaleMeterKeepsOwnershipAndFreshnessSeparate() throws {
+        let joined = try readerSnapshot(accounts: [account(nil, source: "codex", windows: [window()])],
+            extras: ["sources": [["source": "codex", "status": "stale"]]])
+        let result = adapt(joined), reader = try XCTUnwrap(result.readerDiagnostics.first)
+        XCTAssertEqual(reader.category, .unbound)
+        XCTAssertEqual(reader.freshness, .stale)
+        XCTAssertEqual(reader.consent, .unknown)
+        XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
+        XCTAssertTrue(result.inputs.isEmpty)
+    }
+    func testReaderUnknownSourceStatusDoesNotInventFailureOrDenial() throws {
+        let joined = try readerSnapshot(accounts: [], extras: ["sources": [["source": "codex",
+            "status": "future-status", "reason": "/synthetic/private/alice@example.invalid"]]])
+        let result = adapt(joined), reader = try XCTUnwrap(result.readerDiagnostics.first)
+        XCTAssertEqual(reader.category, .unknown)
+        XCTAssertEqual(reader.freshness, .unknown)
+        XCTAssertEqual(reader.consent, .unknown)
+        XCTAssertEqual(reader.english, "Reader status is unknown.")
+        XCTAssertTrue(result.inputs.isEmpty)
+    }
+    func testReaderUnverifiedAccountMetadataDoesNotClaimUsageWasRead() throws {
+        let result = adapt(try readerSnapshot(accounts: [account(nil, source: "codex", windows: [])]))
+        XCTAssertEqual(result.emptyDiagnostic?.english, "Subscription binding is not verified.")
+        XCTAssertEqual(result.emptyDiagnostic?.chinese, "订阅归属尚未验证。")
+        XCTAssertTrue(result.inputs.isEmpty)
+    }
+    private func readerSnapshot(accounts: [[String: Any]], generated: TimeInterval = -10,
+                                valid: TimeInterval = 300, extras: [String: Any] = [:]) throws -> JoinedSnapshot {
+        var v1 = extras; v1["contractVersion"] = 1
+        return try snapshot(accounts: accounts, generated: generated, valid: valid, extras: v1)
+    }
+    func testReaderDecodedPresenceAndAuthorizationCapabilityDoNotProveConsentOrBinding() throws {
+        let joined = try readerSnapshot(accounts: [account(nil, source: "codex", windows: [window(remaining: 0)])], extras: [
+            "connections": [["id": "codex", "installed": ["status": "yes"],
+                "authorization": ["status": "yes", "via": "agent-owned-reader"],
+                "quota": ["status": "yes", "binding": "unknown"]]],
+        ])
+        let result = adapt(joined), reader = try XCTUnwrap(result.readerDiagnostics.first)
+        XCTAssertEqual(reader.detection, .detected)
+        XCTAssertEqual(reader.consent, .unknown)
+        XCTAssertEqual(reader.category, .unbound)
+        XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
+        XCTAssertNil(result.unavailableReason)
+        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+    }
+    func testReaderNotDetectedRequiresExplicitPresenceEvidence() throws {
+        let missing = adapt(try readerSnapshot(accounts: [], extras: [
+            "sources": [["source": "codex", "status": "missing", "reason": "not-found"]],
+        ]))
+        XCTAssertEqual(missing.readerDiagnostics.first?.detection, .unknown)
+        XCTAssertEqual(missing.readerDiagnostics.first?.category, .unavailable)
+        let absent = adapt(try readerSnapshot(accounts: [], extras: [
+            "connections": [["id": "codex", "installed": ["status": "no", "reason": "not-found"]]],
+        ]))
+        XCTAssertEqual(absent.readerDiagnostics.first?.detection, .notDetected)
+        XCTAssertEqual(absent.emptyDiagnostic?.category, .notDetected)
+        XCTAssertEqual(absent.readerDiagnostics.first?.consent, .unknown)
+    }
+    func testReaderGlobalOffAndConsentChangedRemainDifferentFromDenial() throws {
+        let cases: [(String, CommunityReaderReasonCategory)] = [
+            ("reader-privacy", .readersOff), ("consent-changed", .consentChanged),
+        ]
+        for (code, expected) in cases {
+            let result = adapt(try readerSnapshot(accounts: [], extras: [
+                "sources": [["source": "readers", "status": "off", "reason": code]],
+            ]))
+            XCTAssertEqual(result.emptyDiagnostic?.category, expected)
+            XCTAssertEqual(result.readerDiagnostics.first?.consent, .unknown)
+            XCTAssertTrue(result.inputs.isEmpty)
+        }
+    }
+    func testReaderEmptyOrRawReasonCannotInventAnIntegrationGap() throws {
+        let empty = adapt(try readerSnapshot(accounts: []))
+        XCTAssertEqual(empty.emptyDiagnostic?.category, .unknown)
+        XCTAssertTrue(empty.readerDiagnostics.isEmpty)
+        let raw = adapt(try readerSnapshot(accounts: [], extras: [
+            "sources": [["source": "claude-code", "status": "ok", "reason": "not-connected-yet"]],
+        ]))
+        XCTAssertEqual(raw.emptyDiagnostic?.category, .unknown)
+        XCTAssertEqual(raw.readerDiagnostics.first?.consent, .unknown)
+        XCTAssertTrue(raw.inputs.isEmpty)
+    }
+    func testReaderStaleAndUnknownObservationCannotSupplyCurrentValues() throws {
+        let expired = adapt(try readerSnapshot(accounts: [account("real", source: "codex", windows: [window()])], valid: -1))
+        XCTAssertEqual(expired.readerDiagnostics.first?.freshness, .stale)
+        XCTAssertEqual(expired.readerDiagnostics.first?.category, .stale)
+        XCTAssertEqual(expired.inputs.map(\.id), ["real"])
+        XCTAssertNil(expired.inputs[0].windows[0].remainingPercent)
+        var unknownTime = account("real", source: "codex", windows: [window()])
+        unknownTime.removeValue(forKey: "observedAt")
+        var unknownWindow = window(); unknownWindow.removeValue(forKey: "observedAt")
+        unknownTime["windows"] = [unknownWindow]
+        let unknown = adapt(try readerSnapshot(accounts: [unknownTime]))
+        XCTAssertEqual(unknown.readerDiagnostics.first?.freshness, .unknown)
+        XCTAssertNil(unknown.inputs[0].windows[0].remainingPercent)
+        XCTAssertNil(unknown.emptyDiagnostic)
+    }
+    func testReaderMissingRevisionAndMismatchedPublicationCannotCreateMembershipOrQuota() throws {
+        let publication = try FeedDecoder.publication(Data(#"{"schemaVersion":1,"contractVersion":1,"publicationId":"synthetic-public-other","units":{"ability":"points","cost":"reference","time":"seconds"},"models":[{"id":"public-only"}],"lineups":[]}"#.utf8))
+        for id in [nil, "real"] as [String?] {
+            let source = try readerSnapshot(accounts: [account(id, source: "codex", windows: [window(remaining: 0)])],
+                extras: ["publication": ["publicationId": "synthetic-personal"]])
+            XCTAssertNil(source.personal.dataRevision)
+            let joined = JoinedSnapshot.make(personal: source.personal, presentation: source.presentation, publication: publication)
+            XCTAssertEqual(joined.scoredUnavailableReason, "publication-mismatch")
+            let result = adapt(joined)
+            XCTAssertEqual(result.inputs.map(\.id), id.map { [$0] } ?? [])
+            XCTAssertFalse(result.inputs.contains { $0.id == "public-only" })
+            if id == nil {
+                XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
+            } else {
+                XCTAssertEqual(result.inputs[0].windows[0].remainingPercent, 0)
+                XCTAssertNil(result.emptyDiagnostic)
+            }
+        }
+    }
+    func testReaderRawLegacyFailureAndUnknownBetaNeverBecomeDiagnosticCopy() throws {
+        let raw = "/synthetic/private/alice@example.invalid/auth.json"
+        var failed = StoreDiagnostics(); failed.personal = raw
+        let missing = adapt(nil, diagnostics: failed)
+        XCTAssertEqual(missing.unavailableReason, raw, "the existing raw contract is preserved")
+        XCTAssertEqual(missing.emptyDiagnostic?.category, .unavailable)
+        XCTAssertFalse((missing.emptyDiagnostic!.english + missing.emptyDiagnostic!.chinese).contains(raw))
+        let joined = try readerSnapshot(accounts: [account(nil, source: raw, windows: [])], extras: [
+            "sources": [["source": raw, "status": "unreadable", "reason": raw, "beta": true]],
+        ])
+        let result = adapt(joined), reader = try XCTUnwrap(result.readerDiagnostics.first)
+        XCTAssertNil(reader.providerID)
+        XCTAssertNil(reader.beta, "Core does not expose beta yet; the mapper must not infer it")
+        XCTAssertFalse(String(reflecting: reader).contains(raw))
+        XCTAssertTrue(result.inputs.isEmpty)
+    }
+    func testReaderEmptyAuthorizationDoesNotBecomeGranted() throws {
+        let result = adapt(try readerSnapshot(accounts: [], extras: [
+            "connections": [["id": "native:cursor", "installed": ["status": "yes"],
+                "authorization": ["status": ""], "quota": ["status": "no", "binding": "unknown"]]],
+        ]))
+        XCTAssertEqual(result.readerDiagnostics.first?.consent, .unknown)
+        XCTAssertTrue(result.inputs.isEmpty)
+    }
+    func testReaderMissingLifetimeRemainsUnknownRatherThanClaimingOldAge() throws {
+        let object: [String: Any] = ["schemaVersion": 1, "contractVersion": 1,
+            "kind": "modelplan.personal-snapshot", "generatedAt": instant(-10),
+            "accounts": [account("real", source: "codex", windows: [window()])]]
+        let personal = try FeedDecoder.personal(JSONSerialization.data(withJSONObject: object))
+        XCTAssertFalse(personal.validUntilReported)
+        var ledger = ExpiryLedger()
+        let joined = JoinedSnapshot.make(personal: personal,
+            presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil)
+        let result = adapt(joined)
+        XCTAssertEqual(result.readerDiagnostics.first?.freshness, .unknown)
+        XCTAssertEqual(result.readerDiagnostics.first?.category, .unavailable)
+        XCTAssertEqual(result.inputs.map(\.id), ["real"])
+        XCTAssertNil(result.inputs[0].windows[0].remainingPercent)
+        XCTAssertEqual(result.unavailableReason, "unknown-lifetime")
+    }
     func testNoFeedNeverCreatesDemoOrPublicSubscriptions() {
         let result = adapt(nil)
         XCTAssertTrue(result.inputs.isEmpty); XCTAssertTrue(result.subscriptions.isEmpty)
