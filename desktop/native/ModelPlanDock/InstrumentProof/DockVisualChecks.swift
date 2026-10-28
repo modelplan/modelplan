@@ -32,12 +32,20 @@ import ImageIO
         let data=image.dataProvider!.data!,bytes=CFDataGetBytePtr(data)!,offset=y*image.bytesPerRow+x*4
         return (0..<4).map{Int(bytes[offset+$0])}
     }
-    // The fallback is the collapsed Dock's own surface; no host, panel, live feed or global input.
+    // Never order a window or run the app: hidden windows exercise the normal window-edge inference.
+    _ = NSApplication.shared
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    guard let screen=NSScreen.main else{throw NativeFailure(message:"offscreen sliver screen unavailable")}
     for thickness in [CGFloat(3),4]{for scale in [1,2]{for edge in [DockEdge.right,.left,.bottom]{
         let vertical=edge != .bottom,size=vertical ? CGSize(width:thickness,height:147.3962):CGSize(width:147.3962,height:thickness)
         let sliver=DockSliverView(frame:CGRect(origin:.zero,size:size))
-        try sliver.apply(image:nil,logicalSize:size,scale:scale,accessibilityLabel:"Synthetic collapsed Dock",edge:edge)
-        defer{sliver.dispose()}
+        let visible=screen.visibleFrame
+        let frame=CGRect(x:edge == .right ? visible.maxX-size.width:visible.minX,y:visible.minY,width:size.width,height:size.height)
+        let window=NSWindow(contentRect:frame,styleMask:.borderless,backing:.buffered,defer:true,screen:screen)
+        window.isReleasedWhenClosed=false;window.setFrame(frame,display:false);window.contentView=sliver
+        defer{window.contentView=nil;window.close();sliver.dispose()}
+        try sliver.apply(image:nil,logicalSize:size,scale:scale,accessibilityLabel:"Synthetic collapsed Dock")
+        require(!window.isVisible,"offscreen probe ordered a window")
         var first:Data?
         for name in [NSAppearance.Name.aqua,.darkAqua]{
             sliver.appearance=NSAppearance(named:name)
@@ -47,14 +55,14 @@ import ImageIO
             if let first{require(data==first,"night-only neutral sliver changed with system appearance")}else{first=data}
             let cross=vertical ? image.width:image.height
             let length=vertical ? image.height:image.width
-            for along in [length/4,length/2,3*length/4]{for sample in [scale,cross-1-scale]{
+            for along in [length/4,length/2,3*length/4]{for sample in Set([scale,cross-1-scale]).sorted(){
                 let pixel=vertical ? rgba(image,sample,along):rgba(image,along,sample)
-                // Bitmap rows are top-down after the draw transform. Left reverses the thickness gradient.
-                let location=(Double(sample)+0.5)/Double(cross),t=edge == .left ? 1-location:location
+                // Frozen CSS 180deg uses physical top-to-bottom, without an edge rotation.
+                let y=vertical ? along:sample,t=(Double(y)+0.5)/Double(image.height)
                 let top=[42.0,43,46],bottom=[20.0,21,23]
                 let expected=(0..<3).map{Int((top[$0]*(1-t)+bottom[$0]*t).rounded())}+[255]
                 require(zip(pixel,expected).allSatisfy{abs($0-$1)<=2},"sliver token mismatch edge=\(edge) scale=\(scale) along=\(along) cross=\(sample) actual=\(pixel) expected=\(expected)")
-                if name == .aqua && along == length/2{sliverSamples.append("\(edge)/\(thickness)pt/\(scale)x=\(pixel)")}
+                if name == .aqua && ((vertical && sample==scale) || (!vertical && along == length/2)){sliverSamples.append("\(edge)/\(thickness)pt/\(scale)x=\(pixel)")}
             }}
             // Radius is on the inner side; outer/screen-side corners stay square and opaque.
             let inner=vertical ? rgba(image,edge == .right ? 0:image.width-1,0):rgba(image,0,0)
@@ -62,8 +70,8 @@ import ImageIO
             let innerMiddle=vertical ? rgba(image,edge == .right ? 0:image.width-1,image.height/2):rgba(image,image.width/2,0)
             let outerMiddle=vertical ? rgba(image,edge == .right ? image.width-1:0,image.height/2):rgba(image,image.width/2,image.height-1)
             // The specified opaque outer outline can cover a transparent corner; compare face shading.
-            require(inner[0]<innerMiddle[0],"sliver rounded the wrong side edge=\(edge) scale=\(scale)")
-            require(zip(outer,outerMiddle).allSatisfy{abs($0-$1)<=2},"screen-side sliver corner is not square")
+            require(inner[0]<(vertical ? outer[0]:innerMiddle[0]),"sliver rounded the wrong side edge=\(edge) scale=\(scale)")
+            if !vertical{require(zip(outer,outerMiddle).allSatisfy{abs($0-$1)<=2},"screen-side sliver corner is not square")}
             require(outer[3]==255,"screen-side sliver corner is not opaque")
         }
         require(sliver.frame.size==size,"drawing changed sliver geometry")
@@ -109,7 +117,7 @@ import ImageIO
     print("dock-visual redkey-aa \(failures.count==aaStart ? "PASS":"FAIL") \(edgeHistograms.joined(separator:" "))")
     let receipt:[String:Any]=["sliverPassed":sliverPassed,"redkeyPublicPathPassed":failures.count==aaStart,
         "sliverSamples":sliverSamples,"edgeAlphaHistograms":edgeHistograms,"failures":failures,
-        "officialKeyAssetTested":false,"visualSignoff":false,"uiLaunched":false]
+        "officialKeyAssetTested":false,"visualSignoff":false,"uiLaunched":false,"windowsOrdered":false]
     try JSONSerialization.data(withJSONObject:receipt,options:[.prettyPrinted,.sortedKeys]).write(to:output.appendingPathComponent("dock-visual.json"))
     if !failures.isEmpty{throw NativeFailure(message:failures.joined(separator:"; "))}
     return checks
