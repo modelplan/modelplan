@@ -110,4 +110,29 @@ import XCTest
         XCTAssertEqual(controller.phase, .consentRecordedReadingBlocked(.off))
         XCTAssertFalse(controller.canAllow(.init(snapshot: fake.facts)))
     }
+    func testExplicitForgetIsIndependentOfGrantEligibilityAndDoesNotOptIntoKeychain() async throws {
+        let fake = IntentAtomicFake(), controller = SettingsConnectionController(service: fake)
+        let before = try SettingsConnectionSnapshot(consentGeneration: 1, tools: [
+            .init(tool: .codex, presence: .detected, authorization: .allowed, consentEligible: false, keychain: .denied),
+        ], consentPreview: .init(textVersion: 7, notice: .init("Exact", "原文"), standardTools: [], deniableTools: [.codex]), mode: .off)
+        controller.receive(before)
+        XCTAssertFalse(controller.canAllow(.init(snapshot: before)))
+        XCTAssertNil(controller.request(.applyStandardConsent(allow: [.codex], deny: [])))
+        let request = try XCTUnwrap(controller.requestForget(.codex))
+        XCTAssertTrue(SettingsConnectionPresentation.confirmation(request.action).english.contains("deletes"))
+        XCTAssertTrue(fake.calls.isEmpty, "even explicit Forget must wait for confirmation")
+        fake.facts = try .init(consentGeneration: 2, tools: [
+            .init(tool: .codex, presence: .detected, authorization: .noConsent, consentEligible: false, keychain: .denied),
+        ], mode: .off)
+        await controller.confirm(request.id)
+        XCTAssertEqual(fake.calls.count, 1); XCTAssertTrue(fake.calls[0].0.isEmpty); XCTAssertEqual(fake.calls[0].1, [.codex])
+        XCTAssertEqual(controller.snapshot?.tools.first?.keychain, .denied)
+        XCTAssertEqual(controller.phase, .consentRecordedReadingBlocked(.off))
+    }
+    func testFirstRunFailureCopyDoesNotClaimActivationOrExposeRawReasons() {
+        XCTAssertTrue(SettingsConnectionPresentation.status(.unavailable).english.contains("About"))
+        XCTAssertTrue(SettingsConnectionPresentation.status(.failed(.stale)).chinese.contains("当前说明"))
+        XCTAssertTrue(SettingsConnectionPresentation.status(.failed(.invalidResponse)).english.contains("No successful permission"))
+        XCTAssertTrue(SettingsConnectionPresentation.status(.consentRecordedReadingBlocked(.off)).english.contains("blocks activation"))
+    }
 }

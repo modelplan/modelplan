@@ -63,29 +63,41 @@ import ModelPlanCommunityHost
         projected = value // Set before notifying the shared application/editor observers.
         application.update(context: CommunityConnectionFacts(connections: value).updating(application.editor.context))
     }
-    public func restoreFirstRunIfNeeded() async { await route(.allowUsage, firstRunOnly: true, userInitiated: false) }
+    public func restoreFirstRunIfNeeded() async {
+        generation &+= 1; let token = generation
+        guard !disposed, !Task.isCancelled else { return }
+        await application.reload()
+        guard !disposed, generation == token, !Task.isCancelled else { return }
+        // Restore canonical admission even when onboarding is complete or no window may be shown.
+        await application.editor.connections.refresh()
+        guard !disposed, generation == token, !Task.isCancelled,
+              application.editor.snapshot?.preferences.onboarding.completed == false else { return }
+        await showFirstRun(token: token, userInitiated: false, inspect: false)
+    }
     public func openFirstRun() async { await route(.allowUsage, forceFirstRun: true) }
     public func openSettings() async { await route(nil) }
     public func perform(_ destination: CommunityConnectionDestination) async { await route(destination) }
     public func action(for step: CommunityConnectionNextStep) -> @MainActor () -> Void {
         { [weak self] in Task { await self?.perform(step.destination) } }
     }
-    private func route(_ destination: CommunityConnectionDestination?, firstRunOnly: Bool = false,
-                       forceFirstRun: Bool = false, userInitiated: Bool = true) async {
+    private func route(_ destination: CommunityConnectionDestination?, forceFirstRun: Bool = false,
+                       userInitiated: Bool = true) async {
         generation &+= 1; let token = generation
         guard eligible(token) else { return }
         await application.reload()
         guard eligible(token), let saved = application.editor.snapshot else { return }
         let incomplete = !saved.preferences.onboarding.completed
-        if firstRunOnly && !incomplete { return }
         let firstRun = forceFirstRun || (incomplete && destination != .about)
         if !firstRun {
             guard eligible(token) else { return }
             await showSettings(destination == .about ? "about" : destination == nil ? nil : "subscriptions")
             return
         }
-        // Presence/preview only. The backend contract forbids reader activation on this inspection.
-        if application.editor.connections.isAvailable { await application.editor.connections.refresh() }
+        await showFirstRun(token: token, userInitiated: userInitiated, inspect: true)
+    }
+    private func showFirstRun(token: UInt64, userInitiated: Bool, inspect: Bool) async {
+        // Presence/preview only; the injected backend owns canonical gate restoration.
+        if inspect { await application.editor.connections.refresh() }
         guard eligible(token) else { return }
         if surface == nil { surface = makeFirstRun(application.editor) }
         guard let surface, eligible(token) else { return }
@@ -114,6 +126,9 @@ import ModelPlanCommunityHost
 @MainActor public final class CommunityConnectionIntegration: NSObject, CommunitySettingsIntegration {
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
+    private var restoration: Task<Void, Never>?
+    private var restorationGeneration: UInt64 = 0
+    private var restored = false
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
         let item = NSMenuItem(title: base.settingsMenuItem.title, action: #selector(openSettings), keyEquivalent: ",")
         item.keyEquivalentModifierMask = .command; item.target = self; return item
@@ -123,8 +138,25 @@ import ModelPlanCommunityHost
         self.base = base; self.flow = flow
     }
     @objc private func openSettings() { Task { await flow.openSettings() } }
-    public func restorePreferences() async { await base.restorePreferences(); await flow.restoreFirstRunIfNeeded() }
-    public func suspend() { flow.suspend(); base.suspend() }
+    public func restorePreferences() async {
+        guard !restored else { return }
+        if let restoration { await restoration.value; return }
+        let token = restorationGeneration
+        let task = Task { @MainActor [weak self, base, flow] in
+            await base.restorePreferences()
+            guard let self, self.restorationGeneration == token, !Task.isCancelled else { return }
+            await flow.restoreFirstRunIfNeeded()
+            guard self.restorationGeneration == token, !Task.isCancelled else { return }
+            self.restored = true
+        }
+        restoration = task
+        await task.value
+        if restorationGeneration == token { restoration = nil }
+    }
+    public func suspend() {
+        restorationGeneration &+= 1; restoration?.cancel(); restoration = nil
+        flow.suspend(); base.suspend()
+    }
 }
 
 public enum CommunityConnectionWiringError: Error, Equatable { case entryMissing, backendMissing, differentApplication, differentBackend }

@@ -34,6 +34,14 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         guard canAllow(intent) else { return nil }
         return request(.applyStandardConsent(allow: intent.orderedTools, deny: []))
     }
+    public func canForget(_ tool: SettingsConnectionTool) -> Bool {
+        isAvailable && !isBusy && canRequest(.applyStandardConsent(allow: [], deny: [tool]))
+    }
+    /// Explicitly destructive, independent of choosing/unchecking first-run Allow intentions.
+    @discardableResult public func requestForget(_ tool: SettingsConnectionTool) -> SettingsConnectionConfirmation? {
+        guard canForget(tool) else { return nil }
+        return request(.applyStandardConsent(allow: [], deny: [tool]))
+    }
     public var isBusy: Bool {
         switch phase { case .loading, .running: return true; default: return false }
     }
@@ -129,7 +137,8 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
                   allow.isEmpty || deny.isEmpty,
                   allow.isEmpty || snapshot?.mode == .automatic || snapshot?.mode == .passive,
                   snapshot?.consentGeneration != nil, let preview = snapshot?.consentPreview else { return false }
-            return tools.allSatisfy { id in preview.standardTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.canRequestConnection } == true }
+            return allow.allSatisfy { id in preview.standardTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.canRequestConnection } == true }
+                && deny.allSatisfy { id in preview.deniableTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.presence == .detected } == true }
         case .installPlugin: return true
         case .connect(let tool, let access):
             return snapshot?.tools.contains { $0.tool == tool && $0.access == access && $0.canRequestConnection } == true
