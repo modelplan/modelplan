@@ -38,6 +38,14 @@ import XCTest
         XCTAssertTrue(SettingsDiagnosticCopy.copy(about, to: clipboard))
         XCTAssertTrue(clipboard.text!.hasPrefix("app=1.2.3-beta07\ncli=v0.5.42-rc.1\n"))
         for secret in ["account", "session", "home", "private"] { XCTAssertFalse(clipboard.text!.contains(secret)) }
+        about.appVersion = "1.2.3\n"; about.cliVersion = "0.5.41\r"; about.macOSVersion = "26.1\t"
+        XCTAssertTrue(SettingsDiagnosticCopy.copy(about, to: clipboard))
+        XCTAssertEqual(clipboard.text, "app=unknown\ncli=unknown\nmacOS=unknown\nreaders=\nerrors=")
+        for separator in ["\u{2028}", "\u{2029}"] {
+            about.macOSVersion = "26.1" + separator
+            XCTAssertTrue(SettingsDiagnosticCopy.copy(about, to: clipboard))
+            XCTAssertEqual(clipboard.text, "app=unknown\ncli=unknown\nmacOS=unknown\nreaders=\nerrors=")
+        }
     }
     func testPublicLinksOnlyReachInjectedHostWithoutPersonalQueryData() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("beta07-links-" + UUID().uuidString)

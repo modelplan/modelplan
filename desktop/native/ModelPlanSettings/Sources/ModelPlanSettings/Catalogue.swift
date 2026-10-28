@@ -53,9 +53,10 @@ public struct SettingsAbout: Sendable {
     }
     public var version: String { safeVersion(appVersion) }
     private func diagnosticVersion(_ value: String) -> String {
-        guard value.utf8.count <= 64,
-              value.range(of: #"^v?[0-9]+(?:\.[0-9]+){1,3}(?:-(?:alpha|beta|rc)[0-9]*(?:\.[0-9]+)*)?(?:\+[A-Za-z0-9.-]+)?$"#,
-                          options: .regularExpression) != nil else { return "unknown" }
+        guard value.utf8.count <= 64, !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+              let match = value.range(of: #"^v?[0-9]+(?:\.[0-9]+){1,3}(?:-(?:alpha|beta|rc)[0-9]*(?:\.[0-9]+)*)?(?:\+[A-Za-z0-9.-]+)?$"#,
+                                      options: .regularExpression),
+              match == (value.startIndex..<value.endIndex) else { return "unknown" }
         // Build metadata is free text, not needed for a shareable version. Do not copy host/user tags.
         return String(value.split(separator: "+", maxSplits: 1)[0])
     }
