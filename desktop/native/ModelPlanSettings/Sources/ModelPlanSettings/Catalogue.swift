@@ -84,6 +84,7 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
 public struct SettingsPageContext: Sendable {
+    public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var capabilities = SettingsCapabilities()
