@@ -46,15 +46,16 @@ import ImageIO
             let data=image.dataProvider!.data! as Data
             if let first{require(data==first,"night-only neutral sliver changed with system appearance")}else{first=data}
             let cross=vertical ? image.width:image.height
-            for sample in [scale,cross-1-scale]{
-                let pixel=vertical ? rgba(image,sample,image.height/2):rgba(image,image.width/2,sample)
+            let length=vertical ? image.height:image.width
+            for along in [length/4,length/2,3*length/4]{for sample in [scale,cross-1-scale]{
+                let pixel=vertical ? rgba(image,sample,along):rgba(image,along,sample)
                 // Bitmap rows are top-down after the draw transform. Left reverses the thickness gradient.
                 let location=(Double(sample)+0.5)/Double(cross),t=edge == .left ? 1-location:location
                 let top=[42.0,43,46],bottom=[20.0,21,23]
                 let expected=(0..<3).map{Int((top[$0]*(1-t)+bottom[$0]*t).rounded())}+[255]
-                require(zip(pixel,expected).allSatisfy{abs($0-$1)<=2},"sliver token mismatch edge=\(edge) scale=\(scale) actual=\(pixel) expected=\(expected)")
-                if name == .aqua{sliverSamples.append("\(edge)/\(thickness)pt/\(scale)x=\(pixel)")}
-            }
+                require(zip(pixel,expected).allSatisfy{abs($0-$1)<=2},"sliver token mismatch edge=\(edge) scale=\(scale) along=\(along) cross=\(sample) actual=\(pixel) expected=\(expected)")
+                if name == .aqua && along == length/2{sliverSamples.append("\(edge)/\(thickness)pt/\(scale)x=\(pixel)")}
+            }}
             // Radius is on the inner side; outer/screen-side corners stay square and opaque.
             let inner=vertical ? rgba(image,edge == .right ? 0:image.width-1,0):rgba(image,0,0)
             let outer=vertical ? rgba(image,edge == .right ? image.width-1:0,0):rgba(image,0,image.height-1)
