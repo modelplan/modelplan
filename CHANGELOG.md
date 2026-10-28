@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI consent commands explain the required `--json` flag on stderr. On macOS, when unset Claude Keychain permission blocks a saved-login read, the reader notice and consent readback name the missing choice and direct users to allow Keychain for Claude Code in Settings. Linux keeps the saved-login notice without a Keychain remedy.
+  CLI 授权命令在缺少 `--json` 时输出用法；macOS 上 Claude 钥匙串选择未设置而无法读取时，读取器提示及授权回读说明原因，并引导用户在设置中允许 Claude Code 访问钥匙串。Linux 保留已有登录不可读的提示，不显示钥匙串操作。
+
 ## CLI v0.5.43, Codex plugin 0.15.35 and Claude Code plugin 0.7.34 (2026-10-28)
 
 - CLI adds `consent --json` and `consent grant --json` for the App: bilingual consent text, atomic generation/text-version checks, durable request replay, standard-route gating, recorded Keychain choices and revoke-first Forget cleanup. Replay receipts, cleanup obligations and Keychain restrictions survive pre-API shared-store readers/writers. Existing production readers pick up the new generation and invalidate in-flight older grants.

@@ -21,6 +21,7 @@ type ReaderGrant struct {
 	Generation         string
 	SavedLogin         bool
 	Keychain           bool
+	KeychainConsent    string // preserves unset versus denied for an actionable reader notice
 	KeychainPriorGrant bool
 	Interactive        bool
 	Region             string // locally selected region; an empty value uses the reader's safe default

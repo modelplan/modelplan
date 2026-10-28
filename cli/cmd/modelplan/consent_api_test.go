@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -85,6 +86,50 @@ func TestConsentAPIReadIsPresenceOnlyAndReadOnly(t *testing.T) {
 	t.Setenv("MODELPLAN_READERS", "off")
 	if r := readConsentAPI(t); r.Mode != consent.Off {
 		t.Fatal(r)
+	}
+}
+
+func TestConsentWithoutJSONExplainsUsageWithoutReadingOrWriting(t *testing.T) {
+	home := consentAPIHome(t)
+	for _, args := range [][]string{{"consent"}, {"consent", "grant"}} {
+		before := tree(t, home)
+		code, out, stderr := consentRun(args, apiRequest(t, 1, 0, []string{"claude"}, nil, nil))
+		if code != exitUsage || out != "" || stderr != "usage: modelplan consent [grant] --json\n" {
+			t.Fatal(code, out, stderr)
+		}
+		if !reflect.DeepEqual(before, tree(t, home)) {
+			t.Fatal("usage error wrote files")
+		}
+	}
+}
+
+func TestConsentReadbackExplainsUnsetClaudeKeychainChoice(t *testing.T) {
+	home := consentAPIHome(t)
+	result := grantConsentAPI(t, apiRequest(t, 1, 0, []string{"claude", "codex"}, nil, nil))
+	check := func(tools []consentTool) {
+		t.Helper()
+		claude, codex := apiTools(tools)["claude"], apiTools(tools)["codex"]
+		wantNotice, wantNextStep := "", ""
+		if runtime.GOOS == "darwin" {
+			wantNotice, wantNextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
+		}
+		if !claude.Allowed || claude.Keychain != "unset" || claude.Notice != wantNotice || claude.NextStep != wantNextStep {
+			t.Fatal("unset readback remedy does not match platform", claude)
+		}
+		if codex.Notice != "" || codex.NextStep != "" {
+			t.Fatal("unused Keychain permission got a notice", codex)
+		}
+	}
+	check(result.Tools)
+	before := tree(t, home)
+	check(readConsentAPI(t).Tools)
+	if !reflect.DeepEqual(before, tree(t, home)) {
+		t.Fatal("readback wrote files")
+	}
+	grantConsentAPI(t, apiRequest(t, 2, 1, []string{"claude"}, nil, map[string]string{"claude": "allow"}))
+	claude := apiTools(readConsentAPI(t).Tools)["claude"]
+	if claude.Keychain != "allowed" || claude.Notice != "" || claude.NextStep != "" {
+		t.Fatal("notice survived an explicit allowance", claude)
 	}
 }
 

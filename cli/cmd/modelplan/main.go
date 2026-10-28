@@ -224,6 +224,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: modelplan publication --json [--offline]")
 		return exitUsage
 	}
+	if cmd == "consent" && !c.json {
+		fmt.Fprintln(stderr, "usage: modelplan consent [grant] --json")
+		return exitUsage
+	}
 
 	if *effortSuggestion != "" && (cmd != "history" || (*effortSuggestion != "dismiss" && *effortSuggestion != "off" && *effortSuggestion != "on")) {
 		fmt.Fprintln(stderr, "usage: modelplan history --effort-suggestion dismiss|off|on")

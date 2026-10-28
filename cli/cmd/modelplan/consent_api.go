@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -27,6 +28,8 @@ type consentTool struct {
 	ReaderID    string   `json:"readerId"`
 	Keychain    string   `json:"keychain"`
 	Hosts       []string `json:"hosts"`
+	Notice      string   `json:"notice,omitempty"`
+	NextStep    string   `json:"nextStep,omitempty"`
 }
 
 type consentView struct {
@@ -95,10 +98,15 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 		if hosts == nil {
 			hosts = []string{}
 		}
-		rows = append(rows, consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
+		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
 			AccessClass: consentAccess(t), Detected: true,
 			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
-			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts})
+			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts}
+		if runtime.GOOS == "darwin" && row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
+			consent.KeychainSupported(t.ProviderID, t.Preferred, t.ReaderID) && r.KeyEnv == "" && !r.BrowserSession {
+			row.Notice, row.NextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
+		}
+		rows = append(rows, row)
 	}
 	return rows
 }
