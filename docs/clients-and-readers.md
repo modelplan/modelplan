@@ -38,10 +38,31 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 `tools`. Each tool includes `id`, `displayName`, `accessClass`
 (`standard|browser-session|not-read`), `detected`, saved `allowed`, catalogue
 `backend` and `readerId`, Keychain consent `keychain` (`allowed|denied|unset`), and provider
-`hosts`. Show the returned text and hosts before submitting consent. Detection
+`hosts` and structured `hostDetails`. Show the returned text and hosts before submitting consent. Detection
 does not establish a login, and saved permission does not override privacy or a
 catalogue kill switch. No credentials, network, processes or cache writes are
 used by this read.
+
+Each tool always includes both fields, with this exact schema:
+
+```json
+{"hosts":["https://api.anthropic.com"],"hostDetails":[{"host":"api.anthropic.com","note":""}]}
+```
+
+`hosts` retains its existing display strings unchanged. `hostDetails` is an
+array of objects with required string fields `host` and `note`. `host` is a bare
+DNS name: no scheme, port, path, whitespace or annotations. `note` is display
+context, or the empty string. For example, Codex returns
+`{"host":"chatgpt.com","note":"Codex runtime"}` alongside the unchanged
+`"https://chatgpt.com (Codex runtime)"` label. Local-only, loopback and unknown
+destinations have `hostDetails: []`; their descriptions remain in `hosts`.
+The field is display metadata, never a URL or an instruction to contact a host.
+New grant responses use the same shape. Replaying a receipt from an older CLI
+returns its original response, which may lack `hostDetails`; use a fresh read
+for the current schema.
+
+`hostDetails` 将裸 DNS 主机名和说明分开，保留原有 `hosts` 展示字符串；本机记录、
+回环或未知目的地返回空数组。新授权响应包含相同字段，旧回执重放保持原始响应。
 
 `modelplan consent grant --json` accepts one JSON object on stdin (at most 64 KiB):
 
