@@ -75,6 +75,10 @@ reports `denied`. New API grants default to `unset` and cannot use Keychain
 until allowed. Omitting a choice preserves existing permission. Recording a
 choice never prompts. Existing source Deny and local-source opt-outs remain in
 force.
+An allowed native Claude grant with Keychain unset includes `notice` and
+`nextStep: "Allow Keychain for Claude Code in Settings"`. A refresh that needs
+Keychain reports the same cause/action; a file-based login still works without
+Keychain permission. Omitting `--json` prints command usage on stderr.
 
 Denials revoke first and perform the same scoped Forget cleanup as disconnect,
 retaining request gates, identities and other tools. If cleanup cannot finish,

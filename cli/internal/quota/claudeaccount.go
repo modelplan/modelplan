@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/keychain"
 )
 
@@ -107,7 +108,15 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	b, status := readBounded(filepath.Join(r.Profile.Root, ".credentials.json"), 64<<10)
 	if status == "missing" {
 		profiles := claudeProfiles()
-		if !r.Grant.Keychain || len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+		if len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+			return fail("unavailable", "No supported Claude Code saved login")
+		}
+		if !r.Grant.Keychain && r.Grant.KeychainConsent == "unset" {
+			out := fail("consent_required", consent.ClaudeKeychainUnsetNotice)
+			out.Entry.NextStep = consent.ClaudeKeychainNextStep
+			return out
+		}
+		if !r.Grant.Keychain {
 			return fail("unavailable", "No supported Claude Code saved login")
 		}
 		k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{

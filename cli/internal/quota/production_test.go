@@ -156,6 +156,65 @@ func TestProductionKeychainPolicy(t *testing.T) {
 	}
 }
 
+func TestProductionUnsetClaudeKeychainNamesCauseAndSettingsAction(t *testing.T) {
+	_ = claudeTestPaths(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+		if err := consent.Set(s, "claude", true, "native:claude", "native", claudeTestNow); err != nil {
+			return err
+		}
+		r := s.Tools["claude"]
+		consent.SetKeychain(&r, "")
+		s.Tools["claude"] = r
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	status, requests := 200, []string{}
+	claudeTestServer(t, &status, &requests)
+	old := claudeSecurity
+	claudeSecurity = func(context.Context, string, ...string) (keychain.ProcessResult, error) {
+		t.Fatal("unset Keychain choice invoked Keychain")
+		return keychain.ProcessResult{}, nil
+	}
+	t.Cleanup(func() { claudeSecurity = old })
+	p := ProductionPaths(t.TempDir(), "1.0.0")
+	if grant := p.ReaderAccess.Grants["claude"]; grant.Keychain || grant.KeychainConsent != "unset" {
+		t.Fatal("production discarded the unset cause", grant)
+	}
+	if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadReaderState(p.Cache, "claude")
+	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != "consent_required" || s.Entries[0].Notice != consent.ClaudeKeychainUnsetNotice || s.Entries[0].NextStep != "Allow Keychain for Claude Code in Settings" {
+		t.Fatal("missing Keychain choice blamed the saved login", s, err)
+	}
+	r := ReadPermitted(p, claudeTestNow)
+	found := false
+	for _, source := range r.Sources {
+		if source.Source == "native:claude" && source.Status == "consent_required" && source.Reason == consent.ClaudeKeychainNextStep {
+			found = true
+		}
+	}
+	if !found || len(requests) != 0 {
+		t.Fatal("cached readback lost next step or made provider calls", r, requests)
+	}
+	// File-based Claude logins do not need Keychain: their read must still work.
+	writeClaudeCredential(t, root, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	if err := RefreshNative(context.Background(), p, claudeTestNow.Add(10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, err = loadReaderState(p.Cache, "claude")
+	if err != nil || len(s.Entries) != 1 || s.Entries[0].Status != "ok" || s.Entries[0].Notice != "" || s.Entries[0].NextStep != "" || len(requests) != 2 {
+		t.Fatal("unset Keychain choice blocked a file-based login", s, err, requests)
+	}
+}
+
 var productionLegacyTests = map[string]func(*testing.T) (time.Time, func() int){
 	"copilot": func(t *testing.T) (time.Time, func() int) {
 		bin, log := fakeCopilot(t)
