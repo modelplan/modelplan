@@ -105,6 +105,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
+  modelplan doctor readers [--refresh] sanitised native-reader verification; cache only by default
   modelplan doctor --share             sanitised cache source/status report; no readers or network
   modelplan update                     explicitly update a standalone/Skill copy from the verified publication pin
   modelplan plugin install claude-code|codex
@@ -182,8 +183,20 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
+	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
 	share := fs.Bool("share", false, "doctor: print only sanitised cache source/status information")
 	if err := fs.Parse(reorder(rest)); err != nil {
+		return exitUsage
+	}
+	if cmd == "doctor" && fs.NArg() > 0 && fs.Arg(0) == "readers" {
+		if fs.NArg() != 1 || *share || (c.offline && *refreshReaders) {
+			fmt.Fprintln(stderr, "usage: modelplan doctor readers [--json] [--refresh] [--lang en|zh]; --refresh cannot be offline")
+			return exitUsage
+		}
+		return doctorReaders(stdout, stderr, c, *refreshReaders)
+	}
+	if *refreshReaders {
+		fmt.Fprintln(stderr, "--refresh requires doctor readers")
 		return exitUsage
 	}
 	if *share {

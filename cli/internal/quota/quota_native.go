@@ -193,6 +193,10 @@ var nativeClient = &http.Client{Timeout: nativeTimeout}
 
 // RefreshNative asks each native provider once and caches the sanitised readings. One at a time.
 func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
+	return refreshNative(ctx, p, now, false)
+}
+
+func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool) error {
 	if !nativePrivacyAllows() || ctx.Err() != nil {
 		return errors.New("personal readers are suspended")
 	}
@@ -205,7 +209,15 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	sessionRead := refreshProductionClaudeSessions(ctx, p, now)
+	sessionRead := false
+	if !diagnostic {
+		sessionRead = refreshProductionClaudeSessions(ctx, p, now)
+	} else if claudeSessionsDue(p, now) && diagnosticSessionDue(p, now) {
+		if err := reserveReaderAttempt(p.Cache, "claude-session", now.Add(5*time.Minute)); err != nil {
+			return err
+		}
+		sessionRead = refreshProductionClaudeSessions(ctx, p, now)
+	}
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
@@ -233,14 +245,18 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
+	var refreshErr error
 	sort.Strings(managed)
 	for _, provider := range managed {
 		if err := refreshManaged(ctx, p, provider, now); err != nil {
-			return err
+			if !diagnostic {
+				return err
+			}
+			refreshErr = err
 		}
 	}
 	if len(on) == 0 {
-		return nil
+		return refreshErr
 	}
 	home, _ := os.UserHomeDir()
 	previous := map[string]codexbarEntry{}
@@ -256,11 +272,17 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		}
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
-		if !n.budgetDue(p.Cache, now) {
+		if !n.budgetDue(p.Cache, now) || (diagnostic && !diagnosticLegacyDue(p.Cache, x.Provider, previous[x.Provider], now)) {
 			if old, ok := previous[x.Provider]; ok {
 				s.Providers = append(s.Providers, old)
 			}
 			continue
+		}
+		if diagnostic {
+			if err := reserveReaderAttempt(p.Cache, x.Provider, now.Add(5*time.Minute)); err != nil {
+				refreshErr = err
+				continue
+			}
 		}
 		if err := n.reserveBudget(p.Cache, now); err != nil {
 			return err
@@ -294,13 +316,21 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		if err := n.finishBudget(p.Cache, next); err != nil {
 			return err
 		}
+		if diagnostic {
+			if err := reserveReaderAttempt(p.Cache, x.Provider, next); err != nil {
+				refreshErr = err
+			}
+		}
 		s.Providers = append(s.Providers, e)
 	}
 	b, _ := json.MarshalIndent(s, "", "  ")
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	return consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) })
+	if err := consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+		return err
+	}
+	return refreshErr
 }
 
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
