@@ -241,7 +241,7 @@ enum SettingsWords {
         searchField.placeholderString = SettingsWords.text("Search settings", "搜索设置", language)
         searchField.setAccessibilityLabel(searchField.placeholderString)
         firstRunPreviewButton.title = SettingsWords.text("First run…", "首次运行…", language)
-        firstRunPreviewButton.isEnabled = !editor.isSaving && editor.context.capabilities.firstRunPreviewAvailable && editor.onHostRequest != nil
+        firstRunPreviewButton.isEnabled = !editor.isSaving && editor.context.capabilities.firstRunPreviewAvailable && editor.canPresentFirstRun
         sidebar.reloadData()
         if let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == selectedPaneID }) {
             sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)

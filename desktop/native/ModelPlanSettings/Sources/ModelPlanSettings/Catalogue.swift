@@ -12,7 +12,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
-    case appVersion, cliStatus, architecture, diagnostics, feedback, licenses
+    case appVersion, cliStatus, architecture, diagnostics, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
 }
@@ -66,6 +66,15 @@ public struct SettingsAbout: Sendable {
             .union(enabledConnectionTools.map(\.rawValue)).sorted()
         return "app=\(diagnosticVersion(appVersion))\ncli=\(diagnosticVersion(cliVersion))\nmacOS=\(diagnosticVersion(macOSVersion))\nreaders=\(readers.joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
     }
+    public var cliStatus: SettingsText {
+        switch cliState {
+        case .ready: return .init("CLI component verified (" + safeVersion(cliVersion) + "). Usage permission is separate.", "CLI组件已核验（" + safeVersion(cliVersion) + "）；用量授权另行确认。")
+        case .unavailable: return .init("A verified CLI component is not available.", "暂无已核验的CLI组件。")
+        case .denied: return .init("CLI reading is blocked by current permissions.", "当前权限阻止CLI读取。")
+        case .stale: return .init("CLI status needs to be checked again.", "CLI状态需要重新检查。")
+        }
+    }
+    public static let consentHelpURL = URL(string: "https://github.com/modelplan/modelplan/blob/main/docs/cli-consent.md")!
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
     public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
     public static let intelNote = SettingsText("Intel untested; 3D may stutter.", "Intel 未测试，3D 效果可能卡顿。")
@@ -174,6 +183,7 @@ public enum SettingsCatalogue {
         .init(.clearAppCache,"Clear app cache","清除应用缓存","Only app-owned derived caches; preferences and CLI data are kept.","仅清除应用衍生缓存，保留偏好和CLI数据。"),
         .init(.privacyStatement,"Privacy statement","隐私说明","No local uploads; only public downloads.","不上传本机数据，仅下载公开数据。"),
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
+        .init(.consentHelp,"Manual consent and cleanup instructions","授权与手动清理说明","Read the CLI disconnect instructions. Browser-cookie cleanup may require a separate approval; nothing is run automatically.","阅读CLI disconnect说明；浏览器缓存清理可能另需批准，此处不会自动执行。"),
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader IDs and error codes only.","仅含版本、macOS、读取器ID和错误代码。"),
@@ -292,7 +302,8 @@ public enum SettingsCatalogue {
         case .clearAppCache: return .action(c.capabilities.clearRequest)
         case .privacyStatement: return .text(SettingsAbout.privacy.value(p.language))
         case .appVersion: return .text(c.about.version)
-        case .cliStatus: return .text(c.about.cliState.rawValue)
+        case .cliStatus: return .text(c.about.cliStatus.value(p.language))
+        case .consentHelp: return .link(SettingsAbout.consentHelpURL)
         case .architecture: return .text(c.about.architecture == .intelUntested ? SettingsAbout.intelNote.value(p.language) : c.about.architecture.rawValue)
         case .diagnostics: return .text(c.about.diagnosticText)
         case .feedback: return .link(SettingsAbout.feedbackURL)

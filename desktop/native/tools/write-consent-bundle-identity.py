@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""Write verified release/bundle consistency fields after helper sealing. Never executes helpers."""
+import argparse
+import hashlib
+import plistlib
+import re
+from pathlib import Path
+
+SOURCE = {
+    'arm64': 'e8f04d7eba3108ec808f2ce53e2a0c72e895c7dc83306e7bd135f039bc50c6ae',
+    'x86_64': '10a3fb58d4211b59dfad2660bedc45c1bee6cf021edfa5cae01e6e58d9b9f4b5',
+}
+
+def digest_file(path):
+    if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 128 * 1024 * 1024:
+        raise ValueError('missing, linked or oversized helper')
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def metadata(source, raw, bundled):
+    if not re.fullmatch('[0-9a-f]{40}', source) or raw != SOURCE or not re.fullmatch('[0-9a-f]{64}', bundled):
+        raise ValueError('unverified release/source identity')
+    return {'ModelPlanPublicSource': source, 'ModelPlanHelperVersion': '0.5.43',
+            'ModelPlanSourceHelperSHA256ByArchitecture': dict(raw),
+            'ModelPlanBundledHelperSHA256': bundled}
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--app', type=Path)
+    p.add_argument('--public-source')
+    p.add_argument('--arm64-input', type=Path)
+    p.add_argument('--x86-64-input', type=Path)
+    p.add_argument('--self-test', action='store_true')
+    a = p.parse_args()
+    if a.self_test:
+        value = metadata('a' * 40, SOURCE, 'b' * 64)
+        assert value['ModelPlanSourceHelperSHA256ByArchitecture'] == SOURCE
+        assert value['ModelPlanHelperVersion'] == '0.5.43'
+        for source, raw in [('bad', SOURCE), ('a' * 40, {**SOURCE, 'arm64': '0' * 64})]:
+            try: metadata(source, raw, 'b' * 64)
+            except ValueError: pass
+            else: raise AssertionError('invalid input admitted')
+        print('PASS metadata shape, invalid source and wrong raw helper refusal')
+        return
+    if not all([a.app, a.public_source, a.arm64_input, a.x86_64_input]):
+        p.error('app, public-source and both raw helper inputs are required')
+    raw = {'arm64': digest_file(a.arm64_input), 'x86_64': digest_file(a.x86_64_input)}
+    bundled = digest_file(a.app / 'Contents/Helpers/modelplan')
+    fields = metadata(a.public_source, raw, bundled)
+    info_path = a.app / 'Contents/Info.plist'
+    if info_path.is_symlink() or info_path.stat().st_size > 65536:
+        raise ValueError('invalid bundle metadata')
+    info = plistlib.loads(info_path.read_bytes())
+    info.pop('ModelPlanSourceHelperSHA256', None)
+    info.update(fields)
+    info_path.write_bytes(plistlib.dumps(info))
+    (a.app / 'Contents/Resources/modelplan.sha256').write_text(bundled + '\n')
+    print('consent bundle metadata written; source provenance/reader consent are separate gates')
+
+if __name__ == '__main__': main()

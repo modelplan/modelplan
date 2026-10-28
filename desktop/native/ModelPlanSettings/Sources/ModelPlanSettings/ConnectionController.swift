@@ -4,6 +4,8 @@ import Foundation
 public enum SettingsConnectionPhase: Equatable, Sendable {
     case unavailable, idle, loading, awaitingConfirmation(SettingsConnectionConfirmation)
     case running(SettingsConnectionAction), pluginResult(SettingsPluginInstallResult), failed(SettingsConnectionFailure), cancelled
+    case consentRecordedReadingBlocked(SettingsReadingMode)
+    case cleanupPending
 }
 
 /// Transient presentation over injected observations. No preference store, clock, selector or service creation.
@@ -11,14 +13,61 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
 @MainActor public final class SettingsConnectionController {
     public private(set) var snapshot: SettingsConnectionSnapshot?
     public private(set) var phase: SettingsConnectionPhase
-    private let service: SettingsConnectionService?
+    public private(set) var availability: SettingsConnectionAvailability
+    private var service: SettingsConnectionService?
     private var generation: UInt64 = 0
     private var observation: UInt64 = 0
     private var observers: [UUID: () -> Void] = [:]
     public init(service: SettingsConnectionService? = nil) {
-        self.service = service; phase = service == nil ? .unavailable : .idle
+        self.service = service
+        let capability = Self.initialAvailability(service)
+        availability = capability
+        phase = service == nil || !capability.hasAnyAction ? .unavailable : .idle
     }
-    public var isAvailable: Bool { service != nil }
+    private static func initialAvailability(_ service: SettingsConnectionService?) -> SettingsConnectionAvailability {
+        guard let service else { return .init(reason: .unavailable) }
+        if let provider = service as? any SettingsConnectionAvailabilityProviding { return provider.settingsConnectionAvailability }
+        return service is any SettingsConnectionAllowing ? .unverified : .legacy
+    }
+    public var isAvailable: Bool { service != nil && availability.hasAnyAction }
+    public var hasAllowanceBackend: Bool { service is any SettingsConnectionAllowing }
+    public func isBound(to expected: SettingsConnectionService) -> Bool { service === expected }
+    /// Late composition uses the existing editor/controller. A second backend cannot take it over.
+    @discardableResult public func bind(service: SettingsConnectionService) -> Bool {
+        guard self.service == nil, !isBusy else { return false }
+        generation &+= 1; let token = generation
+        let capability = Self.initialAvailability(service)
+        guard self.service == nil, generation == token else { return false }
+        self.service = service; availability = capability
+        phase = isAvailable ? .idle : .unavailable; changed(); return true
+    }
+    public func updateAvailability(_ value: SettingsConnectionAvailability) {
+        generation &+= 1; availability = service == nil ? .init(reason: .unavailable) : value
+        phase = isAvailable ? .idle : .unavailable; changed()
+    }
+    public func canConnect(_ tool: SettingsConnectionTool, access: SettingsConnectionAccess) -> Bool {
+        isAvailable && !isBusy && canRequest(.connect(tool, access))
+    }
+    public func canAllow(_ intent: SettingsConnectionIntent) -> Bool {
+        isAvailable && !isBusy && intent.basis == snapshot && canRequest(.applyStandardConsent(allow: intent.orderedTools, deny: [], keychainAllow: intent.orderedKeychainTools))
+    }
+    @discardableResult public func requestAllow(_ intent: SettingsConnectionIntent) -> SettingsConnectionConfirmation? {
+        guard canAllow(intent) else { return nil }
+        return request(.applyStandardConsent(allow: intent.orderedTools, deny: [], keychainAllow: intent.orderedKeychainTools))
+    }
+    public func canForget(_ tool: SettingsConnectionTool) -> Bool {
+        isAvailable && !isBusy && canRequest(.applyStandardConsent(allow: [], deny: [tool]))
+    }
+    /// Explicitly destructive, independent of choosing/unchecking first-run Allow intentions.
+    @discardableResult public func requestForget(_ tool: SettingsConnectionTool) -> SettingsConnectionConfirmation? {
+        guard canForget(tool) else { return nil }
+        return request(.applyStandardConsent(allow: [], deny: [tool]))
+    }
+    /// A visible draft edit must retire the exact confirmation it no longer represents.
+    func invalidateConfirmation() {
+        guard case .awaitingConfirmation = phase else { return }
+        generation &+= 1; phase = isAvailable ? .idle : .unavailable; changed()
+    }
     public var isBusy: Bool {
         switch phase { case .loading, .running: return true; default: return false }
     }
@@ -40,13 +89,13 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         generation &+= 1; phase = isAvailable ? .cancelled : .unavailable; changed()
     }
     public func refresh() async {
-        guard let service else { phase = .unavailable; changed(); return }
+        guard let service, availability.canInspect else { phase = .unavailable; changed(); return }
         guard !isBusy else { return }
         guard !Task.isCancelled else { cancel(); return }
         generation &+= 1; let token = generation
         phase = .loading; changed()
         // Observers may synchronously cancel or replace the observation before dispatch.
-        guard generation == token, phase == .loading else { return }
+        guard generation == token, phase == .loading, availability.canInspect else { return }
         guard !Task.isCancelled else { cancel(); return }
         do {
             let value = try await service.detect()
@@ -68,13 +117,27 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
               canRequest(confirmation.action) else { return }
         guard !Task.isCancelled else { cancel(); return }
         generation &+= 1; let token = generation
-        let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration)
+        let keychainAllow: [SettingsConnectionTool]
+        if case .applyStandardConsent(_, _, let chosen) = confirmation.action { keychainAllow = chosen } else { keychainAllow = [] }
+        let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration,
+                                                       consentTextVersion: snapshot?.consentPreview?.textVersion, keychainAllow: keychainAllow)
         phase = .running(confirmation.action); changed()
         guard generation == token, confirmation.observation == observation,
               phase == .running(confirmation.action), canRequest(confirmation.action) else { return }
         guard !Task.isCancelled else { cancel(); return }
         do {
             switch confirmation.action {
+            case .applyStandardConsent(let tools, let denied, let keychain):
+                guard let allowing = service as? any SettingsConnectionAllowing else { throw SettingsConnectionFailure.unavailable }
+                let value = try await allowing.applyStandardConsent(allow: tools, deny: denied, request: request)
+                guard generation == token else { return }
+                guard !Task.isCancelled else { cancel(); return }
+                try acceptActionResult(value)
+                let complete = tools.allSatisfy { id in value.tools.contains { $0.tool == id && $0.authorization == .allowed } }
+                    && denied.allSatisfy { id in value.tools.contains { $0.tool == id && ($0.authorization == .denied || $0.authorization == .noConsent) } }
+                    && keychain.allSatisfy { id in value.tools.contains { $0.tool == id && $0.keychain == .allowed } }
+                phase = !complete ? .failed(.invalidResponse) : !value.pendingCleanupTools.isEmpty ? .cleanupPending : (value.mode == .off || value.mode == .unknown)
+                    ? .consentRecordedReadingBlocked(value.mode) : .idle
             case .connect(let tool, let access):
                 let value = try await service.connect(tool, access: access, request: request)
                 guard generation == token else { return }
@@ -97,10 +160,21 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     }
     private func canRequest(_ action: SettingsConnectionAction) -> Bool {
         switch action {
-        case .installPlugin: return true
+        case .applyStandardConsent(let allow, let deny, let keychain):
+            let tools = allow + deny
+            guard Set(keychain).count == keychain.count,
+                  keychain.allSatisfy({ id in id == .claude && allow.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.keychainEligible } == true }) else { return false }
+            guard service is any SettingsConnectionAllowing, !tools.isEmpty, Set(tools).count == tools.count,
+                  allow.isEmpty ? availability.canForget : availability.canGrant,
+                  allow.isEmpty || deny.isEmpty,
+                  allow.isEmpty || snapshot?.mode == .automatic || snapshot?.mode == .passive,
+                  snapshot?.consentGeneration != nil, let preview = snapshot?.consentPreview else { return false }
+            return allow.allSatisfy { id in preview.standardTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.canRequestConnection } == true }
+                && deny.allSatisfy { id in preview.deniableTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.presence == .detected } == true }
+        case .installPlugin(let tool): return availability.pluginTools.contains(tool)
         case .connect(let tool, let access):
-            return snapshot?.tools.contains { $0.tool == tool && $0.access == access && $0.canRequestConnection } == true
-        case .disconnect(let tool): return snapshot?.tools.contains { $0.tool == tool } == true
+            return availability.canGrant && snapshot?.tools.contains { $0.tool == tool && $0.access == access && $0.canRequestConnection } == true
+        case .disconnect(let tool): return availability.canForget && snapshot?.tools.contains { $0.tool == tool } == true
         }
     }
     private func accept(_ value: SettingsConnectionSnapshot) throws {
@@ -122,6 +196,9 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     }
     private func failed(_ error: Error, token: UInt64) {
         guard generation == token else { return }
+        if (error as? SettingsConnectionFailure) == .cleanupReadbackUnavailable, let previous = snapshot {
+            observation &+= 1; snapshot = try? previous.withoutVerifiedConsent()
+        }
         if Task.isCancelled || error is CancellationError { phase = .cancelled }
         else { phase = .failed((error as? SettingsConnectionFailure) ?? .requestFailed) }
         changed()

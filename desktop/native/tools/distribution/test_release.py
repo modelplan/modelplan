@@ -203,6 +203,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.assertEqual(swift[-3:], (self.info['SUPublicEDKey'], self.signature, str(archive)))
         for args, data in self.calls:
             self.assertNotIn(self.env['SPARKLE_ED25519_PRIVATE_KEY'], args)
+
             if args[0] == '/fake/sign_update':
                 self.assertEqual(data, self.env['SPARKLE_ED25519_PRIVATE_KEY'].encode() + b'\n')
         xml = ET.parse(self.output / 'appcast-beta.xml')
@@ -292,6 +293,20 @@ class AdhocBetaCandidate(unittest.TestCase):
             self.prepare()
         self.assertFalse((self.output / 'draft-release.json').exists())
         self.assertFalse((self.output / 'appcast-beta.xml').exists())
+
+
+    def test_resigning_refreshes_info_and_resource_pin_together(self):
+        self.info.update(ModelPlanHelperVersion='0.5.43',
+                         ModelPlanSourceHelperSHA256='a' * 64,
+                         ModelPlanBundledHelperSHA256=release.sha256(self.helper))
+        self.write_info()
+        with patch.object(release, 'run', side_effect=self.fake_run):
+            self.prepare()
+        info = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
+        self.assertEqual(info['ModelPlanBundledHelperSHA256'], release.sha256(self.helper))
+        self.assertEqual((self.resources / 'modelplan.sha256').read_text().strip(), info['ModelPlanBundledHelperSHA256'])
+        self.assertEqual(info['ModelPlanSourceHelperSHA256'], 'a' * 64)
+        self.assertEqual(info['ModelPlanHelperVersion'], '0.5.43')
 
 
 class CandidateArchive(unittest.TestCase):
