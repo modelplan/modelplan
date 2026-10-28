@@ -16,7 +16,7 @@ import zipfile
 import posixpath
 import subprocess
 import tempfile
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from urllib.request import urlopen
 import xml.etree.ElementTree as ET
 
@@ -25,21 +25,25 @@ SIGNING = ('MACOS_CERTIFICATE_P12_BASE64', 'MACOS_CERTIFICATE_PASSWORD',
            'MACOS_OFFICIAL_WORKFLOW_ID', 'CANDIDATE_RUN_ID', 'MACOS_FEED_URL')
 NOTARY = ('APPLE_NOTARY_KEY_P8_BASE64', 'APPLE_NOTARY_KEY_ID', 'APPLE_NOTARY_ISSUER_ID')
 SPARKLE = ('SPARKLE_ED25519_PRIVATE_KEY', 'SPARKLE_TOOLS_URL',
-           'SPARKLE_TOOLS_SHA256', 'MACOS_UPDATE_URL', 'MACOS_FEED_URL')
+           'SPARKLE_TOOLS_SHA256', 'MACOS_UPDATE_URL')
+ADHOC_BETA = SPARKLE + ('MACOS_BETA_FEED_URL', 'MACOS_RELEASE_NOTES_URL', 'MACOS_BUNDLE_ID',
+                        'MACOS_OFFICIAL_WORKFLOW_ID', 'CANDIDATE_RUN_ID')
 NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
 ET.register_namespace('sparkle', NS)
 
 
 def release_plan(env):
-    trusted = (env.get('RELEASE_REQUESTED') == 'true' and
-               env.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and
-               env.get('GITHUB_REF') == 'refs/heads/main')
+    trusted = (env.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and
+               env.get('GITHUB_REF') == 'refs/heads/main' and
+               env.get('GITHUB_REPOSITORY') == 'modelplan/modelplan')
     result = {}
     for stage, names in [('sign', SIGNING), ('notarize', SIGNING + NOTARY),
-                         ('appcast', SIGNING + NOTARY + SPARKLE)]:
+                         ('appcast', SIGNING + NOTARY + SPARKLE), ('adhoc_appcast', ADHOC_BETA)]:
+        requested = env.get('ADHOC_BETA_REQUESTED' if stage == 'adhoc_appcast' else 'RELEASE_REQUESTED') == 'true'
+        authorized = trusted and requested
         missing = [name for name in names if not env.get(name, '').strip()]
-        result[stage] = {'ready': trusted and not missing, 'missing': missing,
-                         'requested_on_main': trusted}
+        result[stage] = {'ready': authorized and not missing, 'missing': missing,
+                         'requested_on_main': authorized}
     return result
 
 
@@ -50,6 +54,20 @@ def https_url(value):
     return value
 
 
+def beta_feed_url(env):
+    beta = https_url(env['MACOS_BETA_FEED_URL'])
+    official = env.get('MACOS_FEED_URL', '').strip()
+    if official:
+        def location(value):
+            url = urlparse(https_url(value))
+            # Query strings cannot turn the same hosted file into a separate channel.
+            path = posixpath.normpath('/' + unquote(url.path).lstrip('/'))
+            return url.hostname.lower(), url.port or 443, path
+        if location(beta) == location(official):
+            raise ValueError('Beta and notarized feeds must use separate files')
+    return beta
+
+
 def sha256(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
@@ -58,7 +76,7 @@ def sha256(path):
 def run(*args, input=None):
     # Do not echo subprocess arguments/output: upstream key tools can echo bad input.
     env = {k: v for k, v in os.environ.items()
-           if k not in SIGNING + NOTARY + SPARKLE and k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
+           if k not in SIGNING + NOTARY + SPARKLE + ADHOC_BETA and k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
     result = subprocess.run(args, input=input, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     if result.returncode:
         raise RuntimeError(f'{Path(args[0]).name} failed (output withheld; no credential diagnostics uploaded)')
@@ -131,7 +149,7 @@ def fetch_sparkle(output):
             tool = output / 'sign_update'; tool.write_bytes(package.extractfile(members[0]).read()); tool.chmod(0o700)
 
 
-def validate_candidate(app, source, bundle_id, team_id):
+def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     app = Path(app).resolve(strict=True)
     # All symlinks must resolve inside the candidate; frameworks may use internal links.
     for item in app.rglob('*'):
@@ -143,7 +161,7 @@ def validate_candidate(app, source, bundle_id, team_id):
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if edition.get('edition') != 'official' or provenance.get('sourceCommit') != source:
         raise ValueError('Candidate edition or exact source commit mismatch')
-    if not re.fullmatch('[0-9a-f]{40}', source) or not re.fullmatch('[A-Z0-9]{10}', team_id):
+    if not re.fullmatch('[0-9a-f]{40}', source) or (team_id is not None and not re.fullmatch('[A-Z0-9]{10}', team_id)):
         raise ValueError('Invalid approved source/team')
     if info.get('CFBundleIdentifier') != bundle_id or not bundle_id:
         raise ValueError('Candidate bundle ID mismatch')
@@ -160,7 +178,7 @@ def validate_candidate(app, source, bundle_id, team_id):
     for executable in (helper, app / 'Contents/MacOS' / info['CFBundleExecutable']):
         if set(run('xcrun', 'lipo', '-archs', str(executable)).decode().split()) != {'arm64', 'x86_64'}:
             raise ValueError('Candidate must contain universal app and CLI executables')
-    if info.get('SUFeedURL') != https_url(os.environ['MACOS_FEED_URL']):
+    if info.get('SUFeedURL') != https_url(feed if feed is not None else os.environ['MACOS_FEED_URL']):
         raise ValueError('Candidate feed channel mismatch')
     public_key = base64.b64decode(info.get('SUPublicEDKey', ''), validate=True)
     if len(public_key) != 32:
@@ -226,27 +244,33 @@ def notarize(app, output):
         run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(output / 'ModelPlan-universal.zip'))
 
 
-def appcast_bytes(info, archive, signature, download, feed):
+def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None, release_notes=None):
     https_url(download); https_url(feed)
+    if channel_name is not None and channel_name != 'beta':
+        raise ValueError('Unsupported update channel')
+    if channel_name == 'beta':
+        https_url(release_notes)
     if len(base64.b64decode(signature, validate=True)) != 64 or Path(archive).stat().st_size <= 0:
         raise ValueError('A real signature and nonempty archive are required')
     rss = ET.Element('rss', version='2.0'); channel = ET.SubElement(rss, 'channel')
-    ET.SubElement(channel, 'title').text = 'ModelPlan official macOS updates'
+    ET.SubElement(channel, 'title').text = 'ModelPlan macOS beta updates' if channel_name == 'beta' else 'ModelPlan official macOS updates'
     ET.SubElement(channel, 'link').text = feed
     item = ET.SubElement(channel, 'item')
     ET.SubElement(item, 'title').text = 'ModelPlan ' + info['CFBundleShortVersionString']
     ET.SubElement(item, f'{{{NS}}}version').text = info['CFBundleVersion']
     ET.SubElement(item, f'{{{NS}}}shortVersionString').text = info['CFBundleShortVersionString']
     ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '14.0.0'
+    if channel_name == 'beta':
+        ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
+        ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
     ET.SubElement(item, 'description').text = 'Universal binary. Apple silicon tested; Intel untested; 3D may stutter.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
     return ET.tostring(rss, encoding='utf-8', xml_declaration=True)
 
 
-def appcast(app, output, tool):
-    env = os.environ; output = Path(output); archive = output / 'ModelPlan-universal.zip'
-    info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
+def sign_archive(info, archive, tool):
+    env = os.environ
     key = env['SPARKLE_ED25519_PRIVATE_KEY'].strip().encode() + b'\n'
     signature = run(str(tool), '--ed-key-file', '-', '-p', str(archive), input=key).decode().strip()
     run(str(tool), '--ed-key-file', '-', '--verify', str(archive), signature, input=key)
@@ -263,13 +287,54 @@ if !key.isValidSignature(signature, for: archive) { exit(1) }
         source = Path(directory) / 'verify.swift'; source.write_text(verifier)
         run('swift', '-module-cache-path', str(Path(directory) / 'module-cache'), str(source),
             info['SUPublicEDKey'], signature, str(archive))
+    return signature
+
+
+def appcast(app, output, tool):
+    env = os.environ; output = Path(output); archive = output / 'ModelPlan-universal.zip'
+    if env.get('MACOS_BETA_FEED_URL', '').strip():
+        beta_feed_url(env)
+    info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
+    signature = sign_archive(info, archive, tool)
     (output / 'appcast.xml').write_bytes(appcast_bytes(info, archive, signature, env['MACOS_UPDATE_URL'], env['MACOS_FEED_URL']))
     (output / 'SHA256SUMS').write_text(f'{sha256(archive)}  {archive.name}\n')
 
 
+def adhoc_appcast(app, output, tool):
+    env = os.environ
+    feed = beta_feed_url(env)
+    https_url(env['MACOS_UPDATE_URL']); https_url(env['MACOS_RELEASE_NOTES_URL'])
+    # Team identity is only optional here; the Developer ID path still supplies and validates it.
+    info = validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], None, feed=feed)
+    app = Path(app)
+    output = Path(output); output.mkdir(parents=True, exist_ok=False)
+    run('codesign', '--force', '--deep', '--sign', '-', str(app))
+    # Deep signing can change the helper bytes. Refresh its integrity record and reseal the app.
+    (app / 'Contents/Resources/modelplan.sha256').write_text(sha256(app / 'Contents/Helpers/modelplan') + '\n')
+    run('codesign', '--force', '--sign', '-', str(app))
+    run('codesign', '--verify', '--deep', '--strict', str(app))
+    archive = output / 'ModelPlan-beta-universal.zip'
+    run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(archive))
+    signature = sign_archive(info, archive, tool)
+    appcast = output / 'appcast-beta.xml'
+    appcast.write_bytes(appcast_bytes(info, archive, signature, env['MACOS_UPDATE_URL'], feed,
+                                    channel_name='beta', release_notes=env['MACOS_RELEASE_NOTES_URL']))
+    (output / 'SHA256SUMS').write_text(''.join(f'{sha256(path)}  {path.name}\n' for path in (archive, appcast)))
+    # Reviewable REST release metadata only. This code never calls a publishing API.
+    (output / 'draft-release.json').write_text(json.dumps({
+        'tag_name': 'macos-beta-' + info['CFBundleVersion'],
+        'target_commitish': env['GITHUB_SHA'],
+        'name': 'ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)',
+        'draft': True, 'prerelease': True,
+        'body': 'Ad-hoc signed, not notarized. First open requires Gatekeeper approval; '
+                'Accessibility and Screen Recording grants may need renewing after updates.\n\n'
+                'Release notes: ' + env['MACOS_RELEASE_NOTES_URL']
+    }, indent=2) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=('plan', 'fetch-cli', 'fetch-sparkle', 'check-archive', 'sign', 'notarize', 'appcast'))
+    parser.add_argument('stage', choices=('plan', 'fetch-cli', 'fetch-sparkle', 'check-archive', 'sign', 'notarize', 'appcast', 'adhoc_appcast'))
     parser.add_argument('--archive'); parser.add_argument('--app'); parser.add_argument('--output'); parser.add_argument('--pin'); parser.add_argument('--tool')
     args = parser.parse_args()
     if args.stage == 'plan':
@@ -284,7 +349,8 @@ def main():
             raise ValueError('Release stage is not authorized/configured')
         if args.stage == 'sign': sign(args.app)
         elif args.stage == 'notarize': notarize(args.app, args.output)
-        else: appcast(args.app, args.output, args.tool)
+        elif args.stage == 'appcast': appcast(args.app, args.output, args.tool)
+        else: adhoc_appcast(args.app, args.output, args.tool)
 
 
 if __name__ == '__main__':
