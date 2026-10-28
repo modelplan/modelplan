@@ -223,10 +223,12 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 | **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
 | Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session |
 | Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
-| Desktop app (preview) | [`desktop/`](desktop/) | A macOS menu bar app: the quota left and the current hint in the menu bar, a popover with your sessions, quota and effort curves, and a notification once per piece of advice. Unsigned builds for now |
+| Desktop app (preview) | [`desktop/`](desktop/) | A macOS menu bar app: the quota left and the current hint in the menu bar, a popover with your sessions, quota and effort curves, and a notification once per piece of advice. Ad-hoc signed, not notarized |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary: `lineup`, `effort`, `models`, `quota`, `advise`, `statusline`, `sync`, `doctor` |
 | Open data | [`data/`](data/) | The reviewed data behind the site: plan tiers, prices, quota metering, calendars, model identities and effort policies. Mirrored from modelplan.ai on every change, one pull request each |
 | Methodology | [`METHODOLOGY.md`](METHODOLOGY.md) | How ability, cost, time and the ★ effort are worked out, and the sources |
+
+Mac beta installation (ad-hoc signed, not notarized): [English](docs/mac-beta-install.md) · [简体中文](docs/mac-beta-install.zh-CN.md).
 
 ## Contributing
 
