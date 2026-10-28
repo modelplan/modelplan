@@ -18,6 +18,9 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
     let started = ProcessInfo.processInfo.systemUptime
     let end = started + 0.25
     var activations = 0, exits: [String] = []
+    let main = CFRunLoopGetMain()
+    let currentIsMain = CFRunLoopGetCurrent() === main
+    let nextBefore = CFRunLoopGetNextTimerFireDate(main, mode) - CFAbsoluteTimeGetCurrent()
     func completed() -> Bool {
         caution.cautionState.mode == .steadyUnacknowledged && caution.animationDuration == nil
     }
@@ -32,7 +35,8 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
         guard result == .stopped else { break }
     }
     let waited = ProcessInfo.processInfo.systemUptime - started
-    try check(completed(), "caution deadline deferred over tracking mode: activations=\(activations), exits=\(exits), waited=\(waited), state=\(caution.cautionState.mode), animation=\(String(describing: caution.animationDuration))")
+    let nextAfter = CFRunLoopGetNextTimerFireDate(main, mode) - CFAbsoluteTimeGetCurrent()
+    try check(completed(), "caution deadline deferred over tracking mode: activations=\(activations), exits=\(exits), waited=\(waited), state=\(caution.cautionState.mode), animation=\(String(describing: caution.animationDuration)), mainThread=\(Thread.isMainThread), currentIsMain=\(currentIsMain), nextTimerBefore=\(nextBefore), nextTimerAfter=\(nextAfter)")
 }
 
 @MainActor func cautionTrackingDeadlineChecks() throws {

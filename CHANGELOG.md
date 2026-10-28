@@ -9,6 +9,11 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - CLI adds cache-only `windows` for public time-of-day billing rates, local-time changes and unverified evidence labels; `lineup` / `plan` and task-start briefs include declared-plan rate context and optional cheaper-window hints. Expired horizons stay unknown, and `lineup <developer-id>` now selects that developer.
   CLI 新增只读缓存的 `windows`，显示公开分时计费倍率、本机时间和未核实标记；`lineup` / `plan` 与任务简报提供已声明套餐的倍率及可选低价时段。过期时域保持未知，`lineup <开发者 ID>` 现正确筛选开发者。
 
+- CLI consent commands explain the required `--json` flag on stderr. On macOS, when unset Claude Keychain permission blocks a saved-login read, the reader notice and consent readback name the missing choice and direct users to allow Keychain for Claude Code in Settings. Linux keeps the saved-login notice without a Keychain remedy.
+  CLI 授权命令在缺少 `--json` 时输出用法；macOS 上 Claude 钥匙串选择未设置而无法读取时，读取器提示及授权回读说明原因，并引导用户在设置中允许 Claude Code 访问钥匙串。Linux 保留已有登录不可读的提示，不显示钥匙串操作。
+
+## CLI v0.5.43, Codex plugin 0.15.35 and Claude Code plugin 0.7.34 (2026-10-28)
+
 - CLI adds `consent --json` and `consent grant --json` for the App: bilingual consent text, atomic generation/text-version checks, durable request replay, standard-route gating, recorded Keychain choices and revoke-first Forget cleanup. Replay receipts, cleanup obligations and Keychain restrictions survive pre-API shared-store readers/writers. Existing production readers pick up the new generation and invalidate in-flight older grants.
   CLI 新增 App 授权 JSON 读取和提交接口，返回中英文原文，原子校验授权代次与文本版本，支持持久化幂等请求；仅授权标准读取、记录钥匙串选择，拒绝先撤销再清理，并使旧代次的进行中读取失效。旧版 CLI 读写共享授权文件后，幂等回执、清理义务及钥匙串限制仍有效。
 
@@ -19,6 +24,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
   每周档位建议在历史文本、Claude Code 状态栏和钩子的用户提示间共享一次提示；状态栏从明确的当前档位按公开参考成本建议一步，预览、仅记录和紧急额度提示不消耗次数。
 
 - Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Production admission supports Automatic/Passive consent and cache-only caller selection without a plugin or status line. Background progress and excluded worker metadata cannot change the selected main branch or its classification; no independent cursor or quota-network schedule.
+
+- Both plugins and their bundled Skill pin CLI v0.5.43 and its published archive checksums.
 
 ## CLI v0.5.42, Codex plugin 0.15.34 and Claude Code plugin 0.7.33 (2026-10-28)
 
