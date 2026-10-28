@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI consent read/grant responses add `hostDetails` with bare DNS hostnames and separate notes, while preserving existing `hosts` display labels.
+  CLI 授权读取和提交响应新增 `hostDetails`，分别返回裸 DNS 主机名与说明，保留现有 `hosts` 展示文本。
+
 ## CLI v0.5.44, Codex plugin 0.15.36 and Claude Code plugin 0.7.35 (2026-10-28)
 
 - CLI adds cache-only `windows` for public time-of-day billing rates, local-time changes and unverified evidence labels; `lineup` / `plan` and task-start briefs include declared-plan rate context and optional cheaper-window hints. Expired horizons stay unknown, and `lineup <developer-id>` now selects that developer.

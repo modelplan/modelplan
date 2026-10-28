@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"runtime"
@@ -19,17 +20,41 @@ import (
 )
 
 type consentTool struct {
-	ID          string   `json:"id"`
-	DisplayName string   `json:"displayName"`
-	AccessClass string   `json:"accessClass"`
-	Detected    bool     `json:"detected"`
-	Allowed     bool     `json:"allowed"`
-	Backend     string   `json:"backend"`
-	ReaderID    string   `json:"readerId"`
-	Keychain    string   `json:"keychain"`
-	Hosts       []string `json:"hosts"`
-	Notice      string   `json:"notice,omitempty"`
-	NextStep    string   `json:"nextStep,omitempty"`
+	ID          string              `json:"id"`
+	DisplayName string              `json:"displayName"`
+	AccessClass string              `json:"accessClass"`
+	Detected    bool                `json:"detected"`
+	Allowed     bool                `json:"allowed"`
+	Backend     string              `json:"backend"`
+	ReaderID    string              `json:"readerId"`
+	Keychain    string              `json:"keychain"`
+	Hosts       []string            `json:"hosts"`
+	HostDetails []consentHostDetail `json:"hostDetails"`
+	Notice      string              `json:"notice,omitempty"`
+	NextStep    string              `json:"nextStep,omitempty"`
+}
+
+type consentHostDetail struct {
+	Host string `json:"host"`
+	Note string `json:"note"`
+}
+
+var consentDNSName = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// Hosts remain display labels for existing callers. Only compiled HTTPS DNS
+// destinations enter the structured field; local-only/loopback labels stay in
+// hosts. This parses metadata and performs no resolution or network access.
+func consentHostDetails(labels []string) []consentHostDetail {
+	details := []consentHostDetail{}
+	for _, label := range labels {
+		endpoint, note, _ := strings.Cut(label, " (")
+		u, err := url.Parse(endpoint)
+		if err != nil || u.Scheme != "https" || len(u.Hostname()) > 253 || !consentDNSName.MatchString(u.Hostname()) {
+			continue
+		}
+		details = append(details, consentHostDetail{Host: u.Hostname(), Note: strings.TrimSuffix(note, ")")})
+	}
+	return details
 }
 
 type consentView struct {
@@ -101,7 +126,8 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
 			AccessClass: consentAccess(t), Detected: true,
 			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
-			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts}
+			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts,
+			HostDetails: consentHostDetails(hosts)}
 		if runtime.GOOS == "darwin" && row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
 			consent.KeychainSupported(t.ProviderID, t.Preferred, t.ReaderID) && r.KeyEnv == "" && !r.BrowserSession {
 			row.Notice, row.NextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
