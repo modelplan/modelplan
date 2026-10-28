@@ -11,8 +11,12 @@ on:
         description: Prepare an approved official candidate (no publication)
         type: boolean
         default: false
+      prepare_adhoc_beta:
+        description: Prepare an ad-hoc beta draft payload (no publication)
+        type: boolean
+        default: false
       candidate_run_id:
-        description: Successful exact-main official assembly run ID (empty skips signing)
+        description: Successful exact-main official assembly run ID (empty skips preparation)
         type: string
         default: ""
 permissions:
@@ -94,6 +98,7 @@ jobs:
       MACOS_TEAM_ID: ${{ vars.MACOS_TEAM_ID }}
       MACOS_BUNDLE_ID: ${{ vars.MACOS_BUNDLE_ID }}
       MACOS_FEED_URL: ${{ vars.MACOS_FEED_URL }}
+      MACOS_BETA_FEED_URL: ${{ vars.MACOS_BETA_FEED_URL }}
       MACOS_UPDATE_URL: ${{ vars.MACOS_UPDATE_URL }}
       SPARKLE_TOOLS_URL: ${{ vars.SPARKLE_TOOLS_URL }}
       SPARKLE_TOOLS_SHA256: ${{ vars.SPARKLE_TOOLS_SHA256 }}
@@ -178,3 +183,80 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       # No gh release, Pages push, feed replacement or deployment in R7.
+
+  adhoc-beta-candidate:
+    # Same protected handoff as Developer ID; no Apple credentials are exposed here.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan' && inputs.prepare_adhoc_beta
+    needs: neutral-build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    environment: macos-release
+    permissions:
+      contents: read
+      actions: read
+    env:
+      ADHOC_BETA_REQUESTED: "true"
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      MACOS_OFFICIAL_WORKFLOW_ID: ${{ vars.MACOS_OFFICIAL_WORKFLOW_ID }}
+      MACOS_BUNDLE_ID: ${{ vars.MACOS_BUNDLE_ID }}
+      MACOS_FEED_URL: ${{ vars.MACOS_FEED_URL }}
+      MACOS_BETA_FEED_URL: ${{ vars.MACOS_BETA_FEED_URL }}
+      MACOS_UPDATE_URL: ${{ vars.MACOS_UPDATE_URL }}
+      MACOS_RELEASE_NOTES_URL: ${{ vars.MACOS_RELEASE_NOTES_URL }}
+      SPARKLE_TOOLS_URL: ${{ vars.SPARKLE_TOOLS_URL }}
+      SPARKLE_TOOLS_SHA256: ${{ vars.SPARKLE_TOOLS_SHA256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Plan optional stages (presence only; never print secret values)
+        id: gates
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: python3 desktop/native/tools/distribution/release.py plan | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Verify trusted official assembly run
+        if: steps.gates.outputs.adhoc_appcast == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run_id = os.environ['CANDIDATE_RUN_ID']
+          workflow_id = os.environ['MACOS_OFFICIAL_WORKFLOW_ID']
+          assert re.fullmatch(r'[0-9]+', run_id) and re.fullmatch(r'[0-9]+', workflow_id)
+          run = json.loads(subprocess.check_output(['gh', 'api', f'repos/modelplan/modelplan/actions/runs/{run_id}']))
+          assert run['head_repository']['full_name'] == 'modelplan/modelplan'
+          assert run['head_branch'] == 'main' and run['head_sha'] == os.environ['GITHUB_SHA']
+          assert run['event'] in ('push', 'workflow_dispatch') and run['conclusion'] == 'success'
+          assert str(run['workflow_id']) == workflow_id
+          PY
+      - uses: actions/download-artifact@v4
+        if: steps.gates.outputs.adhoc_appcast == 'true'
+        with:
+          name: modelplan-macos-official-candidate
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/official-input
+      - name: Validate archive paths and unpack the official candidate
+        if: steps.gates.outputs.adhoc_appcast == 'true'
+        run: |
+          python3 desktop/native/tools/distribution/release.py check-archive --archive "$RUNNER_TEMP/official-input/ModelPlan.app.zip"
+          mkdir "$RUNNER_TEMP/official-app"
+          ditto -x -k "$RUNNER_TEMP/official-input/ModelPlan.app.zip" "$RUNNER_TEMP/official-app"
+      - name: Prepare reviewed Sparkle signing tool
+        if: steps.gates.outputs.adhoc_appcast == 'true'
+        run: python3 desktop/native/tools/distribution/release.py fetch-sparkle --output "$RUNNER_TEMP/sparkle-tools"
+      - name: Ad-hoc sign, verify and prepare beta draft payload
+        if: steps.gates.outputs.adhoc_appcast == 'true'
+        env:
+          SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
+        run: python3 desktop/native/tools/distribution/release.py adhoc_appcast --app "$RUNNER_TEMP/official-app/ModelPlan.app" --output "$RUNNER_TEMP/adhoc-beta-output" --tool "$RUNNER_TEMP/sparkle-tools/sign_update"
+      - uses: actions/upload-artifact@v4
+        if: success() && steps.gates.outputs.adhoc_appcast == 'true'
+        with:
+          name: modelplan-macos-adhoc-beta-DRAFT-NOT-PUBLISHED
+          path: ${{ runner.temp }}/adhoc-beta-output/
+          if-no-files-found: error
+          retention-days: 7
+      # Publishing requires a separate explicit coordinator action after owner approval.

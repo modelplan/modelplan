@@ -22,10 +22,19 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var settings: SettingsApplication?
     private weak var help: InstrumentHelpComposition?
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
-    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) { self.openWebsite = openWebsite }
+    private let makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)?
+    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in },
+                makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)? = nil) {
+        self.openWebsite = openWebsite; self.makeCockpit = makeCockpit
+    }
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
         let surface = CommunityInstrumentView(openWebsite: openWebsite)
+        if let makeCockpit {
+            let composition = makeCockpit(surface.mainScreen)
+            do { try surface.attachCockpit(composition) }
+            catch { composition.dispose(); surface.fail() }
+        }
         current = surface
         if let settings { surface.apply(settings) }
         if let help { surface.bindHelp(help) }
@@ -62,10 +71,15 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public private(set) var isPresented = false
     public var requestFreshSelection: (() -> Void)?
     public var contentSizeChanged: (() -> Void)?
+    public private(set) var cockpitComposition: CockpitInstrumentComposition?
+    public var requestedInstrumentScope: InstrumentScope { cockpitComposition?.requestedScope ?? .all }
+    /// Settings/favourites and other application effects stay with the upper owner.
+    public var onInstrumentIntent: ((InstrumentSurfaceIntent) -> Void)?
     private let status = NSTextField(wrappingLabelWithString: "")
     private var settings: SettingsApplication?
     private var selection: AssembledModelSelection?
     private var diagnostics = StoreDiagnostics()
+    private var instrumentSnapshot: JoinedSnapshot?
     private var rendering = false
     private var publishRequested = false, compareRequested = false
     private var retired = false
@@ -105,6 +119,29 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         view.setFrameSize(preferredContentSize)
     }
     @objc private func applicationLostFocus(_ notification: Notification) { retireFocusHelp() }
+    public func attachCockpit(_ composition: CockpitInstrumentComposition) throws {
+        guard !retired, !isPresented, cockpitComposition == nil,
+              composition.surface.mainScreen === mainScreen, composition.rootView !== view,
+              !composition.rootView.isDescendant(of: mainScreen)
+        else { throw InstrumentSurfaceError.invalidInput }
+        cockpitComposition = composition
+        composition.onFailure = { [weak self] _ in self?.fail() }
+        modelPicker.isHidden = true; composition.rootView.frame.origin = .zero
+        view.addSubview(composition.rootView)
+        composition.onIntent = { [weak self, weak composition] intent in
+            guard let self, let composition, self.cockpitComposition === composition,
+                  !self.retired, self.isPresented, !self.renderFailure else { return }
+            switch intent {
+            case .openWebsite(let link):
+                guard self.mainScreen.presentation?.websiteLinks.contains(link) == true else { return }
+                self.openWebsite(link)
+            case .modelSelected(let id): self.selectedModelID = id; self.requestFreshSelection?()
+            case .requestScope: self.requestFreshSelection?()
+            default: break
+            }
+            self.onInstrumentIntent?(intent)
+        }
+    }
     @objc private func windowLostKey(_ notification: Notification) {
         guard let current=view.window,let window=notification.object as? NSWindow,window === current else { return }
         retireFocusHelp()
@@ -137,17 +174,22 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         let languageChanged = settings?.effective.language != application.effective.language
         settings = application
         modelPicker.setAccessibilityLabel(instrumentLanguage == .chinese ? "选择模型" : "Choose a model")
+        let appearance: NSAppearance?
         switch application.snapshot.preferences.theme {
-        case .system: mainScreen.appearance = nil
-        case .day: mainScreen.appearance = NSAppearance(named: .aqua)
-        case .night: mainScreen.appearance = NSAppearance(named: .darkAqua)
+        case .system: appearance = nil
+        case .day: appearance = NSAppearance(named: .aqua)
+        case .night: appearance = NSAppearance(named: .darkAqua)
         }
+        if let cockpitComposition { cockpitComposition.surface.applyAppearance(appearance) }
+        else { mainScreen.appearance = appearance }
         // An application commit must reevaluate live feeds, not resurrect a cached exact personal join.
         if isPresented, let requestFreshSelection { requestFreshSelection() }
         else if languageChanged { needsSelection = true; clearForPendingLanguage() }
         helpBinding?.refresh()
     }
-    public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) { self.diagnostics = diagnostics }
+    public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
+        guard !retired else { return }; self.diagnostics = diagnostics; instrumentSnapshot = snapshot
+    }
     public func render(selection: AssembledModelSelection, publishedAt: Date?, now: Date) {
         guard !retired else { return }
         self.selection = selection; needsSelection = false
@@ -159,9 +201,15 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         guard !retired else { return }; isPresented = true
         if let requestFreshSelection { requestFreshSelection() }
         else if !needsSelection, selection != nil { requestPublish() }
+        do { try cockpitComposition?.setPresentationAllowed(true) } catch { fail() }
     }
-    public func suspendPresentation() { isPresented = false; mainScreen.suspend(); helpBinding?.suspend() }
-    public func closePresentation() { isPresented = false; mainScreen.closeForCockpit(); helpBinding?.suspend() }
+    public func suspendPresentation() {
+        isPresented = false; try? cockpitComposition?.setPresentationAllowed(false)
+        mainScreen.suspend(); helpBinding?.suspend()
+    }
+    public func closePresentation() {
+        isPresented = false; cockpitComposition?.close(); mainScreen.closeForCockpit(); helpBinding?.suspend()
+    }
     public func dispose() {
         guard !retired else { return }; retired = true; isPresented = false; helpGeneration &+= 1
         NotificationCenter.default.removeObserver(self,name:NSApplication.didResignActiveNotification,object:nil)
@@ -171,6 +219,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         (view as? InstrumentContainer)?.optionChanged = nil;(view as? InstrumentContainer)?.escape=nil
         mainScreen.onHelpEscape=nil
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
+        cockpitComposition?.dispose(); cockpitComposition = nil; onInstrumentIntent = nil; instrumentSnapshot = nil
         requestFreshSelection = nil; contentSizeChanged = nil
     }
     @objc private func pickedModel(_ sender: NSPopUpButton) {
@@ -195,6 +244,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     }
     private func publish(_ selection: AssembledModelSelection, compare: Bool) {
         guard selection.language == instrumentLanguage else { clearForPendingLanguage(); return }
+        if let cockpitComposition { publishCockpit(cockpitComposition, selection: selection, compare: compare); return }
         let grouped = Dictionary(grouping: selection.models, by: \.id)
         let ids = selection.shared.orderedIDs
         guard ids.allSatisfy({ grouped[$0]?.count == 1 }) else { fail(); return }
@@ -270,16 +320,40 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         } catch { fail() }
     }
     private func clearForPendingLanguage() {
+        cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true
         modelPicker.isEnabled = false
         status.stringValue = instrumentLanguage == .chinese ? "正在等待当前语言的模型目录" : "Waiting for the current model catalogue"
         status.frame = .init(x: 8, y: 40, width: max(1, preferredContentSize.width - 16), height: 60)
         status.isHidden = false; helpBinding?.suspend()
     }
-    private func fail() {
+    fileprivate func fail() {
+        cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true; renderFailure = true
         status.stringValue = instrumentLanguage == .chinese ? "当前数据暂无法在原生视图显示" : "Current data cannot be displayed in the native view"
         status.frame = .init(x: 8, y: 40, width: max(1, preferredContentSize.width - 16), height: 60)
         status.isHidden = false; modelPicker.isEnabled = false; helpBinding?.suspend()
+    }
+    private func publishCockpit(_ composition: CockpitInstrumentComposition,
+                                selection: AssembledModelSelection, compare: Bool) {
+        do {
+            try composition.update(.init(snapshot: instrumentSnapshot, selection: selection,
+                scope: composition.requestedScope, language: instrumentLanguage,
+                publishedAt: sourceStamp.publishedAt, now: sourceStamp.observedAt,
+                showProjectNames: settings?.effective.showProjectNames ?? false))
+            guard !retired, isPresented, cockpitComposition === composition else { return }
+            let size = composition.rootView.frame.size
+            guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0,
+                  size.width <= 2048, size.height <= 2048 else { throw InstrumentSurfaceError.invalidFrames }
+            orderedModelIDs = selection.shared.orderedIDs
+            if let id = selectedModelID, !orderedModelIDs.contains(id) { selectedModelID = nil }
+            if compare, let selectedModelID {
+                mainScreen.openComparison(modelID: selectedModelID, from: .comparisonRow(selectedModelID), toggle: false)
+            }
+            let changed = preferredContentSize != size; preferredContentSize = size
+            view.setFrameSize(size); modelPicker.isHidden = true; status.isHidden = true
+            composition.rootView.isHidden = false; renderFailure = false
+            if changed { contentSizeChanged?() }; helpBinding?.refresh()
+        } catch { fail() }
     }
 }
