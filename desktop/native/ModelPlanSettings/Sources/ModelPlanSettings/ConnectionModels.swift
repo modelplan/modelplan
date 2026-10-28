@@ -132,9 +132,17 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
               }), tools.allSatisfy({ row in
                   if case .verified(let refs) = row.binding { return !refs.isEmpty && refs.count <= 1000 && refs.allSatisfy(Self.validReference) }
                   return true
-              }), tools.allSatisfy({ $0.providerHosts.count <= 32 && $0.providerHosts.allSatisfy(Self.validHost) })
+              }), tools.allSatisfy({ $0.providerHosts.count <= 32 && $0.providerHosts.allSatisfy(SettingsProviderHostText.isValid) })
         else { throw SettingsConnectionFailure.invalidResponse }
-        self.consentGeneration = consentGeneration; self.tools = tools; self.subscriptions = subscriptions
+        let displayTools = try tools.map { value -> SettingsConnectionToolState in
+            var row = value
+            row.providerHosts = try value.providerHosts.map { raw in
+                guard let label = SettingsProviderHostText.normalized(raw) else { throw SettingsConnectionFailure.invalidResponse }
+                return label
+            }
+            return row
+        }
+        self.consentGeneration = consentGeneration; self.tools = displayTools; self.subscriptions = subscriptions
         self.unrecognizedTools = unrecognizedTools
         self.consentPreview = consentPreview
         self.mode = mode; self.pendingCleanupTools = pendingCleanupTools
@@ -154,14 +162,8 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
     private static func validReference(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
     }
-    public static func validHost(_ value: String) -> Bool {
-        guard !value.isEmpty, value.utf8.count <= 253 else { return false }
-        let labels = value.split(separator: ".", omittingEmptySubsequences: false)
-        return labels.allSatisfy { label in
-            guard !label.isEmpty, label.utf8.count <= 63, label.first != "-", label.last != "-" else { return false }
-            return label.utf8.allSatisfy { (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 }
-        }
-    }
+    /// Compatibility entry point. Provider host values are bounded display metadata, not DNS policy.
+    public static func validHost(_ value: String) -> Bool { SettingsProviderHostText.isValid(value) }
     public var standardTools: [SettingsConnectionToolState] { tools.filter { $0.access == .standard } }
     public var advancedTools: [SettingsConnectionToolState] { tools.filter { $0.access == .browserSession } }
 }

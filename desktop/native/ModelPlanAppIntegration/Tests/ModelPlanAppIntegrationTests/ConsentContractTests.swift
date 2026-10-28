@@ -76,14 +76,16 @@ final class ConsentContractTests: XCTestCase {
         XCTAssertEqual(result.tools.first?.presence, .unknown); XCTAssertEqual(result.tools.first?.authorization, .unknown)
         XCTAssertFalse(result.tools.first!.canRequestConnection)
     }
-    func testHostsMustBeDestinationNamesAndUnsetDoesNotBecomeKeychainGrant() throws {
+    func testHostsAreDisplayMetadataAndUnsetDoesNotBecomeKeychainGrant() throws {
         let value = tool(keychain: .unset)
         let snapshot = try preview([value]).projecting()
         XCTAssertTrue(snapshot.tools.first!.canRequestConnection); XCTAssertEqual(snapshot.tools.first!.keychain, .unset)
-        let invalid = CommunityConsentToolFacts(id: "codex", displayName: "Codex", accessClass: .standard,
+        let describedEndpoint = CommunityConsentToolFacts(id: "codex", displayName: "Codex", accessClass: .standard,
             detected: true, allowed: false, backend: "native", readerId: "native:codex", keychain: .unset,
             hosts: ["https://account@example.test/private"])
-        XCTAssertThrowsError(try preview([invalid]))
+        let described = try preview([describedEndpoint]).projecting()
+        XCTAssertEqual(described.tools.first?.providerHosts, ["example.test"], "URL user info and path are not display labels or authority")
+        XCTAssertEqual(described.tools.first?.keychain, .unset)
         XCTAssertEqual(String(data: try JSONEncoder().encode(CommunityConsentKeychainDecision.allow), encoding: .utf8), "\"allow\"")
         XCTAssertEqual(String(data: try JSONEncoder().encode(CommunityConsentKeychainDecision.deny), encoding: .utf8), "\"deny\"")
     }

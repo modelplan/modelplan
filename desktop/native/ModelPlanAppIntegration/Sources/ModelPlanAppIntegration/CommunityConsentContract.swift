@@ -52,7 +52,7 @@ public struct CommunityConsentPreviewFacts: Sendable {
               tools.allSatisfy({ $0.id.range(of: #"^[a-z][a-z0-9-]{0,47}$"#, options: .regularExpression) != nil
                   && !$0.displayName.isEmpty && $0.displayName.utf8.count <= 96
                   && !$0.displayName.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
-                  && $0.hosts.count <= 32 && $0.hosts.allSatisfy(SettingsConnectionSnapshot.validHost) }),
+                  && $0.hosts.count <= 32 && $0.hosts.allSatisfy(SettingsProviderHostText.isValid) }),
               consentTextVersion > 0, consentTextVersion <= 1_000_000,
               [consentText.english, consentText.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 })
         else { throw SettingsConnectionFailure.invalidResponse }
