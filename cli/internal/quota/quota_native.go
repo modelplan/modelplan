@@ -145,6 +145,9 @@ func NativeDue(p Paths, now time.Time) bool {
 	if !nativePrivacyAllows() {
 		return false
 	}
+	if claudeSessionsDue(p, now) {
+		return true
+	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && managedDue(p, provider, now) {
 			return true
@@ -202,6 +205,7 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	sessionRead := refreshProductionClaudeSessions(ctx, p, now)
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
@@ -219,6 +223,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		}
 	}
 	if len(on) == 0 && len(managed) == 0 {
+		if sessionRead {
+			return nil
+		}
 		return errors.New("no native provider is on")
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+len(managed)+1)*nativeTimeout)
@@ -335,6 +342,9 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
+	// Apply local state after native accounts, including early-return paths.
+	// Both Read and the production ReadPermitted flow pass through this hook.
+	defer applyClaudeSessions(r, p, now)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})

@@ -7,10 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
@@ -31,7 +33,7 @@ func ProductionPaths(cache, version string) Paths {
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
 	state, mode := consent.Current()
-	if mode != consent.Automatic || nativeOff() {
+	if mode == consent.Off || nativeOff() {
 		return p
 	}
 	cat := loadReaderCatalogue(cache)
@@ -40,6 +42,25 @@ func ProductionPaths(cache, version string) Paths {
 		for _, route := range cat.Detectors {
 			routes[route.ProviderID] = route
 		}
+	}
+	// Local session state is admitted independently of borrowed-login imports,
+	// including in Passive mode. Construction remains read-only: no key creation.
+	if record, exists := state.Tools["claude"]; exists && record.Allowed && record.ConsentTextVersion == consent.TextVersion && record.Backend == BackendNative && !record.BrowserSession && (record.ReaderID == "native:claude" || record.ReaderID == "native:claude-code") {
+		route, known := routes["claude"]
+		if !known || (route.Preferred == "native" && strings.HasPrefix(route.ReaderID, "native:") && detect.Compatible(version, route.MinCLI)) {
+			root, access := localusage.ProductionHistoryAccess(home, "claude", false)
+			if access.Allowed && !access.Denied && access.Privacy != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off" && detect.LocalRoot(root) {
+				generation, priorValid := state.Generation, access.StillValid
+				access.StillValid = func() bool {
+					current, effective := consent.Current()
+					return current.Generation == generation && effective != consent.Off && !nativeOff() && os.Getenv("MODELPLAN_HISTORY") != "off" && (priorValid == nil || priorValid())
+				}
+				p.ClaudeSessionRoot, p.ClaudeSessionAccess = root, &access
+			}
+		}
+	}
+	if mode != consent.Automatic {
+		return p
 	}
 	for id, record := range state.Tools {
 		n := nativeReaders[id]
@@ -159,6 +180,9 @@ func publishReaderCache(publish func(func() error) error, save func() bool) bool
 }
 
 func forgetProductionReaderState(cache, tool string) error {
+	if tool == "claude" {
+		return localusage.ForgetProductionHistoryLocked(cache, tool)
+	}
 	names := map[string]string{"copilot": "copilot-v1.json", "antigravity": "antigravity-v1.json", "zai": "zai-config-v1.json", "amp": "amp-v1.json"}
 	name := names[tool]
 	if name == "" {
@@ -183,4 +207,34 @@ func forgetProductionReaderState(cache, tool string) error {
 		return errors.New("reader cache unavailable")
 	}
 	return writeAtomic(path, b)
+}
+
+// claudeSessionsDue shares the production refresh entry point, while its actual
+// reservation is the projection engine's local floor, never a quota/network gate.
+func claudeSessionsDue(p Paths, now time.Time) bool {
+	a := p.ClaudeSessionAccess
+	if a == nil || !a.Allowed || a.Denied || a.Privacy == consent.Off || os.Getenv("MODELPLAN_HISTORY") == "off" || nativeOff() || p.ClaudeSessionRoot == "" || (a.StillValid != nil && !a.StillValid()) {
+		return false
+	}
+	if len(a.Key) != 32 {
+		return true
+	}
+	cached := localusage.ReadProjectionCache(p.Cache, "claude", *a, now)
+	return !now.Before(cached.NextAttemptAt)
+}
+
+// The caller already holds consent's ReaderLock. Only this explicit refresh may
+// create the shared local-history installation key; ProductionPaths never does.
+func refreshProductionClaudeSessions(ctx context.Context, p Paths, now time.Time) bool {
+	a := p.ClaudeSessionAccess
+	if a == nil || !a.Allowed || a.Denied || a.Privacy == consent.Off || os.Getenv("MODELPLAN_HISTORY") == "off" || nativeOff() || p.ClaudeSessionRoot == "" || (a.StillValid != nil && !a.StillValid()) {
+		return false
+	}
+	home, _ := os.UserHomeDir()
+	root, access := localusage.ProductionHistoryAccess(home, "claude", true)
+	if root != p.ClaudeSessionRoot || !access.Allowed || access.Denied {
+		return false
+	}
+	RefreshClaudeSessions(ctx, root, p.Cache, access, now)
+	return ctx.Err() == nil
 }

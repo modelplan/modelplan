@@ -6,6 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Production admission supports Automatic/Passive consent and cache-only caller selection without a plugin or status line. Background progress and excluded worker metadata cannot change the selected main branch or its classification; no independent cursor or quota-network schedule.
+
 ## CLI v0.5.42, Codex plugin 0.15.34 and Claude Code plugin 0.7.33 (2026-10-28)
 
 - CLI production paths now admit consented native saved-login readers, carrying local profiles, selected region, bounded Keychain policy and revocation-fenced publication into quota, hooks and desktop feeds. Explicit `MODELPLAN_READERS=automatic` preserves saved privacy; runtime imports stay blocked in Passive. Wire incremental local-history refresh and the optional desktop `localHistory` feed, add an explicit GLM configuration source, and include the newer captures in Forget while preserving request gates and Keychain Deny.

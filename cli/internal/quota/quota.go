@@ -1,6 +1,7 @@
 // Package quota reads the user's own usage windows from files the harnesses already write
 // on this machine: Codex session logs, the Claude Code status-line snapshot that
-// `modelplan statusline` records, the user-maintained local.json and, for providers the user
+// `modelplan statusline` records, admitted passive Claude session projections,
+// the user-maintained local.json and, for providers the user
 // enabled, CodexBar's reading (codexbar.go) or a native reader's (quota_native.go: the vendor's
 // usage endpoint, with an API key the user keeps in an environment variable, sent only to that
 // vendor). Cursor optionally reuses its editor sign-in read-only for private dashboard
@@ -10,6 +11,7 @@ package quota
 
 import (
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"math"
 	"sort"
 	"strconv"
@@ -104,6 +106,7 @@ const RunsOutTight = 180
 // the caller named it, else recent-thread, the newest interactive thread on this machine), and
 // observedAt when that thread last reported it. An empty effort means the turn context named none.
 type Harness struct {
+	SessionKey  string     `json:"sessionKey,omitempty"` // keyed hash, never a raw session ID or path
 	Model       string     `json:"model,omitempty"`
 	Effort      string     `json:"effort,omitempty"`
 	FastMode    *bool      `json:"fastMode,omitempty"`
@@ -228,11 +231,13 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 type Paths struct {
 	CLIVersion                  string // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
-	CodexBarFile                string        // ~/.config/modelplan/codexbar.json: providers read through CodexBar
-	ConnectionsFile             string        // ~/.config/modelplan/connections.json: which backend reads each provider
-	CodexThread                 string        // the calling Codex thread, when known (CODEX_THREAD_ID)
-	ClaudeSession               string        // the calling Claude Code session, when known
-	ReaderAccess                *ReaderAccess // explicit shared-consent admission for saved-login readers
+	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
+	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider
+	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
+	ClaudeSession               string                    // the calling Claude Code session, when known
+	ClaudeSessionRoot           string                    // transient locally admitted profile root, never persisted
+	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
+	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 }
 
 // Read gathers every available source and evaluates it at now.
