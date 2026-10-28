@@ -120,14 +120,14 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as output:
               output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
           PYCODE
-      - name: Check smoke assertion negative controls
+      - name: Check smoke assertions and release identity negative controls
         run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
-      - name: Fetch the checked-in CLI pin (same as the neutral distribution)
+      - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
-      - name: Package the actual universal Community app
-        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build"
+      - name: Package the actual universal Community app with unverified consent identity
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
       - name: Assert packaged production wiring (known baseline failures remain red)
-        run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report"
+        run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified
       - uses: actions/upload-artifact@v4
         if: always()
         with:

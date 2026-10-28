@@ -16,7 +16,7 @@ import tempfile
 import time
 
 
-def assertions(report, helper, home):
+def assertions(report, helper, home, *, expect_unverified=False):
     """Return all results so one bad component cannot hide the remaining wiring facts."""
     dock = report.get('dockHostType')
     purpose = report.get('dockHostPurpose')
@@ -27,6 +27,11 @@ def assertions(report, helper, home):
     port = report.get('consentPortPresent')
     api = report.get('consentAPIAvailable')
     status = report.get('firstRunConnectionStatus')
+    reason = report.get('connectionAvailabilityReason')
+    human_status = (isinstance(status, str) and bool(status.strip())
+                    and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', status.strip()) is None
+                    and re.search(r'\bcomponent_?(?:missing|updating|unverified)\b', status, re.IGNORECASE) is None
+                    and 'unavailable: unavailable' not in status.lower())
     help_text = report.get('cliHelp', '')
     # Global flags are printed even for unknown subcommands. Require an advertised command
     # and JSON support, not just a successful/parseable generic help response.
@@ -34,7 +39,7 @@ def assertions(report, helper, home):
                and re.search(r'(?m)^\s*modelplan\s+consent\b', help_text) is not None
                and '--json' in help_text)
     defaults = {key: report.get(key) for key in ('showDock', 'autoHide', 'edge')}
-    return [
+    results = [
         ('report-schema', report.get('schemaVersion') == 1, report.get('schemaVersion')),
         ('dock-host', isinstance(dock, str) and bool(dock) and purpose == 'production',
          {'type': dock, 'purpose': purpose}),
@@ -44,9 +49,7 @@ def assertions(report, helper, home):
         ('connection-availability', type(available) is bool and type(backend_available) is bool
          and available == backend_available and (not available or consent),
          {'available': available, 'backendAvailable': backend_available, 'cliConsentJSON': consent}),
-        ('first-run-status', isinstance(status, str) and bool(status.strip())
-         and re.fullmatch(r'[a-z_]+', status.strip()) is None
-         and 'unavailable: unavailable' not in status.lower(), status),
+        ('first-run-status', human_status, status),
         ('consent-port', port is True and type(api) is bool, {'present': port, 'apiAvailable': api}),
         ('consent-capability', type(api) is bool and (not api or consent),
          {'apiAvailable': api, 'cliConsentJSON': consent}),
@@ -57,6 +60,16 @@ def assertions(report, helper, home):
         ('synthetic-home', report.get('home') == str(home), report.get('home')),
         ('no-visible-ui', report.get('visibleWindows') == 0, report.get('visibleWindows')),
     ]
+    if expect_unverified:
+        results += [
+            ('unverified-consent', api is False and available is False and backend_available is False
+             and reason == 'componentUnverified',
+             {'apiAvailable': api, 'available': available, 'backendAvailable': backend_available, 'reason': reason}),
+            ('unverified-status', human_status and (
+                ('not been verified' in status and 'About' in status)
+                or ('尚未核验' in status and '关于' in status)), status),
+        ]
+    return results
 
 
 def print_results(results):
@@ -65,7 +78,7 @@ def print_results(results):
     return all(passed for _, passed, _ in results)
 
 
-def launch(app, output):
+def launch(app, output, *, expect_unverified=False):
     executable = app / 'Contents/MacOS/ModelPlanCommunity'
     helper = app / 'Contents/Helpers/modelplan'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
@@ -124,7 +137,7 @@ def launch(app, output):
                 pass
             raise RuntimeError(f'Packaged entry failed to report (exit {process.returncode}); inspect process.stderr artifact')
         report = json.loads(report_path.read_text())
-        results = assertions(report, helper, home)
+        results = assertions(report, helper, home, expect_unverified=expect_unverified)
         (output / 'assertions.json').write_text(json.dumps(
             [{'name': name, 'passed': bool(passed), 'value': value} for name, passed, value in results],
             indent=2, ensure_ascii=False) + '\n')
@@ -135,9 +148,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', type=Path)
     parser.add_argument('output', type=Path)
+    parser.add_argument('--expect-unverified', action='store_true',
+                        help='require disabled consent and human unverified-build guidance')
     args = parser.parse_args()
     try:
-        passed = launch(args.app.resolve(), args.output.resolve())
+        passed = launch(args.app.resolve(), args.output.resolve(), expect_unverified=args.expect_unverified)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f'app-smoke launch FAIL {error}', flush=True)
         return 1
