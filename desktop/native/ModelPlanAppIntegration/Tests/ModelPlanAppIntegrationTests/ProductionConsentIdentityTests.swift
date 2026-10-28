@@ -25,9 +25,9 @@ import ModelPlanSettings
     private final class Placement: CommunityPlacementProducing {
         var onPlacementObserved: ((DockEdgePlacement?, Bool) -> Void)?
     }
-    private let arm64Source = "e8f04d7eba3108ec808f2ce53e2a0c72e895c7dc83306e7bd135f039bc50c6ae"
-    private let amd64Source = "10a3fb58d4211b59dfad2660bedc45c1bee6cf021edfa5cae01e6e58d9b9f4b5"
-    private func bundle(version: String = "0.5.43", source: String? = nil) throws -> URL {
+    private let arm64Source = "06e0be93fd4529673b0328d1066c09e8bde766dd6010bceec05668f42a56eef3"
+    private let amd64Source = "af389d7d015ca2d392fcee5973327d7b5c277861d7dbc4aed7f291e46ebcd282"
+    private func bundle(version: String = "0.5.45", source: String? = nil) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("consent-identity-" + UUID().uuidString).resolvingSymlinksInPath()
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let helpers = root.appendingPathComponent("Contents/Helpers"), resources = root.appendingPathComponent("Contents/Resources")
