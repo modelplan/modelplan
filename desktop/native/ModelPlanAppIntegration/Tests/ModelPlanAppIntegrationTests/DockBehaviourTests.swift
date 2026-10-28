@@ -43,19 +43,19 @@ import ModelPlanSettings
         let appearance: StaticDockPreviewHost.Appearance?
         if neutralAppearance {
             appearance = { view, rows, preferences in
-            inputs.suppliedPreferences = preferences; inputs.suppliedRows = rows
-            try view.applyCommunity(rows, locale: preferences.language.rawValue)
-            let factor = preferences.size.nozzleDiameter / 44
-            let vertical = preferences.dockEdge != .bottom
-            let size = CGSize(width: (vertical ? 90 : 190) * factor, height: (vertical ? 190 : 90) * factor)
-            view.setFrameSize(size)
-            let hull = CGRect(x: 11 * factor, y: 17 * factor,
-                              width: (vertical ? 60 : BehaviourFixture.hullSpan) * factor,
-                              height: (vertical ? BehaviourFixture.hullSpan : 60) * factor)
-            var geometry = StaticDockGeometry(hoverRects: [hull],
-                dragRegions: .init(body: CGPath(rect: hull, transform: nil), excludedControls: []))
-            try geometry.registerSliver(hullBounds: hull, expandedSize: size, edge: preferences.dockEdge, scale: factor)
-            return geometry
+                inputs.suppliedPreferences = preferences; inputs.suppliedRows = rows
+                try view.applyCommunity(rows, locale: preferences.language.rawValue)
+                let factor = preferences.size.nozzleDiameter / 44
+                let vertical = preferences.dockEdge != .bottom
+                let size = CGSize(width: (vertical ? 90 : 190) * factor, height: (vertical ? 190 : 90) * factor)
+                view.setFrameSize(size)
+                let hull = CGRect(x: 11 * factor, y: 17 * factor,
+                                  width: (vertical ? 60 : BehaviourFixture.hullSpan) * factor,
+                                  height: (vertical ? BehaviourFixture.hullSpan : 60) * factor)
+                var geometry = StaticDockGeometry(hoverRects: [hull],
+                    dragRegions: .init(body: CGPath(rect: hull, transform: nil), excludedControls: []))
+                try geometry.registerSliver(hullBounds: hull, expandedSize: size, edge: preferences.dockEdge, scale: factor)
+                return geometry
             }
         } else { appearance = nil }
         host = StaticDockPreviewHost(appearance: appearance, currentDate: { BehaviourFixture.now }, createsNativePanels: true,
@@ -214,20 +214,21 @@ import ModelPlanSettings
         f.host.commitDisplayPlacement = { commits.append(($0, $1, $2)) }
         let local = CGPoint(x: 25, y: 30)
         let start = panel.convertPoint(toScreen: f.host.dockView.convert(local, to: nil))
-        let end = CGPoint(x: 600, y: 25)
+        // Bottom space is reserved for the system Dock in this layout; drop on the exposed left edge.
+        let end = CGPoint(x: 1, y: 450)
         f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
         f.host.dockView.mouseDown(with: try f.event(.leftMouseDown, global: start))
         f.inputs.pointer = end
         f.host.dockView.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
         XCTAssertEqual(f.host.edgePresentation?.moving, true)
-        XCTAssertEqual(f.host.edgePresentation?.snapPreview?.edge, .bottom)
+        XCTAssertEqual(f.host.edgePresentation?.snapPreview?.edge, .left)
         f.inputs.presence.mouseButtonDown = false
         f.host.dockView.mouseUp(with: try f.event(.leftMouseUp, global: end))
         XCTAssertEqual(commits.count, 1)
         let commit = try XCTUnwrap(commits.first)
         try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
         let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
-        XCTAssertEqual(placement.edge, .bottom); XCTAssertNotEqual(placement.frame, before)
+        XCTAssertEqual(placement.edge, .left); XCTAssertNotEqual(placement.frame, before)
         try f.reveal(); let savedFrame = panel.frame
         f.host.close()
         let restored = try BehaviourFixture(url: url); defer { restored.host.close() }
