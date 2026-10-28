@@ -1,26 +1,36 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanSettings
-import ModelPlanCore
 import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanAppIntegration
+import ModelPlanCore
 
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
+        let dock = ProductionDockFactory.community()
+        let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
+        let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
+        let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
+        // Only a consistent containing bundle for the reviewed release may expose the consent API.
+        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
+        let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
         })
-        let makeSettings: @MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration = { gate in
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, consentBackend: backend, transport: transport) { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
-            let application = SettingsApplicationCoordinator(store: store,
+            var context = SettingsPageContext()
+            if consent.availability.canInspect { context.about.cliVersion = CommunityConsentBundleIdentity.version }
+            let application = SettingsApplicationCoordinator(store: store, context: context,
                 environment: SettingsWindowController.systemEnvironment()) { transaction in
+                dock.apply(transaction)
                 surfaces.apply(transaction)
                 // Apply the committed theme to existing neutral AppKit consumers; no OS preference is written.
                 let desired: NSAppearance.Name?
@@ -34,46 +44,62 @@ import ModelPlanAppIntegration
                     NSApplication.shared.appearance = desired.flatMap { NSAppearance(named: $0) }
                 }
             }
-            return CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
+            dock.commitDisplayPlacement = { [weak application] id, edge, fraction in
+                guard let application else { return }
+                Task { _ = try? await application.editor.commit(.dockPlacement(displayID: id, edge: edge, alongFraction: fraction)) }
+            }
+            dock.displayChoicesChanged = { [weak application] displays in
+                guard let application else { return }
+                var context = application.editor.context; context.displays = displays
+                application.update(context: context)
+            }
+            dock.catalogueChanged = { [weak application] rows in
+                guard let application else { return }
+                var context = application.editor.context; context.subscriptions = rows
+                application.update(context: context)
+            }
+            let base = CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
                 makeHelp: { application in
                     let help = await InstrumentHelpComposition.restored(application: application)
                     surfaces.bindHelp(help)
                     return help
                 })
+            return try CommunityApplicationFactory.connectSettings(base: base, application: application,
+                backend: backend, placementSource: dock, canPresent: { [weak gate] in gate?.canPresent == true })
         }
-        let delegate = CommunityDelegate(surfaces: surfaces, makeSettings: makeSettings)
-        // Explicit packaged-app test mode: inspect the existing factory; never start the app lifecycle.
+        // Inspect only the composition retained by normal Settings configuration; do not start the runtime.
         if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
-            fputs("app-smoke entry started\n", stderr); _ = NSApplication.shared
+            _ = NSApplication.shared
             Task { @MainActor in
                 do {
-                    fputs("app-smoke task started\n", stderr)
-                    func field(_ object: Any, _ name: String) -> Any? {
-                        guard let value = Mirror(reflecting: object).children.first(where: { $0.label == name })?.value else { return nil }
-                        let mirror = Mirror(reflecting: value)
-                        return mirror.displayStyle == .optional ? mirror.children.first?.value : value
-                    }
                     @MainActor func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-                    let gate = LifecycleCoordinator(store: SnapshotStore(transport: BundledCLI(bundle: Bundle.main.bundleURL))); fputs("app-smoke gate created\n", stderr)
-                    let session = try makeSettings(gate) as! CommunitySettingsSession; fputs("app-smoke factory called\n", stderr); await session.restorePreferences()
-                    let editor = session.windowHost.application.editor, firstRun = SettingsFirstRunController(editor: session.windowHost.application.editor)
-                    await firstRun.prepare(); fputs("app-smoke first run prepared\n", stderr)
-                    let preferences = editor.snapshot!.preferences, connections = editor.connections
-                    let section = views(firstRun.window!.contentView!).first { $0.accessibilityIdentifier() == "settings.connections" }
+                    let gate = LifecycleCoordinator(store: SnapshotStore(transport: transport))
+                    delegate.configureSettings(gate)
+                    let integration = delegate.settingsIntegration as? CommunityConnectionIntegration
+                    await integration?.restorePreferences()
+                    let application = integration?.flow.application
+                    let firstRun = application.map { SettingsFirstRunController(editor: $0.editor) }
+                    await firstRun?.prepare()
+                    let connections = application?.editor.connections, preferences = application?.editor.snapshot?.preferences
+                    let bound = connections?.isBound(to: backend) == true
+                    let capability: SettingsConnectionAvailability? = bound ? backend.settingsConnectionAvailability : nil
+                    let actualDock = delegate.companionSurface as? StaticDockPreviewHost
+                    let section = (firstRun?.window?.contentView).flatMap { views($0).first { $0.accessibilityIdentifier() == "settings.connections" } }
                     let status = section?.subviews.compactMap { $0 as? NSTextField }.dropFirst().first?.stringValue
-                    let service = field(connections, "service"), dock = field(delegate, "companion")
-                    let port = service.flatMap { field($0, "consentPort") } ?? field(delegate, "consentPort")
                     let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"), process = Process(), pipe = Pipe()
                     process.executableURL = helper; process.arguments = ["--help"]; process.standardInput = FileHandle.nullDevice
                     process.standardOutput = pipe; process.standardError = pipe; try process.run()
                     let help = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self); process.waitUntilExit()
                     let consentJSON = help.range(of: #"(?m)^\s*modelplan\s+consent\b"#, options: .regularExpression) != nil && help.contains("--json")
-                    let report: [String: Any] = ["schemaVersion": 1, "dockHostType": dock.map { String(reflecting: type(of: $0)) as Any } ?? NSNull(),
-                        "connectionServicePresent": service != nil, "connectionAvailable": connections.isAvailable,
-                        "firstRunConnectionStatus": status.map { $0 as Any } ?? NSNull(), "consentPortPresent": port != nil,
-                        "consentAPIAvailable": port.flatMap { field($0, "apiAvailable") } ?? NSNull(),
+                    let report: [String: Any] = ["schemaVersion": 1,
+                        "dockHostType": delegate.companionSurface.map { String(reflecting: type(of: $0)) as Any } ?? NSNull(),
+                        "dockHostPurpose": actualDock.map { String(describing: $0.purpose) as Any } ?? NSNull(),
+                        "connectionServicePresent": connections.map { $0.hasAllowanceBackend as Any } ?? NSNull(), "connectionServiceBound": bound,
+                        "connectionAvailable": connections.map { $0.isAvailable as Any } ?? NSNull(), "connectionBackendAvailable": capability.map { $0.hasAnyAction as Any } ?? NSNull(),
+                        "firstRunConnectionStatus": status.map { $0 as Any } ?? NSNull(), "consentPortPresent": bound,
+                        "consentAPIAvailable": capability.map { $0.canInspect as Any } ?? NSNull(),
                         "cliSupportsConsentJSON": process.terminationStatus == 0 && consentJSON, "cliHelp": help, "cliHelpExitCode": process.terminationStatus, "cliPath": helper.path,
-                        "showDock": preferences.showDock, "autoHide": preferences.autoHide, "edge": preferences.dockEdge.rawValue,
+                        "showDock": preferences.map { $0.showDock as Any } ?? NSNull(), "autoHide": preferences.map { $0.autoHide as Any } ?? NSNull(), "edge": preferences.map { $0.dockEdge.rawValue as Any } ?? NSNull(),
                         "home": NSHomeDirectory(), "visibleWindows": NSApplication.shared.windows.filter(\.isVisible).count]
                     let output = ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE_REPORT"]!
                     try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: output), options: .atomic)
@@ -83,6 +109,6 @@ import ModelPlanAppIntegration
             NSApplication.shared.run(); return
         }
         NSApplication.shared.delegate = delegate
-        withExtendedLifetime(delegate) { NSApplication.shared.run() }
+        withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
     }
 }

@@ -19,7 +19,10 @@ import time
 def assertions(report, helper, home):
     """Return all results so one bad component cannot hide the remaining wiring facts."""
     dock = report.get('dockHostType')
+    purpose = report.get('dockHostPurpose')
     available = report.get('connectionAvailable')
+    backend_available = report.get('connectionBackendAvailable')
+    bound = report.get('connectionServiceBound')
     service = report.get('connectionServicePresent')
     port = report.get('consentPortPresent')
     api = report.get('consentAPIAvailable')
@@ -33,10 +36,14 @@ def assertions(report, helper, home):
     defaults = {key: report.get(key) for key in ('showDock', 'autoHide', 'edge')}
     return [
         ('report-schema', report.get('schemaVersion') == 1, report.get('schemaVersion')),
-        ('dock-host', isinstance(dock, str) and bool(dock) and not re.search(r'preview|self.?test|probe', dock, re.I), dock),
-        ('connection-service', service is True, service),
-        ('connection-availability', type(available) is bool and available == service == consent,
-         {'service': service, 'available': available, 'cliConsentJSON': consent}),
+        ('dock-host', isinstance(dock, str) and bool(dock) and purpose == 'production',
+         {'type': dock, 'purpose': purpose}),
+        ('connection-service', service is True and bound is True, {'present': service, 'bound': bound}),
+        # Service identity and API availability are independent. A bound backend may
+        # truthfully disable every action even when the CLI advertises consent.
+        ('connection-availability', type(available) is bool and type(backend_available) is bool
+         and available == backend_available and (not available or consent),
+         {'available': available, 'backendAvailable': backend_available, 'cliConsentJSON': consent}),
         ('first-run-status', isinstance(status, str) and bool(status.strip())
          and re.fullmatch(r'[a-z_]+', status.strip()) is None
          and 'unavailable: unavailable' not in status.lower(), status),

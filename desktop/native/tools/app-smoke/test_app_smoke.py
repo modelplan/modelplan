@@ -14,7 +14,8 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.helper = Path('/synthetic/Community.app/Contents/Helpers/modelplan')
         self.home = Path('/synthetic/home')
         self.report = {'schemaVersion': 1, 'dockHostType': 'ProductionDockHost',
-                       'connectionServicePresent': True, 'connectionAvailable': True,
+                       'dockHostPurpose': 'production', 'connectionServicePresent': True, 'connectionServiceBound': True,
+                       'connectionAvailable': True, 'connectionBackendAvailable': True,
                        'firstRunConnectionStatus': 'Connection service is ready.',
                        'consentPortPresent': True, 'consentAPIAvailable': True,
                        'cliHelp': 'Usage:\n  modelplan consent --json\n', 'cliHelpExitCode': 0,
@@ -28,17 +29,29 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.assertTrue(all(self.results().values()))
 
     def test_missing_objects_do_not_pass_as_false_defaults(self):
-        self.report.update(dockHostType=None, connectionServicePresent=False, connectionAvailable=False,
+        self.report.update(dockHostType=None, dockHostPurpose=None, connectionServicePresent=False,
+                           connectionServiceBound=False, connectionAvailable=False, connectionBackendAvailable=False,
                            consentPortPresent=False, consentAPIAvailable=None, cliHelp='Usage: modelplan --help')
         result = self.results()
         for name in ['dock-host', 'connection-service', 'consent-port', 'consent-capability']:
             self.assertFalse(result[name], name)
         self.assertTrue(result['connection-availability'])
 
-    def test_preview_and_self_test_hosts_are_rejected(self):
+    def test_historical_type_names_do_not_override_production_purpose(self):
         for name in ['StaticDockPreviewHost', 'OfficialSelfTestDock', 'WindowProbe']:
-            self.report['dockHostType'] = name
-            self.assertFalse(self.results()['dock-host'], name)
+            with self.subTest(name=name):
+                self.report['dockHostType'] = name
+                self.assertTrue(all(self.results().values()))
+
+    def test_self_test_or_missing_purpose_cannot_claim_production(self):
+        for purpose in ['selfTest', 'preview', 'unknown', None, True]:
+            with self.subTest(purpose=purpose):
+                self.report['dockHostPurpose'] = purpose
+                self.assertFalse(self.results()['dock-host'])
+
+    def test_a_missing_host_cannot_claim_production_purpose(self):
+        self.report['dockHostType'] = None
+        self.assertFalse(self.results()['dock-host'])
 
     def test_raw_or_empty_status_is_rejected(self):
         for status in ['', None, 'unavailable', 'not_connected_yet', 'unavailable: unavailable']:
@@ -54,8 +67,29 @@ class AppSmokeAssertionsTests(unittest.TestCase):
             self.assertFalse(self.results()['connection-availability'], text)
 
     def test_api_false_does_not_require_an_unimplemented_consent_command(self):
-        self.report.update(consentAPIAvailable=False, cliHelp='modelplan connect --json\n')
-        self.assertTrue(self.results()['consent-capability'])
+        self.report.update(connectionServicePresent=True, connectionServiceBound=True,
+                           connectionAvailable=False, connectionBackendAvailable=False,
+                           consentPortPresent=True, consentAPIAvailable=False,
+                           cliHelp='modelplan connect --json\n', cliSupportsConsentJSON=False)
+        self.assertTrue(all(self.results().values()), self.results())
+
+    def test_unverified_installed_backend_can_decline_an_advertised_api(self):
+        self.report.update(connectionAvailable=False, connectionBackendAvailable=False, consentAPIAvailable=False)
+        self.assertTrue(all(self.results().values()))
+
+    def test_controller_availability_must_match_its_bound_backend(self):
+        self.report['connectionBackendAvailable'] = False
+        self.assertFalse(self.results()['connection-availability'])
+
+    def test_wrong_backend_cannot_pass_as_a_bound_service(self):
+        self.report['connectionServiceBound'] = False
+        self.assertFalse(self.results()['connection-service'])
+
+    def test_claimed_availability_requires_an_advertised_cli_api(self):
+        self.report.update(consentAPIAvailable=False, cliHelp='modelplan connect --json\n', cliSupportsConsentJSON=False)
+        self.assertFalse(self.results()['connection-availability'])
+        self.report['consentAPIAvailable'] = True
+        self.assertFalse(self.results()['consent-capability'])
 
     def test_helper_home_and_ui_are_observed_not_assumed(self):
         self.report.update(cliPath='/usr/local/bin/modelplan', home='/real/home', visibleWindows=1)

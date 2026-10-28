@@ -83,6 +83,21 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
     private var changeObservers: [UUID: () -> Void] = [:]
+    private var firstRunPresentation: (id: UUID, action: () -> Void, about: (() -> Void)?)?
+    public var canPresentFirstRun: Bool { firstRunPresentation != nil || onHostRequest != nil }
+    /// A local navigation seam, separate from the app's one system-effect receiver.
+    public func bindFirstRunPresentation(_ action: @escaping () -> Void, about: (() -> Void)? = nil) -> UUID? {
+        guard firstRunPresentation == nil else { return nil }
+        let id = UUID(); firstRunPresentation = (id, action, about); notifyChange(); return id
+    }
+    public var canPresentConnectionHelp: Bool { firstRunPresentation?.about != nil }
+    public func requestConnectionHelp() throws {
+        guard !isSaving, let about = firstRunPresentation?.about else { throw SettingsEditorError.actionUnavailable }
+        about()
+    }
+    public func unbindFirstRunPresentation(_ id: UUID) {
+        if firstRunPresentation?.id == id { firstRunPresentation = nil; notifyChange() }
+    }
     public private(set) var lastCommitDeliveryFailure: SettingsCommitDeliveryFailure?
     private let commitObserverLimit: Duration
     private lazy var commitObservers = SettingsCommitObservers(limit: commitObserverLimit) { [weak self] failure in
@@ -158,6 +173,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     public func request(_ action: SettingsB22Action) throws {
         guard !isSaving else { throw SettingsEditorError.editInProgress }
         guard let snapshot else { throw SettingsEditorError.notLoaded }
+        if case .previewFirstRun = action, context.capabilities.firstRunPreviewAvailable, let presentation = firstRunPresentation {
+            presentation.action(); return
+        }
         guard let onHostRequest else { throw SettingsEditorError.actionUnavailable }
         let intent: SettingsHostIntent
         switch action {

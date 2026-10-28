@@ -96,7 +96,7 @@ func ProductionPaths(cache, version string) Paths {
 				continue
 			}
 			g.SavedLogin = true
-			g.Keychain = id == "claude" && state.Allows(id, "keychain", mode)
+			g.Keychain = state.KeychainStatus(id, mode) == "allowed"
 			g.KeychainPriorGrant = g.Keychain
 		}
 		if id == "zai" && record.KeyEnv == "" && len(record.Profiles) == 1 {
