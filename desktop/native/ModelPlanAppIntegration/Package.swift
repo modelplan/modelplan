@@ -30,6 +30,6 @@ let package = Package(
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),
-        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration"]),
+        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration"], resources: [.process("Fixtures")]),
     ]
 )
