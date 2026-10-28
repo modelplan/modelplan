@@ -27,6 +27,48 @@ import ModelPlanSettings
 }
 
 @MainActor final class InstrumentHintSourceRouterTests: XCTestCase {
+    func testCatalogueTransitionCancelsRestButKeepsLiveSourceLease() async throws {
+        var now = 0.0
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        let metric = PublishedMetric(1, basis: "synthetic")
+        let model = InstrumentModel(id: "model", name: "Example", efforts: [
+            .init(key: "high", label: "High", ability: metric, cost: metric, time: metric)
+        ], recommended: "high", current: .init("high"))
+        let inputs = [FaderChannelInput(model: model)]
+        let view = FaderBankView(elapsed: { now }, hintPointerEligible: { true })
+        view.reducedMotion = true; view.onHelpChange = { _, _ in }
+        let receiver = try TrialReceiver()
+        let router = InstrumentHintSourceRouter(receiver: receiver, uptime: { now })
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: date)
+        let lease = router.register(isLive: { [weak view] in view != nil }) { [weak view] in
+            guard let region = view?.recipe?.regions.first(where: { $0.role == .slider && $0.modelID == model.id }) else { return nil }
+            return .init(anchor: .init(modelID: model.id, regionID: region.id, travel: region.rect),
+                         pointer: .init(x: region.rect.midX, y: region.rect.midY))
+        }
+        var events: [InstrumentHintInput] = []
+        view.onHintInput = { [weak router] input in events.append(input); router?.receive(input, from: lease) }
+        let travel = try XCTUnwrap(view.recipe?.regions.first { $0.role == .slider && $0.modelID == model.id })
+        let point = CGPoint(x: travel.rect.midX, y: travel.rect.midY)
+        view.beginFaderRest(at: point)
+        XCTAssertNotNil(router.pendingTarget); XCTAssertNotNil(receiver.hints.trialRest)
+        let candidateCount = events.filter { if case .faderRestCandidate = $0 { return true }; return false }.count
+        XCTAssertEqual(candidateCount, 1)
+        now = 0.1
+        try view.update(inputs: inputs, publicationUsable: false, language: .english, compact: false,
+                        now: date, catalogueOnly: true)
+        XCTAssertNil(router.pendingTarget); XCTAssertNil(receiver.hints.trialRest)
+        view.beginFaderRest(at: point)
+        XCTAssertEqual(events.filter { if case .faderRestCandidate = $0 { return true }; return false }.count, candidateCount)
+        XCTAssertEqual(receiver.begins, 1)
+        now = 0.2
+        try view.update(inputs: inputs, publicationUsable: true, language: .english, compact: false, now: date)
+        view.beginFaderRest(at: point) // Same lease: no second register call.
+        XCTAssertEqual(receiver.begins, 2)
+        XCTAssertNotNil(router.pendingTarget); XCTAssertNotNil(router.validatePendingRest())
+        XCTAssertFalse(receiver.hints.preferences.seen.contains(.trial))
+        XCTAssertNil(view.window)
+        router.remove(lease); view.dispose()
+    }
     private func state(_ model: String = "a", x: CGFloat = 20, width: CGFloat = 100) -> InstrumentHintSourceSnapshot {
         .init(anchor: .init(modelID: model, regionID: "travel", travel: CGRect(x: 0, y: 0, width: width, height: 100)), pointer: CGPoint(x: x, y: 20))
     }

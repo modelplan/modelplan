@@ -93,7 +93,7 @@ import CoreText
         commitSurfaces(next, prepared: Prepared(caps: capImages, texts: textImages), initial: initial)
         synchronizeRegions(next.regions, oldOrder: oldOrder); updateFocus()
         if let anchor = restAnchor {
-            if !state.publicationUsable { cancelHintRest(.removal) }
+            if !state.publicationUsable { cancelHintRest(.layoutChange) }
             else if let region = next.regions.first(where: { $0.id == anchor.regionID && $0.modelID == anchor.modelID }) {
                 if region.rect != anchor.travel { cancelHintRest(.layoutChange) }
             } else { cancelHintRest(.removal) }
@@ -336,7 +336,8 @@ import CoreText
         restAnchor = nil
         let at = elapsed(); if at.isFinite { onHintInput?(.cancelFaderRest(reason, at: at)) }
     }
-    private func beginFaderRest(at point: CGPoint) {
+    /// View-local geometry input shared by the native adapter and offscreen hosts; emits no native event.
+    public func beginFaderRest(at point: CGPoint) {
         guard controller.publicationUsable, hintPointerEligible(), controller.draggingModelID == nil, point.x.isFinite, point.y.isFinite,
               let region = recipe?.regions.first(where: { $0.role == .slider && $0.enabled && $0.rect.contains(point) }),
               let id = region.modelID else { return }
