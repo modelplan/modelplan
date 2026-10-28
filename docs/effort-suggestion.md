@@ -1,9 +1,11 @@
 # Local default-effort suggestion
 
-`modelplan history` shows an effort suggestion section when enough local history is
-known. Claude Code and Codex hooks may show the same line in the user's
-`systemMessage`, at most once per rolling seven days across both harnesses, after
-a weekly reset. The line is never included in the model's `additionalContext`.
+After a weekly reset, `modelplan history`, the Claude Code status-line hint and
+Claude Code / Codex hooks share one suggestion notice per rolling seven days,
+when enough local history is known. Hooks put the line only in the user's
+`systemMessage`, never the model's `additionalContext`. The status line shows a
+compact summary such as `default: 3wk 45% ★Med→High ref ×1.37`; urgent quota advice
+has priority. Preview, record-only and missing quota meters do not consume a notice.
 It is advice only: ModelPlan never changes the harness's model, effort or Fast setting.
 
 The inputs are the local `<cache>/observed/cycles.json` ledger and the already
@@ -15,7 +17,9 @@ existing raw history/measurement format; it does not add the derived suggestion 
 the plugins' measurement feed.
 
 The latest three completed weekly cycles must belong to the same source, recorded
-plan, limit and window duration. Resets must be five to nine days apart, with the
+plan, limit and window duration. Claude Code's status-line readings do not name a
+plan: those cycles retain an empty label, kept separate from labelled pools;
+no plan is inferred from the model. Resets must be five to nine days apart, with the
 latest reset less than seven days ago. A cycle needs at least five attributed
 percentage points and at least 60% of its final use attributed to reviewed model
 identifiers and explicit published efforts. The rest includes use before the first
@@ -34,6 +38,14 @@ meter jitter, dominance avoids a mixed workload, and a wide middle range avoids
 frequent reversals. They are client presentation heuristics over a user's own
 observations, not a new public model ranking or a production recommendation scorer.
 
+The status line supplies its explicit current model and effort (including
+`--model` / `--effort` flags) to the pure `SuggestDefaultEffort` function, together
+with finished weeks from its weekly pool. The adjacent step starts at that current
+effort rather than an older historical effort. Unknown current effort, another
+model or a changed speed setting produces no status-line suggestion. History and
+the existing hook/desktop view use the dominant recorded configuration when no
+current default is supplied. No new configuration reader is added.
+
 Adjacent efforts, the ★ marker and reference costs come from the verified
 publication. Both costs must be positive and share the same nonempty cost basis;
 the ratio must agree with the direction. It is a **published reference-cost ratio**,
@@ -48,9 +60,9 @@ Use `modelplan history --effort-suggestion dismiss` to hide it for seven days,
 restore it. State is local in `<cache>/observed/effort-suggestion.json` (0600); deleting
 that file clears preferences and the notice throttle. `MODELPLAN_EFFORT_SUGGESTION=off`
 or `MODELPLAN_HISTORY=off` disables the feature, including hooks and desktop output.
-Manual history and desktop reads can review an eligible suggestion repeatedly;
-they never consume a hook notice. Corrupt state or a failed notification
-claim is silent.
+Text history claims the same weekly notice as the status line and hooks. Desktop
+inspection remains read-only and can review an eligible suggestion repeatedly
+without consuming the notice. Corrupt state or a failed notification claim is silent.
 
 `desktop --json` optionally adds `effortSuggestion` with the source, plan, model,
 from/to published effort keys and labels, ★ key, Fast, three-week summary,
@@ -63,8 +75,14 @@ clock; `validUntil` includes upcoming reset, expiry and dismissal boundaries.
 
 ## 中文
 
-`modelplan history` 在数据足够时显示本机默认档位建议。Claude Code / Codex 钩子
-每七天最多在用户的 `systemMessage` 中提示一次，绝不放入模型的 `additionalContext`。
+每周重置后，`modelplan history`、Claude Code 状态栏和 Claude Code / Codex 钩子
+共享每七天最多一次的本机默认档位建议。钩子只在用户的 `systemMessage` 中提示，
+绝不放入模型的 `additionalContext`。状态栏显示三周平均用量、相邻档位和公开参考
+成本比，紧急额度提示优先；预览、仅记录和无额度条时不消耗提示次数。状态栏使用
+当前明确的型号和档位（包括 `--model` / `--effort`），从当前档位迈一步；档位未知、
+型号或速度模式不匹配时不建议。历史和已有钩子/桌面视图在未提供当前默认档位时
+沿用主要已记录配置，不新增配置读取器。Claude Code 状态栏不报告套餐名，记录保持
+空标签且不与有标签的额度池混用，不从型号推断套餐。
 只读取本机额度周期记录和已验证的公开发布，不新增凭证或会话读取，不上传、跨用户
 汇总，也不会替用户切换档位或 Fast。三个已结束的同来源、同套餐、同额度池周周期中，
 每周至少归因 5 个百分点且归因比例至少 60%；主配置至少占已归因用量的 60%。平均
@@ -73,5 +91,5 @@ clock; `validUntil` includes upcoming reset, expiry and dismissal boundaries.
 
 `modelplan history --effort-suggestion dismiss` 隐藏七天，`off` 不再建议，`on` 恢复；
 状态只保存在本机缓存。环境变量 `MODELPLAN_EFFORT_SUGGESTION=off` 或
-`MODELPLAN_HISTORY=off` 也会关闭。手动历史和桌面只读查询可重复查看，不消耗每周
-钩子提示次数。桌面 JSON 的可选字段为 `effortSuggestion`，契约版本仍为 1。
+`MODELPLAN_HISTORY=off` 也会关闭。历史文本与状态栏、钩子共享每周提示次数；桌面
+只读查询可重复查看且不消耗次数。桌面 JSON 的可选字段为 `effortSuggestion`，契约版本仍为 1。

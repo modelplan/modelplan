@@ -36,3 +36,21 @@ func TestEffortSuggestionLanguages(t *testing.T) {
 		t.Fatal("unknown must be silent")
 	}
 }
+
+func TestEffortSuggestionUnknownPlanLabel(t *testing.T) {
+	d, _ := contracttest.Public()
+	l := contracttest.EffortLedger(contracttest.Now, "medium", false, 40, 45, 50)
+	for i := range l.Cycles {
+		l.Cycles[i].Source, l.Cycles[i].Plan = "claude-code", ""
+	}
+	v := history.SuggestEffort(l, d, contracttest.Now)
+	if v == nil {
+		t.Fatal("Claude Code meter without plan label must remain usable")
+	}
+	for _, style := range []render.Style{{T: render.EN}, {T: render.ZH}} {
+		line := style.EffortSuggestionLine(v)
+		if !strings.HasPrefix(line, "claude-code · ") || strings.Contains(line, " / ") {
+			t.Fatalf("unknown plan was fabricated or left a separator: %s", line)
+		}
+	}
+}
