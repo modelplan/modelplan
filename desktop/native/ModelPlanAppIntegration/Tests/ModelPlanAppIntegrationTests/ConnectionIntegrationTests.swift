@@ -13,7 +13,8 @@ import ModelPlanCommunityHost
     func show(paneID: String?) { shows += 1 }
     func hide() { hides += 1 }
 }
-@MainActor private final class ConnectionBackendFake: SettingsConnectionAllowing {
+@MainActor private final class ConnectionBackendFake: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
+    var settingsConnectionAvailability = SettingsConnectionAvailability(canInspect: true, canGrant: true, canForget: true)
     var snapshot = try! SettingsConnectionSnapshot()
     var detects = 0, mutations = 0
     var pauseDetect = false
@@ -202,5 +203,21 @@ import ModelPlanCommunityHost
         await pending.value
         XCTAssertEqual(backend.detects, 1); XCTAssertNil(application.editor.connections.snapshot); XCTAssertEqual(surface.shows, 0)
         flow.dispose()
+    }
+    func testUnavailableComponentHasOneLocalAboutActionAndNoServiceRetry() async throws {
+        let application = try application(), backend = ConnectionBackendFake(), surface = ConnectionSurfaceFake()
+        backend.settingsConnectionAvailability = .init(reason: .componentUnverified)
+        var panes: [String?] = []
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { panes.append($0) }, makeFirstRun: { _ in surface })
+        let entry = try CommunityConnectionIntegration(base: UnwiredEntryStub(), flow: flow)
+        await entry.restorePreferences(); await entry.restorePreferences()
+        XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
+        XCTAssertEqual(application.editor.connections.phase, .unavailable); XCTAssertEqual(surface.shows, 1)
+        XCTAssertTrue(application.editor.canPresentConnectionHelp)
+        try application.editor.requestConnectionHelp()
+        for _ in 0..<100 where panes.isEmpty { await Task.yield() }
+        XCTAssertEqual(panes.count, 1); XCTAssertEqual(panes[0], "about")
+        XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
+        flow.dispose(); XCTAssertFalse(application.editor.canPresentConnectionHelp)
     }
 }

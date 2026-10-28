@@ -2,6 +2,15 @@
 import Foundation
 
 public enum SettingsConnectionPresentation {
+    public static func availability(_ value: SettingsConnectionAvailability) -> SettingsText? {
+        switch value.reason {
+        case .none: return nil
+        case .componentMissing: return .init("The bundled usage component is missing. Check component status in About.", "随包用量组件缺失，请在关于中检查组件状态。")
+        case .componentUpdating: return .init("The bundled usage component is updating. Check component status in About.", "随包用量组件正在更新，请在关于中检查组件状态。")
+        case .componentUnverified: return .init("This build's consent component has not been verified. Check CLI support in About.", "此构建的授权组件尚未核验，请在关于中检查 CLI 支持。")
+        case .unavailable: return .init("Usage consent is unavailable in this build. Check component status in About.", "此构建暂不能请求用量授权，请在关于中检查组件状态。")
+        }
+    }
     public static func presence(_ value: SettingsToolPresence) -> SettingsText {
         switch value {
         case .detected: return .init("Detected", "已检测到")

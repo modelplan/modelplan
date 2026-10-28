@@ -59,10 +59,14 @@ import AppKit
         for button in buttons { button.retire() }; buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         label(.init("Tools and connections", "工具与连接"), heading: true)
-        label(SettingsConnectionPresentation.status(controller.phase))
+        if let reason = SettingsConnectionPresentation.availability(controller.availability) {
+            label(reason)
+            addArrangedSubview(button(.init("Check component in About", "在关于中检查组件"), id: "connections.componentHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        } else { label(SettingsConnectionPresentation.status(controller.phase)) }
         if preferenceFailed { label(.init("Could not save visibility. The previous setting is retained.", "无法保存可见性；已保留原设置。")) }
         addArrangedSubview(button(.init("Check detected tools", "检查已检测工具"), id: "connections.detect",
-                                  enabled: controller.isAvailable && !controller.isBusy) { [weak self] in
+                                  enabled: controller.availability.canInspect && !controller.isBusy) { [weak self] in
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
@@ -88,9 +92,12 @@ import AppKit
             toolGroup([], advanced: true)
         }
         label(.init("ModelPlan plugins", "ModelPlan 插件"), heading: true)
+        if controller.availability.pluginTools.isEmpty {
+            label(.init("Plugin installation is unavailable in this build.", "此构建暂不支持插件安装。"))
+        }
         for tool in SettingsPluginTool.allCases {
             addArrangedSubview(button(.init("Install for " + tool.title + "…", "为 " + tool.title + " 安装…"),
-                id: "connections.plugin." + tool.rawValue, enabled: controller.isAvailable && !controller.isBusy) { [weak self] in
+                id: "connections.plugin." + tool.rawValue, enabled: controller.availability.pluginTools.contains(tool) && !controller.isBusy) { [weak self] in
                 self?.controller.request(.installPlugin(tool))
             })
         }
@@ -168,7 +175,7 @@ import AppKit
             }
             let connect = button(advanced ? .init("Enable browser session…", "开启浏览器会话…") : .init("Connect…", "连接…"),
                 id: "connections.connect." + value.tool.rawValue,
-                enabled: controller.isAvailable && !controller.isBusy && value.canRequestConnection) { [weak self] in
+                enabled: controller.canConnect(value.tool, access: value.access)) { [weak self] in
                 self?.controller.request(.connect(value.tool, value.access))
             }
             let disconnect = forgetButton(value.tool)

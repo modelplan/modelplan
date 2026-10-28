@@ -83,12 +83,17 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// Emitted only after a successful explicit edit. The host must check revision and its own authorization.
     public var onHostRequest: ((SettingsHostRequest) -> Void)?
     private var changeObservers: [UUID: () -> Void] = [:]
-    private var firstRunPresentation: (id: UUID, action: () -> Void)?
+    private var firstRunPresentation: (id: UUID, action: () -> Void, about: (() -> Void)?)?
     public var canPresentFirstRun: Bool { firstRunPresentation != nil || onHostRequest != nil }
     /// A local navigation seam, separate from the app's one system-effect receiver.
-    public func bindFirstRunPresentation(_ action: @escaping () -> Void) -> UUID? {
+    public func bindFirstRunPresentation(_ action: @escaping () -> Void, about: (() -> Void)? = nil) -> UUID? {
         guard firstRunPresentation == nil else { return nil }
-        let id = UUID(); firstRunPresentation = (id, action); notifyChange(); return id
+        let id = UUID(); firstRunPresentation = (id, action, about); notifyChange(); return id
+    }
+    public var canPresentConnectionHelp: Bool { firstRunPresentation?.about != nil }
+    public func requestConnectionHelp() throws {
+        guard !isSaving, let about = firstRunPresentation?.about else { throw SettingsEditorError.actionUnavailable }
+        about()
     }
     public func unbindFirstRunPresentation(_ id: UUID) {
         if firstRunPresentation?.id == id { firstRunPresentation = nil; notifyChange() }
