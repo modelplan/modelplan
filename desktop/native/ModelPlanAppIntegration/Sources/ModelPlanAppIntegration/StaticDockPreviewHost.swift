@@ -72,6 +72,7 @@ public struct StaticDockGeometry {
     private let elapsedClock: (() -> TimeInterval)?
     private let edgeScheduling: (any DockEdgeScheduling)?
     var edgePresentation: DockEdgePresentation? { edge.presentation }
+    var nativePanel: NSPanel? { panel }
     func refreshPresence() { edge.refresh() }
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
