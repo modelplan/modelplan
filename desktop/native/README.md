@@ -26,7 +26,7 @@ Fake-process checks use the existing system Python, fixed read and account-refre
 
 ## Local test package
 
-Obtain the official v0.5.35 arm64/amd64 CLI archives and `checksums.txt`. Pass their directory and a **new** output directory to `desktop/native/tools/package-neutral.sh`. It verifies archive hashes, compiles both architectures, merges app/helper slices, includes MIT/CLI third-party notices, and ad-hoc signs with Hardened Runtime and no App Sandbox entitlement. This is not Developer ID signing/notarisation; the test bundle ID is provisional. Apple silicon is the runtime target. Intel is untested and is labelled "Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter".
+Obtain the arm64/amd64 CLI archives and `checksums.txt` selected by `desktop/native/consent-cli-pin.json`, which is reviewed with the native consent identity rather than following plugin upgrades. Pass their directory and a **new** output directory to `desktop/native/tools/package-neutral.sh`. It verifies archive hashes, compiles both architectures, merges app/helper slices, includes MIT/CLI third-party notices, and ad-hoc signs with Hardened Runtime and no App Sandbox entitlement. This is not Developer ID signing/notarisation; the test bundle ID is provisional. Apple silicon is the runtime target. Intel is untested and is labelled "Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter".
 
 ```sh
 python3 desktop/native/tools/check-packaged-access.py "/path/ModelPlan Community.app" /new/receipt-directory
