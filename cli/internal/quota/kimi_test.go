@@ -90,17 +90,18 @@ func TestKimiOptInRegionsCacheAndPrivacy(t *testing.T) {
 		t.Fatal("read without consent")
 	}
 	var refs []string
-	for _, region := range []string{"china", "international"} {
+	for index, region := range []string{"china", "international"} {
+		at := kimiNow.Add(time.Duration(index) * NativeEvery)
 		if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "kimi", Backend: BackendNative, Enabled: true, Region: region}); err != nil {
 			t.Fatal(err)
 		}
-		if !NativeDue(p, kimiNow) {
+		if !NativeDue(p, at) {
 			t.Fatal("region switch did not invalidate cache")
 		}
-		if err := RefreshNative(context.Background(), p, kimiNow); err != nil {
+		if err := RefreshNative(context.Background(), p, at); err != nil {
 			t.Fatal(err)
 		}
-		if NativeDue(p, kimiNow.Add(5*time.Minute)) || !NativeDue(p, kimiNow.Add(NativeEvery)) {
+		if NativeDue(p, at.Add(5*time.Minute)) || !NativeDue(p, at.Add(NativeEvery)) {
 			t.Fatal("cache throttle")
 		}
 		e := loadNative(p.Cache).Providers[0]
@@ -118,52 +119,52 @@ func TestKimiOptInRegionsCacheAndPrivacy(t *testing.T) {
 			t.Fatal("secret/account leaked")
 		}
 	}
-	// Main's #117 freshness evaluator hides an expired current value while
-	// retaining the original observation for snapshot revision/history.
+	// Current projections drop expired windows; the raw cache retains history.
+	lastRead := kimiNow.Add(NativeEvery)
 	cached := loadNative(p.Cache)
-	reset := kimiNow.Add(time.Minute)
+	reset := lastRead.Add(time.Minute)
 	cached.Providers[0].Windows[0].ResetsAt = &reset
 	encoded, _ := json.Marshal(cached)
 	if err := os.WriteFile(nativePath(p.Cache), encoded, 0600); err != nil {
 		t.Fatal(err)
 	}
-	report := Read(p, kimiNow.Add(2*time.Minute))
+	report := Read(p, lastRead.Add(2*time.Minute))
 	found := false
-	for _, a := range report.Accounts {
-		if a.Source == "native:kimi" {
-			for i := range a.Windows {
-				w := &a.Windows[i]
-				if w.Kind == "five_hour" {
-					used, _ := w.ObservedUsage()
-					if w.UsedPercent != nil || w.RemainingPercent != nil || w.UnknownReason != "reset_passed" || used == nil || *used != 12.5 {
-						t.Fatalf("reset freshness lost original reading: %+v", w)
-					}
-					found = true
+	for _, account := range report.Accounts {
+		if account.Source == "native:kimi" {
+			found = true
+			for _, window := range account.Windows {
+				if window.Kind == "five_hour" {
+					t.Fatal("expired Kimi window retained in current projection")
 				}
 			}
 		}
 	}
 	if !found {
-		t.Fatal("missing Kimi reset window")
+		t.Fatal("other Kimi windows lost")
+	}
+	rawCache := loadNative(p.Cache)
+	if rawCache.Providers[0].Windows[0].UsedPercent == nil {
+		t.Fatal("historical observation erased")
 	}
 	t.Setenv("KIMI_CODE_API_KEY", "new-synthetic-key")
-	if !NativeDue(p, kimiNow) {
-		t.Fatal("key change did not invalidate cache")
+	if NativeDue(p, lastRead.Add(time.Minute)) || !NativeDue(p, lastRead.Add(NativeEvery)) {
+		t.Fatal("key change bypassed provider floor or failed to invalidate")
 	}
 	var r Report
-	applyNative(&r, p, kimiNow)
+	applyNative(&r, p, lastRead)
 	if len(r.Accounts) != 0 {
 		t.Fatal("old key quota reused")
 	}
 	t.Setenv("KIMI_CODE_API_KEY", "")
 	r = Report{}
-	applyNative(&r, p, kimiNow)
+	applyNative(&r, p, lastRead)
 	if len(r.Accounts) != 0 || hits != 2 {
 		t.Fatal("missing key read old quota")
 	}
 	t.Setenv("KIMI_CODE_API_KEY", "synthetic-secret")
 	r = Report{}
-	applyNative(&r, p, kimiNow.Add(61*time.Minute))
+	applyNative(&r, p, lastRead.Add(61*time.Minute))
 	if len(r.Accounts) != 0 {
 		t.Fatal("stale quota remained known")
 	}

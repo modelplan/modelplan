@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 )
 
@@ -17,9 +18,9 @@ func usageCmd(args []string, stdout, stderr io.Writer, c common) int {
 		return exitUsage
 	}
 	home, _ := os.UserHomeDir()
-	set, status, read, name := localusage.SetGemini, localusage.GeminiStatus, localusage.ReadGemini, "Gemini CLI"
+	set, status, name := localusage.SetGemini, localusage.GeminiStatus, "Gemini CLI"
 	if args[0] == "qwen" {
-		set, status, read, name = localusage.SetQwen, localusage.QwenStatus, localusage.ReadQwen, "Qwen Code"
+		set, status, name = localusage.SetQwen, localusage.QwenStatus, "Qwen Code"
 	}
 	sub := "read"
 	if len(args) == 2 {
@@ -38,7 +39,7 @@ func usageCmd(args []string, stdout, stderr io.Writer, c common) int {
 	}
 	r := status(home, time.Now())
 	if sub == "read" {
-		r = read(home, time.Now())
+		r = permittedLocalUsage(home, args[0], time.Now())
 	}
 	if c.json {
 		return printJSON(stdout, r)
@@ -84,4 +85,23 @@ func usageCmd(args []string, stdout, stderr io.Writer, c common) int {
 		fmt.Fprintf(stdout, "%-10s  %-24s  %d  %s  %s  %s  %s  %s\n", row.Day, row.Model, row.Messages, n(row.Input), n(row.Output), n(row.Cached), n(row.Thoughts), n(row.Total))
 	}
 	return 0
+}
+
+func permittedLocalUsage(home, tool string, now time.Time) localusage.Report {
+	if !consent.Allowed(tool, consent.Local) {
+		var r localusage.Report
+		if tool == "qwen" {
+			r = localusage.QwenStatus(home, now)
+		} else {
+			r = localusage.GeminiStatus(home, now)
+		}
+		r.Status = "off"
+		r.Enabled = false
+		r.Reason = "reader-consent-or-privacy"
+		return r
+	}
+	if tool == "qwen" {
+		return localusage.ReadQwen(home, now)
+	}
+	return localusage.ReadGemini(home, now)
 }

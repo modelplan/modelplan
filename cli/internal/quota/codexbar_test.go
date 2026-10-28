@@ -25,8 +25,7 @@ func fakeCodexBar(t *testing.T) (bin, log string) {
 	dir := t.TempDir()
 	data, _ := filepath.Abs("testdata/codexbar")
 	bin, log = filepath.Join(dir, "CodexBarCLI"), filepath.Join(dir, "calls")
-	script := `#!/bin/sh
-echo "$* LANG=$LANG" >> "` + log + `"
+	script := "#!/bin/sh\n" + fakeConfigMetadata(t) + `echo "$* LANG=$LANG" >> "` + log + `"
 f="` + data + `/$2.json"
 [ -f "$f" ] || { echo '[{"provider":"codex","source":"auto","error":{"code":1,"kind":"provider","message":"No available fetch strategy for codex."}}]'; exit 1; }
 cat "$f"
@@ -42,6 +41,7 @@ exit 0
 func cbPaths(t *testing.T, providers ...string) Paths {
 	dir := t.TempDir()
 	p := Paths{Cache: filepath.Join(dir, "cache"), CodexBarFile: filepath.Join(dir, "codexbar.json")}
+	auditFixtureHelpers(t, &p)
 	if providers != nil {
 		if err := SetCodexBarEnabled(p.CodexBarFile, providers); err != nil {
 			t.Fatal(err)
