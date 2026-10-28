@@ -32,9 +32,17 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 		case "status":
 			return connectionsStatus(stdout, stderr, p, c, quiet)
 		case "refresh":
+			if !quiet && !c.json {
+				p = quota.InteractiveReaders(p)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
-			if err := quota.RefreshNative(ctx, p, time.Now()); err != nil {
+			home, _ := os.UserHomeDir()
+			now := time.Now()
+			histories := localusage.ProductionHistories(home, st.Dir, false, now)
+			// Gemini/Qwen use their existing feed in desktop; prime only the shared
+			// incremental adapter when its source is explicitly admitted.
+			if err := quota.RefreshNative(ctx, p, now); err != nil && len(histories) == 0 {
 				if !quiet {
 					fmt.Fprintln(stderr, "connections:", err)
 				}

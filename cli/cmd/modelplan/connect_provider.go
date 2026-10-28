@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -21,6 +23,12 @@ func consentHosts(provider, region string) []string {
 	// Native destinations are compiled reader capabilities. Helper destinations
 	// follow the pinned CodexBar provider docs at ee890b5, not remote URLs to run.
 	switch provider {
+	case "amp", "droid":
+		return []string{"none (local history only; authenticated quota requires a separate audited reader)"}
+	case "grok":
+		return []string{"https://cli-chat-proxy.grok.com"}
+	case "antigravity":
+		return []string{"loopback (Antigravity runtime)"}
 	case "claude":
 		return []string{"https://api.anthropic.com"}
 	case "codex":
@@ -97,7 +105,7 @@ func setChoiceRegion(row *consentChoice, region, keyEnv string) {
 	row.Access += " Destinations / 凭据接收主机: " + strings.Join(row.Hosts, ", ")
 }
 
-func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, st *store.Store, c common, backend, region, keyEnv, privacy string, browser bool) int {
+func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, st *store.Store, c common, backend, region, keyEnv, privacy, profile string, browser bool) int {
 	if len(args) != 1 || !consent.ValidTool(strings.ToLower(args[0])) {
 		fmt.Fprintln(stderr, "usage: modelplan connect <tool> [--browser-session] [--json]")
 		return exitUsage
@@ -158,6 +166,10 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 			e.DisplayName = quota.ProviderName(id)
 		}
 	}
+	if profile != "" && (id != "zai" || profile != "claude-code" || backend != "native" || keyEnv != "") {
+		fmt.Fprintln(stderr, "connect: --profile claude-code is only for native zai without --key-env")
+		return exitUsage
+	}
 	source := quota.QuotaSource{Provider: id, Backend: quota.BackendNative, Enabled: true, Region: region, KeyEnv: keyEnv}
 	if backend == "native" && quota.ProviderName(id) != "" {
 		if err := quota.ValidateSource(source); err != nil {
@@ -167,6 +179,11 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 	}
 	row := choice(detect.Tool{Entry: e, Detected: true}, mode)
 	row.Access = strings.TrimSuffix(row.Access, " Destinations / 凭据接收主机: "+strings.Join(row.Hosts, ", "))
+	row.Profile = profile
+	if profile != "" {
+		row.Access += " Local source / 本机来源: " + profile + " settings; only a validated GLM Coding Plan endpoint."
+	}
+
 	row.Hosts = consentHosts(id, region)
 	row.Region = region
 	row.KeyEnv = keyEnv
@@ -232,6 +249,11 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 		record := current.Tools[id]
 		record.Region = region
 		record.KeyEnv = keyEnv
+		if profile != "" {
+			record.Profiles = []string{profile}
+		} else if keyEnv != "" {
+			record.Profiles = nil
+		}
 		record.BrowserSession = browser
 		record.BrowserCookieCache = record.BrowserCookieCache || browser
 		current.Tools[id] = record
@@ -240,6 +262,19 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitErr
+	}
+	if backend == "native" && (id == "gemini" || id == "qwen") {
+		home, _ := os.UserHomeDir()
+		var err error
+		if id == "gemini" {
+			err = localusage.SetGemini(home, true)
+		} else {
+			err = localusage.SetQwen(home, true)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, "local usage setting:", err)
+			return exitErr
+		}
 	}
 	if backend == "native" && quota.ProviderName(id) != "" {
 		if err := quota.SetConnection(quotaPaths(st).ConnectionsFile, source); err != nil {

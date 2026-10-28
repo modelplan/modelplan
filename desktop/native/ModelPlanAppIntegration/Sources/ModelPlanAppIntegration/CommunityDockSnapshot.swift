@@ -9,17 +9,20 @@ public struct CommunityDockSnapshot: Sendable {
     public let inputs: [DockInstrumentInput]
     public let subscriptions: [SettingsSubscription]
     public let unavailableReason: String?
+    public let readerDiagnostics: [CommunityReaderDiagnostic]
+    public let emptyDiagnostic: CommunityReaderDiagnostic?
 
-    public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date) {
+    public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date,
+                readerFacts: [CommunityReaderFacts]? = nil) {
+        let reasons = CommunityReaderReason.project(snapshot: snapshot, diagnostics: diagnostics, now: now, facts: readerFacts ?? [])
+        readerDiagnostics = reasons.readers; emptyDiagnostic = reasons.empty
         guard let snapshot else {
             inputs = []; subscriptions = []
             unavailableReason = diagnostics.personal ?? "personal-not-loaded"
             return
         }
         let personal = snapshot.personal
-        let readable = diagnostics.personal == nil && snapshot.presentation.actionable &&
-            now.timeIntervalSinceReferenceDate.isFinite && personal.generatedAt.date <= now &&
-            personal.validUntilReported && personal.validUntil.map { $0.date > now } == true
+        let readable = CommunityReaderReason.isReadable(snapshot, diagnostics: diagnostics, now: now)
         unavailableReason = readable ? nil : diagnostics.personal ?? snapshot.presentation.unavailableReason ?? "personal-unavailable"
         let accounts = personal.accounts ?? []
         // An explicit ref is real membership even when its current reading is unavailable. Never
@@ -48,10 +51,8 @@ public struct CommunityDockSnapshot: Sendable {
                 for (windowIndex, window) in rawWindows.enumerated() {
                     let index = projectedOffset + windowIndex
                     let quota = snapshot.presentation.quotas.indices.contains(index) ? snapshot.presentation.quotas[index] : nil
-                    let matched = quota?.source == account.source && quota?.subscription == id && quota?.kind == window.kind
-                    let observed = quota?.observedAt
-                    let current = readable && matched && quota?.reason == nil &&
-                        observed.map { $0 <= now } == true && window.unknownReason == nil && window.reason == nil
+                    let current = CommunityReaderReason.currentReading(account: account, window: window, quota: quota,
+                                                                       readable: readable, now: now)
                     if current { hasCurrentReading = true }
                     // These IDs locate a reported row only; they are not invented CLI window IDs.
                     let locator = "account.\(accountIndex).window.\(windowIndex)"

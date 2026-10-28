@@ -40,7 +40,7 @@ func TestConsentPersistencePrivacyAndDeny(t *testing.T) {
 	if s.Generation != 4 || s.Tools["claude"].ConsentTextVersion != TextVersion || !s.Tools["claude"].DeniedSources["keychain"] {
 		t.Fatal(s)
 	}
-	for _, v := range []struct{ env, mode string }{{"", Passive}, {"passive", Passive}, {"off", Off}, {"automatic", Off}, {"invalid", Off}} {
+	for _, v := range []struct{ env, mode string }{{"", Passive}, {"passive", Passive}, {"off", Off}, {"automatic", Passive}, {"invalid", Off}} {
 		if s.Effective(v.env) != v.mode {
 			t.Fatal(v)
 		}

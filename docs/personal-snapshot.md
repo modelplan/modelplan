@@ -339,3 +339,15 @@ A connected native Cursor entry adds `quotaAccess` (the existing selection shape
 Both `desktop --json --read-only` and `publication --json` now include additive `contractVersion: 1` and `capabilities` metadata. The existing `schemaVersion`, fields and command behavior are retained. See [the contract schemas and compatibility policy](../schema/README.md) and [independent synthetic goldens](../testdata/contract-v1/README.md).
 
 The flattened publication also carries verified public reset announcements/confirmations, scoped calendar windows and quota multipliers, their horizon, and validated published plan-metering metadata. These are published results, not personal refill evidence or entitlement. Missing optional metadata remains null. Capabilities explicitly identify unavailable credit history, exact reset-drop provenance and model-selection metadata rather than inventing data for the UI.
+
+### Incremental local history
+
+Optional `localHistory` contains the admitted Amp, Droid, Kimi, Copilot and Grok
+count-adapter results: native token fields, unallocated measurements, original
+capture times, freshness and beta status. Gemini/Qwen retain `localUsage` as their
+single displayed history source. Read-only desktop calls inspect incremental
+caches without creating keys or advancing checkpoints. See the
+[production admission audit](production-reader-admission.md).
+
+可选 `localHistory` 包含已授权工具的增量本机计数、未知归因、原始捕获时间及 beta
+状态。Gemini/Qwen 沿用 `localUsage`，不重复展示计数；只读调用不创建密钥或推进游标。

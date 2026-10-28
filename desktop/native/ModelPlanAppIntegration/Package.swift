@@ -20,6 +20,7 @@ let package = Package(
             .product(name: "ModelPlanAssembly", package: "ModelPlanNative"),
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
             .product(name: "ModelPlanInstruments", package: "ModelPlanNative"),
+            .product(name: "ModelPlanCockpitShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),

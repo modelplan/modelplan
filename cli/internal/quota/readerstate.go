@@ -25,6 +25,8 @@ type ReaderGrant struct {
 	Interactive        bool
 	Region             string // locally selected region; an empty value uses the reader's safe default
 	Profiles           []ReaderProfile
+	ConfigSource       *ZaiConfigSource
+	Publish            func(func() error) error
 	// StillValid checks the consent generation immediately before publication.
 	StillValid func() bool
 }
@@ -243,6 +245,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if err := saveReaderState(p.Cache, s); err != nil {
 		return err
 	}
+	if g.StillValid != nil && !g.StillValid() {
+		return errors.New("reader consent changed")
+	}
 	call, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	out := n.Managed(call, nativeClient, readerContext{Paths: p, Grant: g, Profile: profile, ProfileKey: profileKey, Previous: previous, Now: now})
@@ -293,6 +298,12 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	}
 	if err := reserveReaderAttempt(p.Cache, provider, s.NextAttemptAt); err != nil {
 		return err
+	}
+	if g.StillValid != nil && !g.StillValid() {
+		return errors.New("reader consent changed")
+	}
+	if g.Publish != nil {
+		return g.Publish(func() error { return saveReaderState(p.Cache, s) })
 	}
 	return saveReaderState(p.Cache, s)
 }
