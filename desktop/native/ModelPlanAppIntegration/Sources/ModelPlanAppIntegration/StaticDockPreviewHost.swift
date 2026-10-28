@@ -47,10 +47,14 @@ public struct StaticDockGeometry {
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
 
-/// Self-test host. Reuses the Dock projection/edge controller and the application's one feed/store.
-/// No working effects, entrance animation, global input monitor, reader activation or service registration.
+public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
+
+/// Interactive native Dock companion shared by production and explicit self-tests.
+/// The static instrument renderer does not disable native panels, edge/hide, drag/drop or menus.
+/// Working effects/entrance, global hooks, reader activation and services are separate owners.
 @MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionVisibility, NSMenuDelegate {
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
+    public let purpose: DockHostPurpose
     public private(set) var isVisible = false
     public var visibilityChanged: (() -> Void)?
     private func reportVisibility(_ visible: Bool) {
@@ -63,6 +67,19 @@ public struct StaticDockGeometry {
     public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
+    /// Current resolver facts, separate from saved intent. Replacing an observer replays once.
+    /// The consumer may update context, but must not persist this recovery as a preference.
+    public var onPlacementObserved: ((_ placement: DockEdgePlacement?, _ recovering: Bool) -> Void)? {
+        didSet {
+            lastPlacementObservation = nil
+            if onPlacementObserved != nil { publishPlacementObservation(edge.presentation) }
+        }
+    }
+    private struct PlacementObservation: Equatable {
+        let placement: DockEdgePlacement?
+        let recovering: Bool
+    }
+    private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
@@ -73,6 +90,7 @@ public struct StaticDockGeometry {
     private let edgeScheduling: (any DockEdgeScheduling)?
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
+    var nativeMovePreviewPanel: NSPanel? { outlinePanel }
     func refreshPresence() { edge.refresh() }
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
@@ -104,11 +122,19 @@ public struct StaticDockGeometry {
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() }) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities)
     }
+    public convenience init(purpose: DockHostPurpose, appearance: Appearance? = nil,
+                            sliverParameters: DockSliverParameters = .current,
+                            readerCapabilities: CommunityReaderCapabilities = .init(),
+                            currentDate: @escaping @MainActor () -> Date = { Date() }) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true,
+                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose)
+    }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
-         readerCapabilities: CommunityReaderCapabilities = .init()) {
+         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest) {
+        self.purpose = purpose
         self.readerCapabilities = readerCapabilities
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
@@ -175,7 +201,7 @@ public struct StaticDockGeometry {
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { edge.stop(); dismissCard(); panel?.orderOut(nil); outlinePanel?.orderOut(nil) }
+        else { edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
     }
     private func rebuild() {
         guard !retired, application != nil else { return }
@@ -390,11 +416,33 @@ public struct StaticDockGeometry {
         value.isReleasedWhenClosed = false
         return value
     }
+    private func publishPlacementObservation(_ value: DockEdgePresentation?) {
+        guard let callback = onPlacementObserved else { return }
+        let placement: DockEdgePlacement?
+        if permitted, !retired, application != nil, let value, value.paintedFrame != nil,
+           !createsNativePanels || panel?.isVisible == true {
+            placement = value.placement
+        } else { placement = nil }
+        let intent = edge.preference
+        let recovering = placement.map { actual in
+            // nil display is follow mode; switching followed displays is not recovery.
+            (intent.displayID.map { $0 != actual.displayID } ?? false)
+                || intent.edge != actual.edge
+                || abs(intent.alongFraction - actual.alongFraction) > 1e-9
+        } ?? false
+        let observation = PlacementObservation(placement: placement, recovering: recovering)
+        guard observation != lastPlacementObservation else { return }
+        // Record before delivery: context updates can synchronously re-enter the Host.
+        lastPlacementObservation = observation
+        callback(observation.placement, observation.recovering)
+    }
     private func present(_ value: DockEdgePresentation) {
-        guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return }
+        guard createsNativePanels else { publishPlacementObservation(value); return }
+        guard permitted, !retired, let frame = value.paintedFrame else {
+            panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+        }
         if panel == nil { panel = makePanel() }
-        guard let panel else { return }
+        guard let panel else { publishPlacementObservation(nil); return }
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
         let content: NSView
@@ -414,18 +462,25 @@ public struct StaticDockGeometry {
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
-            catch { panel.orderOut(nil); reportVisibility(false); return }
-        case .suppressed: panel.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return
+            catch { panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
+        case .suppressed: panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
-        if let preview = value.snapPreview, let view = edgeViews[preview.edge], let path = view.registeredHullPath {
+        if let preview = value.snapPreview, let view = edgeViews[preview.edge],
+           view.registeredHullPath != nil || view.registeredMovePreviewImage != nil {
             if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
-            outlineView.path = path
+            outlineView.path = view.registeredHullPath
+            outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
-        } else { outlinePanel?.orderOut(nil) }
+        } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
+        publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
+    }
+    private func hideMovePreview() {
+        outlinePanel?.orderOut(nil)
+        outlineView.path = nil; outlineView.rasterImage = nil
     }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
@@ -445,7 +500,7 @@ public struct StaticDockGeometry {
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
-    private func menu() -> NSMenu {
+    func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
         if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
@@ -467,7 +522,8 @@ public struct StaticDockGeometry {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit preview / 退出自测版", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitTitle = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
@@ -524,10 +580,12 @@ public struct StaticDockGeometry {
         guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
         dismissCard()
         NotificationCenter.default.removeObserver(self)
-        edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
+        edge.stop(); publishPlacementObservation(nil)
+        edge.onPresent = nil; edge.onCommittedPlacement = nil
+        onPlacementObserved = nil
         dockView.onNeedsFreshPresentation = nil
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
-        edgeViews = [:]; edgeGeometries = [:]; outlinePanel?.orderOut(nil); outlinePanel = nil
+        edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
