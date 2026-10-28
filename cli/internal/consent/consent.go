@@ -143,7 +143,7 @@ func (s State) Allows(tool, class, mode string) bool {
 		if !r.Allowed || r.ConsentTextVersion != TextVersion || r.DeniedSources[class] {
 			return false
 		}
-		if class == "keychain" && (r.Keychain == "denied" || r.Keychain == "unset") {
+		if class == "keychain" && s.keychainStatus(tool) != "allowed" {
 			return false
 		}
 	} else if class == Credential || class == Bridge || class == "keychain" {

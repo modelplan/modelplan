@@ -37,7 +37,7 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 (`automatic|passive|off`), `consentText: {"en": "…", "zh": "…"}`, and detected
 `tools`. Each tool includes `id`, `displayName`, `accessClass`
 (`standard|browser-session|not-read`), `detected`, saved `allowed`, catalogue
-`backend` and `readerId`, recorded `keychain` (`allowed|denied|unset`), and provider
+`backend` and `readerId`, Keychain consent `keychain` (`allowed|denied|unset`), and provider
 `hosts`. Show the returned text and hosts before submitting consent. Detection
 does not establish a login, and saved permission does not override privacy or a
 catalogue kill switch. No credentials, network, processes or cache writes are
@@ -67,9 +67,14 @@ whole transaction with `unknown_tool`. Only standard routes can be allowed;
 browser sessions require their separate advanced action. Disabled readers fail
 with `readers_off`, including `MODELPLAN_READERS=off`; passive settings remain
 restrictive. Keychain entries must name a listed decision and use `allow|deny`.
-They record permission only and never prompt; new API records default to unset
-and cannot use Keychain until allowed. Existing source Deny and local-source
-opt-outs remain in force.
+Only the native Claude route uses this permission; choices for other routes fail
+atomically with `keychain_not_supported`, and their readback stays `unset`.
+Readback and production share the same consent policy: legacy `connect` grants
+include Keychain permission and report `allowed`; passive/off or source Deny
+reports `denied`. New API grants default to `unset` and cannot use Keychain
+until allowed. Omitting a choice preserves existing permission. Recording a
+choice never prompts. Existing source Deny and local-source opt-outs remain in
+force.
 
 Denials revoke first and perform the same scoped Forget cleanup as disconnect,
 retaining request gates, identities and other tools. If cleanup cannot finish,

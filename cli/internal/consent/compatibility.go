@@ -14,6 +14,42 @@ import (
 const keychainUnset = "consent-api/keychain/unset"
 const keychainAllowed = "consent-api/keychain/allowed"
 
+// KeychainSupported names the native route which actually uses Keychain. The
+// standard helper always disables it, including when its provider is Claude.
+func KeychainSupported(tool, backend, reader string) bool {
+	return tool == "claude" && backend == "native" && (reader == "native:claude" || reader == "native:claude-code")
+}
+
+// KeychainStatus is the shared consent policy for API readback and production
+// admission. Legacy connect grants include Keychain permission implicitly; API
+// grants distinguish unset from Deny. Mode restrictions still win, and unused
+// Keychain fields on other tools never describe a permission the reader uses.
+func (s State) KeychainStatus(tool, mode string) string {
+	status := s.keychainStatus(tool)
+	if status == "allowed" && !s.Allows(tool, "keychain", mode) {
+		return "denied"
+	}
+	return status
+}
+
+func (s State) keychainStatus(tool string) string {
+	r, exists := s.Tools[tool]
+	if !exists || !KeychainSupported(tool, r.Backend, r.ReaderID) || r.BrowserSession || r.KeyEnv != "" {
+		return "unset"
+	}
+	r.restoreKeychain()
+	if r.Keychain == "unset" || r.Keychain == "denied" {
+		return r.Keychain
+	}
+	if !r.Allowed || r.ConsentTextVersion != TextVersion {
+		return "unset"
+	}
+	if r.DeniedSources[Credential] {
+		return "denied"
+	}
+	return "allowed"
+}
+
 func (r *Record) restoreKeychain() {
 	switch {
 	case r.DeniedSources[keychainUnset] && r.DeniedSources["keychain"]:

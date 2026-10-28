@@ -91,13 +91,6 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 			continue
 		}
 		r := s.Tools[t.ProviderID]
-		keychain := r.Keychain
-		if keychain == "" {
-			keychain = "unset"
-		}
-		if r.DeniedSources["keychain"] && keychain != "unset" {
-			keychain = "denied"
-		}
 		hosts := consentHosts(t.ProviderID, r.Region)
 		if hosts == nil {
 			hosts = []string{}
@@ -105,7 +98,7 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 		rows = append(rows, consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
 			AccessClass: consentAccess(t), Detected: true,
 			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
-			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: keychain, Hosts: hosts})
+			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts})
 	}
 	return rows
 }
@@ -237,8 +230,12 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 			}
 		}
 		for id := range request.Keychain {
-			if _, exists := tools[id]; !exists {
+			t, exists := tools[id]
+			if !exists {
 				return errors.New("unknown_tool")
+			}
+			if !consent.KeychainSupported(id, t.Preferred, t.ReaderID) {
+				return errors.New("keychain_not_supported")
 			}
 			touched := false
 			for _, ids := range [][]string{request.Allow, request.Deny} {
@@ -270,7 +267,10 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 					allowed = allowed || a == id
 				}
 				r := s.Tools[id]
-				consent.SetKeychain(&r, request.Keychain[id])
+				if consent.KeychainSupported(id, t.Preferred, t.ReaderID) &&
+					(request.Keychain[id] != "" || s.KeychainStatus(id, consent.Automatic) != "allowed") {
+					consent.SetKeychain(&r, request.Keychain[id])
+				}
 				s.Tools[id] = r
 				reader, backend := t.ReaderID, t.Preferred
 				if !allowed {
@@ -295,7 +295,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 	if err != nil {
 		code := err.Error()
 		switch code {
-		case "invalid_request", "readers_off", "stale_generation", "stale_consent_text", "unknown_tool", "access_class_forbidden", "reader_unavailable", "request_id_conflict":
+		case "invalid_request", "readers_off", "stale_generation", "stale_consent_text", "unknown_tool", "keychain_not_supported", "access_class_forbidden", "reader_unavailable", "request_id_conflict":
 		default:
 			code = "consent_unavailable"
 		}

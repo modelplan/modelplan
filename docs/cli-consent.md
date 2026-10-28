@@ -98,6 +98,14 @@ source Deny and retains explicit allowed readback if an old writer drops the
 new `keychain` field. An explicit API allow may resolve unset; it never clears
 an existing user/OS Deny.
 
+`State.KeychainStatus` is shared by API readback and production admission.
+Existing native Claude `connect` grants implicitly permit Keychain and read back
+as `allowed`; the same saved permission is `denied` under Passive/Off. Only
+native Claude uses this consent capability. The API rejects explicit choices
+for other routes with `keychain_not_supported` and reports their unused state
+as `unset`, including old API records that had stored an ineffective choice.
+New API grants start unset; omission preserves an existing implicit grant.
+
 Replay receipts and pending Forget IDs are encoded in true-valued keys under
 `hinted["consent-api/receipt/v1/<requestId>/<base64url-receipt>"]`. This reserved
 namespace cannot collide with tool IDs, and supported schema-1 writers preserve
