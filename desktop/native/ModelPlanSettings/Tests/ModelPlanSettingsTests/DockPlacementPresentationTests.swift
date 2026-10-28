@@ -29,4 +29,23 @@ final class DockPlacementPresentationTests: XCTestCase {
         guard case .choice(let value, _) = row.value else { return XCTFail("saved choice missing") }
         XCTAssertEqual(value, "right"); XCTAssertEqual(preferences.dockEdge, .right)
     }
+    func testMissingObservationDoesNotPretendThePreferenceIsActualPlacement() throws {
+        var preferences = SettingsPreferences(); preferences.dockEdge = .left
+        let rows = try SettingsCatalogue.rows(preferences: preferences, context: .init())
+        for key in [SettingKey.dockEdge, .dockDisplay, .dockPosition] {
+            let row = try XCTUnwrap(rows.first { $0.key == key })
+            XCTAssertTrue(row.title.english.hasPrefix("Preferred"))
+            XCTAssertTrue(row.subtitle.english.contains("has not been observed"))
+            XCTAssertTrue(row.subtitle.chinese.contains("尚未观测"))
+        }
+    }
+    func testActualFactsCanChangeWithoutRewritingSavedIntentOrExposingRawDisplayID() throws {
+        let preferences = SettingsPreferences(); var context = SettingsPageContext()
+        context.dockPlacementObservation = try .init(displayID: "opaque-display-id", edge: .bottom, alongFraction: 0.25, recovering: false)
+        let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .dockEdge })
+        XCTAssertTrue(row.subtitle.english.contains("Currently bottom")); XCTAssertTrue(row.subtitle.english.contains("25.0%"))
+        XCTAssertFalse(row.subtitle.english.contains("opaque-display-id")); XCTAssertFalse(row.subtitle.english.contains("recovery"))
+        XCTAssertEqual(preferences.dockEdge, .right)
+        XCTAssertThrowsError(try SettingsDockPlacementObservation(displayID: "screen", edge: .left, alongFraction: .nan, recovering: true))
+    }
 }
