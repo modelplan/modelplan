@@ -48,7 +48,7 @@ func fixtureDigest() *digest.Digest {
 		Multipliers: []digest.MultiplierWindow{
 			mw("base", 1, 0, -2*time.Hour, 20*time.Hour), mw("peak", 3, 10, 30*time.Minute, 4*time.Hour),
 		},
-		MultiplierHorizon: &digest.MultiplierHorizon{From: now.Add(-time.Hour).Format(time.RFC3339), To: now.Add(47 * time.Hour).Format(time.RFC3339)},
+		MultiplierHorizon: &digest.MultiplierHorizon{Selection: "highest-priority-no-stacking", From: now.Add(-time.Hour).Format(time.RFC3339), To: now.Add(47 * time.Hour).Format(time.RFC3339)},
 	}
 }
 

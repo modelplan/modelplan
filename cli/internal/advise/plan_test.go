@@ -183,6 +183,12 @@ func TestBriefForAGLMSessionNamesThePlanAndItsLineup(t *testing.T) {
 			t.Fatalf("every effort costs one request: %+v", b.Ladder)
 		}
 	}
+	if len(b.BillingContext) != 1 || b.BillingContext[0].MultiplierNow == nil || *b.BillingContext[0].MultiplierNow != 3 || b.BillingContext[0].NextCheaperAt == nil || !b.BillingContext[0].NextCheaperAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("billing context=%+v", b.BillingContext)
+	}
+	if len(b.PlanRates) != 1 || b.PlanRates[0].MultiplierNow == nil || *b.PlanRates[0].MultiplierNow != 3 || b.PlanRates[0].NextCheaperAt == nil {
+		t.Fatalf("plan rate context=%+v", b.PlanRates)
+	}
 	if len(b.PlanRates) != 1 || *b.PlanRates[0].Now != 3 {
 		t.Fatalf("rates = %+v", b.PlanRates)
 	}

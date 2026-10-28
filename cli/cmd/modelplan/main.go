@@ -48,6 +48,8 @@ const (
 const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 
   modelplan lineup [--dev anthropic]   WHICH ENGINE: a developer's models at ★ recommended effort
+  modelplan plan [--dev anthropic]     decision view, with connected-plan time rates
+  modelplan windows [--provider X]     public billing windows (cache only; --plan ID --model NAME)
   modelplan effort [model]             one model's effort ladder (default: Claude Code's current model),
                                        with your own measured speed per effort when there is some
   modelplan models [--dev openai]      models with ★ effort, ability and cost
@@ -97,7 +99,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan history --effort-suggestion dismiss|off|on
                                        control local weekly effort suggestions (never changes settings)
-  modelplan declare <planId> [generation]
+  modelplan declare <planId> [generation] [--region ID]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
                                        advice follows how it counts usage (--remove takes it out)
@@ -155,6 +157,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var c common
 	fs := flags(cmd, &c)
 	fs.SetOutput(stderr)
+	provider := fs.String("provider", "", "windows: published provider id")
+	planFlag := fs.String("plan", "", "windows: published plan id")
 	dev := fs.String("dev", "", "developer id, e.g. anthropic, openai, zhipuai")
 	force := fs.Bool("force", false, "sync: ignore the 10-minute check interval")
 	background := fs.Bool("background", false, "sync: detach and return immediately")
@@ -186,6 +190,23 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
+	if cmd == "lineup" || cmd == "plan" {
+		if fs.NArg() > 1 || fs.NArg() == 1 && *dev != "" && !strings.EqualFold(*dev, fs.Arg(0)) {
+			fmt.Fprintln(stderr, "usage: modelplan "+cmd+" [developer-id | --dev ID]")
+			return exitUsage
+		}
+		if fs.NArg() == 1 {
+			*dev = fs.Arg(0)
+		}
+		*dev = strings.ToLower(*dev)
+	}
+	if cmd == "windows" {
+		if fs.NArg() != 0 {
+			fmt.Fprintln(stderr, "usage: modelplan windows [--provider X] [--plan ID] [--model NAME] [--region REGION] [--json]")
+			return exitUsage
+		}
+		c.offline = true
+	}
 	if *share {
 		if cmd != "doctor" || fs.NArg() != 0 {
 			fmt.Fprintln(stderr, "usage: modelplan doctor --share [--json]")
@@ -216,7 +237,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	open := store.Open
-	if cmd == "detect" || cmd == "connect" || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
+	if cmd == "windows" || cmd == "detect" || cmd == "connect" || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
 		open = store.Locate // creates nothing
 	}
 	st, err := open()
@@ -401,7 +422,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
 
 	case "declare":
-		return declareCmd(fs.Args(), stdout, stderr, st, c, *remove)
+		return declareCmd(fs.Args(), stdout, stderr, st, c, *remove, *region)
 
 	case "doctor":
 		s, _ := st.State()
@@ -423,13 +444,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "publication":
 		return printJSON(stdout, d.Publication())
-	case "lineup":
+	case "windows":
+		now := time.Now()
+		groups := advise.Windows(d, advise.WindowFilter{Provider: *provider, Plan: *planFlag, Model: *modelFlag, Region: *region}, now)
+		if c.json {
+			return printJSON(stdout, map[string]any{"schemaVersion": 1, "publicationId": d.PublicationID, "evaluatedAt": now.UTC(), "horizon": d.MultiplierHorizon, "groups": groups})
+		}
+		style.Windows(stdout, groups)
+	case "lineup", "plan":
 		devs := []string{*dev}
 		if *dev == "" {
 			devs = []string{"anthropic", "openai"}
 		}
+		now := time.Now()
+		var models []*digest.Model
+		for _, v := range devs {
+			models = append(models, d.Developer(v)...)
+		}
+		report := quota.Report{Accounts: quota.DeclaredPlans(quotaPaths(st).LocalFile, now)}
+		billing := advise.Billing(d, report, models, now)
 		if c.json {
-			out := map[string]any{"publicationId": d.PublicationID, "units": d.Units, "lineups": map[string]*digest.PublishedLineup{}}
+			out := map[string]any{"billingContext": billing, "billingNote": "Context only: base API reference cost × time rate; the user decides. See modelplan windows.", "evaluatedAt": now.UTC(), "publicationId": d.PublicationID, "units": d.Units, "lineups": map[string]*digest.PublishedLineup{}}
 			for _, v := range devs {
 				out["lineups"].(map[string]*digest.PublishedLineup)[v] = d.PublishedLineup(v)
 			}
@@ -439,10 +474,15 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if i > 0 {
 				fmt.Fprintln(stdout)
 			}
-			if err := style.Lineup(stdout, d, v); err != nil {
+			if err := style.Lineup(stdout, d, v, billing); err != nil {
 				fmt.Fprintln(stderr, err)
 				return exitErr
 			}
+		}
+		if len(billing) == 0 {
+			style.BillingFootnote(stdout)
+		} else {
+			style.BillingHint(stdout, billing)
 		}
 	case "effort":
 		q := strings.Join(fs.Args(), " ")
@@ -1110,7 +1150,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

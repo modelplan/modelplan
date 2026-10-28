@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI adds cache-only `windows` for public time-of-day billing rates, local-time changes and unverified evidence labels; `lineup` / `plan` and task-start briefs include declared-plan rate context and optional cheaper-window hints. Expired horizons stay unknown, and `lineup <developer-id>` now selects that developer.
+  CLI 新增只读缓存的 `windows`，显示公开分时计费倍率、本机时间和未核实标记；`lineup` / `plan` 与任务简报提供已声明套餐的倍率及可选低价时段。过期时域保持未知，`lineup <开发者 ID>` 现正确筛选开发者。
+
 - CLI weekly effort suggestions now share one notice across text history, the Claude Code status-line hint and user-only hooks. The status line steps from the explicit current effort using published reference costs; previews, record-only mode and urgent quota advice do not consume the notice.
   每周档位建议在历史文本、Claude Code 状态栏和钩子的用户提示间共享一次提示；状态栏从明确的当前档位按公开参考成本建议一步，预览、仅记录和紧急额度提示不消耗次数。
 

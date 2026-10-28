@@ -161,6 +161,7 @@ type Account struct {
 	Beta       bool      `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string    `json:"plan,omitempty"`
+	Region     string    `json:"region,omitempty"`
 	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
 	ObservedAt time.Time `json:"observedAt"`
 	Stale      bool      `json:"stale"`

@@ -412,10 +412,14 @@ func planLine(p *advise.Plan, rates []advise.PlanRate) string {
 		if r.Now == nil {
 			return ", time-of-day rate now not published"
 		}
-		if *r.Now == 1 {
+		if *r.Now == 1 && (r.Status == "" || r.Status == "CONFIRMED") {
 			return ""
 		}
-		return ", " + rateX(r.Now, "") + " now"
+		suffix := ""
+		if r.Status != "" && r.Status != "CONFIRMED" {
+			suffix = " (unverified)"
+		}
+		return ", " + rateX(r.Now, "") + " now" + suffix
 	}
 	var rs []string
 	for _, r := range rates {
@@ -473,6 +477,7 @@ func TaskBrief(b *advise.Brief) string {
 	// No quota figures: the user sees them in the hook's hints; figures handed to the model go stale
 	// within the thread and invite it to repeat them.
 	lines = append(lines, now+".")
+	lines = append(lines, BillingBrief(b.BillingContext))
 	if p := b.Plan; p != nil {
 		lines = append(lines, planLine(p, b.PlanRates))
 	}
