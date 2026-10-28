@@ -7,6 +7,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Cache-only caller selection respects consent/privacy and requires no plugin or status line; no independent cursor or quota-network schedule.
+
+## CLI v0.5.41, Codex plugin 0.15.33 and Claude Code plugin 0.7.32 (2026-10-27)
+
 - Catalogue helper routes now distinguish audited standard, separate advanced browser-session and not-read access. Standard consent excludes browser sessions and forces both the Keychain gate and `cookieSource: off` across the complete effective helper registry, verified after normalization, including for Firefox/Safari cookies. Only the explicitly granted browser-session target gets `cookieSource: auto`; user-set Keychain disables remain in force. `connect <tool> --browser-session` explains Safe Storage/cookie caching and grants one provider explicitly. Forget atomically captures current cookie-cleanup obligations during revocation and keeps blocked cleanup pending. All connect JSON paths are previews; confirmations name destination hosts. Privacy/revocation gates now also protect Qwen status exports and generation-fenced refresh/snapshot/history writes.
 
 - CLI `connect --detected` adds a pre-checked, single-confirmation consent chooser and read-only JSON preview, shared versioned per-tool grants, automatic/passive privacy (`MODELPLAN_READERS=passive|off`), persistent source denials, and one-time new-tool hints. `disconnect <tool|--all>` revokes first and deletes ModelPlan-owned readings while retaining other tools and request gates. Unreviewed helper routes and incompatible catalogue entries cannot admit readers.
@@ -19,6 +22,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - CLI `modelplan detect [--json]` checks tool presence from a verified cached catalogue or a built-in bootstrap, without credential contents, network calls, tool launches or cache writes. Unknown signals/rules are inert; incompatible `minCli` entries request an update.
 
 - CLI publication refreshes spread load with independent uniform 0–60 second jitter before interval-triggered online checks and on the 10-minute check interval. Caller deadlines are preserved; first checks, explicit syncs and offline/cache reads have no added pre-check delay.
+
+- Both plugins and their bundled Skill pin CLI v0.5.41 and its published archive checksums.
 
 ## CLI v0.5.40, Codex plugin 0.15.32 and Claude Code plugin 0.7.31 (2026-10-26)
 
