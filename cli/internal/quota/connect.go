@@ -271,6 +271,15 @@ func Selections(p Paths) ([]Selection, error) {
 				}
 			}
 		}
+		if n := nativeReaders[x.Provider]; p.ReaderAccess != nil && x.Backend == BackendNative && n != nil && n.Managed == nil && n.KeyEnv == "" {
+			if _, admitted := p.ReaderAccessGrant(x.Provider); !admitted {
+				x.Blocked = "reader-consent-or-privacy"
+			}
+		}
+		if g, ok := p.ReaderAccessGrant(x.Provider); ok && (g.SavedLogin || g.ConfigSource != nil) && x.Backend == BackendNative && x.Blocked == "no-key" {
+			x.Blocked = ""
+			x.KeyEnv, x.KeySet = "", false
+		}
 		if route, ok := publishedRoutes[x.Provider]; ok && !detect.Compatible(p.CLIVersion, route.MinCLI) {
 			x.Blocked = "update-required"
 		}
@@ -349,6 +358,18 @@ func ForgetTool(p Paths, tool string) error {
 		}
 		f.Close()
 		releases = append(releases, func() { os.Remove(path) })
+	}
+	if n := nativeReaders[tool]; n != nil && n.Managed != nil {
+		if _, err := os.Stat(readerPath(p.Cache, tool)); err == nil {
+			if err := ForgetReader(p.Cache, tool); err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := forgetProductionReaderState(p.Cache, tool); err != nil {
+		return err
 	}
 	files := []string{}
 	if tool == "claude" {

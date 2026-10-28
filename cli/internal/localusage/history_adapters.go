@@ -103,21 +103,19 @@ func historyAllowed(tool, rel string) bool {
 	}
 	return false
 }
+
+var historyDepths = map[string]int{"amp": 0, "droid": 1, "copilot": 1, "kimi": 2, "grok": 2, "qwen": 3, "gemini": 3}
+
 func historyDepth(tool string) int {
-	switch tool {
-	case projectionTool:
+	if tool == projectionTool {
 		return 2
-	case "amp":
-		return 0
-	case "copilot", "droid":
-		return 1
-	case "kimi", "grok":
-		return 2
-	case "qwen", "gemini":
-		return 3
+	}
+	if depth, ok := historyDepths[tool]; ok {
+		return depth
 	}
 	return -1
 }
+
 func historySession(tool, rel string) string {
 	p := strings.Split(filepath.ToSlash(rel), "/")
 	name := p[len(p)-1]

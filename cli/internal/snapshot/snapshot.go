@@ -40,6 +40,7 @@ type Snapshot struct {
 	Capabilities    map[string]desktopcontract.Capability `json:"capabilities"`
 	QwenUsage       *qwenusage.Report                     `json:"qwenUsage,omitempty"`
 	LocalUsage      []localusage.Report                   `json:"localUsage,omitempty"`
+	LocalHistory    []localusage.HistoryResult            `json:"localHistory,omitempty"`
 	SchemaVersion   int                                   `json:"schemaVersion"`
 	Kind            string                                `json:"kind"`
 	GeneratedAt     time.Time                             `json:"generatedAt"`
@@ -199,13 +200,14 @@ type Event struct {
 }
 
 type Input struct {
-	QwenUsage  *qwenusage.Report
-	LocalUsage []localusage.Report
-	Report     quota.Report
-	Digest     *digest.Digest
-	State      store.State
-	Events     []advise.Event // from advise.Derive with the advice state
-	Measured   []speed.Stat
+	QwenUsage    *qwenusage.Report
+	LocalUsage   []localusage.Report
+	LocalHistory []localusage.HistoryResult
+	Report       quota.Report
+	Digest       *digest.Digest
+	State        store.State
+	Events       []advise.Event // from advise.Derive with the advice state
+	Measured     []speed.Stat
 	// Ledger: the speed ledger's rows behind Measured, for DataRevision.
 	Ledger      []speed.Row
 	Connections []connections.Connection
@@ -230,7 +232,7 @@ const note = "Built on this machine from what the harnesses write locally; never
 func Build(in Input) Snapshot {
 	s := Snapshot{ContractVersion: desktopcontract.Version, Capabilities: desktopcontract.PersonalCapabilities(), LocalUsage: in.LocalUsage, SchemaVersion: SchemaVersion, Kind: Kind, GeneratedAt: in.Now.UTC(), CLIVersion: in.CLIVersion,
 		Sessions: []Session{}, Accounts: in.Report.Accounts, Sources: in.Report.Sources, Events: []Event{}, Measured: in.Measured,
-		Recording: in.Recording, Note: note, QwenUsage: in.QwenUsage}
+		Recording: in.Recording, Note: note, QwenUsage: in.QwenUsage, LocalHistory: in.LocalHistory}
 	if in.Recording {
 		s.EffortSuggestion = in.EffortSuggestion
 	}
@@ -332,8 +334,9 @@ func revision(in Input) string {
 		Subscription                        *quota.Binding `json:",omitempty"`
 	}
 	var v struct {
-		QwenUsage        *qwenusage.Report   `json:",omitempty"`
-		LocalUsage       []localusage.Report `json:",omitempty"`
+		QwenUsage        *qwenusage.Report          `json:",omitempty"`
+		LocalUsage       []localusage.Report        `json:",omitempty"`
+		LocalHistory     []localusage.HistoryResult `json:",omitempty"`
 		Accounts         []account
 		Sources          []quota.SourceStatus
 		Ledger           []speed.Row
@@ -358,6 +361,13 @@ func revision(in Input) string {
 	for _, usage := range in.LocalUsage {
 		usage.EvaluatedAt = time.Time{}
 		v.LocalUsage = append(v.LocalUsage, usage)
+	}
+	for _, r := range in.LocalHistory {
+		// Freshness and retry eligibility are clock projections; observed counts,
+		// availability and capture times are the revision inputs.
+		r.Freshness = ""
+		r.NextStep = ""
+		v.LocalHistory = append(v.LocalHistory, r)
 	}
 	for _, a := range in.Report.Accounts {
 		x := account{Source: a.Source, Plan: a.Plan, Generation: a.Generation, Via: a.Via, Pool: a.Pool, ObservedAt: a.ObservedAt.UTC(), Harness: a.Harness, Cards: a.Cards, Subscription: a.Subscription}
@@ -450,6 +460,9 @@ func validUntil(in Input, s Snapshot) *time.Time {
 			ts = append(ts, time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, 0, 0, l.Location()))
 			break
 		}
+	}
+	for _, r := range in.LocalHistory {
+		ts = append(ts, r.NextAttemptAt, r.ObservedAt.Add(time.Hour))
 	}
 	for _, x := range s.Sessions {
 		if x.Activity != nil && x.Activity.LastSignalAt != nil {

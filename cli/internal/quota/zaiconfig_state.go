@@ -15,9 +15,11 @@ import (
 // ZaiConfigAccess is CLIJIT's fail-closed admission seam. Explicit configured
 // keys are allowed in Passive mode. No credential-store import is performed.
 type ZaiConfigAccess struct {
-	Allowed bool
-	Denied  bool
-	Privacy string
+	StillValid func() bool
+	Publish    func(func() error) error
+	Allowed    bool
+	Denied     bool
+	Privacy    string
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
@@ -100,6 +102,9 @@ func zaiConfigAdmission(ctx context.Context) (ZaiConfigAccess, string) {
 		if err != nil || len(decoded) != 32 {
 			return a, "privacy_blocked"
 		}
+	}
+	if a.StillValid != nil && !a.StillValid() {
+		return a, "consent_required"
 	}
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	switch {
@@ -224,7 +229,7 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 	s.AttemptAt = now.UTC()
 	s.NextAt = now.Add(5 * time.Minute).UTC()
 	s.LoginGeneration = access.LoginGeneration
-	if !saveZaiConfigState(cache, s) {
+	if !publishReaderCache(access.Publish, func() bool { return saveZaiConfigState(cache, s) }) {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig attempt gate unavailable"}
 	}
 	zaiConfigAttempts.Store(cache, now)
@@ -253,7 +258,7 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 			}
 		}
 	}
-	if !saveZaiConfigState(cache, s) {
+	if !publishReaderCache(access.Publish, func() bool { return saveZaiConfigState(cache, s) }) {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "ZaiConfig result cache unavailable"}
 	}
 	return zaiConfigCachedEntry(s, now, access.LoginGeneration)

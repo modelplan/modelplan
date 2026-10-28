@@ -65,7 +65,7 @@ func setSource(home, source string, on bool) error {
 	s.SchemaVersion = 1
 	if source == "qwen" {
 		s.Qwen = on
-	} else {
+	} else if source == "gemini" {
 		s.Enabled = on
 	}
 	b, _ := json.MarshalIndent(s, "", "  ")

@@ -178,6 +178,7 @@ func Fallback() *Catalogue {
 		{"copilot", "GitHub Copilot", "copilot", ".copilot"}, {"gemini", "Gemini CLI", "gemini", ".gemini"},
 		{"kimi", "Kimi Code", "kimi", ".kimi-code"}, {"qwen", "Qwen Code", "qwen", ".qwen"},
 		{"opencodego", "OpenCode", "opencode", ".config/opencode"}, {"kiro", "Kiro", "kiro-cli", ".kiro"},
+		{"amp", "Amp", "amp", ".local/share/amp"}, {"droid", "Droid", "droid", ".factory"}, {"grok", "Grok Build", "grok", ".grok"},
 	} {
 		e := Entry{ProviderID: tool.id, DisplayName: tool.name, ReaderID: "native:" + tool.id, Preferred: "native", MinCLI: "0.0.0", Beta: true, DetectionStatus: "signals"}
 		for _, s := range []Signal{{Type: "command", Name: tool.command}, {Type: "path", Value: tool.path}} {
