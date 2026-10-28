@@ -127,6 +127,8 @@ public struct AccountBinding: Decodable, Sendable {
 }
 
 public struct QuotaAccount: Decodable, Sendable {
+    public let beta: Bool?
+    public let sharedPool: QuotaSharedPool?
     public let generation: String?
     public let pool: String?
     public let source: String
@@ -142,6 +144,13 @@ public struct QuotaAccount: Decodable, Sendable {
     public let harness: JSONValue?
     public let reserve: JSONValue?
     public let via: String?
+}
+
+/// Reported shared-pool eligibility does not establish a cross-tool account binding.
+public struct QuotaSharedPool: Decodable, Sendable {
+    public let kind: String?
+    public let status: String?
+    public let additive: Bool?
 }
 
 public struct RequestUsage: Decodable, Sendable {
@@ -193,6 +202,7 @@ public struct UsageCredits: Decodable, Sendable {
 }
 
 public struct SourceStatus: Decodable, Sendable {
+    public let beta: Bool?
     public let source: String
     public let status: String
     public let reason: String?
@@ -217,6 +227,16 @@ public struct ConnectionStatus: Decodable, Sendable {
     public let paths: JSONValue?
     public let hosts: [String]?
     public let privacy: JSONValue?
+    public let quotaAccess: ConnectionQuotaAccess?
+}
+
+/// Reported backend admission metadata. Missing fields do not imply consent or denial.
+/// Raw wire codes are evidence for an allowlisted presentation mapper, not display text.
+public struct ConnectionQuotaAccess: Decodable, Sendable {
+    public let provider: String?
+    public let backend: String?
+    public let blocked: String?
+    public let accessClass: String?
 }
 
 public struct ModelReference: Decodable, Sendable {
