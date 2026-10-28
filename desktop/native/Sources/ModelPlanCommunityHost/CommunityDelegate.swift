@@ -31,8 +31,13 @@ import ModelPlanShell
         CommunityRuntime(transport: injectedTransport ?? BundledCLI(bundle: Bundle.main.bundleURL))
     }
 
-    /// Initialization does not start the CLI, events or application; the normal launch route calls this once.
-    func configureSettings(_ gate: LifecycleCoordinator) -> NSMenuItem? {
+    /// Read-only references to the actual retained composition; never inferred from status flags.
+    public var settingsIntegration: (any CommunitySettingsIntegration)? { settings }
+    public var companionSurface: (any CommunityCompanionSurface)? { companion }
+
+    /// Retain Settings once and schedule its normal restore under the caller's presentation gate.
+    /// Does not start the app runtime or OS events; restore may inspect the bundled consent component.
+    @discardableResult public func configureSettings(_ gate: LifecycleCoordinator) -> NSMenuItem? {
         guard let makeSettings else { return nil }
         guard !settingsConfigured else { return settingsItem }
         settingsConfigured = true
