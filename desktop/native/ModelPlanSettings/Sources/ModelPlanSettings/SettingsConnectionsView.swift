@@ -162,18 +162,21 @@ import AppKit
                     intent.select(value.tool, enabled: !intent.selected.contains(value.tool)); self.intent = intent; self.render()
                 }
                 choice.setButtonType(.switch); choice.state = intent?.selected.contains(value.tool) == true ? .on : .off
-                addArrangedSubview(choice); continue
+                addArrangedSubview(choice)
+                if value.authorization == .allowed { addArrangedSubview(forgetButton(value.tool)) }
+                continue
             }
             let connect = button(advanced ? .init("Enable browser session…", "开启浏览器会话…") : .init("Connect…", "连接…"),
                 id: "connections.connect." + value.tool.rawValue,
                 enabled: controller.isAvailable && !controller.isBusy && value.canRequestConnection) { [weak self] in
                 self?.controller.request(.connect(value.tool, value.access))
             }
-            let disconnect = button(.init("Forget readings…", "忘记读数…"), id: "connections.disconnect." + value.tool.rawValue,
-                enabled: controller.isAvailable && !controller.isBusy) { [weak self] in
-                self?.controller.request(.disconnect(value.tool))
-            }
+            let disconnect = forgetButton(value.tool)
             addArrangedSubview(NSStackView(views: [connect, disconnect]))
         }
+    }
+    private func forgetButton(_ tool: SettingsConnectionTool) -> ConnectionButton {
+        button(.init("Forget readings…", "忘记读数…"), id: "connections.disconnect." + tool.rawValue,
+               enabled: controller.canForget(tool)) { [weak self] in self?.controller.requestForget(tool) }
     }
 }

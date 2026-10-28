@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add `modelplan doctor readers [--json]` for sanitised owner verification of native quota readers, local-history adapters and Claude session state. The default reads only cache/presence metadata; explicit `--refresh` uses production consent and interactive Keychain policy while sharing per-provider request floors, intervals and backoff with ordinary refreshes. Output contains only compiled provider IDs, status codes, window counts, UTC ages and beta flags.
+  新增 `modelplan doctor readers [--json]`，用于所有者核验原生额度读取器、本机历史适配器与 Claude 会话状态。默认仅读取缓存与存在性元数据；显式 `--refresh` 遵循生产授权和交互式钥匙串策略，与普通刷新共享各提供方的请求下限、间隔与退避。输出仅含固定提供方标识、状态码、窗口数量、UTC 年龄及 beta 标记。
+
 - CLI weekly effort suggestions now share one notice across text history, the Claude Code status-line hint and user-only hooks. The status line steps from the explicit current effort using published reference costs; previews, record-only mode and urgent quota advice do not consume the notice.
   每周档位建议在历史文本、Claude Code 状态栏和钩子的用户提示间共享一次提示；状态栏从明确的当前档位按公开参考成本建议一步，预览、仅记录和紧急额度提示不消耗次数。
 

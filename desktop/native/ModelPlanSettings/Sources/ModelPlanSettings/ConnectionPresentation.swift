@@ -70,14 +70,21 @@ public enum SettingsConnectionPresentation {
     }
     public static func status(_ phase: SettingsConnectionPhase) -> SettingsText {
         switch phase {
-        case .unavailable: return .init("Connection service unavailable", "连接服务不可用")
+        case .unavailable: return .init("Usage consent is not connected in this build. Check CLI support in About.", "此构建尚未接通用量授权，请在关于中检查 CLI 支持。")
         case .idle: return .init("Detection, authorization, quota and subscription ownership are separate facts.", "检测、授权、额度与订阅归属是独立事实。")
         case .loading: return .init("Checking tools…", "正在检查工具…")
         case .awaitingConfirmation(let confirmation): return self.confirmation(confirmation.action)
         case .running: return .init("Request in progress…", "请求处理中…")
         case .cancelled: return .init("Request cancelled. An already accepted external action may still complete.", "请求已取消；已被外部接受的操作仍可能完成。")
         case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
-        case .failed(let code): return .init("Request unavailable: " + code.rawValue, "请求不可用：" + code.rawValue)
+        case .failed(let code):
+            switch code {
+            case .unavailable: return .init("This action is unavailable. Check CLI support and current permissions.", "此操作不可用，请检查 CLI 支持和当前权限。")
+            case .stale: return .init("Tools or consent changed. Review the current text and choices before trying again.", "工具或授权已变化，请检查当前说明和选择后重试。")
+            case .invalidResponse: return .init("The returned state could not be verified. No successful permission or installation is assumed.", "无法核验返回状态，不认定授权或安装成功。")
+            case .cancelled: return .init("Request cancelled. Review current permissions before retrying.", "请求已取消，重试前请检查当前权限。")
+            case .requestFailed: return .init("The action did not complete with a verified result. Review its current state.", "操作未返回可核验结果，请检查当前状态。")
+            }
         case .pluginResult(let result):
             switch result.status {
             case .installed: return .init("Plugin installed (reported by runtime)", "运行时报告插件已安装")

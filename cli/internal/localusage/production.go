@@ -117,14 +117,19 @@ func ProductionHistory(home, cache, tool string, readOnly bool, now time.Time) H
 		_, a := ProductionHistoryAccess(home, tool, false)
 		return ReadHistoryCache(cache, tool, a, now)
 	}
-	unlock, err := consent.ReaderLock()
+	return RefreshProductionHistory(context.Background(), home, cache, tool, now)
+}
+
+// RefreshProductionHistory is the foreground, cancellable production count read.
+func RefreshProductionHistory(ctx context.Context, home, cache, tool string, now time.Time) HistoryResult {
+	unlock, err := consent.ReaderLockContext(ctx)
 	if err != nil {
 		_, a := ProductionHistoryAccess(home, tool, false)
 		return ReadHistoryCache(cache, tool, a, now)
 	}
 	defer unlock()
 	root, a := ProductionHistoryAccess(home, tool, true)
-	return RefreshHistory(context.Background(), tool, root, cache, a, now)
+	return RefreshHistory(ctx, tool, root, cache, a, now)
 }
 
 func ProductionHistories(home, cache string, readOnly bool, now time.Time) []HistoryResult {
