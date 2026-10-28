@@ -15,6 +15,7 @@ import (
 type Plan struct {
 	ID           string `json:"planId"`
 	Generation   string `json:"generation,omitempty"`
+	Region       string `json:"region,omitempty"`
 	Basis        string `json:"basis"`
 	BasisAssumed bool   `json:"basisAssumed,omitempty"`
 	Unit         string `json:"unit,omitempty"`
@@ -54,6 +55,7 @@ func Link(a *quota.Account, r quota.Report, d *digest.Digest) (quota.Account, *P
 			return *a, nil // two declared plans meter this model: which one pays is not known
 		}
 		p, from = newPlan(u.Plan, m, d), u
+		p.Region = u.Region
 	}
 	if p == nil {
 		return *a, nil
@@ -92,12 +94,24 @@ func (p *Plan) applies(w *digest.MultiplierWindow, m *digest.Model) bool {
 	return p.appliesTo(w) && (len(w.Models) == 0 || contains(w.Models, m.Name) || contains(w.Models, m.ID))
 }
 
+// matchesPlan shares the publication's rule-ID mapping with public window discovery.
+// Metered plans name their rules explicitly; other plans use literal window planIds.
+func (p *Plan) matchesPlan(w *digest.MultiplierWindow) bool {
+	if len(p.rules) > 0 {
+		return p.rules[w.RuleID]
+	}
+	return contains(w.PlanIDs, p.ID)
+}
+
 // appliesTo: the window is this plan's (and generation's), for any model.
 func (p *Plan) appliesTo(w *digest.MultiplierWindow) bool {
+	if w.Region != "" && p.Region != "" && w.Region != p.Region {
+		return false
+	}
 	if len(w.Clients) > 0 {
 		return false
 	}
-	if len(p.rules) > 0 && !p.rules[w.RuleID] || len(p.rules) == 0 && !contains(w.PlanIDs, p.ID) {
+	if !p.matchesPlan(w) {
 		return false
 	}
 	return p.Generation == "" || len(w.Generations) == 0 || contains(w.Generations, p.Generation)
@@ -106,11 +120,18 @@ func (p *Plan) appliesTo(w *digest.MultiplierWindow) bool {
 // rate: the time-of-day multiplier for the model at t; 1 for a plan without time rules, nil
 // when the plan has rules but none is published for t, or they conflict.
 func (p *Plan) rate(m *digest.Model, t time.Time) *float64 {
-	if len(p.rules) == 0 {
+	hasRules := len(p.rules) > 0
+	for i := range p.d.Multipliers {
+		if p.applies(&p.d.Multipliers[i], m) {
+			hasRules = true
+			break
+		}
+	}
+	if !hasRules {
 		one := 1.0
 		return &one
 	}
-	r, _ := rateAt(p.d.Multipliers, func(w *digest.MultiplierWindow) bool { return p.applies(w, m) }, t)
+	r, _ := publishedRate(p.timeDigest(), func(w *digest.MultiplierWindow) bool { return p.applies(w, m) }, t)
 	return r
 }
 
@@ -154,7 +175,7 @@ func (p *Plan) cost(m *digest.Model, e *digest.Effort, t time.Time, cross bool) 
 // current one (an off-peak start), within the multiplier horizon.
 func (p *Plan) cheaperLater(m *digest.Model, now, until time.Time) (*time.Time, *float64, *float64) {
 	cur := p.rate(m, now)
-	if cur == nil || len(p.rules) == 0 {
+	if cur == nil {
 		return nil, nil, nil
 	}
 	var bounds []time.Time
@@ -184,11 +205,14 @@ const offpeakWait = 3 * time.Hour
 
 // Rates is what the plan charges for each model it meters that this harness can run, now.
 type PlanRate struct {
-	Model       string   `json:"model"`
-	UnitsPerUSD *float64 `json:"unitsPerUsd,omitempty"`
-	Multiplier  *float64 `json:"multiplier,omitempty"`
-	Amount      *float64 `json:"amount,omitempty"`
-	Now         *float64 `json:"now"` // time-of-day multiplier now; nil when not published
+	Model         string     `json:"model"`
+	UnitsPerUSD   *float64   `json:"unitsPerUsd,omitempty"`
+	Multiplier    *float64   `json:"multiplier,omitempty"`
+	Amount        *float64   `json:"amount,omitempty"`
+	MultiplierNow *float64   `json:"multiplierNow"`
+	NextCheaperAt *time.Time `json:"nextCheaperAt,omitempty"`
+	Status        string     `json:"status,omitempty"`
+	Now           *float64   `json:"now"` // time-of-day multiplier now; nil when not published
 }
 
 func (p *Plan) Rates(harness string, now time.Time) []PlanRate {
@@ -198,7 +222,9 @@ func (p *Plan) Rates(harness string, now time.Time) []PlanRate {
 		if m == nil || len(m.HarnessIDs[harness]) == 0 {
 			continue
 		}
-		out = append(out, PlanRate{Model: m.Name, UnitsPerUSD: r.UnitsPerUSD, Multiplier: r.Multiplier, Amount: r.Amount, Now: p.rate(m, now)})
+		at, _, _ := p.cheaperLater(m, now, now.Add(6*time.Hour))
+		_, status := publishedRate(p.timeDigest(), func(w *digest.MultiplierWindow) bool { return p.applies(w, m) }, now)
+		out = append(out, PlanRate{Model: m.Name, UnitsPerUSD: r.UnitsPerUSD, Multiplier: r.Multiplier, Amount: r.Amount, Now: p.rate(m, now), MultiplierNow: p.rate(m, now), NextCheaperAt: at, Status: status})
 	}
 	return out
 }
@@ -209,7 +235,9 @@ func planOf(a *quota.Account, d *digest.Digest) *Plan {
 		return nil
 	}
 	if m := d.Metering(a.Plan, a.Generation); m != nil {
-		return newPlan(a.Plan, m, d)
+		p := newPlan(a.Plan, m, d)
+		p.Region = a.Region
+		return p
 	}
 	return nil
 }
