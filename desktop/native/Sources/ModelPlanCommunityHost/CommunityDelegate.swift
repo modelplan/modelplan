@@ -172,8 +172,7 @@ import ModelPlanShell
         companion?.render(snapshot: snapshot, diagnostics: diagnostics)
         overview?.render(snapshot: snapshot, diagnostics: diagnostics)
         if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
-            let selection = runtime.modelSelection.evaluate(scope: .all, selectedID: consumer.selectedModelID,
-                                                            language: consumer.instrumentLanguage)
+            let selection = runtime.selection(for: consumer)
             consumer.render(selection: selection, publishedAt: runtime.store.modelSelectionFeeds().publication?.publishedAt?.date, now: Date())
         }
     }
