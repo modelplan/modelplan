@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanSettings
+import ModelPlanCore
 import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanAppIntegration
@@ -39,6 +40,45 @@ import ModelPlanAppIntegration
                     surfaces.bindHelp(help)
                     return help
                 })
+        }
+        // Explicit packaged-app test mode: inspect the existing factory; never start the app lifecycle.
+        if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
+            Task { @MainActor in
+                do {
+                    func field(_ object: Any, _ name: String) -> Any? {
+                        guard let value = Mirror(reflecting: object).children.first(where: { $0.label == name })?.value else { return nil }
+                        let mirror = Mirror(reflecting: value)
+                        return mirror.displayStyle == .optional ? mirror.children.first?.value : value
+                    }
+                    func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+                    let factory = field(delegate, "makeSettings") as! (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)
+                    let gate = LifecycleCoordinator(store: SnapshotStore(transport: BundledCLI(bundle: Bundle.main.bundleURL)))
+                    let session = try factory(gate) as! CommunitySettingsSession; await session.restorePreferences()
+                    let editor = session.windowHost.application.editor, firstRun = SettingsFirstRunController(editor: session.windowHost.application.editor)
+                    await firstRun.prepare()
+                    let preferences = editor.snapshot!.preferences, connections = editor.connections
+                    let section = views(firstRun.window!.contentView!).first { $0.accessibilityIdentifier() == "settings.connections" }
+                    let status = section?.subviews.compactMap { $0 as? NSTextField }.dropFirst().first?.stringValue
+                    let service = field(connections, "service"), dock = field(delegate, "companion")
+                    let port = service.flatMap { field($0, "consentPort") } ?? field(delegate, "consentPort")
+                    let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"), process = Process(), pipe = Pipe()
+                    process.executableURL = helper; process.arguments = ["--help"]; process.standardInput = FileHandle.nullDevice
+                    process.standardOutput = pipe; process.standardError = pipe; try process.run()
+                    let help = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self); process.waitUntilExit()
+                    let consentJSON = help.range(of: #"(?m)^\s*modelplan\s+consent\b"#, options: .regularExpression) != nil && help.contains("--json")
+                    let report: [String: Any] = ["schemaVersion": 1, "dockHostType": dock.map { String(reflecting: type(of: $0)) as Any } ?? NSNull(),
+                        "connectionServicePresent": service != nil, "connectionAvailable": connections.isAvailable,
+                        "firstRunConnectionStatus": status.map { $0 as Any } ?? NSNull(), "consentPortPresent": port != nil,
+                        "consentAPIAvailable": port.flatMap { field($0, "apiAvailable") } ?? NSNull(),
+                        "cliSupportsConsentJSON": process.terminationStatus == 0 && consentJSON, "cliHelp": help, "cliHelpExitCode": process.terminationStatus, "cliPath": helper.path,
+                        "showDock": preferences.showDock, "autoHide": preferences.autoHide, "edge": preferences.dockEdge.rawValue,
+                        "home": NSHomeDirectory(), "visibleWindows": NSApplication.shared.windows.filter(\.isVisible).count]
+                    let output = ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE_REPORT"]!
+                    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: output), options: .atomic)
+                    exit(0)
+                } catch { fputs("app-smoke report FAIL \(error)\n", stderr); exit(70) }
+            }
+            RunLoop.main.run(); return
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime(delegate) { NSApplication.shared.run() }
