@@ -495,9 +495,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
         if let preview = value.snapPreview, let view = edgeViews[preview.edge],
-           view.registeredHullPath != nil || view.registeredMovePreviewImage != nil {
+           view.registeredMoveOutlinePath != nil || view.registeredMovePreviewImage != nil {
             if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
-            outlineView.path = view.registeredHullPath
+            outlineView.path = view.registeredMoveOutlinePath
             outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }

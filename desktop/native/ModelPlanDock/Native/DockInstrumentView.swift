@@ -45,16 +45,20 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public var registeredHullPath: CGPath? {
         guard !failed else { return nil }
-        // The neutral edition paints this exact rectangle; it needs no official skin.
-        if community { return bounds.isEmpty ? nil : CGPath(rect: bounds, transform: nil) }
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
         let path = CGMutablePath()
         path.addLines(between: skin.bodyPolygon.map { CGPoint(x: $0.x - skin.bounds.minX, y: $0.y - skin.bounds.minY) })
         path.closeSubpath(); return path
     }
+    /// Movement may outline the neutral rectangle; supplier hull/sliver registration stays independent.
+    public var registeredMoveOutlinePath: CGPath? {
+        guard !failed else { return nil }
+        if community { return bounds.isEmpty ? nil : CGPath(rect: bounds, transform: nil) }
+        return registeredHullPath
+    }
     public func registeredDragRegions(excluding controls: [CGRect]) -> DockBackgroundDragRegions? {
         if community {
-            guard !failed, let body = registeredHullPath else { return nil }
+            guard !failed, let body = registeredMoveOutlinePath else { return nil }
             let rows = orderedIDs.compactMap { stationRect($0) }
             return DockBackgroundDragRegions(body: body, excludedControls: controls + rows,
                 bodyHitTest: { [weak self] point in
