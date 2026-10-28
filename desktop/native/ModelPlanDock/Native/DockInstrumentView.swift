@@ -38,14 +38,42 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         let rect = path.boundingBoxOfPath
         return rect.isNull || rect.isEmpty ? nil : rect
     }
+    /// Existing material pixels for a destination ghost when the supplier has no vector hull.
+    public var registeredMovePreviewImage: CGImage? {
+        guard !community, !failed else { return nil }
+        return backgroundImage
+    }
     public var registeredHullPath: CGPath? {
+        guard !failed else { return nil }
+        // The neutral edition paints this exact rectangle; it needs no official skin.
+        if community { return bounds.isEmpty ? nil : CGPath(rect: bounds, transform: nil) }
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
         let path = CGMutablePath()
         path.addLines(between: skin.bodyPolygon.map { CGPoint(x: $0.x - skin.bounds.minX, y: $0.y - skin.bounds.minY) })
         path.closeSubpath(); return path
     }
     public func registeredDragRegions(excluding controls: [CGRect]) -> DockBackgroundDragRegions? {
-        guard let skin, let path = registeredHullPath else { return nil }
+        if community {
+            guard !failed, let body = registeredHullPath else { return nil }
+            let rows = orderedIDs.compactMap { stationRect($0) }
+            return DockBackgroundDragRegions(body: body, excludedControls: controls + rows,
+                bodyHitTest: { [weak self] point in
+                    guard let self, self.community else { return false }
+                    return self.isPainted(atLocal: point)
+                })
+        }
+        guard let skin else { return nil }
+        let path: CGPath
+        let bodyHitTest: ((CGPoint) -> Bool)?
+        if let hull = registeredHullPath {
+            path = hull; bodyHitTest = nil
+        } else {
+            // Precomposited skins deliberately omit a vector body. Register the
+            // rendered pixels, not transparent padding or an invented silhouette.
+            guard skin.bodyPolygon.isEmpty, !community, !failed, image != nil, alphaData != nil else { return nil }
+            path = CGPath(rect: bounds, transform: nil)
+            bodyHitTest = { [weak self] point in self?.isPainted(atLocal: point) ?? false }
+        }
         var excluded = controls
         for station in skin.stations {
             excluded.append(CGRect(x: station.centre.x - station.diameter / 2 - skin.bounds.minX,
@@ -54,7 +82,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             excluded.append(station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
             if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)) }
         }
-        return DockBackgroundDragRegions(body: path, excludedControls: excluded)
+        return DockBackgroundDragRegions(body: path, excludedControls: excluded, bodyHitTest: bodyHitTest)
     }
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
@@ -114,7 +142,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
+    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
     private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
@@ -155,11 +183,19 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
             let value=[r.alias ?? r.name,r.readout].joined(separator:"  ")
+            let context = NSGraphicsContext.current?.cgContext
+            context?.saveGState()
+            if let control = stationRect(id) { context?.clip(to: control) }
             (value as NSString).draw(at:CGPoint(x:12 * communityRowHeight / 44,y:CGFloat(index)*communityRowHeight+14 * communityRowHeight / 44),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12 * communityRowHeight / 44,weight:.regular),.foregroundColor:NSColor.labelColor])
+            context?.restoreGState()
         }
     }
     private func stationRect(_ id:String)->CGRect? {
-        if community {guard let i=orderedIDs.firstIndex(of:id) else{return nil};return CGRect(x:0,y:CGFloat(i)*communityRowHeight,width:bounds.width,height:communityRowHeight)}
+        if community {
+            guard let i=orderedIDs.firstIndex(of:id) else{return nil}
+            let inset = 8 * communityRowHeight / 44
+            return CGRect(x:0,y:CGFloat(i)*communityRowHeight,width:bounds.width,height:communityRowHeight).insetBy(dx:inset,dy:inset)
+        }
         guard let s=skin?.stations.first(where:{$0.subscriptionID==id}),let origin=skin?.bounds.origin else{return nil}
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }

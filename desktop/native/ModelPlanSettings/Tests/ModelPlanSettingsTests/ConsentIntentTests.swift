@@ -135,6 +135,9 @@ import XCTest
         XCTAssertTrue(SettingsConnectionPresentation.status(.unavailable).english.contains("About"))
         XCTAssertTrue(SettingsConnectionPresentation.status(.failed(.stale)).chinese.contains("当前说明"))
         XCTAssertTrue(SettingsConnectionPresentation.status(.failed(.invalidResponse)).english.contains("No successful permission"))
-        XCTAssertTrue(SettingsConnectionPresentation.status(.consentRecordedReadingBlocked(.off)).english.contains("blocks activation"))
+        let blocked = SettingsConnectionPresentation.status(.consentRecordedReadingBlocked(.off))
+        XCTAssertTrue(blocked.english.contains("off") && blocked.english.contains("About"))
+        XCTAssertTrue(blocked.chinese.contains("停用") && blocked.chinese.contains("关于"))
+        XCTAssertNotEqual(blocked.english, "off", "A raw mode is not a human next step")
     }
 }
