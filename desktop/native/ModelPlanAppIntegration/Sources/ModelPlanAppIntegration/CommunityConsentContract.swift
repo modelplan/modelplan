@@ -81,8 +81,10 @@ public struct CommunityConsentPreviewFacts: Sendable {
             rows.removeAll { $0.tool == tool }; rows.append(row)
         }
         let eligible = Set(tools.filter(\.eligible).compactMap(\.tool))
+        let deniable = Set(tools.filter(\.mayDeny).compactMap(\.tool))
         return try .init(consentGeneration: generation, tools: rows, subscriptions: previous?.subscriptions ?? [],
-            unrecognizedTools: unknown, consentPreview: .init(textVersion: consentTextVersion, notice: consentText, standardTools: eligible), mode: mode)
+            unrecognizedTools: unknown, consentPreview: .init(textVersion: consentTextVersion, notice: consentText,
+                standardTools: eligible, deniableTools: deniable), mode: mode)
     }
 }
 /// Only the final structured `consent grant --json` stdin shape. This type never launches a command.

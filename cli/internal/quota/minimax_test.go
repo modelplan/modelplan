@@ -89,14 +89,27 @@ func TestMiniMaxConsentRegionsBindingAndPrivacy(t *testing.T) {
 		t.Fatal("read without opt-in")
 	}
 	refs := []string{}
-	for _, region := range []string{"international", "china"} {
+	for index, region := range []string{"international", "china"} {
+		at := minimaxNow.Add(time.Duration(index) * NativeEvery)
 		if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "minimax", Backend: BackendNative, Enabled: true, Region: region}); err != nil {
 			t.Fatal(err)
 		}
-		if !NativeDue(p, minimaxNow) {
-			t.Fatal("region change did not invalidate")
+		if index > 0 {
+			early := minimaxNow.Add(time.Minute)
+			if NativeDue(p, early) {
+				t.Fatal("region change bypassed interval")
+			}
+			if err := RefreshNative(context.Background(), p, early); err != nil {
+				t.Fatal(err)
+			}
+			if hits != 1 {
+				t.Fatal("region change repeated request early")
+			}
 		}
-		if err := RefreshNative(context.Background(), p, minimaxNow); err != nil {
+		if !NativeDue(p, at) {
+			t.Fatal("region unavailable at next interval")
+		}
+		if err := RefreshNative(context.Background(), p, at); err != nil {
 			t.Fatal(err)
 		}
 		e := loadNative(p.Cache).Providers[0]
@@ -104,7 +117,7 @@ func TestMiniMaxConsentRegionsBindingAndPrivacy(t *testing.T) {
 			t.Fatal("missing region binding")
 		}
 		refs = append(refs, e.SubscriptionRef)
-		if NativeDue(p, minimaxNow.Add(time.Minute)) || !NativeDue(p, minimaxNow.Add(NativeEvery)) {
+		if NativeDue(p, at.Add(time.Minute)) || !NativeDue(p, at.Add(NativeEvery)) {
 			t.Fatal("cache cadence")
 		}
 	}
@@ -120,8 +133,8 @@ func TestMiniMaxConsentRegionsBindingAndPrivacy(t *testing.T) {
 	t.Setenv("MINIMAX_CODING_API_KEY", "different-synthetic-key")
 	var r Report
 	applyNative(&r, p, minimaxNow)
-	if len(r.Accounts) != 0 || !NativeDue(p, minimaxNow) {
-		t.Fatal("old-key quota reused")
+	if len(r.Accounts) != 0 || NativeDue(p, minimaxNow.Add(NativeEvery+time.Minute)) || !NativeDue(p, minimaxNow.Add(2*NativeEvery)) {
+		t.Fatal("old-key quota reused or key change bypassed interval")
 	}
 	t.Setenv("MINIMAX_CODING_API_KEY", "")
 	r = Report{}

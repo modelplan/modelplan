@@ -47,10 +47,14 @@ public struct StaticDockGeometry {
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
 
-/// Self-test host. Reuses the Dock projection/edge controller and the application's one feed/store.
-/// No working effects, entrance animation, global input monitor, reader activation or service registration.
+public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
+
+/// Interactive native Dock companion shared by production and explicit self-tests.
+/// The static instrument renderer does not disable native panels, edge/hide, drag/drop or menus.
+/// Working effects/entrance, global hooks, reader activation and services are separate owners.
 @MainActor public final class StaticDockPreviewHost: NSObject, CommunityCompanionVisibility, NSMenuDelegate {
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
+    public let purpose: DockHostPurpose
     public private(set) var isVisible = false
     public var visibilityChanged: (() -> Void)?
     private func reportVisibility(_ visible: Bool) {
@@ -118,11 +122,19 @@ public struct StaticDockGeometry {
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() }) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities)
     }
+    public convenience init(purpose: DockHostPurpose, appearance: Appearance? = nil,
+                            sliverParameters: DockSliverParameters = .current,
+                            readerCapabilities: CommunityReaderCapabilities = .init(),
+                            currentDate: @escaping @MainActor () -> Date = { Date() }) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true,
+                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose)
+    }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
-         readerCapabilities: CommunityReaderCapabilities = .init()) {
+         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest) {
+        self.purpose = purpose
         self.readerCapabilities = readerCapabilities
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
@@ -488,7 +500,7 @@ public struct StaticDockGeometry {
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
-    private func menu() -> NSMenu {
+    func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
         if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
@@ -510,7 +522,8 @@ public struct StaticDockGeometry {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit preview / 退出自测版", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitTitle = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
