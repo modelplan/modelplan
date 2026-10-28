@@ -63,6 +63,19 @@ public struct StaticDockGeometry {
     public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
     public var commitPlacement: ((SettingsDockEdge, Double) -> Void)?
+    /// Current resolver facts, separate from saved intent. Replacing an observer replays once.
+    /// The consumer may update context, but must not persist this recovery as a preference.
+    public var onPlacementObserved: ((_ placement: DockEdgePlacement?, _ recovering: Bool) -> Void)? {
+        didSet {
+            lastPlacementObservation = nil
+            if onPlacementObserved != nil { publishPlacementObservation(edge.presentation) }
+        }
+    }
+    private struct PlacementObservation: Equatable {
+        let placement: DockEdgePlacement?
+        let recovering: Bool
+    }
+    private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
@@ -391,11 +404,33 @@ public struct StaticDockGeometry {
         value.isReleasedWhenClosed = false
         return value
     }
+    private func publishPlacementObservation(_ value: DockEdgePresentation?) {
+        guard let callback = onPlacementObserved else { return }
+        let placement: DockEdgePlacement?
+        if permitted, !retired, application != nil, let value, value.paintedFrame != nil,
+           !createsNativePanels || panel?.isVisible == true {
+            placement = value.placement
+        } else { placement = nil }
+        let intent = edge.preference
+        let recovering = placement.map { actual in
+            // nil display is follow mode; switching followed displays is not recovery.
+            (intent.displayID.map { $0 != actual.displayID } ?? false)
+                || intent.edge != actual.edge
+                || abs(intent.alongFraction - actual.alongFraction) > 1e-9
+        } ?? false
+        let observation = PlacementObservation(placement: placement, recovering: recovering)
+        guard observation != lastPlacementObservation else { return }
+        // Record before delivery: context updates can synchronously re-enter the Host.
+        lastPlacementObservation = observation
+        callback(observation.placement, observation.recovering)
+    }
     private func present(_ value: DockEdgePresentation) {
-        guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); hideMovePreview(); reportVisibility(false); return }
+        guard createsNativePanels else { publishPlacementObservation(value); return }
+        guard permitted, !retired, let frame = value.paintedFrame else {
+            panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+        }
         if panel == nil { panel = makePanel() }
-        guard let panel else { return }
+        guard let panel else { publishPlacementObservation(nil); return }
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
         let content: NSView
@@ -415,8 +450,8 @@ public struct StaticDockGeometry {
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
-            catch { panel.orderOut(nil); reportVisibility(false); return }
-        case .suppressed: panel.orderOut(nil); hideMovePreview(); reportVisibility(false); return
+            catch { panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
+        case .suppressed: panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
@@ -428,6 +463,7 @@ public struct StaticDockGeometry {
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
+        publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
     }
     private func hideMovePreview() {
@@ -531,7 +567,9 @@ public struct StaticDockGeometry {
         guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
         dismissCard()
         NotificationCenter.default.removeObserver(self)
-        edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
+        edge.stop(); publishPlacementObservation(nil)
+        edge.onPresent = nil; edge.onCommittedPlacement = nil
+        onPlacementObserved = nil
         dockView.onNeedsFreshPresentation = nil
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil

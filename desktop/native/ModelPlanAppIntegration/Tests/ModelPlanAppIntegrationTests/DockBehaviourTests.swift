@@ -266,6 +266,49 @@ import ModelPlanSettings
         }
     }
 
+    func testPlacementProducerReportsActualSeamRecoveryAndClearsOnTopologyAndClose() async throws {
+        let url = try temporaryURL(), store = try SettingsStore(url: url)
+        try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right }
+        let persisted = try Data(contentsOf: url)
+        let appearance: StaticDockPreviewHost.Appearance = { view, rows, prefs in
+            try view.applyCommunity(rows)
+            view.setFrameSize(prefs.dockEdge == .bottom ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180))
+            return .init(hoverRects: [view.bounds], sliverLength: 120)
+        }
+        let f = try BehaviourFixture(url: url, customAppearance: appearance)
+        defer { f.host.close() }
+        let adjacent = DockDisplayArea(id: "adjacent", frame: CGRect(x: 1200, y: 0, width: 1200, height: 900),
+                                      visibleFrame: CGRect(x: 1200, y: 24, width: 1200, height: 850))
+        f.inputs.displays.append(adjacent)
+        var facts: [(DockEdgePlacement?, Bool)] = []
+        f.host.onPlacementObserved = { facts.append(($0, $1)) }
+        await f.start()
+        let left = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(left.displayID, "main"); XCTAssertEqual(left.edge, .left)
+        XCTAssertEqual(facts.last?.0, left); XCTAssertEqual(facts.last?.1, true)
+        let panel = try f.panel(); XCTAssertTrue(panel.isVisible)
+        XCTAssertEqual(panel.frame, left.sliverFrame)
+        let count = facts.count
+        f.host.refreshPresence()
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(facts.count, count)
+        XCTAssertEqual(f.coordinator.latest?.snapshot.preferences.dockEdge, .right)
+        f.inputs.displays.removeAll { $0.id == "adjacent" }
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(facts.last?.0, f.host.edgePresentation?.placement)
+        XCTAssertEqual(facts.last?.0?.edge, .right); XCTAssertEqual(facts.last?.1, false)
+        f.inputs.displays = []
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false); XCTAssertFalse(panel.isVisible)
+        f.inputs.displays = [.init(id: "main", frame: CGRect(x: 0, y: 0, width: 1200, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1200, height: 850)), adjacent]
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(facts.last?.0?.edge, .left); XCTAssertEqual(facts.last?.1, true)
+        f.host.close(); XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false)
+        XCTAssertFalse(panel.isVisible); XCTAssertNil(f.host.nativePanel)
+        XCTAssertEqual(try Data(contentsOf: url), persisted, "fallback and observations must never overwrite saved right intent")
+        print("placement-producer saved=right effective=left recovery=true restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
+    }
+
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start()
