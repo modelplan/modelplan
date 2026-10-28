@@ -354,6 +354,14 @@ import CoreText
     public func leaveHelp() { dwellTimer?.invalidate(); dwellTimer = nil; dwell.leave(); popover?.close(); onHelpChange?(nil, nil) }
     private func stopAnimations() { surfaces.values.forEach { $0.removeAllAnimations() } }
     public func suspend() { cancelHintRest(.focusLoss); timer?.invalidate(); timer = nil; controller.cancelGesture(); leaveHelp(); stopAnimations() }
+    /// Actual cockpit close clears mirrored interaction without publishing a hidden raster.
+    public func closeForCockpit() {
+        suspend(); _ = controller.endTrial(); controller.setSourceHighlight(nil)
+        presentation = nil; recipe = nil; oldCaps.removeAll(); oldTexts.removeAll()
+        for control in controls.values { control.retire(); control.removeFromSuperview() }
+        controls.removeAll(); setAccessibilityChildren([]); focusedID = nil; focus.path = nil
+        for layer in surfaces.values { layer.removeFromSuperlayer() }; surfaces.removeAll()
+    }
     public func dispose() {
         cancelHintRest(.teardown); suspend(); onIntent = nil; onHelpChange = nil; onHintInput = nil
         hintObservers.forEach { NotificationCenter.default.removeObserver($0) }; hintObservers = []
