@@ -8,6 +8,7 @@ import ModelPlanInstruments
 @MainActor public protocol CommunityInstrumentSurface: NativeOverviewSurface {
     var instrumentLanguage: InstrumentLanguage { get }
     var selectedModelID: String? { get }
+    var requestedInstrumentScope: InstrumentScope { get }
     var isPresented: Bool { get }
     var preferredContentSize: CGSize { get }
     var requestFreshSelection: (() -> Void)? { get set }
@@ -16,4 +17,9 @@ import ModelPlanInstruments
     func resumePresentation()
     func suspendPresentation()
     func closePresentation()
+}
+
+/// Existing consumers remain All until they explicitly expose a requested subscription.
+public extension CommunityInstrumentSurface {
+    var requestedInstrumentScope: InstrumentScope { .all }
 }
