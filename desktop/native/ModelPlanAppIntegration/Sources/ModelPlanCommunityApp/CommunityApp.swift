@@ -14,7 +14,7 @@ import ModelPlanAppIntegration
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
         })
-        let delegate = CommunityDelegate(surfaces: surfaces) { gate in
+        let makeSettings: @MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration = { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
@@ -41,6 +41,7 @@ import ModelPlanAppIntegration
                     return help
                 })
         }
+        let delegate = CommunityDelegate(surfaces: surfaces, makeSettings: makeSettings)
         // Explicit packaged-app test mode: inspect the existing factory; never start the app lifecycle.
         if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
             fputs("app-smoke entry started\n", stderr); _ = NSApplication.shared
@@ -52,10 +53,9 @@ import ModelPlanAppIntegration
                         let mirror = Mirror(reflecting: value)
                         return mirror.displayStyle == .optional ? mirror.children.first?.value : value
                     }
-                    func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-                    let factory = field(delegate, "makeSettings") as! (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration); fputs("app-smoke factory resolved\n", stderr)
-                    let gate = LifecycleCoordinator(store: SnapshotStore(transport: BundledCLI(bundle: Bundle.main.bundleURL)))
-                    let session = try factory(gate) as! CommunitySettingsSession; fputs("app-smoke factory called\n", stderr); await session.restorePreferences()
+                    @MainActor func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+                    let gate = LifecycleCoordinator(store: SnapshotStore(transport: BundledCLI(bundle: Bundle.main.bundleURL))); fputs("app-smoke gate created\n", stderr)
+                    let session = try makeSettings(gate) as! CommunitySettingsSession; fputs("app-smoke factory called\n", stderr); await session.restorePreferences()
                     let editor = session.windowHost.application.editor, firstRun = SettingsFirstRunController(editor: session.windowHost.application.editor)
                     await firstRun.prepare(); fputs("app-smoke first run prepared\n", stderr)
                     let preferences = editor.snapshot!.preferences, connections = editor.connections
