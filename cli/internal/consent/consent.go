@@ -292,6 +292,9 @@ func ReaderLock() (func(), error) {
 	return lockFile(file)
 }
 
+// ErrReaderBusy distinguishes admission contention from collection failures.
+var ErrReaderBusy = errors.New("reader admission busy")
+
 // Detached refreshes may briefly wait for a local snapshot/history commit. Do
 // not make the foreground caller wait or let a fresh child starve on that race.
 func ReaderLockContext(ctx context.Context) (func(), error) {
@@ -304,7 +307,7 @@ func ReaderLockContext(ctx context.Context) (func(), error) {
 		}
 		select {
 		case <-ctx.Done():
-			return nil, err
+			return nil, errors.Join(ErrReaderBusy, err)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

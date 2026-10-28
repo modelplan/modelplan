@@ -64,6 +64,19 @@ for the current schema.
 `hostDetails` 将裸 DNS 主机名和说明分开，保留原有 `hosts` 展示字符串；本机记录、
 回环或未知目的地返回空数组。新授权响应包含相同字段，旧回执重放保持原始响应。
 
+After consent, an online `desktop --json` poll schedules admitted native readers
+that are due, including an immediate first attempt when no reader attempt exists.
+It returns cached data while one detached `connections refresh --quiet --scheduled`
+worker fills the caches; a following poll shows completed readings. A kernel lock
+inherited by that worker prevents concurrent polls from stacking native children
+and releases automatically on exit or termination. The worker rechecks due state
+and waits through reader-admission contention (for example, a Codex runtime
+refresh), without retrying an already attempted provider request. It uses the
+existing provider floors, budgets, generation fences and non-interactive
+Keychain policy (about two seconds per Keychain attempt). `--offline` and
+`--read-only` never schedule a refresh. Quota/advice and online hooks share this
+scheduler. JSON Codex grants also permit its separate runtime account refresh.
+
 `modelplan consent grant --json` accepts one JSON object on stdin (at most 64 KiB):
 
 ```json
