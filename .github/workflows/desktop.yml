@@ -149,6 +149,7 @@ jobs:
       - name: Field bridge protocol checks (synthetic page adapter)
         run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
       - name: Dock native resource and instrument checks (neutral inputs)
+        if: ${{ !cancelled() }}
         run: swift run --package-path desktop/native --skip-build ModelPlanDockInstrumentChecks "$RUNNER_TEMP/dock-instrument-checks"
       - name: Archive offscreen Dock visual probes
         if: always()
