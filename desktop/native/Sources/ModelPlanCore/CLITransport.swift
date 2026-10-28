@@ -2,6 +2,9 @@
 import Foundation
 import Darwin
 
+/// Command selection is not consent. Production callers must gate normal mode on canonical admission.
+public enum DesktopReadMode: Sendable { case readOnly, normal }
+
 public enum CLICommand: String, Sendable, CaseIterable {
     case desktop, refreshAccount, publicationOffline, publication, detect
     public var arguments: [String] {
@@ -39,19 +42,36 @@ public protocol CLITransport: Sendable {
 
 /// One slot belongs to the transport until the owned child has exited, including cancellation.
 /// The executable is an explicit bundle path. No shell, PATH lookup or management command.
-public actor ProcessCLITransport: CLITransport {
+public protocol ConsentJSONTransport: Sendable {
+    func readConsentJSON() async throws -> CommandResult
+    func grantConsentJSON(_ payload: Data) async throws -> CommandResult
+}
+
+public actor ProcessCLITransport: CLITransport, ConsentJSONTransport {
     private let executable: URL
     private let environment: [String: String]?
     private let timeoutOverride: TimeInterval?
+    private let desktopReadMode: DesktopReadMode
     private var active = false
-    public init(executable: URL, environment: [String: String]? = nil, timeoutOverride: TimeInterval? = nil) {
-        self.executable = executable; self.environment = environment; self.timeoutOverride = timeoutOverride
+    public init(executable: URL, environment: [String: String]? = nil, timeoutOverride: TimeInterval? = nil, desktopReadMode: DesktopReadMode = .readOnly) {
+        self.executable = executable; self.environment = environment; self.timeoutOverride = timeoutOverride; self.desktopReadMode = desktopReadMode
     }
     public func execute(_ command: CLICommand) async throws -> CommandResult {
+        let arguments = command == .desktop && desktopReadMode == .normal ? ["desktop", "--json"] : command.arguments
+        return try await run(arguments: arguments, timeout: command.timeout)
+    }
+    public func readConsentJSON() async throws -> CommandResult {
+        try await run(arguments: ["consent", "--json"], timeout: 10)
+    }
+    public func grantConsentJSON(_ payload: Data) async throws -> CommandResult {
+        guard !payload.isEmpty, payload.count <= 65536 else { throw TransportError.outputLimit }
+        return try await run(arguments: ["consent", "grant", "--json"], timeout: 20, input: payload)
+    }
+    private func run(arguments: [String], timeout: TimeInterval, input: Data? = nil) async throws -> CommandResult {
         guard !active else { throw TransportError.busy }
         active = true; defer { active = false }
-        let session = ProcessSession(executable: executable, arguments: command.arguments, environment: environment,
-                                     timeout: timeoutOverride ?? command.timeout)
+        let session = ProcessSession(executable: executable, arguments: arguments, environment: environment,
+                                     timeout: timeoutOverride ?? timeout, input: input)
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .utility).async { continuation.resume(with: Result { try session.run() }) }
@@ -64,22 +84,29 @@ private final class ProcessSession: @unchecked Sendable {
     let executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval
     private let lock = NSLock()
     private var cancelled = false
-    init(executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval) {
-        self.executable = executable; self.arguments = arguments; self.environment = environment; self.timeout = timeout
+    private let input: Data?
+    init(executable: URL, arguments: [String], environment: [String: String]?, timeout: TimeInterval, input: Data? = nil) {
+        self.executable = executable; self.arguments = arguments; self.environment = environment; self.timeout = timeout; self.input = input
     }
     func cancel() { lock.lock(); cancelled = true; lock.unlock() }
     private var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
     func run() throws -> CommandResult {
         guard !isCancelled else { throw TransportError.cancelled }
         let child = Process(), output = Pipe(), errors = Pipe()
+        let inputPipe = input == nil ? nil : Pipe()
         child.executableURL = executable; child.arguments = arguments; child.environment = environment
-        child.standardOutput = output; child.standardError = errors; child.standardInput = FileHandle.nullDevice
+        child.standardOutput = output; child.standardError = errors; child.standardInput = inputPipe?.fileHandleForReading ?? FileHandle.nullDevice
         defer {
+            try? inputPipe?.fileHandleForReading.close(); try? inputPipe?.fileHandleForWriting.close()
             try? output.fileHandleForReading.close(); try? errors.fileHandleForReading.close()
             try? output.fileHandleForWriting.close(); try? errors.fileHandleForWriting.close()
         }
         do { try child.run() } catch { throw TransportError.launchFailed }
         try? output.fileHandleForWriting.close(); try? errors.fileHandleForWriting.close()
+        try? inputPipe?.fileHandleForReading.close()
+        let inputFD = inputPipe?.fileHandleForWriting.fileDescriptor
+        if let inputFD { _ = fcntl(inputFD, F_SETFL, fcntl(inputFD, F_GETFL) | O_NONBLOCK); _ = fcntl(inputFD, F_SETNOSIGPIPE, 1) }
+        var inputOffset = 0, inputClosed = false
         let fds = [output.fileHandleForReading.fileDescriptor, errors.fileHandleForReading.fileDescriptor]
         for fd in fds { _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) }
         let clock = ContinuousClock(), start = ContinuousClock.now
@@ -95,6 +122,16 @@ private final class ProcessSession: @unchecked Sendable {
             if failure != nil, child.isRunning {
                 if stoppedAt == nil { child.terminate(); stoppedAt = now }
                 else if stoppedAt!.duration(to: now) >= .milliseconds(200) { _ = kill(child.processIdentifier, SIGKILL) }
+            }
+            if let input, let inputFD, !inputClosed, failure == nil {
+                let count = input.withUnsafeBytes { bytes in
+                    Darwin.write(inputFD, bytes.baseAddress!.advanced(by: inputOffset), min(4096, input.count - inputOffset))
+                }
+                if count > 0 { inputOffset += count }
+                else if count < 0 && errno != EAGAIN && errno != EINTR { failure = .pipeFailure }
+                if inputOffset == input.count || failure != nil {
+                    try? inputPipe?.fileHandleForWriting.close(); inputClosed = true
+                }
             }
             var polls = fds.enumerated().map { pollfd(fd: open[$0.offset] ? $0.element : -1, events: Int16(POLLIN | POLLHUP), revents: 0) }
             let polled = polls.withUnsafeMutableBufferPointer { Darwin.poll($0.baseAddress, nfds_t($0.count), 10) }

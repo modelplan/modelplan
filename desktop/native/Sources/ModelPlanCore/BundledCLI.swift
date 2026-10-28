@@ -4,12 +4,24 @@ import CryptoKit
 
 /// Fixed bundle helper, pinned by a resource included in the app's code signature.
 /// Hash verification and process IO occur off the main actor. No PATH or unsigned fallback.
-public actor BundledCLI: CLITransport {
+public actor BundledCLI: CLITransport, ConsentJSONTransport {
     private let bundle: URL
     private let environment: [String: String]?
+    private let desktopReadMode: DesktopReadMode
     private var verified: ProcessCLITransport?
-    public init(bundle: URL, environment: [String: String]? = nil) { self.bundle = bundle; self.environment = environment }
+    public init(bundle: URL, environment: [String: String]? = nil, desktopReadMode: DesktopReadMode = .readOnly) {
+        self.bundle = bundle; self.environment = environment; self.desktopReadMode = desktopReadMode
+    }
     public func execute(_ command: CLICommand) async throws -> CommandResult {
+        try await verifiedTransport().execute(command)
+    }
+    public func readConsentJSON() async throws -> CommandResult {
+        try await verifiedTransport().readConsentJSON()
+    }
+    public func grantConsentJSON(_ payload: Data) async throws -> CommandResult {
+        try await verifiedTransport().grantConsentJSON(payload)
+    }
+    private func verifiedTransport() throws -> ProcessCLITransport {
         if verified == nil {
             let helper = bundle.appendingPathComponent("Contents/Helpers/modelplan")
             let pin = bundle.appendingPathComponent("Contents/Resources/modelplan.sha256")
@@ -23,9 +35,9 @@ public actor BundledCLI: CLITransport {
             let actual = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
             guard actual == expected else { throw TransportError.launchFailed }
             try Task.checkCancellation()
-            verified = ProcessCLITransport(executable: helper, environment: environment)
+            verified = ProcessCLITransport(executable: helper, environment: environment, desktopReadMode: desktopReadMode)
         }
         guard let verified else { throw TransportError.launchFailed }
-        return try await verified.execute(command)
+        return verified
     }
 }

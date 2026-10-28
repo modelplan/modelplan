@@ -58,6 +58,17 @@ public enum JSONValue: Codable, Equatable, Sendable {
 }
 
 public enum FeedDecoder {
+    /// Canonical consent readback only; detection and saved permission are not admission.
+    public static func consentPreview(_ data: Data) throws -> ConsentPreview {
+        let value = try decode(ConsentPreview.self, data)
+        guard value.consentTextVersion > 0, value.tools.count <= 512,
+              Set(value.tools.map(\.id)).count == value.tools.count,
+              !value.consentText.en.isEmpty, !value.consentText.zh.isEmpty,
+              value.consentText.en.utf8.count <= 8192, value.consentText.zh.utf8.count <= 8192,
+              value.tools.allSatisfy({ !$0.id.isEmpty && $0.id.utf8.count <= 48 && $0.hosts.count <= 64 })
+        else { throw FeedError.invalidIdentity }
+        return value
+    }
     public static let maximumBytes = 8 * 1024 * 1024
     private static func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
         guard data.count <= maximumBytes else { throw FeedError.tooLarge }
