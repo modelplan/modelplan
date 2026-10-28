@@ -1,73 +1,84 @@
-# Passive Claude session adapter (beta, draft)
+# Passive Claude session reader (beta)
 
-PR228 has merged, and this PR is now based on current main. The shared
-interface below still needs its session-state extension. It contains no independent file walker, cursor, offset cache or log
-collector. `ProjectClaudeSessions` reuses `localusage.HistoryAccess` and projects
-bounded transient record batches into model/effort/Fast plus keyed session and
-observation metadata. It performs no file/credential/Keychain/process/network I/O.
+The reader uses the shared [local-history projection interface](local-history-projection.md)
+from PR232. `ClaudeSessionReducer` is a `localusage.ProjectionReducer`; it performs
+no file, credential, Keychain, process or network I/O. There is no independent
+walker, cursor, offset cache or scheduling engine.
 
-## Exact READERS API gap
+`RefreshClaudeSessions(ctx, root, cache, access, now)` explicitly ingests the
+consent-scoped Claude profile root through `RefreshProjection`. The shared engine
+admits only main `projects/<project>/<session>.jsonl` files, delivers bounded
+complete lines, handles appends/restarts/replacement/truncation and commits the
+sanitized frontier, snapshot and cursors atomically. Its five-second local floor
+and failure backoff are independent of account-quota/network schedules.
 
-The merged PR228 currently exports `RefreshHistory`, `ReadHistoryCache`,
-`ForgetHistoryProfile`, and the count-oriented `HistoryAccess/HistoryRow/HistoryResult`
-types. `historyDepth("claude")` is unsupported; `historyAllowed`, `decodeHistory`,
-`historyCursor` and its atomic commit logic are private and fixed to seven history
-providers. `HistoryRow` carries day/model/token counts, not effort, nullable Fast,
-source session selection or a sanitized custom snapshot.
+`ReadClaudeSessions(cache, access, caller, now)` uses `ReadProjectionCache` only.
+It never discovers or reads a transcript, even on an empty cache. The persisted
+snapshot is independent of the caller: selection is repeated using the caller's
+profile-scoped HMAC, so a caller change requires no ingestion or write.
+`ForgetClaudeSessions(cache, access)` uses `ForgetProjectionProfile` after the
+caller cancels and joins in-flight work. It removes derived state/cursors even
+after consent revocation, preserving the shared engine's local reservation.
 
-The adapter needs READERS to export a bounded append/decoder seam that:
+CLIJIT supplies authorized roots, `localusage.HistoryAccess`, caller selection and
+explicit refresh scheduling, including suspension while hidden/asleep. Quota
+`Paths.ClaudeSessionAccess` admits cache-only projection into `Read`: session state
+can produce an account with no quota windows when no plugin/status-line/account
+snapshot exists. When an account exists, native session fields replace optional
+hook metadata as a whole, including clearing unknown values. The session reader
+does not collect quota or require a status line/plugin. Missing access grants
+nothing; consent, denial, Automatic/Passive-only and `MODELPLAN_READERS` gates
+apply before ingestion and cache presentation.
 
-- admits approved main Claude transcript paths and supplies the filename session
-  selector/profile scope without persisting raw paths;
-- feeds new complete rows and explicitly marks bounded discovery/recovery uncertainty;
-- allows a sanitized session-state snapshot (and only minimal keyed technical
-  decoder/frontier state) to commit atomically with its cursor;
-- preserves old capture age on incomplete/unreadable input and supports a bounded
-  local-state cadence independent of network quota gates;
-- retains existing byte-count, restart, truncation/replacement, privacy and
-  revocation guarantees.
-
-Until that API exists, this PR stays draft and has no collector/cache integration.
-It does not patch READERS-owned files or invent a second cursor. The coordinator
-has retargeted it to main; merging the dependency did not add the required
-append/snapshot extension. Wire the adapter only after that exported contract exists.
-The original standalone cursor has been removed.
-
-## Projection contract
+## Fields and selection
 
 The owner confirmed top-level `effort`, `message.model`, and
-`message.usage.speed` on 2026-10-27. The committed minimal fixture has exactly those
-shapes; other usage keys are ignored. Missing/null/unknown fields independently
-remain unknown, including malformed optional values. Speed standard maps false;
-fast maps true. No service-tier/latency/preference inference is used. A minimal
-field fixture cannot establish a current/interactive session by itself.
+`message.usage.speed` on 2026-10-27. The minimal fixture has exactly those shapes;
+other usage keys are ignored. Missing/null/unknown fields independently remain
+unknown, including malformed optional values. Speed `standard` maps to false;
+`fast` maps to true. No service-tier/latency/preference inference is used and no
+setting is changed. A minimal field fixture cannot establish activity by itself.
 
-Selection validates filename/header session agreement and source timestamps,
-reconstructs the selected main-chain leaf through transient UUID/parent UUIDs,
-and chooses its newest complete assistant record. Complete same-message streaming
-fragments are deduplicated; conflicting model/effort/Fast values become unknown
-independently. Later incomplete blocks do not freshen or splice the previous turn.
-Sidechains, agent/team workers, metadata/compaction, synthetic/error responses,
-SDK entrypoints and daemon sessions cannot displace an interactive recent thread.
-Unclassified origins cannot displace confirmed CLI/IDE/desktop origins. Explicit
-matching callers get current-thread; an unmatched caller is reported as such.
-A bounded/incomplete discovery cannot claim recent-thread. No file mtime or
-foreground-process inspection establishes activity.
+Selection validates filename/header agreement and source timestamps, reconstructs
+the timestamp-selected main-chain leaf using keyed node references, and chooses
+its newest complete assistant record. The whole selected ancestry must be
+available. Complete same-message streaming fragments are deduplicated; conflicting
+model/effort/Fast values become unknown independently. Exact repeated records do
+not freshen the snapshot. Later incomplete blocks do not splice or freshen the
+previous turn. A resumed branch can select an earlier assistant across refreshes.
 
-The session key is HMAC-SHA256 over the installation key, a versioned domain,
-opaque profile ref and session ID. Profiles cannot share a key accidentally.
-Raw IDs, ancestry, entrypoint/session-kind fields, content, cwd, titles, project
-names and other usage fields remain transient or are never decoded. No label is
-collected even if the optional project-label preference would permit it. The
-selected projection replaces optional plugin/status-line harness metadata as a
-whole, including clearing absent fields; optional snapshots cannot override it.
-Automatic and Passive-only are admitted; missing consent/denial/off fail closed.
+Sidechains, agent/team workers, metadata/compaction and synthetic/error responses
+are excluded. SDK/daemon sessions and unclassified origins cannot displace a
+confirmed CLI/IDE/desktop recent session. An explicit matching caller is labelled
+`current-thread`; a fallback is `recent-thread` and an unmatched caller is reported.
+No file mtime or foreground-process inspection establishes activity.
+
+Only conclusive discovery prunes missing file frontiers. Incomplete discovery,
+byte recovery, missing ancestry, malformed records or an omitted bootstrap prefix
+cannot publish a new snapshot: the engine retains the original-age last good
+snapshot while committing sanitized progress with its cursor. Complete empty
+files/discovery clear selection. Reset discards that file's old decoder state.
+The semantic frontier is capped at 4096 sanitized graph records and 1800 KiB across
+256 files, below the engine's 2 MiB decoder cap. Hitting a semantic bound remains
+incomplete until reset or conclusive removal; it never guesses from dropped
+ancestry. A presentation exceeding 64 KiB also remains incomplete.
+
+## Privacy and verification
+
+Session, node and message references are domain-separated HMAC-SHA256 values
+scoped to the installation key and profile. The frontier contains only keyed
+references, sequence tie breakers, timestamps, approved model/effort/Fast fields,
+closed origin/type enums and completeness/exclusion flags. The snapshot contains
+only approved fields and keyed observation/selection metadata. No message
+contents, raw IDs/ancestry, paths, project names, titles, credentials or arbitrary
+provider text are stored. No project label is collected.
 
 Protocol evidence is read-only: Anthropic SDK Python sessions.py at
 717cea09021fac3654879f0a362ed254a73ec35d and published TypeScript SDK 0.3.301.
-Their implementations are not copied or vendored. All records in tests are
-handwritten; no real transcript or credential was read. Tests cover the owner
-shape/older optional fields, branches/resumes, streaming duplicates/conflicts,
-SDK/daemon/worker exclusions, current versus recent/missing caller, timestamp
-and bounded uncertainty, HMAC isolation/privacy canaries and optional snapshots.
-Incremental I/O/atomic-commit acceptance remains blocked on the READERS seam above.
+Their implementations are not copied or vendored. All test records are handwritten
+synthetic fixtures. Tests cover field unknowns, selection/exclusions, persisted
+resumes, streaming duplicates/conflicts, unchanged-file zero-content reads,
+append/torn-line recovery and backoff, reducer-error atomic rollback/replay,
+replacement/truncation/empty discovery, bounded uncertainty, profile isolation,
+cache-only caller changes, consent/privacy, Forget and optional-hook precedence.
+No real transcript, credential or vendor request is needed or accessed.

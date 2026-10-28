@@ -1,17 +1,18 @@
 package quota
 
-// Projection only. File discovery, incremental I/O and atomic checkpoint/snapshot
-// commit belong to READERS (PR228). Its public API currently lacks this seam;
-// this adapter deliberately does not implement a second cursor.
+// Claude field decoding and selection for the shared localusage projection engine.
+// Discovery, incremental I/O and atomic cursor/snapshot commits belong to READERS.
 // Protocol evidence: Anthropic SDK Python 717cea0 sessions.py and TypeScript SDK
 // 0.3.301, read-only; independently implemented. The owner confirmed field shapes
 // on 2026-10-27. No source, transcript body or raw identity is persisted here.
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"os"
 	"regexp"
@@ -104,20 +105,29 @@ func parseClaudeSessionFields(b []byte) ClaudeSessionFields {
 	return fields
 }
 
+// Only keyed graph references and whitelisted fields enter the decoder frontier.
+// Sequence breaks equal source timestamps without persisting byte offsets.
 type claudeSessionNode struct {
-	id, parent, message string
-	kind                string
-	at                  time.Time
-	fields              ClaudeSessionFields
-	complete            bool
-	index               int
+	ID       string              `json:"id"`
+	Parent   string              `json:"parent,omitempty"`
+	Message  string              `json:"message,omitempty"`
+	Kind     string              `json:"kind"`
+	At       time.Time           `json:"at"`
+	Fields   ClaudeSessionFields `json:"fields"`
+	Complete bool                `json:"complete,omitempty"`
+	Index    int                 `json:"index"`
 }
-
+type claudeSessionFile struct {
+	SessionKey string              `json:"sessionKey"`
+	Origin     string              `json:"origin,omitempty"`
+	Excluded   bool                `json:"excluded,omitempty"`
+	Invalid    bool                `json:"invalid,omitempty"`
+	Omitted    bool                `json:"omitted,omitempty"`
+	Nodes      []claudeSessionNode `json:"nodes"`
+}
 type claudeSessionCandidate struct {
-	observation       ClaudeSessionObservation
-	rawID             string // transient caller matching only; never returned or cached
-	interactive       bool
-	completeDiscovery bool
+	observation ClaudeSessionObservation
+	interactive bool
 }
 
 func claudeSessionHash(key []byte, profile, id string) string {
@@ -126,109 +136,123 @@ func claudeSessionHash(key []byte, profile, id string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func claudeSessionBatchProjection(a localusage.HistoryAccess, batch ClaudeSessionBatch, now time.Time) (*claudeSessionCandidate, bool) {
-	if !claudeSessionOpaque.MatchString(batch.ExpectedSessionID) || len(batch.Records) > 4096 {
-		return nil, false
+func decodeClaudeSessionLine(a localusage.HistoryAccess, file *claudeSessionFile, session string, data []byte, now time.Time) {
+	keyed := func(domain, id string) string {
+		if id == "" {
+			return ""
+		}
+		return claudeSessionHash(a.Key, a.ProfileRef, domain+"\x00"+session+"\x00"+id)
 	}
+	var row struct {
+		Type        string          `json:"type"`
+		ID          string          `json:"uuid"`
+		Parent      string          `json:"parentUuid"`
+		Session     string          `json:"sessionId"`
+		Timestamp   string          `json:"timestamp"`
+		Sidechain   bool            `json:"isSidechain"`
+		Meta        bool            `json:"isMeta"`
+		Compact     bool            `json:"isCompactSummary"`
+		APIError    bool            `json:"isApiErrorMessage"`
+		Agent       string          `json:"agentId"`
+		Team        string          `json:"teamName"`
+		Entrypoint  string          `json:"entrypoint"`
+		SessionKind string          `json:"sessionKind"`
+		Error       json.RawMessage `json:"error"`
+		Message     struct {
+			ID    string          `json:"id"`
+			Model json.RawMessage `json:"model"`
+			Role  string          `json:"role"`
+			Stop  json.RawMessage `json:"stop_reason"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(data, &row) != nil {
+		file.Invalid = true
+		return
+	}
+	if row.Session != "" && row.Session != session {
+		file.Invalid = true
+		return
+	}
+	switch row.Entrypoint {
+	case "sdk-cli", "sdk-ts", "sdk-py":
+		file.Excluded = true
+	case "cli", "claude-vscode", "claude-desktop":
+		value := "cli"
+		if row.Entrypoint == "claude-vscode" {
+			value = "vscode"
+		}
+		if row.Entrypoint == "claude-desktop" {
+			value = "desktop"
+		}
+		if file.Origin != "" && file.Origin != value {
+			file.Invalid = true
+			file.Excluded = true
+		}
+		file.Origin = value
+	}
+	if row.SessionKind == "daemon" || row.SessionKind == "daemon-worker" {
+		file.Excluded = true
+	}
+	if row.Sidechain || row.Meta || row.Compact || row.Agent != "" || row.Team != "" || row.APIError || (len(row.Error) > 0 && string(row.Error) != "null") || claudeFieldString(row.Message.Model) == "<synthetic>" {
+		return
+	}
+	switch row.Type {
+	case "user", "assistant", "progress", "system", "attachment":
+	default:
+		return
+	}
+	if !claudeSessionOpaque.MatchString(row.ID) || (row.Parent != "" && !claudeSessionOpaque.MatchString(row.Parent)) {
+		file.Invalid = true
+		return
+	}
+	at, err := time.Parse(time.RFC3339Nano, row.Timestamp)
+	if err != nil || at.After(now) {
+		file.Invalid = true
+		return
+	}
+	node := claudeSessionNode{ID: keyed("node", row.ID), Parent: keyed("node", row.Parent), Message: keyed("message", row.Message.ID), Kind: row.Type, At: at.UTC(), Index: len(file.Nodes)}
+	if row.Type == "assistant" {
+		if row.Message.Role != "" && row.Message.Role != "assistant" {
+			file.Invalid = true
+			return
+		}
+		node.Fields = parseClaudeSessionFields(data)
+		switch claudeFieldString(row.Message.Stop) {
+		case "end_turn", "tool_use", "max_tokens", "stop_sequence", "pause_turn", "refusal", "model_context_window_exceeded":
+			node.Complete = true
+		}
+	}
+
+	for _, old := range file.Nodes {
+		if old.ID != node.ID {
+			continue
+		}
+		if old.Parent != node.Parent {
+			file.Invalid = true
+			return
+		}
+		sameFast := old.Fields.FastMode == nil && node.Fields.FastMode == nil
+		if old.Fields.FastMode != nil && node.Fields.FastMode != nil {
+			sameFast = *old.Fields.FastMode == *node.Fields.FastMode
+		}
+		if old.Message == node.Message && old.Kind == node.Kind && old.At.Equal(node.At) && old.Complete == node.Complete && old.Fields.Model == node.Fields.Model && old.Fields.Effort == node.Fields.Effort && sameFast {
+			return
+		}
+	}
+	file.Nodes = append(file.Nodes, node)
+}
+
+func claudeSessionFileProjection(file claudeSessionFile) (*claudeSessionCandidate, bool) {
+	partial := file.Invalid || file.Omitted
 	nodes := map[string]claudeSessionNode{}
-	all := []claudeSessionNode{}
-	origin := ""
-	excluded := false
-	partial := !batch.CompleteDiscovery
-	total := 0
-	for index, data := range batch.Records {
-		total += len(data)
-		if len(data) > 1<<20 || total > 8<<20 {
-			return nil, false
-		}
-		var row struct {
-			Type        string          `json:"type"`
-			ID          string          `json:"uuid"`
-			Parent      string          `json:"parentUuid"`
-			Session     string          `json:"sessionId"`
-			Timestamp   string          `json:"timestamp"`
-			Sidechain   bool            `json:"isSidechain"`
-			Meta        bool            `json:"isMeta"`
-			Compact     bool            `json:"isCompactSummary"`
-			APIError    bool            `json:"isApiErrorMessage"`
-			Agent       string          `json:"agentId"`
-			Team        string          `json:"teamName"`
-			Entrypoint  string          `json:"entrypoint"`
-			SessionKind string          `json:"sessionKind"`
-			Error       json.RawMessage `json:"error"`
-			Message     struct {
-				ID    string          `json:"id"`
-				Model json.RawMessage `json:"model"`
-				Role  string          `json:"role"`
-				Stop  json.RawMessage `json:"stop_reason"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(data, &row) != nil {
-			partial = true
-			continue
-		}
-		if row.Session != "" && row.Session != batch.ExpectedSessionID {
-			return nil, false
-		}
-		switch row.Entrypoint {
-		case "sdk-cli", "sdk-ts", "sdk-py":
-			excluded = true
-		case "cli", "claude-vscode", "claude-desktop":
-			value := "cli"
-			if row.Entrypoint == "claude-vscode" {
-				value = "vscode"
-			}
-			if row.Entrypoint == "claude-desktop" {
-				value = "desktop"
-			}
-			if origin != "" && origin != value {
-				partial = true
-				excluded = true
-			}
-			origin = value
-		}
-		if row.SessionKind == "daemon" || row.SessionKind == "daemon-worker" {
-			excluded = true
-		}
-		if row.Sidechain || row.Meta || row.Compact || row.Agent != "" || row.Team != "" || row.APIError || (len(row.Error) > 0 && string(row.Error) != "null") || claudeFieldString(row.Message.Model) == "<synthetic>" {
-			continue
-		}
-		switch row.Type {
-		case "user", "assistant", "progress", "system", "attachment":
-		default:
-			continue
-		}
-		if !claudeSessionOpaque.MatchString(row.ID) || (row.Parent != "" && !claudeSessionOpaque.MatchString(row.Parent)) {
-			partial = true
-			continue
-		}
-		at, err := time.Parse(time.RFC3339Nano, row.Timestamp)
-		if err != nil || at.After(now.Add(5*time.Minute)) {
-			partial = true
-			continue
-		}
-		node := claudeSessionNode{id: row.ID, parent: row.Parent, message: row.Message.ID, kind: row.Type, at: at.UTC(), index: index}
-		if row.Type == "assistant" {
-			if row.Message.Role != "" && row.Message.Role != "assistant" {
-				partial = true
-				continue
-			}
-			node.fields = parseClaudeSessionFields(data)
-			switch claudeFieldString(row.Message.Stop) {
-			case "end_turn", "tool_use", "max_tokens", "stop_sequence", "pause_turn", "refusal", "model_context_window_exceeded":
-				node.complete = true
-			}
-		}
-		if old, ok := nodes[node.id]; ok && old.parent != node.parent {
-			return nil, false
-		}
-		nodes[node.id] = node
-		all = append(all, node)
+	all := file.Nodes
+	for _, node := range all {
+		nodes[node.ID] = node
 	}
 	parents := map[string]bool{}
 	for _, node := range nodes {
-		if node.parent != "" {
-			parents[node.parent] = true
+		if node.Parent != "" {
+			parents[node.Parent] = true
 		}
 	}
 	var leaf *claudeSessionNode
@@ -236,29 +260,30 @@ func claudeSessionBatchProjection(a localusage.HistoryAccess, batch ClaudeSessio
 		if parents[id] {
 			continue
 		}
-		if leaf == nil || node.at.After(leaf.at) || (node.at.Equal(leaf.at) && node.index > leaf.index) {
+		if leaf == nil || node.At.After(leaf.At) || (node.At.Equal(leaf.At) && node.Index > leaf.Index) {
 			n := node
 			leaf = &n
 		}
 	}
 	if leaf == nil {
-		return nil, false
+		return nil, len(nodes) == 0 && !partial
 	}
 	var selected *claudeSessionNode
 	seen := map[string]bool{}
 	for node := leaf; node != nil; {
-		if seen[node.id] {
+		if seen[node.ID] {
 			return nil, false
 		}
-		seen[node.id] = true
-		if node.kind == "assistant" && node.complete {
-			selected = node
+		seen[node.ID] = true
+		if node.Kind == "assistant" && node.Complete {
+			if selected == nil {
+				selected = node
+			}
+		}
+		if node.Parent == "" {
 			break
 		}
-		if node.parent == "" {
-			break
-		}
-		parent, ok := nodes[node.parent]
+		parent, ok := nodes[node.Parent]
 		if !ok {
 			partial = true
 			break
@@ -268,35 +293,35 @@ func claudeSessionBatchProjection(a localusage.HistoryAccess, batch ClaudeSessio
 	if selected == nil {
 		return nil, !partial
 	}
-	fields := selected.fields
-	if selected.message != "" {
+	fields := selected.Fields
+	if selected.Message != "" {
 		model, effort := "", ""
 		var fast *bool
 		modelConflict, effortConflict, fastConflict := false, false, false
 		for _, node := range all {
-			if node.kind != "assistant" || !node.complete || node.message != selected.message {
+			if node.Kind != "assistant" || !node.Complete || node.Message != selected.Message {
 				continue
 			}
-			if node.fields.Model != "" {
-				if model != "" && model != node.fields.Model {
+			if node.Fields.Model != "" {
+				if model != "" && model != node.Fields.Model {
 					modelConflict = true
 				}
-				model = node.fields.Model
+				model = node.Fields.Model
 			}
-			if node.fields.Effort != "" {
-				if effort != "" && effort != node.fields.Effort {
+			if node.Fields.Effort != "" {
+				if effort != "" && effort != node.Fields.Effort {
 					effortConflict = true
 				}
-				effort = node.fields.Effort
+				effort = node.Fields.Effort
 			}
-			if node.fields.FastMode != nil {
-				if fast != nil && *fast != *node.fields.FastMode {
+			if node.Fields.FastMode != nil {
+				if fast != nil && *fast != *node.Fields.FastMode {
 					fastConflict = true
 				}
-				fast = node.fields.FastMode
+				fast = node.Fields.FastMode
 			}
-			if node.index > selected.index {
-				fields = node.fields
+			if node.Index > selected.Index {
+				fields = node.Fields
 			}
 		}
 		if modelConflict {
@@ -310,89 +335,68 @@ func claudeSessionBatchProjection(a localusage.HistoryAccess, batch ClaudeSessio
 		}
 	}
 	candidate := &claudeSessionCandidate{
-		rawID: batch.ExpectedSessionID, interactive: origin != "" && !excluded, completeDiscovery: batch.CompleteDiscovery && !partial,
-		observation: ClaudeSessionObservation{ClaudeSessionFields: fields, SessionKey: claudeSessionHash(a.Key, a.ProfileRef, batch.ExpectedSessionID), ObservedAt: selected.at, Origin: origin},
+		interactive: file.Origin != "" && !file.Excluded,
+		observation: ClaudeSessionObservation{ClaudeSessionFields: fields, SessionKey: file.SessionKey, ObservedAt: selected.At, Origin: file.Origin},
 	}
 	return candidate, !partial
 }
 
-// ProjectClaudeSessions performs no file, credential, Keychain, process or network
-// I/O. READERS must supply bounded records and atomically commit this sanitized
-// result together with its cursor; that exported seam is the PR228 dependency.
+// ProjectClaudeSessions is a pure batch convenience wrapper around the same
+// reducer used by RefreshClaudeSessions. It owns no discovery or cursor state.
 func ProjectClaudeSessions(a localusage.HistoryAccess, batches []ClaudeSessionBatch, caller string, now time.Time) ClaudeSessionProjection {
 	result := ClaudeSessionProjection{Availability: "unknown", Beta: true, Sessions: []ClaudeSessionObservation{}}
+	if blocked := claudeSessionAdmission(a); blocked != "" {
+		result.Availability = blocked
+		return result
+	}
+	if len(batches) > 256 {
+		result.Availability = "partial"
+		return result
+	}
+	reduce := ClaudeSessionReducer(a, now)
+	state := localusage.ProjectionState{}
+	refs := []string{}
+	complete := true
+	for _, b := range batches {
+		ref := claudeSessionHash(a.Key, a.ProfileRef, "file\x00"+b.ExpectedSessionID)
+		refs = append(refs, ref)
+		complete = complete && b.CompleteDiscovery
+		var err error
+		state, err = reduce(context.Background(), state, localusage.ProjectionBatch{FileRef: ref, SessionID: b.ExpectedSessionID, Reset: "initial", Lines: b.Records})
+		if err != nil {
+			result.Availability = "partial"
+			return result
+		}
+	}
+	state, err := reduce(context.Background(), state, localusage.ProjectionBatch{Final: true, DiscoveryComplete: complete, RecoveryComplete: complete, LiveFileRefs: refs})
+	if err != nil {
+		result.Availability = "partial"
+		return result
+	}
+	result = selectClaudeSessions(state.Snapshot, a, caller)
+	if state.Incomplete {
+		result.Availability = "partial"
+		result.Selected = nil
+	}
+	return result
+}
+
+func claudeSessionAdmission(a localusage.HistoryAccess) string {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	if mode == "off" || a.Privacy == "off" {
-		result.Availability = "off"
-		return result
+		return "off"
 	}
 	if a.Denied {
-		result.Availability = "denied"
-		return result
+		return "denied"
 	}
 	if !a.Allowed {
-		result.Availability = "consent_required"
-		return result
+		return "consent_required"
 	}
 	profile, err := hex.DecodeString(a.ProfileRef)
 	if len(a.Key) != 32 || err != nil || len(profile) != 32 || (a.Privacy != "" && a.Privacy != "automatic" && a.Privacy != "passive") || (mode != "" && mode != "automatic" && mode != "passive") {
-		result.Availability = "privacy_blocked"
-		return result
+		return "privacy_blocked"
 	}
-	if len(batches) > 128 {
-		result.Availability = "partial"
-		return result
-	}
-	candidates := []claudeSessionCandidate{}
-	complete := true
-	for _, batch := range batches {
-		candidate, ok := claudeSessionBatchProjection(a, batch, now)
-		complete = complete && ok
-		if candidate != nil {
-			candidates = append(candidates, *candidate)
-		}
-	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].observation.ObservedAt.Equal(candidates[j].observation.ObservedAt) {
-			return candidates[i].observation.SessionKey < candidates[j].observation.SessionKey
-		}
-		return candidates[i].observation.ObservedAt.After(candidates[j].observation.ObservedAt)
-	})
-	by := map[string]bool{}
-	var current, recent *ClaudeSessionObservation
-	for _, candidate := range candidates {
-		observation := candidate.observation
-		if by[observation.SessionKey] {
-			continue
-		}
-		by[observation.SessionKey] = true
-		result.Sessions = append(result.Sessions, observation)
-		if caller != "" && caller == candidate.rawID {
-			value := observation
-			value.Attribution = "current-thread"
-			current = &value
-		}
-		if recent == nil && candidate.interactive && candidate.completeDiscovery {
-			value := observation
-			value.Attribution = "recent-thread"
-			recent = &value
-		}
-	}
-	result.Selected = current
-	if current == nil {
-		result.Selected = recent
-		result.CallerMissing = caller != ""
-	}
-	if result.Selected != nil {
-		result.Availability = "ok"
-	}
-	if !complete {
-		result.Availability = "partial"
-		if current == nil {
-			result.Selected = nil
-		}
-	}
-	return result
+	return ""
 }
 
 // The selected native projection replaces optional snapshots as one unit;
@@ -401,5 +405,221 @@ func applyClaudeSessionProjection(account *Account, projection ClaudeSessionProj
 	account.Harness = &Harness{}
 	if selected := projection.Selected; selected != nil {
 		account.Harness = &Harness{Model: selected.Model, Effort: selected.Effort, FastMode: selected.FastMode, SessionKey: selected.SessionKey, ObservedAt: &selected.ObservedAt, Attribution: selected.Attribution, Origin: selected.Origin}
+	}
+}
+
+// The persisted snapshot is independent of the invocation's caller. Selection is
+// repeated from this sanitized snapshot even when all source files are unchanged.
+type claudeSessionSnapshot struct {
+	Sessions []claudeSessionSnapshotEntry `json:"sessions"`
+}
+type claudeSessionSnapshotEntry struct {
+	ClaudeSessionObservation
+	Interactive bool `json:"interactive,omitempty"`
+}
+
+// ClaudeSessionReducer implements localusage.ProjectionReducer without I/O. Only
+// keyed graph references, enum classification, timestamps and approved fields are
+// retained. A lost prefix or frontier bound cannot establish complete ancestry.
+func ClaudeSessionReducer(a localusage.HistoryAccess, now time.Time) localusage.ProjectionReducer {
+	// Do not retain a caller-owned mutable key buffer across reducer calls.
+	a.Key = append([]byte(nil), a.Key...)
+	return func(ctx context.Context, state localusage.ProjectionState, batch localusage.ProjectionBatch) (localusage.ProjectionState, error) {
+		if ctx.Err() != nil || claudeSessionAdmission(a) != "" {
+			return state, errors.New("Claude session read unavailable")
+		}
+		files := map[string]claudeSessionFile{}
+		if len(state.Decoder) > 0 {
+			if err := json.Unmarshal(state.Decoder, &files); err != nil {
+				return state, errors.New("Claude session frontier invalid")
+			}
+		}
+		if batch.Final {
+			if batch.DiscoveryComplete {
+				live := map[string]bool{}
+				for _, ref := range batch.LiveFileRefs {
+					live[ref] = true
+				}
+				for ref := range files {
+					if !live[ref] {
+						delete(files, ref)
+					}
+				}
+			}
+			state.Incomplete = !batch.DiscoveryComplete || !batch.RecoveryComplete
+			snapshot := claudeSessionSnapshot{Sessions: []claudeSessionSnapshotEntry{}}
+			state.ObservedAt = time.Time{}
+			for _, file := range files {
+				candidate, complete := claudeSessionFileProjection(file)
+				state.Incomplete = state.Incomplete || !complete
+				if candidate == nil {
+					continue
+				}
+				snapshot.Sessions = append(snapshot.Sessions, claudeSessionSnapshotEntry{ClaudeSessionObservation: candidate.observation, Interactive: candidate.interactive})
+				if candidate.observation.ObservedAt.After(state.ObservedAt) {
+					state.ObservedAt = candidate.observation.ObservedAt
+				}
+			}
+			sort.Slice(snapshot.Sessions, func(i, j int) bool {
+				left, right := snapshot.Sessions[i], snapshot.Sessions[j]
+				if left.ObservedAt.Equal(right.ObservedAt) {
+					return left.SessionKey < right.SessionKey
+				}
+				return left.ObservedAt.After(right.ObservedAt)
+			})
+			if !state.Incomplete {
+				state.Snapshot, _ = json.Marshal(snapshot)
+				if len(state.Snapshot) > 64<<10 {
+					state.Incomplete = true
+					state.Snapshot = nil
+				}
+			}
+		} else {
+			if !claudeSessionOpaque.MatchString(batch.SessionID) || !claudeKeyedRef(batch.FileRef) {
+				return state, errors.New("Claude session batch invalid")
+			}
+			if batch.Reset != "" {
+				delete(files, batch.FileRef)
+			}
+			file := files[batch.FileRef]
+			sessionKey := claudeSessionHash(a.Key, a.ProfileRef, batch.SessionID)
+			if file.SessionKey != "" && file.SessionKey != sessionKey {
+				return state, errors.New("Claude session scope invalid")
+			}
+			file.SessionKey = sessionKey
+			file.Omitted = file.Omitted || batch.PrefixOmitted
+			total := 0
+			for _, f := range files {
+				total += len(f.Nodes)
+			}
+			// Bound the semantic frontier separately from the engine's byte budgets.
+			// Reaching this limit stays unknown until replacement/reset; it never guesses.
+			priorNodes := len(file.Nodes)
+			batchBytes := 0
+			if len(batch.Lines) > 4096 {
+				return state, errors.New("Claude session batch too large")
+			}
+			for _, line := range batch.Lines {
+				if ctx.Err() != nil {
+					return state, ctx.Err()
+				}
+				batchBytes += len(line)
+				if len(line) > 1<<20 || batchBytes > 8<<20 {
+					return state, errors.New("Claude session batch too large")
+				}
+				if total >= 4096 {
+					file.Invalid = true
+					continue
+				}
+				count := len(file.Nodes)
+				decodeClaudeSessionLine(a, &file, batch.SessionID, line, now)
+				total += len(file.Nodes) - count
+			}
+			files[batch.FileRef] = file
+			if len(files) > 256 {
+				return state, errors.New("Claude session frontier too large")
+			}
+			encoded, _ := json.Marshal(files)
+			if len(encoded) > 1800<<10 {
+				file.Nodes, file.Invalid = file.Nodes[:priorNodes], true
+				files[batch.FileRef] = file
+			}
+		}
+		state.Decoder, _ = json.Marshal(files)
+		return state, nil
+	}
+}
+func claudeKeyedRef(ref string) bool {
+	b, err := hex.DecodeString(ref)
+	return err == nil && len(b) == 32
+}
+
+func selectClaudeSessions(snapshot []byte, a localusage.HistoryAccess, caller string) ClaudeSessionProjection {
+	r := ClaudeSessionProjection{Availability: "unknown", Beta: true, Sessions: []ClaudeSessionObservation{}}
+	if blocked := claudeSessionAdmission(a); blocked != "" {
+		r.Availability = blocked
+		return r
+	}
+	var s claudeSessionSnapshot
+	if len(snapshot) == 0 {
+		r.CallerMissing = caller != ""
+		return r
+	}
+	if json.Unmarshal(snapshot, &s) != nil {
+		return r
+	}
+	callerKey := ""
+	if caller != "" {
+		callerKey = claudeSessionHash(a.Key, a.ProfileRef, caller)
+	}
+	var current, recent *ClaudeSessionObservation
+	for _, entry := range s.Sessions {
+		observation := entry.ClaudeSessionObservation
+		r.Sessions = append(r.Sessions, observation)
+		if callerKey != "" && observation.SessionKey == callerKey {
+			value := observation
+			value.Attribution = "current-thread"
+			current = &value
+		}
+		if recent == nil && entry.Interactive {
+			value := observation
+			value.Attribution = "recent-thread"
+			recent = &value
+		}
+	}
+	r.Selected = current
+	if current == nil {
+		r.Selected = recent
+		r.CallerMissing = caller != ""
+	}
+	if r.Selected != nil {
+		r.Availability = "ok"
+	}
+	return r
+}
+
+// RefreshClaudeSessions is the explicit local ingestion entry point. CLIJIT
+// supplies the consent-scoped root/access and suspends scheduling while asleep
+// or hidden. No network quota schedule or provider account reader is involved.
+func RefreshClaudeSessions(ctx context.Context, root, cache string, a localusage.HistoryAccess, now time.Time) localusage.ProjectionResult {
+	return localusage.RefreshProjection(ctx, "claude", root, cache, a, now, ClaudeSessionReducer(a, now))
+}
+
+// ReadClaudeSessions reads only ModelPlan's cache, then selects the caller from
+// keyed sessions. A caller change never requires a source reread or cache write.
+func ReadClaudeSessions(cache string, a localusage.HistoryAccess, caller string, now time.Time) (ClaudeSessionProjection, localusage.ProjectionResult) {
+	result := localusage.ReadProjectionCache(cache, "claude", a, now)
+	projection := selectClaudeSessions(result.Snapshot, a, caller)
+	if result.Availability != "ok" {
+		projection.Availability = result.Availability
+	}
+	return projection, result
+}
+
+// ForgetClaudeSessions is called after cancellation/join, including after consent
+// revocation. The engine retains the local reservation and touches no tool files.
+func ForgetClaudeSessions(cache string, a localusage.HistoryAccess) error {
+	return localusage.ForgetProjectionProfile(cache, "claude", a)
+}
+
+// An admitted native projection replaces optional hook metadata as one unit,
+// including unknown fields. A session-only source requires no plugin or account.
+func applyClaudeSessions(r *Report, p Paths, now time.Time) {
+	if p.ClaudeSessionAccess == nil {
+		return
+	}
+	projection, _ := ReadClaudeSessions(p.Cache, *p.ClaudeSessionAccess, p.ClaudeSession, now)
+	r.Sources = append(r.Sources, SourceStatus{Source: "claude-session", Status: projection.Availability, Beta: true})
+	found := false
+	for i := range r.Accounts {
+		if r.Accounts[i].Source == "claude-code" {
+			applyClaudeSessionProjection(&r.Accounts[i], projection)
+			found = true
+		}
+	}
+	if !found && projection.Selected != nil {
+		account := Account{Source: "claude-code", Via: "local", ObservedAt: projection.Selected.ObservedAt, Windows: []Window{}}
+		applyClaudeSessionProjection(&account, projection)
+		r.Accounts = append(r.Accounts, account)
 	}
 }
