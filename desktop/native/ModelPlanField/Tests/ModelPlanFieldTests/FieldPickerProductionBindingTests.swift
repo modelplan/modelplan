@@ -6,6 +6,7 @@ import XCTest
 @MainActor private final class PickerHostFixture: FieldPickerProductionHost {
     var input: FieldPickerHostInput
     var focusConnected = true, stillConnected = true
+    var saveFails = false
     var field: FieldPublicProjection?, focusedID: String?, saved: Data?, restoredScopeIDs: [String]?
     var expanded: Bool?
     init(_ catalogue: FieldPickerCatalogue) { input = .init(catalogue: catalogue, savedValue: nil) }
@@ -14,7 +15,10 @@ import XCTest
         guard focusConnected else { throw FieldPickerConnectionError.disconnected }
         field = projection; focusedID = focusedPublicID
     }
-    func saveFieldPickerValue(_ value: Data) throws { saved = value }
+    func saveFieldPickerValue(_ value: Data) throws {
+        if saveFails { throw FieldPickerConnectionError.disconnected }
+        saved = value
+    }
     func setFieldPickerExpanded(_ expanded: Bool) throws { self.expanded = expanded }
     func closeEnlargedFieldAndRestoreCurrentScopeStill() throws {
         guard stillConnected else { throw FieldPickerConnectionError.disconnected }
@@ -31,10 +35,16 @@ import XCTest
         let binding = FieldPickerProductionBinding(view: view, host: host, locale: .english)
         host.focusConnected = false
         XCTAssertThrowsError(try binding.open()); XCTAssertFalse(view.isPresented)
+        XCTAssertEqual(host.expanded, false)
+        XCTAssertNil(host.field)
+        XCTAssertEqual(host.restoredScopeIDs, input.scopeModelIDs)
         host.focusConnected = true; try binding.open()
         host.stillConnected = false
-        XCTAssertThrowsError(try binding.close()); XCTAssertFalse(view.isPresented)
-        XCTAssertNotNil(binding.lastError); binding.dispose()
+        XCTAssertThrowsError(try binding.close()); XCTAssertTrue(view.isPresented)
+        XCTAssertNotNil(binding.lastError); XCTAssertNotNil(binding.recoveryError)
+        host.stillConnected = true; try binding.close()
+        XCTAssertFalse(view.isPresented); XCTAssertEqual(host.expanded, false)
+        XCTAssertNil(host.field); XCTAssertNil(binding.recoveryError); binding.dispose()
     }
     func testBindingForwardsPublicFocusLayoutAndPersistenceThenRestoresLatestScopeNotFieldExtras() async throws {
         let input = try pickerCatalogue(), host = PickerHostFixture(input)
@@ -52,5 +62,37 @@ import XCTest
         try binding.close()
         XCTAssertEqual(host.restoredScopeIDs, ["m10"]); XCTAssertNil(host.field)
         binding.dispose(); XCTAssertNil(view.window)
+    }
+    func testPersistenceFailureAfterAppliedProjectionRestoresCurrentScopeAndRetryRemainsPossible() async throws {
+        let host = PickerHostFixture(try pickerCatalogue())
+        let view = FieldFleetPickerView(frame: .init(x: 0,y: 0,width: 430,height: 664))
+        let binding = FieldPickerProductionBinding(view: view, host: host, locale: .english)
+        try binding.open()
+        host.input = .init(catalogue: try pickerCatalogue(scope: ["m10"]), savedValue: nil)
+        host.saveFails = true
+        view.focus("m16") // Applies the new public projection/focus, then persistence throws.
+        XCTAssertFalse(view.isPresented); XCTAssertNil(host.field)
+        XCTAssertEqual(host.expanded, false); XCTAssertEqual(host.restoredScopeIDs, ["m10"])
+        XCTAssertNotNil(binding.lastError); XCTAssertNil(binding.recoveryError)
+        host.saveFails = false
+        try binding.open()
+        XCTAssertTrue(view.isPresented); XCTAssertEqual(host.field?.models.map(\.id), ["m10"])
+        view.setLaunched(true, publicID: "m16")
+        XCTAssertEqual(host.field?.models.map(\.id), ["m10","m16"])
+        XCTAssertNotNil(host.saved); XCTAssertNil(binding.lastError)
+        try binding.close(); XCTAssertFalse(view.isPresented); binding.dispose()
+    }
+    func testFailedCompensationKeepsControlsUsableUntilExplicitCloseRetry() async throws {
+        let host = PickerHostFixture(try pickerCatalogue())
+        let view = FieldFleetPickerView(frame: .init(x: 0,y: 0,width: 430,height: 664))
+        let binding = FieldPickerProductionBinding(view: view, host: host, locale: .english)
+        host.focusConnected = false; host.stillConnected = false
+        XCTAssertThrowsError(try binding.open())
+        XCTAssertTrue(view.isPresented); XCTAssertEqual(host.expanded, true)
+        XCTAssertNotNil(binding.lastError); XCTAssertNotNil(binding.recoveryError)
+        host.stillConnected = true; try binding.close()
+        XCTAssertFalse(view.isPresented); XCTAssertEqual(host.expanded, false)
+        XCTAssertEqual(host.restoredScopeIDs, ["m0","m1","m2"])
+        XCTAssertNil(binding.lastError); XCTAssertNil(binding.recoveryError); binding.dispose()
     }
 }
