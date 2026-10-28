@@ -18,7 +18,7 @@ import ModelPlanCockpitShell
         let models: [[String: Any]] = ["a", "b"].map { id in
             ["id": id, "name": id, "developerId": "example", "lineageId": id, "lineageStatus": "current",
              "defaultSelected": id == active, "recommended": "high",
-             "efforts": [["effort": "high", "label": "High", "ability": 10, "cost": 2, "time": 3]]]
+             "efforts": [["effort": "high", "label": "High", "available": false, "ability": 10, "cost": 2, "time": 3]]]
         }
         return try FeedDecoder.publication(JSONSerialization.data(withJSONObject: ["schemaVersion": 1,
             "publicationId": revision, "selectionRevision": revision,
@@ -59,6 +59,7 @@ import ModelPlanCockpitShell
         XCTAssertFalse(surface.renderFailure)
         let field = try XCTUnwrap(surface.cockpitComposition?.field)
         XCTAssertEqual(field.currentScope?.admittedPublicIDs, ["a"])
+        XCTAssertEqual(field.currentScope?.projection.models.first?.efforts.first?.available, false, "Preserve the published nullable availability tuple without defaulting true")
         // Synthetic native lifecycle delivery: no App/Window/input is launched in this check.
         field.setPresented(true)
         try field.open(); XCTAssertEqual(window.shown, 1)

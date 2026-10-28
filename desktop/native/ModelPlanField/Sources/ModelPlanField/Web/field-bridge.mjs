@@ -14,8 +14,9 @@ const viewport = value => keys(value, ['width', 'height', 'scale', 'profile']) &
   [value.width, value.height].every(n => Number.isInteger(n) && n > 0 && n <= 4096) &&
   Number.isFinite(value.scale) && value.scale >= 0.1 && value.scale <= 4 &&
   ['tall', 'short'].includes(value.profile);
-const effort = value => keys(value, ['effort'], ['label', 'ability', 'cost', 'time']) &&
+const effort = value => keys(value, ['effort'], ['label', 'ability', 'cost', 'time', 'available']) &&
   text(value.effort, 128) && optionalText(value.label) &&
+  (value.available === undefined || value.available === null || typeof value.available === 'boolean') &&
   [value.ability, value.cost, value.time].every(optionalNumber);
 const model = value => keys(value, ['id', 'efforts'], ['name', 'developerId', 'recommended']) &&
   text(value.id, 128) && optionalText(value.name) && optionalText(value.developerId, 128) &&

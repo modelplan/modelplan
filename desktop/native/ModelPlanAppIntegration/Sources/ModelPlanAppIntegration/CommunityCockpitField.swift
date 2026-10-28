@@ -96,7 +96,7 @@ import ModelPlanField
         let ids = selection.shared.orderedIDs
         guard let state = shell.state, let slot = shell.surfaceLayout?.slots[.window] else { throw FieldPickerConnectionError.disconnected }
         let viewport = try FieldViewport(width: Int(slot.width), height: Int(slot.height),
-            scale: min(2, max(1, shell.window?.backingScaleFactor ?? Double(state.appearance.scale))), profile: state.profile == .full ? .tall : .short)
+            scale: min(2, max(1, shell.window.map { Double($0.backingScaleFactor) } ?? Double(state.appearance.scale))), profile: state.profile == .full ? .tall : .short)
         let configs = Dictionary(uniqueKeysWithValues: selection.models.compactMap { model in
             model.current.map { (model.id, $0) }
         })

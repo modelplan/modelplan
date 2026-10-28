@@ -13,6 +13,11 @@ public struct CommunityFieldScope: Equatable, Sendable {
     public let configurations: [String: EffortConfiguration]
     public let appearance: FieldAppearance
     public let viewport: FieldViewport
+    public init(projection: FieldPublicProjection, admittedPublicIDs: [String],
+                configurations: [String: EffortConfiguration], appearance: FieldAppearance, viewport: FieldViewport) {
+        self.projection = projection; self.admittedPublicIDs = admittedPublicIDs
+        self.configurations = configurations; self.appearance = appearance; self.viewport = viewport
+    }
 }
 
 /// Private suppliers provide their own frozen shell/frames and current-scope still admission.

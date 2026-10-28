@@ -24,6 +24,10 @@ public struct FieldViewport: Codable, Equatable, Sendable {
 public struct FieldPublicEffort: Codable, Equatable, Sendable {
     public let effort: String, label: String?
     public let ability: Double?, cost: Double?, time: Double?
+    public let available: Bool?
+    public init(effort: String, label: String?, ability: Double?, cost: Double?, time: Double?, available: Bool? = nil) {
+        self.effort = effort; self.label = label; self.ability = ability; self.cost = cost; self.time = time; self.available = available
+    }
 }
 public struct FieldPublicModel: Codable, Equatable, Sendable {
     public let id: String, name: String?, developerId: String?, recommended: String?
@@ -61,7 +65,7 @@ public struct FieldPublicProjection: Codable, Equatable, Sendable {
             }
             result.append(FieldPublicModel(id: m.id, name: m.name, developerId: m.developerId,
                 recommended: m.recommended, efforts: efforts.map {
-                    FieldPublicEffort(effort: $0.effort, label: $0.label, ability: $0.ability, cost: $0.cost, time: $0.time)
+                    FieldPublicEffort(effort: $0.effort, label: $0.label, ability: $0.ability, cost: $0.cost, time: $0.time, available: $0.available)
                 }))
         }
         revision = publication.publicationId; models = result
