@@ -94,6 +94,15 @@ func (p *Plan) applies(w *digest.MultiplierWindow, m *digest.Model) bool {
 	return p.appliesTo(w) && (len(w.Models) == 0 || contains(w.Models, m.Name) || contains(w.Models, m.ID))
 }
 
+// matchesPlan shares the publication's rule-ID mapping with public window discovery.
+// Metered plans name their rules explicitly; other plans use literal window planIds.
+func (p *Plan) matchesPlan(w *digest.MultiplierWindow) bool {
+	if len(p.rules) > 0 {
+		return p.rules[w.RuleID]
+	}
+	return contains(w.PlanIDs, p.ID)
+}
+
 // appliesTo: the window is this plan's (and generation's), for any model.
 func (p *Plan) appliesTo(w *digest.MultiplierWindow) bool {
 	if w.Region != "" && p.Region != "" && w.Region != p.Region {
@@ -102,7 +111,7 @@ func (p *Plan) appliesTo(w *digest.MultiplierWindow) bool {
 	if len(w.Clients) > 0 {
 		return false
 	}
-	if len(p.rules) > 0 && !p.rules[w.RuleID] || len(p.rules) == 0 && !contains(w.PlanIDs, p.ID) {
+	if !p.matchesPlan(w) {
 		return false
 	}
 	return p.Generation == "" || len(w.Generations) == 0 || contains(w.Generations, p.Generation)

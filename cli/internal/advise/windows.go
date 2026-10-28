@@ -93,11 +93,6 @@ func rateTimeline(d *digest.Digest, match func(*digest.MultiplierWindow) bool, n
 }
 
 func sameRate(a, b *float64) bool { return a == nil && b == nil || a != nil && b != nil && *a == *b }
-func sortedStrings(xs []string) []string {
-	ys := append([]string{}, xs...)
-	sort.Strings(ys)
-	return ys
-}
 
 // Windows keeps separate regional, generation and client scopes, grouping plan families
 // with a shared schedule. Model overrides inherit the family's model-independent rules.
@@ -113,32 +108,58 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 		if f.Provider != "" && !strings.EqualFold(f.Provider, w.Provider) {
 			continue
 		}
-		plans := w.PlanIDs
-		if len(plans) == 0 {
-			plans = []string{f.Plan}
+		type planScope struct{ id, generation string }
+		var plans []planScope
+		ids := w.PlanIDs
+		if len(ids) == 0 {
+			ids = []string{f.Plan}
 		}
 		gens := w.Generations
 		if len(gens) == 0 {
 			gens = []string{""}
 		}
-		for _, plan := range plans {
+		for _, id := range ids {
 			for _, gen := range gens {
-				if f.Plan != "" && plan != "" && f.Plan != plan {
-					continue
+				plans = append(plans, planScope{id, gen})
+			}
+		}
+		// Canonical plan IDs can differ from a window's literal legacy planIds.
+		// Enumerate the published timeRules aliases even in the unfiltered view.
+		if d.PlanMetering != nil {
+			for _, m := range d.PlanMetering.Plans {
+				if contains(m.TimeRules, w.RuleID) {
+					plans = append(plans, planScope{m.PlanID, m.Generation})
 				}
-				if f.Region != "" && w.Region != "" && w.Region != f.Region {
-					continue
+			}
+		}
+		clients := w.Clients
+		if len(clients) == 0 {
+			clients = []string{""}
+		}
+		for _, plan := range plans {
+			if f.Plan != "" && plan.id != "" && f.Plan != plan.id {
+				continue
+			}
+			if len(w.Generations) > 0 && plan.generation != "" && !contains(w.Generations, plan.generation) {
+				continue
+			}
+			if f.Region != "" && w.Region != "" && w.Region != f.Region {
+				continue
+			}
+			region := w.Region
+			if f.Region != "" {
+				region = f.Region
+			}
+			for _, client := range clients {
+				g := WindowGroup{Provider: w.Provider, PlanIDs: []string{}, Region: region}
+				if plan.id != "" {
+					g.PlanIDs = []string{plan.id}
 				}
-				region := w.Region
-				if f.Region != "" {
-					region = f.Region
+				if plan.generation != "" {
+					g.Generations = []string{plan.generation}
 				}
-				g := WindowGroup{Provider: w.Provider, PlanIDs: []string{}, Region: region, Clients: sortedStrings(w.Clients)}
-				if plan != "" {
-					g.PlanIDs = []string{plan}
-				}
-				if gen != "" {
-					g.Generations = []string{gen}
+				if client != "" {
+					g.Clients = []string{client}
 				}
 				key, _ := json.Marshal(g)
 				scopes[string(key)] = g
@@ -153,11 +174,19 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 	merged := map[string]int{}
 	for _, key := range keys {
 		g := scopes[key]
+		p := &Plan{rules: map[string]bool{}}
+		if len(g.PlanIDs) > 0 {
+			a := quota.Account{Source: "user", Plan: g.PlanIDs[0]}
+			if len(g.Generations) > 0 {
+				a.Generation = g.Generations[0]
+			}
+			p = planForAccount(&a, d)
+		}
 		scopeMatch := func(w *digest.MultiplierWindow) bool {
-			return w.Provider == g.Provider && (len(w.PlanIDs) == 0 || len(g.PlanIDs) > 0 && contains(w.PlanIDs, g.PlanIDs[0])) &&
+			return w.Provider == g.Provider && (len(w.PlanIDs) == 0 && len(p.rules) == 0 || p.matchesPlan(w)) &&
 				(len(w.Generations) == 0 || len(g.Generations) > 0 && contains(w.Generations, g.Generations[0])) &&
 				(w.Region == "" || w.Region == g.Region) &&
-				(len(w.Clients) == 0 || strings.Join(sortedStrings(w.Clients), "|") == strings.Join(g.Clients, "|"))
+				(len(w.Clients) == 0 || len(g.Clients) > 0 && contains(w.Clients, g.Clients[0]))
 		}
 		models, zones := map[string]bool{}, map[string]bool{}
 		qualifications := map[string]bool{}
@@ -184,6 +213,9 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 			if w.Timezone != "" {
 				zones[w.Timezone] = true
 			}
+		}
+		if len(models) == 0 {
+			continue
 		}
 		for q := range qualifications {
 			g.Qualifications = append(g.Qualifications, q)

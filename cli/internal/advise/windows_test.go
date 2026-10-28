@@ -186,3 +186,140 @@ func TestGlobalRegionIsAnExactScope(t *testing.T) {
 		t.Fatalf("regional cost=%+v", costs)
 	}
 }
+
+func TestWindowsPlanRuleAliasAgreesWithBilling(t *testing.T) {
+	d := glmDigest(true)
+	// The published rule IDs link pro to windows labelled with the legacy plan.
+	groups := Windows(d, WindowFilter{Provider: "zai", Plan: "zhipu-global-pro", Model: "glm"}, now)
+	report := quota.Report{Accounts: []quota.Account{declared("zhipu-global-pro", "legacy-v2"), declared("zhipu-global-pro", "credits-2026")}}
+	billing := Billing(d, report, []*digest.Model{d.Model("glm")}, now)
+	if len(groups) != 2 || len(billing) != 2 {
+		t.Fatalf("alias groups=%+v billing=%+v", groups, billing)
+	}
+	for _, cost := range billing {
+		var matched *WindowSeries
+		for _, group := range groups {
+			if len(group.PlanIDs) != 1 || group.PlanIDs[0] != "zhipu-global-pro" {
+				t.Fatalf("wrong plan scope=%+v", group)
+			}
+			if len(group.Generations) == 1 && group.Generations[0] == cost.Generation {
+				if len(group.Series) != 1 {
+					t.Fatalf("series=%+v", group.Series)
+				}
+				matched = &group.Series[0]
+			}
+		}
+		if matched == nil || !sameRate(matched.Now.Multiplier, cost.MultiplierNow) || matched.Now.Status != cost.Status {
+			t.Fatalf("generation=%s public=%+v billing=%+v", cost.Generation, matched, cost)
+		}
+		if cost.Generation == "legacy-v2" && (len(matched.Changes) == 0 || !matched.Changes[0].At.Equal(now.Add(time.Hour)) || matched.Changes[0].Multiplier == nil || *matched.Changes[0].Multiplier != 1) {
+			t.Fatalf("legacy fallback=%+v", matched)
+		}
+	}
+	// The unfiltered view must also discover canonical aliases, not just literal planIds.
+	found := false
+	for _, g := range Windows(d, WindowFilter{Provider: "zai", Model: "glm"}, now) {
+		found = found || contains(g.PlanIDs, "zhipu-global-pro")
+	}
+	if !found {
+		t.Fatal("unfiltered windows omit canonical pro alias")
+	}
+}
+
+func TestWindowsPlanRuleAliasPreservesScopeExclusions(t *testing.T) {
+	d := glmDigest(true)
+	for i := range d.Multipliers {
+		if d.Multipliers[i].Provider == "zai" {
+			d.Multipliers[i].Region = "global"
+		}
+	}
+	// A higher-priority client-specific rule must stay in its own public scenario.
+	override := d.Multipliers[len(d.Multipliers)-1]
+	override.Provider = "zai"
+	override.Region = "global"
+	override.Generations = []string{"legacy-v2"}
+	override.Models = []string{"GLM-5.3"}
+	d.Multipliers = append(d.Multipliers, override)
+	groups := Windows(d, WindowFilter{Provider: "zai", Plan: "zhipu-global-pro", Model: "glm", Region: "global"}, now)
+	normal, client := false, false
+	for _, g := range groups {
+		if len(g.Generations) != 1 || g.Generations[0] != "legacy-v2" {
+			continue
+		}
+		r := g.Series[0].Now.Multiplier
+		if len(g.Clients) == 0 {
+			normal = r != nil && *r == 3
+		} else if len(g.Clients) == 1 && g.Clients[0] == "ZCode" {
+			client = r != nil && *r == 0.1
+		}
+	}
+	if !normal || !client {
+		t.Fatalf("client scopes=%+v", groups)
+	}
+	for _, filter := range []WindowFilter{
+		{Provider: "zai", Plan: "zhipu-global-pro", Model: "not-a-published-model", Region: "china"},
+		{Provider: "zai", Plan: "zhipu-global-pro", Model: "glm", Region: "china"},
+		{Provider: "other", Plan: "zhipu-global-pro", Model: "glm", Region: "global"},
+	} {
+		if got := Windows(d, filter, now); len(got) != 0 {
+			t.Fatalf("filter=%+v groups=%+v", filter, got)
+		}
+	}
+	// In the legacy generation the Flash override must not leak into GLM, or vice versa.
+	for _, g := range Windows(d, WindowFilter{Provider: "zai", Plan: "zhipu-global-pro", Model: "glm-5.3-flash", Region: "global"}, now) {
+		if len(g.Generations) == 1 && g.Generations[0] == "legacy-v2" && len(g.Clients) == 0 {
+			if r := g.Series[0].Now.Multiplier; r == nil || *r != 0.4 {
+				t.Fatalf("model leaked=%+v", g)
+			}
+			return
+		}
+	}
+	t.Fatal("alias lookup omitted Flash's model-specific schedule")
+}
+
+func TestWindowsOverlappingClientSetsResolvePerClient(t *testing.T) {
+	d, at := windowDigest()
+	d.Multipliers = d.Multipliers[:1]
+	d.Multipliers[0].Clients = []string{"A", "B"}
+	override := d.Multipliers[0]
+	override.RuleID = "A-offpeak"
+	override.Clients = []string{"A"}
+	override.Priority = 10
+	override.Multiplier = f(0.5)
+	override.EndsAt = at.Add(time.Hour).Format(time.RFC3339)
+	d.Multipliers = append(d.Multipliers, override)
+	groups := Windows(d, WindowFilter{Provider: "synthetic", Plan: "pro", Model: "model", Region: "china"}, at)
+	if len(groups) != 2 {
+		t.Fatalf("client groups=%+v", groups)
+	}
+	seen := map[string]bool{}
+	for _, g := range groups {
+		if len(g.Clients) != 1 || len(g.Series) != 1 {
+			t.Fatalf("not a concrete client scope=%+v", g)
+		}
+		client := g.Clients[0]
+		seen[client] = true
+		s := g.Series[0]
+		switch client {
+		case "A":
+			if s.Now.Multiplier == nil || *s.Now.Multiplier != 0.5 || len(s.Changes) != 1 || !s.Changes[0].At.Equal(at.Add(time.Hour)) || s.Changes[0].Multiplier == nil || *s.Changes[0].Multiplier != 1 {
+				t.Fatalf("A must return to shared base=%+v", s)
+			}
+		case "B":
+			if s.Now.Multiplier == nil || *s.Now.Multiplier != 1 || len(s.Changes) != 0 {
+				t.Fatalf("B must retain shared base=%+v", s)
+			}
+		default:
+			t.Fatalf("unexpected client=%s", client)
+		}
+	}
+	if !seen["A"] || !seen["B"] {
+		t.Fatalf("clients=%v", seen)
+	}
+	// At the half-open boundary A and B both use the shared base rate.
+	for _, g := range Windows(d, WindowFilter{Provider: "synthetic", Plan: "pro", Model: "model", Region: "china"}, at.Add(time.Hour)) {
+		if r := g.Series[0].Now.Multiplier; r == nil || *r != 1 {
+			t.Fatalf("boundary=%+v", g)
+		}
+	}
+}
