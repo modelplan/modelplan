@@ -7,6 +7,10 @@ import ModelPlanCore
 import ModelPlanField
 import ModelPlanAssembly
 import ModelPlanCockpitShell
+import ModelPlanShell
+import ModelPlanSettings
+import ModelPlanDock
+@testable import ModelPlanCommunityHost
 @testable import ModelPlanAppIntegration
 
 @MainActor private final class RecordingFieldWindow: CommunityFieldWindow {
@@ -24,6 +28,28 @@ import ModelPlanCockpitShell
         XCTFail("Replacement construction must not evaluate or render a feed")
         throw InstrumentSurfaceError.invalidInput
     }
+}
+@MainActor private final class InstrumentSettingsCompanion: CommunityCompanionSurface {
+    var showConsole: (() -> Void)?, showSettings: (() -> Void)?
+    func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {}
+    func setPresentationAllowed(_ allowed: Bool) {}
+    func close() {}
+}
+private actor InstrumentSettingsTransport: CLITransport {
+    func execute(_ command: CLICommand) async throws -> CommandResult {
+        XCTFail("Navigation must not execute a helper"); throw TransportError.launchFailed
+    }
+}
+@MainActor private final class InstrumentSettingsConsent: CommunityConsentCommandPort {
+    func readCanonicalConsent() async throws -> ConsentPreview {
+        XCTFail("Unverified navigation must not inspect consent"); throw SettingsConnectionFailure.unavailable
+    }
+    func applyConsentJSON(_ payload: Data) async throws {
+        XCTFail("Navigation must not grant"); throw SettingsConnectionFailure.unavailable
+    }
+}
+@MainActor private final class InstrumentSettingsPlacement: CommunityPlacementProducing {
+    var onPlacementObserved: ((ModelPlanDock.DockEdgePlacement?, Bool) -> Void)?
 }
 /// Synthetic sizes below the neutral minimums, with no official geometry/paint or private assets.
 @MainActor private final class CompactTestSkin: CockpitShellSkin {
@@ -294,6 +320,43 @@ import ModelPlanCockpitShell
         next.dispose()
         XCTAssertNil(shell.state); XCTAssertNil(shell.surfaceLayout); XCTAssertEqual(shell.backdropBytes, 0)
         XCTAssertFalse(next.surface.engines.isDescendant(of: shell))
+    }
+    func testEmptyEngineAddSubscriptionReachesTheSameRetainedSettingsPane() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
+        _ = try await store.update { preferences in
+            for _ in OnboardingDefinition.task65.steps { preferences.onboarding.next() }
+        }
+        let app = SettingsApplicationCoordinator(store: store, apply: { _ in })
+        let window = TestSettingsSurface(), transport = InstrumentSettingsTransport()
+        let backend = CommunityConnectionBackend(port: InstrumentSettingsConsent(), desktop: .init(readOnly: transport, normal: transport))
+        let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() },
+            activate: {}, makeSurface: { editor in XCTAssertTrue(editor === app.editor); return window })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
+            placementSource: InstrumentSettingsPlacement(), canPresent: { true }, makeFirstRun: { _ in
+                XCTFail("Completed local onboarding must route to Settings"); return TestSettingsSurface()
+            })
+        defer { entry.flow.dispose() }
+        let surfaces = CommunityApplicationFactory.makeSurfaces()
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: InstrumentSettingsCompanion(),
+            consentBackend: backend, transport: transport) { _ in entry }
+        let gate = LifecycleCoordinator(store: SnapshotStore(transport: transport, automaticTimers: false))
+        _ = delegate.configureSettings(gate); await entry.restorePreferences()
+        let view = try XCTUnwrap(surfaces.makeOverview() as? CommunityInstrumentView)
+        defer { view.dispose() }
+        delegate.configureOverview(view) // The same binding called by the real Status window path.
+        render(view, publication: try publication()); view.resumePresentation()
+        let composition = try XCTUnwrap(view.cockpitComposition)
+        try composition.surface.setPresentationAllowed(true) // Synthetic presentation, no App/Window.
+        let intent = try XCTUnwrap(composition.surface.engineTable.recipe?.regions.first { $0.intent == .openSubscriptionsSettings }?.intent)
+        let shown = expectation(description: "Actual retained subscriptions pane")
+        window.onShow = { shown.fulfill() }
+        composition.surface.engineTable.onIntent?(intent)
+        await fulfillment(of: [shown], timeout: 1)
+        XCTAssertEqual(window.shown.compactMap { $0 }, ["subscriptions"])
+        XCTAssertTrue(delegate.settingsIntegration === entry)
+        XCTAssertTrue(entry.flow.application === app)
     }
     func testMissingSupplierPortFailsActualFactoryAndCannotClaimConnected() async throws {
         let neutral = CommunityCockpitSupply.neutral()

@@ -63,7 +63,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 
 /// Live read-only public model/effort consumer using M3's existing native MainScreenView.
 /// This is not the complete four-region cockpit, Dock, renderer or an official appearance provider.
-@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface, CommunityPublicCatalogueConsumer {
+@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface, CommunityPublicCatalogueConsumer, CommunityInstrumentSettingsRouting {
     public let view: NSView = InstrumentContainer()
     public let mainScreen: MainScreenView
     public let modelPicker = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -78,6 +78,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public private(set) var cockpitComposition: CockpitInstrumentComposition?
     public var requestedInstrumentScope: InstrumentScope { cockpitComposition?.requestedScope ?? .all }
     /// Settings/favourites and other application effects stay with the upper owner.
+    public var requestSubscriptionsSettings: (() async -> Void)?
     public var onInstrumentIntent: ((InstrumentSurfaceIntent) -> Void)?
     private let status = NSTextField(wrappingLabelWithString: "")
     private var settings: SettingsApplication?
@@ -225,7 +226,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         (view as? InstrumentContainer)?.optionChanged = nil;(view as? InstrumentContainer)?.escape=nil
         mainScreen.onHelpEscape=nil
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
-        cockpitComposition?.dispose(); cockpitComposition = nil; onInstrumentIntent = nil; instrumentSnapshot = nil
+        cockpitComposition?.dispose(); cockpitComposition = nil; onInstrumentIntent = nil; requestSubscriptionsSettings = nil; instrumentSnapshot = nil
         requestFreshSelection = nil; contentSizeChanged = nil
     }
     @objc private func pickedModel(_ sender: NSPopUpButton) {

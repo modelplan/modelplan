@@ -29,3 +29,8 @@ public extension CommunityInstrumentSurface {
 @MainActor public protocol CommunityPublicCatalogueConsumer: AnyObject {
     func render(publication: PublicPublication?)
 }
+
+/// The host binds this only to its existing retained Settings integration.
+@MainActor public protocol CommunityInstrumentSettingsRouting: AnyObject {
+    var requestSubscriptionsSettings: (() async -> Void)? { get set }
+}

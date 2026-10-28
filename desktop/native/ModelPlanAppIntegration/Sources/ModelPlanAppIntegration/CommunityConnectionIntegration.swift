@@ -125,7 +125,7 @@ import ModelPlanCommunityHost
 }
 
 /// Wrap the existing session in the private entry; no root-host protocol or second editor is needed.
-@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation {
+@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting {
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
     private var restoration: Task<Void, Never>?
@@ -145,6 +145,7 @@ import ModelPlanCommunityHost
         try flow.requireBackend()
         self.base = base; self.flow = flow
     }
+    public func presentSubscriptionsSettings() async { await flow.perform(.connections) }
     @objc private func openSettings() { Task { await flow.openSettings() } }
     @objc private func openUsageAccess() {
         let step = currentUsageNextStep
