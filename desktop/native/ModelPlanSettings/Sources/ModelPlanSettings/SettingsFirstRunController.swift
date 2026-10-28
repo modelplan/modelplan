@@ -15,6 +15,7 @@ import AppKit
     private let privacy = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
+    private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let loginSubtitle = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private var options: OnboardingOptions?
@@ -23,6 +24,7 @@ import AppKit
     private var active = false, busy = false, pageValid = false
     private var generation: UInt64 = 0
     private var observer: UUID?
+    private var connectionObserver: UUID?
     private var saveTask: Task<Void, Never>?
 
     public init(editor: SettingsEditor, host: FirstRunHost = .popup) {
@@ -40,17 +42,26 @@ import AppKit
             let editor = self.editor
             Task { @MainActor in editor.removeChangeObserver(observer) }
         }
+        if let connectionObserver {
+            let editor = self.editor
+            Task { @MainActor in editor.connections.removeObserver(connectionObserver) }
+        }
     }
     public func prepare() async {
         active = true; generation &+= 1; errorMessage = nil
         options = nil; baseRevision = nil; touchedLogin = false; touchedReaders = []; pageValid = false
         if observer == nil { observer = editor.observeChanges { [weak self] in self?.refresh() } }
+        if connectionObserver == nil { connectionObserver = editor.connections.observe { [weak self] in self?.refreshEnabled() } }
         await editor.reload(); refresh()
+        connectionsView.followingKeyView = loginButton
+        if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
     }
     public func present() async { await prepare(); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
     public func suspend() {
         active = false; pageValid = false; generation &+= 1
         if let observer { editor.removeChangeObserver(observer); self.observer = nil }
+        if let connectionObserver { editor.connections.removeObserver(connectionObserver); self.connectionObserver = nil }
+        connectionsView.suspend()
         refreshEnabled()
     }
     public func windowWillClose(_ notification: Notification) { suspend() }
@@ -86,7 +97,7 @@ import AppKit
         for (a,b) in zip(focusOrder,focusOrder.dropFirst()) {a.nextKeyView=b}
         window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
-        for view in [titleLabel,privacy,subscriptions,readerStack,login,status,buttons] {
+        for view in [titleLabel,privacy,subscriptions,connectionsView,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
@@ -113,12 +124,15 @@ import AppKit
             window?.title = SettingsWords.text("First run", "首次运行", language)
             titleLabel.stringValue = SettingsWords.text("Set up ModelPlan", "设置 ModelPlan", language)
             privacy.stringValue = page.privacy.value(language)
+            connectionsView.apply(language: language)
+            readerStack.isHidden = editor.connections.isAvailable
+            subscriptions.isHidden = editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
                 : SettingsWords.text("Subscriptions detected", "已检测到的订阅", language) + "\n" + page.subscriptions.map { [$0.name.value(language),$0.plan].filter { !$0.isEmpty }.joined(separator: " · ") }.joined(separator: "\n")
             for id in OptionalReaderID.allCases {
                 guard let reader = page.readers.first(where: { $0.id.rawValue == id.rawValue }) else { continue }
-                readerButtons[id]?.title = reader.title + " — " + reader.description.value(language)
+                readerButtons[id]?.title = reader.title + " — " + SettingsWords.text("Local choice only; not shared authorization", "仅为本地选择，不代表共享授权", language)
                 readerButtons[id]?.state = options?.readerConsent[id] == true ? .on : .off
             }
             loginButton.title = LoginSetting.title.value(language)
@@ -136,9 +150,9 @@ import AppKit
         refreshEnabled()
     }
     private func refreshEnabled() {
-        let enabled = active && pageValid && !busy && !editor.isSaving && options != nil
+        let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil
         loginButton.isEnabled = enabled
-        for button in readerButtons.values { button.isEnabled = enabled }
+        for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         doneButton.isEnabled = enabled
         helpButton.isEnabled = enabled && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }

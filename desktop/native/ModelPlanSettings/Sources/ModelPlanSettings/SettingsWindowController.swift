@@ -100,6 +100,7 @@ enum SettingsWords {
     private let sidebar = NSTableView()
     private let glass = NSVisualEffectView()
     private let stack = NSStackView()
+    private lazy var connectionsView = SettingsConnectionsView(editor: editor)
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -164,7 +165,10 @@ enum SettingsWords {
         refresh()
     }
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
-    public func windowWillClose(_ notification: Notification) { for row in rows.values { row.diagram?.stop() } }
+    public func windowWillClose(_ notification: Notification) {
+        for row in rows.values { row.diagram?.stop() }
+        connectionsView.suspend()
+    }
     public func controlTextDidChange(_ obj: Notification) { if obj.object as? NSSearchField === searchField { refresh() } }
     public func numberOfRows(in tableView: NSTableView) -> Int { SettingsStructure.task65.panes.count }
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -206,6 +210,8 @@ enum SettingsWords {
         status.setAccessibilityIdentifier("settings.status"); status.setAccessibilityRole(.staticText)
         empty.font = .systemFont(ofSize: 13); empty.textColor = .secondaryLabelColor
         for view in [heading, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
+        stack.addArrangedSubview(connectionsView)
+        connectionsView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         NSLayoutConstraint.activate([
             side.leadingAnchor.constraint(equalTo: root.leadingAnchor), side.topAnchor.constraint(equalTo: root.topAnchor),
             side.bottomAnchor.constraint(equalTo: root.bottomAnchor), side.widthAnchor.constraint(equalToConstant: 236),
@@ -256,6 +262,11 @@ enum SettingsWords {
         if window?.appearance?.name != desiredAppearance { window?.appearance = desiredAppearance.flatMap(NSAppearance.init(named:)) }
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let connectionsWereHidden = connectionsView.isHidden
+        connectionsView.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
+            : !["connect", "tool", "plugin", "连接", "工具", "插件", "订阅"].contains(where: { query.localizedCaseInsensitiveContains($0) })
+        if connectionsView.isHidden && !connectionsWereHidden { connectionsView.suspend() }
+        connectionsView.apply(language: language)
         heading.stringValue = query.isEmpty
             ? SettingsStructure.task65.panes.first(where: { $0.id == selectedPaneID })!.title.value(language)
             : SettingsWords.text("Search results", "搜索结果", language)
@@ -267,6 +278,7 @@ enum SettingsWords {
         do {
             let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
+                .filter { !editor.connections.isAvailable || ($0.key != .detectedReaders && $0.key != .optionalReaders) }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -280,7 +292,7 @@ enum SettingsWords {
                 for (index, key) in keys.enumerated() {
                     let row = rows[key] ?? SettingsNativeRow(key: key); rows[key] = row
                     if row.superview !== stack {
-                        stack.insertArrangedSubview(row, at: index + 3)
+                        stack.insertArrangedSubview(row, at: index + 4)
                         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
                     }
                 }
@@ -375,7 +387,7 @@ enum SettingsWords {
         guard owns(sender) else { return }
         switch action {
         case .copyDiagnostics:
-            if clipboard.writeDiagnostics(editor.context.about.diagnosticText) {
+            if SettingsDiagnosticCopy.copy(editor.context.about, to: clipboard) {
                 feedback = .copied
                 if errorSource == .clipboard { errorMessage = nil; errorSource = nil }
             } else {
