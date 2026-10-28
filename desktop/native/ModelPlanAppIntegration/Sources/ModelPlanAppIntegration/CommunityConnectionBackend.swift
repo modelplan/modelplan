@@ -31,13 +31,14 @@ import ModelPlanSettings
     }
     public func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool],
                                      request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
-        // Forget is a separate explicit flow, never generated from first-run unchecked items.
-        guard deny.isEmpty else { throw SettingsConnectionFailure.unavailable }
+        // A deny-only request is the separately confirmed Forget flow. First-run omission
+        // never becomes denial, and granting and deleting are never combined by this service.
+        guard deny.isEmpty || allow.isEmpty else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
         let before = try await port.readCanonicalConsent()
         try check(token)
-        let payload = try CommunityConsentGrantPayload(preview: .init(canonical: before), allow: allow, deny: [], request: request)
+        let payload = try CommunityConsentGrantPayload(preview: .init(canonical: before), allow: allow, deny: deny, request: request)
         let bytes = try JSONEncoder().encode(payload)
         try check(token)
         try await port.applyConsentJSON(bytes)
@@ -56,7 +57,7 @@ import ModelPlanSettings
         return try await applyStandardConsent(allow: [tool], deny: [], request: request)
     }
     public func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
-        throw SettingsConnectionFailure.unavailable
+        try await applyStandardConsent(allow: [], deny: [tool], request: request)
     }
     public func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult {
         throw SettingsConnectionFailure.unavailable
