@@ -6,10 +6,16 @@ import ModelPlanShell
 import XCTest
 import ModelPlanCore
 import ModelPlanCommunityHost
-import ModelPlanAppIntegration
+@testable import ModelPlanAppIntegration
 import ModelPlanSettings
 
 @MainActor final class ProductionApplicationFactoryTests: XCTestCase {
+    private actor NoConsentTransport: CLITransport, ConsentJSONTransport {
+        func execute(_ command: CLICommand) async throws -> CommandResult { throw TransportError.launchFailed }
+        func readConsentJSON() async throws -> CommandResult { throw TransportError.launchFailed }
+        func grantConsentJSON(_ payload: Data) async throws -> CommandResult { throw TransportError.launchFailed }
+    }
+
     private final class Companion: CommunityCompanionSurface {
         var showConsole: (() -> Void)?, showSettings: (() -> Void)?
         func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {}
@@ -68,6 +74,8 @@ import ModelPlanSettings
         XCTAssertNil(delegate.settingsIntegration)
         let item = delegate.configureSettings(LifecycleCoordinator(store: SnapshotStore(transport: desktop)))
         XCTAssertEqual(item?.isEnabled, false)
+        XCTAssertTrue(item?.title.contains("quit and reopen ModelPlan") == true)
+        XCTAssertFalse(item?.title.contains("unavailable") == true)
         XCTAssertNil(delegate.settingsIntegration)
     }
     func testNormalEntryFactoryRetainsItsRequiredCompanionWithoutLaunching() {
@@ -84,4 +92,38 @@ import ModelPlanSettings
         XCTAssertTrue((unwrapped as AnyObject?) === companion, "Removing companion forwarding must fail this wiring check")
         XCTAssertNotNil(backend.onCanonicalReadback, "Production composition must route readback to the existing delegate")
     }
+    func testActualProductionDockAndSettingsFactoriesInstallSamePlacementSubscriber() async throws {
+        let dock = ProductionDockFactory.community()
+        defer { dock.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("production-placement-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let application = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { dock.apply($0) }
+        let base = CommunitySettingsSession(application: application, canPresent: { false })
+        let transport = NoConsentTransport()
+        let backend = CommunityConnectionBackend(port: CommunityCLIConsentPort(transport: transport), desktop: .init(readOnly: transport, normal: transport))
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: application, backend: backend,
+            placementSource: dock, canPresent: { false })
+        defer { entry.flow.dispose() }
+        XCTAssertEqual(dock.purpose, .production)
+        XCTAssertNotNil(dock.onPlacementObserved, "the actual production factory must install the callback")
+        XCTAssertTrue(entry.flow.application === application)
+        await application.reload()
+        let before = try XCTUnwrap(application.latest).snapshot
+        try CommunityDockPlacementFacts.requireSynchronized(nil, recovering: false, application: application)
+        let area = CGRect(x: 0, y: 0, width: 1200, height: 900)
+        let layout = DockEdgeLayout(displayID: "fixture", edge: .left, expandedSize: CGSize(width: 60, height: 200),
+            sliverLength: 100, sliverThickness: 4, hoverRects: [CGRect(x: 0, y: 0, width: 60, height: 200)])
+        let fact = try XCTUnwrap(DockEdgeGeometry.resolve(preference: .init(displayID: "fixture", edge: .left),
+            displays: [.init(id: "fixture", frame: area, visibleFrame: area)], layouts: [layout], pointer: nil, primaryID: "fixture"))
+        dock.onPlacementObserved?(fact, true)
+        try CommunityDockPlacementFacts.requireSynchronized(fact, recovering: true, application: application)
+        XCTAssertEqual(application.editor.context.dockPlacementObservation?.edge, .left)
+        XCTAssertEqual(application.latest?.snapshot.revision, before.revision)
+        XCTAssertEqual(application.latest?.snapshot.preferences.dockEdge, before.preferences.dockEdge)
+        dock.onPlacementObserved?(nil, false)
+        XCTAssertNil(application.editor.context.dockPlacementObservation)
+        dock.close()
+        XCTAssertNil(dock.nativePanel, "construction must not open a panel or read an account")
+    }
+
 }

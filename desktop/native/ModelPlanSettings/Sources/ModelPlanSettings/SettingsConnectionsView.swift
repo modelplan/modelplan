@@ -76,6 +76,17 @@ import AppKit
             addArrangedSubview(button(.init("Check component and instructions in About", "在关于中检查组件与说明"), id: "connections.requestHelp",
                 enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
         }
+        let readingBlocked: Bool
+        switch controller.phase {
+        case .consentRecordedReadingBlocked: readingBlocked = true
+        case .idle: readingBlocked = controller.snapshot.map { $0.mode == .off || $0.mode == .unknown } ?? false
+        default: readingBlocked = false
+        }
+        if readingBlocked {
+            label(.init("Usage reading is off or has not been verified. Open About for reading-mode instructions.", "用量读取已停用或尚未核验，请在关于中查看读取模式说明。"))
+            addArrangedSubview(button(.init("Review reading-mode instructions in About", "在关于中查看读取模式说明"), id: "connections.modeHelp",
+                enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
+        }
         if preferenceFailed { label(.init("Could not save visibility. The previous setting is retained.", "无法保存可见性；已保留原设置。")) }
         addArrangedSubview(button(.init("Check detected tools", "检查已检测工具"), id: "connections.detect",
                                   enabled: controller.availability.canInspect && !controller.isBusy) { [weak self] in
@@ -86,7 +97,7 @@ import AppKit
             label(.init("Usage reading mode: " + mode.english, "用量读取模式：" + mode.chinese))
             if let preview = snapshot.consentPreview { label(preview.notice) }
             if intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
-            if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }
+            if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools were found. Sign in to a supported tool, then choose Check detected tools.", "尚未找到工具。请先登录受支持的工具，再点“检查已检测工具”。")) }
             toolGroup(snapshot.standardTools, advanced: false)
             if firstRun {
                 label(.init("Checked tools are intentions only. Use Allow and confirm to request shared permission.", "勾选仅代表意向；点击授权并确认后才会请求共享权限。"))
@@ -174,7 +185,8 @@ import AppKit
             let hosts = value.providerHosts.isEmpty ? SettingsText("None reported", "未报告")
                 : SettingsText(value.providerHosts.joined(separator: ", "), value.providerHosts.joined(separator: ", "))
             label(.init("Provider hosts: " + hosts.english, "服务商主机：" + hosts.chinese))
-            label(.init("Recorded Keychain permission: " + value.keychain.rawValue, "已记录钥匙串权限：" + value.keychain.rawValue))
+            let keychainPermission = SettingsConnectionPresentation.keychain(value.keychain)
+            label(.init("Keychain permission: " + keychainPermission.english, "钥匙串权限：" + keychainPermission.chinese))
             if !advanced && value.keychainEligible {
                 let keychain = button(.init("Allow Claude Code Keychain access", "允许 Claude Code 访问钥匙串"),
                     id: "connections.keychain.claude", enabled: controller.canConnect(.claude, access: .standard)
@@ -186,8 +198,9 @@ import AppKit
                 keychain.setButtonType(.switch)
                 keychain.state = intent?.keychainAllowedTools.contains(.claude) == true ? .on : .off
                 addArrangedSubview(keychain)
-                label(.init("Optional. macOS may ask for approval when reading Claude Code usage. Leaving this unchecked keeps the recorded Keychain choice.",
-                            "可选。读取 Claude Code 用量时 macOS 可能请求批准；不勾选会保留已记录的钥匙串选择。"))
+                let submit = firstRun ? SettingsText("Allow selected tools", "授权所选工具") : SettingsText("Connect", "连接")
+                label(.init("To read Claude Code usage, select this option, choose \(submit.english), and confirm. macOS may ask for approval. Leaving it unchecked keeps the recorded choice; without existing permission, usage cannot be read.",
+                            "要读取 Claude Code 用量，请勾选此项，再点击“\(submit.chinese)”并确认；macOS 可能请求批准。不勾选会保留已记录的选择；若尚未允许，则无法读取用量。"))
             }
             if firstRun && !advanced {
                 let choice = button(.init("Choose " + value.tool.title, "选择 " + value.tool.title),

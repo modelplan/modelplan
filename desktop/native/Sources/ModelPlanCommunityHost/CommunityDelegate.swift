@@ -47,7 +47,7 @@ import ModelPlanShell
             Task { await integration.restorePreferences() }
         } catch {
             // Preserve malformed/unavailable preferences; do not create a replacement store or expose paths.
-            let item = NSMenuItem(title: "Settings unavailable / 设置不可用", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "Settings could not open — quit and reopen ModelPlan / 设置未能打开，请退出并重新打开 ModelPlan", action: nil, keyEquivalent: "")
             item.isEnabled = false; settingsItem = item
         }
         return settingsItem

@@ -573,6 +573,7 @@ struct NativeFailure:Error {let message:String}
         let font=try fonts.font("mono",size:11,weight:400)
         try require((CTFontCopyPostScriptName(font) as String)=="JetBrainsMono-Regular","actual Regular instance, not the first Thin descriptor")
     }
+    checks+=try dockVisualChecks(root)
     let b23Checks=try b23CardAccessibilityChecks();checks+=b23Checks
     print("PASS \(b23Checks) B23 card AX/localized-copy/stable-control checks (offscreen metadata only)")
     let receipt:[String:Any]=["schemaVersion":1,"checks":checks,"b23AccessibilityChecks":b23Checks,"result":"passed","fixtureOnly":true,

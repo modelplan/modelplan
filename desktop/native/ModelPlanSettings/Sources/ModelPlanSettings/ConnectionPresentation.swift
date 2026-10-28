@@ -19,6 +19,14 @@ public enum SettingsConnectionPresentation {
         case .unknown: return .init("Not verified", "尚未核验")
         }
     }
+    public static func keychain(_ value: SettingsRecordedKeychain) -> SettingsText {
+        switch value {
+        case .allowed: return .init("Allowed by your choice", "已按你的选择允许")
+        case .denied: return .init("Not allowed by your choice", "你选择了不允许")
+        case .unset: return .init("Permission not requested yet", "尚未请求权限")
+        case .unknown: return .init("Permission not verified", "尚未核验权限")
+        }
+    }
     public static func presence(_ value: SettingsToolPresence) -> SettingsText {
         switch value {
         case .detected: return .init("Detected", "已检测到")
@@ -98,7 +106,7 @@ public enum SettingsConnectionPresentation {
         case .running: return .init("Request in progress…", "请求处理中…")
         case .cancelled: return .init("Request cancelled. An already accepted external action may still complete.", "请求已取消；已被外部接受的操作仍可能完成。")
         case .cleanupPending: return .init("Current permissions were read back. Cached-reading cleanup is still incomplete; review the manual cleanup instructions.", "已核验当前权限；缓存读数清理尚未完成，请查看手动清理说明。")
-        case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
+        case .consentRecordedReadingBlocked: return .init("Consent was recorded, but usage reading is still off or unverified. Open About for reading-mode instructions.", "授权选择已记录，但用量读取仍停用或尚未核验。请在关于中查看读取模式说明。")
         case .failed(let code):
             switch code {
             case .mutationReadbackUnavailable: return .init("The request was accepted, but current permissions could not be verified. No current permission or completed cleanup is assumed. Open About before retrying.", "请求已被接受，但无法核验当前权限；不认定当前授权或清理已完成。请在关于中查看说明后再重试。")

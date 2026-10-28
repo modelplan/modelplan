@@ -13,7 +13,6 @@ import ModelPlanCore
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        // Only a consistent containing bundle for the reviewed release may expose the consent API.
         let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let preferenceURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
@@ -45,28 +44,14 @@ import ModelPlanCore
                     NSApplication.shared.appearance = desired.flatMap { NSAppearance(named: $0) }
                 }
             }
-            dock.commitDisplayPlacement = { [weak application] id, edge, fraction in
-                guard let application else { return }
-                Task { _ = try? await application.editor.commit(.dockPlacement(displayID: id, edge: edge, alongFraction: fraction)) }
-            }
-            dock.displayChoicesChanged = { [weak application] displays in
-                guard let application else { return }
-                var context = application.editor.context; context.displays = displays
-                application.update(context: context)
-            }
-            dock.catalogueChanged = { [weak application] rows in
-                guard let application else { return }
-                var context = application.editor.context; context.subscriptions = rows
-                application.update(context: context)
-            }
             let base = CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
                 makeHelp: { application in
                     let help = await InstrumentHelpComposition.restored(application: application)
                     surfaces.bindHelp(help)
                     return help
                 })
-            return try CommunityApplicationFactory.connectSettings(base: base, application: application,
-                backend: backend, placementSource: dock, canPresent: { [weak gate] in gate?.canPresent == true })
+            return try CommunityApplicationFactory.connectSettings(base: base, application: application, backend: backend, placementSource: dock,
+                canPresent: { [weak gate] in gate?.canPresent == true })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }

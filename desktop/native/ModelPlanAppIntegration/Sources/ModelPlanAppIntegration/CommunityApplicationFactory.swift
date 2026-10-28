@@ -6,7 +6,7 @@ import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanSettings
 
-/// The normal executable and construction checks share this required-companion boundary.
+/// Consent/Settings composition shared by the normal executable and construction checks.
 @MainActor public enum CommunityApplicationFactory {
     /// Both normal entries and wiring checks call this exact composition factory.
     public static func makeSurfaces(
@@ -45,7 +45,7 @@ import ModelPlanSettings
     public static func connectSettings(base: CommunitySettingsSession,
                                        application: SettingsApplicationCoordinator,
                                        backend: any SettingsConnectionAllowing,
-                                       placementSource: any CommunityPlacementProducing,
+                                       placementSource: (any CommunityPlacementProducing)? = nil,
                                        canPresent: @escaping @MainActor () -> Bool,
                                        makeFirstRun: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) throws -> CommunityConnectionIntegration {
         let flow = try CommunityConnectionFlow(application: application, backend: backend,
@@ -53,13 +53,13 @@ import ModelPlanSettings
                 await base?.windowHost.present(paneID: pane)
             }, makeFirstRun: makeFirstRun)
         if let canonical = backend as? CommunityConnectionBackend { try canonical.bindPresentation(to: application.editor) }
-        CommunityPlacementBinding.install(on: placementSource, application: application)
+        if let placementSource { CommunityPlacementBinding.install(on: placementSource, application: application) }
         let entry = try CommunityConnectionIntegration(base: base, flow: flow)
         try CommunityConnectionWiring.requireInstalled(entry, application: application, backend: backend)
         return entry
     }
     public static func makeDelegate(surfaces: any NativeSurfaceProvider,
-                                    companion: any CommunityCompanionSurface,
+                                    companion: (any CommunityCompanionSurface)? = nil,
                                     consentBackend: CommunityConnectionBackend,
                                     transport: (any CLITransport)? = nil,
                                     statusItemTitle: String = "ModelPlan",

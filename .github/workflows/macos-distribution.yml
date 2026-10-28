@@ -53,8 +53,8 @@ jobs:
           PY
       - name: Test release gates with synthetic values only
         run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
-      - name: Fetch CLI archives from the checked-in public pin
-        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/cli-archives"
+      - name: Fetch CLI archives from the reviewed native consent pin
+        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
       - name: Build universal neutral app (ad-hoc only)
         run: |
           bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"

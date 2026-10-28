@@ -6,11 +6,15 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.44, Codex plugin 0.15.36 and Claude Code plugin 0.7.35 (2026-10-28)
+
 - CLI adds cache-only `windows` for public time-of-day billing rates, local-time changes and unverified evidence labels; `lineup` / `plan` and task-start briefs include declared-plan rate context and optional cheaper-window hints. Expired horizons stay unknown, and `lineup <developer-id>` now selects that developer.
   CLI 新增只读缓存的 `windows`，显示公开分时计费倍率、本机时间和未核实标记；`lineup` / `plan` 与任务简报提供已声明套餐的倍率及可选低价时段。过期时域保持未知，`lineup <开发者 ID>` 现正确筛选开发者。
 
 - CLI consent commands explain the required `--json` flag on stderr. On macOS, when unset Claude Keychain permission blocks a saved-login read, the reader notice and consent readback name the missing choice and direct users to allow Keychain for Claude Code in Settings. Linux keeps the saved-login notice without a Keychain remedy.
   CLI 授权命令在缺少 `--json` 时输出用法；macOS 上 Claude 钥匙串选择未设置而无法读取时，读取器提示及授权回读说明原因，并引导用户在设置中允许 Claude Code 访问钥匙串。Linux 保留已有登录不可读的提示，不显示钥匙串操作。
+
+- Both plugins and their bundled Skill pin CLI v0.5.44 and its published archive checksums.
 
 ## CLI v0.5.43, Codex plugin 0.15.35 and Claude Code plugin 0.7.34 (2026-10-28)
 

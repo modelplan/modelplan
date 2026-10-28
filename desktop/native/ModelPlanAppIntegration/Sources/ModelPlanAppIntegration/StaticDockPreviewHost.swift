@@ -46,6 +46,10 @@ public struct StaticDockGeometry {
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
+/// Empty-state copy must not swallow the neutral Dock's background grab area.
+@MainActor private final class StaticDockStatusLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
 
 public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
@@ -113,7 +117,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var cardID: String?
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
-    private let empty = NSTextField(wrappingLabelWithString: "No local subscriptions / 暂无本地订阅")
+    private let empty = StaticDockStatusLabel(wrappingLabelWithString: "No local subscriptions / 暂无本地订阅")
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = NSButton(frame: .zero)
@@ -288,7 +292,19 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if let rect = geometry.consoleButton { consoleButton.frame = rect }
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
-        // Resolve every orientation before tracking. Pointer samples reuse prepared geometry/pixels.
+        // The same neutral rectangle is valid at every edge. Register destinations before tracking,
+        // so a right-edge Community Dock can actually preview and drop on the left or bottom.
+        if appearance == nil {
+            for orientation in DockEdgeGeometry.allowedEdges where orientation != selected {
+                var candidate = geometry
+                let scales = sliverParameters.sizeScales
+                let factor = passPreferences.size == .small ? scales.small : passPreferences.size == .large ? scales.large : scales.medium
+                try? candidate.registerSliver(hullBounds: dockView.bounds, expandedSize: dockView.frame.size,
+                    edge: settingsEdge(orientation), parameters: sliverParameters, scale: factor)
+                nextGeometries[orientation] = candidate; nextViews[orientation] = dockView
+            }
+        }
+        // Resolve every official orientation before tracking. Pointer samples reuse prepared pixels.
         if createsNativePanels, let appearance {
             for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
                 var oriented = passPreferences
@@ -436,7 +452,21 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         lastPlacementObservation = observation
         callback(observation.placement, observation.recovering)
     }
+    private func bindBackgroundMovement(_ value: DockEdgePresentation) {
+        dockView.backgroundDragDelegate = nil
+        alternateViews.forEach { $0.backgroundDragDelegate = nil }
+        edge.dragRegions = nil
+        guard permitted, !retired, value.state == .expanded else { return }
+        let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let view = edgeViews[orientation] ?? dockView
+        let current = edgeGeometries[orientation] ?? geometry
+        if let regions = current.dragRegions ?? view.registeredDragRegions(excluding: current.consoleButton.map { [$0] } ?? []) {
+            edge.dragRegions = regions; view.backgroundDragDelegate = edge
+        }
+    }
     private func present(_ value: DockEdgePresentation) {
+        // Native panels and the no-window construction checks share this actual input binding.
+        bindBackgroundMovement(value)
         guard createsNativePanels else { publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
@@ -456,9 +486,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
             if let rect = current.consoleButton { consoleButton.frame = rect }
-            let regions = current.dragRegions ?? view.registeredDragRegions(excluding: current.consoleButton.map { [$0] } ?? [])
-            if let regions { edge.dragRegions = regions; view.backgroundDragDelegate = edge }
-            else { view.backgroundDragDelegate = nil; edge.dragRegions = nil }
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
@@ -468,9 +495,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
         if let preview = value.snapPreview, let view = edgeViews[preview.edge],
-           view.registeredHullPath != nil || view.registeredMovePreviewImage != nil {
+           view.registeredMoveOutlinePath != nil || view.registeredMovePreviewImage != nil {
             if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
-            outlineView.path = view.registeredHullPath
+            outlineView.path = view.registeredMoveOutlinePath
             outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }

@@ -1,40 +1,28 @@
-# Consent API bundle consistency
+# Production Settings and Dock composition
 
-`CommunityApp` calls `CommunityApplicationFactory.makeConsentPort(bundle:transport:)` over its own containing bundle and the same bundle's pinned `BundledCLI`. The factory enables the v0.5.43 consent API only when `CommunityConsentBundleIdentity.matches(bundle:)` accepts all fixed, bounded inputs. Old, absent, malformed or inconsistent metadata leaves the port unverified, with no helper invocation during construction.
+The consent component and bundle-consistency contract are on main; see [the consent core](CONSENT_CORE.md). `CommunityApp` retains that port/backend, first-run flow and verified About context while adding the production Dock companion.
 
-The packager supplies these `Contents/Info.plist` keys:
+`CommunityApplicationFactory.connectSettings` binds one canonical backend into the existing Settings editor, then installs `CommunityPlacementBinding` on the same Dock. The `CommunityPlacementProducing` port supplies current placement; the optional `CommunityDockSettingsRouting` port supplies the existing drag-commit, display and subscription callbacks. Every explicit drag receipt saves through that same editor. Topology recovery updates context only and never overwrites durable placement preferences. The native Settings row labels the saved value as preferred and shows the actual placement first in its subtitle.
 
-| Key | Required value |
-| --- | --- |
-| `ModelPlanPublicSource` | The app's public source revision, 40 lowercase hex characters |
-| `ModelPlanHelperVersion` | `0.5.43` |
-| `ModelPlanSourceHelperSHA256` | One reviewed raw upstream helper SHA-256 for a thin package |
-| `ModelPlanSourceHelperSHA256ByArchitecture` | For a universal helper, both `arm64` and `x86_64` raw upstream hashes instead of the single-source key |
-| `ModelPlanBundledHelperSHA256` | Actual helper SHA-256 after the packager's final helper signing step |
+The default Community factory registers its own painted rectangular body and move outline without an official skin. `registeredMoveOutlinePath` is separate from the supplier hull contract: a neutral preview must never replace an appearance’s registered sliver span/anchor with the full view rectangle. Its row control rectangles exclude an 8-point scaled grab margin; drawing, pointer actions and accessibility share those control rectangles. The empty-status label is hit-through. Every allowed target edge is registered before tracking. The same expanded-state handler binding runs before the native-panel boundary, so no-window checks inspect the actual production input graph.
 
-The reviewed raw hashes are published in `CommunityConsentBundleIdentity.sourceSHA256ByArchitecture`. The actual bytes of `Contents/Helpers/modelplan`, the bundled hash in Info and `Contents/Resources/modelplan.sha256` must agree. The signature-covered resource pin must be refreshed if signing changes the helper. Symlinked, missing or oversized fixed inputs are rejected. `BundledCLI` still performs its independent hash check before a requested command.
+The factory regressions verify default neutral registration, row actions, hidden/disposed regions and the real registered handler. The latter starts on the right, begins/updates/ends a move through that controller, observes a left snap destination, and verifies persisted left-edge intent plus the native catalogue's actual-left subtitle. It injects only display/clock/scheduler and disables panels; no official skin, manual callback installation, native input event, screen or owner journey is substituted. Native vector/raster preview presentation and official assembly still require their own packaged/native acceptance.
 
-This gate checks consistency, **not standalone source provenance, signature authenticity, reader consent, account availability or working quota data**. M0 owns verified upstream acquisition and assembly/signing provenance. Synthetic fixtures deliberately use inert helper bytes and test only this consistency contract. No credential or owner profile is read by the factory.
+## Typed retained inspection
 
-The private Beta07 bootstrap retains its additional private-source/review identity checks and uses the same reviewed arm64 release tuple. Its new identity gate may enable its port; old Beta06 stays unchanged. M0's actual public/community producer (`tools/package-neutral.sh`) now calls `tools/write-consent-bundle-identity.py` after sealing the helper and before sealing the App. The writer checks both raw helper bytes against the reviewed source hashes and writes Info plus the resource pin. This M0-owned producer is included in the Settings integration; the actual package script has not been executed by M4. M0 still owns checking the resulting package and every later reseal: whenever helper bytes change, both `ModelPlanBundledHelperSHA256` and the resource pin must be refreshed before sealing the App. Source integration and metadata checks do not prove an actual package or owner journey.
-
-## Typed retained inspection for RELPIPE
-
-The root delegate exposes read-only `settingsIntegration` and `companionSurface` references to its actual retained objects. Its public, idempotent `configureSettings(gate)` is the same function used at normal launch. Inspection must call that boundary and read the retained integration, rather than calling a parallel factory or force-casting it to the unwrapped `CommunitySettingsSession`:
+The delegate exposes read-only `settingsIntegration` and `companionSurface` references to its actual retained objects. Its idempotent `configureSettings(gate)` is also used at normal launch:
 
 ```swift
 _ = delegate.configureSettings(gate)
 guard let actual = delegate.settingsIntegration as? CommunityConnectionIntegration else { throw CommunityConnectionWiringError.entryMissing }
 let application = actual.flow.application
 try CommunityConnectionWiring.requireInstalled(actual, application: application, backend: backend)
-await actual.restorePreferences() // coalesced with the existing scheduled restore
+await actual.restorePreferences()
 let connections = application.editor.connections
-let sameBackend = connections.isBound(to: backend)
-let installed = connections.hasAllowanceBackend && sameBackend
-let capability = backend.settingsConnectionAvailability // reads the retained command port's capability
-// Require equality with connections.availability; derive API readiness from the actual flags/reason.
+let installed = connections.hasAllowanceBackend && connections.isBound(to: backend)
+let capability = backend.settingsConnectionAvailability
 ```
 
-`CommunityConnectionBackend` requires a nonoptional command port at construction; no reflection of guessed field names or second presence flag is needed. A present service with `.unverified` capability remains unverified. For the actual retained Dock, cast `delegate.companionSurface` to `StaticDockPreviewHost` and inspect its `purpose == .production`; its historical type name does not establish purpose. Keep the missing-companion, actual `.selfTest`, missing-service and unverified-API negative controls.
+Require equality between the retained backend's capability and `connections.availability`; an installed but unverified service remains unverified. For the Dock, inspect the retained host's `purpose == .production`; the historical class name does not determine its purpose. Preserve missing-companion, self-test, missing-service and unverified-API negative controls.
 
-A newly created `LifecycleCoordinator` starts with `canPresent == false`; inspection must not start OS events/runtime or manufacture a permissive presentation flag. Restoring the real integration can inspect canonical consent, so the smoke owner must retain its isolated input/network policy. M4 has only run in-memory construction checks with an unavailable fake transport, and has not executed an App, helper or smoke run locally. RELPIPE owns its hook/checker, and M0 integrates shared entry conflicts.
+A new lifecycle coordinator starts with presentation disabled. Inspection must not start OS events/runtime or manufacture a presentation grant. Canonical restoration may invoke the bundled component, so packaged smoke retains its isolated input/network policy. Local construction checks use only synthetic transports and fixtures. Actual packaged smoke, native consent and the owner journey remain separate acceptance gates.

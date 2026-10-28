@@ -3,22 +3,10 @@ import AppKit
 import CryptoKit
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
-import ModelPlanShell
-import ModelPlanCommunityHost
 @testable import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class ConsentCoreQ2Tests: XCTestCase {
-    private final class Placement: CommunityPlacementProducing {
-        var onPlacementObserved: ((DockEdgePlacement?, Bool) -> Void)?
-    }
-    private final class Companion: CommunityCompanionSurface {
-        var showConsole: (() -> Void)?, showSettings: (() -> Void)?
-        func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {}
-        func setPresentationAllowed(_ allowed: Bool) {}
-        func close() {}
-    }
     private actor Wire: ConsentJSONTransport {
         var reads = 0, writes = 0, revoked = false
         var failReadback = false, badReceipt = false, failAllReads = false, ordinarySuccess = false
@@ -86,7 +74,7 @@ import ModelPlanCommunityHost
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { _ in about })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
-            placementSource: Placement(), canPresent: { true }, makeFirstRun: { _ in firstRun })
+            canPresent: { true }, makeFirstRun: { _ in firstRun })
         defer { entry.flow.dispose() }
         await entry.restorePreferences()
         let view = SettingsConnectionsView(editor: app.editor, firstRun: true)
@@ -110,7 +98,7 @@ import ModelPlanCommunityHost
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
-        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, placementSource: Placement(), canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
         await entry.restorePreferences()
         let original = try XCTUnwrap(app.editor.connections.snapshot)
@@ -167,10 +155,10 @@ import ModelPlanCommunityHost
         let context = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: port.availability)
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
         var factories = 0
-        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: CommunityInstrumentSurfaceProvider(), companion: Companion(), consentBackend: backend) { _ in
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: CommunityInstrumentSurfaceProvider(), consentBackend: backend) { _ in
             factories += 1
             let base = CommunitySettingsSession(application: app, canPresent: { false })
-            return try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, placementSource: Placement(), canPresent: { false })
+            return try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         }
         let lifecycle = LifecycleCoordinator(store: SnapshotStore(transport: desktop))
         XCTAssertNil(delegate.settingsIntegration)
@@ -192,7 +180,7 @@ import ModelPlanCommunityHost
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {}, makeSurface: { _ in about })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
-            placementSource: Placement(), canPresent: { true }, makeFirstRun: { _ in firstRun })
+            canPresent: { true }, makeFirstRun: { _ in firstRun })
         defer { entry.flow.dispose() }
         await entry.restorePreferences()
         let view = SettingsConnectionsView(editor: app.editor, firstRun: true)
@@ -214,7 +202,7 @@ import ModelPlanCommunityHost
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
-        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, placementSource: Placement(), canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
         await entry.restorePreferences()
         let original = try XCTUnwrap(app.editor.connections.snapshot)
@@ -244,7 +232,7 @@ import ModelPlanCommunityHost
         let backend = CommunityConnectionBackend(port: port, desktop: gate)
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
-        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, placementSource: Placement(), canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
         await entry.restorePreferences()
         let admitted = try await gate.execute(.desktop); XCTAssertEqual(admitted.exitCode, 0)
@@ -292,7 +280,7 @@ import ModelPlanCommunityHost
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
         let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
         let base = CommunitySettingsSession(application: app, canPresent: { false })
-        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, placementSource: Placement(), canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
         defer { entry.flow.dispose() }
         let values: [(SettingsReadingMode, String, String)] = [(.automatic, "Automatic reading", "自动读取"),
             (.passive, "Passive reading", "被动读取"), (.off, "Reading disabled", "已停用读取"), (.unknown, "Not verified", "尚未核验")]
