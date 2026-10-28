@@ -13,8 +13,8 @@ import ModelPlanCore
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        // Disabled until packaging verifies a containing consent-API release and its fixtures.
-        let consent = CommunityCLIConsentPort(transport: readOnly)
+        // Only a consistent containing bundle for the reviewed release may expose the consent API.
+        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
@@ -26,7 +26,9 @@ import ModelPlanCore
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
-            let application = SettingsApplicationCoordinator(store: store,
+            var context = SettingsPageContext()
+            if consent.availability.canInspect { context.about.cliVersion = CommunityConsentBundleIdentity.version }
+            let application = SettingsApplicationCoordinator(store: store, context: context,
                 environment: SettingsWindowController.systemEnvironment()) { transaction in
                 dock.apply(transaction)
                 surfaces.apply(transaction)

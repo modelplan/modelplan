@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import Foundation
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanCommunityHost
@@ -6,6 +7,9 @@ import ModelPlanSettings
 
 /// The normal executable and construction checks share this required-companion boundary.
 @MainActor public enum CommunityApplicationFactory {
+    public static func makeConsentPort(bundle: URL, transport: any ConsentJSONTransport) -> CommunityCLIConsentPort {
+        CommunityCLIConsentPort(transport: transport, apiAvailable: CommunityConsentBundleIdentity.matches(bundle: bundle))
+    }
     public static func connectSettings(base: CommunitySettingsSession,
                                        application: SettingsApplicationCoordinator,
                                        backend: any SettingsConnectionAllowing,
