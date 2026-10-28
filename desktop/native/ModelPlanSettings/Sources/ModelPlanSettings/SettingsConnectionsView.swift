@@ -66,13 +66,16 @@ import AppKit
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
+            label(.init("Canonical reading mode: " + snapshot.mode.rawValue, "规范读取模式：" + snapshot.mode.rawValue))
             if firstRun && intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }
             toolGroup(snapshot.standardTools, advanced: false)
             if firstRun {
                 label(.init("Checked tools are intentions only. Use Allow and confirm to request shared permission.", "勾选仅代表意向；点击授权并确认后才会请求共享权限。"))
                 if let preview = snapshot.consentPreview { label(preview.notice) }
-                addArrangedSubview(button(.init("Allow selected tools…", "授权所选工具…"), id: "connections.allowSelected",
+                let title = intent?.denied.isEmpty == false ? SettingsText("Apply consent choices…", "应用授权选择…")
+                    : SettingsText("Allow selected tools…", "授权所选工具…")
+                addArrangedSubview(button(title, id: "connections.allowSelected",
                     enabled: intent.map { controller.canAllow($0) } ?? false) { [weak self] in
                     guard let self, let intent = self.intent else { return }; self.controller.requestAllow(intent)
                 })

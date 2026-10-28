@@ -127,13 +127,15 @@ import ModelPlanCommunityHost
     public func suspend() { flow.suspend(); base.suspend() }
 }
 
-public enum CommunityConnectionWiringError: Error, Equatable { case entryMissing, backendMissing, differentApplication }
+public enum CommunityConnectionWiringError: Error, Equatable { case entryMissing, backendMissing, differentApplication, differentBackend }
 /// The actual entry's construction test must call this on its returned integration, not a parallel fixture.
 @MainActor public enum CommunityConnectionWiring {
     public static func requireInstalled(_ entry: any CommunitySettingsIntegration,
-                                        application: SettingsApplicationCoordinator) throws {
+                                        application: SettingsApplicationCoordinator,
+                                        backend: any SettingsConnectionAllowing) throws {
         guard let entry = entry as? CommunityConnectionIntegration else { throw CommunityConnectionWiringError.entryMissing }
         guard entry.flow.application === application else { throw CommunityConnectionWiringError.differentApplication }
         try entry.flow.requireBackend()
+        guard application.editor.connections.isBound(to: backend) else { throw CommunityConnectionWiringError.differentBackend }
     }
 }

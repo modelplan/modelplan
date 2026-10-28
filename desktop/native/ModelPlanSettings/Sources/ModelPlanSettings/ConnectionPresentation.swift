@@ -45,10 +45,10 @@ public enum SettingsConnectionPresentation {
     }
     public static func confirmation(_ action: SettingsConnectionAction) -> SettingsText {
         switch action {
-        case .allowStandardTools(let tools):
-            let names = tools.map(\.title).joined(separator: ", ")
-            return .init("Allow shared usage reading for \(names)? Checked tools are your choices, not permission already granted. Browser sessions are excluded.",
-                         "允许共享读取 \(names) 的用量？勾选仅代表你的选择，不代表已授权；不包括浏览器会话。")
+        case .applyStandardConsent(let tools, let denied):
+            let names = tools.map(\.title).joined(separator: ", "), deniedNames = denied.map(\.title).joined(separator: ", ")
+            return .init("Allow: \(names). Deny: \(deniedNames). These choices request shared consent, not activation. Browser sessions and Keychain grants are excluded.",
+                         "允许：\(names)。拒绝：\(deniedNames)。这些选择仅请求共享授权，不表示已启用读取；不包括浏览器会话及钥匙串授权。")
         case .connect(let tool, .browserSession):
             return .init("Enable advanced browser-session reading for \(tool.title)? This is a separate consent request. Detection is not permission. The runtime must explain and authorize any credential access before execution.",
                          "允许 \(tool.title) 的高级浏览器会话读取？这是单独的授权请求，检测结果不代表许可。运行时必须在执行前解释并取得任何凭据访问授权。")
@@ -71,6 +71,7 @@ public enum SettingsConnectionPresentation {
         case .awaitingConfirmation(let confirmation): return self.confirmation(confirmation.action)
         case .running: return .init("Request in progress…", "请求处理中…")
         case .cancelled: return .init("Request cancelled. An already accepted external action may still complete.", "请求已取消；已被外部接受的操作仍可能完成。")
+        case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
         case .failed(let code): return .init("Request unavailable: " + code.rawValue, "请求不可用：" + code.rawValue)
         case .pluginResult(let result):
             switch result.status {

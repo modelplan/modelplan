@@ -17,7 +17,7 @@ import ModelPlanCommunityHost
     var snapshot = try! SettingsConnectionSnapshot()
     var detects = 0, mutations = 0
     func detect() async throws -> SettingsConnectionSnapshot { detects += 1; return snapshot }
-    func allowStandardTools(_ tools: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
+    func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
     func connect(_ tool: SettingsConnectionTool, access: SettingsConnectionAccess, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
     func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
     func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult { mutations += 1; return .init(tool: tool, status: .planned) }
@@ -124,7 +124,7 @@ import ModelPlanCommunityHost
         XCTAssertThrowsError(try CommunityConnectionIntegration(base: UnwiredEntryStub(), flow: flow)) {
             XCTAssertEqual($0 as? CommunityConnectionWiringError, .backendMissing)
         }
-        XCTAssertThrowsError(try CommunityConnectionWiring.requireInstalled(UnwiredEntryStub(), application: application)) {
+        XCTAssertThrowsError(try CommunityConnectionWiring.requireInstalled(UnwiredEntryStub(), application: application, backend: ConnectionBackendFake())) {
             XCTAssertEqual($0 as? CommunityConnectionWiringError, .entryMissing)
         }
         flow.dispose()
@@ -133,9 +133,12 @@ import ModelPlanCommunityHost
         let application = try application(), backend = ConnectionBackendFake()
         let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { false }, showSettings: { _ in })
         let entry = try CommunityConnectionIntegration(base: UnwiredEntryStub(), flow: flow)
-        XCTAssertNoThrow(try CommunityConnectionWiring.requireInstalled(entry, application: application))
-        XCTAssertThrowsError(try CommunityConnectionWiring.requireInstalled(entry, application: self.application())) {
+        XCTAssertNoThrow(try CommunityConnectionWiring.requireInstalled(entry, application: application, backend: backend))
+        XCTAssertThrowsError(try CommunityConnectionWiring.requireInstalled(entry, application: self.application(), backend: backend)) {
             XCTAssertEqual($0 as? CommunityConnectionWiringError, .differentApplication)
+        }
+        XCTAssertThrowsError(try CommunityConnectionWiring.requireInstalled(entry, application: application, backend: ConnectionBackendFake())) {
+            XCTAssertEqual($0 as? CommunityConnectionWiringError, .differentBackend)
         }
         XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
         flow.dispose()

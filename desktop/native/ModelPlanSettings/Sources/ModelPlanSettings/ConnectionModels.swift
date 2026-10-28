@@ -23,6 +23,7 @@ public enum SettingsConnectionTool: String, CaseIterable, Sendable {
     }
 }
 public enum SettingsConnectionAccess: String, Sendable { case standard, browserSession }
+public enum SettingsReadingMode: String, Sendable { case automatic, passive, off, unknown }
 public enum SettingsToolPresence: String, Sendable { case detected, notDetected, unknown, unsupported }
 public enum SettingsSharedAuthorization: String, Sendable { case allowed, noConsent, denied, unknown, notApplicable }
 public enum SettingsToolConnectionState: String, Sendable { case connected, notConnectedYet, off, unknown }
@@ -43,17 +44,18 @@ public struct SettingsConnectionToolState: Equatable, Sendable {
     public var binding: SettingsSubscriptionBinding
     public var access: SettingsConnectionAccess
     public var beta: Bool
+    public var consentEligible: Bool?
     public init(tool: SettingsConnectionTool, presence: SettingsToolPresence = .unknown,
                 authorization: SettingsSharedAuthorization = .unknown,
                 connection: SettingsToolConnectionState = .unknown, quota: SettingsToolQuotaState = .unknown,
                 support: SettingsToolSupport = .unknown, binding: SettingsSubscriptionBinding = .unknown,
-                access: SettingsConnectionAccess = .standard, beta: Bool = false) {
+                access: SettingsConnectionAccess = .standard, beta: Bool = false, consentEligible: Bool? = nil) {
         self.tool = tool; self.presence = presence; self.authorization = authorization
         self.connection = connection; self.quota = quota; self.support = support
-        self.binding = binding; self.access = access; self.beta = beta
+        self.binding = binding; self.access = access; self.beta = beta; self.consentEligible = consentEligible
     }
     /// Draft selection is not a grant, including when detect/preview says selected=true.
-    public var canRequestConnection: Bool { presence == .detected && support != .detectedOnly && support != .unknown }
+    public var canRequestConnection: Bool { presence == .detected && (consentEligible ?? (support != .detectedOnly && support != .unknown)) }
 }
 public struct SettingsVerifiedSubscription: Equatable, Sendable {
     public let reference: String
@@ -90,9 +92,10 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
     public let subscriptions: [SettingsVerifiedSubscription]
     public let unrecognizedTools: [SettingsUnrecognizedTool]
     public let consentPreview: SettingsConsentPreview?
+    public let mode: SettingsReadingMode
     public init(consentGeneration: UInt64? = nil, tools: [SettingsConnectionToolState] = [],
                 subscriptions: [SettingsVerifiedSubscription] = [], unrecognizedTools: [SettingsUnrecognizedTool] = [],
-                consentPreview: SettingsConsentPreview? = nil) throws {
+                consentPreview: SettingsConsentPreview? = nil, mode: SettingsReadingMode = .unknown) throws {
         if let preview = consentPreview {
             guard (1...1_000_000).contains(preview.textVersion),
                   [preview.notice.english, preview.notice.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 }),
@@ -120,6 +123,7 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
         self.consentGeneration = consentGeneration; self.tools = tools; self.subscriptions = subscriptions
         self.unrecognizedTools = unrecognizedTools
         self.consentPreview = consentPreview
+        self.mode = mode
     }
     private static func validReference(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -146,7 +150,7 @@ public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)
     case disconnect(SettingsConnectionTool)
     case installPlugin(SettingsPluginTool)
-    case allowStandardTools([SettingsConnectionTool])
+    case applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool])
 }
 public struct SettingsConnectionConfirmation: Equatable, Sendable {
     public let id: UUID
@@ -175,5 +179,5 @@ public struct SettingsConnectionRequestContext: Equatable, Sendable {
 }
 /// Atomic standard-class intent; browser-session permission is never included in this batch.
 @MainActor public protocol SettingsConnectionAllowing: SettingsConnectionService {
-    func allowStandardTools(_ tools: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot
+    func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot
 }
