@@ -149,7 +149,16 @@ jobs:
       - name: Field bridge protocol checks (synthetic page adapter)
         run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
       - name: Dock native resource and instrument checks (neutral inputs)
+        if: ${{ !cancelled() }}
         run: swift run --package-path desktop/native --skip-build ModelPlanDockInstrumentChecks "$RUNNER_TEMP/dock-instrument-checks"
+      - name: Archive offscreen Dock visual probes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dock-visual-${{ matrix.os }}
+          path: ${{ runner.temp }}/dock-instrument-checks/dock-visual/
+          if-no-files-found: warn
+          retention-days: 3
       - name: Dock logic unit checks
         run: swift run --package-path desktop/native --skip-build ModelPlanDockLogicChecks
       - name: Window/input native contracts

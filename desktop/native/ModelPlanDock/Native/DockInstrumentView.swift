@@ -174,7 +174,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
-        if let image {NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil);return}
+        if let image {
+            NSGraphicsContext.saveGraphicsState();defer{NSGraphicsContext.restoreGraphicsState()}
+            NSGraphicsContext.current?.imageInterpolation = .high
+            NSGraphicsContext.current?.cgContext.setShouldAntialias(true)
+            NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil);return
+        }
         // Official rasters include transparent/grain pixels: replace the backing contents,
         // rather than accumulating alpha over the previous appearance on each redraw.
         if !community { NSColor.clear.setFill(); bounds.fill(using: .copy); return }
