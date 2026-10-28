@@ -43,20 +43,21 @@ import ModelPlanAppIntegration
         }
         // Explicit packaged-app test mode: inspect the existing factory; never start the app lifecycle.
         if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
-            fputs("app-smoke entry started\n", stderr)
+            fputs("app-smoke entry started\n", stderr); _ = NSApplication.shared
             Task { @MainActor in
                 do {
+                    fputs("app-smoke task started\n", stderr)
                     func field(_ object: Any, _ name: String) -> Any? {
                         guard let value = Mirror(reflecting: object).children.first(where: { $0.label == name })?.value else { return nil }
                         let mirror = Mirror(reflecting: value)
                         return mirror.displayStyle == .optional ? mirror.children.first?.value : value
                     }
                     func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-                    let factory = field(delegate, "makeSettings") as! (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)
+                    let factory = field(delegate, "makeSettings") as! (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration); fputs("app-smoke factory resolved\n", stderr)
                     let gate = LifecycleCoordinator(store: SnapshotStore(transport: BundledCLI(bundle: Bundle.main.bundleURL)))
-                    let session = try factory(gate) as! CommunitySettingsSession; await session.restorePreferences()
+                    let session = try factory(gate) as! CommunitySettingsSession; fputs("app-smoke factory called\n", stderr); await session.restorePreferences()
                     let editor = session.windowHost.application.editor, firstRun = SettingsFirstRunController(editor: session.windowHost.application.editor)
-                    await firstRun.prepare()
+                    await firstRun.prepare(); fputs("app-smoke first run prepared\n", stderr)
                     let preferences = editor.snapshot!.preferences, connections = editor.connections
                     let section = views(firstRun.window!.contentView!).first { $0.accessibilityIdentifier() == "settings.connections" }
                     let status = section?.subviews.compactMap { $0 as? NSTextField }.dropFirst().first?.stringValue
@@ -79,7 +80,7 @@ import ModelPlanAppIntegration
                     exit(0)
                 } catch { fputs("app-smoke report FAIL \(error)\n", stderr); exit(70) }
             }
-            RunLoop.main.run(); return
+            NSApplication.shared.run(); return
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime(delegate) { NSApplication.shared.run() }

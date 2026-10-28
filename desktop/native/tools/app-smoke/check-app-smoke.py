@@ -107,6 +107,13 @@ def launch(app, output):
                         (output / f'crash-{index}.ips').write_bytes(path.read_bytes())
                     break
                 time.sleep(1)
+            try:
+                diagnostic = subprocess.run(['/usr/bin/log', 'show', '--last', '2m', '--style', 'compact',
+                                             '--predicate', f'processIdentifier == {process.pid}'],
+                                            capture_output=True, timeout=10)
+                (output / 'process.system.log').write_bytes(diagnostic.stdout + diagnostic.stderr)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             raise RuntimeError(f'Packaged entry failed to report (exit {process.returncode}); inspect process.stderr artifact')
         report = json.loads(report_path.read_text())
         results = assertions(report, helper, home)
