@@ -685,6 +685,158 @@
       ],
       "type": "object"
     },
+    "localusage-HistoryResult": {
+      "additionalProperties": true,
+      "properties": {
+        "availability": {
+          "type": "string"
+        },
+        "beta": {
+          "type": "boolean"
+        },
+        "bytesRead": {
+          "type": "integer"
+        },
+        "confidence": {
+          "type": "string"
+        },
+        "freshness": {
+          "type": "string"
+        },
+        "measurement": {
+          "type": "string"
+        },
+        "nextAttemptAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/localusage-HistoryRow"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "unallocated": {
+          "items": {
+            "$ref": "#/$defs/localusage-HistoryRow"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "validationBytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "validationBytes",
+        "confidence",
+        "tool",
+        "measurement",
+        "timezone",
+        "availability",
+        "freshness",
+        "beta",
+        "nextStep",
+        "rows",
+        "unallocated",
+        "bytesRead"
+      ],
+      "type": "object"
+    },
+    "localusage-HistoryRow": {
+      "additionalProperties": true,
+      "properties": {
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "day": {
+          "type": "string"
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totalTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
     "localusage-Report": {
       "additionalProperties": true,
       "properties": {
@@ -962,6 +1114,9 @@
     "quota-Account": {
       "additionalProperties": true,
       "properties": {
+        "beta": {
+          "type": "boolean"
+        },
         "cards": {
           "items": {
             "$ref": "#/$defs/quota-Card"
@@ -1009,6 +1164,16 @@
         },
         "pool": {
           "type": "string"
+        },
+        "sharedPool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/quota-SharedPoolBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "type": "string"
@@ -1131,8 +1296,17 @@
             }
           ]
         },
+        "currency": {
+          "type": "string"
+        },
         "observedAt": {
           "format": "date-time",
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "unit": {
           "type": "string"
         },
         "unlimited": {
@@ -1209,6 +1383,16 @@
         "reason": {
           "type": "string"
         },
+        "remaining": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "unlimited": {
           "type": "boolean"
         },
@@ -1232,6 +1416,9 @@
     "quota-Selection": {
       "additionalProperties": true,
       "properties": {
+        "accessClass": {
+          "type": "string"
+        },
         "backend": {
           "type": "string"
         },
@@ -1287,9 +1474,32 @@
       ],
       "type": "object"
     },
+    "quota-SharedPoolBinding": {
+      "additionalProperties": true,
+      "properties": {
+        "additive": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "status",
+        "additive"
+      ],
+      "type": "object"
+    },
     "quota-SourceStatus": {
       "additionalProperties": true,
       "properties": {
+        "beta": {
+          "type": "boolean"
+        },
         "reason": {
           "type": "string"
         },
@@ -3306,6 +3516,15 @@
     "liveSessions": {
       "items": {
         "$ref": "#/$defs/speed-LiveSession"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "localHistory": {
+      "items": {
+        "$ref": "#/$defs/localusage-HistoryResult"
       },
       "type": [
         "array",

@@ -145,6 +145,9 @@ func NativeDue(p Paths, now time.Time) bool {
 	if !nativePrivacyAllows() {
 		return false
 	}
+	if claudeSessionsDue(p, now) {
+		return true
+	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && managedDue(p, provider, now) {
 			return true
@@ -202,6 +205,7 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	sessionRead := refreshProductionClaudeSessions(ctx, p, now)
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
@@ -219,6 +223,9 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 		}
 	}
 	if len(on) == 0 && len(managed) == 0 {
+		if sessionRead {
+			return nil
+		}
 		return errors.New("no native provider is on")
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+len(managed)+1)*nativeTimeout)
@@ -259,8 +266,11 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 			return err
 		}
 		key := os.Getenv(x.KeyEnv)
-		if n.Collect != nil {
-			e = n.Collect(ctx, nativeClient, p.Cache, now)
+		readerCtx := productionReaderContext(ctx, p, x.Provider)
+		if g, ok := p.ReaderAccessGrant(x.Provider); ok && g.ConfigSource != nil {
+			e = collectZaiConfig(readerCtx, nativeClient, p.Cache, now)
+		} else if n.Collect != nil {
+			e = n.Collect(readerCtx, nativeClient, p.Cache, now)
 		} else {
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
@@ -332,6 +342,9 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 // applyNative adds one account per native provider with a recent usable reading, and one source
 // status per native provider saying what was read or why not.
 func applyNative(r *Report, p Paths, now time.Time) {
+	// Apply local state after native accounts, including early-return paths.
+	// Both Read and the production ReadPermitted flow pass through this hook.
+	defer applyClaudeSessions(r, p, now)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})
@@ -345,6 +358,11 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && !legacySelections[provider] {
+			if p.ReaderAccess != nil {
+				if _, allowed := readerAllowed(p, provider); !allowed {
+					continue
+				}
+			}
 			applyManaged(r, p, provider, now)
 		}
 	}
@@ -369,6 +387,8 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"
 		case x.Blocked == "native-off":
 			st.Status, st.Reason = "missing", "native readers are off (MODELPLAN_NATIVE)"
+		case x.Blocked != "" && x.Blocked != "no-key":
+			st.Status, st.Reason = "off", x.Blocked
 		case x.Blocked == "no-key" && (!ok || x.Provider == "kimi" || x.Provider == "minimax"):
 			st.Status, st.Reason = "missing", x.KeyEnv+" is not set where modelplan runs"
 		case x.Provider == "kimi" && ok && !kimiCacheMatches(p.Cache, x, e):

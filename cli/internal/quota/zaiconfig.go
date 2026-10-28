@@ -16,7 +16,7 @@ import (
 // ZaiConfigSource is a CLIJIT-authorised selected profile, never an automatic
 // search list. Paths stay transient. No project-level configuration is scanned.
 // OpenCodeProvider must be the active provider; a model name alone proves nothing.
-type ZaiConfigSource struct{ Tool, SettingsPath, AuthPath, OpenCodeProvider string }
+type ZaiConfigSource struct{ Tool, SettingsPath, AuthPath, OpenCodeProvider, Region string }
 type zaiConfigSourceKey struct{}
 
 // RefreshConfiguredZai uses the existing native Z.ai reader after both consent
@@ -172,6 +172,9 @@ func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.T
 		return codexbarEntry{Status: "error", Error: zaiConfigNext("not_supported_yet")}
 	}
 	region, key, state := zaiConfiguredKey(source)
+	if source.Region != "" && region != source.Region {
+		return codexbarEntry{Status: "error", Error: zaiConfigNext("not_supported_yet")}
+	}
 	if state != "" {
 		return codexbarEntry{Status: "error", Error: zaiConfigNext(state)}
 	}

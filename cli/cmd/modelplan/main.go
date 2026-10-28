@@ -173,6 +173,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	remove := fs.Bool("remove", false, "declare: take the plan out of local.json")
 	backend := fs.String("backend", "native", "connect: native (this client's own reader) or codexbar")
 	region := fs.String("region", "", "connect: the provider's region (zai: global or bigmodel-cn)")
+	profile := fs.String("profile", "", "connect zai: explicit local source (claude-code); no credential read during connect")
 	keyEnv := fs.String("key-env", "", "connect: the environment variable that holds the API key")
 	detected := fs.Bool("detected", false, "connect: choose detected tools with one consent confirmation")
 	privacy := fs.String("privacy", "", "connect --detected: automatic or passive")
@@ -234,7 +235,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return connectDetected(stdin, stdout, stderr, st, c, *privacy)
 	}
 	if cmd == "connect" {
-		return connectProvider(fs.Args(), stdin, stdout, stderr, st, c, *backend, *region, *keyEnv, *privacy, *browserSession)
+		return connectProvider(fs.Args(), stdin, stdout, stderr, st, c, *backend, *region, *keyEnv, *privacy, *profile, *browserSession)
 	}
 	if cmd == "disconnect" {
 		return disconnectTools(fs.Args(), *all, stdout, stderr, st, c)
@@ -897,7 +898,8 @@ func refreshAccountLater(st *store.Store) {
 // reading is due (both hooks, quota and advise), so nothing waits for it.
 func refreshCodexBarLater(st *store.Store, now time.Time) {
 	p := quotaPaths(st)
-	if quota.NativeDue(p, now) {
+	home, _ := os.UserHomeDir()
+	if quota.NativeDue(p, now) || localusage.ProductionHistoryDue(home, st.Dir, now) {
 		_ = startDetached("connections", "refresh", "--quiet")
 	}
 	if len(quota.CodexBarActive(p)) == 0 {
@@ -970,7 +972,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
 	}
 	boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
-	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
+	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistories(home, st.Dir, true, now), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
 		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 		QwenUsage:   qwenSnapshot(now),
 		Connections: connections.Diagnose(connectionEnv, report),
@@ -1086,15 +1088,7 @@ func nonNil(es []advise.Event) []advise.Event {
 // quotaPaths: the shared cache, $CODEX_HOME (default ~/.codex), ~/.config/modelplan/local.json and
 // ~/.config/modelplan/codexbar.json.
 func quotaPaths(st *store.Store) quota.Paths {
-	home, _ := os.UserHomeDir()
-	codex := os.Getenv("CODEX_HOME")
-	if codex == "" {
-		codex = filepath.Join(home, ".codex")
-	}
-	// Codex sets CODEX_THREAD_ID and Claude Code CLAUDE_CODE_SESSION_ID for the commands a
-	// thread runs, so a Skill calling `modelplan quota` reads that thread's own model and effort.
-	return quota.Paths{CLIVersion: version, Cache: st.Dir, CodexHome: codex, LocalFile: filepath.Join(home, ".config", "modelplan", "local.json"),
-		CodexBarFile: filepath.Join(home, ".config", "modelplan", "codexbar.json"), ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"), CodexThread: os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID")}
+	return quota.ProductionPaths(st.Dir, version)
 }
 
 // reorder lets flags follow positional args: `modelplan effort opus --json`.
@@ -1116,7 +1110,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)

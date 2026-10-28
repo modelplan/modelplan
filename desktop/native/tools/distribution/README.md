@@ -55,6 +55,27 @@ Notarization uses `notarytool --wait`, requires Accepted, staples and validates 
 
 The XML is a single-version **feed candidate**, includes build/display versions and minimum macOS, and requires a nonempty signed archive. It is not an in-place updater for an existing feed. R7 uploads only a candidate artifact and never pushes a feed, writes Pages, creates a release or deploys anything. Preserving old items, monotonically increasing versions, matching the final download URL/archive bytes, N→N+1/invalid-signature/interruption tests, clean-Mac offline Gatekeeper checks and owner release approval remain B26 gates.
 
+## Ad-hoc beta channel
+
+Before an Apple Developer account is available, dispatch this workflow on canonical `main` with `prepare_adhoc_beta=true` and a trusted `candidate_run_id`. The **macos-release** environment must require owner review for every run and restrict branches to main. The beta job verifies the same successful, exact-main official assembly run and validates the same official edition, source provenance, bundle ID, universal executables, helper hash and notices as the Developer ID path. No Apple certificate, team ID or notarization key is required; the existing signed/notarized stages retain their requirements.
+
+On the owner's Mac, use the reviewed Sparkle distribution's `bin/generate_keys` to make a key pair. Export the private key with `bin/generate_keys -x <private-key-file>` and store its contents as the **macos-release** environment secret `SPARKLE_ED25519_PRIVATE_KEY`; keep the key safe on the owner's Mac. Give M0 the public key for the app's `SUPublicEDKey`. The workflow sends the private key to `sign_update` over stdin and verifies the result against that embedded public key. [Sparkle key setup](https://sparkle-project.org/documentation/#eddsa-ed25519-signatures).
+
+Set these nonsecret environment variables:
+
+- `MACOS_BUNDLE_ID` and `MACOS_OFFICIAL_WORKFLOW_ID`: the approved bundle identity and trusted assembly workflow, as above.
+- `SPARKLE_TOOLS_URL` / `SPARKLE_TOOLS_SHA256`: the reviewed immutable tools archive and its checksum, as above.
+- `MACOS_BETA_FEED_URL`: a dedicated credential-free HTTPS beta feed file; the candidate's `SUFeedURL` must match exactly.
+- `MACOS_UPDATE_URL`: the final, versioned HTTPS download URL for `ModelPlan-beta-universal.zip`.
+- `MACOS_RELEASE_NOTES_URL`: the HTTPS release notes URL included in the beta appcast.
+- `MACOS_FEED_URL`: reserve the future notarized feed at a different file when known. It is optional for beta preparation; when both feeds are configured, preparation rejects the same host/port/path, including case/default-port, escaped-path, dot-segment and query-string aliases. Redirects and hosting aliases remain the owner's responsibility; never map the two feed URLs to one file.
+
+The job deep ad-hoc signs the app, refreshes the helper integrity record, reseals it and runs `codesign --verify --deep --strict` before making a symlink-preserving `ditto` ZIP. Its artifact `modelplan-macos-adhoc-beta-DRAFT-NOT-PUBLISHED` contains `ModelPlan-beta-universal.zip`, `appcast-beta.xml`, `SHA256SUMS` (ZIP and appcast hashes), and `draft-release.json` (`draft: true`, `prerelease: true`). The beta XML includes `sparkle:channel` = `beta`, minimum macOS 14.0 (`14.0.0` in Sparkle's three-part XML format), release notes and the archive's EdDSA signature. No GitHub Release is created. The coordinator separately reviews and publishes the payload and beta feed only after explicit owner approval, keeping the final archive bytes and URL unchanged.
+
+M0 owns the app integration: embed Sparkle, set `SUPublicEDKey` to the owner's base64 public key and beta `SUFeedURL` to `MACOS_BETA_FEED_URL`, and allow `beta` through `SPUUpdaterDelegate.allowedChannels(for:)`. Without that delegate setting Sparkle ignores beta items even in a dedicated feed. This PR edits no app sources. [Sparkle channels](https://sparkle-project.org/documentation/publishing/#channels).
+
+Known limits: first open requires a Gatekeeper override for the non-notarized app; Accessibility and Screen Recording (TCC) grants may need re-granting after an update because the ad-hoc signature changes. Once the Apple account exists, enable the existing Developer ID/notarization configuration. With the same bundle identity and Sparkle key and a higher build number, the notarized build can arrive as a normal Sparkle update: the coordinator must publish a notarized transition item to the existing, separate beta feed, and M0's notarized app uses the official `SUFeedURL` afterward. This transition is not automatic feed publication or a claim of tested update behavior; the existing B26 live-update and clean-Mac checks still apply.
+
 ## Local checks
 
 ```
@@ -62,6 +83,6 @@ python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py'
 node scripts/check-source-policy.mjs
 ```
 
-These tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering, trusted-trigger denial, archive traversal/link rejection, community/official separation and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
+These tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering (including all beta-setting combinations), trusted-trigger denial, archive traversal/link rejection, community/official separation, distinct feed files, beta signing order/helper hash refresh and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
 
 References: [Sparkle publishing](https://sparkle-project.org/documentation/publishing/) (archive preservation, signed enclosure and version fields), [Sparkle security](https://sparkle-project.org/documentation/security-and-reliability/) (stdin key handling), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).

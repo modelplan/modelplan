@@ -20,6 +20,7 @@ import (
 )
 
 type consentChoice struct {
+	Profile  string   `json:"profile,omitempty"`
 	Tool     string   `json:"tool"`
 	Name     string   `json:"name"`
 	Selected bool     `json:"selected"`
@@ -323,6 +324,9 @@ func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *stor
 				}
 			}
 			if err = quota.ForgetTool(quotaPaths(st), id); err != nil {
+				break
+			}
+			if err = localusage.ForgetProductionHistory(st.Dir, id); err != nil {
 				break
 			}
 			if cookies[id] {

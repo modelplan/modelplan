@@ -68,6 +68,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
 /// One presenter over the app's existing store. No service calls or second preference file.
 @MainActor public final class SettingsEditor {
     public let store: SettingsStore
+    public let connections: SettingsConnectionController
     public private(set) var snapshot: SettingsSnapshot?
     public private(set) var environment: SettingsEnvironment
     public private(set) var context: SettingsPageContext
@@ -92,10 +93,11 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     /// A save waits at most two seconds for all app observers together. A shorter bound can be
     /// injected for tests/hosts; this does not change hint display/dwell timing or persisted policy.
     public init(store: SettingsStore, context: SettingsPageContext = .init(), environment: SettingsEnvironment = .init(),
-                commitObserverLimit: Duration = .seconds(2)) {
+                commitObserverLimit: Duration = .seconds(2), connectionService: SettingsConnectionService? = nil) {
         precondition(commitObserverLimit > .zero && commitObserverLimit <= .seconds(2))
         self.commitObserverLimit = commitObserverLimit
         self.store = store; self.context = context; self.environment = environment
+        self.connections = SettingsConnectionController(service: connectionService)
     }
     public var effective: EffectiveSettings? { snapshot.map { EffectiveSettings($0.preferences, environment: environment) } }
     private func accept(_ candidate: SettingsSnapshot) {

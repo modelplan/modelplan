@@ -66,6 +66,7 @@ public struct StaticDockGeometry {
     private let appearance: Appearance?
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
+    private let readerCapabilities: CommunityReaderCapabilities
     private let createsNativePanels: Bool
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
     private let elapsedClock: (() -> TimeInterval)?
@@ -99,13 +100,15 @@ public struct StaticDockGeometry {
     private let consoleButton = NSButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
-    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, currentDate: @escaping @MainActor () -> Date = { Date() }) {
-        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters)
+    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() }) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities)
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
-         elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil) {
+         elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
+         readerCapabilities: CommunityReaderCapabilities = .init()) {
+        self.readerCapabilities = readerCapabilities
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
@@ -196,7 +199,9 @@ public struct StaticDockGeometry {
         if choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
         guard passIsCurrent(generation) else { return }
         let passPreferences = preferences
-        let now = currentDate(), next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now)
+        let now = currentDate()
+        let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
+        let next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts)
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
@@ -238,6 +243,8 @@ public struct StaticDockGeometry {
         if rows.isEmpty && appearance == nil {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
+            empty.stringValue = CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
             if empty.superview == nil { dockView.addSubview(empty) }
@@ -439,6 +446,15 @@ public struct StaticDockGeometry {
     }
     private func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
+        if let model {
+            for (index, text) in CommunityReaderStatusPresentation.menuLines(model, english: preferences.language == .english).enumerated() {
+                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                status.setAccessibilityIdentifier("dock.reader-status.\(index)")
+                menu.addItem(status)
+            }
+            if !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
+        }
         for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }

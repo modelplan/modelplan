@@ -7,6 +7,13 @@ Droid, Kimi Code, Qwen Code, Copilot CLI, Gemini CLI or Grok Build. It reports
 unallocated measurements. It never reports remaining quota, calls a provider,
 launches a tool, imports credentials or requires an export command.
 
+The production bridge is `localusage.ProductionHistoryAccess`: shared consent,
+compiled roots, the existing installation key, and generation-fenced publication.
+`connections refresh` primes admitted adapters; the desktop's optional
+`localHistory` projects additional tools without writing during read-only calls.
+See the [production admission audit](production-reader-admission.md) for all paths
+and the separate Gemini/Qwen display source.
+
 ## Sources and limits
 
 The caller supplies the selected store root; these are relative record paths,

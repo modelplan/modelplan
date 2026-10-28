@@ -9,6 +9,15 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - CLI weekly effort suggestions now share one notice across text history, the Claude Code status-line hint and user-only hooks. The status line steps from the explicit current effort using published reference costs; previews, record-only mode and urgent quota advice do not consume the notice.
   每周档位建议在历史文本、Claude Code 状态栏和钩子的用户提示间共享一次提示；状态栏从明确的当前档位按公开参考成本建议一步，预览、仅记录和紧急额度提示不消耗次数。
 
+- Add the beta passive Claude session-state reader for owner-confirmed model/effort/Fast fields, using the shared local-history projection engine for bounded incremental reads and atomic sanitized snapshots. Production admission supports Automatic/Passive consent and cache-only caller selection without a plugin or status line. Background progress and excluded worker metadata cannot change the selected main branch or its classification; no independent cursor or quota-network schedule.
+
+## CLI v0.5.42, Codex plugin 0.15.34 and Claude Code plugin 0.7.33 (2026-10-28)
+
+- CLI production paths now admit consented native saved-login readers, carrying local profiles, selected region, bounded Keychain policy and revocation-fenced publication into quota, hooks and desktop feeds. Explicit `MODELPLAN_READERS=automatic` preserves saved privacy; runtime imports stay blocked in Passive. Wire incremental local-history refresh and the optional desktop `localHistory` feed, add an explicit GLM configuration source, and include the newer captures in Forget while preserving request gates and Keychain Deny.
+  CLI 生产路径现将共享授权接入原生登录读取器、钩子与桌面，保留本机来源、地区、钥匙串期限及撤销写入保护；显式 automatic 保留已保存的隐私设置。接入增量本机历史与桌面可选字段，GLM 配置来源需显式选择；忘记读数保留请求间隔和钥匙串拒绝状态。
+
+- Both plugins and their bundled Skill pin CLI v0.5.42 and its published archive checksums.
+
 ## CLI v0.5.41, Codex plugin 0.15.33 and Claude Code plugin 0.7.32 (2026-10-27)
 
 - Catalogue helper routes now distinguish audited standard, separate advanced browser-session and not-read access. Standard consent excludes browser sessions and forces both the Keychain gate and `cookieSource: off` across the complete effective helper registry, verified after normalization, including for Firefox/Safari cookies. Only the explicitly granted browser-session target gets `cookieSource: auto`; user-set Keychain disables remain in force. `connect <tool> --browser-session` explains Safe Storage/cookie caching and grants one provider explicitly. Forget atomically captures current cookie-cleanup obligations during revocation and keeps blocked cleanup pending. All connect JSON paths are previews; confirmations name destination hosts. Privacy/revocation gates now also protect Qwen status exports and generation-fenced refresh/snapshot/history writes.
