@@ -3,9 +3,10 @@ import Foundation
 import Darwin
 
 public enum CLICommand: String, Sendable, CaseIterable {
-    case desktop, refreshAccount, publicationOffline, publication
+    case desktop, refreshAccount, publicationOffline, publication, detect
     public var arguments: [String] {
         switch self {
+        case .detect: return ["detect", "--json"]
         case .desktop: return ["desktop", "--json", "--read-only"]
         case .refreshAccount: return ["quota", "--refresh-account", "--quiet"]
         case .publicationOffline: return ["publication", "--json", "--offline"]
@@ -15,7 +16,7 @@ public enum CLICommand: String, Sendable, CaseIterable {
     public var timeout: TimeInterval {
         switch self {
         case .desktop, .refreshAccount: return 20
-        case .publicationOffline: return 10
+        case .publicationOffline, .detect: return 10
         case .publication: return 30
         }
     }

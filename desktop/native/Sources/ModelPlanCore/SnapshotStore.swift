@@ -17,6 +17,8 @@ import Foundation
 
 public struct StoreDiagnostics: Sendable {
     public init() {}
+    public var detection: String? = "not-requested"
+    public var detectionReadAt: Date?
     public var personal: String? = "not-loaded"
     public var publication: String? = "not-loaded"
     public var publicationWarning = false
@@ -37,6 +39,8 @@ public struct StoreDiagnostics: Sendable {
     private var ledger = ExpiryLedger()
     private var pending: [CLICommand] = []
     private var worker: Task<Void, Never>?
+    private var activeCommand: CLICommand?
+    public private(set) var detectionReport: DetectionReport?
     private var timer: Timer?
     private var generation = 0
     private var suspended = true
@@ -67,10 +71,17 @@ public struct StoreDiagnostics: Sendable {
         guard !suspended else { return }
         enqueue(.desktop); enqueue(.publicationOffline); enqueue(.publication); kick()
     }
+    /// Explicit caller request only; start/resume/refresh never scan for installed tools.
+    /// Uses the existing serialized child queue, with no independent timer or reader.
+    public func requestDetection() {
+        guard !suspended, activeCommand != .detect, !pending.contains(.detect) else { return }
+        enqueue(.detect); kick()
+    }
     /// Sleep/lock/user switch/display removal use this transaction; ordinary app deactivation does not.
     public func suspend() {
         guard !suspended else { return }
         suspended = true; generation += 1; pending.removeAll(); timer?.invalidate(); timer = nil
+        detectionReport = nil; diagnostics.detection = "not-requested"; diagnostics.detectionReadAt = nil
         worker?.cancel() // Retain the slot until the transport has reaped its child.
         onChange?()
     }
@@ -118,6 +129,7 @@ public struct StoreDiagnostics: Sendable {
         // Do not start a bounded publication child across the next personal-read deadline.
         if pending.first != .desktop && desktopDue - time.elapsed < 30 { pending.removeAll { $0 == .desktop }; pending.insert(.desktop, at: 0) }
         let command = pending.removeFirst(), token = generation
+        activeCommand = command
         if command == .desktop { desktopDue = time.elapsed + 60 }
         if command == .publication { publicationDue = time.elapsed + 600 }
         diagnostics.childRunning = true
@@ -136,6 +148,12 @@ public struct StoreDiagnostics: Sendable {
                 let result = try await transport.execute(command)
                 try Task.checkCancellation()
                 switch command {
+                case .detect:
+                    guard result.exitCode == 0 else { throw FeedError.malformed("detect-exit") }
+                    let value = try await decoder.detection(result.stdout)
+                    guard let self, token == self.generation, !self.suspended else { break }
+                    self.detectionReport = value
+                    self.diagnostics.detection = nil; self.diagnostics.detectionReadAt = self.time.wall
                 case .refreshAccount:
                     // Refresh output is never a feed; the desktop worker invokes it above.
                     break
@@ -156,7 +174,11 @@ public struct StoreDiagnostics: Sendable {
                 }
             } catch {
                 if let self, token == self.generation, !self.suspended {
-                    if command == .desktop { self.personalUsable = false; self.diagnostics.personal = "personal-read-unavailable" }
+                    if command == .detect {
+                        self.detectionReport = nil; self.diagnostics.detection = "detection-read-unavailable"
+                        self.diagnostics.detectionReadAt = nil
+                    }
+                    else if command == .desktop { self.personalUsable = false; self.diagnostics.personal = "personal-read-unavailable" }
                     else {
                         self.diagnostics.publication = "publication-read-unavailable"
                         self.diagnostics.publicationWarning = self.publication != nil
@@ -166,7 +188,7 @@ public struct StoreDiagnostics: Sendable {
                 }
             }
             guard let self else { return }
-            self.worker = nil; self.diagnostics.childRunning = false
+            self.worker = nil; self.activeCommand = nil; self.diagnostics.childRunning = false
             if token == self.generation && !self.suspended {
                 self.reconcileIDs(); _ = self.view(); self.onChange?()
             }
