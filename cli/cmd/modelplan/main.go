@@ -691,6 +691,7 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 // defaultEffortHint is user-only and cache-only. It matches the current weekly
 // pool and explicit harness configuration, so another subscription's history or
 // another model's past default cannot supply the status-line hint.
+// An unknown plan label matches only other unknown labels.
 func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, now time.Time) string {
 	if history.Off() || d == nil {
 		return ""
@@ -705,7 +706,7 @@ func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, re
 			}
 			var cycles []history.Cycle
 			for _, c := range history.Load(st.Dir).Cycles {
-				if c.Source == a.Source && (a.Plan == "" || c.Plan == a.Plan) && c.Limit == w.Limit && c.Kind == "weekly" && c.Done(now) &&
+				if c.Source == a.Source && c.Plan == a.Plan && c.Limit == w.Limit && c.Kind == "weekly" && c.Done(now) &&
 					(w.WindowMinutes == 0 || c.WindowMinutes == 0 || c.WindowMinutes == w.WindowMinutes) {
 					cycles = append(cycles, c)
 				}

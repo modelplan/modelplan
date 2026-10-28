@@ -296,3 +296,80 @@ func TestEffortSuggestionFullStatusline(t *testing.T) {
 		})
 	}
 }
+
+func TestEffortSuggestionUnknownPlanMatchesOnlyUnlabelledCycles(t *testing.T) {
+	for _, path := range []string{"helper", "statusline-command"} {
+		for _, unlabelled := range []bool{false, true} {
+			scope := "labelled-only"
+			if unlabelled {
+				scope = "eligible-unlabelled-with-unrelated-labelled"
+			}
+			for _, lang := range []string{"en", "zh"} {
+				t.Run(path+"/"+scope+"/"+lang, func(t *testing.T) {
+					at := time.Now()
+					st, report := claudeEffortFixture(t, at)
+					// Real status-line accounts have no plan label. This must be
+					// a distinct pool, including when labelled cycles coexist.
+					report.Accounts[0].Plan = ""
+					if unlabelled {
+						l := history.Load(st.Dir)
+						cycles := contracttest.EffortLedger(at, "medium", false, 40, 45, 50).Cycles
+						for i := range cycles {
+							cycles[i].Source, cycles[i].Plan = "claude-code", ""
+						}
+						l.Cycles = append(l.Cycles, cycles...)
+						if err := os.WriteFile(history.Path(st.Dir), publicationJSON(t, l), 0600); err != nil {
+							t.Fatal(err)
+						}
+					}
+					d := mustEffortDigest(t)
+					style := render.Style{T: render.EN}
+					marker, needle := "default:", "default: 3wk 45% ★Med→High ref ×1.50"
+					if lang == "zh" {
+						style.T = render.ZH
+						marker, needle = "默认：", "默认：3周 45% ★Med→High 参考 ×1.50"
+					}
+					input := `{"model":{"id":"native-z"},"rate_limits":{"seven_day":{"used_percentage":20,"resets_at":` + fmt.Sprint(at.Add(6*24*time.Hour).Unix()) + `}}}`
+					var claimed []byte
+					for attempt := 0; attempt < 2; attempt++ {
+						var output string
+						if path == "helper" {
+							output = defaultEffortHint(style, st, d, report, at.Add(time.Duration(attempt)*time.Minute))
+						} else {
+							var out, stderr bytes.Buffer
+							if code := run([]string{"statusline", "--effort", "medium", "--offline", "--lang", lang}, strings.NewReader(input), &out, &stderr); code != 0 {
+								t.Fatal(code, out.String(), stderr.String())
+							}
+							output = out.String()
+						}
+						wantHint := unlabelled && attempt == 0
+						if strings.Contains(output, marker) != wantHint || (wantHint && !strings.Contains(output, needle)) {
+							t.Fatalf("wrong unknown-plan hint on attempt %d: %q", attempt, output)
+						}
+						stamp, err := os.ReadFile(history.EffortSuggestionPath(st.Dir))
+						if !unlabelled {
+							if !os.IsNotExist(err) {
+								t.Fatal("labelled-only history consumed unknown-plan notice", err)
+							}
+						} else {
+							if err != nil {
+								t.Fatal("eligible unlabelled history did not claim notice", err)
+							}
+							if attempt == 0 {
+								claimed = stamp
+							} else if !bytes.Equal(stamp, claimed) {
+								t.Fatal("second attempt changed the shared weekly stamp")
+							}
+						}
+					}
+					// Other user-facing paths retain the notice when the current
+					// pool is ineligible, and share its claim after a valid hint.
+					wantNotice := !unlabelled
+					if got := history.NotifyEffortSuggestion(st.Dir, d, at.Add(time.Hour)); (got != nil) != wantNotice {
+						t.Fatal("wrong shared notice eligibility after status-line attempts", got)
+					}
+				})
+			}
+		}
+	}
+}
