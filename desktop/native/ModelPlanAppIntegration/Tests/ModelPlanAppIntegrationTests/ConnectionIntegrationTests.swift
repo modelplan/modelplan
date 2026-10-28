@@ -13,10 +13,17 @@ import ModelPlanCommunityHost
     func show(paneID: String?) { shows += 1 }
     func hide() { hides += 1 }
 }
-@MainActor private final class ConnectionBackendFake: SettingsConnectionAllowing {
+@MainActor private final class ConnectionBackendFake: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
+    var settingsConnectionAvailability = SettingsConnectionAvailability(canInspect: true, canGrant: true, canForget: true)
     var snapshot = try! SettingsConnectionSnapshot()
     var detects = 0, mutations = 0
-    func detect() async throws -> SettingsConnectionSnapshot { detects += 1; return snapshot }
+    var pauseDetect = false
+    var detectGate: CheckedContinuation<SettingsConnectionSnapshot, Never>?
+    func detect() async throws -> SettingsConnectionSnapshot {
+        detects += 1
+        if pauseDetect { return await withCheckedContinuation { detectGate = $0 } }
+        return snapshot
+    }
     func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
     func connect(_ tool: SettingsConnectionTool, access: SettingsConnectionAccess, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
     func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { mutations += 1; return snapshot }
@@ -24,7 +31,12 @@ import ModelPlanCommunityHost
 }
 @MainActor private final class UnwiredEntryStub: CommunitySettingsIntegration {
     var settingsMenuItem: NSMenuItem { fatalError("No menu should be constructed by a wiring check") }
-    func restorePreferences() async {}
+    var restores = 0, pauseRestore = false
+    var restoreGate: CheckedContinuation<Void, Never>?
+    func restorePreferences() async {
+        restores += 1
+        if pauseRestore { await withCheckedContinuation { restoreGate = $0 } }
+    }
     func suspend() {}
 }
 @MainActor final class ConnectionIntegrationTests: XCTestCase {
@@ -83,7 +95,7 @@ import ModelPlanCommunityHost
         var panes: [String?] = [], factories = 0
         let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { panes.append($0) },
             makeFirstRun: { _ in factories += 1; return surface })
-        await flow.restoreFirstRunIfNeeded(); XCTAssertEqual(backend.detects, 0); XCTAssertEqual(factories, 0)
+        await flow.restoreFirstRunIfNeeded(); XCTAssertEqual(backend.detects, 1); XCTAssertEqual(factories, 0)
         let allow = try XCTUnwrap(CommunityConnectionNextStep.forReason(.noConsent))
         XCTAssertEqual(allow.title.chinese, "授权读取")
         let action = flow.action(for: allow); action()
@@ -142,5 +154,70 @@ import ModelPlanCommunityHost
         }
         XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
         flow.dispose()
+    }
+    func testCompletedOnboardingRestartRestoresCanonicalAdmissionExactlyOnceWithoutAWindow() async throws {
+        let application = try application(); await application.reload()
+        _ = try await application.editor.completeFirstRun(options: .init(preferences: application.editor.snapshot!.preferences),
+            action: .done, host: .standalone, expectedRevision: application.editor.snapshot!.revision)
+        let backend = ConnectionBackendFake(), base = UnwiredEntryStub(); var surfaces = 0
+        backend.snapshot = try .init(consentGeneration: 7, tools: [.init(tool: .codex, authorization: .allowed)], mode: .automatic)
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { false }, showSettings: { _ in XCTFail("unexpected window") },
+            makeFirstRun: { _ in surfaces += 1; return ConnectionSurfaceFake() })
+        let entry = try CommunityConnectionIntegration(base: base, flow: flow)
+        async let first: Void = entry.restorePreferences()
+        async let second: Void = entry.restorePreferences()
+        _ = await (first, second); await entry.restorePreferences()
+        XCTAssertEqual(base.restores, 1); XCTAssertEqual(backend.detects, 1)
+        XCTAssertEqual(application.editor.connections.snapshot, backend.snapshot)
+        XCTAssertEqual(application.editor.connections.snapshot?.mode, .automatic); XCTAssertEqual(surfaces, 0)
+        flow.dispose()
+    }
+    func testIncompleteEntryRestoreInspectsOnceAndThenShowsFirstRun() async throws {
+        let application = try application(), backend = ConnectionBackendFake(), base = UnwiredEntryStub(), surface = ConnectionSurfaceFake()
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { _ in }, makeFirstRun: { _ in surface })
+        let entry = try CommunityConnectionIntegration(base: base, flow: flow)
+        await entry.restorePreferences(); await entry.restorePreferences()
+        XCTAssertEqual(backend.detects, 1); XCTAssertEqual(surface.shows, 1); XCTAssertEqual(backend.mutations, 0)
+        flow.dispose()
+    }
+    func testSuspensionDuringBaseRestoreCannotInspectOrReopenLate() async throws {
+        let application = try application(), backend = ConnectionBackendFake(), base = UnwiredEntryStub(), surface = ConnectionSurfaceFake()
+        base.pauseRestore = true
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { _ in }, makeFirstRun: { _ in surface })
+        let entry = try CommunityConnectionIntegration(base: base, flow: flow)
+        let pending = Task { await entry.restorePreferences() }
+        for _ in 0..<100 where base.restoreGate == nil { await Task.yield() }
+        let gate = try XCTUnwrap(base.restoreGate); entry.suspend(); gate.resume(); await pending.value
+        XCTAssertEqual(backend.detects, 0); XCTAssertEqual(surface.shows, 0)
+        flow.dispose()
+    }
+    func testSuspensionDuringCanonicalInspectionCannotPublishOrReopenLate() async throws {
+        let application = try application(), backend = ConnectionBackendFake(), surface = ConnectionSurfaceFake()
+        backend.pauseDetect = true
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { _ in }, makeFirstRun: { _ in surface })
+        let entry = try CommunityConnectionIntegration(base: UnwiredEntryStub(), flow: flow)
+        let pending = Task { await entry.restorePreferences() }
+        for _ in 0..<100 where backend.detectGate == nil { await Task.yield() }
+        let gate = try XCTUnwrap(backend.detectGate); entry.suspend()
+        gate.resume(returning: try .init(consentGeneration: 9, tools: [.init(tool: .codex, authorization: .allowed)], mode: .automatic))
+        await pending.value
+        XCTAssertEqual(backend.detects, 1); XCTAssertNil(application.editor.connections.snapshot); XCTAssertEqual(surface.shows, 0)
+        flow.dispose()
+    }
+    func testUnavailableComponentHasOneLocalAboutActionAndNoServiceRetry() async throws {
+        let application = try application(), backend = ConnectionBackendFake(), surface = ConnectionSurfaceFake()
+        backend.settingsConnectionAvailability = .init(reason: .componentUnverified)
+        var panes: [String?] = []
+        let flow = try CommunityConnectionFlow(application: application, backend: backend, canPresent: { true }, showSettings: { panes.append($0) }, makeFirstRun: { _ in surface })
+        let entry = try CommunityConnectionIntegration(base: UnwiredEntryStub(), flow: flow)
+        await entry.restorePreferences(); await entry.restorePreferences()
+        XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
+        XCTAssertEqual(application.editor.connections.phase, .unavailable); XCTAssertEqual(surface.shows, 1)
+        XCTAssertTrue(application.editor.canPresentConnectionHelp)
+        try application.editor.requestConnectionHelp()
+        for _ in 0..<100 where panes.isEmpty { await Task.yield() }
+        XCTAssertEqual(panes.count, 1); XCTAssertEqual(panes[0], "about")
+        XCTAssertEqual(backend.detects, 0); XCTAssertEqual(backend.mutations, 0)
+        flow.dispose(); XCTAssertFalse(application.editor.canPresentConnectionHelp)
     }
 }

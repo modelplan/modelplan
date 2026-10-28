@@ -56,3 +56,27 @@ func reserveReaderAttempt(cache, provider string, next time.Time) error {
 	}
 	return nil
 }
+
+// legacyNativeDue is shared by scheduling and every legacy dispatcher. Check
+// the persisted provider reservation even without an aggregate capture. Older
+// captures still enforce their own interval/backoff; unrelated session sweeps
+// may update the aggregate envelope without postponing a provider's deadline.
+func legacyNativeDue(cache, provider string, e codexbarEntry, now time.Time) bool {
+	next, err := legacyNativeNext(cache, provider, e)
+	return err == nil && !now.Before(next)
+}
+
+func legacyNativeNext(cache, provider string, e codexbarEntry) (time.Time, error) {
+	next, err := loadReaderAttempt(cache, provider)
+	if err != nil || !next.IsZero() {
+		return next, err
+	}
+	if e.ObservedAt.IsZero() {
+		return time.Time{}, nil
+	}
+	wait := NativeEvery
+	if e.Status != "ok" {
+		wait = nativeRetryAfter
+	}
+	return e.ObservedAt.Add(wait), nil
+}

@@ -86,8 +86,11 @@ public struct SettingsConsentPreview: Equatable, Sendable {
     public let textVersion: Int
     public let notice: SettingsText
     public let standardTools: Set<SettingsConnectionTool>
-    public init(textVersion: Int, notice: SettingsText, standardTools: Set<SettingsConnectionTool>) {
+    public let deniableTools: Set<SettingsConnectionTool>
+    public init(textVersion: Int, notice: SettingsText, standardTools: Set<SettingsConnectionTool>,
+                deniableTools: Set<SettingsConnectionTool> = []) {
         self.textVersion = textVersion; self.notice = notice; self.standardTools = standardTools
+        self.deniableTools = deniableTools
     }
 }
 public struct SettingsConnectionSnapshot: Equatable, Sendable {
@@ -104,7 +107,8 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
         if let preview = consentPreview {
             guard (1...1_000_000).contains(preview.textVersion),
                   [preview.notice.english, preview.notice.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 }),
-                  preview.standardTools.allSatisfy({ id in tools.contains { $0.tool == id && $0.access == .standard && $0.canRequestConnection } })
+                  preview.standardTools.allSatisfy({ id in tools.contains { $0.tool == id && $0.access == .standard && $0.canRequestConnection } }),
+                  preview.deniableTools.allSatisfy({ id in tools.contains { $0.tool == id && $0.access == .standard && $0.presence == .detected } })
             else { throw SettingsConnectionFailure.invalidResponse }
         }
         guard tools.count <= SettingsConnectionTool.allCases.count,

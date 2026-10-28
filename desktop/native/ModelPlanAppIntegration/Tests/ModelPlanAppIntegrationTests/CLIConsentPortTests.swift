@@ -6,6 +6,9 @@ import ModelPlanSettings
 import ModelPlanAppIntegration
 
 @MainActor final class CLIConsentPortTests: XCTestCase {
+    private actor Desktop: CLITransport {
+        func execute(_ command: CLICommand) async throws -> CommandResult { throw TransportError.launchFailed }
+    }
     private actor Port: ConsentJSONTransport {
         let reply: Data
         var calls = 0
@@ -18,6 +21,19 @@ import ModelPlanAppIntegration
         let transport = Port(Data()), port = CommunityCLIConsentPort(transport: transport)
         do { _ = try await port.readCanonicalConsent(); XCTFail("Unavailable release must refuse") } catch { }
         let calls = await transport.count(); XCTAssertEqual(calls, 0)
+    }
+    func testProductionBackendPropagatesDisabledCapabilityWithoutRetrying() async throws {
+        let transport = Port(Data()), port = CommunityCLIConsentPort(transport: transport)
+        let desktop = Desktop()
+        let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
+        let controller = SettingsConnectionController(service: backend)
+        XCTAssertEqual(controller.availability.reason, .componentUnverified)
+        XCTAssertFalse(controller.availability.hasAnyAction)
+        await controller.refresh()
+        do { _ = try await backend.detect(); XCTFail("Must refuse") } catch { }
+        let calls = await transport.count(); XCTAssertEqual(calls, 0)
+        let copy = try XCTUnwrap(SettingsConnectionPresentation.availability(controller.availability))
+        XCTAssertTrue(copy.chinese.contains("关于")); XCTAssertFalse(copy.english.contains("Request unavailable:"))
     }
     func testGrantReceiptMustMatchRequestAndContainCanonicalGeneration() async throws {
         let id = UUID(), other = UUID()

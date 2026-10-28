@@ -6,19 +6,25 @@ import ModelPlanSettings
 /// The executable adapter must verify its containing release before supplying this port.
 /// Neither method may implement interactive prompts or convert omitted decisions into denial.
 @MainActor public protocol CommunityConsentCommandPort: AnyObject {
+    var availability: SettingsConnectionAvailability { get }
     func readCanonicalConsent() async throws -> ConsentPreview
     func applyConsentJSON(_ payload: Data) async throws
 }
+public extension CommunityConsentCommandPort {
+    var availability: SettingsConnectionAvailability { .unverified }
+}
 
 /// Single Settings service over canonical consent and the same runtime's desktop gate.
-@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing {
+@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
     private var revision: UInt64 = 0
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
     }
+    public var settingsConnectionAvailability: SettingsConnectionAvailability { port.availability }
     public func detect() async throws -> SettingsConnectionSnapshot {
+        guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
         let value = try await port.readCanonicalConsent()
@@ -31,13 +37,17 @@ import ModelPlanSettings
     }
     public func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool],
                                      request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
-        // Forget is a separate explicit flow, never generated from first-run unchecked items.
-        guard deny.isEmpty else { throw SettingsConnectionFailure.unavailable }
+        // A deny-only request is the separately confirmed Forget flow. First-run omission
+        // never becomes denial, and granting and deleting are never combined by this service.
+        guard deny.isEmpty || allow.isEmpty else { throw SettingsConnectionFailure.unavailable }
+        guard deny.isEmpty ? port.availability.canGrant : port.availability.canForget else {
+            throw SettingsConnectionFailure.unavailable
+        }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
         let before = try await port.readCanonicalConsent()
         try check(token)
-        let payload = try CommunityConsentGrantPayload(preview: .init(canonical: before), allow: allow, deny: [], request: request)
+        let payload = try CommunityConsentGrantPayload(preview: .init(canonical: before), allow: allow, deny: deny, request: request)
         let bytes = try JSONEncoder().encode(payload)
         try check(token)
         try await port.applyConsentJSON(bytes)
@@ -56,7 +66,7 @@ import ModelPlanSettings
         return try await applyStandardConsent(allow: [tool], deny: [], request: request)
     }
     public func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
-        throw SettingsConnectionFailure.unavailable
+        try await applyStandardConsent(allow: [], deny: [tool], request: request)
     }
     public func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult {
         throw SettingsConnectionFailure.unavailable
