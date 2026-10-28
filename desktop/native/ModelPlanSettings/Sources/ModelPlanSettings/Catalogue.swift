@@ -37,6 +37,8 @@ public struct SettingsAbout: Sendable {
     public var appVersion: String, cliVersion: String
     public var macOSVersion = "unknown"
     public var enabledReaders = Set<SettingsReaderID>()
+    /// Explicitly enabled runtime reader IDs; never populated from detection or local consent flags.
+    public var enabledConnectionTools = Set<SettingsConnectionTool>()
     public var recentErrorCodes: [SettingsDiagnosticCode] = []
     public var cliState: CLIReadState
     public var architecture: SettingsArchitecture
@@ -52,11 +54,16 @@ public struct SettingsAbout: Sendable {
     public var version: String { safeVersion(appVersion) }
     /// Deliberate allowlist. No paths, aliases, projects, account IDs, raw CLI output/errors or machine identity.
     public var diagnosticText: String {
-        "app=\(version)\ncli=\(safeVersion(cliVersion))\nmacOS=\(safeVersion(macOSVersion))\nreaders=\(SettingsReaderID.allCases.filter { enabledReaders.contains($0) }.map(\.rawValue).joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
+        let readers = Set(SettingsReaderID.allCases.filter { enabledReaders.contains($0) }.map(\.rawValue))
+            .union(enabledConnectionTools.map(\.rawValue)).sorted()
+        return "app=\(version)\ncli=\(safeVersion(cliVersion))\nmacOS=\(safeVersion(macOSVersion))\nreaders=\(readers.joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
     }
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
     public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
     public static let intelNote = SettingsText("Intel untested; 3D may stutter.", "Intel 未测试，3D 效果可能卡顿。")
+    public static let trademarkNotice = SettingsText(
+        "ModelPlan and Model Plan identify the official project. Software licenses do not grant endorsement or permission to impersonate it. Official visuals have a separate reserved license; the root MIT license does not cover them. Third-party marks belong to their respective owners.",
+        "ModelPlan 和 Model Plan 标识官方项目。软件许可不授予官方背书或冒充项目的权利。官方视觉另有保留许可，不在根 MIT 许可范围内。第三方商标属于各自权利人。")
 }
 public struct SettingsLicenseNotice: Equatable, Sendable {
     public let component: String, license: String, text: String
@@ -132,7 +139,7 @@ public enum SettingsCatalogue {
         .init(.dockPosition,"Along-edge position","沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
         .init(.dockEdge,"Dock edge","挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader observations.","本地读取器的只读观测。"),
-        .init(.optionalReaders,"Optional readers","可选读取器","Off by default; saves consent only.","默认关闭；只保存同意选择。"),
+        .init(.optionalReaders,"Local reader choices","本地读取器选择","Legacy app choices only; not shared CLI authorization.","仅为旧版本地选择，不代表 CLI 共享授权。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
         .init(.order,"Subscription order","订阅顺序","One shared order for the dock and cockpit; hidden entries remain editable.","挂件与驾驶舱共用顺序；隐藏项仍可编辑。"),
         .init(.login,LoginSetting.title.english,LoginSetting.title.chinese,"Start ModelPlan after signing in to your Mac.","登录 Mac 后自动启动 ModelPlan。"),

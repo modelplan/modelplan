@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: MIT
+import Foundation
+
+public enum SettingsConnectionPhase: Equatable, Sendable {
+    case unavailable, idle, loading, awaitingConfirmation(SettingsConnectionConfirmation)
+    case running(SettingsConnectionAction), pluginResult(SettingsPluginInstallResult), failed(SettingsConnectionFailure), cancelled
+}
+
+/// Transient presentation over injected observations. No preference store, clock, selector or service creation.
+/// Settings and first run share this one controller through their existing SettingsEditor.
+@MainActor public final class SettingsConnectionController {
+    public private(set) var snapshot: SettingsConnectionSnapshot?
+    public private(set) var phase: SettingsConnectionPhase
+    private let service: SettingsConnectionService?
+    private var generation: UInt64 = 0
+    private var observation: UInt64 = 0
+    private var observers: [UUID: () -> Void] = [:]
+    public init(service: SettingsConnectionService? = nil) {
+        self.service = service; phase = service == nil ? .unavailable : .idle
+    }
+    public var isAvailable: Bool { service != nil }
+    public var isBusy: Bool {
+        switch phase { case .loading, .running: return true; default: return false }
+    }
+    public func observe(_ body: @escaping () -> Void) -> UUID {
+        let id = UUID(); observers[id] = body; return id
+    }
+    public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
+    private func changed() { for body in Array(observers.values) { body() } }
+    /// The app's newer observation invalidates confirmation and any in-flight UI receipt.
+    /// Unknown/empty is explicit; it never becomes inferred authorization or an invented subscription.
+    public func receive(_ value: SettingsConnectionSnapshot) {
+        generation &+= 1
+        do { try accept(value); phase = isAvailable ? .idle : .unavailable }
+        catch { phase = .failed(.stale) }
+        changed()
+    }
+    /// Cancels UI admission/results, not an already accepted external effect. The runtime owns cancellation.
+    public func cancel() {
+        generation &+= 1; phase = isAvailable ? .cancelled : .unavailable; changed()
+    }
+    public func refresh() async {
+        guard let service else { phase = .unavailable; changed(); return }
+        guard !isBusy else { return }
+        guard !Task.isCancelled else { cancel(); return }
+        generation &+= 1; let token = generation
+        phase = .loading; changed()
+        do {
+            let value = try await service.detect()
+            guard generation == token else { return }
+            guard !Task.isCancelled else { cancel(); return }
+            try accept(value); phase = .idle; changed()
+        } catch { failed(error, token: token) }
+    }
+    /// An explicit request only presents a confirmation. No service is invoked here.
+    @discardableResult public func request(_ action: SettingsConnectionAction) -> SettingsConnectionConfirmation? {
+        guard isAvailable, !isBusy, canRequest(action) else { return nil }
+        generation &+= 1
+        let confirmation = SettingsConnectionConfirmation(id: UUID(), action: action, observation: observation)
+        phase = .awaitingConfirmation(confirmation); changed(); return confirmation
+    }
+    public func confirm(_ id: UUID) async {
+        guard let service, case .awaitingConfirmation(let confirmation) = phase,
+              confirmation.id == id, confirmation.observation == observation,
+              canRequest(confirmation.action) else { return }
+        guard !Task.isCancelled else { cancel(); return }
+        generation &+= 1; let token = generation
+        let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration)
+        phase = .running(confirmation.action); changed()
+        do {
+            switch confirmation.action {
+            case .connect(let tool, let access):
+                let value = try await service.connect(tool, access: access, request: request)
+                guard generation == token else { return }
+                guard !Task.isCancelled else { cancel(); return }
+                try acceptActionResult(value); phase = .idle
+            case .disconnect(let tool):
+                let value = try await service.disconnect(tool, request: request)
+                guard generation == token else { return }
+                guard !Task.isCancelled else { cancel(); return }
+                try acceptActionResult(value); phase = .idle
+            case .installPlugin(let tool):
+                let value = try await service.installPlugin(tool, request: request)
+                guard generation == token else { return }
+                guard !Task.isCancelled else { cancel(); return }
+                guard value.tool == tool else { throw SettingsConnectionFailure.invalidResponse }
+                phase = .pluginResult(value)
+            }
+            changed()
+        } catch { failed(error, token: token) }
+    }
+    private func canRequest(_ action: SettingsConnectionAction) -> Bool {
+        switch action {
+        case .installPlugin: return true
+        case .connect(let tool, let access):
+            return snapshot?.tools.contains { $0.tool == tool && $0.access == access && $0.canRequestConnection } == true
+        case .disconnect(let tool): return snapshot?.tools.contains { $0.tool == tool } == true
+        }
+    }
+    private func accept(_ value: SettingsConnectionSnapshot) throws {
+        // A canonical generation rollback cannot replace a newer observed grant/revocation.
+        if let current = snapshot?.consentGeneration,
+           value.consentGeneration.map({ $0 < current }) ?? true {
+            throw SettingsConnectionFailure.stale
+        }
+        observation &+= 1; snapshot = value
+    }
+    private func acceptActionResult(_ value: SettingsConnectionSnapshot) throws {
+        // Turning reading on/off is not evidence that a subscription stopped belonging to its owner.
+        // Do not fabricate a merge: reject an incomplete action receipt and retain the last observation.
+        // The app may still replace ownership via its separately verified receive(...) observation.
+        let prior = snapshot?.subscriptions ?? []
+        guard prior.allSatisfy({ old in value.subscriptions.contains { $0.reference == old.reference && $0.tool == old.tool } })
+        else { throw SettingsConnectionFailure.invalidResponse }
+        try accept(value)
+    }
+    private func failed(_ error: Error, token: UInt64) {
+        guard generation == token else { return }
+        if Task.isCancelled || error is CancellationError { phase = .cancelled }
+        else { phase = .failed((error as? SettingsConnectionFailure) ?? .requestFailed) }
+        changed()
+    }
+}

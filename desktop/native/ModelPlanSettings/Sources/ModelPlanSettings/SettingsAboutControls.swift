@@ -5,6 +5,12 @@ import AppKit
 @MainActor public protocol SettingsDiagnosticClipboard: AnyObject {
     func writeDiagnostics(_ text: String) -> Bool
 }
+@MainActor public enum SettingsDiagnosticCopy {
+    /// Projection is applied at the final port boundary, even if the caller supplied unsafe versions.
+    @discardableResult public static func copy(_ about: SettingsAbout, to clipboard: SettingsDiagnosticClipboard) -> Bool {
+        clipboard.writeDiagnostics(about.diagnosticText)
+    }
+}
 @MainActor public final class SystemDiagnosticClipboard: SettingsDiagnosticClipboard {
     public init() {}
     public func writeDiagnostics(_ text: String) -> Bool {
@@ -38,9 +44,10 @@ enum SettingsSurfaceAction {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     func apply(_ notices: [SettingsLicenseNotice], language: SettingsLanguage) {
-        let value = notices.isEmpty
+        let licenses = notices.isEmpty
             ? SettingsWords.text("Bundled notices are not available in this build.", "此版本尚未提供随包许可声明。", language)
             : notices.map { $0.component + " — " + $0.license + "\n" + $0.text }.joined(separator: "\n\n")
+        let value = licenses + "\n\n" + SettingsAbout.trademarkNotice.value(language)
         if text.string != value { text.string = value }
         text.setAccessibilityLabel(SettingsWords.text("Third-party license notices", "第三方许可声明", language))
     }
