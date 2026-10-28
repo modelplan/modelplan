@@ -74,14 +74,31 @@ public struct SettingsUnrecognizedTool: Equatable, Sendable {
         self.id = id; self.title = title; self.presence = presence; self.access = access
     }
 }
+/// Fixed consent wording/version supplied by the runtime's current preview, never a grant.
+public struct SettingsConsentPreview: Equatable, Sendable {
+    public let textVersion: Int
+    public let notice: SettingsText
+    public let standardTools: Set<SettingsConnectionTool>
+    public init(textVersion: Int, notice: SettingsText, standardTools: Set<SettingsConnectionTool>) {
+        self.textVersion = textVersion; self.notice = notice; self.standardTools = standardTools
+    }
+}
 public struct SettingsConnectionSnapshot: Equatable, Sendable {
     /// Canonical CLI consent generation, supplied by the same runtime. Nil is unknown, never a grant.
     public let consentGeneration: UInt64?
     public let tools: [SettingsConnectionToolState]
     public let subscriptions: [SettingsVerifiedSubscription]
     public let unrecognizedTools: [SettingsUnrecognizedTool]
+    public let consentPreview: SettingsConsentPreview?
     public init(consentGeneration: UInt64? = nil, tools: [SettingsConnectionToolState] = [],
-                subscriptions: [SettingsVerifiedSubscription] = [], unrecognizedTools: [SettingsUnrecognizedTool] = []) throws {
+                subscriptions: [SettingsVerifiedSubscription] = [], unrecognizedTools: [SettingsUnrecognizedTool] = [],
+                consentPreview: SettingsConsentPreview? = nil) throws {
+        if let preview = consentPreview {
+            guard (1...1_000_000).contains(preview.textVersion),
+                  [preview.notice.english, preview.notice.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 }),
+                  preview.standardTools.allSatisfy({ id in tools.contains { $0.tool == id && $0.access == .standard && $0.canRequestConnection } })
+            else { throw SettingsConnectionFailure.invalidResponse }
+        }
         guard tools.count <= SettingsConnectionTool.allCases.count,
               unrecognizedTools.count <= 512, Set(unrecognizedTools.map(\.id)).count == unrecognizedTools.count,
               unrecognizedTools.allSatisfy({ tool in
@@ -102,6 +119,7 @@ public struct SettingsConnectionSnapshot: Equatable, Sendable {
               }) else { throw SettingsConnectionFailure.invalidResponse }
         self.consentGeneration = consentGeneration; self.tools = tools; self.subscriptions = subscriptions
         self.unrecognizedTools = unrecognizedTools
+        self.consentPreview = consentPreview
     }
     private static func validReference(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 256 && !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -128,6 +146,7 @@ public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)
     case disconnect(SettingsConnectionTool)
     case installPlugin(SettingsPluginTool)
+    case allowStandardTools([SettingsConnectionTool])
 }
 public struct SettingsConnectionConfirmation: Equatable, Sendable {
     public let id: UUID
@@ -138,8 +157,10 @@ public struct SettingsConnectionRequestContext: Equatable, Sendable {
     public let id: UUID
     /// The host must revalidate this against its shared consent before admitting an effect.
     public let expectedConsentGeneration: UInt64?
-    public init(id: UUID, expectedConsentGeneration: UInt64?) {
+    public let consentTextVersion: Int?
+    public init(id: UUID, expectedConsentGeneration: UInt64?, consentTextVersion: Int? = nil) {
         self.id = id; self.expectedConsentGeneration = expectedConsentGeneration
+        self.consentTextVersion = consentTextVersion
     }
 }
 
@@ -151,4 +172,8 @@ public struct SettingsConnectionRequestContext: Equatable, Sendable {
     func connect(_ tool: SettingsConnectionTool, access: SettingsConnectionAccess, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot
     func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot
     func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult
+}
+/// Atomic standard-class intent; browser-session permission is never included in this batch.
+@MainActor public protocol SettingsConnectionAllowing: SettingsConnectionService {
+    func allowStandardTools(_ tools: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot
 }

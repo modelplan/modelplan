@@ -20,6 +20,8 @@ import AppKit
 @MainActor final class SettingsConnectionsView: NSStackView {
     private let controller: SettingsConnectionController
     private let editor: SettingsEditor
+    private let firstRun: Bool
+    private var intent: SettingsConnectionIntent?
     private var language: SettingsLanguage = .chinese
     private var observer: UUID?
     private var buttons: [ConnectionButton] = []
@@ -28,8 +30,9 @@ import AppKit
     private var preferenceFailed = false
     weak var followingKeyView: NSView? { didSet { buttons.last?.nextKeyView = followingKeyView } }
     var firstControl: NSView? { buttons.first { $0.isEnabled } }
-    init(editor: SettingsEditor) {
+    init(editor: SettingsEditor, firstRun: Bool = false) {
         self.editor = editor; self.controller = editor.connections
+        self.firstRun = firstRun
         super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 10
         setAccessibilityIdentifier("settings.connections")
@@ -63,8 +66,17 @@ import AppKit
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
+            if firstRun && intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }
             toolGroup(snapshot.standardTools, advanced: false)
+            if firstRun {
+                label(.init("Checked tools are intentions only. Use Allow and confirm to request shared permission.", "勾选仅代表意向；点击授权并确认后才会请求共享权限。"))
+                if let preview = snapshot.consentPreview { label(preview.notice) }
+                addArrangedSubview(button(.init("Allow selected tools…", "授权所选工具…"), id: "connections.allowSelected",
+                    enabled: intent.map { controller.canAllow($0) } ?? false) { [weak self] in
+                    guard let self, let intent = self.intent else { return }; self.controller.requestAllow(intent)
+                })
+            }
             unrecognized(snapshot.unrecognizedTools.filter { $0.access == .standard })
             toolGroup(snapshot.advancedTools, advanced: true)
             unrecognized(snapshot.unrecognizedTools.filter { $0.access == .browserSession })
@@ -137,6 +149,15 @@ import AppKit
             let suffix = value.beta ? " · beta" : ""
             label(.init(value.tool.title + suffix, value.tool.title + suffix), heading: true)
             label(SettingsConnectionPresentation.summary(value))
+            if firstRun && !advanced {
+                let choice = button(.init("Choose " + value.tool.title, "选择 " + value.tool.title),
+                    id: "connections.choose." + value.tool.rawValue, enabled: !controller.isBusy && value.canRequestConnection) { [weak self] in
+                    guard let self, var intent = self.intent else { return }
+                    intent.select(value.tool, enabled: !intent.selected.contains(value.tool)); self.intent = intent; self.render()
+                }
+                choice.setButtonType(.switch); choice.state = intent?.selected.contains(value.tool) == true ? .on : .off
+                addArrangedSubview(choice); continue
+            }
             let connect = button(advanced ? .init("Enable browser session…", "开启浏览器会话…") : .init("Connect…", "连接…"),
                 id: "connections.connect." + value.tool.rawValue,
                 enabled: controller.isAvailable && !controller.isBusy && value.canRequestConnection) { [weak self] in

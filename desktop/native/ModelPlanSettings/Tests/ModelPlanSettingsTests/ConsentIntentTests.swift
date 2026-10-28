@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: MIT
+import Foundation
+import XCTest
+@testable import ModelPlanSettings
+
+@MainActor private class IntentInspectOnly: SettingsConnectionService {
+    var facts = try! SettingsConnectionSnapshot()
+    var detects = 0
+    func detect() async throws -> SettingsConnectionSnapshot { detects += 1; return facts }
+    func connect(_ tool: SettingsConnectionTool, access: SettingsConnectionAccess, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { throw SettingsConnectionFailure.unavailable }
+    func disconnect(_ tool: SettingsConnectionTool, request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot { throw SettingsConnectionFailure.unavailable }
+    func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult { throw SettingsConnectionFailure.unavailable }
+}
+@MainActor private final class IntentAtomicFake: IntentInspectOnly, SettingsConnectionAllowing {
+    var calls: [([SettingsConnectionTool], SettingsConnectionRequestContext)] = []
+    func allowStandardTools(_ tools: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
+        calls.append((tools, request)); return facts
+    }
+}
+@MainActor final class ConsentIntentTests: XCTestCase {
+    private func facts(generation: UInt64? = 1, version: Int? = 7, allowed: Bool = false) throws -> SettingsConnectionSnapshot {
+        try .init(consentGeneration: generation, tools: [
+            .init(tool: .codex, presence: .detected, authorization: allowed ? .allowed : .noConsent, support: .full),
+            .init(tool: .cursor, presence: .detected, support: .full, access: .browserSession),
+            .init(tool: .claude, presence: .notDetected, support: .full),
+        ], consentPreview: version.map { .init(textVersion: $0, notice: .init("Synthetic consent", "合成授权说明"), standardTools: [.codex]) })
+    }
+    func testPrecheckedStandardChoicesAreOnlyIntentAndBrowserSessionCannotJoin() throws {
+        let snapshot = try facts(); var intent = SettingsConnectionIntent(snapshot: snapshot)
+        XCTAssertEqual(intent.selected, [.codex]); XCTAssertEqual(snapshot.tools[0].authorization, .noConsent)
+        intent.select(.cursor, enabled: true); intent.select(.claude, enabled: true)
+        XCTAssertEqual(intent.orderedTools, [.codex])
+        intent.select(.codex, enabled: false); XCTAssertTrue(intent.selected.isEmpty)
+        XCTAssertEqual(snapshot.tools[0].authorization, .noConsent)
+    }
+    func testBatchRequiresAtomicBackendPreviewAndCanonicalGeneration() throws {
+        let inspect = IntentInspectOnly()
+        let readonly = SettingsConnectionController(service: inspect), value = try facts()
+        readonly.receive(value); XCTAssertFalse(readonly.canAllow(.init(snapshot: value)))
+        let atomic = IntentAtomicFake(), bound = SettingsConnectionController()
+        XCTAssertTrue(bound.bind(service: atomic)); XCTAssertFalse(bound.bind(service: IntentAtomicFake()))
+        for value in [try facts(version: nil), try facts(generation: nil)] {
+            bound.receive(value); XCTAssertFalse(bound.canAllow(.init(snapshot: value)))
+        }
+        bound.receive(value); XCTAssertTrue(bound.canAllow(.init(snapshot: value)))
+        XCTAssertTrue(atomic.calls.isEmpty); XCTAssertEqual(atomic.detects, 0)
+    }
+    func testOnlyExplicitConfirmationCallsOneAtomicBatchWithExactContext() async throws {
+        let fake = IntentAtomicFake()
+        let actual = SettingsConnectionController(service: fake), before = try facts()
+        actual.receive(before); fake.facts = try facts(generation: 2, allowed: true)
+        let request = try XCTUnwrap(actual.requestAllow(.init(snapshot: before)))
+        XCTAssertTrue(fake.calls.isEmpty); XCTAssertEqual(actual.snapshot, before)
+        await actual.confirm(UUID()); XCTAssertTrue(fake.calls.isEmpty)
+        await actual.confirm(request.id); await actual.confirm(request.id)
+        XCTAssertEqual(fake.calls.count, 1); XCTAssertEqual(fake.calls[0].0, [.codex])
+        XCTAssertEqual(fake.calls[0].1.id, request.id)
+        XCTAssertEqual(fake.calls[0].1.expectedConsentGeneration, 1); XCTAssertEqual(fake.calls[0].1.consentTextVersion, 7)
+        XCTAssertEqual(actual.snapshot?.tools[0].authorization, .allowed)
+    }
+    func testNewPolicyOrObserverRevocationInvalidatesOldIntentBeforeDispatch() async throws {
+        let fake = IntentAtomicFake()
+        let controller = SettingsConnectionController(service: fake), before = try facts()
+        controller.receive(before); let intent = SettingsConnectionIntent(snapshot: before)
+        let newer = try facts(generation: 2, version: 8)
+        controller.receive(newer); XCTAssertNil(controller.requestAllow(intent))
+        let observer = controller.observe { if case .running = controller.phase { controller.receive(try! self.facts(generation: 3, version: 9)) } }
+        let request = try XCTUnwrap(controller.requestAllow(.init(snapshot: newer)))
+        await controller.confirm(request.id)
+        XCTAssertTrue(fake.calls.isEmpty); XCTAssertEqual(controller.snapshot?.consentGeneration, 3)
+        controller.removeObserver(observer)
+    }
+    func testIncompleteBatchReadbackIsNotSuccessOrAnAutomaticRetry() async throws {
+        let fake = IntentAtomicFake(), controller = SettingsConnectionController(service: fake)
+        let before = try facts(); controller.receive(before)
+        fake.facts = try facts(generation: 2, allowed: false)
+        let request = try XCTUnwrap(controller.requestAllow(.init(snapshot: before)))
+        await controller.confirm(request.id)
+        XCTAssertEqual(fake.calls.count, 1); XCTAssertEqual(controller.phase, .failed(.invalidResponse))
+        XCTAssertEqual(controller.snapshot, fake.facts, "preserve actual canonical readback instead of inventing a grant or rollback")
+    }
+    func testPreviewCannotAdmitBrowserOrMissingTools() throws {
+        XCTAssertThrowsError(try SettingsConnectionSnapshot(tools: [.init(tool: .cursor, presence: .detected, support: .full, access: .browserSession)],
+            consentPreview: .init(textVersion: 1, notice: .init("Test", "测试"), standardTools: [.cursor])))
+    }
+}

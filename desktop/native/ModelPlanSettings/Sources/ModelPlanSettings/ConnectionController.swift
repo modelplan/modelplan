@@ -11,7 +11,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
 @MainActor public final class SettingsConnectionController {
     public private(set) var snapshot: SettingsConnectionSnapshot?
     public private(set) var phase: SettingsConnectionPhase
-    private let service: SettingsConnectionService?
+    private var service: SettingsConnectionService?
     private var generation: UInt64 = 0
     private var observation: UInt64 = 0
     private var observers: [UUID: () -> Void] = [:]
@@ -19,6 +19,19 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         self.service = service; phase = service == nil ? .unavailable : .idle
     }
     public var isAvailable: Bool { service != nil }
+    public var hasAllowanceBackend: Bool { service is any SettingsConnectionAllowing }
+    /// Late composition uses the existing editor/controller. A second backend cannot take it over.
+    @discardableResult public func bind(service: SettingsConnectionService) -> Bool {
+        guard self.service == nil, !isBusy else { return false }
+        generation &+= 1; self.service = service; phase = .idle; changed(); return true
+    }
+    public func canAllow(_ intent: SettingsConnectionIntent) -> Bool {
+        isAvailable && !isBusy && intent.basis == snapshot && canRequest(.allowStandardTools(intent.orderedTools))
+    }
+    @discardableResult public func requestAllow(_ intent: SettingsConnectionIntent) -> SettingsConnectionConfirmation? {
+        guard canAllow(intent) else { return nil }
+        return request(.allowStandardTools(intent.orderedTools))
+    }
     public var isBusy: Bool {
         switch phase { case .loading, .running: return true; default: return false }
     }
@@ -68,13 +81,22 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
               canRequest(confirmation.action) else { return }
         guard !Task.isCancelled else { cancel(); return }
         generation &+= 1; let token = generation
-        let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration)
+        let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration,
+                                                       consentTextVersion: snapshot?.consentPreview?.textVersion)
         phase = .running(confirmation.action); changed()
         guard generation == token, confirmation.observation == observation,
               phase == .running(confirmation.action), canRequest(confirmation.action) else { return }
         guard !Task.isCancelled else { cancel(); return }
         do {
             switch confirmation.action {
+            case .allowStandardTools(let tools):
+                guard let allowing = service as? any SettingsConnectionAllowing else { throw SettingsConnectionFailure.unavailable }
+                let value = try await allowing.allowStandardTools(tools, request: request)
+                guard generation == token else { return }
+                guard !Task.isCancelled else { cancel(); return }
+                try acceptActionResult(value)
+                phase = tools.allSatisfy({ id in value.tools.contains { $0.tool == id && $0.authorization == .allowed } })
+                    ? .idle : .failed(.invalidResponse)
             case .connect(let tool, let access):
                 let value = try await service.connect(tool, access: access, request: request)
                 guard generation == token else { return }
@@ -97,6 +119,10 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     }
     private func canRequest(_ action: SettingsConnectionAction) -> Bool {
         switch action {
+        case .allowStandardTools(let tools):
+            guard service is any SettingsConnectionAllowing, !tools.isEmpty, Set(tools).count == tools.count,
+                  snapshot?.consentGeneration != nil, let preview = snapshot?.consentPreview else { return false }
+            return tools.allSatisfy { id in preview.standardTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.canRequestConnection } == true }
         case .installPlugin: return true
         case .connect(let tool, let access):
             return snapshot?.tools.contains { $0.tool == tool && $0.access == access && $0.canRequestConnection } == true
