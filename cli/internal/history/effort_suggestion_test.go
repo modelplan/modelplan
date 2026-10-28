@@ -45,6 +45,11 @@ func TestSuggestEffort(t *testing.T) {
 		}},
 		{name: "tiny observed", effort: "medium", uses: []float64{2, 2, 2}},
 		{name: "missing effort", effort: "", uses: []float64{40, 45, 50}},
+		{name: "Claude status-line has no plan label", effort: "medium", uses: []float64{40, 45, 50}, direction: "up", ratio: 1.5, edit: func(l *history.Ledger, d *digest.Digest) {
+			for i := range l.Cycles {
+				l.Cycles[i].Source, l.Cycles[i].Plan = "claude-code", ""
+			}
+		}},
 		{name: "different plan", effort: "medium", uses: []float64{40, 45, 50}, edit: func(l *history.Ledger, d *digest.Digest) { l.Cycles[0].Plan = "other" }},
 		{name: "different source", effort: "medium", uses: []float64{40, 45, 50}, edit: func(l *history.Ledger, d *digest.Digest) { l.Cycles[0].Source = "claude-code" }},
 		{name: "different pool", effort: "medium", uses: []float64{40, 45, 50}, edit: func(l *history.Ledger, d *digest.Digest) { l.Cycles[0].Limit = "other" }},
@@ -225,5 +230,73 @@ func TestEffortDismissalExpiresAndReadDoesNotConsumeNotice(t *testing.T) {
 	}
 	if history.NotifyEffortSuggestion(cache, d, next) == nil {
 		t.Fatal("manual view consumed notice")
+	}
+}
+
+func TestSuggestDefaultEffortUsesCurrentDefault(t *testing.T) {
+	at := contracttest.Now
+	for _, tc := range []struct {
+		name, past, current, from, to string
+		uses                          []float64
+	}{
+		{"up from current", "medium", "high", "high", "maximum", []float64{40, 45, 50}},
+		{"down from current", "maximum", "high", "high", "medium", []float64{90, 92, 91}},
+		{"already highest", "medium", "maximum", "", "", []float64{40, 45, 50}},
+		{"already lowest", "high", "medium", "", "", []float64{90, 92, 91}},
+		{"unknown", "medium", "", "", "", []float64{40, 45, 50}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _ := contracttest.Public()
+			cost := 6.0
+			d.Models[0].Efforts = append(d.Models[0].Efforts, digest.Effort{Effort: "maximum", Label: "Max", Cost: &cost, CostBasisID: "synthetic-reference"})
+			l := contracttest.EffortLedger(at, tc.past, false, tc.uses...)
+			before, _ := json.Marshal(l)
+			v := history.SuggestDefaultEffort(l.Cycles, history.Share{Model: "native-z", Effort: tc.current}, d, at)
+			after, _ := json.Marshal(l)
+			if string(before) != string(after) {
+				t.Fatal("pure calculation mutated input")
+			}
+			if tc.from == "" {
+				if v != nil {
+					t.Fatalf("unexpected suggestion: %+v", v)
+				}
+				return
+			}
+			if v == nil || v.FromEffort != tc.from || v.ToEffort != tc.to || v.Fast {
+				t.Fatalf("wrong current default or changed Fast: %+v", v)
+			}
+			want := 2.0
+			if tc.to == "medium" {
+				want = 2.0 / 3
+			}
+			if math.Abs(v.CostRatio-want) > 1e-10 {
+				t.Fatalf("ratio = %v, want %v", v.CostRatio, want)
+			}
+		})
+	}
+}
+
+func TestSuggestDefaultEffortRequiresOneKnownPool(t *testing.T) {
+	at := contracttest.Now
+	for _, tc := range []struct {
+		name string
+		edit func(*history.Ledger, *history.Share)
+	}{
+		{"source", func(l *history.Ledger, c *history.Share) { l.Cycles[0].Source = "claude-code" }},
+		{"plan", func(l *history.Ledger, c *history.Share) { l.Cycles[0].Plan = "other" }},
+		{"pool", func(l *history.Ledger, c *history.Share) { l.Cycles[0].Limit = "other" }},
+		{"unfinished", func(l *history.Ledger, c *history.Share) { l.Cycles[0].ResetsAt = at.Add(time.Hour) }},
+		{"model", func(l *history.Ledger, c *history.Share) { c.Model = "native-one" }},
+		{"speed changed", func(l *history.Ledger, c *history.Share) { c.Fast = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _ := contracttest.Public()
+			l := contracttest.EffortLedger(at, "medium", false, 40, 45, 50)
+			current := history.Share{Model: "native-z", Effort: "medium"}
+			tc.edit(&l, &current)
+			if v := history.SuggestDefaultEffort(l.Cycles, current, d, at); v != nil {
+				t.Fatalf("unexpected suggestion: %+v", v)
+			}
+		})
 	}
 }

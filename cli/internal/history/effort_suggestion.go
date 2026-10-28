@@ -17,13 +17,17 @@ import (
 
 // Conservative, tunable thresholds: three recent weeks, mostly observed and on one
 // configuration. Five observed points rejects meter jitter; 60% dominance avoids
-// treating a mixed workload as a default. The middle range deliberately abstains.
+// treating a mixed workload as a default. At most 60% average / 75% maximum
+// leaves repeated headroom; 90% average or two limit hits means repeated pressure.
+// The middle range deliberately abstains.
 const (
 	suggestionWeeks    = 3
 	suggestionWeek     = 7 * 24 * time.Hour
 	minObservedPoints  = 5.0
 	minAttributedShare = .60
 	minDominantShare   = .60
+	minDominantWeeks   = 2
+	tightLimitCycles   = 2
 	underusedAverage   = 60.0
 	underusedMaximum   = 75.0
 	tightAverage       = 90.0
@@ -65,6 +69,29 @@ func positive(v float64) bool { return v > 0 && !math.IsNaN(v) && !math.IsInf(v,
 // SuggestEffort is pure: callers supply a ledger and a verified publication. No
 // historical default, alias, endpoint, cost or speed multiplier is guessed.
 func SuggestEffort(l Ledger, d *digest.Digest, now time.Time) *EffortSuggestion {
+	return suggestEffort(l, d, now, nil)
+}
+
+// SuggestDefaultEffort takes finished weekly cycles of one subscription/pool and
+// an explicit current default. Past attribution establishes a comparable model
+// and speed setting; the adjacent step starts at the current effort, even when
+// the user has since changed it. Unknown defaults and mixed subscriptions abstain.
+// Share.Points is unused. The caller owns reading local inputs and publication.
+func SuggestDefaultEffort(cycles []Cycle, current Share, d *digest.Digest, now time.Time) *EffortSuggestion {
+	if len(cycles) == 0 || current.Model == "" || current.Effort == "" {
+		return nil
+	}
+	pool := cycles[0]
+	for _, c := range cycles {
+		if c.Source != pool.Source || c.Plan != pool.Plan || c.Limit != pool.Limit || c.WindowMinutes != pool.WindowMinutes ||
+			c.Kind != "weekly" || !c.Done(now) {
+			return nil
+		}
+	}
+	return suggestEffort(Ledger{Cycles: cycles}, d, now, &current)
+}
+
+func suggestEffort(l Ledger, d *digest.Digest, now time.Time, current *Share) *EffortSuggestion {
 	if d == nil || d.PublicationID == "" {
 		return nil
 	}
@@ -74,7 +101,9 @@ func SuggestEffort(l Ledger, d *digest.Digest, now time.Time) *EffortSuggestion 
 	}
 	groups := map[pool][]Cycle{}
 	for _, c := range l.Cycles {
-		if (c.Source != "codex" && c.Source != "claude-code") || c.Plan == "" || c.Kind != "weekly" ||
+		// Claude Code's status-line meter does not report a plan label. Keep it
+		// unknown and separate from labelled pools; Codex does report its plan.
+		if (c.Source != "codex" && c.Source != "claude-code") || (c.Source == "codex" && c.Plan == "") || c.Kind != "weekly" ||
 			(c.WindowMinutes != 0 && c.WindowMinutes != 10080) || c.ResetsAt.IsZero() || !c.Done(now) {
 			continue
 		}
@@ -149,7 +178,7 @@ func SuggestEffort(l Ledger, d *digest.Digest, now time.Time) *EffortSuggestion 
 		if avg <= underusedAverage && maximum <= underusedMaximum && hits == 0 {
 			step, direction = 1, "up"
 		}
-		if avg >= tightAverage || hits >= 2 {
+		if avg >= tightAverage || hits >= tightLimitCycles {
 			step, direction = -1, "down"
 		}
 		if step == 0 {
@@ -162,10 +191,17 @@ func SuggestEffort(l Ledger, d *digest.Digest, now time.Time) *EffortSuggestion 
 				dominant, best = cfg, n
 			}
 		}
-		if best/knownTotal < minDominantShare || occurrences[dominant] < 2 {
+		if best/knownTotal < minDominantShare || occurrences[dominant] < minDominantWeeks {
 			continue
 		}
 		m := d.Model(dominant.model)
+		if current != nil {
+			cm := d.Match(k.source, current.Model)
+			if cm == nil || cm.ID != m.ID || current.Fast != dominant.fast || m.Effort(current.Effort) == nil {
+				continue
+			}
+			dominant.effort = m.Effort(current.Effort).Effort
+		}
 		fromIndex := -1
 		for i := range m.Efforts {
 			if m.Efforts[i].Effort == dominant.effort {
@@ -303,14 +339,20 @@ func ReadEffortSuggestion(cache string, d *digest.Digest, now time.Time) EffortV
 	return v
 }
 
-// NotifyEffortSuggestion claims one user-facing notice per rolling week across
-// hooks and harnesses. Manual history/desktop reads never consume the notice.
+// NotifyEffortSuggestion claims one user-facing notice per rolling week shared
+// by history, status-line hints and hooks. Desktop inspection remains read-only.
 func NotifyEffortSuggestion(cache string, d *digest.Digest, now time.Time) *EffortSuggestion {
 	if effortSuggestionOff() {
 		return nil
 	}
-	v := ReadEffortSuggestion(cache, d, now)
-	if v.Suggestion == nil {
+	return ClaimEffortSuggestion(cache, ReadEffortSuggestion(cache, d, now).Suggestion, now)
+}
+
+// ClaimEffortSuggestion atomically reserves the shared weekly user notice for a
+// precomputed suggestion, including one based on an explicit current default.
+// Call only when the caller will render it; previews and discarded output do not claim.
+func ClaimEffortSuggestion(cache string, v *EffortSuggestion, now time.Time) *EffortSuggestion {
+	if effortSuggestionOff() || v == nil || v.ResetAt.IsZero() || now.Before(v.ResetAt) || !now.Before(v.ExpiresAt) {
 		return nil
 	}
 	unlock, ok := lockNamed(cache, "effort-suggestion.lock")
@@ -326,7 +368,7 @@ func NotifyEffortSuggestion(cache string, d *digest.Digest, now time.Time) *Effo
 	if saveEffortState(cache, s) != nil {
 		return nil
 	}
-	return v.Suggestion
+	return v
 }
 
 // SetEffortSuggestion changes only this feature's local state, never a harness

@@ -370,7 +370,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		d, _, _ := publication.Load(st)
 		style.History(stdout, l, d, history.Path(st.Dir), now)
-		if v := history.ReadEffortSuggestion(st.Dir, d, now).Suggestion; v != nil {
+		if v := history.NotifyEffortSuggestion(st.Dir, d, now); v != nil {
 			if c.lang == "en" {
 				fmt.Fprintln(stdout, "\nDefault effort suggestion (local only)")
 			} else {
@@ -605,9 +605,19 @@ func statuslineInput(in quota.StatuslineInput, stdout io.Writer, style render.St
 	d, s, err := publication.Load(st)
 	hint := ""
 	if acct != nil {
+		// Explicit status-line flags also identify the current configuration for
+		// personal advice; do not substitute the publication's recommended effort.
+		if modelID != "" {
+			acct.Harness.Model = modelID
+		}
+		if effort != "" {
+			acct.Harness.Effort = effort
+		}
 		var report quota.Report
 		report, acct = linkedReport(st, d, *acct, now)
-		hint = statuslineHint(style, st, d, report, now, !preview)
+		if style.QuotaSegment(acct, "") != "" {
+			hint = statuslineHint(style, st, d, report, now, !preview && stdout != io.Discard)
+		}
 	}
 	q := style.QuotaSegment(acct, hint)
 	if q != "" {
@@ -656,7 +666,11 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 	state := advise.Load(st.Dir)
 	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
 	hint := ""
+	personalAllowed := true
 	for _, e := range es {
+		if e.Source == "claude-code" && (e.Type == advise.WindowExhausted || e.Type == advise.WindowTight || e.InStatusLine(now)) {
+			personalAllowed = false
+		}
 		if e.Source == "claude-code" && e.InStatusLine(now) {
 			if hint = style.AdviceShort(e); hint != "" {
 				if save {
@@ -668,8 +682,45 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 	}
 	if save {
 		_ = state.Save(st.Dir, now)
+		if hint == "" && personalAllowed {
+			hint = defaultEffortHint(style, st, d, report, now)
+		}
 	}
 	return hint
+}
+
+// defaultEffortHint is user-only and cache-only. It matches the current weekly
+// pool and explicit harness configuration, so another subscription's history or
+// another model's past default cannot supply the status-line hint.
+// An unknown plan label matches only other unknown labels.
+func defaultEffortHint(style render.Style, st *store.Store, d *digest.Digest, report quota.Report, now time.Time) string {
+	if history.Off() || d == nil {
+		return ""
+	}
+	for _, a := range report.Accounts {
+		if a.Source != "claude-code" || a.Harness == nil || a.Harness.Endpoint != "" {
+			continue
+		}
+		for _, w := range a.Windows {
+			if w.Kind != "weekly" {
+				continue
+			}
+			var cycles []history.Cycle
+			for _, c := range history.Load(st.Dir).Cycles {
+				if c.Source == a.Source && c.Plan == a.Plan && c.Limit == w.Limit && c.Kind == "weekly" && c.Done(now) &&
+					(w.WindowMinutes == 0 || c.WindowMinutes == 0 || c.WindowMinutes == w.WindowMinutes) {
+					cycles = append(cycles, c)
+				}
+			}
+			current := history.Share{Model: a.Harness.Model, Effort: a.Harness.Effort,
+				Fast: (a.Harness.FastMode != nil && *a.Harness.FastMode) || a.Harness.ServiceTier == "fast"}
+			v := history.SuggestDefaultEffort(cycles, current, d, now)
+			if v = history.ClaimEffortSuggestion(st.Dir, v, now); v != nil {
+				return style.EffortSuggestionShort(v)
+			}
+		}
+	}
+	return ""
 }
 
 // adviseHook is a UserPromptSubmit hook for Claude Code or Codex (both accept the same
