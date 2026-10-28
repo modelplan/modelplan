@@ -73,6 +73,22 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def refresh_helper_identity(app):
+    """Refresh both consistency records after helper bytes change, before the App is sealed."""
+    app = Path(app)
+    helper = app / 'Contents/Helpers/modelplan'
+    info_path = app / 'Contents/Info.plist'
+    pin = app / 'Contents/Resources/modelplan.sha256'
+    if any(path.is_symlink() for path in (helper, info_path, pin)):
+        raise ValueError('Linked helper identity input')
+    digest = sha256(helper)
+    info = plistlib.loads(info_path.read_bytes())
+    info['ModelPlanBundledHelperSHA256'] = digest
+    info_path.write_bytes(plistlib.dumps(info))
+    pin.write_text(digest + '\n')
+    return digest
+
+
 def run(*args, input=None):
     # Do not echo subprocess arguments/output: upstream key tools can echo bad input.
     env = {k: v for k, v in os.environ.items()
@@ -214,8 +230,7 @@ def sign(app):
             for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
                 if not path.is_symlink() and path.suffix in ('.framework', '.app', '.xpc', '.appex'):
                     codesign(path)
-            resource = app / 'Contents/Resources/modelplan.sha256'
-            resource.write_text(sha256(app / 'Contents/Helpers/modelplan') + '\n')
+            refresh_helper_identity(app)
             codesign(app)
             run('codesign', '--verify', '--deep', '--strict', str(app))
             result = subprocess.run(['codesign', '-d', '--verbose=4', str(app)], capture_output=True, check=True)
@@ -310,7 +325,7 @@ def adhoc_appcast(app, output, tool):
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
     run('codesign', '--force', '--deep', '--sign', '-', str(app))
     # Deep signing can change the helper bytes. Refresh its integrity record and reseal the app.
-    (app / 'Contents/Resources/modelplan.sha256').write_text(sha256(app / 'Contents/Helpers/modelplan') + '\n')
+    refresh_helper_identity(app)
     run('codesign', '--force', '--sign', '-', str(app))
     run('codesign', '--verify', '--deep', '--strict', str(app))
     archive = output / 'ModelPlan-beta-universal.zip'

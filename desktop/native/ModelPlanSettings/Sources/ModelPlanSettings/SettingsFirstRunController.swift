@@ -15,7 +15,7 @@ import AppKit
     private let privacy = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
-    private lazy var connectionsView = SettingsConnectionsView(editor: editor)
+    private lazy var connectionsView = SettingsConnectionsView(editor: editor, firstRun: true)
     private let loginSubtitle = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private var options: OnboardingOptions?
