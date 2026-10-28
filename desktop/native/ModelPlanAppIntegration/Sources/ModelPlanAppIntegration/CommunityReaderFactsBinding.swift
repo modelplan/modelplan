@@ -47,6 +47,12 @@ public enum CommunityReaderFactsBinding {
 }
 
 public enum CommunityReaderStatusPresentation {
+    /// Official appearance keeps its supplied empty hull; its menu still needs a truthful reason.
+    /// Existing per-reader rows already supply that reason when evidence identifies any reader.
+    public static func emptyMenuLine(_ model: CommunityDockSnapshot, english: Bool) -> String? {
+        guard model.inputs.isEmpty, model.readerDiagnostics.isEmpty else { return nil }
+        return emptyText(model, english: english)
+    }
     public static func menuLines(_ model: CommunityDockSnapshot, english: Bool) -> [String] {
         Array(model.readerDiagnostics.prefix(16)).map { diagnostic in
             let name = toolName(diagnostic.providerID, english: english)
