@@ -93,7 +93,8 @@ import CoreText
         commitSurfaces(next, prepared: Prepared(caps: capImages, texts: textImages), initial: initial)
         synchronizeRegions(next.regions, oldOrder: oldOrder); updateFocus()
         if let anchor = restAnchor {
-            if let region = next.regions.first(where: { $0.id == anchor.regionID && $0.modelID == anchor.modelID }) {
+            if !state.publicationUsable { cancelHintRest(.removal) }
+            else if let region = next.regions.first(where: { $0.id == anchor.regionID && $0.modelID == anchor.modelID }) {
                 if region.rect != anchor.travel { cancelHintRest(.layoutChange) }
             } else { cancelHintRest(.removal) }
         }
