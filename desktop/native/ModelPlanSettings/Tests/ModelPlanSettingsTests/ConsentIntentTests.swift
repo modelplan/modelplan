@@ -3,7 +3,8 @@ import Foundation
 import XCTest
 @testable import ModelPlanSettings
 
-@MainActor private class IntentInspectOnly: SettingsConnectionService {
+@MainActor private class IntentInspectOnly: SettingsConnectionAvailabilityProviding {
+    var settingsConnectionAvailability: SettingsConnectionAvailability { .init(canInspect: true) }
     var facts = try! SettingsConnectionSnapshot()
     var detects = 0
     func detect() async throws -> SettingsConnectionSnapshot { detects += 1; return facts }
@@ -12,6 +13,7 @@ import XCTest
     func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult { throw SettingsConnectionFailure.unavailable }
 }
 @MainActor private final class IntentAtomicFake: IntentInspectOnly, SettingsConnectionAllowing {
+    override var settingsConnectionAvailability: SettingsConnectionAvailability { .init(canInspect: true, canGrant: true, canForget: true) }
     var calls: [([SettingsConnectionTool], [SettingsConnectionTool], SettingsConnectionRequestContext)] = []
     func applyStandardConsent(allow: [SettingsConnectionTool], deny: [SettingsConnectionTool], request: SettingsConnectionRequestContext) async throws -> SettingsConnectionSnapshot {
         calls.append((allow, deny, request)); return facts

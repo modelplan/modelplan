@@ -32,7 +32,8 @@ import ModelPlanCommunityHost
         self.application = application; self.canPresent = canPresent; self.showSettings = showSettings
         self.activate = activate; self.makeFirstRun = makeFirstRun ?? { ConnectionFirstRunSurface(editor: $0) }
         let editor = application.editor
-        navigation = editor.bindFirstRunPresentation { [weak self] in Task { await self?.openFirstRun() } }
+        navigation = editor.bindFirstRunPresentation({ [weak self] in Task { await self?.openFirstRun() } },
+            about: { [weak self] in Task { await self?.perform(.about) } })
         guard let navigation else { throw SettingsConnectionFailure.unavailable }
         if let backend, !editor.connections.bind(service: backend) {
             editor.unbindFirstRunPresentation(navigation); self.navigation = nil
