@@ -298,4 +298,55 @@ import ModelPlanDock
         XCTAssertEqual(port.grants, 0); XCTAssertNil(view.window)
     }
 
+    func testRealCommunityFactoryRegistersTheGestureHandlerAndPersistsItsDropWithoutASkinOrWindow() async throws {
+        let store = try store()
+        try await store.update { $0.dockEdge = .right; $0.dockDisplayID = "fixture"; $0.autoHide = false }
+        let screen = DockDisplayArea(id: "fixture", frame: .init(x: 0, y: 0, width: 1200, height: 900), visibleFrame: .init(x: 0, y: 0, width: 1200, height: 900))
+        var now: TimeInterval = 0
+        var presence = DockPresence()
+        var pointer = CGPoint(x: 1180, y: 450)
+        let host = ProductionDockFactory.community(createsNativePanels: false,
+            nativeEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "fixture", pointer: pointer, presence: presence) },
+            elapsedClock: { now }, edgeScheduling: Scheduler())
+        defer { host.close() }
+        let app = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+        let base = CommunitySettingsSession(application: app, canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(Port()),
+            placementSource: host, canPresent: { false })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences(); host.setPresentationAllowed(true)
+        now = 1; host.refreshPresence()
+        XCTAssertEqual(host.purpose, .production)
+        XCTAssertEqual(host.edgePresentation?.state, .expanded)
+        let placement = try XCTUnwrap(host.edgePresentation?.placement)
+        XCTAssertEqual(placement.edge, .right)
+        XCTAssertTrue(host.dockView.hitTest(CGPoint(x: host.dockView.bounds.midX, y: host.dockView.bounds.midY)) === host.dockView,
+            "Fresh-install status copy cannot intercept the neutral background")
+        let handler = try XCTUnwrap(host.dockView.backgroundDragDelegate,
+            "This must be the production handler installed by present, not a test-installed callback")
+        let local = CGPoint(x: 2, y: 2)
+        XCTAssertTrue(handler.backgroundCanDrag(local: local))
+        XCTAssertFalse(handler.backgroundCanDrag(local: CGPoint(x: -1, y: 2)))
+        let start = CGPoint(x: placement.frame.minX + local.x, y: placement.frame.maxY - local.y)
+        pointer = start; presence.mouseButtonDown = true
+        XCTAssertTrue(handler.beginBackgroundMove(local: local, global: start))
+        let drop = CGPoint(x: 1, y: 450)
+        pointer = drop; handler.updateBackgroundMove(global: drop)
+        XCTAssertTrue(handler.isBackgroundMoving)
+        XCTAssertEqual(host.edgePresentation?.snapPreview?.edge, .left,
+            "The actual neutral factory must register a left destination, not just its starting edge")
+        XCTAssertNotNil(host.dockView.registeredHullPath, "The actual neutral pixels have an exact move-outline path")
+        presence.mouseButtonDown = false; handler.endBackgroundMove(global: drop)
+        for _ in 0..<1000 where app.editor.snapshot?.preferences.dockEdge != .left { await Task.yield() }
+        let saved = await store.snapshot()
+        let moved = try XCTUnwrap(host.edgePresentation?.placement)
+        XCTAssertEqual(saved.preferences.dockEdge, .left); XCTAssertEqual(moved.edge, .left)
+        XCTAssertNoThrow(try CommunityDockPlacementFacts.requireSynchronized(moved, recovering: false, application: app))
+        let row = try XCTUnwrap(try SettingsCatalogue.rows(preferences: saved.preferences, context: app.editor.context).first { $0.key == .dockEdge })
+        XCTAssertTrue(row.subtitle.chinese.contains("当前位于左侧"))
+        host.setPresentationAllowed(false)
+        XCTAssertNil(host.dockView.backgroundDragDelegate)
+        XCTAssertNil(host.nativePanel); XCTAssertNil(host.nativeMovePreviewPanel)
+    }
+
 }
