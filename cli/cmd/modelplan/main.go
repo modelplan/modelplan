@@ -58,6 +58,8 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        account reading (--refresh-account asks it now; at most every
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
   modelplan detect [--json]            presence-only tool detection; no credentials or network
+  modelplan consent --json             read shared consent and bilingual consent text
+  modelplan consent grant --json       atomically apply one JSON request from stdin
   modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
   modelplan connect --detected [--privacy automatic|passive] [--json]
                                        preview or confirm the pre-checked detected-tool list once
@@ -107,6 +109,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        --preview renders a sample without recording it)
   modelplan sync [--force]             refresh the local cache from the verified publication
   modelplan doctor                     show base URL, cache and publication state
+  modelplan doctor readers [--refresh] sanitised native-reader verification; cache only by default
   modelplan doctor --share             sanitised cache source/status report; no readers or network
   modelplan update                     explicitly update a standalone/Skill copy from the verified publication pin
   modelplan plugin install claude-code|codex
@@ -186,6 +189,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
+	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
 	share := fs.Bool("share", false, "doctor: print only sanitised cache source/status information")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
@@ -206,6 +210,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return exitUsage
 		}
 		c.offline = true
+	}
+	if cmd == "doctor" && fs.NArg() > 0 && fs.Arg(0) == "readers" {
+		if fs.NArg() != 1 || *share || (c.offline && *refreshReaders) {
+			fmt.Fprintln(stderr, "usage: modelplan doctor readers [--json] [--refresh] [--lang en|zh]; --refresh cannot be offline")
+			return exitUsage
+		}
+		return doctorReaders(stdout, stderr, c, *refreshReaders)
+	}
+	if *refreshReaders {
+		fmt.Fprintln(stderr, "--refresh requires doctor readers")
+		return exitUsage
 	}
 	if *share {
 		if cmd != "doctor" || fs.NArg() != 0 {
@@ -237,7 +252,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	open := store.Open
-	if cmd == "windows" || cmd == "detect" || cmd == "connect" || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
+	if cmd == "windows" || cmd == "detect" || cmd == "consent" || cmd == "connect" || cmd == "disconnect" || (cmd == "desktop" && *readOnly) || (cmd == "publication" && c.offline) {
 		open = store.Locate // creates nothing
 	}
 	st, err := open()
@@ -247,6 +262,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if cmd == "detect" {
 		return detectCmd(fs.Args(), stdout, stderr, st, c)
+	}
+	if cmd == "consent" {
+		return consentCmd(fs.Args(), stdin, stdout, st, c)
 	}
 	if cmd == "connect" && *detected {
 		if fs.NArg() != 0 || *browserSession {

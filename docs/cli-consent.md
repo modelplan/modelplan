@@ -90,6 +90,31 @@ and cache publication are serialized with consent changes. A paused refresh
 cannot publish after revocation; a paused statusline input is admitted only after
 input parsing. Local performance and quota-history writes use the same fences.
 
+The [App consent API](clients-and-readers.md#app-consent-api) also works with
+pre-API CLI copies sharing schema 1. API Keychain unset/deny choices persist the
+existing `deniedSources.keychain` veto, which those readers already enforce.
+Reserved `deniedSources` metadata distinguishes an initial unset choice from a
+source Deny and retains explicit allowed readback if an old writer drops the
+new `keychain` field. An explicit API allow may resolve unset; it never clears
+an existing user/OS Deny.
+
+`State.KeychainStatus` is shared by API readback and production admission.
+Existing native Claude `connect` grants implicitly permit Keychain and read back
+as `allowed`; the same saved permission is `denied` under Passive/Off. Only
+native Claude uses this consent capability. The API rejects explicit choices
+for other routes with `keychain_not_supported` and reports their unused state
+as `unset`, including old API records that had stored an ineffective choice.
+New API grants start unset; omission preserves an existing implicit grant.
+
+Replay receipts and pending Forget IDs are encoded in true-valued keys under
+`hinted["consent-api/receipt/v1/<requestId>/<base64url-receipt>"]`. This reserved
+namespace cannot collide with tool IDs, and supported schema-1 writers preserve
+unknown keys in `hinted`. The API exposes decoded receipts internally rather
+than relying on a new top-level JSON field that an older writer would discard.
+Permissions and receipts still share one locked atomic replacement and the
+256 KiB file bound; no sidecar or schema upgrade is required. Frozen pre-API
+readers/writers in the regression suite verify both restrictions and replay.
+
 Catalogue routing cannot grant consent. `preferred: off` stops new reads;
 `codexbar.audited: false` blocks the helper, including explicit legacy connections
 when the publication names that provider. Newly consented helper routes require a
