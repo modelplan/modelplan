@@ -27,3 +27,7 @@ func StartLocked(path string, args ...string) error {
 	}
 	return start([]*os.File{f}, args...)
 }
+
+// KeepLockInWorker retains the inherited lock locally but prevents provider
+// subprocesses from inheriting it and extending its lifetime beyond the worker.
+func KeepLockInWorker() { syscall.CloseOnExec(3) }

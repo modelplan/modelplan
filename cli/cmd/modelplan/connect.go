@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/connections"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -34,6 +35,9 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 		case "status":
 			return connectionsStatus(stdout, stderr, p, c, quiet)
 		case "refresh":
+			if scheduled {
+				detach.KeepLockInWorker()
+			}
 			quiet = quiet || scheduled
 			if c.offline {
 				return connectionsStatus(stdout, stderr, p, c, quiet)
