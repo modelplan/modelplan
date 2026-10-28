@@ -38,6 +38,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         let rect = path.boundingBoxOfPath
         return rect.isNull || rect.isEmpty ? nil : rect
     }
+    /// Existing material pixels for a destination ghost when the supplier has no vector hull.
+    public var registeredMovePreviewImage: CGImage? {
+        guard !community, !failed else { return nil }
+        return backgroundImage
+    }
     public var registeredHullPath: CGPath? {
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
         let path = CGMutablePath()

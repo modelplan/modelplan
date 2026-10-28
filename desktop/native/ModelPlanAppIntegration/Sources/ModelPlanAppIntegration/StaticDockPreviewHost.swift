@@ -73,6 +73,7 @@ public struct StaticDockGeometry {
     private let edgeScheduling: (any DockEdgeScheduling)?
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
+    var nativeMovePreviewPanel: NSPanel? { outlinePanel }
     func refreshPresence() { edge.refresh() }
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
@@ -175,7 +176,7 @@ public struct StaticDockGeometry {
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { edge.stop(); dismissCard(); panel?.orderOut(nil); outlinePanel?.orderOut(nil) }
+        else { edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
     }
     private func rebuild() {
         guard !retired, application != nil else { return }
@@ -392,7 +393,7 @@ public struct StaticDockGeometry {
     }
     private func present(_ value: DockEdgePresentation) {
         guard createsNativePanels else { return }
-        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return }
+        guard permitted, !retired, let frame = value.paintedFrame else { panel?.orderOut(nil); hideMovePreview(); reportVisibility(false); return }
         if panel == nil { panel = makePanel() }
         guard let panel else { return }
         panel.setFrame(frame, display: false)
@@ -415,17 +416,23 @@ public struct StaticDockGeometry {
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { panel.orderOut(nil); reportVisibility(false); return }
-        case .suppressed: panel.orderOut(nil); outlinePanel?.orderOut(nil); reportVisibility(false); return
+        case .suppressed: panel.orderOut(nil); hideMovePreview(); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
-        if let preview = value.snapPreview, let view = edgeViews[preview.edge], let path = view.registeredHullPath {
+        if let preview = value.snapPreview, let view = edgeViews[preview.edge],
+           view.registeredHullPath != nil || view.registeredMovePreviewImage != nil {
             if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
-            outlineView.path = path
+            outlineView.path = view.registeredHullPath
+            outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
-        } else { outlinePanel?.orderOut(nil) }
+        } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
         reportVisibility(panel.isVisible)
+    }
+    private func hideMovePreview() {
+        outlinePanel?.orderOut(nil)
+        outlineView.path = nil; outlineView.rasterImage = nil
     }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
@@ -527,7 +534,7 @@ public struct StaticDockGeometry {
         edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
         dockView.onNeedsFreshPresentation = nil
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
-        edgeViews = [:]; edgeGeometries = [:]; outlinePanel?.orderOut(nil); outlinePanel = nil
+        edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
+import ImageIO
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -36,12 +38,17 @@ import ModelPlanSettings
     // Neutral test registration: the owner's requested M span, asymmetric padding to catch anchor drift.
     // This is a supplier input, not an assertion about official appearance pixels (checklist item 7).
     static let hullSpan: CGFloat = 147.3962
-    init(url: URL, capabilities: CommunityReaderCapabilities = .init(), neutralAppearance: Bool = true) throws {
+    init(url: URL, capabilities: CommunityReaderCapabilities = .init(), neutralAppearance: Bool = true, customAppearance: StaticDockPreviewHost.Appearance? = nil) throws {
         self.url = url
         _ = NSApplication.shared
         let inputs = inputs, scheduler = scheduler
         let appearance: StaticDockPreviewHost.Appearance?
-        if neutralAppearance {
+        if let customAppearance {
+            appearance = { view, rows, preferences in
+                inputs.suppliedPreferences = preferences; inputs.suppliedRows = rows
+                return try customAppearance(view, rows, preferences)
+            }
+        } else if neutralAppearance {
             appearance = { view, rows, preferences in
                 inputs.suppliedPreferences = preferences; inputs.suppliedRows = rows
                 try view.applyCommunity(rows, locale: preferences.language.rawValue)
@@ -142,6 +149,121 @@ import ModelPlanSettings
     private func render(_ fixture: BehaviourFixture, _ snapshot: JoinedSnapshot?) {
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         fixture.host.render(snapshot: snapshot, diagnostics: diagnostics)
+    }
+
+    func testRasterDefaultHostDragShowsPreviewAndRestoresAtBothScales() async throws {
+        for scale in [1, 2] {
+            let url = try temporaryURL(), folder = url.deletingLastPathComponent()
+            let context = try XCTUnwrap(CGContext(data: nil, width: 192, height: 320,
+                bitsPerComponent: 8, bytesPerRow: 768, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setFillColor(NSColor.gray.cgColor)
+            context.addPath(CGPath(roundedRect: CGRect(x: 16, y: 16, width: 160, height: 288),
+                                   cornerWidth: 16, cornerHeight: 16, transform: nil)); context.fillPath()
+            let rasterURL = folder.appendingPathComponent("synthetic-material.png")
+            let writer = try XCTUnwrap(CGImageDestinationCreateWithURL(rasterURL as CFURL, "public.png" as CFString, 1, nil))
+            CGImageDestinationAddImage(writer, try XCTUnwrap(context.makeImage()), nil)
+            XCTAssertTrue(CGImageDestinationFinalize(writer))
+            let data = try Data(contentsOf: rasterURL)
+            let resources = try DockArtworkStore(root: folder, manifest: .init(files: ["material": .init(
+                path: rasterURL.lastPathComponent, sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), bytes: data.count)]))
+            let json: [String: Any] = ["schemaVersion": 1, "bounds": [[0, 0], [96, 160]], "bodyPolygon": [],
+                "fixedLayers": [["resource": "material", "rect": [[0, 0], [96, 160]]]], "palette": [:],
+                "text": ["size": 10, "weight": 400], "aliasText": ["size": 10, "weight": 400],
+                "stations": [["subscriptionID": "synthetic", "centre": [48, 64], "diameter": 44,
+                    "readout": [[28, 90], [40, 16]], "aliasRect": [[24, 118], [48, 12]],
+                    "eventRect": [[72, 96], [8, 8]], "glyphRect": [[26, 42], [44, 44]],
+                    "layers": [], "glyphs": [:],
+                    "outer": ["radius": 20, "width": 2, "minimumVisibleFraction": 0, "opacity": 1],
+                    "inner": ["radius": 16, "width": 1, "minimumVisibleFraction": 0, "opacity": 1],
+                    "clock": ["radius": 24, "dotRadius": 0.5, "backWidth": 1, "positions": 10],
+                    "notchWidth": 1, "caseInnerRadius": 10]]]
+            let skin = try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: json))
+            let renderer = DockInstrumentRenderer(resources: resources)
+            let appearance: StaticDockPreviewHost.Appearance = { view, _, _ in
+                view.presentationBackingScale = scale
+                try view.applyOfficial(skin: skin, rows: [], renderer: renderer, scale: scale, locale: "en")
+                return .init(hoverRects: [CGRect(x: 8, y: 8, width: 80, height: 144)], sliverLength: 144,
+                             consoleButton: CGRect(x: 16, y: 20, width: 12, height: 12), sliverAlongAnchor: 80)
+            }
+            let f = try BehaviourFixture(url: url, customAppearance: appearance)
+            defer { f.host.close() }
+            await f.start()
+            let preferences = try XCTUnwrap(f.coordinator.latest).snapshot.preferences
+            XCTAssertEqual(preferences.size, .medium); XCTAssertEqual(preferences.size.nozzleDiameter, 44)
+            XCTAssertEqual(preferences.dockEdge, .right); XCTAssertTrue(preferences.autoHide)
+            XCTAssertEqual(preferences.revealMilliseconds, 150)
+            XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+            let initial = try XCTUnwrap(f.host.edgePresentation?.placement)
+            f.inputs.pointer = CGPoint(x: initial.wakeFrame.midX, y: initial.wakeFrame.midY)
+            f.host.refreshPresence(); f.tick(0.149)
+            XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+            f.tick(0.002); XCTAssertEqual(f.host.edgePresentation?.state, .expanded)
+            let panel = try f.panel(), originalFrame = panel.frame
+            let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+            XCTAssertNil(view.registeredHullPath)
+            XCTAssertEqual(view.renderedPixelSize, CGSize(width: 96 * scale, height: 160 * scale))
+            var commits: [(String, SettingsDockEdge, Double)] = []
+            f.host.commitDisplayPlacement = { commits.append(($0, $1, $2)) }
+            func gesture(_ local: CGPoint, to end: CGPoint, release: Bool = true) throws {
+                let start = panel.convertPoint(toScreen: view.convert(local, to: nil))
+                f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
+                view.mouseDown(with: try f.event(.leftMouseDown, global: start))
+                f.inputs.pointer = end
+                view.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
+                if release {
+                    f.inputs.presence.mouseButtonDown = false
+                    view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+                }
+            }
+            let end = CGPoint(x: 1, y: 450)
+            try gesture(CGPoint(x: 20, y: 80), to: end)
+            XCTAssertTrue(commits.isEmpty, "arrival guard must reject a drag immediately after reveal")
+            f.tick(0.301)
+            for local in [CGPoint(x: 1, y: 1), CGPoint(x: 20, y: 24), CGPoint(x: 48, y: 64),
+                          CGPoint(x: 48, y: 98), CGPoint(x: 76, y: 100), CGPoint(x: 48, y: 124)] {
+                XCTAssertFalse(view.backgroundDragDelegate?.backgroundCanDrag(local: local) ?? true)
+                try gesture(local, to: end)
+                XCTAssertTrue(commits.isEmpty, "padding and every control must not start a host move")
+                XCTAssertFalse(f.host.edgePresentation?.moving ?? true)
+            }
+            try gesture(CGPoint(x: 20, y: 80), to: end, release: false)
+            XCTAssertEqual(f.host.edgePresentation?.moving, true)
+            let destination = try XCTUnwrap(f.host.edgePresentation?.snapPreview)
+            XCTAssertEqual(destination.edge, .left); XCTAssertEqual(panel.frame, originalFrame)
+            let preview = try XCTUnwrap(f.host.nativeMovePreviewPanel, "raster drags need visible destination feedback")
+            XCTAssertTrue(preview.isVisible); XCTAssertTrue(preview.ignoresMouseEvents)
+            XCTAssertEqual(preview.frame, destination.frame)
+            XCTAssertNil(preview.contentView?.hitTest(CGPoint(x: 20, y: 80)))
+            XCTAssertGreaterThan(preview.alphaValue, 0)
+            let surface = try XCTUnwrap(preview.contentView as? DockSnapOutlineView)
+            XCTAssertNil(surface.path)
+            let material = try XCTUnwrap(surface.rasterImage)
+            XCTAssertEqual(material.width, 96 * scale); XCTAssertEqual(material.height, 160 * scale)
+            let pixels = try XCTUnwrap(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
+            surface.cacheDisplay(in: surface.bounds, to: pixels)
+            let painted = try XCTUnwrap(pixels.colorAt(x: pixels.pixelsWide / 2, y: pixels.pixelsHigh / 2))
+            XCTAssertGreaterThan(painted.alphaComponent, 0); XCTAssertLessThan(painted.alphaComponent, 1)
+            f.inputs.presence.mouseButtonDown = false
+            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+            XCTAssertEqual(commits.count, 1, "a completed native gesture commits once")
+            XCTAssertFalse(preview.isVisible); XCTAssertNil(surface.rasterImage)
+            let commit = try XCTUnwrap(commits.first)
+            try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
+            let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
+            try f.reveal(); let savedFrame = panel.frame
+            XCTAssertNotEqual(savedFrame, originalFrame)
+            f.host.close(); XCTAssertFalse(panel.isVisible); XCTAssertFalse(preview.isVisible)
+            let restored = try BehaviourFixture(url: url, customAppearance: appearance)
+            defer { restored.host.close() }
+            await restored.start(); try restored.reveal()
+            XCTAssertEqual(restored.host.edgePresentation?.placement, placement)
+            let restoredPanel = try restored.panel()
+            XCTAssertEqual(restoredPanel.frame, savedFrame)
+            restored.host.close(); XCTAssertFalse(restoredPanel.isVisible)
+            print("raster-host scale=\(scale) default-M44-right reveal=150ms preview=visible non-intercepting drop=1 restored=true closed=true")
+        }
     }
 
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
