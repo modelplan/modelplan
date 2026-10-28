@@ -133,7 +133,7 @@ func connectDetected(stdin io.Reader, stdout, stderr io.Writer, st *store.Store,
 	}
 	fmt.Fprintln(stdout, consent.Text)
 	if c.lang != "en" {
-		fmt.Fprintln(stdout, "允许此账户下的 App、插件和所有 CLI 副本读取所选工具的用量。凭据仅发给对应服务商，不发送给 ModelPlan，也不保存；macOS 可能请求钥匙串权限。可在设置中关闭。")
+		fmt.Fprintln(stdout, consent.TextZH)
 	}
 	for _, group := range []string{"standard", "advanced"} {
 		if group == "standard" {
@@ -316,23 +316,10 @@ func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *stor
 	}
 	if err == nil {
 		for _, id := range ids {
-			p := quotaPaths(st)
-			if quota.ProviderName(id) != "" {
-				err = quota.SetConnection(p.ConnectionsFile, quota.QuotaSource{Provider: id, Backend: quota.BackendNative, Enabled: false})
-				if err != nil {
-					break
-				}
-			}
-			if err = quota.ForgetTool(quotaPaths(st), id); err != nil {
-				break
-			}
-			if err = localusage.ForgetProductionHistory(st.Dir, id); err != nil {
+			if err = forgetConsentTool(st, id, cookies[id]); err != nil {
 				break
 			}
 			if cookies[id] {
-				if err = quota.ClearBrowserCookies(context.Background(), quotaPaths(st), id); err != nil {
-					break
-				}
 				err = consent.Change(consent.Path(), func(current *consent.State) error {
 					r := current.Tools[id]
 					if r.Allowed {
@@ -362,6 +349,27 @@ func disconnectTools(args []string, all bool, stdout, stderr io.Writer, st *stor
 	}
 	fmt.Fprintln(stdout, "Disconnected; cached readings deleted / 已断开并删除缓存读数:", strings.Join(ids, ", "))
 	return 0
+}
+
+// Revocation is durable before this runs. Forget preserves rate gates, source
+// denials, identities and other tools; failed cookie cleanup stays obligatory.
+func forgetConsentTool(st *store.Store, id string, cookies bool) error {
+	p := quotaPaths(st)
+	if quota.ProviderName(id) != "" {
+		if err := quota.SetConnection(p.ConnectionsFile, quota.QuotaSource{Provider: id, Backend: quota.BackendNative, Enabled: false}); err != nil {
+			return err
+		}
+	}
+	if err := quota.ForgetTool(p, id); err != nil {
+		return err
+	}
+	if err := localusage.ForgetProductionHistory(st.Dir, id); err != nil {
+		return err
+	}
+	if cookies {
+		return quota.ClearBrowserCookies(context.Background(), p, id)
+	}
+	return nil
 }
 
 // A newly found tool gets a single CLI hint. Explicit previews/detection never
