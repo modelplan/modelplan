@@ -43,6 +43,7 @@ import ModelPlanAppIntegration
         }
         // Explicit packaged-app test mode: inspect the existing factory; never start the app lifecycle.
         if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
+            fputs("app-smoke entry started\n", stderr)
             Task { @MainActor in
                 do {
                     func field(_ object: Any, _ name: String) -> Any? {

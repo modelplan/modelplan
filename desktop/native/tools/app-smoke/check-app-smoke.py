@@ -13,6 +13,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def assertions(report, helper, home):
@@ -77,14 +78,12 @@ def launch(app, output):
                        'MODELPLAN_CACHE': str(home / 'cache'), 'XDG_CONFIG_HOME': str(home / 'config'),
                        'PATH': '/usr/bin:/bin', 'NO_COLOR': '1', 'MODELPLAN_APP_SMOKE': '1',
                        'MODELPLAN_APP_SMOKE_REPORT': str(report_path)}
-        # Both the executable and its --help child inherit network denial. Deny the
-        # real user home, allowing only the bundle and this test's owned output tree.
-        quote = json.dumps
+        # The app and its --help child inherit network denial. Synthetic HOME and
+        # CFFIXED_USER_HOME redirect all app-owned preferences and CLI locations;
+        # system AppKit/launch services retain their ordinary read access.
         profile = root / 'smoke.sb'
-        profile.write_text('(version 1)\n(allow default)\n(deny network*)\n'
-                           f'(deny file-read* file-write* (subpath {quote(str(Path.home()))}))\n'
-                           f'(allow file-read* (subpath {quote(str(app))}))\n'
-                           f'(allow file-read* file-write* (subpath {quote(str(output))}))\n')
+        profile.write_text('(version 1)\n(allow default)\n(deny network*)\n')
+        started = time.time()
         process = subprocess.Popen(['/usr/bin/sandbox-exec', '-f', str(profile), str(executable)],
                                    env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, start_new_session=True)
@@ -97,6 +96,17 @@ def launch(app, output):
         (output / 'process.stdout').write_bytes(stdout)
         (output / 'process.stderr').write_bytes(stderr)
         if process.returncode != 0 or not report_path.is_file():
+            # Retain only diagnostics for this test executable from this launch.
+            # No general user/system log dump or credential/environment discovery.
+            diagnostics = Path.home() / 'Library/Logs/DiagnosticReports'
+            for _ in range(5):
+                reports = [path for path in diagnostics.glob('ModelPlanCommunity*.ips')
+                           if path.stat().st_mtime >= started and path.stat().st_size <= 2 * 1024 * 1024]
+                if reports:
+                    for index, path in enumerate(reports):
+                        (output / f'crash-{index}.ips').write_bytes(path.read_bytes())
+                    break
+                time.sleep(1)
             raise RuntimeError(f'Packaged entry failed to report (exit {process.returncode}); inspect process.stderr artifact')
         report = json.loads(report_path.read_text())
         results = assertions(report, helper, home)
