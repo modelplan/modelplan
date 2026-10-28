@@ -179,6 +179,53 @@ import XCTest
         let next = try XCTUnwrap(real.request(.disconnect(.cursor)))
         real.cancel(); await real.confirm(next.id); XCTAssertTrue(fake.actions.isEmpty)
     }
+    func testRunningObserverCancellationPreventsEveryMutationDispatch() async throws {
+        let actions: [SettingsConnectionAction] = [.connect(.cursor, .standard), .disconnect(.cursor), .installPlugin(.codex)]
+        for action in actions {
+            let fake = ConnectionFake()
+            let observed = SettingsConnectionController(service: fake)
+            let before = try snapshot(generation: 5); observed.receive(before)
+            let observer = observed.observe { if case .running = observed.phase { observed.cancel() } }
+            let request = try XCTUnwrap(observed.request(action))
+            await observed.confirm(request.id)
+            XCTAssertTrue(fake.actions.isEmpty); XCTAssertTrue(fake.requests.isEmpty)
+            XCTAssertEqual(observed.phase, .cancelled); XCTAssertEqual(observed.snapshot, before)
+            observed.removeObserver(observer)
+        }
+    }
+    func testRunningObserverNewDeniedObservationPreventsOldMutationDispatch() async throws {
+        let actions: [SettingsConnectionAction] = [.connect(.cursor, .standard), .disconnect(.cursor), .installPlugin(.claudeCode)]
+        for action in actions {
+            let fake = ConnectionFake()
+            let controller = SettingsConnectionController(service: fake)
+            controller.receive(try snapshot(generation: 5))
+            let denied = try snapshot(generation: 6, authorization: .denied)
+            let observer = controller.observe { if case .running = controller.phase { controller.receive(denied) } }
+            let request = try XCTUnwrap(controller.request(action))
+            await controller.confirm(request.id)
+            XCTAssertTrue(fake.actions.isEmpty); XCTAssertTrue(fake.requests.isEmpty)
+            XCTAssertEqual(controller.snapshot, denied); XCTAssertEqual(controller.phase, .idle)
+            controller.removeObserver(observer)
+        }
+    }
+    func testLoadingObserverCancellationPreventsDetectDispatch() async throws {
+        let fake = ConnectionFake()
+        let observed = SettingsConnectionController(service: fake)
+        let before = try snapshot(); observed.receive(before)
+        let observer = observed.observe { if observed.phase == .loading { observed.cancel() } }
+        await observed.refresh()
+        XCTAssertEqual(fake.detects, 0); XCTAssertEqual(observed.phase, .cancelled); XCTAssertEqual(observed.snapshot, before)
+        observed.removeObserver(observer)
+    }
+    func testLoadingObserverNewDeniedObservationPreventsDetectDispatch() async throws {
+        let fake = ConnectionFake(), controller = SettingsConnectionController(service: fake)
+        controller.receive(try snapshot(generation: 1))
+        let denied = try snapshot(generation: 2, authorization: .denied)
+        let observer = controller.observe { if controller.phase == .loading { controller.receive(denied) } }
+        await controller.refresh()
+        XCTAssertEqual(fake.detects, 0); XCTAssertEqual(controller.snapshot, denied); XCTAssertEqual(controller.phase, .idle)
+        controller.removeObserver(observer)
+    }
     func testRawFailureNeverEntersPresentation() async {
         let fake = ConnectionFake()
         fake.error = NSError(domain: "/Users/private/email@example.test/token", code: 4,

@@ -45,6 +45,9 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         guard !Task.isCancelled else { cancel(); return }
         generation &+= 1; let token = generation
         phase = .loading; changed()
+        // Observers may synchronously cancel or replace the observation before dispatch.
+        guard generation == token, phase == .loading else { return }
+        guard !Task.isCancelled else { cancel(); return }
         do {
             let value = try await service.detect()
             guard generation == token else { return }
@@ -67,6 +70,9 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         generation &+= 1; let token = generation
         let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration)
         phase = .running(confirmation.action); changed()
+        guard generation == token, confirmation.observation == observation,
+              phase == .running(confirmation.action), canRequest(confirmation.action) else { return }
+        guard !Task.isCancelled else { cancel(); return }
         do {
             switch confirmation.action {
             case .connect(let tool, let access):
