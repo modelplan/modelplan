@@ -33,8 +33,8 @@ import ImageIO
         return (0..<4).map{Int(bytes[offset+$0])}
     }
     // The fallback is the collapsed Dock's own surface; no host, panel, live feed or global input.
-    for scale in [1,2]{for edge in [DockEdge.right,.left,.bottom]{
-        let vertical=edge != .bottom,size=vertical ? CGSize(width:4,height:147.3962):CGSize(width:147.3962,height:4)
+    for thickness in [CGFloat(3),4]{for scale in [1,2]{for edge in [DockEdge.right,.left,.bottom]{
+        let vertical=edge != .bottom,size=vertical ? CGSize(width:thickness,height:147.3962):CGSize(width:147.3962,height:thickness)
         let sliver=DockSliverView(frame:CGRect(origin:.zero,size:size))
         try sliver.apply(image:nil,logicalSize:size,scale:scale,accessibilityLabel:"Synthetic collapsed Dock",edge:edge)
         defer{sliver.dispose()}
@@ -42,7 +42,7 @@ import ImageIO
         for name in [NSAppearance.Name.aqua,.darkAqua]{
             sliver.appearance=NSAppearance(named:name)
             let image=try capture(sliver,scale,.none,false)
-            try png(image,"sliver-\(edge)-\(scale)x-\(name.rawValue)")
+            try png(image,"sliver-\(edge)-\(thickness)pt-\(scale)x-\(name.rawValue)")
             let data=image.dataProvider!.data! as Data
             if let first{require(data==first,"night-only neutral sliver changed with system appearance")}else{first=data}
             let cross=vertical ? image.width:image.height
@@ -53,7 +53,7 @@ import ImageIO
                 let top=[42.0,43,46],bottom=[20.0,21,23]
                 let expected=(0..<3).map{Int((top[$0]*(1-t)+bottom[$0]*t).rounded())}+[255]
                 require(zip(pixel,expected).allSatisfy{abs($0-$1)<=2},"sliver token mismatch edge=\(edge) scale=\(scale) actual=\(pixel) expected=\(expected)")
-                if name == .aqua{sliverSamples.append("\(edge)/\(scale)x=\(pixel)")}
+                if name == .aqua{sliverSamples.append("\(edge)/\(thickness)pt/\(scale)x=\(pixel)")}
             }
             // Radius is on the inner side; outer/screen-side corners stay square and opaque.
             let inner=vertical ? rgba(image,edge == .right ? 0:image.width-1,0):rgba(image,0,0)
@@ -66,7 +66,7 @@ import ImageIO
             require(outer[3]==255,"screen-side sliver corner is not opaque")
         }
         require(sliver.frame.size==size,"drawing changed sliver geometry")
-    }}
+    }}}
     let sliverPassed=failures.isEmpty
     print("dock-visual sliver-colour \(sliverPassed ? "PASS":"FAIL") \(sliverSamples.joined(separator:" "))")
 

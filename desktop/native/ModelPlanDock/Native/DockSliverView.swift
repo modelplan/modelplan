@@ -82,7 +82,7 @@ import CoreGraphics
         func color(_ r:CGFloat,_ g:CGFloat,_ b:CGFloat,_ a:CGFloat=1)->CGColor{
             CGColor(colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!,components:[r/255,g/255,b/255,a])!
         }
-        let r=min(2,min(bounds.width,bounds.height)/2),path=CGMutablePath(),b=bounds
+        let r=min(2,min(bounds.width,bounds.height)),path=CGMutablePath(),b=bounds
         let topLeft=edge == .right || edge == .bottom,topRight=edge == .left || edge == .bottom
         let bottomRight=edge == .left || edge == .top,bottomLeft=edge == .right || edge == .top
         path.move(to:CGPoint(x:b.minX+(topLeft ? r:0),y:b.minY))
