@@ -45,6 +45,15 @@ public enum SettingsConnectionPresentation {
     }
     public static func confirmation(_ action: SettingsConnectionAction) -> SettingsText {
         switch action {
+        case .applyStandardConsent(let tools, let denied):
+            if !denied.isEmpty {
+                let names = denied.map(\.title).joined(separator: ", ")
+                return .init("Revoke access and Forget cached readings for \(names)? This deletes scoped readings; it is separate from choosing tools to allow.",
+                             "撤销 \(names) 的权限并忘记缓存读数？这会删除其范围内读数，与选择允许的工具分开。")
+            }
+            let names = tools.map(\.title).joined(separator: ", ")
+            return .init("Allow shared usage reading for \(names)? These choices request consent, not activation. Omitted tools and recorded Keychain choices stay unchanged; browser sessions are excluded.",
+                         "允许共享读取 \(names) 的用量？这些选择仅请求授权，不表示已启用读取；未选择工具和已记录的钥匙串选择保持不变，不包括浏览器会话。")
         case .connect(let tool, .browserSession):
             return .init("Enable advanced browser-session reading for \(tool.title)? This is a separate consent request. Detection is not permission. The runtime must explain and authorize any credential access before execution.",
                          "允许 \(tool.title) 的高级浏览器会话读取？这是单独的授权请求，检测结果不代表许可。运行时必须在执行前解释并取得任何凭据访问授权。")
@@ -52,8 +61,8 @@ public enum SettingsConnectionPresentation {
             return .init("Request shared reader consent for \(tool.title)? This changes CLI-owned consent. Detection and local Settings choices do not grant access.",
                          "请求 \(tool.title) 的共享读取授权？此操作会更改 CLI 管理的授权，检测结果和本地设置选择不授予访问权。")
         case .disconnect(let tool):
-            return .init("Turn off shared reading for \(tool.title)? Existing subscription ownership evidence is retained.",
-                         "关闭 \(tool.title) 的共享读取？已有的订阅归属证据会保留。")
+            return .init("Revoke access and Forget cached readings for \(tool.title)? This deletes its scoped cached readings. Other tools are kept.",
+                         "撤销 \(tool.title) 的权限并忘记缓存读数？这会删除该工具范围内的缓存读数，保留其他工具。")
         case .installPlugin(let tool):
             return .init("Request ModelPlan plugin installation for \(tool.title)? The runtime may change host configuration and use the network. Confirming here is a request, not proof of installation.",
                          "请求为 \(tool.title) 安装 ModelPlan 插件？运行时可能更改宿主配置并使用网络。此处确认仅表示请求，不证明安装完成。")
@@ -67,6 +76,7 @@ public enum SettingsConnectionPresentation {
         case .awaitingConfirmation(let confirmation): return self.confirmation(confirmation.action)
         case .running: return .init("Request in progress…", "请求处理中…")
         case .cancelled: return .init("Request cancelled. An already accepted external action may still complete.", "请求已取消；已被外部接受的操作仍可能完成。")
+        case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
         case .failed(let code): return .init("Request unavailable: " + code.rawValue, "请求不可用：" + code.rawValue)
         case .pluginResult(let result):
             switch result.status {
