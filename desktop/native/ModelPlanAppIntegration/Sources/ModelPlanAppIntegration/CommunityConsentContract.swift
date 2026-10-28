@@ -3,17 +3,21 @@ import Foundation
 import ModelPlanSettings
 
 public enum CommunityConsentAccessClass: String, Sendable { case standard, browserSession = "browser-session", notRead = "not-read", unknown }
-public enum CommunityConsentKeychain: Equatable, Sendable { case notRequired, requiresOwnerApproval, unknown }
+public typealias CommunityConsentKeychain = SettingsRecordedKeychain
+public enum CommunityConsentKeychainDecision: String, Encodable, Sendable { case allow, deny }
 /// Core's verified decoder supplies these exact preview fields. No credential/sign-in claim is derived.
 public struct CommunityConsentToolFacts: Sendable {
     public let id: String, displayName: String, accessClass: CommunityConsentAccessClass
     public let detected: Bool, allowed: Bool
     public let backend: String, readerId: String
     public let keychain: CommunityConsentKeychain
+    public let hosts: [String]
     public init(id: String, displayName: String, accessClass: CommunityConsentAccessClass,
-                detected: Bool, allowed: Bool, backend: String, readerId: String, keychain: CommunityConsentKeychain) {
+                detected: Bool, allowed: Bool, backend: String, readerId: String, keychain: CommunityConsentKeychain,
+                hosts: [String] = []) {
         self.id = id; self.displayName = displayName; self.accessClass = accessClass
         self.detected = detected; self.allowed = allowed; self.backend = backend; self.readerId = readerId; self.keychain = keychain
+        self.hosts = hosts
     }
     var tool: SettingsConnectionTool? {
         Self.knownTool(id)
@@ -24,7 +28,7 @@ public struct CommunityConsentToolFacts: Sendable {
         return SettingsConnectionTool(rawValue: value)
     }
     var eligible: Bool {
-        guard let tool, accessClass == .standard, detected, keychain == .notRequired,
+        guard let tool, accessClass == .standard, detected,
               ["native", "codexbar", "codexbar-compat"].contains(backend) else { return false }
         let parts = readerId.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, ["native", "codexbar"].contains(String(parts[0])) else { return false }
@@ -37,18 +41,19 @@ public struct CommunityConsentPreviewFacts: Sendable {
     public let generation: UInt64, consentTextVersion: Int
     public let mode: SettingsReadingMode
     public let tools: [CommunityConsentToolFacts]
-    public let text: SettingsText
+    public let consentText: SettingsText
     public init(generation: UInt64, consentTextVersion: Int, mode: SettingsReadingMode,
-                tools: [CommunityConsentToolFacts], text: SettingsText) throws {
+                tools: [CommunityConsentToolFacts], consentText: SettingsText) throws {
         let normalized = tools.compactMap(\.tool)
         guard tools.count <= 512, Set(tools.map(\.id)).count == tools.count, Set(normalized).count == normalized.count,
               tools.allSatisfy({ $0.id.range(of: #"^[a-z][a-z0-9-]{0,47}$"#, options: .regularExpression) != nil
                   && !$0.displayName.isEmpty && $0.displayName.utf8.count <= 96
-                  && !$0.displayName.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }),
+                  && !$0.displayName.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+                  && $0.hosts.count <= 32 && $0.hosts.allSatisfy(SettingsConnectionSnapshot.validHost) }),
               consentTextVersion > 0, consentTextVersion <= 1_000_000,
-              [text.english, text.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 })
+              [consentText.english, consentText.chinese].allSatisfy({ !$0.isEmpty && $0.utf8.count <= 8192 })
         else { throw SettingsConnectionFailure.invalidResponse }
-        self.generation = generation; self.consentTextVersion = consentTextVersion; self.mode = mode; self.tools = tools; self.text = text
+        self.generation = generation; self.consentTextVersion = consentTextVersion; self.mode = mode; self.tools = tools; self.consentText = consentText
     }
     /// Detection/consent preview cannot invent quota or membership. Preserve verified reading facts.
     public func projecting(over previous: SettingsConnectionSnapshot? = nil) throws -> SettingsConnectionSnapshot {
@@ -71,12 +76,13 @@ public struct CommunityConsentPreviewFacts: Sendable {
             row.authorization = value.allowed ? .allowed : .noConsent
             row.access = value.accessClass == .browserSession ? .browserSession : .standard
             row.consentEligible = value.eligible
+            row.keychain = value.keychain; row.providerHosts = value.hosts
             if mode == .off { row.connection = .off }
             rows.removeAll { $0.tool == tool }; rows.append(row)
         }
         let eligible = Set(tools.filter(\.eligible).compactMap(\.tool))
         return try .init(consentGeneration: generation, tools: rows, subscriptions: previous?.subscriptions ?? [],
-            unrecognizedTools: unknown, consentPreview: .init(textVersion: consentTextVersion, notice: text, standardTools: eligible), mode: mode)
+            unrecognizedTools: unknown, consentPreview: .init(textVersion: consentTextVersion, notice: consentText, standardTools: eligible), mode: mode)
     }
 }
 /// Only the final structured `consent grant --json` stdin shape. This type never launches a command.
@@ -86,7 +92,7 @@ public struct CommunityConsentGrantPayload: Encodable, Sendable {
     public let consentTextVersion: Int
     public let allow: [String], deny: [String]
     /// No Keychain opt-in is collected by this slice. Empty is deliberate, never inferred from presence.
-    public let keychain: [String: Bool] = [:]
+    public let keychain: [String: CommunityConsentKeychainDecision] = [:]
     public init(preview: CommunityConsentPreviewFacts, allow: [SettingsConnectionTool], deny: [SettingsConnectionTool],
                 request: SettingsConnectionRequestContext) throws {
         let selected = allow + deny

@@ -31,7 +31,6 @@ import XCTest
         intent.select(.cursor, enabled: true); intent.select(.claude, enabled: true)
         XCTAssertEqual(intent.orderedTools, [.codex])
         intent.select(.codex, enabled: false); XCTAssertTrue(intent.selected.isEmpty)
-        XCTAssertEqual(intent.orderedDenied, [.codex])
         XCTAssertEqual(snapshot.tools[0].authorization, .noConsent)
     }
     func testBatchRequiresAtomicBackendPreviewAndCanonicalGeneration() throws {
@@ -84,6 +83,22 @@ import XCTest
     func testPreviewCannotAdmitBrowserOrMissingTools() throws {
         XCTAssertThrowsError(try SettingsConnectionSnapshot(tools: [.init(tool: .cursor, presence: .detected, support: .full, access: .browserSession)],
             consentPreview: .init(textVersion: 1, notice: .init("Test", "测试"), standardTools: [.cursor])))
+    }
+    func testUncheckingAnAllowedToolOmitsItWithoutGeneratingDenyOrForget() async throws {
+        let fake = IntentAtomicFake(), controller = SettingsConnectionController(service: fake)
+        let before = try SettingsConnectionSnapshot(consentGeneration: 1, tools: [
+            .init(tool: .codex, presence: .detected, authorization: .noConsent, support: .full),
+            .init(tool: .claude, presence: .detected, authorization: .allowed, support: .full),
+        ], consentPreview: .init(textVersion: 7, notice: .init("Exact", "原文"), standardTools: [.codex, .claude]), mode: .automatic)
+        controller.receive(before); var intent = SettingsConnectionIntent(snapshot: before)
+        intent.select(.claude, enabled: false)
+        fake.facts = try SettingsConnectionSnapshot(consentGeneration: 2, tools: [
+            .init(tool: .codex, presence: .detected, authorization: .allowed, support: .full),
+            .init(tool: .claude, presence: .detected, authorization: .allowed, support: .full),
+        ], mode: .automatic)
+        let request = try XCTUnwrap(controller.requestAllow(intent)); await controller.confirm(request.id)
+        XCTAssertEqual(fake.calls.count, 1); XCTAssertEqual(fake.calls[0].0, [.codex]); XCTAssertTrue(fake.calls[0].1.isEmpty)
+        XCTAssertEqual(controller.snapshot?.tools.first { $0.tool == .claude }?.authorization, .allowed)
     }
     func testCanonicalBlockedModeIsNeverReportedAsLocalActivation() async throws {
         let fake = IntentAtomicFake(), controller = SettingsConnectionController(service: fake)

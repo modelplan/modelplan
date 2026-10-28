@@ -67,14 +67,13 @@ import AppKit
         })
         if let snapshot = controller.snapshot {
             label(.init("Canonical reading mode: " + snapshot.mode.rawValue, "规范读取模式：" + snapshot.mode.rawValue))
+            if let preview = snapshot.consentPreview { label(preview.notice) }
             if firstRun && intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }
             toolGroup(snapshot.standardTools, advanced: false)
             if firstRun {
                 label(.init("Checked tools are intentions only. Use Allow and confirm to request shared permission.", "勾选仅代表意向；点击授权并确认后才会请求共享权限。"))
-                if let preview = snapshot.consentPreview { label(preview.notice) }
-                let title = intent?.denied.isEmpty == false ? SettingsText("Apply consent choices…", "应用授权选择…")
-                    : SettingsText("Allow selected tools…", "授权所选工具…")
+                let title = SettingsText("Allow selected tools…", "授权所选工具…")
                 addArrangedSubview(button(title, id: "connections.allowSelected",
                     enabled: intent.map { controller.canAllow($0) } ?? false) { [weak self] in
                     guard let self, let intent = self.intent else { return }; self.controller.requestAllow(intent)
@@ -152,6 +151,10 @@ import AppKit
             let suffix = value.beta ? " · beta" : ""
             label(.init(value.tool.title + suffix, value.tool.title + suffix), heading: true)
             label(SettingsConnectionPresentation.summary(value))
+            let hosts = value.providerHosts.isEmpty ? SettingsText("None reported", "未报告")
+                : SettingsText(value.providerHosts.joined(separator: ", "), value.providerHosts.joined(separator: ", "))
+            label(.init("Provider hosts: " + hosts.english, "服务商主机：" + hosts.chinese))
+            label(.init("Recorded Keychain permission: " + value.keychain.rawValue, "已记录钥匙串权限：" + value.keychain.rawValue))
             if firstRun && !advanced {
                 let choice = button(.init("Choose " + value.tool.title, "选择 " + value.tool.title),
                     id: "connections.choose." + value.tool.rawValue, enabled: !controller.isBusy && value.canRequestConnection) { [weak self] in
@@ -166,7 +169,7 @@ import AppKit
                 enabled: controller.isAvailable && !controller.isBusy && value.canRequestConnection) { [weak self] in
                 self?.controller.request(.connect(value.tool, value.access))
             }
-            let disconnect = button(.init("Disconnect…", "断开连接…"), id: "connections.disconnect." + value.tool.rawValue,
+            let disconnect = button(.init("Forget readings…", "忘记读数…"), id: "connections.disconnect." + value.tool.rawValue,
                 enabled: controller.isAvailable && !controller.isBusy) { [weak self] in
                 self?.controller.request(.disconnect(value.tool))
             }

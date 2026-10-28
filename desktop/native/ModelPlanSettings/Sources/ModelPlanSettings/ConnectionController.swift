@@ -28,11 +28,11 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         generation &+= 1; self.service = service; phase = .idle; changed(); return true
     }
     public func canAllow(_ intent: SettingsConnectionIntent) -> Bool {
-        isAvailable && !isBusy && intent.basis == snapshot && canRequest(.applyStandardConsent(allow: intent.orderedTools, deny: intent.orderedDenied))
+        isAvailable && !isBusy && intent.basis == snapshot && canRequest(.applyStandardConsent(allow: intent.orderedTools, deny: []))
     }
     @discardableResult public func requestAllow(_ intent: SettingsConnectionIntent) -> SettingsConnectionConfirmation? {
         guard canAllow(intent) else { return nil }
-        return request(.applyStandardConsent(allow: intent.orderedTools, deny: intent.orderedDenied))
+        return request(.applyStandardConsent(allow: intent.orderedTools, deny: []))
     }
     public var isBusy: Bool {
         switch phase { case .loading, .running: return true; default: return false }
@@ -126,6 +126,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         case .applyStandardConsent(let allow, let deny):
             let tools = allow + deny
             guard service is any SettingsConnectionAllowing, !tools.isEmpty, Set(tools).count == tools.count,
+                  allow.isEmpty || deny.isEmpty,
                   allow.isEmpty || snapshot?.mode == .automatic || snapshot?.mode == .passive,
                   snapshot?.consentGeneration != nil, let preview = snapshot?.consentPreview else { return false }
             return tools.allSatisfy { id in preview.standardTools.contains(id) && snapshot?.standardTools.contains { $0.tool == id && $0.canRequestConnection } == true }
