@@ -92,7 +92,7 @@ func safeRelative(p string) bool {
 	}
 	// Documented tool-owned classes; never admit unrelated secret stores such as
 	// .ssh or arbitrary home files just because a remote catalogue names them.
-	roots := []string{".claude", ".codex", ".zcode", ".cursor", ".copilot", ".gemini", ".kimi-code", ".qwen", ".kiro", ".config/opencode", "Library/Application Support/Cursor", "Library/Application Support/Claude", "Library/Application Support/Codex", "Library/Application Support/ZCode"}
+	roots := []string{".claude", ".codex", ".zcode", ".cursor", ".copilot", ".gemini", ".kimi-code", ".qwen", ".kiro", ".grok", ".factory", ".kimi", ".local/share/amp", ".config/opencode", "Library/Application Support/Cursor", "Library/Application Support/Claude", "Library/Application Support/Codex", "Library/Application Support/ZCode"}
 	for _, root := range roots {
 		if p == root || strings.HasPrefix(p, root+"/") {
 			return true
@@ -163,4 +163,15 @@ func (e Env) presence(s Signal) string {
 		return "unknown"
 	}
 	return "unknown"
+}
+
+// LocalRoot admits only an existing literal local tool directory. Callers supply
+// compiled tool roots or explicit local environment selections, never remote paths.
+// This checks presence metadata only and does not open tool files.
+func LocalRoot(root string) bool {
+	if !filepath.IsAbs(root) {
+		return false
+	}
+	info, err := os.Lstat(root)
+	return err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0
 }
