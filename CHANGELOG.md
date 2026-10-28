@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI adds `consent --json` and `consent grant --json` for the App: bilingual consent text, atomic generation/text-version checks, durable request replay, standard-route gating, recorded Keychain choices and revoke-first Forget cleanup. Replay receipts, cleanup obligations and Keychain restrictions survive pre-API shared-store readers/writers. Existing production readers pick up the new generation and invalidate in-flight older grants.
+  CLI 新增 App 授权 JSON 读取和提交接口，返回中英文原文，原子校验授权代次与文本版本，支持持久化幂等请求；仅授权标准读取、记录钥匙串选择，拒绝先撤销再清理，并使旧代次的进行中读取失效。旧版 CLI 读写共享授权文件后，幂等回执、清理义务及钥匙串限制仍有效。
+
 - Add `modelplan doctor readers [--json]` for sanitised owner verification of native quota readers, local-history adapters and Claude session state. The default reads only cache/presence metadata; explicit `--refresh` uses production consent and interactive Keychain policy while sharing per-provider request floors, intervals and backoff with ordinary refreshes. Output contains only compiled provider IDs, status codes, window counts, UTC ages and beta flags.
   新增 `modelplan doctor readers [--json]`，用于所有者核验原生额度读取器、本机历史适配器与 Claude 会话状态。默认仅读取缓存与存在性元数据；显式 `--refresh` 遵循生产授权和交互式钥匙串策略，与普通刷新共享各提供方的请求下限、间隔与退避。输出仅含固定提供方标识、状态码、窗口数量、UTC 年龄及 beta 标记。
 
