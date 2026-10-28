@@ -3,6 +3,7 @@ import Foundation
 import CryptoKit
 import XCTest
 import ModelPlanCore
+import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -15,6 +16,14 @@ import ModelPlanSettings
         }
         func grantConsentJSON(_ payload: Data) async throws -> CommandResult { grants += 1; throw TransportError.launchFailed }
         func counts() -> [Int] { [reads, grants] }
+    }
+    private actor Desktop: CLITransport {
+        let code: Int32
+        init(_ code: Int32) { self.code = code }
+        func execute(_ command: CLICommand) async throws -> CommandResult { .init(exitCode: code, stdout: Data()) }
+    }
+    private final class Placement: CommunityPlacementProducing {
+        var onPlacementObserved: ((DockEdgePlacement?, Bool) -> Void)?
     }
     private let arm64Source = "e8f04d7eba3108ec808f2ce53e2a0c72e895c7dc83306e7bd135f039bc50c6ae"
     private let amd64Source = "10a3fb58d4211b59dfad2660bedc45c1bee6cf021edfa5cae01e6e58d9b9f4b5"
@@ -90,6 +99,25 @@ import ModelPlanSettings
         try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": self.arm64Source, "x86_64": String(repeating: "a", count: 64)] }
         XCTAssertFalse(CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport).availability.hasAnyAction)
         let calls = await transport.counts(); XCTAssertEqual(calls, [0, 0])
+    }
+
+    func testVerifiedEntryPortRestoresTheSameSettingsBackendWithoutGrantingDesktopReads() async throws {
+        let root = try bundle(), transport = Transport()
+        let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport)
+        let gate = ConsentGatedDesktopTransport(readOnly: Desktop(69), normal: Desktop(0))
+        let backend = CommunityConnectionBackend(port: port, desktop: gate)
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("synthetic-settings.json")), apply: { _ in })
+        let base = CommunitySettingsSession(application: app, canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend,
+            placementSource: Placement(), canPresent: { false }, makeFirstRun: { _ in XCTFail("No window grant in consistency test"); fatalError() })
+        defer { entry.flow.dispose() }
+        try CommunityConnectionWiring.requireInstalled(entry, application: app, backend: backend)
+        await entry.restorePreferences()
+        XCTAssertTrue(app.editor.connections.availability.canInspect)
+        XCTAssertEqual(app.editor.connections.snapshot?.consentGeneration, 1)
+        let counts = await transport.counts(); XCTAssertEqual(counts, [1, 0])
+        let result = try await gate.execute(.desktop)
+        XCTAssertEqual(result.exitCode, 69, "A release-consistent component is not canonical reader consent")
     }
 
 }

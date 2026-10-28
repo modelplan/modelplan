@@ -33,6 +33,7 @@ import ModelPlanShell
 
     /// Read-only references to the actual retained composition; never inferred from status flags.
     public var settingsIntegration: (any CommunitySettingsIntegration)? { settings }
+    public var companionSurface: (any CommunityCompanionSurface)? { companion }
 
     /// Retain Settings once and schedule its normal restore under the caller's presentation gate.
     /// Does not start the app runtime or OS events; restore may inspect the bundled consent component.
@@ -46,7 +47,7 @@ import ModelPlanShell
             Task { await integration.restorePreferences() }
         } catch {
             // Preserve malformed/unavailable preferences; do not create a replacement store or expose paths.
-            let item = NSMenuItem(title: "Settings unavailable / 设置不可用", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "Settings could not open — quit and reopen ModelPlan / 设置未能打开，请退出并重新打开 ModelPlan", action: nil, keyEquivalent: "")
             item.isEnabled = false; settingsItem = item
         }
         return settingsItem

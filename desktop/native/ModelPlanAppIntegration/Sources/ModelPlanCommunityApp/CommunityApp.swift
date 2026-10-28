@@ -42,20 +42,6 @@ import ModelPlanCore
                     NSApplication.shared.appearance = desired.flatMap { NSAppearance(named: $0) }
                 }
             }
-            dock.commitDisplayPlacement = { [weak application] id, edge, fraction in
-                guard let application else { return }
-                Task { _ = try? await application.editor.commit(.dockPlacement(displayID: id, edge: edge, alongFraction: fraction)) }
-            }
-            dock.displayChoicesChanged = { [weak application] displays in
-                guard let application else { return }
-                var context = application.editor.context; context.displays = displays
-                application.update(context: context)
-            }
-            dock.catalogueChanged = { [weak application] rows in
-                guard let application else { return }
-                var context = application.editor.context; context.subscriptions = rows
-                application.update(context: context)
-            }
             let base = CommunitySettingsSession(application: application, canPresent: { [weak gate] in gate?.canPresent == true },
                 makeHelp: { application in
                     let help = await InstrumentHelpComposition.restored(application: application)
