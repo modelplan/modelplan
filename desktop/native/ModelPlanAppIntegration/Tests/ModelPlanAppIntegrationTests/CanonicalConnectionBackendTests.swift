@@ -12,6 +12,7 @@ import ModelPlanAppIntegration
         func execute(_ command: CLICommand) async throws -> CommandResult { .init(exitCode: code, stdout: Data()) }
     }
     private final class Port: CommunityConsentCommandPort {
+        var availability: SettingsConnectionAvailability { .init(canInspect: true, canGrant: true, canForget: true) }
         var reads = 0, writes = 0
         var expectedDeny: [String] = []
         let value: ConsentPreview

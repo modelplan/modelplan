@@ -6,19 +6,25 @@ import ModelPlanSettings
 /// The executable adapter must verify its containing release before supplying this port.
 /// Neither method may implement interactive prompts or convert omitted decisions into denial.
 @MainActor public protocol CommunityConsentCommandPort: AnyObject {
+    var availability: SettingsConnectionAvailability { get }
     func readCanonicalConsent() async throws -> ConsentPreview
     func applyConsentJSON(_ payload: Data) async throws
 }
+public extension CommunityConsentCommandPort {
+    var availability: SettingsConnectionAvailability { .unverified }
+}
 
 /// Single Settings service over canonical consent and the same runtime's desktop gate.
-@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing {
+@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
     private var revision: UInt64 = 0
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
     }
+    public var settingsConnectionAvailability: SettingsConnectionAvailability { port.availability }
     public func detect() async throws -> SettingsConnectionSnapshot {
+        guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
         let value = try await port.readCanonicalConsent()
@@ -34,6 +40,9 @@ import ModelPlanSettings
         // A deny-only request is the separately confirmed Forget flow. First-run omission
         // never becomes denial, and granting and deleting are never combined by this service.
         guard deny.isEmpty || allow.isEmpty else { throw SettingsConnectionFailure.unavailable }
+        guard deny.isEmpty ? port.availability.canGrant : port.availability.canForget else {
+            throw SettingsConnectionFailure.unavailable
+        }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
         let before = try await port.readCanonicalConsent()

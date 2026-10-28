@@ -10,6 +10,9 @@ import ModelPlanSettings
     public init(transport: any ConsentJSONTransport, apiAvailable: Bool = false) {
         self.transport = transport; self.apiAvailable = apiAvailable
     }
+    public var availability: SettingsConnectionAvailability {
+        apiAvailable ? .init(canInspect: true, canGrant: true, canForget: true) : .unverified
+    }
     public func readCanonicalConsent() async throws -> ConsentPreview {
         guard apiAvailable else { throw SettingsConnectionFailure.unavailable }
         let result = try await transport.readConsentJSON()
