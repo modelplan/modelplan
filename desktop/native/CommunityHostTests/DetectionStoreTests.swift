@@ -28,7 +28,49 @@ private actor DetectionTestTransport: CLITransport {
     var wall = Date(timeIntervalSince1970: 1_793_145_600)
     var elapsed: TimeInterval = 0
 }
+private actor HeldDetectionTransport: CLITransport {
+    private let ordinary = DetectionTestTransport()
+    private var firstGate: CheckedContinuation<Void, Never>?
+    private var started: CheckedContinuation<Void, Never>?
+    private var detectionCount = 0, active = 0, maximumActive = 0
+    func execute(_ command: CLICommand) async throws -> CommandResult {
+        active += 1; maximumActive = max(maximumActive, active)
+        defer { active -= 1 }
+        guard command == .detect else { return try await ordinary.execute(command) }
+        detectionCount += 1
+        let first = detectionCount == 1
+        if first {
+            await withCheckedContinuation { gate in
+                firstGate = gate; started?.resume(); started = nil
+            }
+        }
+        let id = first ? "old" : "new"
+        return CommandResult(exitCode: 0, stdout: Data("{\"schemaVersion\":1,\"tools\":[{\"providerId\":\"\(id)\",\"status\":\"unknown\"}]}".utf8))
+    }
+    func waitForFirstDetection() async {
+        if firstGate != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func releaseFirstDetection() { firstGate?.resume(); firstGate = nil }
+    func observed() -> (Int, Int) { (detectionCount, maximumActive) }
+}
 @MainActor final class DetectionStoreTests: XCTestCase {
+    func testExplicitResumeRequestQueuesBehindCancelledDetectionGeneration() async throws {
+        for requestsAfterResume in [false, true] {
+            let transport = HeldDetectionTransport()
+            let store = SnapshotStore(transport: transport, time: DetectionTestTime(), automaticTimers: false)
+            store.start(); try await settle(store)
+            store.requestDetection(); await transport.waitForFirstDetection()
+            store.suspend(); store.resume()
+            if requestsAfterResume { store.requestDetection(); store.requestDetection() }
+            await transport.releaseFirstDetection(); try await settle(store)
+            let (count, maximum) = await transport.observed()
+            XCTAssertEqual(maximum, 1)
+            XCTAssertEqual(count, requestsAfterResume ? 2 : 1)
+            XCTAssertEqual(store.detectionReport?.tools.first?.providerId, requestsAfterResume ? "new" : nil)
+            await store.stopAndWait()
+        }
+    }
     func testDefaultLifecycleAndRefreshDoNotRequestDetection() async throws {
         let transport = DetectionTestTransport()
         let store = SnapshotStore(transport: transport, time: DetectionTestTime(), automaticTimers: false)

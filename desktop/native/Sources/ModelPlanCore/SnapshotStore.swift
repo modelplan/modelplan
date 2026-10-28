@@ -41,6 +41,7 @@ public struct StoreDiagnostics: Sendable {
     private var pending: [CLICommand] = []
     private var worker: Task<Void, Never>?
     private var activeCommand: CLICommand?
+    private var activeCommandGeneration: Int?
     public var detectionReport: DetectionReport? { diagnostics.detectionReport }
     private var timer: Timer?
     private var generation = 0
@@ -75,7 +76,9 @@ public struct StoreDiagnostics: Sendable {
     /// Explicit caller request only; start/resume/refresh never scan for installed tools.
     /// Uses the existing serialized child queue, with no independent timer or reader.
     public func requestDetection() {
-        guard !suspended, activeCommand != .detect, !pending.contains(.detect) else { return }
+        guard !suspended, !pending.contains(.detect) else { return }
+        // A cancelled older generation still owns the child slot, but not this awake request.
+        guard activeCommand != .detect || activeCommandGeneration != generation else { return }
         enqueue(.detect); kick()
     }
     /// Sleep/lock/user switch/display removal use this transaction; ordinary app deactivation does not.
@@ -130,7 +133,7 @@ public struct StoreDiagnostics: Sendable {
         // Do not start a bounded publication child across the next personal-read deadline.
         if pending.first != .desktop && desktopDue - time.elapsed < 30 { pending.removeAll { $0 == .desktop }; pending.insert(.desktop, at: 0) }
         let command = pending.removeFirst(), token = generation
-        activeCommand = command
+        activeCommand = command; activeCommandGeneration = token
         if command == .desktop { desktopDue = time.elapsed + 60 }
         if command == .publication { publicationDue = time.elapsed + 600 }
         diagnostics.childRunning = true
@@ -189,7 +192,8 @@ public struct StoreDiagnostics: Sendable {
                 }
             }
             guard let self else { return }
-            self.worker = nil; self.activeCommand = nil; self.diagnostics.childRunning = false
+            self.worker = nil; self.activeCommand = nil; self.activeCommandGeneration = nil
+            self.diagnostics.childRunning = false
             if token == self.generation && !self.suspended {
                 self.reconcileIDs(); _ = self.view(); self.onChange?()
             }
