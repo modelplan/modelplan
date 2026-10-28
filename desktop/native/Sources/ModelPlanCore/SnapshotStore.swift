@@ -19,6 +19,7 @@ public struct StoreDiagnostics: Sendable {
     public init() {}
     public var detection: String? = "not-requested"
     public var detectionReadAt: Date?
+    public var detectionReport: DetectionReport?
     public var personal: String? = "not-loaded"
     public var publication: String? = "not-loaded"
     public var publicationWarning = false
@@ -40,7 +41,7 @@ public struct StoreDiagnostics: Sendable {
     private var pending: [CLICommand] = []
     private var worker: Task<Void, Never>?
     private var activeCommand: CLICommand?
-    public private(set) var detectionReport: DetectionReport?
+    public var detectionReport: DetectionReport? { diagnostics.detectionReport }
     private var timer: Timer?
     private var generation = 0
     private var suspended = true
@@ -81,7 +82,7 @@ public struct StoreDiagnostics: Sendable {
     public func suspend() {
         guard !suspended else { return }
         suspended = true; generation += 1; pending.removeAll(); timer?.invalidate(); timer = nil
-        detectionReport = nil; diagnostics.detection = "not-requested"; diagnostics.detectionReadAt = nil
+        diagnostics.detectionReport = nil; diagnostics.detection = "not-requested"; diagnostics.detectionReadAt = nil
         worker?.cancel() // Retain the slot until the transport has reaped its child.
         onChange?()
     }
@@ -152,7 +153,7 @@ public struct StoreDiagnostics: Sendable {
                     guard result.exitCode == 0 else { throw FeedError.malformed("detect-exit") }
                     let value = try await decoder.detection(result.stdout)
                     guard let self, token == self.generation, !self.suspended else { break }
-                    self.detectionReport = value
+                    self.diagnostics.detectionReport = value
                     self.diagnostics.detection = nil; self.diagnostics.detectionReadAt = self.time.wall
                 case .refreshAccount:
                     // Refresh output is never a feed; the desktop worker invokes it above.
@@ -175,7 +176,7 @@ public struct StoreDiagnostics: Sendable {
             } catch {
                 if let self, token == self.generation, !self.suspended {
                     if command == .detect {
-                        self.detectionReport = nil; self.diagnostics.detection = "detection-read-unavailable"
+                        self.diagnostics.detectionReport = nil; self.diagnostics.detection = "detection-read-unavailable"
                         self.diagnostics.detectionReadAt = nil
                     }
                     else if command == .desktop { self.personalUsable = false; self.diagnostics.personal = "personal-read-unavailable" }
