@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- CLI production paths now admit consented native saved-login readers, carrying local profiles, selected region, bounded Keychain policy and revocation-fenced publication into quota, hooks and desktop feeds. Explicit `MODELPLAN_READERS=automatic` preserves saved privacy; runtime imports stay blocked in Passive. Wire incremental local-history refresh and the optional desktop `localHistory` feed, add an explicit GLM configuration source, and include the newer captures in Forget while preserving request gates and Keychain Deny.
+  CLI 生产路径现将共享授权接入原生登录读取器、钩子与桌面，保留本机来源、地区、钥匙串期限及撤销写入保护；显式 automatic 保留已保存的隐私设置。接入增量本机历史与桌面可选字段，GLM 配置来源需显式选择；忘记读数保留请求间隔和钥匙串拒绝状态。
+
 ## CLI v0.5.41, Codex plugin 0.15.33 and Claude Code plugin 0.7.32 (2026-10-27)
 
 - Catalogue helper routes now distinguish audited standard, separate advanced browser-session and not-read access. Standard consent excludes browser sessions and forces both the Keychain gate and `cookieSource: off` across the complete effective helper registry, verified after normalization, including for Firefox/Safari cookies. Only the explicitly granted browser-session target gets `cookieSource: auto`; user-set Keychain disables remain in force. `connect <tool> --browser-session` explains Safe Storage/cookie caching and grants one provider explicitly. Forget atomically captures current cookie-cleanup obligations during revocation and keeps blocked cleanup pending. All connect JSON paths are previews; confirmations name destination hosts. Privacy/revocation gates now also protect Qwen status exports and generation-fenced refresh/snapshot/history writes.

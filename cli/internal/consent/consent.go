@@ -92,12 +92,12 @@ func Load(file string) (State, error) {
 // Effective lets environment settings only restrict a persisted privacy choice.
 // An unknown nonempty override fails closed, rather than enabling imports.
 func (s State) Effective(override string) string {
-	switch strings.ToLower(override) {
+	switch strings.ToLower(strings.TrimSpace(override)) {
 	case "off":
 		return Off
 	case "passive":
 		return Passive
-	case "":
+	case "", "automatic":
 		return s.Privacy
 	default:
 		return Off

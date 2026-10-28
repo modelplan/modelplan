@@ -22,6 +22,8 @@ import (
 // existing installation key; ProfileRef is an opaque keyed reference. Neither
 // credentials nor raw identities are needed. No access is granted by detection.
 type HistoryAccess struct {
+	StillValid          func() bool
+	Publish             func(func() error) error
 	Allowed, Denied     bool
 	Privacy, ProfileRef string
 	Key                 []byte
@@ -101,6 +103,12 @@ func historyHash(key []byte, domain, value string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 func historyAdmission(tool string, a HistoryAccess) string {
+	if os.Getenv("MODELPLAN_HISTORY") == "off" || (tool == "gemini" && os.Getenv("MODELPLAN_GEMINI") == "off") || (tool == "qwen" && os.Getenv("MODELPLAN_QWEN") == "off") {
+		return "off"
+	}
+	if a.StillValid != nil && !a.StillValid() {
+		return "consent_required"
+	}
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	if mode == "off" || a.Privacy == "off" {
 		return "off"
@@ -775,14 +783,26 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	if ctx.Err() != nil || historyAdmission(tool, a) != "" {
 		return ReadHistoryCache(cache, tool, a, now)
 	}
-	if !historySave(historyPath(cache, tool, a), s) {
+	save := func() error {
+		if !historySave(historyPath(cache, tool, a), s) {
+			return errors.New("history cache unavailable")
+		}
+		historySave(gatePath, gate)
+		return nil
+	}
+	var publishErr error
+	if a.Publish != nil {
+		publishErr = a.Publish(save)
+	} else {
+		publishErr = save()
+	}
+	if publishErr != nil {
 		r := ReadHistoryCache(cache, tool, a, now)
 		r.Availability = "stale"
 		r.Freshness = "stale"
 		r.NextStep = historyNext(tool, "stale")
 		return r
 	}
-	historySave(gatePath, gate)
 	return ReadHistoryCache(cache, tool, a, now)
 }
 

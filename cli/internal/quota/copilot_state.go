@@ -16,9 +16,11 @@ import (
 // native connection is the consent: only an enabled connection dispatches Collect.
 // Passive blocks the authenticated runtime, including potential Keychain reads.
 type CopilotAccess struct {
-	Allowed bool
-	Denied  bool
-	Privacy string
+	StillValid func() bool
+	Publish    func(func() error) error
+	Allowed    bool
+	Denied     bool
+	Privacy    string
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
@@ -101,6 +103,9 @@ func copilotAdmission(ctx context.Context) (CopilotAccess, string) {
 		if err != nil || len(decoded) != 32 {
 			return a, "privacy_blocked"
 		}
+	}
+	if a.StillValid != nil && !a.StillValid() {
+		return a, "consent_required"
 	}
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	switch {
@@ -226,7 +231,7 @@ func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.
 	s.AttemptAt = now.UTC()
 	s.NextAt = now.Add(5 * time.Minute).UTC()
 	s.LoginGeneration = access.LoginGeneration
-	if !saveCopilotState(cache, s) {
+	if !publishReaderCache(access.Publish, func() bool { return saveCopilotState(cache, s) }) {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "Copilot attempt gate unavailable"}
 	}
 	copilotAttempts.Store(cache, now)
@@ -255,7 +260,7 @@ func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.
 			}
 		}
 	}
-	if !saveCopilotState(cache, s) {
+	if !publishReaderCache(access.Publish, func() bool { return saveCopilotState(cache, s) }) {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: "Copilot result cache unavailable"}
 	}
 	return copilotCachedEntry(s, now, access.LoginGeneration)
