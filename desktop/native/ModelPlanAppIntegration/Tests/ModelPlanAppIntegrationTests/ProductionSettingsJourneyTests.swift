@@ -13,13 +13,16 @@ import ModelPlanDock
     private final class Port: CommunityConsentCommandPort {
         var availability: SettingsConnectionAvailability = .unverified
         var reads = 0, grants = 0, granted = false
-        var toolID = "codex", keychainState = "unset"
+        var toolID = "codex", keychainState = "unset", readingMode = "automatic"
         var expectedKeychain: [String: String] = [:]
-        var recordKeychain = true
+        var recordKeychain = true, reportsTool = true
         func readCanonicalConsent() async throws -> ConsentPreview {
             reads += 1
+            let tools = reportsTool ? """
+            {"id":"\(toolID)","displayName":"Synthetic tool","accessClass":"standard","detected":true,"allowed":\(granted),"backend":"native","readerId":"native:\(toolID)","keychain":"\(keychainState)","hosts":["example.test"]}
+            """ : ""
             return try FeedDecoder.consentPreview(Data("""
-            {"generation":\(granted ? 2 : 1),"consentTextVersion":2,"mode":"automatic","consentText":{"en":"Synthetic consent","zh":"合成授权"},"tools":[{"id":"\(toolID)","displayName":"Synthetic tool","accessClass":"standard","detected":true,"allowed":\(granted),"backend":"native","readerId":"native:\(toolID)","keychain":"\(keychainState)","hosts":["example.test"]}]}
+            {"generation":\(granted ? 2 : 1),"consentTextVersion":2,"mode":"\(readingMode)","consentText":{"en":"Synthetic consent","zh":"合成授权"},"tools":[\(tools)]}
             """.utf8))
         }
         func applyConsentJSON(_ payload: Data) async throws {
@@ -198,6 +201,101 @@ import ModelPlanDock
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         XCTAssertEqual(try encoder.encode(after.preferences), try encoder.encode(before.preferences), "Observed recovery must never rewrite the saved preferred display/edge/fraction")
         XCTAssertNil(host.nativePanel)
+        // Use the same commit port called by the production Dock's drag receipt.
+        XCTAssertNotNil(host.commitDisplayPlacement, "The real factory must wire the return path to the same editor")
+        host.setPresentationAllowed(true)
+        host.commitDisplayPlacement?("fixture", .left, 0.35)
+        for _ in 0..<1000 where app.editor.snapshot?.preferences.dockEdge != .left { await Task.yield() }
+        let moved = try XCTUnwrap(host.edgePresentation?.placement)
+        XCTAssertEqual(moved.edge, .left)
+        XCTAssertNoThrow(try CommunityDockPlacementFacts.requireSynchronized(moved, recovering: false, application: app))
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.preferences.dockEdge, .left)
+        XCTAssertEqual(saved.preferences.dockAlongFraction, 0.35)
+        let row = try XCTUnwrap(try SettingsCatalogue.rows(preferences: saved.preferences, context: app.editor.context).first { $0.key == .dockEdge })
+        XCTAssertTrue(row.subtitle.chinese.contains("当前位于左侧"))
+        host.setPresentationAllowed(false)
+        XCTAssertNil(host.nativePanel)
         entry.flow.dispose()
     }
+    func testFreshFactoryFirstRunExplainsKeychainRecordsAndTheUncheckedNextStep() async throws {
+        let cases = [("allowed", "Allowed by your choice", "已按你的选择允许"),
+                     ("denied", "Not allowed by your choice", "你选择了不允许"),
+                     ("unset", "Permission not requested yet", "尚未请求权限")]
+        for (raw, english, chinese) in cases {
+            let app = SettingsApplicationCoordinator(store: try store(), apply: { _ in })
+            let port = Port(); port.toolID = "claude"; port.keychainState = raw
+            port.availability = .init(canInspect: true, canGrant: true, canForget: true)
+            var mounted: SettingsConnectionsView?
+            let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {})
+            let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(port),
+                canPresent: { true }, makeFirstRun: { editor in
+                    XCTAssertTrue(editor === app.editor)
+                    mounted = SettingsConnectionsView(editor: editor, firstRun: true)
+                    return Surface()
+                })
+            await entry.restorePreferences()
+            let view = try XCTUnwrap(mounted)
+            for language in [SettingsLanguage.english, .chinese] {
+                view.apply(language: language)
+                let labels = view.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue }
+                let expected = language == .english ? "Keychain permission: " + english : "钥匙串权限：" + chinese
+                XCTAssertTrue(labels.contains(expected), "The actual first-run section must translate " + raw)
+                XCTAssertTrue(labels.contains { $0.contains(language == .english ? "usage cannot be read" : "无法读取用量") })
+                XCTAssertFalse(labels.contains { $0 == "?" || $0.hasSuffix(": " + raw) || $0.hasSuffix("：" + raw) })
+                XCTAssertEqual(try control(view, "connections.keychain.claude").state, .off)
+            }
+            XCTAssertEqual(port.grants, 0); XCTAssertNil(view.window)
+            entry.flow.dispose()
+        }
+    }
+    func testFreshFactoryWithNoToolsOffersSignInRecheckAndLocalSettingsAction() async throws {
+        let app = SettingsApplicationCoordinator(store: try store(), apply: { _ in })
+        let port = Port(); port.reportsTool = false
+        port.availability = .init(canInspect: true, canGrant: true, canForget: true)
+        var mounted: SettingsConnectionsView?
+        let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {})
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(port),
+            canPresent: { true }, makeFirstRun: { editor in
+                mounted = SettingsConnectionsView(editor: editor, firstRun: true); return Surface()
+            })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences()
+        let view = try XCTUnwrap(mounted)
+        for language in [SettingsLanguage.english, .chinese] {
+            view.apply(language: language)
+            let labels = view.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue }
+            XCTAssertTrue(labels.contains { $0.contains(language == .english ? "Sign in to a supported tool" : "请先登录受支持的工具") })
+            XCTAssertTrue(try control(view, "connections.detect").isEnabled)
+            XCTAssertFalse(try control(view, "connections.allowSelected").isEnabled)
+        }
+        entry.updateUsageState(snapshot: nil, diagnostics: .init(), now: Date())
+        XCTAssertNotNil(entry.currentUsageNextStep)
+        XCTAssertFalse(entry.usageAccessMenuItem.title.contains("?"))
+        XCTAssertEqual(port.grants, 0); XCTAssertNil(view.window)
+    }
+
+    func testFreshFactoryReadingOffOffersTheSameLocalAboutAction() async throws {
+        let app = SettingsApplicationCoordinator(store: try store(), apply: { _ in })
+        let port = Port(); port.readingMode = "off"
+        port.availability = .init(canInspect: true, canGrant: true, canForget: true)
+        let surface = Surface(); var mounted: SettingsConnectionsView?
+        let base = CommunitySettingsSession(application: app, canPresent: { true }, environment: { .init() }, activate: {},
+            makeSurface: { editor in XCTAssertTrue(editor === app.editor); return surface })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(port),
+            canPresent: { true }, makeFirstRun: { editor in
+                mounted = SettingsConnectionsView(editor: editor, firstRun: true); return Surface()
+            })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences()
+        let view = try XCTUnwrap(mounted)
+        XCTAssertFalse(try control(view, "connections.allowSelected").isEnabled)
+        XCTAssertEqual(app.editor.connections.snapshot?.mode, .off)
+        let help = try control(view, "connections.modeHelp")
+        XCTAssertTrue(help.isEnabled); help.invoke?()
+        for _ in 0..<1000 where surface.panes.isEmpty { await Task.yield() }
+        XCTAssertEqual(surface.panes.first ?? nil, "about")
+        XCTAssertEqual(port.grants, 0); XCTAssertNil(view.window)
+    }
+
 }

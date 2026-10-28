@@ -68,6 +68,8 @@ import ModelPlanSettings
         XCTAssertNil(delegate.settingsIntegration)
         let item = delegate.configureSettings(LifecycleCoordinator(store: SnapshotStore(transport: desktop)))
         XCTAssertEqual(item?.isEnabled, false)
+        XCTAssertTrue(item?.title.contains("quit and reopen ModelPlan") == true)
+        XCTAssertFalse(item?.title.contains("unavailable") == true)
         XCTAssertNil(delegate.settingsIntegration)
     }
     func testNormalEntryFactoryRetainsItsRequiredCompanionWithoutLaunching() {
