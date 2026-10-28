@@ -16,10 +16,22 @@ final class ConsentProcessTransportTests: XCTestCase {
     func testBoundedGrantStdinIsCompleteAndReadUsesExactCommand() async throws {
         let file = try fixture(); defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         let port = ProcessCLITransport(executable: file, environment: [:])
-        let read = try await port.readConsentJSON()
+        let start = ProcessInfo.processInfo.systemUptime
+        let read: CommandResult
+        do { read = try await port.readConsentJSON() }
+        catch {
+            XCTFail("CONSENT-PROCESS-PROBE read stage failed after \(ProcessInfo.processInfo.systemUptime - start)s: \(error)")
+            return
+        }
         XCTAssertEqual(try JSONDecoder().decode([String].self, from: read.stdout), ["consent", "--json"])
         let bytes = Data(repeating: 120, count: 65536)
-        let result = try await port.grantConsentJSON(bytes)
+        let grantStart = ProcessInfo.processInfo.systemUptime
+        let result: CommandResult
+        do { result = try await port.grantConsentJSON(bytes) }
+        catch {
+            XCTFail("CONSENT-PROCESS-PROBE grant stdin stage failed after \(ProcessInfo.processInfo.systemUptime - grantStart)s: \(error)")
+            return
+        }
         XCTAssertEqual(result.exitCode, 0); XCTAssertEqual(result.stdout, bytes)
     }
     func testOversizedAndEmptyPayloadsRefuseBeforeLaunch() async throws {
