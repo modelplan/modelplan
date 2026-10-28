@@ -232,6 +232,10 @@ import AppKit
             else if case .readers(let readers) = row.value {
                 readout.stringValue = readers.map { $0.title + " · " + Self.readerStatus($0.observation, language: language) + "\n" + $0.description.value(language) }.joined(separator: "\n")
             }
+            else if case .link(let url) = row.value {
+                readout.stringValue = SettingsWords.text("Manual guide URL (select and copy):\n", "手动说明网址（可选择复制）：\n", language) + url.absoluteString
+                readout.isSelectable = true
+            }
             else if case .text(let text) = row.value { readout.stringValue = text }
             else { readout.stringValue = SettingsWords.text("Not available in this build", "此版本暂不可用", language) }
         }

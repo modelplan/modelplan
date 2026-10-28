@@ -82,7 +82,8 @@ import AppKit
             guard let self else { return }; self.task = Task { await self.controller.refresh() }
         })
         if let snapshot = controller.snapshot {
-            label(.init("Canonical reading mode: " + snapshot.mode.rawValue, "规范读取模式：" + snapshot.mode.rawValue))
+            let mode = SettingsConnectionPresentation.readingMode(snapshot.mode)
+            label(.init("Usage reading mode: " + mode.english, "用量读取模式：" + mode.chinese))
             if let preview = snapshot.consentPreview { label(preview.notice) }
             if intent?.basis != snapshot { intent = .init(snapshot: snapshot) }
             if snapshot.tools.isEmpty && snapshot.unrecognizedTools.isEmpty { label(.init("No tools reported. Authorization and subscription ownership remain unknown.", "未报告工具；授权及订阅归属仍未知。")) }

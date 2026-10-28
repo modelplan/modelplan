@@ -196,7 +196,8 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     }
     private func failed(_ error: Error, token: UInt64) {
         guard generation == token else { return }
-        if (error as? SettingsConnectionFailure) == .cleanupReadbackUnavailable, let previous = snapshot {
+        let failure = error as? SettingsConnectionFailure
+        if failure == .cleanupReadbackUnavailable || failure == .mutationReadbackUnavailable, let previous = snapshot {
             observation &+= 1; snapshot = try? previous.withoutVerifiedConsent()
         }
         if Task.isCancelled || error is CancellationError { phase = .cancelled }

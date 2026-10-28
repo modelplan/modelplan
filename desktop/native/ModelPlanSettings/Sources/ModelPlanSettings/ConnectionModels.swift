@@ -178,7 +178,7 @@ public struct SettingsPluginInstallResult: Equatable, Sendable {
     public var isInstalled: Bool { status == .installed }
 }
 public enum SettingsConnectionFailure: String, Error, Sendable {
-    case unavailable, requestFailed, invalidResponse, stale, cancelled, cleanupReadbackUnavailable
+    case unavailable, requestFailed, invalidResponse, stale, cancelled, cleanupReadbackUnavailable, mutationReadbackUnavailable
 }
 public enum SettingsConnectionAction: Equatable, Sendable {
     case connect(SettingsConnectionTool, SettingsConnectionAccess)

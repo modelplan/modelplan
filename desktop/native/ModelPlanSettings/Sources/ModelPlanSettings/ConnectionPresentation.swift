@@ -11,6 +11,14 @@ public enum SettingsConnectionPresentation {
         case .unavailable: return .init("Usage consent is unavailable in this build. Check component status in About.", "此构建暂不能请求用量授权，请在关于中检查组件状态。")
         }
     }
+    public static func readingMode(_ value: SettingsReadingMode) -> SettingsText {
+        switch value {
+        case .automatic: return .init("Automatic reading", "自动读取")
+        case .passive: return .init("Passive reading", "被动读取")
+        case .off: return .init("Reading disabled", "已停用读取")
+        case .unknown: return .init("Not verified", "尚未核验")
+        }
+    }
     public static func presence(_ value: SettingsToolPresence) -> SettingsText {
         switch value {
         case .detected: return .init("Detected", "已检测到")
@@ -93,6 +101,7 @@ public enum SettingsConnectionPresentation {
         case .consentRecordedReadingBlocked: return .init("Consent was recorded, but canonical reading mode still blocks activation.", "授权选择已记录，但规范读取模式仍阻止启用。")
         case .failed(let code):
             switch code {
+            case .mutationReadbackUnavailable: return .init("The request was accepted, but current permissions could not be verified. No current permission or completed cleanup is assumed. Open About before retrying.", "请求已被接受，但无法核验当前权限；不认定当前授权或清理已完成。请在关于中查看说明后再重试。")
             case .cleanupReadbackUnavailable: return .init("The CLI reported unfinished cleanup, but current access could not be verified. Check detected tools and review the manual cleanup instructions.", "CLI报告清理未完成，但无法核验当前权限。请重新检查工具，并查看手动清理说明。")
             case .unavailable: return .init("This action is unavailable. Check CLI support and current permissions.", "此操作不可用，请检查 CLI 支持和当前权限。")
             case .stale: return .init("Tools or consent changed. Review the current text and choices before trying again.", "工具或授权已变化，请检查当前说明和选择后重试。")

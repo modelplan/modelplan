@@ -9,9 +9,9 @@ import ModelPlanCore
 @MainActor final class ConsentCoreQ2Tests: XCTestCase {
     private actor Wire: ConsentJSONTransport {
         var reads = 0, writes = 0, revoked = false
-        var failReadback = false, badReceipt = false, failAllReads = false
+        var failReadback = false, badReceipt = false, failAllReads = false, ordinarySuccess = false
         var pendingIDs = ["claude"]
-        func configure(failReadback: Bool = false, badReceipt: Bool = false, pendingIDs: [String] = ["claude"], failAllReads: Bool = false) { self.failAllReads = failAllReads; self.failReadback = failReadback; self.badReceipt = badReceipt; self.pendingIDs = pendingIDs }
+        func configure(failReadback: Bool = false, badReceipt: Bool = false, pendingIDs: [String] = ["claude"], failAllReads: Bool = false, ordinarySuccess: Bool = false) { self.ordinarySuccess = ordinarySuccess; self.failAllReads = failAllReads; self.failReadback = failReadback; self.badReceipt = badReceipt; self.pendingIDs = pendingIDs }
         func readConsentJSON() async throws -> CommandResult {
             reads += 1
             if failAllReads || (revoked && failReadback) { throw TransportError.launchFailed }
@@ -26,9 +26,10 @@ import ModelPlanCore
             XCTAssertEqual(value["allow"] as? [String], [])
             XCTAssertEqual(value["keychain"] as? [String: String], [:])
             revoked = true
-            return .init(exitCode: 1, stdout: try JSONSerialization.data(withJSONObject: [
-                "ok": false, "error": "cleanup_pending", "requestId": badReceipt ? UUID().uuidString : value["requestId"]!,
-                "generation": 2, "tools": [], "pendingForget": pendingIDs]))
+            var reply: [String: Any] = ["ok": ordinarySuccess, "requestId": badReceipt ? UUID().uuidString : value["requestId"]!,
+                "generation": 2, "tools": [], "pendingForget": ordinarySuccess ? [] : pendingIDs]
+            if !ordinarySuccess { reply["error"] = "cleanup_pending" }
+            return .init(exitCode: ordinarySuccess ? 0 : 1, stdout: try JSONSerialization.data(withJSONObject: reply))
         }
         func counts() -> [Int] { [reads, writes] }
     }
@@ -216,6 +217,83 @@ import ModelPlanCore
         XCTAssertEqual(app.editor.connections.snapshot?.subscriptions, [membership])
         XCTAssertEqual(app.editor.connections.phase, .cleanupPending)
         XCTAssertEqual(app.editor.connections.snapshot?.pendingCleanupTools, [.claude])
+    }
+
+    private actor AdmissionProbe: CLITransport {
+        let code: Int32
+        init(_ code: Int32) { self.code = code }
+        func execute(_ command: CLICommand) async throws -> CommandResult { .init(exitCode: code, stdout: Data()) }
+    }
+    func testOrdinaryForgetLostReadbackWithdrawsConsentWithoutRetryOrOwnershipLoss() async throws {
+        let root = try bundle(), wire = Wire()
+        await wire.configure(failReadback: true, ordinarySuccess: true)
+        let gate = ConsentGatedDesktopTransport(readOnly: AdmissionProbe(69), normal: AdmissionProbe(0))
+        let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
+        let backend = CommunityConnectionBackend(port: port, desktop: gate)
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let base = CommunitySettingsSession(application: app, canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences()
+        let admitted = try await gate.execute(.desktop); XCTAssertEqual(admitted.exitCode, 0)
+        let original = try XCTUnwrap(app.editor.connections.snapshot)
+        let membership = SettingsVerifiedSubscription(reference: "synthetic-owned", tool: .claude, name: .init("Synthetic plan", "合成方案"))
+        var tools = original.tools; tools[0].binding = .verified(references: [membership.reference])
+        app.editor.connections.receive(try .init(consentGeneration: original.consentGeneration, tools: tools,
+            subscriptions: [membership], consentPreview: original.consentPreview, mode: original.mode))
+        let request = try XCTUnwrap(app.editor.connections.requestForget(.claude))
+        await app.editor.connections.confirm(request.id)
+        XCTAssertEqual(app.editor.connections.snapshot?.tools.first?.authorization, .unknown)
+        XCTAssertNil(app.editor.connections.snapshot?.consentGeneration)
+        XCTAssertNil(app.editor.connections.snapshot?.consentPreview)
+        XCTAssertEqual(app.editor.connections.snapshot?.subscriptions, [membership])
+        XCTAssertFalse(app.editor.connections.canForget(.claude))
+        await app.editor.connections.confirm(request.id)
+        let counts = await wire.counts(); XCTAssertEqual(counts, [3, 1])
+        let refused = try await gate.execute(.desktop); XCTAssertEqual(refused.exitCode, 69)
+        XCTAssertEqual(app.editor.connections.phase, .failed(.mutationReadbackUnavailable))
+    }
+    func testManualInstructionURLIsRenderedSelectableWithoutAHostOrWindow() async throws {
+        let root = try bundle()
+        let context = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: .unverified)
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), context: context, apply: { _ in })
+        await app.reload()
+        let snapshot = try XCTUnwrap(app.editor.snapshot)
+        let item = try XCTUnwrap(try SettingsCatalogue.rows(preferences: snapshot.preferences, context: context, paneID: "about").first { $0.key == .consentHelp })
+        for language in [SettingsLanguage.english, .chinese] {
+            let row = SettingsNativeRow(key: .consentHelp)
+            row.apply(item, language: language, saving: false, input: nil, reduced: true, onChoice: NSSelectorFromString("unused:"),
+                target: self, showGroup: false, snapshot: snapshot, context: context, holdAvailable: false, hasHost: false,
+                onEdit: { _, _ in XCTFail("Read-only instructions must not edit") },
+                onSurfaceAction: { _, _ in XCTFail("Rendering must not execute a URL/CLI action") }, onDraftCleared: { _ in })
+            let field = try XCTUnwrap(row.controls.arrangedSubviews.compactMap { $0 as? NSTextField }.first { $0.stringValue.contains(SettingsAbout.consentHelpURL.absoluteString) })
+            XCTAssertTrue(field.isSelectable); XCTAssertFalse(field.isEditable)
+            XCTAssertFalse(field.stringValue.contains("Not available in this build"))
+            XCTAssertFalse(field.stringValue.contains("此版本暂不可用"))
+            XCTAssertNil(row.window)
+            row.retireControls()
+        }
+    }
+    func testReadingModesRenderHumanBilingualLabelsInTheFirstRunSection() async throws {
+        let root = try bundle(), wire = Wire(), desktop = Desktop()
+        let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: wire)
+        let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let base = CommunitySettingsSession(application: app, canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
+        defer { entry.flow.dispose() }
+        let values: [(SettingsReadingMode, String, String)] = [(.automatic, "Automatic reading", "自动读取"),
+            (.passive, "Passive reading", "被动读取"), (.off, "Reading disabled", "已停用读取"), (.unknown, "Not verified", "尚未核验")]
+        for (mode, en, zh) in values {
+            app.editor.connections.receive(try .init(consentGeneration: 1, mode: mode))
+            let view = SettingsConnectionsView(editor: app.editor, firstRun: true)
+            for language in [SettingsLanguage.english, .chinese] {
+                view.apply(language: language)
+                let expected = language == .english ? "Usage reading mode: " + en : "用量读取模式：" + zh
+                XCTAssertTrue(view.arrangedSubviews.compactMap { $0 as? NSTextField }.contains { $0.stringValue == expected })
+                XCTAssertNil(view.window)
+            }
+        }
     }
 
 }

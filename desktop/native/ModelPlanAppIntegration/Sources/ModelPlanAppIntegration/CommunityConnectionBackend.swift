@@ -82,12 +82,11 @@ public extension CommunityConsentCommandPort {
         do { after = try await port.readCanonicalConsent() }
         catch {
             try check(token)
-            if cleanup != nil { throw SettingsConnectionFailure.cleanupReadbackUnavailable }
-            throw error
+            throw cleanup == nil ? SettingsConnectionFailure.mutationReadbackUnavailable : SettingsConnectionFailure.cleanupReadbackUnavailable
         }
         try check(token)
         guard after.generation >= generationFloor else {
-            throw cleanup == nil ? SettingsConnectionFailure.stale : SettingsConnectionFailure.cleanupReadbackUnavailable
+            throw cleanup == nil ? SettingsConnectionFailure.mutationReadbackUnavailable : SettingsConnectionFailure.cleanupReadbackUnavailable
         }
         if cleanup == nil { pendingCleanup.subtract(deny) }
         generationFloor = after.generation
