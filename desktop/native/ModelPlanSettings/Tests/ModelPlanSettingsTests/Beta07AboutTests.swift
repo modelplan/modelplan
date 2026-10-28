@@ -27,6 +27,18 @@ import XCTest
         for component in ["three.js", "CodexBar", "font"] { XCTAssertFalse(notice.english.contains(component)) }
         XCTAssertTrue(SettingsPageContext().licenseNotices.isEmpty, "only the host's audited bundled notices may list dependencies")
     }
+    func testCopiedVersionsRemoveFreeTextMetadataAndUnrecognizedPrereleaseTags() {
+        var about = SettingsAbout(appVersion: "1.2.3+account-private", cliVersion: "0.5.41-session-private")
+        about.macOSVersion = "26.1+home-private"
+        let clipboard = DiagnosticFake()
+        XCTAssertTrue(SettingsDiagnosticCopy.copy(about, to: clipboard))
+        XCTAssertEqual(clipboard.text, "app=1.2.3\ncli=unknown\nmacOS=26.1\nreaders=\nerrors=")
+        XCTAssertEqual(about.version, "1.2.3+account-private", "UI version display remains independent of the copy projection")
+        about.appVersion = "1.2.3-beta07+private-build"; about.cliVersion = "v0.5.42-rc.1"
+        XCTAssertTrue(SettingsDiagnosticCopy.copy(about, to: clipboard))
+        XCTAssertTrue(clipboard.text!.hasPrefix("app=1.2.3-beta07\ncli=v0.5.42-rc.1\n"))
+        for secret in ["account", "session", "home", "private"] { XCTAssertFalse(clipboard.text!.contains(secret)) }
+    }
     func testPublicLinksOnlyReachInjectedHostWithoutPersonalQueryData() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("beta07-links-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -52,11 +52,18 @@ public struct SettingsAbout: Sendable {
         return value
     }
     public var version: String { safeVersion(appVersion) }
+    private func diagnosticVersion(_ value: String) -> String {
+        guard value.utf8.count <= 64,
+              value.range(of: #"^v?[0-9]+(?:\.[0-9]+){1,3}(?:-(?:alpha|beta|rc)[0-9]*(?:\.[0-9]+)*)?(?:\+[A-Za-z0-9.-]+)?$"#,
+                          options: .regularExpression) != nil else { return "unknown" }
+        // Build metadata is free text, not needed for a shareable version. Do not copy host/user tags.
+        return String(value.split(separator: "+", maxSplits: 1)[0])
+    }
     /// Deliberate allowlist. No paths, aliases, projects, account IDs, raw CLI output/errors or machine identity.
     public var diagnosticText: String {
         let readers = Set(SettingsReaderID.allCases.filter { enabledReaders.contains($0) }.map(\.rawValue))
             .union(enabledConnectionTools.map(\.rawValue)).sorted()
-        return "app=\(version)\ncli=\(safeVersion(cliVersion))\nmacOS=\(safeVersion(macOSVersion))\nreaders=\(readers.joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
+        return "app=\(diagnosticVersion(appVersion))\ncli=\(diagnosticVersion(cliVersion))\nmacOS=\(diagnosticVersion(macOSVersion))\nreaders=\(readers.joined(separator: ","))\nerrors=\(recentErrorCodes.prefix(8).map(\.rawValue).joined(separator: ","))"
     }
     public static let feedbackURL = URL(string: "https://github.com/modelplan/modelplan/issues/new/choose")!
     public static let privacy = SettingsText("No local data is uploaded. Only public data is downloaded.", "不上传任何本机数据，只下载公开数据。")
