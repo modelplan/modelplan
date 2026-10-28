@@ -4,10 +4,17 @@ import AppKit
 /// The appearance owner supplies its painted body/grips and explicitly excludes every control/ignition.
 @MainActor public struct DockBackgroundDragRegions {
     public let body:CGPath,grips:[CGPath],excludedControls:[CGRect]
-    public init(body:CGPath,grips:[CGPath]=[],excludedControls:[CGRect]){self.body=body;self.grips=grips;self.excludedControls=excludedControls}
+    private let bodyHitTest: ((CGPoint) -> Bool)?
+    public init(body:CGPath,grips:[CGPath]=[],excludedControls:[CGRect]){
+        self.init(body:body,grips:grips,excludedControls:excludedControls,bodyHitTest:nil)
+    }
+    /// A raster body qualifies its bounding path with its live alpha hit-test.
+    init(body:CGPath,grips:[CGPath]=[],excludedControls:[CGRect],bodyHitTest:((CGPoint)->Bool)?){
+        self.body=body;self.grips=grips;self.excludedControls=excludedControls;self.bodyHitTest=bodyHitTest
+    }
     public func contains(_ local:CGPoint)->Bool{
         guard local.x.isFinite,local.y.isFinite,!excludedControls.contains(where:{$0.contains(local)}) else{return false}
-        return body.contains(local) || grips.contains{$0.contains(local)}
+        return (body.contains(local) && (bodyHitTest?(local) ?? true)) || grips.contains{$0.contains(local)}
     }
 }
 @MainActor public protocol DockBackgroundDragHandling:AnyObject {

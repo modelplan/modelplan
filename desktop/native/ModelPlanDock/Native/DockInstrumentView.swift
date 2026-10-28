@@ -45,7 +45,18 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         path.closeSubpath(); return path
     }
     public func registeredDragRegions(excluding controls: [CGRect]) -> DockBackgroundDragRegions? {
-        guard let skin, let path = registeredHullPath else { return nil }
+        guard let skin else { return nil }
+        let path: CGPath
+        let bodyHitTest: ((CGPoint) -> Bool)?
+        if let hull = registeredHullPath {
+            path = hull; bodyHitTest = nil
+        } else {
+            // Precomposited skins deliberately omit a vector body. Register the
+            // rendered pixels, not transparent padding or an invented silhouette.
+            guard skin.bodyPolygon.isEmpty, !community, !failed, image != nil, alphaData != nil else { return nil }
+            path = CGPath(rect: bounds, transform: nil)
+            bodyHitTest = { [weak self] point in self?.isPainted(atLocal: point) ?? false }
+        }
         var excluded = controls
         for station in skin.stations {
             excluded.append(CGRect(x: station.centre.x - station.diameter / 2 - skin.bounds.minX,
@@ -54,7 +65,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             excluded.append(station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
             if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)) }
         }
-        return DockBackgroundDragRegions(body: path, excludedControls: excluded)
+        return DockBackgroundDragRegions(body: path, excludedControls: excluded, bodyHitTest: bodyHitTest)
     }
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
