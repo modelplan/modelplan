@@ -6,8 +6,8 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-- CLI adds `consent --json` and `consent grant --json` for the App: bilingual consent text, atomic generation/text-version checks, durable request replay, standard-route gating, recorded Keychain choices and revoke-first Forget cleanup. Existing production readers pick up the new generation and invalidate in-flight older grants.
-  CLI 新增 App 授权 JSON 读取和提交接口，返回中英文原文，原子校验授权代次与文本版本，支持持久化幂等请求；仅授权标准读取、记录钥匙串选择，拒绝先撤销再清理，并使旧代次的进行中读取失效。
+- CLI adds `consent --json` and `consent grant --json` for the App: bilingual consent text, atomic generation/text-version checks, durable request replay, standard-route gating, recorded Keychain choices and revoke-first Forget cleanup. Replay receipts, cleanup obligations and Keychain restrictions survive pre-API shared-store readers/writers. Existing production readers pick up the new generation and invalidate in-flight older grants.
+  CLI 新增 App 授权 JSON 读取和提交接口，返回中英文原文，原子校验授权代次与文本版本，支持持久化幂等请求；仅授权标准读取、记录钥匙串选择，拒绝先撤销再清理，并使旧代次的进行中读取失效。旧版 CLI 读写共享授权文件后，幂等回执、清理义务及钥匙串限制仍有效。
 
 - CLI weekly effort suggestions now share one notice across text history, the Claude Code status-line hint and user-only hooks. The status line steps from the explicit current effort using published reference costs; previews, record-only mode and urgent quota advice do not consume the notice.
   每周档位建议在历史文本、Claude Code 状态栏和钩子的用户提示间共享一次提示；状态栏从明确的当前档位按公开参考成本建议一步，预览、仅记录和紧急额度提示不消耗次数。

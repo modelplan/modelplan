@@ -95,7 +95,7 @@ func consentTools(s consent.State, report detect.Report) []consentTool {
 		if keychain == "" {
 			keychain = "unset"
 		}
-		if r.DeniedSources["keychain"] {
+		if r.DeniedSources["keychain"] && keychain != "unset" {
 			keychain = "denied"
 		}
 		hosts := consentHosts(t.ProviderID, r.Region)
@@ -270,14 +270,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 					allowed = allowed || a == id
 				}
 				r := s.Tools[id]
-				if r.Keychain == "" {
-					r.Keychain = "unset"
-				}
-				if request.Keychain[id] == "allow" {
-					r.Keychain = "allowed"
-				} else if request.Keychain[id] == "deny" {
-					r.Keychain = "denied"
-				}
+				consent.SetKeychain(&r, request.Keychain[id])
 				s.Tools[id] = r
 				reader, backend := t.ReaderID, t.Preferred
 				if !allowed {

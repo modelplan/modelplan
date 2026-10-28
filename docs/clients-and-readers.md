@@ -55,7 +55,9 @@ once. Omitted tools keep their records. Success returns
 `{"ok":true,"requestId":"…","generation":1,"tools":[…]}` with the same tool
 shape as the read. Repeating the same UUID and request returns the saved result
 without writing, even after a later decision; changed contents with that UUID
-fail with `request_id_conflict`. Retained receipts share the consent file's
+fail with `request_id_conflict`. Receipts, pending Forget obligations and
+Keychain restrictions survive writes by pre-API CLI copies sharing schema 1.
+Retained receipts share the consent file's
 256 KiB bound; a full file rejects a new transaction without changing grants.
 
 Failures use JSON `{"ok":false,"error":"…"}` and a nonzero exit status.

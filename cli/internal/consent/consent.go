@@ -47,12 +47,14 @@ type Record struct {
 	DeniedSources map[string]bool `json:"deniedSources,omitempty"`
 }
 type State struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	Generation    uint64             `json:"generation"`
-	Privacy       string             `json:"privacy"`
-	Tools         map[string]Record  `json:"tools"`
-	Hinted        map[string]bool    `json:"hinted,omitempty"`
-	Requests      map[string]Receipt `json:"requests,omitempty"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Generation    uint64            `json:"generation"`
+	Privacy       string            `json:"privacy"`
+	Tools         map[string]Record `json:"tools"`
+	Hinted        map[string]bool   `json:"hinted,omitempty"`
+	// Requests is decoded from a reserved Hinted namespace. Schema-v1 writers
+	// preserve that map but discard unknown top-level fields.
+	Requests map[string]Receipt `json:"-"`
 }
 
 // Receipt is committed with permissions. Results contain only public consent
@@ -97,6 +99,13 @@ func Load(file string) (State, error) {
 	}
 	if s.Hinted == nil {
 		s.Hinted = map[string]bool{}
+	}
+	if err := loadReceipts(&s, b); err != nil {
+		return Empty(), err
+	}
+	for id, r := range s.Tools {
+		r.restoreKeychain()
+		s.Tools[id] = r
 	}
 	return s, nil
 }
@@ -205,6 +214,9 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 }
 
 func save(file string, s State) error {
+	if err := storeReceipts(&s); err != nil {
+		return err
+	}
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
@@ -260,6 +272,10 @@ func Deny(file, tool, source string) error {
 			r.DeniedSources = map[string]bool{}
 		}
 		r.DeniedSources[source] = true
+		if source == "keychain" {
+			delete(r.DeniedSources, keychainUnset)
+			r.Keychain = "denied"
+		}
 		s.Tools[tool] = r
 		return nil
 	})
