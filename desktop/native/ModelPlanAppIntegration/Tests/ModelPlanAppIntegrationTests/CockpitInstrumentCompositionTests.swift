@@ -128,6 +128,7 @@ import ModelPlanCockpitShell
         let retainedBytes = shell.backdropBytes
         let a = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
             provider: SyntheticInstrumentInputs(), frames: { layout })
+        let retiredEngineWrapper = try XCTUnwrap(a.surface.engines.superview)
         let provider = SyntheticInstrumentInputs()
         let b = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
             provider: provider, frames: { layout })
@@ -136,6 +137,8 @@ import ModelPlanCockpitShell
         // without publishing pixels: this regression exercises slot ownership, not layout admission.
         let input = try provider.input(for: observation())
         try b.surface.update(input, frames: layout)
+        // A caller may reuse the retired wrapper elsewhere; that does not renew A's engine lease.
+        shell.setContent(retiredEngineWrapper, for: .records)
         a.dispose()
         XCTAssertNotNil(shell.state); XCTAssertEqual(shell.backdropBytes, retainedBytes)
         XCTAssertTrue(b.surface.engines.isDescendant(of: shell))

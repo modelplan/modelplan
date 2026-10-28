@@ -87,6 +87,7 @@ public struct CockpitInstrumentObservation: Sendable {
                             engineTable: EngineTableView? = nil, faders: FaderBankView? = nil, ownsShell: Bool = false,
                             frames: @escaping () throws -> InstrumentSurfaceFrames) {
         var engineSlot: CockpitInstrumentSlotView?, consoleSlot: CockpitInstrumentSlotView?
+        var stoppedOwnedRoot = false
         self.init(mainScreen: mainScreen, rootView: shell, provider: provider, engineTable: engineTable, faders: faders, frames: {
             let value = try frames()
             guard shell.surfaceLayout?.slots[.engines]?.size == value.engines,
@@ -98,10 +99,10 @@ public struct CockpitInstrumentObservation: Sendable {
             engineSlot = e; consoleSlot = c
             shell.setContent(e, for: .engines); shell.setContent(c, for: .console)
         }, unmount: {
-            if let engineSlot, engineSlot.superview === shell {
+            if let engineSlot, (engineSlot.ownsRegistration || stoppedOwnedRoot), engineSlot.superview === shell {
                 shell.setContent(nil, for: .engines)
             }
-            if let consoleSlot, consoleSlot.superview === shell {
+            if let consoleSlot, (consoleSlot.ownsRegistration || stoppedOwnedRoot), consoleSlot.superview === shell {
                 shell.setContent(nil, for: .console)
             }
         })
@@ -110,6 +111,7 @@ public struct CockpitInstrumentObservation: Sendable {
             guard ownsShell, let shell, let engineSlot, let consoleSlot,
                   engineSlot.ownsRegistration, consoleSlot.ownsRegistration,
                   engineSlot.superview === shell, consoleSlot.superview === shell else { return }
+            stoppedOwnedRoot = true
             shell.stop()
         }
         shellPresented = engineSlot?.allowed == true && consoleSlot?.allowed == true
