@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCore
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
@@ -124,12 +125,18 @@ import ModelPlanCommunityHost
 }
 
 /// Wrap the existing session in the private entry; no root-host protocol or second editor is needed.
-@MainActor public final class CommunityConnectionIntegration: NSObject, CommunitySettingsIntegration {
+@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation {
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
     private var restoration: Task<Void, Never>?
     private var restorationGeneration: UInt64 = 0
     private var restored = false
+    public private(set) var currentUsageNextStep: CommunityConnectionNextStep? = .forReason(.notLoaded)
+    public private(set) var currentUsageMessage = SettingsText("Personal readings have not loaded.", "个人读数尚未加载。")
+    public private(set) lazy var usageAccessMenuItem: NSMenuItem = {
+        let item = NSMenuItem(title: "Usage access… / 用量授权…", action: #selector(openUsageAccess), keyEquivalent: "")
+        item.target = self; return item
+    }()
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
         let item = NSMenuItem(title: base.settingsMenuItem.title, action: #selector(openSettings), keyEquivalent: ",")
         item.keyEquivalentModifierMask = .command; item.target = self; return item
@@ -139,6 +146,29 @@ import ModelPlanCommunityHost
         self.base = base; self.flow = flow
     }
     @objc private func openSettings() { Task { await flow.openSettings() } }
+    @objc private func openUsageAccess() {
+        let step = currentUsageNextStep
+        Task { await flow.perform(step?.destination ?? .connections) }
+    }
+    public func updateUsageState(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date) {
+        let editor = flow.application.editor
+        if let unavailable = SettingsConnectionPresentation.availability(editor.connections.availability) {
+            currentUsageMessage = unavailable
+            currentUsageNextStep = .init(title: .init("Check component in About", "在关于中检查组件"), destination: .about)
+        } else {
+            let projection = CommunityReaderReason.project(snapshot: snapshot, diagnostics: diagnostics, now: now)
+            if let reason = projection.empty ?? projection.readers.first(where: { $0.category != .fresh }) {
+                currentUsageMessage = .init(reason.english, reason.chinese)
+                currentUsageNextStep = .forReason(reason.category)
+            } else {
+                currentUsageMessage = .init("Current readings are available.", "当前读数可用。")
+                currentUsageNextStep = nil
+            }
+        }
+        let language = editor.snapshot?.preferences.language ?? .chinese
+        usageAccessMenuItem.title = currentUsageMessage.value(language)
+            + (currentUsageNextStep.map { " — " + $0.title.value(language) } ?? "")
+    }
     public func restorePreferences() async {
         guard !restored else { return }
         if let restoration { await restoration.value; return }

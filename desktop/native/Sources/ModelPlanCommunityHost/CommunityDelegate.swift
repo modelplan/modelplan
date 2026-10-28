@@ -132,6 +132,7 @@ import ModelPlanShell
         menu.addItem(withTitle: "Intel untested; 3D may stutter", action: nil, keyEquivalent: "")
         menu.addItem(.separator())
         if let settingsItem = configureSettings(runtime.lifecycle) { menu.addItem(settingsItem) }
+        if let remediation = settings as? any CommunityUsageRemediation { menu.addItem(remediation.usageAccessMenuItem) }
         menu.addItem(withTitle: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu; status = item
         if let settingsItem { NSApplication.shared.mainMenu = applicationMenu(settingsItem: settingsItem) }
@@ -169,6 +170,7 @@ import ModelPlanShell
     private func render() {
         guard let runtime, !terminating else { return }
         let snapshot = runtime.store.view(), diagnostics = runtime.store.diagnostics
+        (settings as? any CommunityUsageRemediation)?.updateUsageState(snapshot: snapshot, diagnostics: diagnostics, now: Date())
         companion?.render(snapshot: snapshot, diagnostics: diagnostics)
         overview?.render(snapshot: snapshot, diagnostics: diagnostics)
         if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
@@ -181,6 +183,11 @@ import ModelPlanShell
         restoreWindow = false
         runtime?.store.setSurfacesVisible(dock: NSApp?.isHidden != true && (companion as? any CommunityCompanionVisibility)?.isVisible == true, cockpit: false)
         (overview as? any CommunityInstrumentSurface)?.closePresentation()
+    }
+    /// The existing serialized store/transport owns the refresh; no new timer, helper or window is created.
+    public func refreshAfterCanonicalConsent() {
+        guard !terminating else { return }
+        runtime?.store.refresh()
     }
     public func windowDidMiniaturize(_ notification: Notification) { updateFeedVisibility() }
     public func windowDidDeminiaturize(_ notification: Notification) { updateFeedVisibility() }

@@ -19,6 +19,8 @@ public extension CommunityConsentCommandPort {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
     private var revision: UInt64 = 0
+    /// Composition routes this into the existing runtime store, never a second producer or timer.
+    public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
     }
@@ -32,6 +34,8 @@ public extension CommunityConsentCommandPort {
         let facts = try CommunityConsentPreviewFacts(canonical: value)
         let snapshot = try facts.projecting()
         guard await desktop.installCanonicalReadback(value, revision: gate) else { throw SettingsConnectionFailure.stale }
+        try check(token)
+        onCanonicalReadback?(value)
         try check(token)
         return snapshot
     }
@@ -57,6 +61,8 @@ public extension CommunityConsentCommandPort {
         try check(token)
         let snapshot = try CommunityConsentPreviewFacts(canonical: after).projecting()
         guard await desktop.installCanonicalReadback(after, revision: gate) else { throw SettingsConnectionFailure.stale }
+        try check(token)
+        onCanonicalReadback?(after)
         try check(token)
         return snapshot
     }

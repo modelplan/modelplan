@@ -21,7 +21,7 @@ import ModelPlanCore
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
         })
-        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, transport: transport) { gate in
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: surfaces, companion: dock, consentBackend: backend, transport: transport) { gate in
             let support = try FileManager.default.url(for: .applicationSupportDirectory,
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
@@ -63,7 +63,7 @@ import ModelPlanCore
                     return help
                 })
             return try CommunityApplicationFactory.connectSettings(base: base, application: application,
-                backend: backend, canPresent: { [weak gate] in gate?.canPresent == true })
+                backend: backend, placementSource: dock, canPresent: { [weak gate] in gate?.canPresent == true })
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
