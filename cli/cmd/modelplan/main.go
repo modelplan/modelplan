@@ -166,7 +166,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	force := fs.Bool("force", false, "sync: ignore the 10-minute check interval")
 	background := fs.Bool("background", false, "sync: detach and return immediately")
 	quiet := fs.Bool("quiet", false, "sync: print nothing on success")
-	scheduled := fs.Bool("scheduled", false, "sync: interval-triggered background refresh")
+	scheduled := fs.Bool("scheduled", false, "sync/connections refresh: scheduled background refresh")
 	harness := fs.String("harness", "claude-code", "statusline: which harness feeds stdin")
 	modelFlag := fs.String("model", "", "statusline: model id when stdin has none")
 	effortFlag := fs.String("effort", "", "statusline: current effort when the harness knows it")
@@ -347,6 +347,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			}
 		} else if !c.offline {
 			refreshAccountLater(st)
+			refreshNativeLater(st)
 		}
 		r := quota.ReadPermitted(quotaPaths(st), time.Now())
 		if c.json {
@@ -361,6 +362,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 		if !c.offline {
 			refreshAccountLater(st)
+			refreshNativeLater(st)
 		}
 		d, _, _ := publication.Load(st)
 		state := advise.Load(st.Dir)
@@ -438,7 +440,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return projectLabelsCmd(fs.Args(), stdout, stderr, st, c)
 
 	case "connect", "disconnect", "connections":
-		return connectCmd(cmd, fs.Args(), stdout, stderr, st, c, *quiet, *backend, *region, *keyEnv)
+		return connectCmd(cmd, fs.Args(), stdout, stderr, st, c, *quiet, *scheduled, *backend, *region, *keyEnv)
 
 	case "codexbar":
 		return codexbarCmd(fs.Args(), stdout, stderr, st, c, *quiet)
@@ -827,17 +829,24 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 	}
 	state := advise.Load(st.Dir)
 	paths := quotaPaths(st)
+	if !c.offline {
+		refreshNativeLater(st)
+	}
 	if harness == "claude-code" {
 		paths.CodexHome = "" // Codex advice belongs to Codex; skip scanning its logs on every prompt
 		if in.SessionID != "" {
 			paths.ClaudeSession = in.SessionID
 		}
-		refreshCodexBarLater(st, now)
+		if !c.offline {
+			refreshCodexBarLater(st, now)
+		}
 	} else {
 		if in.SessionID != "" {
 			paths.CodexThread = in.SessionID
 		}
-		refreshAccountLater(st) // the prompt uses the cached reading; the next one gets a fresher one
+		if !c.offline {
+			refreshAccountLater(st) // the prompt uses the cached reading; the next one gets a fresher one
+		}
 	}
 	var es []advise.Event
 	report := quota.ReadPermitted(paths, now)
@@ -960,10 +969,6 @@ func refreshAccountLater(st *store.Store) {
 // reading is due (both hooks, quota and advise), so nothing waits for it.
 func refreshCodexBarLater(st *store.Store, now time.Time) {
 	p := quotaPaths(st)
-	home, _ := os.UserHomeDir()
-	if quota.NativeDue(p, now) || localusage.ProductionHistoryDue(home, st.Dir, now) {
-		_ = startDetached("connections", "refresh", "--quiet")
-	}
 	if len(quota.CodexBarActive(p)) == 0 {
 		return
 	}
@@ -990,7 +995,7 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 
 // desktopCmd prints the personal snapshot (docs/personal-snapshot.md) for the desktop app: one
 // call gives it the sessions, quota, advice and measured speed. Like the hooks it refreshes the
-// Codex account reading, CodexBar and a stale publication in the background, records the quota
+// Codex account reading, native readers, CodexBar and a stale publication in the background, records the quota
 // history and Codex speed, and arms switch-back; it marks nothing as told, which the app does
 // for its own notifications.
 func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int {
@@ -998,6 +1003,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 	d, ps, _ := publication.Load(st)
 	if !c.offline && !readOnly {
 		refreshAccountLater(st)
+		refreshNativeLater(st)
 		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
 			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}

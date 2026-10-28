@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/connections"
+	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/detach"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -20,7 +23,7 @@ import (
 // `disconnect <provider>` turns it off (its codexbar.json setting too), `connections` shows the
 // effective choice per provider without reading anything, and `connections refresh` asks the
 // native readers now.
-func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.Store, c common, quiet bool, backend, region, keyEnv string) int {
+func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.Store, c common, quiet, scheduled bool, backend, region, keyEnv string) int {
 	p := quotaPaths(st)
 	switch cmd {
 	case "connections":
@@ -32,6 +35,16 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 		case "status":
 			return connectionsStatus(stdout, stderr, p, c, quiet)
 		case "refresh":
+			if scheduled {
+				detach.KeepLockInWorker()
+			}
+			quiet = quiet || scheduled
+			if c.offline {
+				return connectionsStatus(stdout, stderr, p, c, quiet)
+			}
+			if scheduled && !nativeRefreshDue(st, time.Now()) {
+				return 0
+			}
 			if !quiet && !c.json {
 				p = quota.InteractiveReaders(p)
 			}
@@ -39,10 +52,24 @@ func connectCmd(cmd string, args []string, stdout, stderr io.Writer, st *store.S
 			defer cancel()
 			home, _ := os.UserHomeDir()
 			now := time.Now()
-			histories := localusage.ProductionHistories(home, st.Dir, false, now)
-			// Gemini/Qwen use their existing feed in desktop; prime only the shared
-			// incremental adapter when its source is explicitly admitted.
-			if err := quota.RefreshNative(ctx, p, now); err != nil && len(histories) == 0 {
+			err := quota.RefreshNative(ctx, p, now)
+			// Codex/helper work can hold reader admission longer than the normal
+			// two-second wait. A scheduled worker retains its launch lock and
+			// retries admission only, before any provider attempt was reserved.
+			for scheduled && errors.Is(err, consent.ErrReaderBusy) && ctx.Err() == nil && nativeRefreshDue(st, time.Now()) {
+				select {
+				case <-ctx.Done():
+					err = ctx.Err()
+				case <-time.After(50 * time.Millisecond):
+					p = quotaPaths(st)
+					err = quota.RefreshNative(ctx, p, time.Now())
+				}
+			}
+			// Quota cache fill takes priority over optional local-history sweeps.
+			// Gemini/Qwen keep their existing desktop feed; only explicitly
+			// admitted sources prime the shared incremental adapter.
+			histories := localusage.ProductionHistories(home, st.Dir, false, time.Now())
+			if err != nil && len(histories) == 0 {
 				if !quiet {
 					fmt.Fprintln(stderr, "connections:", err)
 				}
