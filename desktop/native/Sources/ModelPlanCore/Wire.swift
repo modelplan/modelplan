@@ -93,6 +93,14 @@ public enum FeedDecoder {
         }
         return value
     }
+    public static func detection(_ data: Data) throws -> DetectionReport {
+        let value = try decode(DetectionReport.self, data)
+        guard value.schemaVersion == 1 else { throw FeedError.unsupportedSchema }
+        let ids = value.tools.map(\.providerId)
+        guard value.tools.count <= 512, Set(ids).count == ids.count,
+              ids.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 128 }) else { throw FeedError.invalidIdentity }
+        return value
+    }
     public static func publication(_ data: Data) throws -> PublicPublication {
         let value = try decode(PublicPublication.self, data)
         guard value.contractVersion == nil || value.contractVersion == 1 else { throw FeedError.unsupportedSchema }
@@ -112,4 +120,5 @@ public actor DecodeWorker {
     public init() {}
     public func personal(_ data: Data) throws -> PersonalSnapshot { try FeedDecoder.personal(data) }
     public func publication(_ data: Data) throws -> PublicPublication { try FeedDecoder.publication(data) }
+    public func detection(_ data: Data) throws -> DetectionReport { try FeedDecoder.detection(data) }
 }
