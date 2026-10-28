@@ -9,13 +9,21 @@ import ModelPlanCockpitShell
     var presentationChanged: ((Bool) -> Void)?
     var stopped: (() -> Void)?
     private(set) var allowed = false
+    private(set) var ownsRegistration = true
     private let content: NSView
     override var isFlipped: Bool { true }
     init(_ content: NSView) { self.content = content; super.init(frame: .zero); addSubview(content) }
     required init?(coder: NSCoder) { nil }
     override func layout() { super.layout(); content.frame = bounds }
-    func setPresentationAllowed(_ allowed: Bool) { self.allowed = allowed; presentationChanged?(allowed) }
-    func stop() { allowed = false; stopped?() }
+    func setPresentationAllowed(_ allowed: Bool) {
+        guard ownsRegistration else { return }
+        self.allowed = allowed; presentationChanged?(allowed)
+    }
+    func stop() {
+        guard ownsRegistration else { return }
+        // Shell revokes registration before calling out to the retired composition.
+        ownsRegistration = false; allowed = false; stopped?()
+    }
 }
 
 /// The two existing host callbacks supply these facts. This is not a second store or decoder.
@@ -86,7 +94,14 @@ public struct CockpitInstrumentObservation: Sendable {
             let e = CockpitInstrumentSlotView(engines), c = CockpitInstrumentSlotView(console)
             engineSlot = e; consoleSlot = c
             shell.setContent(e, for: .engines); shell.setContent(c, for: .console)
-        }, unmount: { shell.setContent(nil, for: .engines); shell.setContent(nil, for: .console) })
+        }, unmount: {
+            if let engineSlot, engineSlot.ownsRegistration, engineSlot.superview === shell {
+                shell.setContent(nil, for: .engines)
+            }
+            if let consoleSlot, consoleSlot.ownsRegistration, consoleSlot.superview === shell {
+                shell.setContent(nil, for: .console)
+            }
+        })
         shellPresented = engineSlot?.allowed == true && consoleSlot?.allowed == true
         let changed: (Bool) -> Void = { [weak self, weak engineSlot, weak consoleSlot] _ in
             guard let self, !self.disposed else { return }

@@ -121,4 +121,25 @@ import ModelPlanCockpitShell
         XCTAssertNil(composition.surface.input); XCTAssertTrue(composition.surface.console.isHidden)
         composition.dispose()
     }
+    func testDisposingReplacedCompositionDoesNotUnmountOrCloseItsReplacement() async throws {
+        let shell = CockpitShellSurface(skin: NeutralCockpitShellSkin()), layout = try frames()
+        let a = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
+            provider: SyntheticInstrumentInputs(), frames: { layout })
+        let provider = SyntheticInstrumentInputs()
+        let b = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
+            provider: provider, frames: { layout })
+        XCTAssertFalse(a.surface.mainScreen === b.surface.mainScreen)
+        // Neutral Shell intentionally has no frozen instrument frames. Seed the typed observation
+        // without publishing pixels: this regression exercises slot ownership, not layout admission.
+        let input = try provider.input(for: observation())
+        try b.surface.update(input, frames: layout)
+        a.dispose()
+        XCTAssertTrue(b.surface.engines.isDescendant(of: shell))
+        XCTAssertTrue(b.surface.console.isDescendant(of: shell))
+        XCTAssertEqual(b.surface.input?.observationID, input.observationID)
+        b.dispose()
+        XCTAssertFalse(b.surface.engines.isDescendant(of: shell))
+        XCTAssertFalse(b.surface.console.isDescendant(of: shell))
+        XCTAssertNil(b.surface.input)
+    }
 }
