@@ -17,6 +17,7 @@ import (
 
 const TextVersion = 2
 const Text = "Allow ModelPlan on this user account—App, plugins and all CLI copies—to read usage for the selected tools using their existing sign-in, through native readers or audited standard CodexBar access. CodexBar is downloaded automatically with a verified checksum; you do not install it. Your credential is sent only to the provider hosts shown for that tool; it is never sent to ModelPlan servers or stored by ModelPlan. macOS may ask for Keychain access for our own readers; standard CodexBar access has Keychain and browser-cookie import disabled. Browser-session access is excluded and requires separate per-provider consent. You can turn this off in Settings."
+const TextZH = "允许此用户账户下的 ModelPlan App、插件和所有 CLI 副本，使用所选工具已有的登录，通过原生读取器或经审计的标准 CodexBar 访问读取用量。CodexBar 会自动下载并校验校验和，无需自行安装。凭据仅发送至各工具所列的服务商主机，绝不发送至 ModelPlan 服务器，也不由 ModelPlan 保存。macOS 可能为原生读取器请求钥匙串访问权限；标准 CodexBar 访问禁用钥匙串和浏览器 Cookie 导入。浏览器会话访问不在本次授权范围内，须按服务商单独授权。可随时在设置中关闭。"
 
 const (
 	Automatic   = "automatic"
@@ -39,16 +40,27 @@ type Record struct {
 	KeyEnv             string    `json:"keyEnv,omitempty"`
 	BrowserSession     bool      `json:"browserSession,omitempty"`
 	BrowserCookieCache bool      `json:"browserCookieCache,omitempty"`
+	// Empty preserves pre-API grants; new API records explicitly start unset.
+	Keychain string `json:"keychain,omitempty"`
 	// Profiles are opaque descriptors, never account identities or token paths.
 	Profiles      []string        `json:"profiles,omitempty"`
 	DeniedSources map[string]bool `json:"deniedSources,omitempty"`
 }
 type State struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	Generation    uint64            `json:"generation"`
-	Privacy       string            `json:"privacy"`
-	Tools         map[string]Record `json:"tools"`
-	Hinted        map[string]bool   `json:"hinted,omitempty"`
+	SchemaVersion int                `json:"schemaVersion"`
+	Generation    uint64             `json:"generation"`
+	Privacy       string             `json:"privacy"`
+	Tools         map[string]Record  `json:"tools"`
+	Hinted        map[string]bool    `json:"hinted,omitempty"`
+	Requests      map[string]Receipt `json:"requests,omitempty"`
+}
+
+// Receipt is committed with permissions. Results contain only public consent
+// DTOs, never credentials. PendingForget survives interrupted/failed cleanup.
+type Receipt struct {
+	RequestHash   string          `json:"requestHash"`
+	Result        json.RawMessage `json:"result"`
+	PendingForget []string        `json:"pendingForget,omitempty"`
 }
 
 var toolID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
@@ -79,7 +91,7 @@ func Load(file string) (State, error) {
 		return Empty(), errors.New("invalid consent state")
 	}
 	for id, r := range s.Tools {
-		if !ValidTool(id) || r.ConsentTextVersion < 1 {
+		if !ValidTool(id) || r.ConsentTextVersion < 1 || (r.Keychain != "" && r.Keychain != "allowed" && r.Keychain != "denied" && r.Keychain != "unset") {
 			return Empty(), errors.New("invalid consent record")
 		}
 	}
@@ -122,6 +134,9 @@ func (s State) Allows(tool, class, mode string) bool {
 		if !r.Allowed || r.ConsentTextVersion != TextVersion || r.DeniedSources[class] {
 			return false
 		}
+		if class == "keychain" && (r.Keychain == "denied" || r.Keychain == "unset") {
+			return false
+		}
 	} else if class == Credential || class == Bridge || class == "keychain" {
 		// A newly shipped import reader cannot treat an absent record as a
 		// grant. Existing explicit legacy settings are handled by their owner.
@@ -137,10 +152,31 @@ func Allowed(tool, class string) bool { s, mode := Current(); return s.Allows(to
 // Change serialises read/modify/rename across every CLI copy. Generation is the
 // reader handoff fence: work started under an older generation is not admitted.
 func Change(file string, change func(*State) error) error {
+	return transaction(file, change, nil, false)
+}
+
+// ErrUnchanged returns a saved receipt without writing or bumping generation.
+var ErrUnchanged = errors.New("consent unchanged")
+
+// Transaction waits briefly for competing consent writers, then commits all
+// permissions and the replay receipt in one rename. An optional finalize step
+// runs after revocation is durable, under the same lock; it may only complete
+// receipt/cleanup metadata, never permissions or generation. This keeps replays
+// deterministic even when Forget cannot finish. Existing writers stay fail-fast.
+func Transaction(file string, change, finalize func(*State) error) error {
+	return transaction(file, change, finalize, true)
+}
+
+func transaction(file string, change, finalize func(*State) error, wait bool) error {
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
 	}
 	unlock, err := lockFile(file + ".lock")
+	deadline := time.Now().Add(2 * time.Second)
+	for wait && err != nil && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		unlock, err = lockFile(file + ".lock")
+	}
 	if err != nil {
 		return errors.New("consent busy; retry")
 	}
@@ -150,12 +186,33 @@ func Change(file string, change func(*State) error) error {
 		return err
 	}
 	if err = change(&s); err != nil {
+		if errors.Is(err, ErrUnchanged) {
+			return nil
+		}
 		return err
 	}
 	s.Generation++
+	if err = save(file, s); err != nil {
+		return err
+	}
+	if finalize != nil {
+		if err = finalize(&s); err != nil {
+			return err
+		}
+		return save(file, s)
+	}
+	return nil
+}
+
+func save(file string, s State) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
+	}
+	// Never write state that Load would reject. Receipts are retained rather
+	// than evicted, so request IDs cannot silently become reusable.
+	if len(b)+1 > 256<<10 {
+		return errors.New("consent state full")
 	}
 	f, err := os.CreateTemp(filepath.Dir(file), ".consent-*")
 	if err != nil {

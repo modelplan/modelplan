@@ -30,6 +30,59 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 3. A tool detected later is offered on its own: an App badge or a one-line CLI hint. Earlier choices are never re-asked.
 4. `modelplan disconnect <tool|--all>` and the App's "Forget readings" revoke consent and delete that tool's cached readings.
 
+### App consent API
+
+`modelplan consent --json` is a cache-only, presence-only read. It returns
+`generation`, integer `consentTextVersion`, effective `mode`
+(`automatic|passive|off`), `consentText: {"en": "…", "zh": "…"}`, and detected
+`tools`. Each tool includes `id`, `displayName`, `accessClass`
+(`standard|browser-session|not-read`), `detected`, saved `allowed`, catalogue
+`backend` and `readerId`, recorded `keychain` (`allowed|denied|unset`), and provider
+`hosts`. Show the returned text and hosts before submitting consent. Detection
+does not establish a login, and saved permission does not override privacy or a
+catalogue kill switch. No credentials, network, processes or cache writes are
+used by this read.
+
+`modelplan consent grant --json` accepts one JSON object on stdin (at most 64 KiB):
+
+```json
+{"requestId":"d91cd465-a255-4bd4-bfed-47ddab82f682","expectGeneration":0,"consentTextVersion":2,"allow":["claude","codex"],"deny":[],"keychain":{"claude":"allow"}}
+```
+
+Copy both version fields from the read response; do not hardcode the example.
+The command atomically applies all listed decisions and increments generation
+once. Omitted tools keep their records. Success returns
+`{"ok":true,"requestId":"…","generation":1,"tools":[…]}` with the same tool
+shape as the read. Repeating the same UUID and request returns the saved result
+without writing, even after a later decision; changed contents with that UUID
+fail with `request_id_conflict`. Retained receipts share the consent file's
+256 KiB bound; a full file rejects a new transaction without changing grants.
+
+Failures use JSON `{"ok":false,"error":"…"}` and a nonzero exit status.
+`stale_generation` and `stale_consent_text` change no permissions: reread and
+show the current text before a new request. Unknown or undetected IDs fail the
+whole transaction with `unknown_tool`. Only standard routes can be allowed;
+browser sessions require their separate advanced action. Disabled readers fail
+with `readers_off`, including `MODELPLAN_READERS=off`; passive settings remain
+restrictive. Keychain entries must name a listed decision and use `allow|deny`.
+They record permission only and never prompt; new API records default to unset
+and cannot use Keychain until allowed. Existing source Deny and local-source
+opt-outs remain in force.
+
+Denials revoke first and perform the same scoped Forget cleanup as disconnect,
+retaining request gates, identities and other tools. If cleanup cannot finish,
+the durable response is `cleanup_pending` with the committed `generation` and
+`pendingForget` IDs; permissions remain revoked. Cookie-cache obligations also
+stay pending because this API never starts a helper that could prompt Keychain.
+Use the explicit `disconnect <tool>` / advanced Forget action to retry cleanup;
+replaying the request returns its original receipt. New production paths admit
+the new generation, and old in-flight reads fail their `StillValid` fence.
+
+应用使用 `consent --json` 显示返回的中英文授权原文及服务商主机，再以同一文本版本和
+generation 提交 `consent grant --json`。请求以 UUID 幂等，标准授权不包含浏览器会话，
+只记录钥匙串选择、不触发提示；拒绝先撤销权限，未完成的清理以 `cleanup_pending`
+返回并保留义务，可通过显式断开操作重试。隐私限制、拒绝状态及停用开关始终有效。
+
 ## 4. Readers
 
 **Head providers, native** (ours): Claude Code, Codex (desktop app, CLI, IDE), ZCode / GLM, Cursor (including The X Subscription's shared pool), Grok Build, GitHub Copilot, Gemini CLI.
