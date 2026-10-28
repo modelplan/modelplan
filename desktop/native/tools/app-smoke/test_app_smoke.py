@@ -22,8 +22,14 @@ class AppSmokeAssertionsTests(unittest.TestCase):
                        'cliSupportsConsentJSON': True, 'cliPath': str(self.helper), 'showDock': True, 'autoHide': True,
                        'edge': 'right', 'home': str(self.home), 'visibleWindows': 0}
 
-    def results(self):
-        return {name: bool(passed) for name, passed, _ in smoke.assertions(self.report, self.helper, self.home)}
+    def results(self, *, expect_unverified=False):
+        return {name: bool(passed) for name, passed, _ in smoke.assertions(
+            self.report, self.helper, self.home, expect_unverified=expect_unverified)}
+
+    def unverified_report(self):
+        self.report.update(connectionAvailable=False, connectionBackendAvailable=False, consentAPIAvailable=False,
+                           connectionAvailabilityReason='componentUnverified',
+                           firstRunConnectionStatus="This build's consent component has not been verified. Check CLI support in About.")
 
     def test_complete_live_report_can_pass(self):
         self.assertTrue(all(self.results().values()))
@@ -54,7 +60,9 @@ class AppSmokeAssertionsTests(unittest.TestCase):
         self.assertFalse(self.results()['dock-host'])
 
     def test_raw_or_empty_status_is_rejected(self):
-        for status in ['', None, 'unavailable', 'not_connected_yet', 'unavailable: unavailable']:
+        for status in ['', None, 'unavailable', 'not_connected_yet', 'unavailable: unavailable',
+                       'componentUnverified', 'Status: componentUnverified',
+                       'component_unverified: This build has not been verified. Check About.']:
             self.report['firstRunConnectionStatus'] = status
             self.assertFalse(self.results()['first-run-status'], status)
         self.report['firstRunConnectionStatus'] = '连接服务不可用'
@@ -76,6 +84,38 @@ class AppSmokeAssertionsTests(unittest.TestCase):
     def test_unverified_installed_backend_can_decline_an_advertised_api(self):
         self.report.update(connectionAvailable=False, connectionBackendAvailable=False, consentAPIAvailable=False)
         self.assertTrue(all(self.results().values()))
+
+    def test_unverified_ci_report_requires_disabled_api_and_human_guidance(self):
+        self.unverified_report()
+        self.assertTrue(all(self.results(expect_unverified=True).values()))
+        self.report['firstRunConnectionStatus'] = '此构建的授权组件尚未核验，请在关于中检查 CLI 支持。'
+        self.assertTrue(all(self.results(expect_unverified=True).values()))
+
+    def test_unverified_ci_cannot_pass_with_verified_or_available_consent(self):
+        self.assertFalse(self.results(expect_unverified=True)['unverified-consent'])
+        self.unverified_report()
+        for key in ['consentAPIAvailable', 'connectionAvailable', 'connectionBackendAvailable']:
+            with self.subTest(key=key):
+                self.report[key] = True
+                self.assertFalse(self.results(expect_unverified=True)['unverified-consent'])
+                self.report[key] = False
+
+    def test_unverified_ci_requires_the_actual_component_unverified_reason(self):
+        self.unverified_report()
+        for reason in [None, 'componentMissing', 'unavailable']:
+            with self.subTest(reason=reason):
+                self.report['connectionAvailabilityReason'] = reason
+                self.assertFalse(self.results(expect_unverified=True)['unverified-consent'])
+
+    def test_unverified_ci_rejects_ready_copy_raw_codes_and_missing_next_step(self):
+        self.unverified_report()
+        for status in ['Connection service is ready.', 'componentUnverified', 'Status: componentUnverified',
+                       'component_unverified', 'This component has not been verified.',
+                       'componentUnverified: This build has not been verified. Check About.',
+                       'component_unverified: This build has not been verified. Check About.']:
+            with self.subTest(status=status):
+                self.report['firstRunConnectionStatus'] = status
+                self.assertFalse(self.results(expect_unverified=True)['unverified-status'])
 
     def test_controller_availability_must_match_its_bound_backend(self):
         self.report['connectionBackendAvailable'] = False

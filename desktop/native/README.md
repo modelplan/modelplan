@@ -28,6 +28,8 @@ Fake-process checks use the existing system Python, fixed read and account-refre
 
 Obtain the arm64/amd64 CLI archives and `checksums.txt` selected by `desktop/native/consent-cli-pin.json`, which is reviewed with the native consent identity rather than following plugin upgrades. Pass their directory and a **new** output directory to `desktop/native/tools/package-neutral.sh`. It verifies archive hashes, compiles both architectures, merges app/helper slices, includes MIT/CLI third-party notices, and ad-hoc signs with Hardened Runtime and no App Sandbox entitlement. This is not Developer ID signing/notarisation; the test bundle ID is provisional. Apple silicon is the runtime target. Intel is untested and is labelled "Intel 未测试，3D 效果可能卡顿 / Intel untested; 3D may stutter".
 
+For arbitrary CI/non-release source builds, pass `--unverified` as the packager's third argument. This explicitly selects the identity writer's `--mode unverified`: helper hashes and signing remain checked, but release version/source-helper admission fields are omitted (and stale fields removed), so the real consent port stays unverified with no API actions. The app-smoke job uses the current plugin CLI pin in this mode and `check-app-smoke.py --expect-unverified` asserts the actual first-run screen's human unverified-build guidance. Release distribution keeps the default `release` mode and the reviewed native pin; an unverified helper identity remains a hard packaging failure, with no automatic fallback.
+
 ```sh
 python3 desktop/native/tools/check-packaged-access.py "/path/ModelPlan Community.app" /new/receipt-directory
 ```

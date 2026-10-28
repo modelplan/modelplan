@@ -82,6 +82,7 @@ import ModelPlanCore
                         "connectionAvailable": connections.map { $0.isAvailable as Any } ?? NSNull(), "connectionBackendAvailable": capability.map { $0.hasAnyAction as Any } ?? NSNull(),
                         "firstRunConnectionStatus": status.map { $0 as Any } ?? NSNull(), "consentPortPresent": bound,
                         "consentAPIAvailable": capability.map { $0.canInspect as Any } ?? NSNull(),
+                        "connectionAvailabilityReason": capability.flatMap { $0.reason }.map { $0.rawValue as Any } ?? NSNull(),
                         "cliSupportsConsentJSON": process.terminationStatus == 0 && consentJSON, "cliHelp": help, "cliHelpExitCode": process.terminationStatus, "cliPath": helper.path,
                         "showDock": preferences.map { $0.showDock as Any } ?? NSNull(), "autoHide": preferences.map { $0.autoHide as Any } ?? NSNull(), "edge": preferences.map { $0.dockEdge.rawValue as Any } ?? NSNull(),
                         "home": NSHomeDirectory(), "visibleWindows": NSApplication.shared.windows.filter(\.isVisible).count]

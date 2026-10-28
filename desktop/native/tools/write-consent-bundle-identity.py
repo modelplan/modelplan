@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Write verified release/bundle consistency fields after helper sealing. Never executes helpers."""
+"""Write release identity, or explicit unverified CI metadata, after helper sealing. Never executes helpers."""
 import argparse
 import hashlib
 import plistlib
@@ -24,12 +24,20 @@ def metadata(source, raw, bundled):
             'ModelPlanSourceHelperSHA256ByArchitecture': dict(raw),
             'ModelPlanBundledHelperSHA256': bundled}
 
+def unverified_metadata(source, bundled):
+    if not re.fullmatch('[0-9a-f]{40}', source) or not re.fullmatch('[0-9a-f]{64}', bundled):
+        raise ValueError('invalid non-release source/helper digest')
+    # Missing release version/source-helper fields deliberately fail runtime consent admission.
+    return {'ModelPlanPublicSource': source, 'ModelPlanBundledHelperSHA256': bundled}
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--app', type=Path)
     p.add_argument('--public-source')
     p.add_argument('--arm64-input', type=Path)
     p.add_argument('--x86-64-input', type=Path)
+    p.add_argument('--mode', choices=('release', 'unverified'), default='release',
+                   help='release requires the reviewed helper identity; unverified omits consent admission fields')
     p.add_argument('--self-test', action='store_true')
     a = p.parse_args()
     if a.self_test:
@@ -46,15 +54,16 @@ def main():
         p.error('app, public-source and both raw helper inputs are required')
     raw = {'arm64': digest_file(a.arm64_input), 'x86_64': digest_file(a.x86_64_input)}
     bundled = digest_file(a.app / 'Contents/Helpers/modelplan')
-    fields = metadata(a.public_source, raw, bundled)
+    fields = unverified_metadata(a.public_source, bundled) if a.mode == 'unverified' else metadata(a.public_source, raw, bundled)
     info_path = a.app / 'Contents/Info.plist'
     if info_path.is_symlink() or info_path.stat().st_size > 65536:
         raise ValueError('invalid bundle metadata')
     info = plistlib.loads(info_path.read_bytes())
-    info.pop('ModelPlanSourceHelperSHA256', None)
+    for field in ('ModelPlanHelperVersion', 'ModelPlanSourceHelperSHA256', 'ModelPlanSourceHelperSHA256ByArchitecture'):
+        info.pop(field, None)
     info.update(fields)
     info_path.write_bytes(plistlib.dumps(info))
     (a.app / 'Contents/Resources/modelplan.sha256').write_text(bundled + '\n')
-    print('consent bundle metadata written; source provenance/reader consent are separate gates')
+    print(f'consent bundle metadata written ({a.mode}); source provenance/reader consent are separate gates')
 
 if __name__ == '__main__': main()
