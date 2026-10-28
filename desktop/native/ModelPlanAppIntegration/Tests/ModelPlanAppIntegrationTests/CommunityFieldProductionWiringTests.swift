@@ -346,7 +346,9 @@ private actor InstrumentSettingsTransport: CLITransport {
         let view = try XCTUnwrap(surfaces.makeOverview() as? CommunityInstrumentView)
         defer { view.dispose() }
         delegate.configureOverview(view) // The same binding called by the real Status window path.
-        render(view, publication: try publication()); view.resumePresentation()
+        view.resumePresentation()
+        // Deliver the runtime observation after presentation, as the normal refresh callback does.
+        render(view, publication: try publication())
         let composition = try XCTUnwrap(view.cockpitComposition)
         try composition.surface.setPresentationAllowed(true) // Synthetic presentation, no App/Window.
         let intent = try XCTUnwrap(composition.surface.engineTable.recipe?.regions.first { $0.intent == .openSubscriptionsSettings }?.intent)

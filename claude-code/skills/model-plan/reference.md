@@ -12,6 +12,8 @@ Check `command -v modelplan` (else `~/.local/bin/modelplan` or `~/.cache/modelpl
 modelplan sync
 modelplan doctor --json
 modelplan lineup --dev openai --json --offline
+modelplan windows --plan '<exact plan id>' --json  # cache only, if listed in --help
+modelplan plan --dev openai --json --offline       # decision-view alias, if listed in --help
 modelplan models --dev openai --json --offline
 modelplan effort '<exact model id>' --json --offline
 modelplan quota --json            # v0.3+: local quota report, see "Personal state"
@@ -24,7 +26,7 @@ modelplan advise --json           # v0.4+: current hints derived from quota + pu
 
 Without `--json`, `modelplan effort` prints the ladder with both views: each effort against ★ and against the step below (`↑ +3.7分 ×1.45`).
 
-One sync followed by offline reads pins the verified cache for the answer. A CLI older than v0.2.2 cannot read the current publication (`manifest: incompatible graph`); suggest updating it and use HTTPS meanwhile. `lineup` returns `publicationId`, `units`, and a developer-keyed `lineups` object; `models` is an array, and `effort` is one model. Use `doctor` for the source/release and cache freshness. If the CLI cannot supply a required view, use its pinned cache for that view and the public API for missing data, checking identity before joining. CLI commands do not expose multiplier windows: even with the CLI installed, read `/v1/client` for timing and bind it to the same publication. A failed sync may retain last-good data; disclose its age. Do not claim an HTTPS response independently performed the CLI's hash verification.
+One sync followed by offline reads pins the verified cache for the answer. A CLI older than v0.2.2 cannot read the current publication (`manifest: incompatible graph`); suggest updating it and use HTTPS meanwhile. `lineup` returns `publicationId`, `units`, and a developer-keyed `lineups` object; `models` is an array, and `effort` is one model. Use `doctor` for the source/release and cache freshness. If the CLI cannot supply a required view, use its pinned cache for that view and the public API for missing data, checking identity before joining. When `--help` lists `windows`, it returns `{schemaVersion, publicationId, evaluatedAt, horizon, groups}` from the verified cache without account reads or network requests. Each provider/plan-family group separates region, generation and client scope; `series` carries the model override, current `{at, multiplier, status}` and next changes, with UTC instants. Text uses the user's local timezone. `lineup` / `plan` add `billingContext` for plans explicitly recorded in `local.json`: `{planId, generation?, region?, model, baseCost, multiplierNow, effectiveCost, status, nextCheaperAt?, nextMultiplier?, nextStatus?}`. `effectiveCost` is base API reference-task cost × current time rate, not plan quota; published rankings remain unchanged. A cheaper start is included only within six hours, as an option. Unknown rates/costs are null; TENTATIVE means unverified. The task-start brief carries the same context and the user decides whether to wait or switch. `modelplan declare <planId> [generation] --region <published-region-id>` records explicit scope; missing required scope remains unknown. Older CLIs do not expose these windows: read `/v1/client` for timing and bind it to the same publication. A failed sync may retain last-good data; disclose its age. Do not claim an HTTPS response independently performed the CLI's hash verification.
 
 Without the CLI:
 

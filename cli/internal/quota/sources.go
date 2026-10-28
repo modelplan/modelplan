@@ -639,6 +639,7 @@ func readLocal(path string, now time.Time) ([]Account, SourceStatus) {
 		Plans         []struct {
 			PlanID     string `json:"planId"`
 			Generation string `json:"generation"`
+			Region     string `json:"region"`
 		} `json:"plans"`
 		ResetCards []struct {
 			PlanID    string `json:"planId"`
@@ -682,6 +683,7 @@ func readLocal(path string, now time.Time) ([]Account, SourceStatus) {
 			return nil, st
 		}
 		acct(p.PlanID).Generation = p.Generation
+		acct(p.PlanID).Region = clip(p.Region)
 	}
 	for _, c := range raw.ResetCards {
 		if !ident.MatchString(c.PlanID) {
@@ -814,7 +816,14 @@ func writeAtomic(path string, b []byte) error {
 // DeclarePlan records in local.json which plan the user has (and its metering generation), or
 // removes it, keeping everything else in the file as it is. The user asked for it; nothing
 // else writes this file.
-func DeclarePlan(path, planID, generation string, remove bool) error {
+func DeclarePlan(path, planID, generation string, remove bool, regions ...string) error {
+	region := ""
+	if len(regions) > 0 {
+		region = regions[0]
+	}
+	if region != "" && !ident.MatchString(region) {
+		return errors.New("region must be a published region id")
+	}
 	if !ident.MatchString(planID) || (generation != "" && !ident.MatchString(generation)) {
 		return errors.New("plan and generation are ids like zhipu-global-pro and legacy-v2")
 	}
@@ -857,12 +866,18 @@ func DeclarePlan(path, planID, generation string, remove bool) error {
 		} else {
 			delete(p, "generation")
 		}
+		if region != "" {
+			p["region"] = region
+		}
 		out = append(out, p)
 	}
 	if !found && !remove {
 		p := map[string]any{"planId": planID}
 		if generation != "" {
 			p["generation"] = generation
+		}
+		if region != "" {
+			p["region"] = region
 		}
 		out = append(out, p)
 	}
@@ -907,3 +922,6 @@ func ThreadOrigin(path string) string {
 // Background: a thread Codex runs by itself (subagent reviews, internal guardians, auto review),
 // not the user's own work.
 func Background(origin, model string) bool { return background(origin, model) }
+
+// DeclaredPlans reads only the bounded local plan declarations; no account reader is started.
+func DeclaredPlans(path string, now time.Time) []Account { a, _ := readLocal(path, now); return a }

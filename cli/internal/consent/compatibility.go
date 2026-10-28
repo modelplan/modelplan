@@ -14,6 +14,9 @@ import (
 const keychainUnset = "consent-api/keychain/unset"
 const keychainAllowed = "consent-api/keychain/allowed"
 
+const ClaudeKeychainUnsetNotice = "Claude Code Keychain permission is unset"
+const ClaudeKeychainNextStep = "Allow Keychain for Claude Code in Settings"
+
 // KeychainSupported names the native route which actually uses Keychain. The
 // standard helper always disables it, including when its provider is Claude.
 func KeychainSupported(tool, backend, reader string) bool {

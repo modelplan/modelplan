@@ -28,8 +28,7 @@ import ModelPlanCore
                 in: .userDomainMask, appropriateFor: nil, create: false)
             let url = support.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             let store = try SettingsStore(url: url)
-            var context = SettingsPageContext()
-            if consent.availability.canInspect { context.about.cliVersion = CommunityConsentBundleIdentity.version }
+            let context = CommunityApplicationFactory.makeSettingsContext(bundle: Bundle.main.bundleURL, availability: consent.availability)
             let application = SettingsApplicationCoordinator(store: store, context: context,
                 environment: SettingsWindowController.systemEnvironment()) { transaction in
                 dock.apply(transaction)

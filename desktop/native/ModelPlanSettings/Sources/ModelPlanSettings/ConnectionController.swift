@@ -5,6 +5,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     case unavailable, idle, loading, awaitingConfirmation(SettingsConnectionConfirmation)
     case running(SettingsConnectionAction), pluginResult(SettingsPluginInstallResult), failed(SettingsConnectionFailure), cancelled
     case consentRecordedReadingBlocked(SettingsReadingMode)
+    case cleanupPending
 }
 
 /// Transient presentation over injected observations. No preference store, clock, selector or service creation.
@@ -135,7 +136,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
                 let complete = tools.allSatisfy { id in value.tools.contains { $0.tool == id && $0.authorization == .allowed } }
                     && denied.allSatisfy { id in value.tools.contains { $0.tool == id && ($0.authorization == .denied || $0.authorization == .noConsent) } }
                     && keychain.allSatisfy { id in value.tools.contains { $0.tool == id && $0.keychain == .allowed } }
-                phase = !complete ? .failed(.invalidResponse) : (value.mode == .off || value.mode == .unknown)
+                phase = !complete ? .failed(.invalidResponse) : !value.pendingCleanupTools.isEmpty ? .cleanupPending : (value.mode == .off || value.mode == .unknown)
                     ? .consentRecordedReadingBlocked(value.mode) : .idle
             case .connect(let tool, let access):
                 let value = try await service.connect(tool, access: access, request: request)
@@ -195,6 +196,10 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     }
     private func failed(_ error: Error, token: UInt64) {
         guard generation == token else { return }
+        let failure = error as? SettingsConnectionFailure
+        if failure == .cleanupReadbackUnavailable || failure == .mutationReadbackUnavailable, let previous = snapshot {
+            observation &+= 1; snapshot = try? previous.withoutVerifiedConsent()
+        }
         if Task.isCancelled || error is CancellationError { phase = .cancelled }
         else { phase = .failed((error as? SettingsConnectionFailure) ?? .requestFailed) }
         changed()

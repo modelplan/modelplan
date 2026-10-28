@@ -15,6 +15,7 @@ With the `modelplan` CLI (`command -v modelplan`, else `~/.local/bin/modelplan` 
 modelplan sync                                   # once per answer; later reads are offline
 modelplan effort '<model>' --json --offline      # one model's effort ladder
 modelplan lineup --dev <maker> --json --offline  # a maker's models at their ★ effort
+modelplan windows --plan <id> --json             # public time rates, cache only (if --help lists it)
 modelplan quota --json                           # the user's own windows, read locally
 modelplan advise --json                          # what is worth saying about them now (v0.4+)
 ```
@@ -76,7 +77,7 @@ It uses this Skill's `cli-pin.json` and the same checksum-verifying fetcher as t
 
 ## 4. Public timing (when it matters)
 
-- Quota multiplier windows (peak and off-peak rates for a plan) are in `/v1/client` `data.multipliers`; follow the reference's matching rules. If waiting helps, give the time until the better window.
+- Quota multiplier windows (peak and off-peak rates for a plan) are available through `modelplan windows` when listed in `--help`, otherwise `/v1/client` `data.multipliers`; follow the reference's matching rules. `lineup` / `plan` and task-start briefs may include `billingContext` with `multiplierNow` and `nextCheaperAt` for explicitly declared plans. These are context only: keep base costs and published verdicts, mark tentative rates as unverified, and offer waiting as an option. The user decides; never switch models, effort or Fast. Expired horizons are unknown.
 - Public resets and reset cards, such as Codex's, come from `/v1/reset-events`. A public reset is not this user's balance: their meter is in the quota report.
 
 ## Rules

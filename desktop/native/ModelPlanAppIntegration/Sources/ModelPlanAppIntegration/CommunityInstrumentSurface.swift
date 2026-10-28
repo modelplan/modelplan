@@ -144,6 +144,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
                 self.openWebsite(link)
             case .modelSelected(let id): self.selectedModelID = id; self.requestFreshSelection?()
             case .requestScope: self.requestFreshSelection?()
+            case .openSubscriptionsSettings:
+                Task { [weak self] in
+                    guard let self, !self.retired, self.isPresented, !self.renderFailure else { return }
+                    await self.requestSubscriptionsSettings?()
+                }
             default: break
             }
             self.onInstrumentIntent?(intent)
