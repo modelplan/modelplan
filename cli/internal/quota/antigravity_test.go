@@ -198,8 +198,13 @@ func TestAntigravityNativeFailureGenerationAndLegacyRecovery(t *testing.T) {
 	if !loadAntigravityState(p.Cache).Good.ObservedAt.Equal(now) {
 		t.Fatal("backoff bypass")
 	}
-	_ = RefreshNative(ctx, p, now.Add(20*time.Minute))
-	if !loadAntigravityState(p.Cache).Good.ObservedAt.Equal(now.Add(20 * time.Minute)) {
+	// Native dispatch also preserves the shared thirty-minute failure backoff.
+	_ = RefreshNative(ctx, p, now.Add(39*time.Minute))
+	if !loadAntigravityState(p.Cache).Good.ObservedAt.Equal(now) {
+		t.Fatal("shared native backoff bypassed")
+	}
+	_ = RefreshNative(ctx, p, now.Add(40*time.Minute))
+	if !loadAntigravityState(p.Cache).Good.ObservedAt.Equal(now.Add(40 * time.Minute)) {
 		t.Fatal("legacy recovery blocked")
 	}
 	// Explicit generations isolate both cache-only, throttled and failed reads.

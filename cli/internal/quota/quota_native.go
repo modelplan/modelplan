@@ -164,24 +164,14 @@ func NativeDue(p Paths, now time.Time) bool {
 	if len(on) == 0 || p.Cache == "" {
 		return false
 	}
-	s := loadNative(p.Cache)
-	if s == nil {
-		return true
-	}
 	by := map[string]codexbarEntry{}
-	for _, e := range s.Providers {
-		by[e.Provider] = e
+	if s := loadNative(p.Cache); s != nil {
+		for _, e := range s.Providers {
+			by[e.Provider] = e
+		}
 	}
 	for _, x := range on {
-		if !nativeReaders[x.Provider].budgetDue(p.Cache, now) {
-			continue
-		}
-		e, ok := by[x.Provider]
-		wait := NativeEvery
-		if ok && e.Status != "ok" {
-			wait = nativeRetryAfter
-		}
-		if !ok || (x.Provider == "cursor" && e.CursorState != cursorState()) || (x.Provider == "minimax" && (e.Region != x.Region || e.KeyEnv != x.KeyEnv || (!IdentityOff() && !minimaxCacheMatches(p.Cache, x, e)))) || (x.Provider == "kimi" && !kimiCacheMatches(p.Cache, x, e)) || now.Sub(s.ObservedAt) >= wait {
+		if legacyNativeDue(p.Cache, x.Provider, by[x.Provider], now) {
 			return true
 		}
 	}
@@ -191,7 +181,7 @@ func NativeDue(p Paths, now time.Time) bool {
 // nativeClient: tests point it at a local server.
 var nativeClient = &http.Client{Timeout: nativeTimeout}
 
-// RefreshNative asks each native provider once and caches the sanitised readings. One at a time.
+// RefreshNative asks each due native provider once and caches the sanitised readings. One at a time.
 func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	return refreshNative(ctx, p, now, false)
 }
@@ -272,17 +262,26 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 		}
 		var e codexbarEntry
 		n := nativeReaders[x.Provider]
-		if !n.budgetDue(p.Cache, now) || (diagnostic && !diagnosticLegacyDue(p.Cache, x.Provider, previous[x.Provider], now)) {
+		if !n.budgetDue(p.Cache, now) || !legacyNativeDue(p.Cache, x.Provider, previous[x.Provider], now) {
 			if old, ok := previous[x.Provider]; ok {
-				s.Providers = append(s.Providers, old)
+				// Migrate an older capture's deadline before cache-only status
+				// projection can change its generation or availability.
+				next, err := legacyNativeNext(p.Cache, x.Provider, old)
+				if err == nil && !next.IsZero() {
+					if err := reserveReaderAttempt(p.Cache, x.Provider, next); err != nil {
+						return err
+					}
+				}
+				s.Providers = append(s.Providers, projectLegacyNativeCache(ctx, p, x.Provider, old, now))
 			}
 			continue
 		}
-		if diagnostic {
-			if err := reserveReaderAttempt(p.Cache, x.Provider, now.Add(5*time.Minute)); err != nil {
-				refreshErr = err
-				continue
+		if err := reserveReaderAttempt(p.Cache, x.Provider, now.Add(5*time.Minute)); err != nil {
+			if !diagnostic {
+				return err
 			}
+			refreshErr = err
+			continue
 		}
 		if err := n.reserveBudget(p.Cache, now); err != nil {
 			return err
@@ -316,10 +315,11 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 		if err := n.finishBudget(p.Cache, next); err != nil {
 			return err
 		}
-		if diagnostic {
-			if err := reserveReaderAttempt(p.Cache, x.Provider, next); err != nil {
-				refreshErr = err
+		if err := reserveReaderAttempt(p.Cache, x.Provider, next); err != nil {
+			if !diagnostic {
+				return err
 			}
+			refreshErr = err
 		}
 		s.Providers = append(s.Providers, e)
 	}
@@ -470,4 +470,35 @@ func kimiCacheMatches(cache string, x Selection, e codexbarEntry) bool {
 	}
 	ref := lookupSubscription(cache, nativeIdentityBasis(x), os.Getenv(x.KeyEnv))
 	return ref != "" && ref == e.SubscriptionRef
+}
+
+// A throttled sweep still applies current generation/admission to typed caches.
+// It must not call a collector just to invalidate an old aggregate account.
+func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old codexbarEntry, now time.Time) codexbarEntry {
+	ctx = productionReaderContext(ctx, p, provider)
+	e := old
+	switch provider {
+	case "copilot":
+		access, blocked := copilotAdmission(ctx)
+		e = copilotCachedEntry(loadCopilotState(p.Cache), now, access.LoginGeneration)
+		if blocked != "" {
+			e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext(blocked)}
+		}
+	case "antigravity":
+		access, blocked := antigravityAdmission(ctx)
+		e = antigravityCachedEntry(loadAntigravityState(p.Cache), now, access.LoginGeneration)
+		if blocked != "" {
+			e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext(blocked)}
+		}
+	case "zai":
+		if g, ok := p.ReaderAccessGrant(provider); ok && g.ConfigSource != nil {
+			access, blocked := zaiConfigAdmission(ctx)
+			e = zaiConfigCachedEntry(loadZaiConfigState(p.Cache), now, access.LoginGeneration)
+			if blocked != "" {
+				e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
+			}
+		}
+	}
+	e.Provider, e.Source = old.Provider, old.Source
+	return e
 }

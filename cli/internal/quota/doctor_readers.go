@@ -261,23 +261,9 @@ func historyDiagnosticAdmission(root string, a localusage.HistoryAccess) bool {
 	return a.Allowed && !a.Denied && a.Privacy != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off" && detect.LocalRoot(root) && (a.StillValid == nil || a.StillValid())
 }
 
-func diagnosticLegacyDue(cache, provider string, e codexbarEntry, now time.Time) bool {
-	if !readerAttemptDue(cache, provider, now) {
-		return false
-	}
-	if e.ObservedAt.IsZero() {
-		return true
-	}
-	wait := NativeEvery
-	if e.Status != "ok" {
-		wait = nativeRetryAfter
-	}
-	return !now.Before(e.ObservedAt.Add(wait))
-}
-
 // RefreshReaderDiagnostics is an explicit foreground read. Existing provider
-// gates reserve before I/O; the legacy paths additionally keep a persistent
-// floor and honour their cached interval/backoff. No helper fallback is run.
+// gates reserve before I/O; ordinary and diagnostic legacy dispatch share the
+// persistent floor and cached interval/backoff. No helper fallback is run.
 func RefreshReaderDiagnostics(ctx context.Context, p Paths, now time.Time) error {
 	err := refreshNative(ctx, InteractiveReaders(p), now, true)
 	home, _ := os.UserHomeDir()

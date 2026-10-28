@@ -129,16 +129,22 @@ func TestNativeZaiRefresh(t *testing.T) {
 		t.Fatalf("report = %+v", r)
 	}
 
-	// A rejected key is a reason, and the next try waits longer.
+	// A key change cannot bypass the shared interval. At the next admitted
+	// attempt a rejection is reported and the longer backoff starts there.
 	t.Setenv("Z_AI_API_KEY", "other-key")
-	_ = RefreshNative(context.Background(), p, now)
-	r = Read(p, now)
+	_ = RefreshNative(context.Background(), p, now.Add(time.Minute))
+	if len(*seen) != 1 || NativeDue(p, now.Add(time.Minute)) {
+		t.Fatal("key change bypassed interval")
+	}
+	failedAt := now.Add(NativeEvery)
+	_ = RefreshNative(context.Background(), p, failedAt)
+	r = Read(p, failedAt)
 	for _, s := range r.Sources {
 		if s.Source == "native:zai" && (s.Status != "unavailable" || s.Reason != "the API key was rejected (HTTP 401)") {
 			t.Fatalf("status = %+v", s)
 		}
 	}
-	if NativeDue(p, now.Add(15*time.Minute)) || !NativeDue(p, now.Add(30*time.Minute)) {
+	if NativeDue(p, failedAt.Add(29*time.Minute)) || !NativeDue(p, failedAt.Add(30*time.Minute)) {
 		t.Fatal("a failure waits half an hour")
 	}
 }
