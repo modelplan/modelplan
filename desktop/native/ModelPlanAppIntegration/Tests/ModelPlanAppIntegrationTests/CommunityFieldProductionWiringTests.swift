@@ -14,6 +14,17 @@ import ModelPlanCockpitShell
     func show(content: NSView, onClose: @escaping () -> Void) { shown += 1 }
     func hide() { hidden += 1 }
 }
+@MainActor private final class ReentrantFieldWindow: CommunityFieldWindow {
+    var onHide: (() -> Void)?
+    func show(content: NSView, onClose: @escaping () -> Void) {}
+    func hide() { let action = onHide; onHide = nil; action?() }
+}
+@MainActor private final class UnusedReplacementInputs: CockpitInstrumentInputProviding {
+    func input(for observation: CockpitInstrumentObservation) throws -> InstrumentSurfaceInput {
+        XCTFail("Replacement construction must not evaluate or render a feed")
+        throw InstrumentSurfaceError.invalidInput
+    }
+}
 /// Synthetic sizes below the neutral minimums, with no official geometry/paint or private assets.
 @MainActor private final class CompactTestSkin: CockpitShellSkin {
     func layout(for state: CockpitSurfaceState) throws -> CockpitSurfaceLayout {
@@ -71,6 +82,14 @@ import ModelPlanCockpitShell
         let field = try XCTUnwrap(surface.cockpitComposition?.field, "Removing the actual factory field mount must fail")
         XCTAssertFalse(field.picker.isPresented)
         XCTAssertThrowsError(try field.open(), "A hidden or unfed factory must not open")
+        let shell = try XCTUnwrap(surface.cockpitComposition?.rootView as? CockpitShellSurface)
+        XCTAssertGreaterThan(shell.backdropBytes, 0)
+        surface.dispose()
+        XCTAssertNil(surface.cockpitComposition)
+        XCTAssertNil(shell.state, "Retaining the actual factory shell must not retain a retired frame")
+        XCTAssertNil(shell.surfaceLayout)
+        XCTAssertEqual(shell.backdropBytes, 0)
+        XCTAssertEqual(shell.stationLayerCount, 0)
     }
     func testSameFactoryForwardsPublicFocusPersistsAndRestoresLatestScope() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -226,6 +245,55 @@ import ModelPlanCockpitShell
         let inside = leaf.convert(.init(x: leaf.bounds.midX, y: leaf.bounds.midY), to: leaf.superview)
         XCTAssertNil(leaf.hitTest(outside), "The rectangular slot must not admit clipped supplier corners")
         XCTAssertNotNil(leaf.hitTest(inside))
+    }
+    func testFieldDisposalRevokesRestoreBeforeCallingTheExternalWindow() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let neutral = CommunityCockpitSupply.neutral(), window = ReentrantFieldWindow()
+        var restores = 0, callbacks = 0
+        let supply = CommunityCockpitSupply(skin: neutral.skin, recipes: neutral.recipes,
+            containsFieldPoint: neutral.containsFieldPoint, frames: neutral.frames, still: { _ in restores += 1; return nil })
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: supply,
+            preferences: PreferenceFile(url: directory.appendingPathComponent("ui.json")), makeFieldWindow: { window })
+        let view = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        defer { view.dispose() }
+        render(view, publication: try publication()); view.resumePresentation()
+        let composition = try XCTUnwrap(view.cockpitComposition)
+        let field = try XCTUnwrap(composition.field), shell = try XCTUnwrap(composition.rootView as? CockpitShellSurface)
+        field.setPresented(true); try field.open(); let before = restores
+        window.onHide = {
+            callbacks += 1
+            do { try field.closeEnlargedFieldAndRestoreCurrentScopeStill(); XCTFail("Retired field restored a scope") }
+            catch { XCTAssertEqual(error as? FieldPickerConnectionError, .disconnected) }
+            do { try field.open(); XCTFail("Retired field reopened") }
+            catch { XCTAssertEqual(error as? FieldPickerConnectionError, .disconnected) }
+        }
+        view.dispose()
+        XCTAssertEqual(callbacks, 1); XCTAssertEqual(restores, before)
+        XCTAssertNil(shell.state); XCTAssertNil(shell.surfaceLayout); XCTAssertEqual(shell.backdropBytes, 0)
+        XCTAssertNil(field.normalFieldView.superview)
+    }
+    func testReplacementInstalledByFieldRetirementKeepsItsShellLease() async throws {
+        let window = ReentrantFieldWindow(), supply = CommunityCockpitSupply.neutral()
+        let provider = CommunityApplicationFactory.makeSurfaces(supply: supply, makeFieldWindow: { window })
+        let view = try XCTUnwrap(provider.makeOverview() as? CommunityInstrumentView)
+        let shell = try XCTUnwrap(view.cockpitComposition?.rootView as? CockpitShellSurface)
+        let bytes = shell.backdropBytes
+        var replacement: CockpitInstrumentComposition?
+        window.onHide = {
+            replacement = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
+                provider: UnusedReplacementInputs(), ownsShell: true, frames: {
+                    try supply.frames(XCTUnwrap(shell.surfaceLayout))
+                })
+        }
+        view.dispose()
+        let next = try XCTUnwrap(replacement)
+        XCTAssertNotNil(shell.state); XCTAssertNotNil(shell.surfaceLayout); XCTAssertEqual(shell.backdropBytes, bytes)
+        XCTAssertTrue(next.surface.engines.isDescendant(of: shell))
+        XCTAssertTrue(next.surface.console.isDescendant(of: shell))
+        next.dispose()
+        XCTAssertNil(shell.state); XCTAssertNil(shell.surfaceLayout); XCTAssertEqual(shell.backdropBytes, 0)
+        XCTAssertFalse(next.surface.engines.isDescendant(of: shell))
     }
     func testMissingSupplierPortFailsActualFactoryAndCannotClaimConnected() async throws {
         let neutral = CommunityCockpitSupply.neutral()

@@ -224,3 +224,11 @@ as the displayed still. The public neutral supplier explicitly provides its own
 rectangle. A private supplier must provide its exact aperture and compact-capable
 recipes; the neutral minimum sizes are not relaxed. Compact injection tests use
 empty synthetic recipes and do not prove official paint or a real matte.
+
+The normal factory owns its constructed shell (`ownsShell:true`). Composition
+disposal first revokes field callbacks/current scope, then disposes instruments
+and stops the shell only if both instrument slot leases still belong to that
+composition. Stopped wrappers are detached by identity. A replacement installed
+during field/window retirement retains its shell; a borrowed shell remains
+caller-owned. Retaining a retired owned shell must expose no state/layout,
+backdrop bytes or station layers. No private resource/assertion is weakened.

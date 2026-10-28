@@ -141,7 +141,7 @@ public struct CommunityFieldScope: Equatable, Sendable {
         let composition = CockpitInstrumentComposition(mainScreen: mainScreen, shell: shell,
             provider: CommunityCockpitInputs(),
             engineTable: EngineTableView(frame: .zero, recipeProvider: supply.recipes.engines),
-            faders: FaderBankView(frame: .zero, recipeProvider: supply.recipes.faders), frames: {
+            faders: FaderBankView(frame: .zero, recipeProvider: supply.recipes.faders), ownsShell: true, frames: {
                 guard let layout = shell.surfaceLayout else { throw InstrumentSurfaceError.invalidFrames }
                 return try supply.frames(layout)
             })

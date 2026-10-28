@@ -199,8 +199,11 @@ import ModelPlanField
     }
     public func dispose() {
         guard !disposed else { return }
-        window.hide(); binding.dispose(); disposed = true
+        // Revoke before external window/slot callbacks can attempt a scope restore or reopen.
+        disposed = true; presented = false; binding.dispose()
         enlarge.target = nil; enlarge.action = nil; closeButton.target = nil; closeButton.action = nil
         currentScope = nil; catalogue = nil; enlargedProjection = nil; focusedPublicID = nil
+        if normal.superview === shell { shell.setContent(nil, for: .window) }
+        window.hide()
     }
 }
