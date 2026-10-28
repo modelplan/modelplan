@@ -106,8 +106,9 @@ import ModelPlanSettings
             try view.applyCommunity(rows); view.setFrameSize(.init(width: 80, height: 180))
             return .init(hoverRects: [view.bounds])
         }, currentDate: { Date(timeIntervalSince1970: 1_800_000_000) }, createsNativePanels: false,
-        nativeEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "fixture") }, elapsedClock: { 0 }, edgeScheduling: Scheduler())
+        nativeEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "fixture") }, elapsedClock: { 0 }, edgeScheduling: Scheduler(), purpose: .production)
         defer { host.close() }
+        XCTAssertEqual(host.purpose, .production)
         let app = SettingsApplicationCoordinator(store: store) { host.apply($0) }
         let base = CommunitySettingsSession(application: app, canPresent: { false })
         let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend(Port()), placementSource: host, canPresent: { false })
