@@ -94,6 +94,48 @@ jobs:
           path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 14
 
+  app-smoke:
+    # The actual universal Community bundle, with no secrets, live reader or displayed UI.
+    runs-on: macos-latest
+    timeout-minutes: 25
+    continue-on-error: false
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode for the release package
+        run: |
+          python3 - <<'PYCODE'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = []
+          for app in Path('/Applications').glob('Xcode*.app'):
+              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
+          if not candidates:
+              raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PYCODE
+      - name: Check smoke assertion negative controls
+        run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
+      - name: Fetch the checked-in CLI pin (same as the neutral distribution)
+        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
+      - name: Package the actual universal Community app
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build"
+      - name: Assert packaged production wiring (known baseline failures remain red)
+        run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: packaged-app-smoke-report
+          path: ${{ runner.temp }}/app-smoke-report/
+          if-no-files-found: warn
+          retention-days: 3
+
   native:
     name: native (${{ matrix.os }})
     # Standard free hosted images, newest installed Xcode; no signing or secrets.
