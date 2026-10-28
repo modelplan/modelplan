@@ -171,6 +171,7 @@ import ModelPlanShell
         let snapshot = runtime.store.view(), diagnostics = runtime.store.diagnostics
         companion?.render(snapshot: snapshot, diagnostics: diagnostics)
         overview?.render(snapshot: snapshot, diagnostics: diagnostics)
+        (overview as? any CommunityPublicCatalogueConsumer)?.render(publication: runtime.store.modelSelectionFeeds().publication)
         if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
             let selection = runtime.selection(for: consumer)
             consumer.render(selection: selection, publishedAt: runtime.store.modelSelectionFeeds().publication?.publishedAt?.date, now: Date())

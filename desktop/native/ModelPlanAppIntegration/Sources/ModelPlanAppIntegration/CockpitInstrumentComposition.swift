@@ -50,6 +50,7 @@ public struct CockpitInstrumentObservation: Sendable {
 @MainActor public final class CockpitInstrumentComposition {
     public let surface: InstrumentSurfaceView
     public let rootView: NSView
+    public internal(set) var field: CommunityCockpitField?
     public private(set) var requestedScope: InstrumentScope = .all
     public var onIntent: ((InstrumentSurfaceIntent) -> Void)?
     public var onHelpChange: ((InstrumentSurfaceRegion, HelpExplanation?, CGRect?) -> Void)?
@@ -137,11 +138,12 @@ public struct CockpitInstrumentObservation: Sendable {
     }
     private func applyPresentation() throws {
         let allowed = hostPresented && shellPresented
+        field?.setPresented(allowed)
         if surface.isPresented != allowed { try surface.setPresentationAllowed(allowed) }
     }
-    public func close() { guard !disposed else { return }; hostPresented = false; surface.close() }
+    public func close() { guard !disposed else { return }; hostPresented = false; field?.setPresented(false); surface.close() }
     public func dispose() {
         guard !disposed else { return }; disposed = true
-        surface.dispose(); unmount(); onIntent = nil; onHelpChange = nil; onHintInput = nil; onFailure = nil
+        field?.dispose(); field = nil; surface.dispose(); unmount(); onIntent = nil; onHelpChange = nil; onHintInput = nil; onFailure = nil
     }
 }

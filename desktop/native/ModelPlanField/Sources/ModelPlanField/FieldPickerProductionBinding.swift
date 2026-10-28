@@ -27,12 +27,16 @@ public struct FieldPickerHostInput: Sendable {
     private weak var host: (any FieldPickerProductionHost)?
     private var locale: FieldLocale
     private var disposed = false
+    public private(set) var isProcessing = false
     public init(view: FieldFleetPickerView, host: (any FieldPickerProductionHost)?, locale: FieldLocale) {
         self.view = view; self.host = host; self.locale = locale
         view.onChange = { [weak self] change in self?.apply(change) }
     }
+    public func setLocale(_ locale: FieldLocale) { self.locale = locale }
     /// Explicit enlarge only. Host failures are compensated; failed compensation retains retry controls.
     public func open() throws {
+        guard !isProcessing else { throw FieldPickerConnectionError.disconnected }
+        isProcessing = true; defer { isProcessing = false }
         guard !disposed else { throw FieldPickerConnectionError.disconnected }
         guard let host else { let error = FieldPickerConnectionError.disconnected; fail(error); throw error }
         do {
@@ -51,6 +55,8 @@ public struct FieldPickerHostInput: Sendable {
         } catch { fail(error); throw error }
     }
     private func apply(_ change: FieldPickerChange) {
+        guard !isProcessing else { return }
+        isProcessing = true; defer { isProcessing = false }
         guard !disposed, view.isPresented else { return }
         guard let host else { fail(FieldPickerConnectionError.disconnected); return }
         do {
@@ -64,6 +70,8 @@ public struct FieldPickerHostInput: Sendable {
         } catch { fail(error) }
     }
     public func close() throws {
+        guard !isProcessing else { throw FieldPickerConnectionError.disconnected }
+        isProcessing = true; defer { isProcessing = false }
         guard !disposed else { throw FieldPickerConnectionError.disconnected }
         guard let host else { let error = FieldPickerConnectionError.disconnected; fail(error); throw error }
         do {

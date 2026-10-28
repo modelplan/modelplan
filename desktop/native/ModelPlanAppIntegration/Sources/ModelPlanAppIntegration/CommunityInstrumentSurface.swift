@@ -22,18 +22,20 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var settings: SettingsApplication?
     private weak var help: InstrumentHelpComposition?
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
-    private let makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)?
+    private let makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)?
     public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in },
-                makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)? = nil) {
+                makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)? = nil) {
         self.openWebsite = openWebsite; self.makeCockpit = makeCockpit
     }
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
         let surface = CommunityInstrumentView(openWebsite: openWebsite)
         if let makeCockpit {
-            let composition = makeCockpit(surface.mainScreen)
-            do { try surface.attachCockpit(composition) }
-            catch { composition.dispose(); surface.fail() }
+            do {
+                let composition = try makeCockpit(surface.mainScreen)
+                do { try surface.attachCockpit(composition) }
+                catch { composition.dispose(); surface.fail() }
+            } catch { surface.fail() }
         }
         current = surface
         if let settings { surface.apply(settings) }
@@ -59,7 +61,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 
 /// Live read-only public model/effort consumer using M3's existing native MainScreenView.
 /// This is not the complete four-region cockpit, Dock, renderer or an official appearance provider.
-@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface {
+@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface, CommunityPublicCatalogueConsumer {
     public let view: NSView = InstrumentContainer()
     public let mainScreen = MainScreenView()
     public let modelPicker = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -80,6 +82,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var selection: AssembledModelSelection?
     private var diagnostics = StoreDiagnostics()
     private var instrumentSnapshot: JoinedSnapshot?
+    private var publicCatalogue: PublicPublication?
+    public func render(publication: PublicPublication?) { publicCatalogue = publication }
     private var rendering = false
     private var publishRequested = false, compareRequested = false
     private var retired = false
@@ -320,6 +324,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         } catch { fail() }
     }
     private func clearForPendingLanguage() {
+        cockpitComposition?.field?.setPresented(false)
         cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true
         modelPicker.isEnabled = false
@@ -328,6 +333,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         status.isHidden = false; helpBinding?.suspend()
     }
     fileprivate func fail() {
+        cockpitComposition?.field?.setPresented(false)
         cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true; renderFailure = true
         status.stringValue = instrumentLanguage == .chinese ? "当前数据暂无法在原生视图显示" : "Current data cannot be displayed in the native view"
@@ -337,6 +343,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private func publishCockpit(_ composition: CockpitInstrumentComposition,
                                 selection: AssembledModelSelection, compare: Bool) {
         do {
+            try composition.field?.update(publication: publicCatalogue, selection: selection,
+                appearance: .init(theme: view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .night : .day,
+                                  locale: instrumentLanguage == .english ? .english : .chinese),
+                reduceMotion: settings?.effective.reduceMotion ?? true,
+                reduceTransparency: settings?.effective.reduceTransparency ?? true)
             try composition.update(.init(snapshot: instrumentSnapshot, selection: selection,
                 scope: composition.requestedScope, language: instrumentLanguage,
                 publishedAt: sourceStamp.publishedAt, now: sourceStamp.observedAt,

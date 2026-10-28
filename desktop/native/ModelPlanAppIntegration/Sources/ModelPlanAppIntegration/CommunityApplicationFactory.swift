@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: MIT
 import ModelPlanCore
+import ModelPlanInstruments
 import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanSettings
 
 /// The normal executable and construction checks share this required-companion boundary.
 @MainActor public enum CommunityApplicationFactory {
+    /// Both normal entries and wiring checks call this exact composition factory.
+    public static func makeSurfaces(
+        supply: CommunityCockpitSupply? = nil,
+        preferences: PreferenceFile? = nil,
+        makeFieldWindow: (@MainActor () -> any CommunityFieldWindow)? = nil,
+        openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }
+    ) -> CommunityInstrumentSurfaceProvider {
+        let supply = supply ?? .neutral()
+        return CommunityInstrumentSurfaceProvider(openWebsite: openWebsite, makeCockpit: { main in
+            try CommunityCockpitFactory.make(mainScreen: main, supply: supply, preferences: preferences, window: makeFieldWindow?() ?? CommunityFieldPanel())
+        })
+    }
+
     public static func connectSettings(base: CommunitySettingsSession,
                                        application: SettingsApplicationCoordinator,
                                        backend: any SettingsConnectionAllowing,

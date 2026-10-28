@@ -51,7 +51,8 @@ public struct FieldPickerChange: Sendable {
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([stack.leadingAnchor.constraint(equalTo: leadingAnchor), stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor), stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            body.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.widthAnchor.constraint(equalTo: body.widthAnchor)])
+            body.widthAnchor.constraint(equalTo: stack.widthAnchor), scroll.widthAnchor.constraint(equalTo: body.widthAnchor),
+            scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 180)])
         isHidden = true
     }
     public required init?(coder: NSCoder) { nil }

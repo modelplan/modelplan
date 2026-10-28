@@ -16,7 +16,9 @@ import ModelPlanCore
         // Disabled until packaging verifies a containing consent-API release and its fixtures.
         let consent = CommunityCLIConsentPort(transport: readOnly)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
-        let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
+        let preferenceURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("ModelPlan/Native/community-v1.json")
+        let surfaces = CommunityApplicationFactory.makeSurfaces(preferences: preferenceURL.map { PreferenceFile(url: $0) }, openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
                   url.user==nil,url.password==nil,url.port==nil else { return }
             NSWorkspace.shared.open(url)
