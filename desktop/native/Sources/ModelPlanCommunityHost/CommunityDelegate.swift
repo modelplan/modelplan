@@ -43,6 +43,19 @@ import ModelPlanShell
         CommunityRuntime(transport: injectedTransport ?? BundledCLI(bundle: Bundle.main.bundleURL))
     }
 
+    /// Normal runtime composition, separate from starting OS events or creating a status item.
+    @discardableResult func configureRuntime() -> CommunityRuntime {
+        if let runtime { return runtime }
+        let runtime = makeRuntime(); self.runtime = runtime
+        runtime.store.onChange = { [weak self] in self?.render() }
+        return runtime
+    }
+    /// Re-evaluate the existing store view after a Settings receipt; no producer/CLI refresh is enqueued.
+    public func refreshMenuBar() {
+        guard let runtime, !terminating else { return }
+        updateMenuBar(snapshot: runtime.store.view(), diagnostics: runtime.store.diagnostics, now: Date())
+    }
+
     /// Read-only references to the actual retained composition; never inferred from status flags.
     public var settingsIntegration: (any CommunitySettingsIntegration)? { settings }
     public var companionSurface: (any CommunityCompanionSurface)? { companion }
@@ -123,9 +136,7 @@ import ModelPlanShell
             probe = RuntimeProbe(home: URL(fileURLWithPath: args[at + 1]), output: URL(fileURLWithPath: args[at + 2]), duration: duration)
             probe?.start(); return
         }
-        let runtime = makeRuntime()
-        self.runtime = runtime
-        runtime.store.onChange = { [weak self] in self?.render() }
+        let runtime = configureRuntime()
         runtime.lifecycle.onPresentationChange = { [weak self] allowed in
             guard let self, !self.terminating else { return }
             if !allowed {

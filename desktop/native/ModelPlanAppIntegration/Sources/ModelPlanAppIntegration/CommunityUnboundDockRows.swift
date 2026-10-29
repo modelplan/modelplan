@@ -11,10 +11,7 @@ struct CommunityUnboundDockRow: Sendable {
     let nextStep: String
     let originalObservedAt: Date?
     func sourceAndAge(at now: Date) -> String {
-        guard let originalObservedAt else { return "Observation time unknown / 观测时间未知" }
-        let age = now.timeIntervalSince(originalObservedAt)
-        guard age.isFinite, age >= 0, age < Double(Int.max) else { return "Observation time unknown / 观测时间未知" }
-        return "Observed \(Int(age))s ago / \(Int(age))秒前观测"
+        CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
     }
 }
 enum CommunityUnboundDockRows {
