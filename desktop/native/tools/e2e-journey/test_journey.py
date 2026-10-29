@@ -20,10 +20,12 @@ class JourneyOracleTests(unittest.TestCase):
             1: dict(detected=True, listedInFirstRun=True, backendBound=True, providerReadsBeforeGrant=0),
             2: dict(granted=True, apiAvailable=True, releaseIdentityVerified=False, debugAdmission=True),
             3: dict(providerReads=1, postProviderSnapshot=True, nativePanelsVisible=False),
-            4: dict(subscriptionRows=1, values=[37]),
+            4: dict(renderedRows=[dict(provider='codex', accountAssociated=True, hasSubscription=False,
+                                      readout='37%', remainingPercent=37)]),
             5: dict(revoked=True, valueSeenBefore=True, postRevokeSnapshot=True, values=[]),
             6: dict(regranted=True, unreadableObserved=True, postErrorSnapshot=True, rows=1, values=[],
-                    settingsActionBound=True, reasonRows=[dict(reason='Reader could not obtain a reading / 读取组件未能取得读数',
+                    rowActionDispatched=True, settingsDestinationReached=True,
+                    reasonRows=[dict(reason='Reader could not obtain a reading / 读取组件未能取得读数',
                         nextStep='Open Settings to check this tool / 打开设置检查此工具')]),
         }
 
@@ -39,13 +41,25 @@ class JourneyOracleTests(unittest.TestCase):
         for step, key, value in [(1, 'backendBound', False), (1, 'listedInFirstRun', False),
                 (1, 'providerReadsBeforeGrant', 1), (2, 'granted', False), (2, 'releaseIdentityVerified', True),
                 (2, 'debugAdmission', False), (3, 'providerReads', 0), (3, 'postProviderSnapshot', False),
-                (3, 'nativePanelsVisible', True), (4, 'subscriptionRows', 0), (4, 'values', [0]),
+                (3, 'nativePanelsVisible', True), (4, 'renderedRows', []),
                 (5, 'valueSeenBefore', False), (5, 'postRevokeSnapshot', False), (5, 'values', [37]),
                 (6, 'unreadableObserved', False), (6, 'postErrorSnapshot', False), (6, 'rows', 0),
-                (6, 'values', [37]), (6, 'settingsActionBound', False)]:
+                (6, 'values', [37]), (6, 'rowActionDispatched', False), (6, 'settingsDestinationReached', False)]:
             with self.subTest(step=step, key=key):
                 facts = copy.deepcopy(self.facts[step]); facts[key] = value
                 self.assertFalse(journey.passes(step, facts))
+
+    def test_fixture_value_must_belong_to_the_same_rendered_account_row(self):
+        valid = self.facts[4]['renderedRows'][0]
+        self.assertTrue(journey.passes(4, self.facts[4]), 'Absent membership is legitimate')
+        for field, value in [('provider', 'other'), ('accountAssociated', False), ('readout', '--'),
+                             ('remainingPercent', 0), ('remainingPercent', True)]:
+            wrong = {**valid, field: value}
+            self.assertFalse(journey.passes(4, dict(renderedRows=[wrong])))
+        # An unrelated verified subscription and an unbound 37% value cannot be combined.
+        rows = [{**valid, 'hasSubscription': True, 'readout': '--', 'remainingPercent': None},
+                {**valid, 'provider': 'other', 'hasSubscription': False}]
+        self.assertFalse(journey.passes(4, dict(subscriptionRows=1, values=[37], renderedRows=rows)))
 
     def test_unreadable_row_needs_human_reason_and_next_step(self):
         for reason, next_step in [('?', 'Open Settings'), ('？', 'Open Settings'), ('reader_error', 'Open Settings'),

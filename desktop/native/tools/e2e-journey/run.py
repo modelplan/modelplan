@@ -35,8 +35,11 @@ def passes(step, facts):
                 and facts.get('postProviderSnapshot') is True and facts.get('nativePanelsVisible') is False)
     values = facts.get('values')
     if step == 4:
-        return (type(facts.get('subscriptionRows')) is int and facts['subscriptionRows'] > 0
-                and isinstance(values, list) and any(type(x) in (int, float) and abs(x - 37) < 0.01 for x in values))
+        rows = facts.get('renderedRows')
+        return isinstance(rows, list) and any(isinstance(row, dict)
+            and row.get('provider') == 'codex' and row.get('accountAssociated') is True
+            and row.get('readout') == '37%' and type(row.get('remainingPercent')) in (int, float)
+            and abs(row['remainingPercent'] - 37) < 0.01 for row in rows)
     if step == 5:
         return (facts.get('revoked') is True and facts.get('valueSeenBefore') is True
                 and facts.get('postRevokeSnapshot') is True and values == [])
@@ -44,7 +47,8 @@ def passes(step, facts):
         reasons = facts.get('reasonRows')
         return (facts.get('regranted') is True and facts.get('unreadableObserved') is True
                 and facts.get('postErrorSnapshot') is True and type(facts.get('rows')) is int and facts['rows'] > 0
-                and values == [] and facts.get('settingsActionBound') is True
+                and values == [] and facts.get('rowActionDispatched') is True
+                and facts.get('settingsDestinationReached') is True
                 and isinstance(reasons, list) and any(isinstance(x, dict) and human(x.get('reason'))
                     and human(x.get('nextStep')) for x in reasons))
     return False

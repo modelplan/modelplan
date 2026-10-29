@@ -101,10 +101,48 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var model: CommunityDockSnapshot?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
     /// Read the very model fed to the retained Dock; no additional producer or projection.
-    public var journeySnapshot: CommunityDockSnapshot? { model }
-    public var journeyFeedGeneratedAt: Date? { snapshot?.personal.generatedAt.date }
+    public var journeySnapshot: CommunityDockSnapshot? { CommunityJourneyCI.enabled ? model : nil }
+    public var journeyFeedGeneratedAt: Date? { CommunityJourneyCI.enabled ? snapshot?.personal.generatedAt.date : nil }
     public var journeyReasonRows: [[String: String]] {
-        Array((model?.presentationRows.values.map { ["reason": $0.reason, "nextStep": $0.nextStep] } ?? []).prefix(16))
+        guard CommunityJourneyCI.enabled else { return [] }
+        return Array((model?.presentationRows.values.map { ["reason": $0.reason, "nextStep": $0.nextStep] } ?? []).prefix(16))
+    }
+    /// Join each actual rendered AX row to its own reported account window locators.
+    /// The report carries no account/subscription identifiers and never infers membership.
+    public var journeyRows: [[String: Any]] {
+        guard CommunityJourneyCI.enabled, let model else { return [] }
+        let nodes = (dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+        return Array(model.inputs.enumerated().compactMap { index, input -> [String: Any]? in
+            guard let node = nodes.first(where: { $0.accessibilityIdentifier() == "dock.subscription." + input.id }) else { return nil }
+            let sources = (snapshot?.personal.accounts ?? []).enumerated().compactMap { accountIndex, account -> String? in
+                input.windows.contains { $0.id.hasPrefix("account.\(accountIndex).window.") } ? account.source : nil
+            }
+            let codex = sources.contains { ["codex", "openai"].contains($0.lowercased()) }
+            let readout = node.accessibilityValue() as? String ?? ""
+            let percent = readout.hasSuffix("%") ? Double(readout.dropLast()) : nil
+            let reason = model.presentationRows[input.id]
+            return ["rowIndex": index, "provider": codex || input.name == "Codex" ? "codex" : "other",
+                    "accountAssociated": codex, "hasSubscription": model.subscriptions.contains { $0.id == input.id },
+                    "readout": readout, "remainingPercent": percent.map { $0 as Any } ?? NSNull(),
+                    "reason": reason?.reason ?? "", "nextStep": reason?.nextStep ?? ""]
+        }.prefix(16))
+    }
+    /// Use the retained row/card wiring and actual enter button; these never install a route.
+    public func journeyOpenCard(at index: Int) -> Bool {
+        guard CommunityJourneyCI.enabled, let model, model.inputs.indices.contains(index),
+              journeyRows.contains(where: { $0["rowIndex"] as? Int == index }) else { return false }
+        dockView.onAction?(.subscription(model.inputs[index].id))
+        return !card.isHidden && cardID == model.inputs[index].id
+    }
+    public func journeyPressCardEnter() -> Bool {
+        guard CommunityJourneyCI.enabled, !card.isHidden else { return false }
+        func find(_ view: NSView) -> NSButton? {
+            if let button = view as? NSButton, button.accessibilityIdentifier() == "dock.card.enter" { return button }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let button = find(card), button.isEnabled else { return false }
+        button.performClick(nil)
+        return true
     }
     #endif
     private var preferences = SettingsPreferences()

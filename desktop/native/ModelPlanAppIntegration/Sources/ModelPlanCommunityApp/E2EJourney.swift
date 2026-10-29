@@ -8,9 +8,10 @@ import ModelPlanAppIntegration
 
 @MainActor private final class JourneyFirstRunSurface: SettingsWindowSurface {
     let controller: SettingsFirstRunController
+    private(set) var presentations = 0
     init(_ editor: SettingsEditor) { controller = SettingsFirstRunController(editor: editor) }
     func prepare() async { await controller.prepare() }
-    func show(paneID: String?) { /* Render real first-run controls without ordering a CI window. */ }
+    func show(paneID: String?) { presentations += 1 /* Real destination, without ordering a CI window. */ }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
 }
 
@@ -51,7 +52,12 @@ import ModelPlanAppIntegration
         }
     }
     private static func values(_ dock: StaticDockPreviewHost) -> [Double] {
-        Array((dock.journeySnapshot?.inputs.flatMap { $0.windows.compactMap(\.remainingPercent) } ?? []).prefix(16))
+        dock.journeyRows.compactMap { $0["remainingPercent"] as? Double }
+    }
+    private static func fixtureValueIsRendered(_ dock: StaticDockPreviewHost) -> Bool {
+        dock.journeyRows.contains {
+            $0["provider"] as? String == "codex" && $0["accountAssociated"] as? Bool == true && $0["readout"] as? String == "37%"
+        }
     }
     private static func freshFeed(_ dock: StaticDockPreviewHost, after time: Double) -> Bool {
         // CLI timestamps may have whole-second precision. Require a later second, never an older poll.
@@ -84,7 +90,7 @@ import ModelPlanAppIntegration
         record(1, ["detected": detected, "listedInFirstRun": listed, "backendBound": controller.isBound(to: backend),
                    "snapshotPresent": controller.snapshot != nil, "canonicalGenerationPresent": controller.snapshot?.consentGeneration != nil,
                    "toolCount": controller.snapshot?.tools.count ?? 0, "controllerPhase": String(describing: controller.phase),
-                   "consentReadStatus": consent.journeyReadStatus,
+                   "consentReadStatus": consent.journeyReadStatus ?? "disabled",
                    "fixtureExecutablePresent": ProcessInfo.processInfo.environment["MODELPLAN_CODEX"].map { FileManager.default.isExecutableFile(atPath: $0) } ?? false,
                    "providerReadsBeforeGrant": calls(failed: false).count + calls(failed: true).count])
 
@@ -103,10 +109,10 @@ import ModelPlanAppIntegration
                    "nativePanelsVisible": dock.isVisible])
 
         _ = await wait(success.isEmpty ? 1 : 75) {
-            (dock.journeySnapshot?.subscriptions.isEmpty == false) && values(dock).contains { abs($0 - 37) < 0.01 }
+            fixtureValueIsRendered(dock)
         }
-        let sawValue = (dock.journeySnapshot?.subscriptions.isEmpty == false) && values(dock).contains { abs($0 - 37) < 0.01 }
-        record(4, ["subscriptionRows": dock.journeySnapshot?.subscriptions.count ?? 0, "values": values(dock)])
+        let sawValue = fixtureValueIsRendered(dock)
+        record(4, ["renderedRows": dock.journeyRows])
 
         let revokeAt = Date().timeIntervalSince1970
         if let confirmation = controller.requestForget(.codex) { await controller.confirm(confirmation.id) }
@@ -129,10 +135,25 @@ import ModelPlanAppIntegration
             return freshFeed(dock, after: last)
         }
         let failures = calls(failed: true)
+        let unreadableRows = dock.journeyRows.filter {
+            $0["provider"] as? String == "codex" && $0["readout"] as? String == "--" && !($0["reason"] as? String ?? "").isEmpty
+        }
+        let beforeNavigation = surface?.presentations ?? 0
+        var rowActionDispatched = false
+        if let rowIndex = unreadableRows.first?["rowIndex"] as? Int, dock.journeyOpenCard(at: rowIndex) {
+            rowActionDispatched = dock.journeyPressCardEnter()
+        }
+        let settingsReached = await wait(rowActionDispatched ? 10 : 0) {
+            guard let surface, surface.presentations > beforeNavigation,
+                  surface.controller.editor === integration.flow.application.editor,
+                  let view = surface.controller.window?.contentView else { return false }
+            return labels(view).contains { $0.contains("Codex") } && controller.isBound(to: backend)
+        }
         record(6, ["regranted": regranted, "unreadableObserved": failures.count > failuresBefore,
                    "postErrorSnapshot": failures.last.map { freshFeed(dock, after: $0) } ?? false,
-                   "rows": dock.journeySnapshot?.inputs.count ?? 0, "reasonRows": dock.journeyReasonRows,
-                   "values": values(dock), "settingsActionBound": dock.showSettings != nil])
+                   "rows": dock.journeyRows.count, "reasonRows": unreadableRows,
+                   "values": values(dock), "rowActionDispatched": rowActionDispatched,
+                   "settingsDestinationReached": settingsReached])
         exit(0)
     }
 }

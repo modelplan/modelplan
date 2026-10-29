@@ -18,7 +18,10 @@ import ModelPlanCore
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
+        // Consent inspection/mutation can overlap the runtime's startup poll. Each transport
+        // owns one active child; sharing the poll's slot made first-run inspection fail busy.
+        let consentTransport = BundledCLI(bundle: Bundle.main.bundleURL)
+        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: consentTransport)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",
