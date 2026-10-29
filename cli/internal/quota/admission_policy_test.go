@@ -2,13 +2,15 @@
 package quota
 
 import (
-	"github.com/modelplan/modelplan/cli/internal/consent"
+	"net/http"
 	"testing"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // Historical parser/identity/budget fixtures exercise the dormant POST protocol
 // against synthetic transports. They explicitly remove its compiled policy gate
-// for this test only. Production gate regressions in internal/readers use the
+// and transport admission for this test only. Production gate regressions use
 // unchanged bindings and valid synthetic logins through ProductionPaths.
 func allowPOSTProtocolFixture(t *testing.T, provider string) {
 	t.Helper()
@@ -17,6 +19,14 @@ func allowPOSTProtocolFixture(t *testing.T, provider string) {
 		return
 	}
 	delete(nativeAdmissionScopes, provider)
+	previous := accountReadClient
+	accountReadClient = func(s string, c *http.Client) *http.Client {
+		if s == scope {
+			return c
+		}
+		return previous(s, c)
+	}
+	t.Cleanup(func() { accountReadClient = previous })
 	t.Cleanup(func() { nativeAdmissionScopes[provider] = scope })
 }
 

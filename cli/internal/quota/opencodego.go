@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"math"
 	"net/http"
 	"strconv"
@@ -21,6 +22,7 @@ var opencodegoHosts = map[string]string{"global": "https://opencode.ai"}
 var opencodegoReader = &nativeReader{Regions: []string{"global"}, KeyEnv: "OPENCODE_API_KEY", Fetch: fetchOpenCodeGo}
 
 func fetchOpenCodeGo(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	c = accountReadClient(consent.ScopeOpenCodeGoAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	host := opencodegoHosts[region]
 	if host == "" {

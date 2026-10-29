@@ -86,7 +86,7 @@ func claudeTestServer(t *testing.T, status *int, paths *[]string) {
 		_, _ = w.Write(b)
 	}))
 	oldHost, oldClient := claudeOAuthHost, nativeClient
-	claudeOAuthHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "api.anthropic.com")
 	t.Cleanup(func() { srv.Close(); claudeOAuthHost, nativeClient = oldHost, oldClient })
 }
 
