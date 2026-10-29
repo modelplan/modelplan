@@ -275,7 +275,8 @@ def backpressure(binary, home):
 
 
 ADMISSION_COMPONENTS = ('U2a-post-veto', 'U2a-minimax-auth-stop', 'U2a-minimax-legacy-control',
-                        'U2a-local-history-gemini', 'U2a-local-history-cursor')
+                        'U2a-local-history-gemini', 'U2a-local-history-cursor',
+                        'U3b-refresh-shared-budget')
 
 
 def evaluate_admission(observation):
@@ -286,14 +287,13 @@ def evaluate_admission(observation):
         item = observation['postScopes'][provider]
         require(item['calls'] == 0 and item['disabledReason'] == 'policy_pending', 'unapproved-post-admitted')
         require(item['syntheticLoginPresent'] is True, 'post-zero-calls-without-valid-login')
-    for provider, history in observation['localHistory'].items():
-        if history.get('outcome') == 'unsupported':
-            require(provider == 'cursor', 'supported-history-not-executed')
-            continue
+    require('gemini' in observation['localHistory'] and 'cursor' in observation['localHistory'], 'history-evidence-missing')
+    for provider in ('gemini', 'cursor'):
+        history = observation['localHistory'][provider]
+        require(history.get('outcome') != 'unsupported', 'supported-history-not-executed')
         require(history['before'] > 0 and history['after'] == history['before'], 'local-history-lost')
         require(len(history['beforeSha256']) == 64 and history['afterSha256'] == history['beforeSha256'],
                 'local-history-values-changed')
-    require('gemini' in observation['localHistory'] and 'cursor' in observation['localHistory'], 'history-evidence-missing')
     control = observation['legacyControl']
     require(control['calls'] == 2 and control['statuses'] == [404, 200] and control['readingAvailable'],
             'legacy-positive-control-failed')
@@ -303,16 +303,29 @@ def evaluate_admission(observation):
                 item['legacyReplyAvailable'] is True and item['legacyCalls'] == 0,
                 'minimax-retried-after-auth-failure')
         require(item['budgetBeforeSha256'] == item['budgetAfterSha256'], 'independent-cli-reset-budget')
-    cursor = observation['localHistory']['cursor']
+    from datetime import datetime
+    budgets = observation['sharedRefreshBudget']
+    require(set(budgets) == {'404', '401', '403'}, 'shared-budget-case-missing')
+    for budget in budgets.values():
+        before, after = budget['beforeCli'], budget['afterCli']
+        require(before.get('disabledReason') == after.get('disabledReason') == 'cooldown' and
+                before['scope'] == after['scope'] == 'minimax.account_usage.api_key' and
+                before['at'] == after['at'], 'shared-budget-deferral-changed')
+        require(datetime.fromisoformat(before['at'].replace('Z', '+00:00')) >=
+                datetime.fromisoformat(budget['nextAttemptAt'].replace('Z', '+00:00')),
+                'shared-budget-deadline-bypassed')
+        require(budget['budgetBeforeSha256'] == budget['budgetAfterSha256'] and
+                budget['requestsBefore'] > 0 and budget['requestsBefore'] == budget['requestsAfter'],
+                'independent-cli-reset-budget')
     components = {
         'U2a-post-veto': {'outcome': 'pass', 'providers': observation['postScopes']},
         'U2a-minimax-auth-stop': {'outcome': 'pass', 'cases': observation['minimax']},
         'U2a-minimax-legacy-control': {'outcome': 'pass', **control},
         'U2a-local-history-gemini': {'outcome': 'pass', **observation['localHistory']['gemini']},
-        'U2a-local-history-cursor': ({'outcome': 'unsupported', 'reason': cursor['reason']}
-                                    if cursor.get('outcome') == 'unsupported' else {'outcome': 'pass', **cursor}),
+        'U2a-local-history-cursor': {'outcome': 'pass', **observation['localHistory']['cursor']},
+        'U3b-refresh-shared-budget': {'outcome': 'pass', 'cases': budgets},
     }
-    return {'outcome': 'unsupported' if cursor.get('outcome') == 'unsupported' else 'pass',
+    return {'outcome': 'pass',
             'subscenarios': components, 'proofScope': 'production constructor and guarded readers; recording HTTP provider'}
 
 
@@ -332,7 +345,7 @@ def _history_items(engine, tool, wait=False):
     deadline = time.monotonic() + 5
     while True:
         result = engine.request('history/query', {'kind': 'tokens', 'tool': tool, 'limit': 10})
-        if 'result' in result:
+        if 'result' in result and (result['result']['data']['items'] or not wait):
             return result['result']['data']['items']
         if not wait:
             return result
@@ -378,7 +391,7 @@ def admission(binary, home, plan):
     from shape_home import build_home
     from contracts import ROOT, load_json, encoded, write_private
     observations = {'sharedSyntheticHome': True, 'unexpectedCalls': 0, 'postScopes': {},
-                    'localHistory': {}, 'minimax': {}, 'cases': []}
+                    'localHistory': {}, 'minimax': {}, 'sharedRefreshBudget': {}, 'cases': []}
     messages = []
     for status in (404, 401, 403):
         case = Path(home) / str(status)
@@ -402,6 +415,13 @@ def admission(binary, home, plan):
             write_private(path, encoded({'sessionId': f'synthetic-{i}', 'messages': [
                 {'id': f'synthetic-{i}', 'type': 'gemini', 'timestamp': stamp,
                  'model': f'synthetic-model-{i}', 'tokens': {'input': 10, 'output': 2, 'total': 12}}]}))
+        cursor_export = case / '.cursor/token-usage/usage.jsonl'
+        cursor_export.parent.mkdir(mode=0o700)
+        write_private(cursor_export, b''.join(encoded({'event': 'stop', 'ts': stamp,
+            'conversation_id': 'synthetic-u14-cursor', 'generation_id': f'turn-{i}',
+            'model': f'synthetic-cursor-{i}', 'tokens_present': True, 'total_tokens': 12 + i
+        }).replace(b'\n', b'') + b'\n' for i in range(2)))
+        cursor_export_sha = digest(regular_bytes(cursor_export))
         cli(binary, case, ['usage', 'gemini', 'enable', '--json'])
         cli(binary, case, ['consent', 'init', '--json'])
         cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=['cursor.local_history']))
@@ -419,10 +439,15 @@ def admission(binary, home, plan):
                 rejected = engine.request('consent/grant', decision(case, allow=[fact['scope']]))
                 require(rejected.get('error', {}).get('code') == -32021, 'unapproved-post-grant-accepted')
                 observations['postScopes'].setdefault(tool, {'calls': 0, 'disabledReason': fact['disabledReason'], 'syntheticLoginPresent': True})
-            local = engine.request('refresh/request', {'scopes': ['gemini.local_history']})
-            require('error' not in local and all(item.get('disabledReason') != 'read_only' for item in local['result']['data']), 'production-local-dispatcher-not-linked')
-            before = _history_items(engine, 'gemini', wait=True)
-            require(len(before) == 2 and sum(item['tokens'] for item in before) == 24, 'gemini-history-seed-not-readable')
+            local = engine.request('refresh/request', {'scopes': plan['localScopes']})
+            require('error' not in local and len(local['result']['data']) == 2 and
+                    all('disabledReason' not in item for item in local['result']['data']),
+                    'production-local-dispatcher-not-linked')
+            before = {}
+            for tool, tokens in (('gemini', 24), ('cursor', 25)):
+                before[tool] = _history_items(engine, tool, wait=True)
+                require(len(before[tool]) == 2 and sum(item['tokens'] for item in before[tool]) == tokens,
+                        tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
             require('error' not in remote and all(item.get('disabledReason') for item in remote['result']['data']), 'policy-pending-refresh-accepted')
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
@@ -430,25 +455,37 @@ def admission(binary, home, plan):
             _wait_native_capture(case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))
-            engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            requests_before = len([item for item in _http_events(case) if item['provider'] == 'minimax'])
+            deferred_before = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            require('error' not in deferred_before and len(deferred_before['result']['data']) == 1,
+                    'shared-budget-deferral-missing')
             cli(binary, case, ['connections', 'refresh', '--quiet'], environment=engine.environment)
+            deferred_after = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            require('error' not in deferred_after and len(deferred_after['result']['data']) == 1,
+                    'shared-budget-deferral-missing')
             trace = _http_events(case)
             mini = [item for item in trace if item['provider'] == 'minimax']
+            observations['sharedRefreshBudget'][str(status)] = {
+                'beforeCli': deferred_before['result']['data'][0], 'afterCli': deferred_after['result']['data'][0],
+                'nextAttemptAt': load_json(budget)['nextAttemptAt'],
+                'budgetBeforeSha256': budget_before, 'budgetAfterSha256': digest(regular_bytes(budget)),
+                'requestsBefore': requests_before, 'requestsAfter': len(mini)}
             require(all(item['method'] == 'GET' and item['host'] == 'api.minimax.io' and item['credentialMatched'] for item in mini), 'unexpected-minimax-request')
             observations['unexpectedCalls'] += sum(item['provider'] not in ('minimax', 'gemini', 'cursor') for item in trace)
             for tool in ('gemini', 'cursor'):
                 observations['postScopes'][tool]['calls'] += sum(item['provider'] == tool for item in trace)
                 require(digest(regular_bytes(credentials[tool]['path'])) == credentials[tool]['sha256'], 'tool-login-file-changed')
-            after = _history_items(engine, 'gemini', wait=True)
-            local_history = {'before': len(before), 'after': len(after),
-                             'beforeSha256': digest(encoded(before)), 'afterSha256': digest(encoded(after))}
-            require(local_history['beforeSha256'] == local_history['afterSha256'], 'local-history-values-changed')
-            observations['localHistory']['gemini'] = local_history
-            cursor = _history_items(engine, 'cursor')
-            require(isinstance(cursor, dict) and cursor.get('error', {}).get('code') == -32050,
-                    'cursor-history-capability-changed-rebind-scenario')
-            observations['localHistory']['cursor'] = {'outcome': 'unsupported',
-                'reason': 'Cursor typed local-history producer/readback is unavailable'}
+            local_history = {}
+            for tool in ('gemini', 'cursor'):
+                after = _history_items(engine, tool, wait=True)
+                local_history[tool] = {'before': len(before[tool]), 'after': len(after),
+                    'beforeTokens': sum(item['tokens'] for item in before[tool]),
+                    'afterTokens': sum(item['tokens'] for item in after),
+                    'beforeSha256': digest(encoded(before[tool])), 'afterSha256': digest(encoded(after))}
+                require(local_history[tool]['beforeSha256'] == local_history[tool]['afterSha256'],
+                        'local-history-values-changed')
+                observations['localHistory'][tool] = local_history[tool]
+            require(digest(regular_bytes(cursor_export)) == cursor_export_sha, 'cursor-export-changed')
             if status == 404:
                 rows = fresh_rows(engine)
                 reading = any(row['id'] == 'minimax' and any(window.get('remainingPercent') == 75
@@ -474,8 +511,6 @@ def admission(binary, home, plan):
             engine.shutdown()
             messages.extend(engine.messages)
     result = evaluate_admission(observations)
-    if result['outcome'] == 'unsupported':
-        result['unsupported'] = [observations['localHistory']['cursor']['reason']]
     return {**result, 'productionU2Executed': True, 'productionConstructorUnchanged': True,
             'testedLevel': 'L1 engine-only', 'L2DeviceOutcome': 'not-run',
             'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}

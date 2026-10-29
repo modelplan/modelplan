@@ -29,6 +29,14 @@ def valid_admission_observation():
         'minimax': {status: {'calls': 1, 'statuses': [int(status)], 'legacyReplyAvailable': True,
                              'legacyCalls': 0, 'budgetBeforeSha256': 'b' * 64, 'budgetAfterSha256': 'b' * 64}
                     for status in ('401', '403')},
+        'sharedRefreshBudget': {status: {
+            'beforeCli': {'scope': 'minimax.account_usage.api_key', 'disabledReason': 'cooldown',
+                          'at': '2100-01-01T00:00:00Z'},
+            'afterCli': {'scope': 'minimax.account_usage.api_key', 'disabledReason': 'cooldown',
+                         'at': '2100-01-01T00:00:00Z'},
+            'nextAttemptAt': '2100-01-01T00:00:00Z', 'requestsBefore': 2, 'requestsAfter': 2,
+            'budgetBeforeSha256': 'b' * 64, 'budgetAfterSha256': 'b' * 64}
+            for status in ('404', '401', '403')},
     }
 
 
@@ -54,6 +62,21 @@ class RealBinaryTests(unittest.TestCase):
         replacements = {entry['path'] for entry in metadata['overlay']['replacements']}
         self.assertEqual(replacements, {'cli/internal/quota/quota_native.go',
                                        'cli/internal/quota/u14_http_provider.go'})
+
+    def test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget(self):
+        result = admission(self.tools['providers'], self.home,
+                           load_json(ROOT / 'examples/admission-plan.json'))
+        self.assertEqual(result['outcome'], 'pass')
+        cursor = result['subscenarios']['U2a-local-history-cursor']
+        self.assertEqual(cursor['outcome'], 'pass')
+        self.assertEqual((cursor['before'], cursor['after']), (2, 2))
+        self.assertEqual(cursor['beforeSha256'], cursor['afterSha256'])
+        budget = result['subscenarios']['U3b-refresh-shared-budget']
+        self.assertEqual(budget['outcome'], 'pass')
+        self.assertEqual(set(budget['cases']), {'404', '401', '403'})
+        for case in result['observations']['cases']:
+            self.assertEqual(case['localHistory']['cursor']['beforeTokens'], 25)
+            self.assertEqual(case['localHistory']['cursor']['afterTokens'], 25)
 
     def test_plain_app_server_smoke_uses_production_shared_constructor(self):
         report = plain_smoke(self.binary, self.home)
@@ -114,17 +137,19 @@ class RealBinaryTests(unittest.TestCase):
         self.assertGreaterEqual(result['elapsedSeconds'], 9)
         self.assertLess(result['elapsedSeconds'], 13)
 
-    def test_admission_runs_production_gates_and_reports_missing_cursor_source(self):
-        plan = load_json(ROOT / 'examples/admission-plan.json')
-        result = admission(self.tools['providers'], self.home, plan)
-        self.assertEqual(result['outcome'], 'unsupported')
-        self.assertTrue(result['productionU2Executed'])
-        self.assertIn('Cursor', result['unsupported'][0])
-        self.assertTrue(result['productionConstructorUnchanged'])
-        self.assertEqual({id: check['outcome'] for id, check in result['subscenarios'].items()},
-                         {'U2a-post-veto': 'pass', 'U2a-minimax-auth-stop': 'pass',
-                          'U2a-minimax-legacy-control': 'pass', 'U2a-local-history-gemini': 'pass',
-                          'U2a-local-history-cursor': 'unsupported'})
+    def test_admission_rejects_a_disabled_real_cursor_producer(self):
+        # Retain constructor/HTTP guard, but remove only Cursor's decoder.
+        source = REPO / 'cli/internal/localusage/cursor_history.go'
+        disabled = Path(self.work.name) / 'cursor_disabled.go'
+        write_private(disabled, b'package localusage\nfunc decodeCursorCounts(b []byte) ([]historyDatum, error) { return nil, nil }\n')
+        overlay = load_json(Path(type(self).work.name) / 'providers-overlay.json')
+        overlay['Replace'][str(source)] = str(disabled)
+        overlay_path = Path(self.work.name) / 'cursor-disabled-overlay.json'
+        write_private(overlay_path, encoded(overlay))
+        binary = Path(self.work.name) / 'modelplan-without-cursor-history'
+        build_binary(REPO, binary, overlay_path)
+        with self.assertRaisesRegex(EngineFailure, 'local-history-not-readable|cursor-history-seed-not-readable'):
+            admission(binary, self.home, load_json(ROOT / 'examples/admission-plan.json'))
 
     def test_external_revoke_reset_cursor_and_off_tightening(self):
         result = shared_state(self.tools['fixture'], self.home)
@@ -139,6 +164,8 @@ class RealBinaryTests(unittest.TestCase):
         for mutate in [lambda x: x['postScopes']['gemini'].update(calls=1),
                        lambda x: x['postScopes']['cursor'].update(disabledReason='ok'),
                        lambda x: x['localHistory']['gemini'].update(after=0),
+                       lambda x: x['localHistory']['cursor'].update(before=0, after=0),
+                       lambda x: x['localHistory']['cursor'].update(outcome='unsupported'),
                        lambda x: x['minimax']['401'].update(calls=2),
                        lambda x: x['minimax']['403'].update(legacyCalls=1),
                        lambda x: x.update(sharedSyntheticHome=False)]:
@@ -148,10 +175,22 @@ class RealBinaryTests(unittest.TestCase):
                 evaluate_admission(invalid)
 
     def test_history_preservation_rejects_changed_values_with_the_same_row_count(self):
-        observation = valid_admission_observation()
-        observation['localHistory']['gemini']['afterSha256'] = 'b' * 64
-        with self.assertRaises(EngineFailure):
-            evaluate_admission(observation)
+        for tool in ('gemini', 'cursor'):
+            observation = valid_admission_observation()
+            observation['localHistory'][tool]['afterSha256'] = 'b' * 64
+            with self.subTest(tool=tool), self.assertRaises(EngineFailure):
+                evaluate_admission(observation)
+
+    def test_shared_budget_rejects_lost_deadline_retries_and_changed_store(self):
+        for mutate in [lambda b: b['afterCli'].update(at='2099-01-01T00:00:00Z'),
+                       lambda b: b['afterCli'].pop('disabledReason'),
+                       lambda b: b.update(requestsAfter=3),
+                       lambda b: b.update(budgetAfterSha256='c' * 64),
+                       lambda b: b.update(nextAttemptAt='2101-01-01T00:00:00Z')]:
+            observation = valid_admission_observation()
+            mutate(observation['sharedRefreshBudget']['404'])
+            with self.assertRaises(EngineFailure):
+                evaluate_admission(observation)
 
     def test_invalid_run_selection_and_in_checkout_output_are_rejected_before_creation(self):
         output = Path(self.work.name) / 'rejected'
