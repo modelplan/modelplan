@@ -15,6 +15,9 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
 @MainActor public final class CommunityCLIConsentPort: CommunityConsentCommandPort {
     private let transport: any ConsentJSONTransport
     private let apiAvailable: Bool
+    #if DEBUG && MODELPLAN_E2E_JOURNEY
+    public private(set) var journeyReadStatus = "not-requested"
+    #endif
     public init(transport: any ConsentJSONTransport, apiAvailable: Bool = false) {
         self.transport = transport; self.apiAvailable = apiAvailable
     }
@@ -23,7 +26,19 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
     }
     public func readCanonicalConsent() async throws -> ConsentPreview {
         guard apiAvailable else { throw SettingsConnectionFailure.unavailable }
-        let result = try await transport.readConsentJSON()
+        let result: CommandResult
+        do { result = try await transport.readConsentJSON() }
+        catch {
+            #if DEBUG && MODELPLAN_E2E_JOURNEY
+            if CommunityJourneyCI.enabled {
+                journeyReadStatus = (error as? TransportError).map { String(describing: $0) } ?? "transport-failed"
+            }
+            #endif
+            throw error
+        }
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        if CommunityJourneyCI.enabled { journeyReadStatus = "exit-\(result.exitCode)" }
+        #endif
         try Task.checkCancellation()
         guard result.exitCode == 0 else { throw SettingsConnectionFailure.requestFailed }
         do { return try FeedDecoder.consentPreview(result.stdout) }

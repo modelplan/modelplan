@@ -65,7 +65,7 @@ import ModelPlanCore
         #if DEBUG && MODELPLAN_E2E_JOURNEY
         if CommunityJourneyCI.enabled {
             NSApplication.shared.delegate = delegate
-            Task { @MainActor in await E2EJourney.run(delegate: delegate, dock: dock, backend: backend) }
+            Task { @MainActor in await E2EJourney.run(delegate: delegate, dock: dock, backend: backend, consent: consent) }
             withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
             return
         }

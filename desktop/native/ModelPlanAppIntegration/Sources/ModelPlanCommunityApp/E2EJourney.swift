@@ -70,7 +70,8 @@ import ModelPlanAppIntegration
         await controller.confirm(confirmation.id)
         return controller.snapshot?.tools.contains { $0.tool == .codex && $0.authorization == .allowed } == true
     }
-    static func run(delegate: CommunityDelegate, dock: StaticDockPreviewHost, backend: CommunityConnectionBackend) async {
+    static func run(delegate: CommunityDelegate, dock: StaticDockPreviewHost, backend: CommunityConnectionBackend,
+                    consent: CommunityCLIConsentPort) async {
         _ = await wait(30) { delegate.settingsIntegration != nil }
         guard let integration = delegate.settingsIntegration as? CommunityConnectionIntegration else {
             for step in 1...6 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
@@ -83,6 +84,7 @@ import ModelPlanAppIntegration
         record(1, ["detected": detected, "listedInFirstRun": listed, "backendBound": controller.isBound(to: backend),
                    "snapshotPresent": controller.snapshot != nil, "canonicalGenerationPresent": controller.snapshot?.consentGeneration != nil,
                    "toolCount": controller.snapshot?.tools.count ?? 0, "controllerPhase": String(describing: controller.phase),
+                   "consentReadStatus": consent.journeyReadStatus,
                    "fixtureExecutablePresent": ProcessInfo.processInfo.environment["MODELPLAN_CODEX"].map { FileManager.default.isExecutableFile(atPath: $0) } ?? false,
                    "providerReadsBeforeGrant": calls(failed: false).count + calls(failed: true).count])
 

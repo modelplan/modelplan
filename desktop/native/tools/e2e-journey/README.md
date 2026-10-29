@@ -13,6 +13,7 @@ All app hooks are inside `#if DEBUG && MODELPLAN_E2E_JOURNEY` and require both `
 - `CommunityJourneyCI` and `CommunityApplicationFactory.makeConsentPort` admit the real consent port only in this explicit debug CI build. Release identity verification is unchanged.
 - `CommunityApp` selects the production factory's existing headless panel option, keeps the real first-run controller hidden through its existing surface factory, and starts the driver alongside normal app startup.
 - `StaticDockPreviewHost` exposes read-only observations of its actual rendered model, feed timestamp and reason/next-step rows.
+- `CommunityCLIConsentPort` exposes only the actual read command's exit code or fixed transport-error category. It keeps the same single invocation and error behavior; no output, path or provider data is captured.
 - `E2EJourney` drives only the retained UI controller and changes only the synthetic provider's mode file. It never asks the CLI to refresh or edits a ModelPlan cache.
 
 `package-neutral.sh --e2e-journey` explicitly builds debug with the macro and unverified metadata. Ordinary release and ordinary debug builds do not include the hooks. Even a release build accidentally receiving the macro excludes them because `DEBUG` is false. The existing release app-smoke launcher deliberately sets the journey environment flag as a negative control: its real unverified consent API must stay disabled and the existing 13 assertions must pass.
