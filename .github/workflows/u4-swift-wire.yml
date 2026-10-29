@@ -1,0 +1,76 @@
+name: U4 Swift wire
+on:
+  pull_request:
+    paths:
+      - cli/internal/appserver/wire/**
+      - cli/internal/appserver/wireschema/**
+      - cli/internal/rows/**
+      - cli/internal/swiftwire/**
+      - schema/app-cli/app-server.json
+      - schema/app-cli/captures/**
+      - clients/swift/ModelPlanWire/**
+      - .github/workflows/u4-swift-wire.yml
+  push:
+    branches: [main]
+    paths:
+      - cli/internal/appserver/wire/**
+      - cli/internal/appserver/wireschema/**
+      - cli/internal/rows/**
+      - cli/internal/swiftwire/**
+      - schema/app-cli/app-server.json
+      - schema/app-cli/captures/**
+      - clients/swift/ModelPlanWire/**
+      - .github/workflows/u4-swift-wire.yml
+permissions:
+  contents: read
+concurrency:
+  group: u4-swift-wire-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  generated-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Go generator tests and vet
+        working-directory: cli
+        run: go vet ./internal/swiftwire/... && go test -v ./internal/swiftwire/...
+      - name: Production schema and Swift drift
+        working-directory: cli
+        run: |
+          go run ./internal/appserver/wire/cmd/schema --check
+          go run ./internal/swiftwire/cmd --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node scripts/check-source-policy.mjs
+  swift-decoder:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Emit captures through the real Go test seam
+        working-directory: cli
+        run: |
+          UPDATE_SWIFT_CAPTURES=1 go test -count=1 -v ./internal/swiftwire/...
+          go run ./internal/swiftwire/cmd --check
+      - name: Generated Swift decodes actual Go encodings and mutations
+        env:
+          MODELPLAN_CAPTURE_DIR: ${{ github.workspace }}/schema/app-cli/captures
+        run: |
+          set -o pipefail
+          swift --version
+          swift test --package-path clients/swift/ModelPlanWire 2>&1 | tee "$RUNNER_TEMP/u4-swift-tests.txt"
+      - name: Preserve synthetic decode evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u4-decode-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/u4-swift-tests.txt
+            schema/app-cli/captures/
+          retention-days: 14
