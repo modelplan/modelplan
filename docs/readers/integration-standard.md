@@ -1,6 +1,6 @@
 # Reader integration standard
 
-Status: revision 2. The owner accepted the direction on 2026-10-29; rows marked [pending] wait for the owner. Part of foundation v2. Use this standard before you add a reader or repair one.
+Status: revision 2. The owner accepted the direction, the K default and the POST gate on 2026-10-29. Part of foundation v2. Use this standard before you add a reader or repair one.
 It covers four things: how we classify a reader path, the lines we never cross, how we learn from other quota monitors, and what each integration must produce.
 Related documents:
 
@@ -46,14 +46,14 @@ Classify each path on four axes:
 |---|---|---|---|
 | standard, pre-selected | auth `none` (L, S, J), and auth `runtime` (R, after the side-effect review) | Checked | [owner] |
 | standard, not pre-selected | auth O | Unchecked, with "select all" | [owner] |
-| standard, key | auth K | See below | [pending] |
+| standard, key | auth K | Configured for ModelPlan: enabled. Only found in the environment: unchecked | [owner] |
 | advanced, off by default | auth C | Not on first run; Settings per subscription | Unchanged |
 | not-read | Any path that breaks a red line with no compliant alternative | Shown with the reason | Unchanged |
 
 - **Runtime reads are not automatically safe.** An R path is not "local" or "zero network": the owning runtime calls its vendor. Each R path needs a side-effect review of the runtime version: no refresh it would not do on its own, no paid call, no state change. The UI says "Read by <tool>'s own runtime", not "local reading".
-- **K default [pending].** Recommended: a key the user explicitly configured for ModelPlan (through `modelplan connect` or Settings) keeps its current enabled behaviour. A key merely present in the environment is offered unchecked and is used only after consent.
+- **K default [owner, 2026-10-29].** A key the user explicitly configured for ModelPlan (through `modelplan connect` or Settings) keeps its current enabled behaviour. A key merely present in the environment is offered unchecked and is used only after consent.
 - **Promotion.** O becomes pre-selected only by owner decision, after two beta cycles with no credential incident and a re-review, per vendor and per path version. Promotion changes the initial choice for undecided users only. It never overrides a denial, a revoke or Passive mode.
-- **POST gate [pending, owner].** Recommended: a POST read is allowed only for a vendor the owner approves, with method, host, path and request-body schema pinned in code and covered by the recording-transport test. Until the owner decides, every POST account-usage scope is disabled, which today means Gemini Code Assist and Cursor plan and period usage. Their local-history scopes are unaffected. Do not convert a POST to a GET and do not self-exempt a "read-only" POST.
+- **POST gate [owner, 2026-10-29].** A POST read is allowed only for a vendor the owner approves. Its method, host, path and request-body schema are pinned in code and covered by the recording-transport test. The integration card presents the exact request for the owner's approval. Until a vendor is approved, its POST account-usage scope is disabled: today that means Gemini Code Assist and Cursor plan and period usage. Their local-history scopes are unaffected. Do not convert a POST to a GET and do not self-exempt a "read-only" POST.
 
 ## 2. Red lines
 
