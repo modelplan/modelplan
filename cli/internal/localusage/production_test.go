@@ -20,6 +20,7 @@ type productionHistoryFixture struct {
 }
 
 var productionHistoryTests = map[string]productionHistoryFixture{
+	"cursor":  {"usage.jsonl", cursorCountFixture, 10, false},
 	"amp":     {"T-synthetic.json", `{"id":"synthetic","messages":[{"role":"assistant","messageId":1,"usage":{"model":"amp-test","timestamp":"2026-10-23T10:00:00Z","inputTokens":10,"outputTokens":2}}]}`, 10, false},
 	"droid":   {"project/synthetic.settings.json", `{"tokenUsage":{"inputTokens":10,"outputTokens":2}}`, 10, true},
 	"kimi":    {"project/synthetic/wire.jsonl", fmt.Sprintf(`{"timestamp":%d,"message":{"type":"StatusUpdate","payload":{"message_id":"synthetic","token_usage":{"input_other":3,"output":2}}}}`+"\n", testNow.Add(-time.Hour).Unix()), 3, false},
@@ -60,6 +61,9 @@ func TestProductionHistoryAdmission(t *testing.T) {
 			}
 			if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, tool, true, "native:"+tool, "native", testNow) }); err != nil {
 				t.Fatal(err)
+			}
+			if tool == "cursor" {
+				grantCursorHistoryFixture(t)
 			}
 			if tool == "gemini" {
 				if err := SetGemini(home, true); err != nil {

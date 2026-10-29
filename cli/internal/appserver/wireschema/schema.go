@@ -84,6 +84,7 @@ func Generate(root string) ([]byte, error) {
 		"Health":               reflect.TypeFor[wire.Health](),
 		"HistoryQueryParams":   reflect.TypeFor[wire.HistoryQueryParams](),
 		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
+		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
 		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
 		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
 		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
@@ -107,7 +108,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -125,7 +126,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "PluginInstallResult"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env

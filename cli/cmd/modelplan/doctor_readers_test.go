@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
@@ -36,7 +37,7 @@ func TestDoctorReadersCacheOnlyOutput(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Readers) != 19 || report.Message != "Paste this whole output back to the coordinator; it contains no personal data." {
+	if len(report.Readers) != 12+len(localusage.HistoryProviders()) || report.Message != "Paste this whole output back to the coordinator; it contains no personal data." {
 		t.Fatal(out.String())
 	}
 	jsonBytes := out.String()

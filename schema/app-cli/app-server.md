@@ -143,6 +143,16 @@ Notification:
   - The app then rebuilds the views only from results admitted under the new generation.
   - Acceptance: a Claude history page is open at g=41, and the CLI revokes Claude (g=42). A Codex result at g=42 arrives before `consent/changed`. The Claude page must be cleared when that result arrives.
 
+### Cockpit display DTO
+
+`cockpit/query` takes an empty object. It returns `CockpitData` with the existing
+`RowsProjection` in `projection` and a `subscriptions` array. Go groups verified
+subscription references; each group contains `subscriptionRef` and an `accounts`
+array of `{tool, account}` using stable tool IDs and the existing account display
+DTO. Unknown bindings are not grouped. Context and covered scopes remain only in
+the envelope. See [cockpit query](../../docs/cockpit-query.md) for its admission and
+no-mutation contract, and the generated schema for exact field types.
+
 ## Type sketch (Go wire DTOs)
 
 ```go

@@ -99,6 +99,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["history/query"] = history
+		var cockpitSource queries.CockpitSource = sharedCockpit{backend: shared}
+		cockpit, err := queries.CockpitHandler(queries.CockpitConfig{State: shared, Source: cockpitSource})
+		if err != nil {
+			return nil, func() {}, err
+		}
+		handlers["cockpit/query"] = cockpit
 		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify})
 		handlers["refresh/request"] = scheduler.Handler()
 		shared.CredentialSink = broker
