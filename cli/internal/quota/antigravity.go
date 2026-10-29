@@ -112,25 +112,30 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		raw, err := antigravityCommand(ctx, "/bin/ps", "-u", strconv.Itoa(os.Getuid()), "-o", "pid=,uid=,comm=,args=")
 		if err != nil {
 			e.Error = antigravityNext("not_detected")
+			e.ErrorCode = "runtime_missing"
 			return e
 		}
 		servers := antigravityServers(raw)
 		if len(servers) == 0 {
 			e.Error = antigravityNext("not_detected")
+			e.ErrorCode = "runtime_missing"
 			return e
 		}
 		if len(servers) != 1 {
 			e.Error = antigravityNext("not_supported_yet")
+			e.ErrorCode = "unsupported_login"
 			return e
 		}
 		s = servers[0]
 	}
 	if s.PID <= 0 || s.Port < 1 || s.Port > 65535 || !antigravityCSRF(s.CSRF) {
 		e.Error = antigravityNext("not_supported_yet")
+		e.ErrorCode = "unsupported_login"
 		return e
 	}
 	if antigravityVerify(ctx, s) != nil {
 		e.Error = antigravityNext("not_supported_yet")
+		e.ErrorCode = "unsupported_login"
 		return e
 	}
 	scheme := "http"
@@ -153,6 +158,7 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 		transport = http.DefaultTransport.(*http.Transport)
 	} else if !ok {
 		e.Error = antigravityNext("not_supported_yet")
+		e.ErrorCode = "unsupported_login"
 		return e
 	}
 	local := transport.Clone()
@@ -185,26 +191,30 @@ func fetchAntigravity(ctx context.Context, c *http.Client, _, _ string, now time
 	resp, err := client.Do(req)
 	if err != nil {
 		e.Error = antigravityNext("network_error")
+		e.ErrorCode = transportErrorCode(err)
 		return e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 401 || resp.StatusCode == 403 {
 		e.Error = antigravityNext("expired_login")
+		e.ErrorCode = httpErrorCode(resp.StatusCode)
 		return e
 	}
 	if resp.StatusCode != 200 {
 		e.Error = antigravityNext("upstream_changed")
+		e.ErrorCode = httpErrorCode(resp.StatusCode)
 		return e
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
 	if err != nil || len(b) > nativeMaxBody {
 		e.Error = antigravityNext("upstream_changed")
+		e.ErrorCode = "schema_changed"
 		return e
 	}
 	return parseAntigravity(b, now)
 }
 func parseAntigravity(b []byte, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("not_supported_yet")}
 	var raw struct {
 		UserStatus *struct {
 			Config *struct {
@@ -220,7 +230,11 @@ func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 			} `json:"cascadeModelConfigData"`
 		} `json:"userStatus"`
 	}
-	if json.Unmarshal(b, &raw) != nil || raw.UserStatus == nil || raw.UserStatus.Config == nil || len(raw.UserStatus.Config.Models) > 256 {
+	if json.Unmarshal(b, &raw) != nil {
+		e.ErrorCode = "parse_error"
+		return e
+	}
+	if raw.UserStatus == nil || raw.UserStatus.Config == nil || len(raw.UserStatus.Config.Models) > 256 {
 		return e
 	}
 	seen := map[string]bool{}
@@ -243,6 +257,7 @@ func parseAntigravity(b []byte, now time.Time) codexbarEntry {
 	}
 	if len(e.Windows) > 0 {
 		e.Status = "ok"
+		e.ErrorCode = ""
 		e.Error = ""
 	}
 	// Models are Antigravity pools; no Claude Code/Codex plan or account binding.

@@ -3,7 +3,6 @@ package quota
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -49,6 +48,7 @@ func fetchMiniMax(ctx context.Context, c *http.Client, region, key string, now t
 				continue
 			}
 			e.Error = err.Error()
+			e.ErrorCode = errorCode(err)
 			return e
 		}
 		parsed, rejected := parseMiniMax(b, now)
@@ -62,7 +62,7 @@ func fetchMiniMax(ctx context.Context, c *http.Client, region, key string, now t
 func miniMaxJSON(ctx context.Context, c *http.Client, endpoint, key string) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, 0, errors.New("MiniMax request failed")
+		return nil, 0, codeError("other", "MiniMax request failed")
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Accept", "application/json")
@@ -72,15 +72,15 @@ func miniMaxJSON(ctx context.Context, c *http.Client, endpoint, key string) ([]b
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, 0, errors.New("MiniMax request failed or timed out")
+		return nil, 0, codeError(transportErrorCode(err), "MiniMax request failed or timed out")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, resp.StatusCode, errors.New("MiniMax HTTP " + strconv.Itoa(resp.StatusCode) + "; verify the selected region and plan key")
+		return nil, resp.StatusCode, codeError(httpErrorCode(resp.StatusCode), "MiniMax HTTP "+strconv.Itoa(resp.StatusCode)+"; verify the selected region and plan key")
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
 	if err != nil || len(b) > nativeMaxBody {
-		return nil, 200, errors.New("MiniMax response too large or cut off")
+		return nil, 200, codeError("schema_changed", "MiniMax response too large or cut off")
 	}
 	return b, 200, nil
 }
@@ -88,9 +88,13 @@ func miniMaxJSON(ctx context.Context, c *http.Client, endpoint, key string) ([]b
 // The second result allows only a recognized auth rejection to try legacy.
 // No arbitrary server strings, identity fields or raw labels reach the cache.
 func parseMiniMax(b []byte, now time.Time) (codexbarEntry, bool) {
-	e := codexbarEntry{Status: "error", Error: "unsupported MiniMax quota format", Plan: "MiniMax", ObservedAt: now.UTC()}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", Error: "unsupported MiniMax quota format", Plan: "MiniMax", ObservedAt: now.UTC()}
 	var top map[string]json.RawMessage
-	if json.Unmarshal(b, &top) != nil || top == nil {
+	if err := json.Unmarshal(b, &top); err != nil {
+		e.ErrorCode = jsonErrorCode(err)
+		return e, false
+	}
+	if top == nil {
 		return e, false
 	}
 	body := top
@@ -207,6 +211,7 @@ func parseMiniMax(b []byte, now time.Time) (codexbarEntry, bool) {
 	}
 	if len(e.Windows) > 0 {
 		e.Status, e.Error = "ok", ""
+		e.ErrorCode = ""
 	}
 	return e, false
 }
