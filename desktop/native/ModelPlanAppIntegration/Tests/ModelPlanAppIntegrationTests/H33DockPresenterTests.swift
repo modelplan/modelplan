@@ -20,8 +20,9 @@ import ModelPlanSettings
     private func consent(_ ids: [String], mode: String = "automatic") throws -> ConsentPreview {
         let tools = ids.map { ["id": $0, "displayName": $0, "backend": "native", "readerId": "native:" + $0,
             "accessClass": "standard", "detected": true, "allowed": true, "keychain": "unset", "hosts": []] as [String: Any] }
-        return try FeedDecoder.consentPreview(JSONSerialization.data(withJSONObject: ["generation": 1, "consentTextVersion": 2,
-            "mode": mode, "consentText": ["en": "Synthetic", "zh": "合成"], "tools": tools]))
+        var capture = try GeneratedAppCLIFixtures.object("consented-consent.json")
+        capture["mode"] = mode; capture["tools"] = tools // Explicit presenter-scope mutations of the generated capture.
+        return try FeedDecoder.consentPreview(JSONSerialization.data(withJSONObject: capture))
     }
     private func model(_ snapshot: JoinedSnapshot, consent: ConsentPreview? = nil) -> CommunityDockSnapshot {
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
@@ -88,4 +89,38 @@ import ModelPlanSettings
         XCTAssertEqual(rowCount(), 0, "reader diagnostic menu copy is not a quota/presentation row")
         XCTAssertNil(host.nativePanel)
     }
+    func testRealFactoryRoutesCanonicalReadbackAndInvalidationToSameDock() async throws {
+        final class Port: CommunityConsentCommandPort {
+            let value: ConsentPreview
+            var fail = false
+            init(_ value: ConsentPreview) { self.value = value }
+            var availability: SettingsConnectionAvailability { .init(canInspect: true, canGrant: true, canForget: false) }
+            func readCanonicalConsent() async throws -> ConsentPreview { if fail { throw SettingsConnectionFailure.requestFailed }; return value }
+            func applyConsentJSON(_ payload: Data) async throws { XCTFail("No grant in readback test") }
+        }
+        actor Desktop: CLITransport {
+            func execute(_ command: CLICommand) async throws -> CommandResult { XCTFail("No helper in factory test"); throw TransportError.launchFailed }
+        }
+        _ = NSApplication.shared
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        let port = Port(try consent(["codex"])), desktop = Desktop()
+        let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: desktop, normal: desktop))
+        let delegate = CommunityApplicationFactory.makeDelegate(surfaces: CommunityInstrumentSurfaceProvider(), companion: host,
+            consentBackend: backend) { _ in throw SettingsConnectionFailure.unavailable }
+        defer { withExtendedLifetime(delegate) {} }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("h33-factory-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await app.reload()
+        var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+        host.render(snapshot: try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]]), diagnostics: diagnostics)
+        _ = try await backend.detect()
+        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        port.fail = true
+        do { _ = try await backend.detect(); XCTFail("Expected readback failure") } catch {}
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertNil(host.nativePanel)
+    }
+
 }

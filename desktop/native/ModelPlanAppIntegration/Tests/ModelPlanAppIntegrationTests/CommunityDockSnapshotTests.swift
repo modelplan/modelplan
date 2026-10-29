@@ -34,9 +34,16 @@ import ModelPlanSettings
         return .make(personal: personal,
             presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil)
     }
-    private func adapt(_ snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics? = nil) -> CommunityDockSnapshot {
+    private func adapt(_ snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics? = nil, canonicalConsent: ConsentPreview? = nil) -> CommunityDockSnapshot {
         var ready = StoreDiagnostics(); ready.personal = nil
-        return CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics ?? ready, now: now)
+        return CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics ?? ready, now: now, canonicalConsent: canonicalConsent)
+    }
+    private func canonicalConsent(_ ids: [String]) throws -> ConsentPreview {
+        var capture = try GeneratedAppCLIFixtures.object("consented-consent.json")
+        var tools = try XCTUnwrap(capture["tools"] as? [[String: Any]])
+        for index in tools.indices { tools[index]["allowed"] = ids.contains(tools[index]["id"] as? String ?? "") }
+        capture["mode"] = "automatic"; capture["tools"] = tools
+        return try FeedDecoder.consentPreview(JSONSerialization.data(withJSONObject: capture))
     }
     func testAccountPresentationWithoutMembershipKeepsRealValueAndNoInventedSubscription() throws {
         let joined = try snapshot(accounts: [account(nil, source: "codex", windows: [window()])])
@@ -52,7 +59,7 @@ import ModelPlanSettings
             ["id": "claude", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "consent_required"]],
             ["id": "codex", "authorization": ["status": "no"], "quota": ["status": "missing"]]
         ]])
-        let result = adapt(joined)
+        let result = adapt(joined, canonicalConsent: try canonicalConsent(["claude"]))
         XCTAssertEqual(result.inputs.count, 1)
         XCTAssertTrue(result.subscriptions.isEmpty)
         let status = try XCTUnwrap(result.presentationRows[result.inputs[0].id])
@@ -449,7 +456,8 @@ import ModelPlanSettings
                 let joined = try snapshot(accounts: accountRow ? [account(nil, source: "codex", windows: [window()])] : [],
                     extras: accountRow ? [:] : ["connections": [["id": "claude", "authorization": ["status": "yes"],
                         "quota": ["status": "no", "reason": "consent_required"]]]])
-                let id = try XCTUnwrap(adapt(joined).inputs.first?.id)
+                let readback = try canonicalConsent(accountRow ? [] : ["claude"])
+                let id = try XCTUnwrap(adapt(joined, canonicalConsent: readback).inputs.first?.id)
                 var supplied = [DockInstrumentReading]()
                 let appearance: StaticDockPreviewHost.Appearance?
                 if official {
@@ -467,6 +475,7 @@ import ModelPlanSettings
                 host.showSettings = { settings += 1 }; host.showConsole = { console += 1 }
                 await coordinator.reload()
                 var ready = StoreDiagnostics(); ready.personal = nil
+                host.updateDockConsent(readback)
                 host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
                 if official { XCTAssertEqual(supplied.map(\.subscriptionID), [id]) }
                 XCTAssertNil(host.nativePanel)

@@ -10,14 +10,14 @@ final class CommunityEmptyReaderMenuTests: XCTestCase {
         let model = CommunityDockSnapshot(snapshot:nil, diagnostics:StoreDiagnostics(), now:now, readerFacts:[])
         XCTAssertTrue(model.inputs.isEmpty); XCTAssertTrue(model.readerDiagnostics.isEmpty)
         XCTAssertEqual(model.emptyDiagnostic?.category, .notLoaded)
-        XCTAssertEqual(CommunityReaderStatusPresentation.emptyMenuLine(model, english:true), model.emptyDiagnostic?.english)
-        XCTAssertEqual(CommunityReaderStatusPresentation.emptyMenuLine(model, english:false), model.emptyDiagnostic?.chinese)
+        XCTAssertEqual(CommunityReaderStatusPresentation.emptyMenuLine(model, english:true), model.emptyDiagnostic!.english + " Open Settings to check connected tools.")
+        XCTAssertEqual(CommunityReaderStatusPresentation.emptyMenuLine(model, english:false), model.emptyDiagnostic!.chinese + " 打开设置检查已连接工具。")
     }
     func testExistingPerReaderReasonDoesNotGetADuplicateAggregateLine() {
         let model = CommunityDockSnapshot(snapshot:nil, diagnostics:StoreDiagnostics(), now:now,
             readerFacts:[.init(providerID:"claude",blockedCode:"not-connected-yet")])
         XCTAssertNil(CommunityReaderStatusPresentation.emptyMenuLine(model, english:true))
-        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english:true), ["Claude: Reader connection is not complete yet."])
+        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english:true), ["Claude: Reader connection is not complete yet. Open Settings to check this tool."])
     }
     func testKnownZeroSubscriptionNeverGetsAnEmptyMenuReason() throws {
         let data = Data(#"{"schemaVersion":1,"kind":"modelplan.personal-snapshot","generatedAt":"2026-10-28T00:00:00Z","validUntil":"2030-01-01T00:00:00Z","accounts":[{"source":"codex","subscription":{"subscriptionRef":"synthetic","status":"verified"},"windows":[{"kind":"five_hour","remainingPercent":0,"observedAt":"2026-10-28T00:00:00Z"}]}],"subscriptions":[{"subscriptionRef":"synthetic","sources":["codex"]}]}"#.utf8)

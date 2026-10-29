@@ -56,7 +56,7 @@ public enum CommunityReaderStatusPresentation {
     public static func menuLines(_ model: CommunityDockSnapshot, english: Bool) -> [String] {
         Array(model.readerDiagnostics.prefix(16)).map { diagnostic in
             let name = toolName(diagnostic.providerID, english: english)
-            return name + ": " + (english ? diagnostic.english : diagnostic.chinese)
+            return name + ": " + (english ? diagnostic.english + " Open Settings to check this tool." : diagnostic.chinese + " 打开设置检查此工具。")
         }
     }
     public static func emptyText(_ model: CommunityDockSnapshot, english: Bool) -> String {
