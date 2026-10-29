@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,5 +116,55 @@ func TestConsentAPIRetiredUnknownToCurrentCatalogueCanBeRevoked(t *testing.T) {
 	code, out, _ := consentRun([]string{"consent", "grant", "--json"}, apiRequest(t, 2, result.Generation, []string{"never-known-tool"}, nil, nil))
 	if code == 0 || !bytes.Contains([]byte(out), []byte(`"error": "unknown_tool"`)) {
 		t.Fatal(code, out)
+	}
+}
+
+// Exercise the published command boundary, including JSON request parsing and
+// the durable transaction/cleanup path, rather than a direct helper call.
+func TestConsentAPIUndetectedGrantRealBinary(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "modelplan")
+	build := exec.Command("go", "build", "-ldflags", "-X main.version=1.0.0", "-o", binary, ".")
+	if b, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build CLI: %v: %s", err, b)
+	}
+	home := consentAPIHome(t)
+	cacheConsentCatalogue(t, "native", "standard", "native:claude")
+	runBinary := func(input string, args ...string) ([]byte, error) {
+		t.Helper()
+		cmd := exec.Command(binary, args...)
+		cmd.Stdin = strings.NewReader(input)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		if stderr.Len() != 0 {
+			t.Fatalf("unexpected stderr: %s", stderr.Bytes())
+		}
+		return stdout.Bytes(), err
+	}
+	if raw, err := runBinary(apiRequest(t, 1, 0, []string{"claude"}, nil, nil), "consent", "grant", "--json"); err != nil {
+		t.Fatalf("grant: %v: %s", err, raw)
+	}
+	if err := os.RemoveAll(filepath.Join(home, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := runBinary("", "consent", "--json")
+	var view consentView
+	if err != nil || json.Unmarshal(raw, &view) != nil {
+		t.Fatalf("list: %v: %s", err, raw)
+	}
+	if row, ok := apiTools(view.Tools)["claude"]; !ok || !row.Allowed || row.Detected {
+		t.Fatalf("undetected grant missing: %s", raw)
+	}
+	if raw, err := runBinary(apiRequest(t, 2, view.Generation, []string{"claude"}, nil, nil), "consent", "grant", "--json"); err == nil || !bytes.Contains(raw, []byte(`"error": "unknown_tool"`)) {
+		t.Fatalf("new undetected grant accepted: %v: %s", err, raw)
+	}
+	raw, err = runBinary(apiRequest(t, 3, view.Generation, nil, []string{"claude"}, nil), "consent", "grant", "--json")
+	var result consentResult
+	if err != nil || json.Unmarshal(raw, &result) != nil || !result.OK || apiTools(result.Tools)["claude"].Allowed {
+		t.Fatalf("revoke: %v: %s", err, raw)
+	}
+	state, err := consent.Load(consent.Path())
+	if err != nil || state.Tools["claude"].Allowed {
+		t.Fatalf("revoke not durable: %+v %v", state, err)
 	}
 }
