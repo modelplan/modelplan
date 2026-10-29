@@ -1,6 +1,6 @@
 # App rows: the CLI owns each tool's row, the app renders it (v4)
 
-Status: design, owner-approved direction (2026-10-29). v4 folds in three rounds of GLM and MACREV design review on #289.
+Status: design approved for build (MACREV R4 SOUND; GLM R4 issue folded in). Owner-approved direction (2026-10-29). v4 folds in four rounds of GLM and MACREV design review on #289.
 Schedule: build after beta07 ships, or at once if beta07 respin5 fails again on an app↔CLI seam.
 Owners: CLI part, CLIJIT. App part, M0 (Dock, menu bar), with M4 for Settings.
 
@@ -41,7 +41,9 @@ Row
   name          {en, zh}: the single title table (declared rows: the user's planId text as both, userAuthored = true)
   vendorKey     art key or null
   surfaces      subset of [dock, menu, settings]
-  consent       allowed | denied | unset | not_required | retired
+  consent       allowed | implicit | denied | unset | not_required | retired
+                implicit = no consent record, but the privacy mode (Automatic by default, consent.go:76) already permits
+                this local read (Claude status line, Codex logs; connect.go:245, :306); treated exactly like allowed
   state         see "State"
   reason        {code, text {en, zh}}; code from the mapping table; text from the CLI message table
   nextStep      {action, text {en, zh}, availableAt?, disabledReason?} or null
@@ -121,13 +123,13 @@ Candidates are the union of four sets:
 
 1. every catalogue entry;
 2. every persisted consent record (allowed or denied), including tools no longer detected and catalogue entries that have since been retired;
-3. every account under an allowed or not-required consent;
+3. every account under an allowed, implicit or not-required consent;
 4. every planId that appears anywhere in local.json (`plans[]`, `windows[]` or `resetCards[]`), as today's `acct()` does.
 
 Then the rules apply in order:
 
 1. **Readers off globally:** no tool rows. `rowsSummary.state = readers_off`, with its next step. Declared rows still show: they are the user's own data and read nothing.
-2. **Consent allowed:** the tool always gets a dock/menu/settings row, whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
+2. **Consent allowed or implicit:** the tool always gets a dock/menu/settings row, whether or not it is still detected or in the catalogue. When it is not detected, `state = needs_action`, code `tool_not_found`. When it is retired, `consent = retired`, code `catalogue_retired`. **This is the invariant the respins kept breaking.**
 3. **Denied, or Forget cleanup pending:** a settings row only. Its accounts are never exported (`accounts = []`) and never shown, so a revoked tool's readings cannot reappear. `cleanup_pending` is the code.
 4. **Detected but unset:** a settings row only.
 5. **Declared plans:** dock/menu/settings rows with `consent = not_required`. They skip the tool predicates (detection, reader, consent, Keychain): only rows 1 (privacy veto), 8–10 below apply. A declared plan without a manual reading is `pending`, code `no_manual_reading`, action `none`.
@@ -145,7 +147,7 @@ Then the rules apply in order:
 | # | Condition | state | codes (normative list below) |
 |---|---|---|---|
 | 1 | admission veto | off / needs_action | privacy_blocked, catalogue_off, update_required, key_missing, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required, not_admitted |
-| 2 | consent: unset, denied, outdated, or changed mid-read | needs_consent / pending | consent_required, consent_denied, consent_outdated, consent_changed |
+| 2 | consent: unset (and not implicit), denied, outdated, or changed mid-read | needs_consent / pending | consent_required, consent_denied, consent_outdated, consent_changed |
 | 3 | no reader exists for the tool | unsupported | no_reader |
 | 4 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
 | 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed |
@@ -200,7 +202,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
 - Every exported id is one of four kinds: an allow-listed key, the literal `other`, the user's own declared `planId`, or an existing identity reference. That covers row ids, `accountLocator`, window ids, `limitKey` and `poolKey`. A charset check alone is not a privacy rule, so unknown provider limit or pool text never appears, not even in ids. Read-only commands write nothing.
 - `subscriptionRef` is the existing random local reference. `MODELPLAN_IDENTITY=off` gives `null`.
 - Plan names come from an allow-list. Declared plans are the user's own text from their own local.json, flagged `userAuthored`.
-- Tests use a field-specific validator per field (ids, timestamps, refs, `limitId` charset, message-table texts), plus canaries: raw emails, paths, hashes, provider error text and secret-like limit or pool ids (for example `account_token_123`) are seeded into the fixtures and must never appear in any row field, ids included.
+- Tests use a field-specific validator per field (ids, timestamps, refs, `limitKey`/`poolKey` allow-list, message-table texts), plus canaries: raw emails, paths, hashes, provider error text and secret-like limit or pool ids (for example `account_token_123`) are seeded into the fixtures and must never appear in any row field, ids included.
 
 ## App side
 
@@ -274,7 +276,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
   - every card with a value shows its age
   - the menu minimum uses only current windows
 - **e2e (#281):** extended with membership, revoke and mixed-account journeys.
-- **CI path filters:** `.github/workflows/desktop.yml` also triggers on `cli/internal/quota`, `cli/internal/connections`, `cli/internal/consent`, `cli/internal/detect` and `cli/cmd/modelplan`, so a change to the projection always runs the Swift, capture and app-smoke checks.
+- **CI path filters:** `.github/workflows/desktop.yml` also triggers on `cli/internal/quota`, `cli/internal/connections`, `cli/internal/consent`, `cli/internal/detect`, `cli/internal/keychain`, `cli/internal/appcontract` and `cli/cmd/modelplan`, so a change to the projection always runs the Swift, capture and app-smoke checks.
 
 ## Rollout
 
@@ -288,7 +290,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
    - switch the surface to rows behind the regression gates
    - add the generation fence
    - migrate the preferences
-3. **Consent API (CLIJIT, with step 1):** `consent --json` also lists tools that have a persisted grant but are no longer detected or have been retired, with `detected = false`. Settings can then show and revoke them, and the rule-2 rows always join to consent facts.
+3. **Consent API (CLIJIT, with step 1):** `consent --json` also lists tools that have a persisted grant but are no longer detected or have been retired, with `detected = false`. Settings can then show and revoke them, and the rule-2 rows always join to consent facts. Both layers change: the CLI request validation (`consent_api.go:253`) accepts a deny for a persisted undetected/retired grant, and Settings `mayDeny` (`CommunityConsentContract.swift:40`) stops requiring detection. A gate test covers it: such a grant can be revoked through both layers, while an unknown or undetected tool still cannot be newly granted.
 4. **Then:**
    - delete the merge code
    - remove the invalidation clearing
