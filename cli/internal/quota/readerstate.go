@@ -240,7 +240,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if grantKey == "" {
 		return errors.New("identity key unavailable")
 	}
-	generationChanged := s.GrantKey != "" && s.GrantKey != grantKey
+	generationChanged := (s.GrantKey != "" || len(s.Entries) != 0 || len(s.PendingAttempts) != 0) && s.GrantKey != grantKey
 	if s.GrantKey != grantKey {
 		if generationChanged {
 			for _, e := range s.Entries {
@@ -438,7 +438,7 @@ func AppendManagedRows(in *rows.Input, p Paths) {
 		}
 		nextAttempt, budgetKnown := managedReaderNext(p.Cache, provider, s.NextAttemptAt)
 		grantKey := lookupReaderHash(p.Cache, provider+":grant", g.Generation)
-		generationChanged := s.GrantKey != "" && (grantKey == "" || s.GrantKey != grantKey)
+		generationChanged := (s.GrantKey != "" || len(s.Entries) != 0 || len(s.PendingAttempts) != 0) && (grantKey == "" || s.GrantKey != grantKey)
 		for index, profile := range g.Profiles {
 			if index >= 16 {
 				break

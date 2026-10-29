@@ -615,3 +615,25 @@ func TestManagedRowsCoolingDownUsesAllPersistedReservations(t *testing.T) {
 		})
 	}
 }
+
+func TestManagedRowsUnboundCacheCannotExportOldAccount(t *testing.T) {
+	p := claudeTestPaths(t)
+	g := p.ReaderAccess.Grants["claude"]
+	profile := g.Profiles[0]
+	key := readerHash(p.Cache, "claude:profile", profile.Root+"\x00"+profile.AccountFile)
+	// A cache without its grant binding cannot establish that its old numbers
+	// belong to the captured generation, even if the profile key still matches.
+	s := &readerState{SchemaVersion: 1, Provider: "claude", Entries: []readerEntry{{ProfileKey: key, Status: "ok", Account: &Account{Source: "claude-code", ObservedAt: claudeTestNow, Windows: []Window{}}}}}
+	if err := saveReaderState(p.Cache, s); err != nil {
+		t.Fatal(err)
+	}
+	before := readerTreeSnapshot(t, p.Cache)
+	in := rows.Input{Now: claudeTestNow, ReadOnly: true}
+	AppendManagedRows(&in, p)
+	if len(in.Accounts) != 0 || len(in.Profiles) != 1 || !in.Profiles[0].GenerationChanged || in.Profiles[0].ObservedAt != nil {
+		t.Fatal("cache without generation provenance exported an old account")
+	}
+	if !reflect.DeepEqual(before, readerTreeSnapshot(t, p.Cache)) {
+		t.Fatal("unbound-cache read migrated state")
+	}
+}
