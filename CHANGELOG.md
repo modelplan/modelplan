@@ -6,7 +6,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-28)
+## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-29)
 
 - Desktop connections now reflect native Claude consent, Keychain choice, production admission and read status, with an actionable Settings next step. Tool CLI discovery includes npm-global, Volta and Bun; env-node scripts launch through a resolved Node/Bun runtime under a minimal GUI PATH, with a distinct missing-runtime reason.
   桌面连接状态现反映 Claude 原生授权、钥匙串选择、生产读取准入及读数状态，并提供可操作的设置入口。工具发现支持 npm-global、Volta 和 Bun；GUI 最小 PATH 下的 env-node 脚本通过已定位的 Node/Bun 运行，缺少运行时单独说明。
