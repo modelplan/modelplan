@@ -196,21 +196,20 @@ import ModelPlanSettings
 
     func testH37EveryAllowedToolAndNativeFailureHasNamedReasonAndNextStep() throws {
         let value = try snapshot(sources: [
-            ["source": "native:grok", "status": "error", "reason": "reader_error", "nextStep": "Open Grok settings"],
+            ["source": "native:grok", "status": "error", "reason": "reader_error"],
             ["source": "native:amp", "status": "unavailable", "reason": "reader_error"]
         ])
         let result = model(value, consent: try consent(["grok", "antigravity", "minimax", "qwen"]))
         XCTAssertEqual(result.inputs.count, 5)
         XCTAssertEqual(Set(result.inputs.map(\.name)), Set(["Grok", "Antigravity", "MiniMax", "Qwen", "Amp"]))
         let grok = try XCTUnwrap(result.presentationRows.values.first { $0.input.name == "Grok" })
-        XCTAssertTrue(grok.reason.contains("unavailable")); XCTAssertEqual(grok.nextStep, "Open Grok settings")
+        XCTAssertTrue(grok.reason.contains("unavailable")); XCTAssertTrue(grok.nextStep.contains("Settings"))
         XCTAssertTrue(result.presentationRows.values.allSatisfy { !$0.reason.isEmpty && !$0.nextStep.isEmpty })
         XCTAssertTrue(result.subscriptions.isEmpty)
     }
     func testH37KeychainAndPendingExpiredSchemaStatesKeepTheirSpecificGuidance() throws {
         for code in ["keychain_choice_needed", "keychain_denied"] {
-            let value = try snapshot(sources: [["source": "native:claude", "status": "unavailable",
-                "reason": code, "nextStep": "Open Claude Keychain choice"]])
+            let value = try snapshot(connections: [["id": "claude-code", "quota": ["status": "no", "nextStep": "Open Claude Keychain choice"]]], sources: [["source": "native:claude", "status": "unavailable", "reason": code]])
             let row = try XCTUnwrap(model(value).presentationRows.values.first)
             XCTAssertTrue(row.reason.contains("Keychain")); XCTAssertEqual(row.nextStep, "Open Claude Keychain choice")
         }
@@ -268,7 +267,7 @@ import ModelPlanSettings
     }
     func testH37NativeOnlyFirstFailureReachesActualHostCardAndSettingsAction() async throws {
         _ = NSApplication.shared
-        let value = try snapshot(sources: [["source": "native:grok", "status": "error", "reason": "reader_error", "nextStep": "Open Grok Settings"]])
+        let value = try snapshot(sources: [["source": "native:grok", "status": "error", "reason": "reader_error"]])
         let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("h37-grok-host-" + UUID().uuidString)
@@ -281,15 +280,43 @@ import ModelPlanSettings
         let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).inputs.first)
         XCTAssertEqual(row.name, "Grok"); XCTAssertTrue(row.alias?.contains("Grok") == true)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertTrue(menu.contains("Grok")); XCTAssertTrue(menu.contains("Open Grok Settings"))
+        XCTAssertTrue(menu.contains("Grok")); XCTAssertTrue(menu.contains("Settings"))
         host.dockView.onAction?(.subscription(row.id))
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
-        XCTAssertTrue(labels.contains { $0.stringValue == "Open Grok Settings" })
+        XCTAssertTrue(labels.contains { $0.stringValue.contains("Check reader status in Settings") })
         let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
         XCTAssertEqual(opens, 1); XCTAssertNil(host.nativePanel)
+    }
+
+    func testH37ActualHumanSourceReasonsDoNotOverrideMachineStatusOnHost() async throws {
+        _ = NSApplication.shared
+        for (provider, status, human, expected) in [
+            ("claude", "consent_required", "Allow Keychain for Claude Code in Settings", "Keychain"),
+            ("grok", "stale", "A previous local observation is old", "expired"),
+            ("grok", "unsupported_schema", "The reader format is newer", "update")
+        ] {
+            let value = try snapshot(sources: [["source": "native:" + provider, "status": status, "reason": human]])
+            let result = model(value, consent: try consent([provider]))
+            let row = try XCTUnwrap(result.presentationRows.values.first)
+            XCTAssertTrue(row.reason.contains(expected))
+            if provider == "claude" { XCTAssertEqual(row.nextStep, human) }
+            let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+            defer { host.close() }
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("human-source-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+            await app.reload()
+            var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+            host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
+            XCTAssertTrue(host.menu().items.contains { $0.title.contains(expected) })
+            host.dockView.onAction?(.subscription(row.input.id))
+            func text(_ v: NSView) -> [String] { (v as? NSTextField).map { [$0.stringValue] } ?? v.subviews.flatMap(text) }
+            XCTAssertTrue(text(host.card).contains { $0.contains(expected) })
+            XCTAssertNil(host.nativePanel)
+        }
     }
 
 

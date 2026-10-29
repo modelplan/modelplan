@@ -27,16 +27,24 @@ enum CommunityUnboundDockRows {
         func guidance(_ provider: String, current: Bool) -> (String, String) {
             let source = sources.first { $0.source == "native:" + provider }
             let connection = connections.first { canonical($0.id) == provider }
+            let pendingCodes: Set<String> = ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"]
+            let machineCodes = pendingCodes.union(["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable"])
+            let reasonCode = (source?.reason).flatMap { machineCodes.contains($0) ? $0 : nil }
             func next(_ fallback: String) -> String {
-                guard let text = source?.nextStep ?? connection?.quota?.nextStep,
+                let nativeRemedy = source.flatMap { value -> String? in
+                    guard ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(value.status),
+                          let reason = value.reason, !machineCodes.contains(reason) else { return nil }
+                    return reason
+                }
+                guard let text = nativeRemedy ?? connection?.quota?.nextStep,
                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 512,
                       !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return fallback }
                 return text
             }
             if current { return ("Local account reading / 本地账户读数", next("Check connected tools in Settings / 在设置检查已连接工具")) }
             let status = source?.status ?? connection?.quota?.status
-            let nativeFailure = source.map { ["consent_required", "unavailable", "error", "stale", "expired", "unsupported_schema", "keychain_choice_needed", "keychain_denied"].contains($0.status) } ?? false
-            let code = nativeFailure ? source?.reason ?? source?.status : source?.reason ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? status
+            let nativeFailure = source.map { ["consent_required", "unavailable", "error", "stale", "expired", "unsupported_schema", "keychain_choice_needed", "keychain_denied"].contains($0.status) || reasonCode.map { !pendingCodes.contains($0) } == true } ?? false
+            let code = nativeFailure ? reasonCode ?? source?.status : reasonCode ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? status
             if provider == "claude", ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(code ?? "") {
                 return (code == "keychain_denied" ? "Keychain permission denied / 钥匙串许可被拒绝" : "Keychain permission required / 需要钥匙串许可",
                         next("Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串"))
