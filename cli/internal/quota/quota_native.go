@@ -396,6 +396,18 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && !legacySelections[provider] {
+			if _, pending := PolicyPending(provider); pending {
+				if p.ReaderAccess == nil {
+					// Legacy cache-only readers report the veto only when a retained capture
+					// exists; an unrelated fresh read must not invent provider membership.
+					if _, err := os.Stat(readerPath(p.Cache, provider)); err == nil || !os.IsNotExist(err) {
+						r.Sources = append(r.Sources, policyPendingSource(provider))
+					}
+				} else if _, exists := p.ReaderAccess.Grants[provider]; exists {
+					r.Sources = append(r.Sources, policyPendingSource(provider))
+				}
+				continue
+			}
 			if p.ReaderAccess != nil {
 				if _, allowed := readerAllowed(p, provider); !allowed {
 					continue
@@ -416,6 +428,10 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			continue
 		}
 		if x.Backend != BackendNative {
+			continue
+		}
+		if _, pending := PolicyPending(x.Provider); pending {
+			r.Sources = append(r.Sources, policyPendingSource(x.Provider))
 			continue
 		}
 		st := SourceStatus{Source: "native:" + x.Provider}

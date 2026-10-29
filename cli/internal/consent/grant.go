@@ -223,6 +223,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 
 // ScopeFacts includes persisted retired scopes so tightening remains reachable.
 type ScopeFact struct {
+	Disabled       *string `json:"disabledReason,omitempty"`
 	Scope          string  `json:"scope"`
 	Tool           string  `json:"tool"`
 	Route          string  `json:"route"`

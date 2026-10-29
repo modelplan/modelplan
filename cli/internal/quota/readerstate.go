@@ -161,6 +161,9 @@ func readerHash(cache, domain, value string) string {
 }
 
 func readerAllowed(p Paths, provider string) (ReaderGrant, bool) {
+	if _, pending := PolicyPending(provider); pending {
+		return ReaderGrant{}, false
+	}
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("MODELPLAN_READERS")))
 	if p.Cache == "" || p.ReaderAccess == nil || nativeOff() || (mode != "" && mode != "automatic") {
 		return ReaderGrant{}, false
@@ -207,6 +210,9 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
+	if err := nativeAdmissionError(provider); err != nil {
+		return err
+	}
 	if ctx.Err() != nil {
 		return errors.New("reader canceled")
 	}
@@ -425,6 +431,10 @@ func AppendManagedRows(in *rows.Input, p Paths) {
 	}
 	providers := make([]string, 0, len(p.ReaderAccess.Grants))
 	for provider, g := range p.ReaderAccess.Grants {
+		if _, pending := PolicyPending(provider); pending {
+			in.Sources = append(in.Sources, rows.SourceState{ToolID: provider, Source: "native:" + provider, Status: "unavailable", ErrorCode: "policy_pending"})
+			continue
+		}
 		if n := nativeReaders[provider]; n != nil && n.Managed != nil && g.SavedLogin && g.Generation != "" {
 			providers = append(providers, provider)
 		}
@@ -642,6 +652,10 @@ func pruneReaderWindows(a *Account, now time.Time) {
 // applyManaged loads only ModelPlan's sanitized cache. It never calls collectors,
 // stats tool files, writes freshness, or launches a refresh (including --json).
 func applyManaged(r *Report, p Paths, provider string, now time.Time) {
+	if _, pending := PolicyPending(provider); pending {
+		r.Sources = append(r.Sources, policyPendingSource(provider))
+		return
+	}
 	if p.Cache == "" {
 		return
 	}
