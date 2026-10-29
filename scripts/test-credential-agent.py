@@ -46,6 +46,13 @@ class Vendor(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def do_POST(self):
+        self.server.unexpected.append('method')
+        self.send_error(400)
+
+    do_PUT = do_POST
+    do_DELETE = do_POST
+
     def log_message(self, *_):
         pass
 
@@ -93,8 +100,11 @@ class Agent:
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self.env)
         self.messages, self.pending, self.output, self.errors = queue.Queue(), [], [], bytearray()
         self.identifier = 0
+        self.operations = set()
+        self.read_retries = 0
         self.session = 's-u7-' + uuid.uuid4().hex
-        threading.Thread(target=self._read, daemon=True).start()
+        self.stdout_thread = threading.Thread(target=self._read, daemon=True)
+        self.stdout_thread.start()
         self.stderr_thread = threading.Thread(target=self._stderr, daemon=True)
         self.stderr_thread.start()
         self.request('initialize', dict(sessionId=self.session, protocolVersion='1.0',
@@ -161,7 +171,10 @@ class Agent:
                       allow=[SCOPE], deny=[])
         if keychain:
             params['keychain'] = {SCOPE: 'allow'}
-        return self.request('consent/grant', params)
+        self.last_grant = params
+        result = self.request('consent/grant', params)
+        assert result['data']['committed'], 'grant lost committed receipt'
+        return result
 
     def credential(self, interactive):
         message = self.wait(lambda message: message.get('method') == 'credentials/request')
@@ -171,6 +184,7 @@ class Agent:
         assert request['consentGeneration'] == self.state()['generation'], 'wrong credential generation'
         assert request['data']['interactive'] is interactive, 'wrong interaction admission'
         assert request['data']['scope'] == SCOPE and request['data']['provider'] == 'claude', 'wrong credential scope'
+        self.operations.add(request['data']['operationId'])
         return request['data']['operationId']
 
     def result(self, operation, outcome='ok', rejected=False):
@@ -189,6 +203,10 @@ class Agent:
         self.request('diagnostics/get', {})
         self.request('rows/subscribe', {})
         assert all(CANARY.encode() not in line for line in self.output), 'token in outbound message'
+        for line in self.output:
+            message = json.loads(line)
+            if message.get('method') == 'credentials/request':
+                assert message['params']['data']['operationId'] in self.operations, 'unexpected duplicate credential operation'
         assert CANARY.encode() not in self.errors, 'token on stderr'
         for name in ('cmdline', 'environ'):
             path = Path('/proc') / str(self.process.pid) / name
@@ -211,6 +229,7 @@ class Agent:
                 self.process.kill()
                 self.process.wait()
                 raise AssertionError('engine shutdown hung')
+        self.stdout_thread.join(timeout=1)
         self.stderr_thread.join(timeout=1)
         assert all(CANARY.encode() not in line for line in self.output), 'token on shutdown stdout'
         assert CANARY.encode() not in self.errors, 'token on shutdown stderr'
@@ -245,7 +264,7 @@ def main():
             try:
                 replacement = run(agent, start) or agent
                 replacement.verify()
-                results.append(dict(scenario='U7-'+name, outcome='pass'))
+                results.append(dict(scenario='U7-'+name, outcome='pass', readRetries=replacement.read_retries))
             finally:
                 replacement.close()
                 if replacement is not agent:
@@ -255,6 +274,15 @@ def main():
             agent.grant()
             operation = agent.credential(True)
             agent.result(operation, value)
+            snapshot = agent.request('rows/subscribe', {})['data']['projection']
+            row = next(row for row in snapshot['rows'] if row['id'] == 'claude')
+            if value == 'ok':
+                assert row['accounts'], 'successful token did not produce an account'
+            else:
+                code = {'canceled': 'keychain_canceled', 'denied': 'keychain_denied',
+                        'not_found': 'keychain_not_found', 'interaction_required': 'keychain_confirmation_needed',
+                        'timeout': 'keychain_confirmation_needed', 'error': 'keychain_unavailable'}[value]
+                assert row['reason']['code'] == code, 'credential recovery reason missing or mismatched'
             expected = 2 if value == 'ok' else 0
             assert len(server.reads)-start == expected, 'unexpected remote read count'
             agent.result(operation, value, rejected=True)
@@ -277,6 +305,7 @@ def main():
             agent.result(agent.credential(True))
             floor = agent.home/'cache/observed/reader-attempts/claude.json'
             before = floor.read_bytes()
+            agent.request('consent/grant', agent.last_grant)
             agent.grant()
             agent.result(agent.credential(True))
             assert len(server.reads)-start == 2, 'grant bypassed remote budget'
