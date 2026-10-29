@@ -129,12 +129,18 @@ func TestSourceOnlyFailureAndCredentialStoreSeparation(t *testing.T) {
 
 func TestExpiryGuidanceAndCollisionOrdering(t *testing.T) {
 	in := sampleInput()
-	in.Profiles[0].CoolingDown = true
+	in.Profiles[0].CoolingDown = false
 	in.Profiles[0].NextAttemptAt = ptr(testNow.Add(2 * time.Minute))
 	row := rowByID(t, Build(in), "codex")
 	if row.StateAfterExpiry.NextStep.DisabledReason != nil || row.StateAfterExpiry.NextStep.AvailableAt != nil {
 		t.Fatal("latch retained an already elapsed cooldown")
 	}
+	in.Profiles[0].CoolingDown = true
+	row = rowByID(t, Build(in), "codex")
+	if row.StateAfterExpiry.NextStep.DisabledReason == nil {
+		t.Fatal("elapsed time bound bypassed an observed budget hold")
+	}
+
 	in.Profiles[0].NextAttemptAt = nil
 	in.Profiles[0].LatestAttempt = AttemptResultFailed
 	in.Profiles[0].LastFailure = &FailureInput{Code: "network", At: ptr(testNow)}

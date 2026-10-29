@@ -377,8 +377,8 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 	if outcome.Action == ActionRefresh {
 		cooling := c.busy || c.keychain == CodeReaderBusy
 		for _, p := range c.profiles {
-			at := knownTime(p.NextAttemptAt)
-			cooling = cooling || p.Busy || p.CoolingDown && (at == nil || at.After(in.Now))
+			// A time bound does not prove every budget/busy hold cleared.
+			cooling = cooling || p.Busy || p.CoolingDown
 			if at := knownTime(p.NextAttemptAt); at != nil && at.After(in.Now) {
 				if step.AvailableAt == nil || at.After(*step.AvailableAt) {
 					step.AvailableAt = at
