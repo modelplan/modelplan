@@ -67,7 +67,12 @@ import ModelPlanSettings
                                     makeSettings: @escaping @MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration) -> CommunityDelegate {
         let delegate = CommunityDelegate(surfaces: surfaces, companion: companion, transport: transport,
                                          statusItemTitle: statusItemTitle, statusItemImage: CommunityMenuBarResources.templateImage(),
-                                         menuBarProvider: CommunityMenuBarProjector(), makeSettings: makeSettings)
+                                         menuBarProvider: CommunityMenuBarProjector(preferences: { [weak source = companion as? any CommunityMenuBarPreferencesProviding] in
+                                             source?.currentMenuBarPreferences
+                                         }), makeSettings: makeSettings)
+        if let source = companion as? any CommunityMenuBarPreferencesProviding {
+            source.menuBarPreferencesChanged = { [weak delegate] in delegate?.refreshMenuBar() }
+        }
         consentBackend.onCanonicalInvalidated = { [weak receiver = companion as? any CommunityDockConsentReceiving] in
             receiver?.updateDockConsent(nil)
         }

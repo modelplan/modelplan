@@ -13,11 +13,19 @@ import ModelPlanSettings
         func readConsentJSON() async throws -> CommandResult { XCTFail("No consent inspection in construction"); throw TransportError.launchFailed }
         func grantConsentJSON(_ data: Data) async throws -> CommandResult { XCTFail("No grants in menu-bar checks"); throw TransportError.launchFailed }
     }
+    private final class Preferences: CommunityCompanionSurface, CommunityMenuBarPreferencesProviding {
+        var currentMenuBarPreferences: SettingsPreferences? = .init()
+        var menuBarPreferencesChanged: (() -> Void)?
+        var showConsole: (() -> Void)?, showSettings: (() -> Void)?
+        func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {}
+        func setPresentationAllowed(_ allowed: Bool) {}
+        func close() {}
+    }
     private func delegate() -> CommunityDelegate {
         let fake = NoEffects()
         let port = CommunityCLIConsentPort(transport: fake, apiAvailable: false)
         let backend = CommunityConnectionBackend(port: port, desktop: .init(readOnly: fake, normal: fake))
-        return CommunityApplicationFactory.makeDelegate(surfaces: NeutralSurfaceProvider(), consentBackend: backend, transport: fake) { _ in
+        return CommunityApplicationFactory.makeDelegate(surfaces: NeutralSurfaceProvider(), companion: Preferences(), consentBackend: backend, transport: fake) { _ in
             XCTFail("Construction must not create Settings or runtime"); throw SettingsConnectionFailure.unavailable
         }
     }
@@ -119,7 +127,7 @@ import ModelPlanSettings
         XCTAssertFalse(host.menuBarReadingItem.title.contains("13%"))
     }
     func testMinimumUsesOriginalNumbersBeforeRoundingAndKeepsFirstTieStable() throws {
-        let presenter = CommunityMenuBarProjector()
+        let presenter = CommunityMenuBarProjector(preferences: { .init() })
         let rounded = presenter.make(snapshot: try joined([account("codex", [0.49]), account("native:gemini", [0.4])]), diagnostics: ready, now: now)
         XCTAssertEqual(rounded.title, "0%")
         XCTAssertTrue(rounded.detail.contains("Gemini"))
