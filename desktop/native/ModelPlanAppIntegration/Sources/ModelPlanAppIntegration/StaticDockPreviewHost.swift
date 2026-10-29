@@ -545,6 +545,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
             if emptyStatus != nil || !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
         }
+        if let model {
+            for row in model.presentationRows.values.sorted(by: { $0.input.id < $1.input.id }) {
+                let item = NSMenuItem(title: row.input.name + ": " + row.reason + " — " + row.nextStep, action: #selector(openSettings), keyEquivalent: "")
+                item.target = self
+                menu.addItem(item)
+            }
+        }
         for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
@@ -564,8 +571,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               let input = model?.inputs.first(where: { $0.id == id }),
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
-                stateLabel: input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期",
-                enterLabel: "Console / 控制台", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
+                sourceAndAge: model?.presentationRows[id]?.sourceAndAge(at: currentDate()) ?? "",
+                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期"),
+                additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
+                enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; card.isHidden = false
@@ -574,7 +583,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
             self.dismissCard()
             guard self.permitted, !self.retired else { return }
-            self.showConsole?()
+            if self.model?.presentationRows[id] != nil { self.showSettings?() }
+            else { self.showConsole?() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }

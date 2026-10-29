@@ -296,6 +296,12 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 		} else {
 			e = n.Fetch(ctx, nativeClient, x.Region, key, now)
 		}
+		if e.Status == "ok" {
+			e.ErrorCode = ""
+		} else {
+			e.ErrorCode = ReaderErrorCode(e.ErrorCode)
+			e.Error = e.ErrorCode
+		}
 		e.Provider, e.Source = x.Provider, "api"
 		if x.Provider == "kimi" || x.Provider == "minimax" {
 			e.Region, e.KeyEnv = x.Region, x.KeyEnv
@@ -341,7 +347,7 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return errors.New("bad request")
+		return codeError("other", "bad request")
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Accept", "application/json")
@@ -349,23 +355,23 @@ func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error 
 	resp, err := c.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return errors.New("timed out")
+			return codeError("timeout", "timed out")
 		}
-		return errors.New("request failed")
+		return codeError(transportErrorCode(err), "request failed")
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return errors.New("the API key was rejected (HTTP " + strconv.Itoa(resp.StatusCode) + ")")
+		return codeError(httpErrorCode(resp.StatusCode), "the API key was rejected (HTTP "+strconv.Itoa(resp.StatusCode)+")")
 	case resp.StatusCode != http.StatusOK:
-		return errors.New("HTTP " + strconv.Itoa(resp.StatusCode))
+		return codeError(httpErrorCode(resp.StatusCode), "HTTP "+strconv.Itoa(resp.StatusCode))
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
 	if err != nil || len(b) > nativeMaxBody {
-		return errors.New("response too large or cut off")
+		return codeError("schema_changed", "response too large or cut off")
 	}
 	if json.Unmarshal(b, v) != nil {
-		return errors.New("unreadable response")
+		return codeError("parse_error", "unreadable response")
 	}
 	return nil
 }
@@ -436,8 +442,10 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "stale", "last reading older than 6 hours"
 		case e.Status == toolcli.RuntimeMissing || strings.HasPrefix(e.Error, toolcli.RuntimeMissing+":"):
 			st.Status, st.Reason = toolcli.RuntimeMissing, toolcli.RuntimeNextStep
+			st.ErrorCode = "runtime_missing"
 		case e.Status != "ok":
-			st.Status, st.Reason = "unavailable", e.Error
+			st.ErrorCode = ReaderErrorCode(e.ErrorCode)
+			st.Status, st.Reason = "unavailable", st.ErrorCode
 		case len(e.Windows) == 0:
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
@@ -501,6 +509,12 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 				e = codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
 			}
 		}
+	}
+	if e.Status == "ok" {
+		e.ErrorCode = ""
+	} else if e.ErrorCode != "" {
+		e.ErrorCode = ReaderErrorCode(e.ErrorCode)
+		e.Error = e.ErrorCode
 	}
 	e.Provider, e.Source = old.Provider, old.Source
 	return e

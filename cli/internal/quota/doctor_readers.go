@@ -7,7 +7,6 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -172,7 +171,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			var last time.Time
 			failure := ""
 			for _, e := range s.Entries {
-				state := diagnosticState(e.Status)
+				state := nativeDiagnosticState(e.Status, e.ErrorCode)
 				if state != "ok" {
 					failure = state
 				}
@@ -199,10 +198,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			e, exists := old[id]
 			row.State = "unavailable:not_read"
 			if exists {
-				row.State = diagnosticState(e.Status)
-				if strings.HasPrefix(e.Error, toolcli.RuntimeMissing+":") {
-					row.State = diagnosticState(toolcli.RuntimeMissing)
-				}
+				row.State = nativeDiagnosticState(e.Status, e.ErrorCode)
 				row.Last = diagnosticAge(e.ObservedAt, now)
 				row.Windows = diagnosticWindows(e.Windows, now)
 				if row.State == "ok" && (e.ObservedAt.IsZero() || now.Sub(e.ObservedAt) > nativeKeep || e.ObservedAt.After(now)) {
@@ -216,12 +212,21 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			case id == "copilot":
 				r := ReadCopilotCache(ctx, p.Cache, now)
 				fillDiagnosticCache(&row, r.Availability, r.Freshness, r.ObservedAt, r.Reading, now)
+				if r.ErrorCode != "" {
+					row.State = nativeDiagnosticState(r.Availability, r.ErrorCode)
+				}
 			case id == "antigravity":
 				r := ReadAntigravityCache(ctx, p.Cache, now)
 				fillDiagnosticCache(&row, r.Availability, r.Freshness, r.ObservedAt, r.Reading, now)
+				if r.ErrorCode != "" {
+					row.State = nativeDiagnosticState(r.Availability, r.ErrorCode)
+				}
 			case id == "zai" && g.ConfigSource != nil:
 				r := ReadZaiConfigCache(ctx, p.Cache, now)
 				fillDiagnosticCache(&row, r.Availability, r.Freshness, r.ObservedAt, r.Reading, now)
+				if r.ErrorCode != "" {
+					row.State = nativeDiagnosticState(r.Availability, r.ErrorCode)
+				}
 			}
 		}
 		rows = append(rows, row)

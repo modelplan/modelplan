@@ -111,6 +111,9 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			reason := "no-reading"
 			if s, ok := status[src]; ok && s.Status != "ok" {
 				reason = s.Status
+				if strings.HasPrefix(src, "native:") && s.Status != "consent_required" && s.Status != "off" && s.Status != toolcli.RuntimeMissing {
+					reason = quota.ReaderErrorCode(s.ErrorCode)
+				}
 			}
 			level := Level{Status: "no", Reason: reason, Binding: "unknown"}
 			if reason == toolcli.RuntimeMissing {
@@ -120,6 +123,9 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		}
 		t := a.ObservedAt.UTC()
 		l := Level{Status: "yes", At: &t, Binding: "unknown"}
+		if s, ok := status[src]; ok && strings.HasPrefix(src, "native:") && s.Status != "ok" {
+			l.Reason = quota.ReaderErrorCode(s.ErrorCode)
+		}
 		if a.Subscription != nil {
 			l.Binding = a.Subscription.Status // the reader saw the account (quota's identity.go)
 		}
@@ -362,6 +368,9 @@ func nativeClaudeConnection(c *Connection, e Env, account *quota.Account, source
 	}
 	if source.Status != "" {
 		c.Quota.Reason = source.Status
+		if source.ErrorCode != "" && source.Status != "ok" {
+			c.Quota.Reason = quota.ReaderErrorCode(source.ErrorCode)
+		}
 		if source.Status == "ok" {
 			c.Quota.Reason = "no_usage_windows"
 		}

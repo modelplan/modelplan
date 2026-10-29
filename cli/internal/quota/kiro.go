@@ -40,15 +40,16 @@ func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) 
 	bin := kiroBin()
 	if bin == "" {
 		e.Error = "kiro-cli not found"
+		e.ErrorCode = "runtime_missing"
 		return e
 	}
 	raw, err := askKiro(ctx, bin)
 	if err != nil {
+		e.Error = err.Error()
+		e.ErrorCode = errorCode(err)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
 			e.Status = toolcli.RuntimeMissing
 			e.Error = toolcli.RuntimeNextStep
-		} else {
-			e.Error = err.Error()
 		}
 		return e
 	}
@@ -73,13 +74,17 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, errors.New("kiro-cli did not start")
+		if ctx.Err() != nil {
+			return nil, codeError(transportErrorCode(ctx.Err()), "Kiro read canceled")
+		}
+		return nil, codeError("runtime_missing", "kiro-cli did not start")
 	}
 	defer func() { _ = in.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	send := func(v any) error { b, _ := json.Marshal(v); _, err := in.Write(append(b, '\n')); return err }
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
 	wait := func(id int) (json.RawMessage, error) {
+		malformed := false
 		for sc.Scan() {
 			var m struct {
 				ID     *int            `json:"id"`
@@ -88,18 +93,25 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 					Message string `json:"message"`
 				} `json:"error"`
 			}
-			if json.Unmarshal(sc.Bytes(), &m) != nil || m.ID == nil || *m.ID != id {
+			if json.Unmarshal(sc.Bytes(), &m) != nil {
+				malformed = true
+				continue
+			}
+			if m.ID == nil || *m.ID != id {
 				continue
 			}
 			if m.Error != nil {
-				return nil, errors.New(kiroReason(m.Error.Message))
+				return nil, codeError(kiroMessageCode(m.Error.Message), kiroReason(m.Error.Message))
 			}
 			return m.Result, nil
 		}
 		if ctx.Err() != nil {
-			return nil, errors.New("timed out")
+			return nil, codeError("timeout", "timed out")
 		}
-		return nil, errors.New("kiro-cli closed")
+		if malformed {
+			return nil, codeError("parse_error", "invalid Kiro reply")
+		}
+		return nil, codeError("schema_changed", "kiro-cli closed")
 	}
 	if err := send(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{
 		"protocolVersion": 1, "clientCapabilities": map[string]any{}, "clientInfo": map[string]any{"name": "modelplan", "version": "1"}}}); err != nil {
@@ -144,16 +156,19 @@ type kiroResult struct {
 }
 
 func parseKiro(raw json.RawMessage, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
 	var r kiroResult
 	if json.Unmarshal(raw, &r) != nil {
+		e.ErrorCode = "parse_error"
 		e.Error = "unreadable reply"
 		return e
 	}
 	if !r.Success || r.Data == nil {
 		e.Error = "no usage"
+		e.ErrorCode = "schema_changed"
 		if r.Message != "" {
 			e.Error = kiroReason(r.Message)
+			e.ErrorCode = kiroMessageCode(r.Message)
 		}
 		return e
 	}
@@ -187,7 +202,19 @@ func parseKiro(raw json.RawMessage, now time.Time) codexbarEntry {
 	}
 	e.Plan = label(r.Data.PlanName)
 	e.Status = "ok"
+	e.ErrorCode = ""
 	return e
 }
 
 func finiteF(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+func kiroMessageCode(message string) string {
+	switch kiroReason(message) {
+	case "Kiro CLI is signed out (kiro-cli login)":
+		return "unsupported_login"
+	case "Kiro CLI is too old for its usage call; update it":
+		return "schema_changed"
+	default:
+		return "other"
+	}
+}

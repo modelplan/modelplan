@@ -179,7 +179,7 @@ func TestCopilotNativeDispatchPublishesFailureAndPreservesHistory(t *testing.T) 
 				t.Fatal(err)
 			}
 			st := copilotNativeStatus(t, p, now.Add(10*time.Minute))
-			if st.Status != "unavailable" || st.Reason != copilotNext(tc.state) {
+			if st.Status != "unavailable" || st.Reason != statusErrorCode(tc.state) {
 				t.Fatal(st)
 			}
 			for _, account := range Read(p, now.Add(10*time.Minute)).Accounts {
@@ -256,7 +256,7 @@ func TestCopilotCaptureGenerationIsNotAttemptGeneration(t *testing.T) {
 	if result.Reading != nil || !result.ObservedAt.IsZero() || result.Availability != "expired_login" {
 		t.Fatal("attempt generation rebound A quota to B or lost B's failure", result)
 	}
-	if st := copilotNativeStatus(t, p, now.Add(10*time.Minute)); st.Reason != copilotNext("expired_login") {
+	if st := copilotNativeStatus(t, p, now.Add(10*time.Minute)); st.Reason != "unsupported_login" {
 		t.Fatal(st)
 	}
 	snap := loadNative(p.Cache)

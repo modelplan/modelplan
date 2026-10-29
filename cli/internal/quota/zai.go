@@ -62,6 +62,7 @@ func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.
 	var r zaiResponse
 	if err := getJSON(ctx, c, host+"/api/monitor/usage/quota/limit", key, &r); err != nil {
 		e.Error = err.Error()
+		e.ErrorCode = errorCode(err)
 		return e
 	}
 	return parseZai(r, now)
@@ -71,7 +72,7 @@ func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.
 var zaiUnit = map[int]int{1: 1440, 3: 60, 5: 1, 6: 10080}
 
 func parseZai(r zaiResponse, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
 	if !r.Success || r.Code != 200 {
 		e.Error = "the quota API said no"
 		if m := label(r.Msg); m != "" {
@@ -149,6 +150,7 @@ func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 		}
 	}
 	e.Status = "ok"
+	e.ErrorCode = ""
 	return e
 }
 

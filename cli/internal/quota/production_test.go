@@ -217,6 +217,9 @@ func testProductionUnsetClaudeKeychainNotice(t *testing.T) {
 	r := ReadPermitted(p, claudeTestNow)
 	found := false
 	wantReason := wantNotice
+	if wantStatus == "unavailable" {
+		wantReason = "file_missing"
+	}
 	if wantNextStep != "" {
 		wantReason = wantNextStep
 	}

@@ -376,7 +376,7 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 func applyAccount(r *Report, cache string, now time.Time) {
 	s := loadAccount(cache)
 	if s != nil && s.Status == toolcli.RuntimeMissing && now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now) {
-		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: toolcli.RuntimeMissing, Reason: toolcli.RuntimeNextStep})
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: toolcli.RuntimeMissing, Reason: toolcli.RuntimeNextStep, ErrorCode: "runtime_missing"})
 	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return

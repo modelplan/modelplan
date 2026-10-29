@@ -39,15 +39,21 @@ func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Tim
 	bin := copilotBin()
 	if bin == "" {
 		e.Error = copilotNext("not_detected")
+		e.ErrorCode = "runtime_missing"
 		return e
 	}
 	raw, err := askCopilot(ctx, bin)
 	if err != nil {
+		e.Error = err.Error()
+		e.ErrorCode = errorCode(err)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
 			e.Status = toolcli.RuntimeMissing
 			e.Error = toolcli.RuntimeNextStep
 		} else {
-			e.Error = err.Error()
+			var rpc *copilotRPCError
+			if errors.As(err, &rpc) {
+				e.ErrorCode = statusErrorCode(rpc.state)
+			}
 		}
 		return e
 	}
@@ -78,7 +84,7 @@ func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
 	defer func() { _ = in.Close(); _ = out.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 	raw, err := copilotQuotaRPC(out, in)
 	if ctx.Err() != nil {
-		return nil, errors.New("Copilot quota read timed out")
+		return nil, codeError("timeout", "Copilot quota read timed out")
 	}
 	return raw, err
 }
@@ -194,7 +200,7 @@ func readCopilotFrame(r *bufio.Reader) ([]byte, error) {
 }
 
 func parseCopilot(raw json.RawMessage, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
 	var r struct {
 		Snapshots map[string]*struct {
 			Used      *int64   `json:"usedRequests"`
@@ -205,6 +211,7 @@ func parseCopilot(raw json.RawMessage, now time.Time) codexbarEntry {
 		} `json:"quotaSnapshots"`
 	}
 	if json.Unmarshal(raw, &r) != nil {
+		e.ErrorCode = "parse_error"
 		e.Error = "unreadable Copilot quota reply"
 		return e
 	}
@@ -257,6 +264,7 @@ func parseCopilot(raw json.RawMessage, now time.Time) codexbarEntry {
 		return e
 	}
 	e.Status = "ok"
+	e.ErrorCode = ""
 	return e
 }
 

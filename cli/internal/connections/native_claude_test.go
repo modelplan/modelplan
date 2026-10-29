@@ -62,6 +62,13 @@ func TestNativeClaudeConsentKeychainAndAdmission(t *testing.T) {
 	if c.Keychain != "allowed" || c.Authorization.Status != "yes" || c.Quota.Reason != "auth_expired" || c.Quota.Status != "no" {
 		t.Fatalf("failed read=%+v", c)
 	}
+	report.Sources[0].Status = "unavailable"
+	report.Sources[0].ErrorCode = "http_401"
+	report.Sources[0].Reason = "private-provider-canary"
+	if c := check("darwin", report); c.Quota.Reason != "http_401" {
+		t.Fatalf("Claude structured error lost=%+v", c)
+	}
+	report.Sources[0].ErrorCode = ""
 	report.Sources[0].Status = "ok"
 	at := time.Now().UTC()
 	report.Accounts = []quota.Account{{Source: "claude-code", Via: "native", ObservedAt: at, Windows: []quota.Window{{Kind: "weekly"}}}}
@@ -114,4 +121,22 @@ func TestCodexRuntimeMissingConnectionHasNextStep(t *testing.T) {
 		}
 	}
 	t.Fatal("Codex missing")
+}
+
+func TestNativeRuntimeMissingRetainsSpecificReasonWithErrorCode(t *testing.T) {
+	testenv.IsolateHome(t)
+	file := filepath.Join(t.TempDir(), "connections.json")
+	if err := quota.SetConnection(file, quota.QuotaSource{Provider: "kiro", Backend: quota.BackendNative, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	r := quota.Report{Sources: []quota.SourceStatus{{Source: "native:kiro", Status: toolcli.RuntimeMissing, ErrorCode: "runtime_missing", Reason: "private-cache-canary"}}}
+	for _, c := range Diagnose(Env{ConnectionsFile: file}, r) {
+		if c.ID == "native:kiro" {
+			if c.Quota.Reason != toolcli.RuntimeMissing || c.Quota.NextStep != toolcli.RuntimeNextStep {
+				t.Fatalf("specific runtime reason lost to generic taxonomy=%+v", c)
+			}
+			return
+		}
+	}
+	t.Fatal("Kiro connection missing")
 }

@@ -88,7 +88,7 @@ func ProductionPaths(cache, version string) Paths {
 				continue
 			}
 			for _, profile := range n.Profiles() {
-				if detect.LocalRoot(profile.Root) {
+				if detect.LocalRoot(profile.Root) || (id == "cursor" && missingCursorProfile(profile.Root)) {
 					g.Profiles = append(g.Profiles, profile)
 				}
 			}
@@ -242,3 +242,24 @@ func refreshProductionClaudeSessions(ctx context.Context, p Paths, now time.Time
 
 // ReaderAdmitted reports the same cached grant gate used by production readers.
 func ReaderAdmitted(p Paths, provider string) bool { _, ok := readerAllowed(p, provider); return ok }
+
+// A presence-only grant may precede creation of Cursor's standard store. Admit
+// that compiled missing location so refresh can report file_missing. Existing
+// files, symlinks and permission failures remain inadmissible.
+func missingCursorProfile(root string) bool {
+	if !filepath.IsAbs(root) {
+		return false
+	}
+	if _, err := os.Lstat(root); !os.IsNotExist(err) {
+		return false
+	}
+	for parent := filepath.Dir(root); ; parent = filepath.Dir(parent) {
+		info, err := os.Lstat(parent)
+		if err == nil {
+			return info.IsDir() && info.Mode()&os.ModeSymlink == 0
+		}
+		if !os.IsNotExist(err) || parent == filepath.Dir(parent) {
+			return false
+		}
+	}
+}

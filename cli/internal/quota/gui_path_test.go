@@ -173,7 +173,7 @@ func TestCopilotRuntimeMissingSurvivesNativeCacheAndDoctor(t *testing.T) {
 	if err := SetConnection(p.ConnectionsFile, QuotaSource{Provider: "copilot", Backend: BackendNative, Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	s := copilotState{SchemaVersion: 1, Availability: toolcli.RuntimeMissing, AttemptAt: at, NextAt: at.Add(time.Hour)}
+	s := copilotState{SchemaVersion: 1, ErrorCode: "runtime_missing", Availability: toolcli.RuntimeMissing, AttemptAt: at, NextAt: at.Add(time.Hour)}
 	if !saveCopilotState(p.Cache, s) {
 		t.Fatal("seed synthetic failure")
 	}
@@ -187,7 +187,7 @@ func TestCopilotRuntimeMissingSurvivesNativeCacheAndDoctor(t *testing.T) {
 	for _, s := range Read(p, at).Sources {
 		if s.Source == "native:copilot" {
 			found = true
-			if s.Status != toolcli.RuntimeMissing || s.Reason != toolcli.RuntimeNextStep {
+			if s.Status != toolcli.RuntimeMissing || s.Reason != toolcli.RuntimeNextStep || s.ErrorCode != "runtime_missing" {
 				t.Fatalf("source=%+v", s)
 			}
 		}
@@ -204,4 +204,16 @@ func TestCopilotRuntimeMissingSurvivesNativeCacheAndDoctor(t *testing.T) {
 		}
 	}
 	t.Fatal("missing Copilot doctor row")
+}
+
+func TestGUIRuntimeFailureUsesBoundedErrorTaxonomy(t *testing.T) {
+	if got := errorCode(toolcli.ErrRuntimeMissing); got != "runtime_missing" {
+		t.Fatalf("runtime error code=%s", got)
+	}
+	if got := statusErrorCode(toolcli.RuntimeMissing); got != "runtime_missing" {
+		t.Fatalf("runtime status code=%s", got)
+	}
+	if got := nativeDiagnosticState(toolcli.RuntimeMissing, "runtime_missing"); got != "unavailable:"+toolcli.RuntimeMissing {
+		t.Fatalf("specific doctor state=%s", got)
+	}
 }
