@@ -30,7 +30,7 @@ adapter facts accidentally becoming a desktop DTO.
 - `Profiles`: per-profile latest attempt, observed time (including nil/future),
   freshness, last failure, login/generation discards, busy/cooldown, next attempt
   and an existing account locator. No identity is allocated by projection.
-- `Accounts`: measurements, raw plan/limit/pool identifiers, beta/estimated flags,
+- `Accounts`: a reviewed `Route` code, measurements, raw plan/limit/pool identifiers, beta/estimated flags,
   and an existing verified subscription reference. Before wire export the builder
   must apply allow-lists, field validation and message-table mapping.
 - `Sources` and `Admissions`: preserve raw compiled status/reason/error/blocked
@@ -97,3 +97,10 @@ go test ./internal/rows -run TestMissingRetiredNoReaderFixtures -args -update-ro
 
 CLI command captures and generated Swift wire types remain in the final
 integration stage, after the reader-state and consent-fence lanes land.
+
+Each account exports a required, bounded `route` code, as specified by foundation
+v2. Adapters set it from the reviewed read path; unknown or absent input becomes
+`unknown`, and declared plans use `manual`. Raw `Source` text never supplies a
+route. Supported codes are `saved_login_api`, `runtime_rpc`, `local_log`,
+`api_key_api`, `local_sqlite`, `status_line`, `browser_session`, `manual` and
+`unknown`.

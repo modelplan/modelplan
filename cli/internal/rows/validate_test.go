@@ -18,6 +18,8 @@ func TestFieldSpecificValidationAndMutationCanaries(t *testing.T) {
 		name string
 		edit func(*Projection)
 	}{
+		{"route canary", func(p *Projection) { p.Rows[0].Accounts[0].Route = Route("private_token@example.test") }},
+		{"route missing", func(p *Projection) { p.Rows[0].Accounts[0].Route = "" }},
 		{"id provenance", func(p *Projection) { p.Rows[0].ID = "deadbeefdeadbeef" }},
 		{"title table", func(p *Projection) { p.Rows[0].Name.EN = "me@example.test" }},
 		{"art key", func(p *Projection) { p.Rows[0].VendorKey = ptr("/private/account") }},

@@ -203,6 +203,12 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 
 func validateAccount(in Input, a Account, declared string, refs map[string]bool) error {
 	fail := func(field string) error { return fmt.Errorf("invalid rows account field: %s", field) }
+	if a.Route == "" || safeRoute(a.Route) != a.Route {
+		return fail("account route")
+	}
+	if declared != "" && a.Route != RouteManual {
+		return fail("declared route")
+	}
 	for _, ref := range []*string{a.SubscriptionRef, a.AccountLocator} {
 		if ref != nil && (in.IdentityOff || !refPattern.MatchString(*ref) || !refs[*ref]) {
 			return fail("existing reference")

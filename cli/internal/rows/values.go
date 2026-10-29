@@ -53,7 +53,10 @@ func buildAccounts(in Input, c *candidate) []Account {
 			list = []AccountInput{{}}
 		}
 		for _, raw := range list {
-			a := Account{AccountLocator: safeRef(p.AccountLocator, in.IdentityOff), SubscriptionRef: safeRef(raw.SubscriptionRef, in.IdentityOff), Plan: planValue(raw.PlanID, c.declared), Beta: raw.Beta, ValueState: ValueStateNone, Windows: []Window{}}
+			a := Account{Route: safeRoute(raw.Route), AccountLocator: safeRef(p.AccountLocator, in.IdentityOff), SubscriptionRef: safeRef(raw.SubscriptionRef, in.IdentityOff), Plan: planValue(raw.PlanID, c.declared), Beta: raw.Beta, ValueState: ValueStateNone, Windows: []Window{}}
+			if c.declared != "" {
+				a.Route = RouteManual
+			}
 			discard := p.LoginChanged || p.GenerationChanged
 			if !discard {
 				a.ObservedAt = observed(p.ObservedAt, in.Now)
