@@ -208,7 +208,7 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				}
 				property := props[name].(object)
 				switch key {
-				case "minimum", "maximum", "minLength", "maxLength":
+				case "minimum", "maximum", "minLength", "maxLength", "maxItems":
 					number, err := strconv.Atoi(value)
 					if err != nil {
 						panic("invalid numeric wire constraint")
@@ -216,6 +216,12 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 					property[key] = number
 				case "pattern":
 					property[key] = value
+				case "uniqueItems":
+					flag, err := strconv.ParseBool(value)
+					if err != nil {
+						panic("invalid boolean wire constraint")
+					}
+					property[key] = flag
 				default:
 					panic("unknown wire constraint")
 				}

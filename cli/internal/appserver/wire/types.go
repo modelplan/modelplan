@@ -10,6 +10,7 @@ import (
 
 const ProtocolVersion = "1.0"
 const JSONRPC = "2.0"
+const MaxRefreshScopes = 128
 const PluginInstallTimeout = 2 * time.Minute
 
 // Limits bound admission and memory independently of provider implementations.
@@ -165,7 +166,7 @@ type CredentialResult struct {
 }
 
 type RefreshRequestParams struct {
-	Scopes []string `json:"scopes,omitempty"`
+	Scopes []string `json:"scopes,omitempty" schema:"maxItems=128,uniqueItems=true"`
 }
 
 type RefreshScheduled struct {
