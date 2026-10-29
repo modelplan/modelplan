@@ -52,17 +52,10 @@ func PlanScopeRefresh(p Paths, scope string, now time.Time) (ScopeRefreshPlan, e
 	case consent.Runtime:
 		if definition.Tool == "codex" {
 			plan.Admitted = !CodexAccountOff() && p.Cache != ""
-			next, err := loadReaderAttempt(p.Cache, "codex")
+			next, err := codexRefreshNext(p.Cache)
 			if err != nil {
 				plan.BudgetKnown = false
 				return plan, nil
-			}
-			if cached := loadAccount(p.Cache); cached != nil {
-				wait := AccountEvery
-				if cached.Status != "ok" {
-					wait = accountRetryAfter
-				}
-				next = laterRefreshTime(next, cached.ObservedAt.Add(wait))
 			}
 			plan.At = laterRefreshTime(now, next)
 			return plan, nil

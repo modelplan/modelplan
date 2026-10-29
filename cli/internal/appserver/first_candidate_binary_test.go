@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/appcontract"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/plugininstall"
 )
 
@@ -150,4 +151,195 @@ func TestRealBinaryPluginInstallMatchesStandaloneContract(t *testing.T) {
 			})
 		}
 	}
+}
+
+func seedRefreshHome(t *testing.T, home, scope string) {
+	t.Helper()
+	file := filepath.Join(home, ".config", "modelplan", "consent.json")
+	state, err := consent.EnsureStore(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, _ := consent.Definition(scope)
+	record := consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, ReaderID: "native:" + definition.Tool, Backend: "native", At: time.Now().UTC()}
+	state.Scopes[scope] = record
+	state.Tools[definition.Tool] = record
+	state.Generation++
+	raw, _ := json.Marshal(state)
+	if err := os.WriteFile(file, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+func refreshReply(t *testing.T, c *pipeClient, id int, scope string) []wire.RefreshScheduled {
+	t.Helper()
+	c.send(t, id, "refresh/request", wire.RefreshRequestParams{Scopes: []string{scope}})
+	response := c.response(t, id)
+	if response["error"] != nil {
+		t.Fatalf("refresh was not a normal scheduled result: %s", response["error"])
+	}
+	var result wire.Envelope[[]wire.RefreshScheduled]
+	if err := json.Unmarshal(response["result"], &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Data) != 1 || result.Data[0].Scope != scope {
+		t.Fatalf("wrong scheduled scopes: %+v", result.Data)
+	}
+	return result.Data
+}
+func runtimeReadCount(t *testing.T, path string) int {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, line := range bytes.Split(bytes.TrimSpace(body), []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var message struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(line, &message); err != nil {
+			t.Fatal(err)
+		}
+		if message.Method == "account/rateLimits/read" {
+			count++
+		}
+	}
+	return count
+}
+func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
+	bin := candidateBinary(t, "./cmd/modelplan")
+	runtimeHost := candidateBinary(t, "./internal/appserver/testdata/runtime")
+	validator, err := appcontract.NewValidator(candidateRoot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, scope string
+		args, env   []string
+		budget      bool
+		want        wire.RefreshDisabledReason
+	}{
+		{name: "budget deferral", scope: consent.ScopeCodexRuntimeUsage, budget: true, want: wire.RefreshCooldown},
+		{name: "offline", scope: consent.ScopeCodexRuntimeUsage, args: []string{"--offline"}, want: wire.RefreshOffline},
+		{name: "read only", scope: consent.ScopeCodexRuntimeUsage, args: []string{"--read-only"}, want: wire.RefreshReadOnly},
+		{name: "readers off", scope: consent.ScopeCodexRuntimeUsage, env: []string{"MODELPLAN_READERS=off"}, want: wire.RefreshReadOnly},
+		{name: "policy pending", scope: consent.ScopeGeminiAccountUsageSavedLogin, want: wire.RefreshReadOnly},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			seedRefreshHome(t, home, test.scope)
+			binDir := filepath.Join(home, "bin")
+			if err := os.MkdirAll(binDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
+				t.Fatal(err)
+			}
+			trace := filepath.Join(home, "runtime.jsonl")
+			budgetPath := filepath.Join(home, "cache", "observed", "reader-attempts", "codex.json")
+			next := time.Now().Add(19 * time.Minute).UTC()
+			if test.budget {
+				if err := os.MkdirAll(filepath.Dir(budgetPath), 0700); err != nil {
+					t.Fatal(err)
+				}
+				raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "nextAttemptAt": next})
+				if err := os.WriteFile(budgetPath, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			env := append([]string{"MODELPLAN_U3B_RUNTIME_CALLS=" + trace}, test.env...)
+			c, stderr := candidateClient(t, bin, home, test.args, env)
+			c.validate = func(message map[string]json.RawMessage) error {
+				raw, _ := json.Marshal(message)
+				return validator.Validate("app-server", raw)
+			}
+			c.initialize(t)
+			reply := refreshReply(t, c, 2, test.scope)
+			if reply[0].DisabledReason == nil || *reply[0].DisabledReason != test.want {
+				t.Fatalf("wrong deferral: %+v", reply)
+			}
+			if test.budget && !reply[0].At.Equal(next) {
+				t.Fatal("lost shared budget deadline")
+			}
+			finishCandidate(t, c)
+			if runtimeReadCount(t, trace) != 0 {
+				t.Fatal("deferred runtime was called")
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("unexpected protocol stderr: %s", stderr.String())
+			}
+			if test.scope == consent.ScopeGeminiAccountUsageSavedLogin {
+				if _, err := os.Stat(filepath.Join(home, "cache", "observed", "reader-attempts", "gemini.json")); !os.IsNotExist(err) {
+					t.Fatal("policy_pending reached budget reservation")
+				}
+			}
+		})
+	}
+	t.Run("two requests and independent CLI share one read", func(t *testing.T) {
+		home := t.TempDir()
+		seedRefreshHome(t, home, consent.ScopeCodexRuntimeUsage)
+		binDir := filepath.Join(home, "bin")
+		if err := os.MkdirAll(binDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
+			t.Fatal(err)
+		}
+		trace := filepath.Join(home, "runtime.jsonl")
+		env := []string{"MODELPLAN_U3B_RUNTIME_CALLS=" + trace}
+		c, stderr := candidateClient(t, bin, home, nil, env)
+		c.initialize(t)
+		first := refreshReply(t, c, 2, consent.ScopeCodexRuntimeUsage)
+		if first[0].DisabledReason != nil {
+			t.Fatalf("due refresh not scheduled: %+v", first)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for runtimeReadCount(t, trace) == 0 && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if runtimeReadCount(t, trace) != 1 {
+			t.Fatal("first refresh did not make one logical read")
+		}
+		second := refreshReply(t, c, 3, consent.ScopeCodexRuntimeUsage)
+		if second[0].DisabledReason == nil || *second[0].DisabledReason != wire.RefreshCooldown {
+			t.Fatalf("second refresh was not deferred: %+v", second)
+		}
+		command := exec.Command(bin, "quota", "--refresh-account", "--quiet")
+		command.Env = append([]string{"HOME=" + home, "PATH=" + binDir, "TMPDIR=" + home, "LANG=C", "MODELPLAN_CACHE=" + filepath.Join(home, "cache")}, env...)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("independent refresh: %v %s", err, output)
+		}
+		finishCandidate(t, c)
+		if runtimeReadCount(t, trace) != 1 {
+			t.Fatal("independent CLI bypassed the shared budget")
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("unexpected stderr: %s", stderr.String())
+		}
+	})
+}
+
+func TestRealBinaryFirstCandidateRequestInventory(t *testing.T) {
+	bin := candidateBinary(t, "./cmd/modelplan")
+	home := t.TempDir()
+	seedRefreshHome(t, home, consent.ScopeCodexRuntimeUsage)
+	c, _ := candidateClient(t, bin, home, nil, nil)
+	c.initialize(t)
+	for index, test := range []struct {
+		method string
+		params any
+	}{
+		{"rows/subscribe", wire.Empty{}}, {"consent/get", wire.Empty{}}, {"consent/grant", wire.ConsentGrantParams{}}, {"credentials/result", wire.CredentialResult{}}, {"refresh/request", wire.RefreshRequestParams{Scopes: []string{consent.ScopeCodexRuntimeUsage}}}, {"plugin/install", map[string]string{"tool": "unsupported"}}, {"diagnostics/get", wire.Empty{}},
+	} {
+		id := 100 + index
+		c.send(t, id, test.method, test.params)
+		response := c.response(t, id)
+		if response["error"] != nil && errorOf(t, response).Code == wire.CodeMethodNotFound {
+			t.Fatalf("first-candidate request not served: %s", test.method)
+		}
+	}
+	finishCandidate(t, c)
 }

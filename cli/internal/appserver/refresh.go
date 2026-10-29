@@ -28,6 +28,7 @@ type RefreshConfig struct {
 	CredentialRequest func(CredentialNeed) (string, error)
 }
 type refreshJob struct {
+	at         time.Time
 	scope, key string
 	stamp      Stamp
 }
@@ -37,14 +38,15 @@ type RefreshScheduler struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	done           chan struct{}
-	jobs           chan refreshJob
+	scheduled      map[string]refreshJob
+	wake           chan struct{}
 	mu             sync.Mutex
 	pending        map[string]time.Time
 }
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), jobs: make(chan refreshJob, len(consent.Definitions())), pending: map[string]time.Time{}, credentialWait: map[string]bool{}}
+	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}}
 	go s.work()
 	return s
 }
@@ -116,10 +118,11 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 				disable(wire.RefreshCooldown)
 			case plan.PolicyPending || !plan.Admitted || !allowed[scope]:
 				disable(wire.RefreshReadOnly)
-			case plan.At.After(now):
-				scheduled.At = plan.At
-				disable(wire.RefreshCooldown)
 			default:
+				if plan.At.After(now) {
+					scheduled.At = plan.At
+					disable(wire.RefreshCooldown)
+				}
 				definition, _ := consent.Definition(scope)
 				key := definition.Tool
 				if definition.Class == consent.Local {
@@ -132,22 +135,22 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 					delete(s.credentialWait, key)
 					busy = false
 				}
-
 				if busy {
 					if !until.After(now) {
 						until = now.Add(5 * time.Minute)
 					}
 					scheduled.At = until.UTC()
 					disable(wire.RefreshCooldown)
+				} else if len(s.pending) >= len(consent.Definitions()) || len(s.scheduled) >= len(consent.Definitions()) {
+					scheduled.At = now.Add(5 * time.Minute).UTC()
+					disable(wire.RefreshCooldown)
 				} else {
-					s.pending[key] = now.Add(5 * time.Minute)
-					select {
-					case s.jobs <- refreshJob{scope: scope, key: key, stamp: stamp}:
-					default:
-						delete(s.pending, key)
-						scheduled.At = now.Add(5 * time.Minute).UTC()
-						disable(wire.RefreshCooldown)
+					s.pending[key] = plan.At
+					if !plan.At.After(now) {
+						s.pending[key] = now.Add(5 * time.Minute)
 					}
+					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At}
+					s.signal()
 				}
 				s.mu.Unlock()
 			}
@@ -158,11 +161,13 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 }
 func stampOfFence(f consent.Fence) Stamp { return Stamp{Epoch: f.StoreEpoch, Generation: f.Generation} }
 func (s *RefreshScheduler) paths(admission consent.Admission) quota.Paths {
-	p := s.config.Paths(admission)
+	return s.safePaths(s.config.Paths(admission))
+}
+func (s *RefreshScheduler) safePaths(p quota.Paths) quota.Paths {
 	if p.ReaderAccess != nil {
 		grants := map[string]quota.ReaderGrant{}
 		for provider, g := range p.ReaderAccess.Grants {
-			if provider == "claude" {
+			if provider == "claude" && g.Credential == nil {
 				g.Credential = func(context.Context) ([]byte, string) { return nil, "confirmation-needed" }
 			}
 			grants[provider] = g
@@ -171,14 +176,50 @@ func (s *RefreshScheduler) paths(admission consent.Admission) quota.Paths {
 	}
 	return p
 }
+func (s *RefreshScheduler) signal() {
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
 func (s *RefreshScheduler) work() {
 	defer close(s.done)
 	for {
+		if s.ctx.Err() != nil {
+			return
+		}
+		s.mu.Lock()
+		var next refreshJob
+		found := false
+		for _, job := range s.scheduled {
+			if !found || job.at.Before(next.at) || job.at.Equal(next.at) && job.key < next.key {
+				next = job
+				found = true
+			}
+		}
+		if found && !time.Now().Before(next.at) {
+			delete(s.scheduled, next.key)
+			s.mu.Unlock()
+			s.run(next)
+			continue
+		}
+		s.mu.Unlock()
+		if !found {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-s.wake:
+			}
+			continue
+		}
+		timer := time.NewTimer(time.Until(next.at))
 		select {
 		case <-s.ctx.Done():
+			timer.Stop()
 			return
-		case job := <-s.jobs:
-			s.run(job)
+		case <-s.wake:
+			timer.Stop()
+		case <-timer.C:
 		}
 	}
 }
@@ -202,12 +243,25 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if stampOfFence(admission.Fence()) != job.stamp {
 		return
 	}
-	paths := s.paths(admission)
+	rawPaths := s.config.Paths(admission)
+	original, _ := rawPaths.ReaderAccessGrant("claude")
+	credentialBound := original.Credential != nil
+	paths := s.safePaths(rawPaths)
 	plan, err := quota.PlanScopeRefresh(paths, job.scope, time.Now())
-	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending || plan.At.After(time.Now()) {
+	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending {
 		return
 	}
-	if s.needsCredential(paths, job.scope) {
+	if plan.At.After(time.Now()) {
+		job.at = plan.At
+		s.mu.Lock()
+		s.pending[job.key] = plan.At
+		s.scheduled[job.key] = job
+		s.signal()
+		s.mu.Unlock()
+		keepPending = true
+		return
+	}
+	if !credentialBound && s.needsCredential(paths, job.scope) {
 		if s.config.CredentialRequest != nil {
 			s.mu.Lock()
 			s.credentialWait[job.key] = true
@@ -244,8 +298,10 @@ func (s *RefreshScheduler) needsCredential(paths quota.Paths, scope string) bool
 func (s *RefreshScheduler) AcceptCredential(ctx context.Context, stamp Stamp, need CredentialNeed, result wire.CredentialResult) error {
 	defer func() {
 		s.mu.Lock()
-		delete(s.pending, need.Provider)
-		delete(s.credentialWait, need.Provider)
+		if s.credentialWait[need.Provider] {
+			delete(s.pending, need.Provider)
+			delete(s.credentialWait, need.Provider)
+		}
 		s.mu.Unlock()
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()
