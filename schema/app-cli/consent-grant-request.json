@@ -5,7 +5,7 @@
   "x-behavior": {
     "stdin": "one JSON object <=65536 bytes; disjoint allow/deny; IDs must be detected at commit time",
     "atomic": "compare generation and current text version under the shared lock; stale changes nothing",
-    "scope": "standard routes only; native Claude is the only keychain choice; recording never prompts"
+    "scope": "standard routes only; native Claude is the only keychain choice; recording itself never prompts; a committed claude+Keychain allow is followed by one foreground Claude read that may (see consent-grant-response.json x-behavior.keychain)"
   },
   "type": "object",
   "properties": {

@@ -46,6 +46,13 @@ func writeClaudeCredential(t *testing.T, root, token string, expiry time.Time) {
 	}
 }
 
+func claudeCredentialJSON(t *testing.T, token string, expiry time.Time) []byte {
+	t.Helper()
+	v := map[string]any{"claudeAiOauth": map[string]any{"accessToken": token, "expiresAt": expiry.UnixMilli(), "scopes": []string{"user:profile"}, "subscriptionType": "max", "refreshToken": "synthetic-refresh-must-never-be-used"}}
+	b, _ := json.Marshal(v)
+	return b
+}
+
 func claudeTestServer(t *testing.T, status *int, paths *[]string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -293,4 +300,65 @@ func TestClaudeDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	if forwarded || state == "" {
 		t.Fatal("credential followed a redirect")
 	}
+}
+
+func TestKeychainGrantReadClearsALatchedBackgroundTimeout(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 200
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	p.ReaderAccess.Grants["claude"] = g
+	interactive := []bool{}
+	old := claudeSecurity
+	t.Cleanup(func() { claudeSecurity = old })
+	// The background attempt hits the two-second deadline while the OS prompt is open.
+	claudeSecurity = func(ctx context.Context, _ string, _ ...string) (keychain.ProcessResult, error) {
+		d, _ := ctx.Deadline()
+		interactive = append(interactive, time.Until(d) > keychain.BackgroundTimeout)
+		<-ctx.Done()
+		return keychain.ProcessResult{}, ctx.Err()
+	}
+	if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := loadReaderState(p.Cache, "claude")
+	if len(s.Entries) == 0 || s.Entries[0].Status != keychain.ConfirmationNeeded {
+		t.Fatal("background timeout was not latched as before", s.Entries)
+	}
+	// A later background attempt would return the latch without asking again.
+	// The grant read is foreground: it bypasses the latch and the schedule, and
+	// the user's "Always Allow" lets it read.
+	claudeSecurity = func(ctx context.Context, _ string, _ ...string) (keychain.ProcessResult, error) {
+		d, _ := ctx.Deadline()
+		interactive = append(interactive, time.Until(d) > keychain.BackgroundTimeout)
+		return keychain.ProcessResult{Output: claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))}, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if err := KeychainGrantRead(ctx, p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = loadReaderState(p.Cache, "claude")
+	if len(s.Entries) == 0 || s.Entries[0].Status != "ok" || s.Entries[0].Account == nil {
+		t.Fatal("grant read did not produce a reading", s.Entries)
+	}
+	if len(interactive) != 2 || interactive[0] || !interactive[1] {
+		t.Fatal("expected one background then one foreground Keychain attempt", interactive)
+	}
+	if _, err := os.Stat(filepath.Join(p.Cache, "observed", "keychain", "claude-code.json")); !os.IsNotExist(err) {
+		t.Fatal("latched Keychain state survived a successful foreground read")
+	}
+	if err := KeychainGrantRead(ctx, p, "codex", claudeTestNow); err == nil {
+		t.Fatal("foreground path accepted a provider without a saved-login reader")
+	}
+	assertClaudeCachePrivate(t, p.Cache)
 }
