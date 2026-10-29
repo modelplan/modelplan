@@ -20,6 +20,8 @@ import (
 // Setup helpers below create handwritten logins and inject local transports.
 // Their test-only Paths/grants are discarded. Every request and projection in
 // this test uses the exact ProductionPaths constructor called by the CLI/App.
+// Gemini/Cursor are dormant protocol fixtures with an explicit test-only policy
+// override. The active policy gate is covered independently in internal/readers.
 var productionManagedTests = map[string]func(*testing.T) (time.Time, func() int){
 	"claude": func(t *testing.T) (time.Time, func() int) {
 		_ = claudeTestPaths(t)

@@ -1,4 +1,8 @@
 {
+  "cleanupError": "cleanup_incomplete",
+  "code": "cleanup_pending",
+  "committed": true,
+  "committedGeneration": 2,
   "error": "cleanup_pending",
   "generation": 2,
   "ok": false,
@@ -7,6 +11,7 @@
     "codex"
   ],
   "requestId": "00000000-0000-4000-8000-000000000068",
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": [
     {
       "accessClass": "standard",
