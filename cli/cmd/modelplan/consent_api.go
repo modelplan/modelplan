@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -112,27 +113,68 @@ func consentAccess(t detect.Tool) string {
 	return "not-read"
 }
 
+// persistedConsentTool is display/revocation metadata, never evidence for a grant.
+// Only the detected-tool map below can authorize a new standard-route grant.
+func persistedConsentTool(id string, r consent.Record) detect.Tool {
+	backend := r.Backend
+	switch backend {
+	case "native", "codexbar", "codexbar-compat", "off":
+	default:
+		backend = "off"
+	}
+	reader := r.ReaderID
+	kind, key, ok := strings.Cut(reader, ":")
+	if !ok || (kind != "native" && kind != "codexbar") || !consent.ValidTool(key) {
+		reader = ""
+	}
+	name := id
+	for _, entry := range detect.Fallback().Detectors {
+		if entry.ProviderID == id {
+			name = entry.DisplayName
+			break
+		}
+	}
+	return detect.Tool{Entry: detect.Entry{ProviderID: id, DisplayName: name, Preferred: backend, ReaderID: reader}}
+}
+
 func consentTools(s consent.State, report detect.Report) []consentTool {
 	rows := []consentTool{}
-	for _, t := range report.Tools {
-		if !t.Detected {
-			continue
-		}
+	known := map[string]bool{}
+	appendRow := func(t detect.Tool, retired bool) {
 		r := s.Tools[t.ProviderID]
 		hosts := consentHosts(t.ProviderID, r.Region)
 		if hosts == nil {
 			hosts = []string{}
 		}
-		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
-			AccessClass: consentAccess(t), Detected: true,
-			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
-			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts,
-			HostDetails: consentHostDetails(hosts)}
+		access := consentAccess(t)
+		if retired {
+			access = "not-read"
+		}
+		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName, AccessClass: access, Detected: t.Detected,
+			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion, Backend: t.Preferred, ReaderID: t.ReaderID,
+			Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts, HostDetails: consentHostDetails(hosts)}
 		if runtime.GOOS == "darwin" && row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
 			consent.KeychainSupported(t.ProviderID, t.Preferred, t.ReaderID) && r.KeyEnv == "" && !r.BrowserSession {
 			row.Notice, row.NextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
 		}
 		rows = append(rows, row)
+	}
+	for _, t := range report.Tools {
+		known[t.ProviderID] = true
+		if _, persisted := s.Tools[t.ProviderID]; !t.Detected && !persisted {
+			continue
+		}
+		appendRow(t, false)
+	}
+	retired := []string{}
+	for id := range s.Tools {
+		if !known[id] {
+			retired = append(retired, id)
+		}
+	}
+	sort.Strings(retired)
+	for _, id := range retired {
+		appendRow(persistedConsentTool(id, s.Tools[id]), true)
 	}
 	return rows
 }
@@ -256,15 +298,30 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				tools[t.ProviderID] = t
 			}
 		}
-		for _, ids := range [][]string{request.Allow, request.Deny} {
-			for _, id := range ids {
-				if _, exists := tools[id]; !exists {
-					return errors.New("unknown_tool")
-				}
+		for _, id := range request.Allow {
+			if _, exists := tools[id]; !exists {
+				return errors.New("unknown_tool")
 			}
+		}
+		// A prior decision remains revocable after detection or catalogue retirement.
+		// Keep this map separate so persisted metadata can never authorize a grant.
+		deniable := map[string]detect.Tool{}
+		for _, id := range request.Deny {
+			if t, exists := tools[id]; exists {
+				deniable[id] = t
+				continue
+			}
+			r, persisted := s.Tools[id]
+			if !persisted {
+				return errors.New("unknown_tool")
+			}
+			deniable[id] = persistedConsentTool(id, r)
 		}
 		for id := range request.Keychain {
 			t, exists := tools[id]
+			if !exists {
+				t, exists = deniable[id]
+			}
 			if !exists {
 				return errors.New("unknown_tool")
 			}
@@ -299,6 +356,9 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				allowed := false
 				for _, a := range request.Allow {
 					allowed = allowed || a == id
+				}
+				if !allowed {
+					t = deniable[id]
 				}
 				r := s.Tools[id]
 				if consent.KeychainSupported(id, t.Preferred, t.ReaderID) &&

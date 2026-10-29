@@ -133,6 +133,12 @@ var loadReaderCatalogue = func(cache string) *detect.Catalogue {
 }
 
 func Selections(p Paths) ([]Selection, error) {
+	return SelectionsWithAdmission(p, consent.Capture())
+}
+
+// SelectionsWithAdmission uses the command's captured permissions. It performs
+// no second consent read; live reader/publication fences remain independent.
+func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection, error) {
 	entries, err := LoadConnections(p.ConnectionsFile)
 	if err != nil {
 		return nil, err
@@ -148,7 +154,7 @@ func Selections(p Paths) ([]Selection, error) {
 		}
 		by[s.Provider] = x
 	}
-	policy, mode := consent.Current()
+	policy, mode := admission.State(), admission.Mode()
 	publishedRoutes := map[string]detect.Entry{}
 	if cat := loadReaderCatalogue(p.Cache); cat != nil {
 		for _, e := range cat.Detectors {
