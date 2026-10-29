@@ -1,0 +1,16 @@
+{
+  "scopes": [
+    {
+      "scope": "codex.runtime_usage",
+      "tool": "codex",
+      "route": "saved_login_api",
+      "detected": false,
+      "retired": false,
+      "state": "allowed",
+      "defaultCheck": false,
+      "keychain": "allow",
+      "cleanupPending": false,
+      "disabledReason": "synthetic"
+    }
+  ]
+}
