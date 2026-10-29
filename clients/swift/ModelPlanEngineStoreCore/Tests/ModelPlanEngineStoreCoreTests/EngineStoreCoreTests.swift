@@ -6,7 +6,7 @@ import ModelPlanWire
 import ModelPlanEngineStoreCore
 
 final class EngineStoreCoreTests: XCTestCase {
-    private let features: [EngineFeature] = [.rows, .consent, .history, .publication, .pluginInstall, .diagnostics]
+    private let features: [EngineFeature] = [.rows, .consent, .history, .cockpit, .publication, .pluginInstall, .diagnostics]
 
     private func capture<T: Decodable>(_ type: T.Type, _ file: String) throws -> T {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -39,8 +39,9 @@ final class EngineStoreCoreTests: XCTestCase {
             .rowsChanged(try reply(capture(WireRowsSnapshot.self, "WireRowsSnapshot.json")), invalidRowCount: 2),
             .consentChanged(try reply(capture(WireConsentFacts.self, "WireConsentFacts.json"))),
             .response(requestID: .string("history"), .history(try reply(capture(WireHistoryPage.self, "WireHistoryPage.json")))),
-            .response(requestID: .string("publication"), .publication(try reply(WireJSONValue.object(["synthetic": .bool(true)])))),
-            .response(requestID: .string("plugin"), .pluginInstall(try reply(WireJSONValue.object(["synthetic": .bool(true)])))),
+            .response(requestID: .string("cockpit"), .cockpit(try reply(capture(WireCockpitData.self, "WireCockpitData.json")))),
+            .response(requestID: .string("publication"), .publication(try reply(capture(WirePublicationResult.self, "WirePublicationResult.json")))),
+            .response(requestID: .string("plugin"), .pluginInstall(try reply(capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")))),
             .response(requestID: .string("diagnostics"), .diagnostics(try reply(capture(WireDiagnostics.self, "WireDiagnostics.json")))),
             .response(requestID: .string("refresh"), .refresh(try reply([capture(WireRefreshScheduled.self, "WireRefreshScheduled.json")]))),
             .response(requestID: .string("grant"), .grant(grant)),
@@ -55,6 +56,7 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertEqual(snapshot.invalidRowCount, 0, file: file, line: line)
         XCTAssertNil(snapshot.consent, file: file, line: line)
         XCTAssertNil(snapshot.history, file: file, line: line)
+        XCTAssertNil(snapshot.cockpit, file: file, line: line)
         XCTAssertNil(snapshot.publication, file: file, line: line)
         XCTAssertNil(snapshot.pluginInstall, file: file, line: line)
         XCTAssertNil(snapshot.diagnostics, file: file, line: line)
@@ -89,8 +91,9 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertEqual(snapshot.invalidRowCount, 2)
         XCTAssertEqual(try bytes(snapshot.consent), try bytes(capture(WireConsentFacts.self, "WireConsentFacts.json")))
         XCTAssertEqual(try bytes(snapshot.history), try bytes(capture(WireHistoryPage.self, "WireHistoryPage.json")))
-        XCTAssertEqual(snapshot.publication, .object(["synthetic": .bool(true)]))
-        XCTAssertEqual(snapshot.pluginInstall, .object(["synthetic": .bool(true)]))
+        XCTAssertEqual(try bytes(snapshot.cockpit), try bytes(capture(WireCockpitData.self, "WireCockpitData.json")))
+        XCTAssertEqual(try bytes(snapshot.publication), try bytes(capture(WirePublicationResult.self, "WirePublicationResult.json")))
+        XCTAssertEqual(try bytes(snapshot.pluginInstall), try bytes(capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")))
         XCTAssertEqual(try bytes(snapshot.diagnostics), try bytes(capture(WireDiagnostics.self, "WireDiagnostics.json")))
         XCTAssertEqual(try bytes(snapshot.refresh), try bytes([capture(WireRefreshScheduled.self, "WireRefreshScheduled.json")]))
         XCTAssertEqual(try bytes(snapshot.lastGrant?.receipt), try bytes(capture(WireConsentReceipt.self, "WireConsentReceipt.json")))
@@ -124,14 +127,18 @@ final class EngineStoreCoreTests: XCTestCase {
         let consent = try capture(WireConsentFacts.self, "WireConsentFacts.json")
         let history = try capture(WireHistoryPage.self, "WireHistoryPage.json")
         let diagnostics = try capture(WireDiagnostics.self, "WireDiagnostics.json")
+        let cockpit = try capture(WireCockpitData.self, "WireCockpitData.json")
+        let publication = try capture(WirePublicationResult.self, "WirePublicationResult.json")
+        let plugin = try capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")
         let recoveries: [(EngineFeature, EngineClientEvent)] = [
             (.rows, .rowsChanged(try reply(rows), invalidRowCount: 3)),
             (.rows, .response(requestID: .string("rows"), .rows(try reply(rows), invalidRowCount: 3))),
             (.consent, .consentChanged(try reply(consent))),
             (.consent, .response(requestID: .string("consent"), .consent(try reply(consent)))),
             (.history, .response(requestID: .string("history"), .history(try reply(history)))),
-            (.publication, .response(requestID: .string("publication"), .publication(try reply(WireJSONValue.null)))),
-            (.pluginInstall, .response(requestID: .string("plugin"), .pluginInstall(try reply(WireJSONValue.null)))),
+            (.cockpit, .response(requestID: .string("cockpit"), .cockpit(try reply(cockpit)))),
+            (.publication, .response(requestID: .string("publication"), .publication(try reply(publication)))),
+            (.pluginInstall, .response(requestID: .string("plugin"), .pluginInstall(try reply(plugin)))),
             (.diagnostics, .response(requestID: .string("diagnostics"), .diagnostics(try reply(diagnostics))))
         ]
         for (recovered, recovery) in recoveries {
@@ -197,6 +204,7 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertEqual(try bytes(core.snapshot.rows), try bytes(rows))
         XCTAssertNil(core.snapshot.history)
         XCTAssertNil(core.snapshot.consent)
+        XCTAssertNil(core.snapshot.cockpit)
         XCTAssertNil(core.snapshot.publication)
         XCTAssertNil(core.snapshot.pluginInstall)
         XCTAssertNil(core.snapshot.lastGrant)
