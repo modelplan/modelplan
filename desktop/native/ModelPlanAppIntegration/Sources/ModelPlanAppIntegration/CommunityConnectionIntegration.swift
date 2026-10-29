@@ -114,7 +114,7 @@ import ModelPlanCommunityHost
         guard application.editor.connections.hasAllowanceBackend else { throw CommunityConnectionWiringError.backendMissing }
     }
     public func suspend() {
-        generation &+= 1; application.editor.connections.cancel(); surface?.hide()
+        generation &+= 1; application.editor.connections.suspend(); surface?.hide()
     }
     public func dispose() {
         guard !disposed else { return }; disposed = true; suspend()

@@ -26,6 +26,7 @@ import AppKit
     private var observer: UUID?
     private var buttons: [ConnectionButton] = []
     private var task: Task<Void, Never>?
+    private let presentationID = UUID()
     private var preferenceSaving = false
     private var preferenceFailed = false
     weak var followingKeyView: NSView? { didSet { buttons.last?.nextKeyView = followingKeyView } }
@@ -44,7 +45,7 @@ import AppKit
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
     func apply(language: SettingsLanguage) { self.language = language; render() }
-    func suspend() { task?.cancel(); task = nil; controller.cancel() }
+    func suspend() { task?.cancel(); task = nil; controller.suspend(presentationID: presentationID) }
     private func label(_ text: SettingsText, heading: Bool = false) {
         let field = NSTextField(wrappingLabelWithString: text.value(language))
         field.font = .systemFont(ofSize: heading ? 14 : 12, weight: heading ? .semibold : .regular)
@@ -90,7 +91,11 @@ import AppKit
         if preferenceFailed { label(.init("Could not save visibility. The previous setting is retained.", "无法保存可见性；已保留原设置。")) }
         addArrangedSubview(button(.init("Check detected tools", "检查已检测工具"), id: "connections.detect",
                                   enabled: controller.availability.canInspect && !controller.isBusy) { [weak self] in
-            guard let self else { return }; self.task = Task { await self.controller.refresh() }
+            guard let self else { return }
+            self.task = Task {
+                guard !Task.isCancelled else { return }
+                await self.controller.refresh(presentationID: self.presentationID)
+            }
         })
         if let snapshot = controller.snapshot {
             let mode = SettingsConnectionPresentation.readingMode(snapshot.mode)
@@ -104,7 +109,7 @@ import AppKit
                 let title = SettingsText("Allow selected tools…", "授权所选工具…")
                 addArrangedSubview(button(title, id: "connections.allowSelected",
                     enabled: intent.map { controller.canAllow($0) } ?? false) { [weak self] in
-                    guard let self, let intent = self.intent else { return }; self.controller.requestAllow(intent)
+                    guard let self, let intent = self.intent else { return }; self.controller.requestAllow(intent, presentationID: self.presentationID)
                 })
             }
             unrecognized(snapshot.unrecognizedTools.filter { $0.access == .standard })
@@ -122,12 +127,16 @@ import AppKit
         for tool in SettingsPluginTool.allCases {
             addArrangedSubview(button(.init("Install for " + tool.title + "…", "为 " + tool.title + " 安装…"),
                 id: "connections.plugin." + tool.rawValue, enabled: controller.availability.pluginTools.contains(tool) && !controller.isBusy) { [weak self] in
-                self?.controller.request(.installPlugin(tool))
+                guard let self else { return }; self.controller.request(.installPlugin(tool), presentationID: self.presentationID)
             })
         }
         if case .awaitingConfirmation(let confirmation) = controller.phase {
             let confirm = button(.init("Confirm request", "确认请求"), id: "connections.confirm", enabled: true) { [weak self] in
-                guard let self else { return }; self.task = Task { await self.controller.confirm(confirmation.id) }
+                guard let self else { return }
+                self.task = Task {
+                    guard !Task.isCancelled else { return }
+                    await self.controller.confirm(confirmation.id, presentationID: self.presentationID)
+                }
             }
             let cancel = button(.init("Cancel", "取消"), id: "connections.cancel", enabled: true) { [weak self] in self?.controller.cancel() }
             addArrangedSubview(NSStackView(views: [confirm, cancel]))
@@ -219,8 +228,8 @@ import AppKit
                 guard let self else { return }
                 if value.keychainEligible {
                     self.controller.request(.applyStandardConsent(allow: [value.tool], deny: [],
-                        keychainAllow: self.intent?.orderedKeychainTools.filter { $0 == value.tool } ?? []))
-                } else { self.controller.request(.connect(value.tool, value.access)) }
+                        keychainAllow: self.intent?.orderedKeychainTools.filter { $0 == value.tool } ?? []), presentationID: self.presentationID)
+                } else { self.controller.request(.connect(value.tool, value.access), presentationID: self.presentationID) }
             }
             let disconnect = forgetButton(value.tool)
             addArrangedSubview(NSStackView(views: [connect, disconnect]))
@@ -228,6 +237,8 @@ import AppKit
     }
     private func forgetButton(_ tool: SettingsConnectionTool) -> ConnectionButton {
         button(.init("Forget readings…", "忘记读数…"), id: "connections.disconnect." + tool.rawValue,
-               enabled: controller.canForget(tool)) { [weak self] in self?.controller.requestForget(tool) }
+               enabled: controller.canForget(tool)) { [weak self] in
+            guard let self else { return }; self.controller.requestForget(tool, presentationID: self.presentationID)
+        }
     }
 }

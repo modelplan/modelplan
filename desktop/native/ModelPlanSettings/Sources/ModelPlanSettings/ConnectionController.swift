@@ -17,6 +17,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     private var service: SettingsConnectionService?
     private var generation: UInt64 = 0
     private var observation: UInt64 = 0
+    private var presentationID: UUID?
     private var observers: [UUID: () -> Void] = [:]
     public init(service: SettingsConnectionService? = nil) {
         self.service = service
@@ -51,17 +52,17 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     public func canAllow(_ intent: SettingsConnectionIntent) -> Bool {
         isAvailable && !isBusy && intent.basis == snapshot && canRequest(.applyStandardConsent(allow: intent.orderedTools, deny: [], keychainAllow: intent.orderedKeychainTools))
     }
-    @discardableResult public func requestAllow(_ intent: SettingsConnectionIntent) -> SettingsConnectionConfirmation? {
+    @discardableResult public func requestAllow(_ intent: SettingsConnectionIntent, presentationID: UUID? = nil) -> SettingsConnectionConfirmation? {
         guard canAllow(intent) else { return nil }
-        return request(.applyStandardConsent(allow: intent.orderedTools, deny: [], keychainAllow: intent.orderedKeychainTools))
+        return request(.applyStandardConsent(allow: intent.orderedTools, deny: [], keychainAllow: intent.orderedKeychainTools), presentationID: presentationID)
     }
     public func canForget(_ tool: SettingsConnectionTool) -> Bool {
         isAvailable && !isBusy && canRequest(.applyStandardConsent(allow: [], deny: [tool]))
     }
     /// Explicitly destructive, independent of choosing/unchecking first-run Allow intentions.
-    @discardableResult public func requestForget(_ tool: SettingsConnectionTool) -> SettingsConnectionConfirmation? {
+    @discardableResult public func requestForget(_ tool: SettingsConnectionTool, presentationID: UUID? = nil) -> SettingsConnectionConfirmation? {
         guard canForget(tool) else { return nil }
-        return request(.applyStandardConsent(allow: [], deny: [tool]))
+        return request(.applyStandardConsent(allow: [], deny: [tool]), presentationID: presentationID)
     }
     /// A visible draft edit must retire the exact confirmation it no longer represents.
     func invalidateConfirmation() {
@@ -88,11 +89,24 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
     public func cancel() {
         generation &+= 1; phase = isAvailable ? .cancelled : .unavailable; changed()
     }
-    public func refresh() async {
+    /// Retire hidden/lifecycle UI work without claiming that the user cancelled a request.
+    /// A surface supplies its ID so an inactive second view cannot retire another caller's work.
+    /// Omitting the ID is the app-wide presentation gate; external effects remain runtime-owned.
+    public func suspend(presentationID: UUID? = nil) {
+        if let presentationID, self.presentationID != presentationID { return }
+        generation &+= 1; self.presentationID = nil
+        switch phase {
+        case .loading, .running, .awaitingConfirmation:
+            phase = isAvailable ? .idle : .unavailable; changed()
+        default: break
+        }
+    }
+    public func refresh(presentationID: UUID? = nil) async {
         guard let service, availability.canInspect else { phase = .unavailable; changed(); return }
         guard !isBusy else { return }
         guard !Task.isCancelled else { cancel(); return }
         generation &+= 1; let token = generation
+        self.presentationID = presentationID
         phase = .loading; changed()
         // Observers may synchronously cancel or replace the observation before dispatch.
         guard generation == token, phase == .loading, availability.canInspect else { return }
@@ -105,13 +119,15 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         } catch { failed(error, token: token) }
     }
     /// An explicit request only presents a confirmation. No service is invoked here.
-    @discardableResult public func request(_ action: SettingsConnectionAction) -> SettingsConnectionConfirmation? {
+    @discardableResult public func request(_ action: SettingsConnectionAction, presentationID: UUID? = nil) -> SettingsConnectionConfirmation? {
         guard isAvailable, !isBusy, canRequest(action) else { return nil }
         generation &+= 1
+        self.presentationID = presentationID
         let confirmation = SettingsConnectionConfirmation(id: UUID(), action: action, observation: observation)
         phase = .awaitingConfirmation(confirmation); changed(); return confirmation
     }
-    public func confirm(_ id: UUID) async {
+    /// Once confirmed, the dispatching surface owns the in-flight UI receipt.
+    public func confirm(_ id: UUID, presentationID: UUID? = nil) async {
         guard let service, case .awaitingConfirmation(let confirmation) = phase,
               confirmation.id == id, confirmation.observation == observation,
               canRequest(confirmation.action) else { return }
@@ -121,6 +137,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         if case .applyStandardConsent(_, _, let chosen) = confirmation.action { keychainAllow = chosen } else { keychainAllow = [] }
         let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration,
                                                        consentTextVersion: snapshot?.consentPreview?.textVersion, keychainAllow: keychainAllow)
+        if let presentationID { self.presentationID = presentationID }
         phase = .running(confirmation.action); changed()
         guard generation == token, confirmation.observation == observation,
               phase == .running(confirmation.action), canRequest(confirmation.action) else { return }
