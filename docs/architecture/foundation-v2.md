@@ -224,6 +224,8 @@ Each seam is tested at the highest point that still reaches the owner-visible re
 
 ### Reader integration standard
 
+The full standard is in [`docs/readers/integration-standard.md`](../readers/integration-standard.md). It covers the classification and tiers, the red lines and how each one is enforced, the reference index, the decision procedure, the card template, and the current paths for each tool. In summary:
+
 - **Classify the read path, not the tool.**
   - Carrier: local JSON/log (L), SQLite (S), hook (J), owning-tool RPC (R), CLI output (D).
   - Authentication: borrowed OAuth (O), API key (K), browser session (C).
