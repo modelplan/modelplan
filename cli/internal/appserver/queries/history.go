@@ -59,6 +59,15 @@ func historyParams(raw json.RawMessage) (wire.HistoryQueryParams, error) {
 		(p.Ref != "" && !accountLocator.MatchString(p.Ref)) {
 		return p, protocol(wire.CodeInvalidParams)
 	}
+	// Optional string fields distinguish omission from JSON null. Decode their
+	// raw presence as well as the typed DTO, whose zero value otherwise hides null.
+	var selectors struct {
+		Ref    json.RawMessage `json:"ref"`
+		Cursor json.RawMessage `json:"cursor"`
+	}
+	if json.Unmarshal(raw, &selectors) != nil || bytes.Equal(bytes.TrimSpace(selectors.Ref), []byte("null")) || bytes.Equal(bytes.TrimSpace(selectors.Cursor), []byte("null")) {
+		return p, protocol(wire.CodeInvalidParams)
+	}
 	switch p.Kind {
 	case wire.HistoryTokens, wire.HistoryQuotaCycles, wire.HistorySessions:
 	default:
