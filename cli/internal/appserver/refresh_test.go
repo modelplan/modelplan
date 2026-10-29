@@ -116,3 +116,100 @@ func TestRefreshReadersOffIsReadOnly(t *testing.T) {
 		t.Fatal("readers off was not deferred", result, err)
 	}
 }
+
+func TestRefreshKnownDeferralRunsWhenDueWithoutBlockingAnotherProvider(t *testing.T) {
+	backend, paths, cache := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	if err := consent.Change(consent.Path(), func(state *consent.State) error {
+		return consent.Set(state, "kiro", true, "native:kiro", quota.BackendNative, time.Now())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend.view.Stamp = stampOfFence(consent.Capture().Fence())
+	backend.view.Projection.ConsentGeneration = backend.view.Stamp.Generation
+	backend.view.Scopes = append(backend.view.Scopes, consent.ScopeKiroRuntimeUsage)
+	due := time.Now().Add(time.Second).UTC()
+	path := filepath.Join(cache, "observed", "reader-attempts", "codex.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "nextAttemptAt": due})
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	type event struct {
+		scope string
+		at    time.Time
+	}
+	events := make(chan event, 2)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error {
+		events <- event{scope: scope, at: time.Now()}
+		return nil
+	}})
+	defer scheduler.Close()
+	deferred, _, err := scheduler.Request(context.Background(), wire.RefreshRequestParams{Scopes: []string{consent.ScopeCodexRuntimeUsage}})
+	if err != nil || deferred[0].DisabledReason == nil || *deferred[0].DisabledReason != wire.RefreshCooldown {
+		t.Fatal("known cooldown not deferred", deferred, err)
+	}
+	immediate, _, err := scheduler.Request(context.Background(), wire.RefreshRequestParams{Scopes: []string{consent.ScopeKiroRuntimeUsage}})
+	if err != nil || immediate[0].DisabledReason != nil {
+		t.Fatal("independent due provider not scheduled", immediate, err)
+	}
+	select {
+	case got := <-events:
+		if got.scope != consent.ScopeKiroRuntimeUsage {
+			t.Fatalf("cooldown blocked independent provider: %+v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("independent provider stalled")
+	}
+	select {
+	case got := <-events:
+		if got.scope != consent.ScopeCodexRuntimeUsage || got.at.Before(due) {
+			t.Fatalf("deferred job did not honor due time: %+v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("accepted deferred job never ran")
+	}
+}
+
+func TestDeferredRefreshRejectsRevokeAndEqualGenerationReset(t *testing.T) {
+	for _, kind := range []string{"revoke", "equal-generation reset"} {
+		t.Run(kind, func(t *testing.T) {
+			backend, paths, cache := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+			before := consent.Capture().Fence()
+			due := time.Now().Add(time.Second).UTC()
+			path := filepath.Join(cache, "observed", "reader-attempts", "codex.json")
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			body, _ := json.Marshal(map[string]any{"schemaVersion": 1, "nextAttemptAt": due})
+			if err := os.WriteFile(path, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			called := make(chan struct{}, 1)
+			scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Run: func(context.Context, quota.Paths, string, time.Time) error { called <- struct{}{}; return nil }})
+			defer scheduler.Close()
+			if _, _, err := scheduler.Request(context.Background(), wire.RefreshRequestParams{Scopes: []string{consent.ScopeCodexRuntimeUsage}}); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "revoke" {
+				if err := consent.Change(consent.Path(), func(state *consent.State) error { return consent.Set(state, "codex", false, "", "", time.Now()) }); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				after, err := consent.Reset(consent.Path())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if after.Generation != before.Generation || after.StoreEpoch == before.StoreEpoch {
+					t.Fatal("reset did not establish the equal-generation/different-epoch seam")
+				}
+			}
+			select {
+			case <-called:
+				t.Fatal("queued read ran after permission context changed")
+			case <-time.After(time.Until(due) + 50*time.Millisecond):
+			}
+		})
+	}
+}
