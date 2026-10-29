@@ -21,18 +21,28 @@ import (
 // ProductionPaths is the single CLI/App/hooks constructor. It reads ModelPlan
 // consent and presence metadata only, never a login file or a provider endpoint.
 func ProductionPaths(cache, version string) Paths {
+	p := ProductionPathsWithAdmission(cache, version, consent.Capture())
+	// Existing refresh/worker callers reselect after taking reader locks. Only
+	// an explicit snapshot attempt freezes selection; their gates stay live.
+	p.Admission = nil
+	return p
+}
+
+// ProductionPathsWithAdmission shares the command's permission input with every
+// cache reader. ReaderGrant.StillValid and Publish deliberately remain live.
+func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
 	codex := os.Getenv("CODEX_HOME")
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	p := Paths{CLIVersion: version, Cache: cache, CodexHome: codex,
+	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: codex,
 		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
 		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
 		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
-	state, mode := consent.Current()
+	state, mode := admission.State(), admission.Mode()
 	if mode == consent.Off || nativeOff() {
 		return p
 	}
@@ -48,7 +58,7 @@ func ProductionPaths(cache, version string) Paths {
 	if record, exists := state.Tools["claude"]; exists && record.Allowed && record.ConsentTextVersion == consent.TextVersion && record.Backend == BackendNative && !record.BrowserSession && (record.ReaderID == "native:claude" || record.ReaderID == "native:claude-code") {
 		route, known := routes["claude"]
 		if !known || (route.Preferred == "native" && strings.HasPrefix(route.ReaderID, "native:") && detect.Compatible(version, route.MinCLI)) {
-			root, access := localusage.ProductionHistoryAccess(home, "claude", false)
+			root, access := localusage.ProductionHistoryAccessWithAdmission(home, "claude", false, admission)
 			if access.Allowed && !access.Denied && access.Privacy != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off" && detect.LocalRoot(root) {
 				generation, priorValid := state.Generation, access.StillValid
 				access.StillValid = func() bool {

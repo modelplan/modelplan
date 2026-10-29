@@ -168,3 +168,21 @@ func TestConsentAPIUndetectedGrantRealBinary(t *testing.T) {
 		t.Fatalf("revoke not durable: %+v %v", state, err)
 	}
 }
+
+func TestConsentAPIPersistedBackendUsesWireVocabulary(t *testing.T) {
+	for _, tc := range []struct{ stored, wire string }{{"native", "native"}, {"codexbar", "codexbar"}, {"codexbar-compat", "codexbar"}, {"off", "off"}, {"unknown", "off"}} {
+		t.Run(tc.stored, func(t *testing.T) {
+			consentAPIHome(t)
+			cacheRetiredCatalogue(t)
+			if err := consent.Change(consent.Path(), func(s *consent.State) error {
+				return consent.Set(s, "retired-tool", true, "codexbar:retired-tool", tc.stored, time.Now())
+			}); err != nil {
+				t.Fatal(err)
+			}
+			row, ok := apiTools(readConsentAPI(t).Tools)["retired-tool"]
+			if !ok || row.Backend != tc.wire || row.Detected {
+				t.Fatalf("persisted backend violated receiptTool vocabulary: %+v", row)
+			}
+		})
+	}
+}

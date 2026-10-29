@@ -118,7 +118,9 @@ func consentAccess(t detect.Tool) string {
 func persistedConsentTool(id string, r consent.Record) detect.Tool {
 	backend := r.Backend
 	switch backend {
-	case "native", "codexbar", "codexbar-compat", "off":
+	case "codexbar-compat":
+		backend = "codexbar"
+	case "native", "codexbar", "off":
 	default:
 		backend = "off"
 	}

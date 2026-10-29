@@ -63,7 +63,13 @@ func productionHistoryRoot(home, tool string) string {
 // ProductionHistoryAccess resolves consent and a compiled local root. It reads
 // no source content. Read-only callers never create an installation key.
 func ProductionHistoryAccess(home, tool string, createKey bool) (string, HistoryAccess) {
-	state, mode := consent.Current()
+	return ProductionHistoryAccessWithAdmission(home, tool, createKey, consent.Capture())
+}
+
+// ProductionHistoryAccessWithAdmission captures no second permission state.
+// StillValid and Publish are live revocation fences, including for read-only caches.
+func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, admission consent.Admission) (string, HistoryAccess) {
+	state, mode := admission.State(), admission.Mode()
 	record, decided := state.Tools[tool]
 	setting, err := loadSetting(SettingsPath(home))
 	legacy := err == nil && ((tool == "gemini" && setting.Enabled) || (tool == "qwen" && setting.Qwen))
@@ -133,7 +139,11 @@ func RefreshProductionHistory(ctx context.Context, home, cache, tool string, now
 }
 
 func ProductionHistories(home, cache string, readOnly bool, now time.Time) []HistoryResult {
-	state, _ := consent.Current()
+	return ProductionHistoriesWithAdmission(home, cache, readOnly, now, consent.Capture())
+}
+
+func ProductionHistoriesWithAdmission(home, cache string, readOnly bool, now time.Time, admission consent.Admission) []HistoryResult {
+	state := admission.State()
 	out := []HistoryResult{}
 	for _, tool := range HistoryProviders() {
 		// Gemini/Qwen retain their existing explicitly opted-in feed; do not add a
@@ -141,9 +151,13 @@ func ProductionHistories(home, cache string, readOnly bool, now time.Time) []His
 		if readOnly && (tool == "gemini" || tool == "qwen") {
 			continue
 		}
-		_, access := ProductionHistoryAccess(home, tool, false)
+		_, access := ProductionHistoryAccessWithAdmission(home, tool, false, admission)
 		if _, decided := state.Tools[tool]; decided || access.Allowed {
-			out = append(out, ProductionHistory(home, cache, tool, readOnly, now))
+			if readOnly {
+				out = append(out, ReadHistoryCache(cache, tool, access, now))
+			} else {
+				out = append(out, RefreshProductionHistory(context.Background(), home, cache, tool, now))
+			}
 		}
 	}
 	return out
