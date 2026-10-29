@@ -283,9 +283,14 @@ legacy 200 and verifies a positive reading. The 401 and 403 cases must stop afte
 one authenticated GET, despite that available legacy reply. Another app request
 and an independent CLI cannot reset the persisted budget. The raw recorder keeps
 only compiled route labels, method/status and a credential-match boolean; header
-values, credentials and bodies are never logged. Gemini history is checked before
-and after account reads using typed-value hashes, not only row counts. Original
-tool-owned login inputs must remain byte-identical.
+values, credentials and bodies are never logged. Gemini and Cursor history are
+checked before and after account reads using positive typed values and hashes,
+not only row counts. Cursor uses two complete synthetic numeric records at the
+compiled `.cursor/token-usage/usage.jsonl` path, with explicit local-history
+consent and a real refresh before querying. This tests the optional export's
+numeric contract described in [Cursor local history](../../docs/cursor-local-history.md);
+it does not certify native Cursor counts or execute/install an exporter. Original
+tool-owned login inputs and the numeric export must remain byte-identical.
 
 Selecting any admission ID runs the shared group and records these outcomes
 individually:
@@ -296,11 +301,18 @@ individually:
 | `U2a-minimax-auth-stop` | pass: 401/403 stop before the legacy route |
 | `U2a-minimax-legacy-control` | pass: the available legacy reply produces a reading |
 | `U2a-local-history-gemini` | pass: typed values remain identical |
-| `U2a-local-history-cursor` | unsupported: no typed production producer |
+| `U2a-local-history-cursor` | pass: two positive typed export rows remain identical |
+| `U3b-refresh-shared-budget` | pass: CLI preserves budget bytes, app cooldown deadline and raw request count |
 
-The aggregate `U2a-admission` conservatively remains unsupported while Cursor
-readability is unsupported. The executed subchecks remain independently visible
-in the manifest. Intact Cursor seed bytes never count as history readability.
+The aggregate `U2a-admission` passes only when every executed subcheck passes.
+The components remain independently visible in the manifest. Intact Cursor seed
+bytes or an empty successful query never count as history readability; disabling
+only the real Cursor decoder in a negative-control build must fail this scenario.
+The U3b component exposes the budget checks already exercised inside admission,
+and additionally verifies the app-server's `cooldown` response and exact deadline
+before and after the standalone CLI call. The successful 404→200 compatibility
+control is one logical read with two HTTP calls; both failure cases have one call.
+No further HTTP call is permitted. No budget file is reset or timestamp rewritten.
 Linux engine results are L1; dedicated test-Mac/package L2 is recorded as not-run.
 
 ```sh

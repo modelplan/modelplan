@@ -329,7 +329,7 @@
         "synthetic-home"
       ],
       "structures": [],
-      "priorJourney": "Production shared backend and independent CLI: account scopes remain policy_pending with zero POST calls; MiniMax 401/403 stop before the available successful legacy response; Gemini local history stays readable. Cursor typed local-history readback is unsupported pending a producer."
+      "priorJourney": "Production shared backend and independent CLI: policy_pending account scopes make zero POST calls; MiniMax 401/403 stop before a demonstrated legacy response; positive Gemini and optional Cursor numeric-export history retain identical typed values. Shared cooldown deadlines, persisted budget hashes and raw request counts survive standalone CLI refresh."
     },
     {
       "id": "U3-backpressure",
@@ -533,7 +533,7 @@
     },
     {
       "id": "U2a-local-history-cursor",
-      "intent": "Cursor typed local-history readability is unsupported pending a production producer.",
+      "intent": "Explicitly granted and refreshed Cursor optional numeric-export history remains readable with identical positive typed values after blocked account refreshes and MiniMax auth failures.",
       "units": [
         "U2a",
         "U10",
@@ -563,6 +563,23 @@
       ],
       "structures": [],
       "priorJourney": "Real-executable regression for strict optional selector input semantics; recording history source only."
+    },
+    {
+      "id": "U3b-refresh-shared-budget",
+      "intent": "After a completed MiniMax read, app-server refresh is deferred until the persisted budget deadline; a standalone CLI refresh preserves that deadline and budget bytes and makes no extra HTTP requests, including a successful legacy control and first-401/403 cases.",
+      "units": [
+        "U3",
+        "U2",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
     }
   ]
 }
