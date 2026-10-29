@@ -1,5 +1,5 @@
-// Package keychain reads only explicitly admitted tool-owned items through Apple's
-// stable security binary. It never writes a tool's item or logs process output.
+// Package keychain hosts the fixed-item injected credential adapter. Without
+// an app capability it reports recovery and never starts a process.
 package keychain
 
 import (
@@ -8,10 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"time"
 )
 
@@ -62,6 +60,9 @@ var profilePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 // ClaudeCredentials is deliberately a fixed-item operation. There are no shell,
 // arbitrary-item, directory-name derivation or whole-Keychain query interfaces.
 func (r Reader) ClaudeCredentials(ctx context.Context, p Policy) Result {
+	if r.Execute == nil {
+		return Result{State: ConfirmationNeeded, NextStep: "Open the app, or use a credentials file"}
+	}
 	if !p.Allowed || !profilePattern.MatchString(p.ProfileRef) || r.Cache == "" {
 		return Result{State: "consent-required"}
 	}
@@ -107,9 +108,6 @@ func (r Reader) ClaudeCredentials(ctx context.Context, p Policy) Result {
 	call, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 	run := r.Execute
-	if run == nil {
-		run = runSecurity
-	}
 	out, err := run(call, "/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
 	state := ""
 	switch {
@@ -159,40 +157,4 @@ func saveState(path string, b []byte) error {
 		return err
 	}
 	return os.Rename(f.Name(), path)
-}
-
-type boundedOutput struct {
-	bytes.Buffer
-	overflow bool
-}
-
-func (b *boundedOutput) Write(p []byte) (int, error) {
-	n := len(p)
-	if b.Len()+n > maxOutput {
-		b.overflow = true
-		p = p[:maxOutput-b.Len()]
-	}
-	_, _ = b.Buffer.Write(p)
-	return n, nil
-}
-
-func runSecurity(ctx context.Context, executable string, args ...string) (ProcessResult, error) {
-	if runtime.GOOS != "darwin" {
-		return ProcessResult{}, errors.New("unavailable")
-	}
-	cmd := exec.CommandContext(ctx, executable, args...)
-	cmd.WaitDelay = 250 * time.Millisecond
-	var out boundedOutput
-	cmd.Stdout = &out
-	// In particular do not attach stderr: it may contain item attributes/secrets.
-	cmd.Stderr = nil
-	err := cmd.Run() // CommandContext kills and waits on timeout; no detached prompt process.
-	r := ProcessResult{Output: out.Bytes()}
-	if cmd.ProcessState != nil {
-		r.ExitCode = cmd.ProcessState.ExitCode()
-	}
-	if out.overflow {
-		return ProcessResult{}, errors.New("unavailable")
-	}
-	return r, err
 }
