@@ -43,6 +43,10 @@ import ModelPlanAppIntegration
         })
         let invariant: [String: Any] = ["canonicalKnown": allowed != nil, "allowedTools": allowed ?? [], "rowCounts": counts]
         value["rowInvariant"] = invariant
+        value["unexpectedRowCount"] = rows.filter { row in
+            let providers = row["providers"] as? [String] ?? []
+            return providers.isEmpty || providers.contains { !(allowed ?? []).contains($0) }
+        }.count
         let nonFresh = rows.filter { row in
             row["dataState"] as? String != "fresh" && (row["providers"] as? [String] ?? []).contains { (allowed ?? []).contains($0) }
         }
@@ -116,7 +120,7 @@ import ModelPlanAppIntegration
         observedDock = dock; observedConsent = consent
         _ = await wait(30) { delegate.settingsIntegration != nil }
         guard let integration = delegate.settingsIntegration as? CommunityConnectionIntegration else {
-            for step in 1...11 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
+            for step in 0...11 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
         }
         await integration.restorePreferences()
         let controller = integration.flow.application.editor.connections
@@ -131,6 +135,24 @@ import ModelPlanAppIntegration
                    "fixtureExecutablePresent": ProcessInfo.processInfo.environment["MODELPLAN_CODEX"].map { FileManager.default.isExecutableFile(atPath: $0) } ?? false,
                    "providerReadsBeforeGrant": calls(failed: false).count + calls(failed: true).count])
 
+        let ownerShape = ProcessInfo.processInfo.environment["MODELPLAN_E2E_OWNER_SHAPE"] == "1"
+        // Observe the retained profile before any mutation; the generator receipt
+        // supplies expectations only to the external oracle, never to the app.
+        if ownerShape {
+            _ = await wait(90) { dock.journeyFeedGeneratedAt != nil }
+        }
+        record(0, ["claudeAccountCount": dock.journeyToolState("claude")["accountCount"] ?? -1, "profile": ownerShape ? "owner-shape" : "fresh",
+                   "consentGeneration": controller.snapshot?.consentGeneration.map { $0 as Any } ?? NSNull(),
+                   "privacy": controller.snapshot?.mode.rawValue ?? "unknown",
+                   "dockEdge": dock.currentMenuBarPreferences?.dockEdge.rawValue ?? "unknown",
+                   "renderedRows": cardRows(dock, rows: dock.journeyRows)])
+        // The rest of the journey exercises explicit grants/revokes on this same
+        // HOME. Remove initial grants only through the real confirmed UI flow.
+        if ownerShape {
+            for tool in SettingsConnectionTool.allCases where controller.snapshot?.tools.contains(where: { $0.tool == tool && $0.authorization == .allowed }) == true {
+                if let confirmation = controller.requestForget(tool) { await controller.confirm(confirmation.id) }
+            }
+        }
         let granted = await allow(controller)
         var pendingFacts = dock.journeyToolState("codex")
         pendingFacts["renderedRows"] = cardRows(dock, rows: rows(dock, for: "codex"))

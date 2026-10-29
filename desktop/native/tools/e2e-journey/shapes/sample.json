@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "macOS": "synthetic",
+  "capturedAt": "2000-01-01T00:00:00Z",
+  "appPreferences": {
+    "status": "ok",
+    "shape": {
+      "schemaVersion": "number",
+      "favouriteModelIDs": {"<array>": 0, "item": null},
+      "localeIdentifier": "null",
+      "edge": "left",
+      "retained": "bool",
+      "revision": "number"
+    }
+  },
+  "consent": {
+    "status": "ok", "schemaVersion": 1, "generation": 37, "privacy": "automatic",
+    "tools": {
+      "codex": {"allowed": true, "backend": "native", "at": "<text>"},
+      "claude": {"allowed": true, "backend": "native", "keychain": "allowed", "at": "<text>"},
+      "grok": {"allowed": true, "backend": "native", "at": "<text>"}
+    }
+  },
+  "connections": {
+    "status": "ok",
+    "shape": {"<key>": {"<array>": 1, "item": {"provider": "string", "backend": "string", "enabled": "bool"}}}
+  },
+  "cacheTree": {
+    "exists": true, "files": 3, "bytes": 1065088,
+    "entries": [
+      {"path": "observed/keychain/claude-code.json", "bytes": 128},
+      {"path": "observed/native.json", "bytes": 16384},
+      {"path": "retained-volume.bin", "bytes": 1048576}
+    ]
+  },
+  "configTree": {
+    "exists": true, "files": 2, "bytes": 9216,
+    "entries": [{"path": "consent.json", "bytes": 8192}, {"path": "connections.json", "bytes": 1024}]
+  },
+  "claudeKeychainSavedState": "keychain-confirmation-needed",
+  "claudeCredentialsFileExists": false,
+  "helper": "found",
+  "cliConsent": {
+    "exit": 0, "bytes": 4096, "seconds": 0.1, "mode": "automatic",
+    "tools": {
+      "codex": {"detected": true, "allowed": true, "keychain": "unset"},
+      "claude": {"detected": true, "allowed": true, "keychain": "allowed"},
+      "grok": {"detected": true, "allowed": true, "keychain": "unset"},
+      "zai": {"detected": true, "allowed": false, "keychain": "unset"}
+    }
+  },
+  "cliDesktopReadOnly": {
+    "exit": 0, "bytes": 8192, "seconds": 0.1,
+    "connections": [{"id": "zai", "authorization": "yes", "quota": "no", "quotaReason": "no-reading"}]
+  }
+}

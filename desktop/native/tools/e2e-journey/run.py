@@ -13,7 +13,9 @@ import subprocess
 import tempfile
 import time
 
-STEPS = range(1, 12)
+from owner_shape import generate
+
+STEPS = range(0, 12)
 MISSING_KEY_REASON = "Z_AI_API_KEY is not set where modelplan runs"
 
 
@@ -41,7 +43,7 @@ def human(value):
             and re.search(r'\b[a-z][a-z0-9]*(?:_[A-Za-z0-9]+|[A-Z][A-Za-z0-9]*)+\b', value, re.A) is None)
 
 
-def passes(step, facts, variant="headless"):
+def passes(step, facts, variant="headless", owner=None):
     if not isinstance(facts, dict) or not row_invariant(facts):
         return False
     if variant not in ('headless', 'native') or facts.get('variant') != variant:
@@ -54,12 +56,28 @@ def passes(step, facts, variant="headless"):
             or not all(isinstance(row, dict) and row.get('cardOpened') is True and human(row.get('reason'))
                        and human(row.get('nextStep')) for row in guidance)):
         return False
+    if type(facts.get('unexpectedRowCount')) is not int or facts['unexpectedRowCount'] != 0:
+        return False
+    if step == 0:
+        if owner is None:
+            return facts.get('profile') == 'fresh' and facts['rowInvariant']['allowedTools'] == []
+        rows = facts.get('renderedRows')
+        claude = [row for row in rows if 'claude' in row.get('providers', [])] if isinstance(rows, list) else []
+        return (facts.get('profile') == 'owner-shape'
+                and facts['rowInvariant']['allowedTools'] == owner['allowedTools']
+                and facts.get('consentGeneration') == owner['generation'] and facts.get('privacy') == owner['privacy']
+                and owner['dockEdge'] is not None and facts.get('dockEdge') == owner['dockEdge']
+                and ('claude' not in owner['allowedTools'] or owner['credentialsFileExists'] or owner['keychainSavedState'] == 'missing'
+                     or (facts.get('claudeAccountCount') == 0 and len(claude) == 1 and claude[0].get('cardOpened') is True
+                    and claude[0].get('readout') == '--' and claude[0].get('remainingPercent') is None
+                    and ('Keychain' in claude[0].get('nextStep', '') or '钥匙串' in claude[0].get('nextStep', '')))))
     if step in (2, 3, 4, 5, 6, 8, 9, 10, 11) and 'codex' not in facts['rowInvariant']['allowedTools']:
         return False
     if step == 1:
         return (facts.get('detected') is True and facts.get('grokDetected') is True and facts.get('listedInFirstRun') is True
                 and facts.get('backendBound') is True and type(facts.get('providerReadsBeforeGrant')) is int
-                and facts['providerReadsBeforeGrant'] == 0)
+                and (facts['providerReadsBeforeGrant'] >= 0 if owner is not None and 'codex' in owner['allowedTools']
+                     else facts['providerReadsBeforeGrant'] == 0))
     if step == 2:
         return (facts.get('granted') is True and facts.get('apiAvailable') is True
                 and facts.get('releaseIdentityVerified') is False and facts.get('debugAdmission') is True)
@@ -135,8 +153,9 @@ def single_unreadable_row(facts, tool):
 
 
 def journey_sandbox():
-    # Defense in depth: Claude is never granted Keychain permission, and no real
-    # Keychain daemon, file or security command is available to this process tree.
+    # The driver never grants Keychain permission. Retained synthetic consent may
+    # record a prior allow; no real Keychain daemon, file or security command is
+    # available to this process tree.
     return r'''(version 1)
 (allow default)
 (deny network*)
@@ -149,13 +168,13 @@ def journey_sandbox():
 '''
 
 
-def print_step(step, facts, variant="headless"):
-    result = passes(step, facts, variant)
+def print_step(step, facts, variant="headless", owner=None):
+    result = passes(step, facts, variant, owner)
     print(f'e2e step {step} {"PASS" if result else "FAIL"} {json.dumps(facts, ensure_ascii=False, sort_keys=True)}', flush=True)
     return result
 
 
-def run(build, output, variant="headless"):
+def run(build, output, variant="headless", shape=None):
     output.mkdir(parents=True, exist_ok=False)
     app = build / 'neutral/ModelPlan Community.app'
     helper = app / 'Contents/Helpers/modelplan'
@@ -167,9 +186,12 @@ def run(build, output, variant="headless"):
     if hashlib.sha256(helper.read_bytes()).hexdigest() != (app / 'Contents/Resources/modelplan.sha256').read_text().strip():
         raise ValueError('sealed helper pin mismatch')
     with tempfile.TemporaryDirectory(prefix='e2e-journey-') as temporary:
-        root = Path(temporary).resolve(); home = root / 'home'; home.mkdir()
+        root = Path(temporary).resolve(); home = root / 'home'
+        owner = generate(shape, home) if shape is not None else None
+        if owner is None: home.mkdir()
+        else: (output / 'shape-receipt.json').write_text(json.dumps(owner, indent=2, sort_keys=True) + '\n')
         profile = home / '.codex'; profile.mkdir()
-        (home / '.claude').mkdir(); (home / '.zcode').mkdir()
+        (home / '.claude').mkdir(exist_ok=True); (home / '.zcode').mkdir(exist_ok=True)
         grok = home / '.grok'; grok.mkdir()
         # Existing native Grok reader fails parsing before any credential or HTTP request.
         (grok / 'auth.json').write_text('{malformed synthetic fixture\n')
@@ -182,10 +204,11 @@ def run(build, output, variant="headless"):
         environment = {'HOME': str(home), 'CFFIXED_USER_HOME': str(home), 'TMPDIR': str(scratch) + '/',
             'CODEX_HOME': str(profile),
             'GROK_HOME': str(grok), 'GROK_AUTH_PATH': str(grok / 'auth.json'),
-            'MODELPLAN_CACHE': str(home / 'cache'), 'XDG_CONFIG_HOME': str(home / '.config'),
+            'MODELPLAN_CACHE': str(home / 'Library/Caches/modelplan'), 'XDG_CONFIG_HOME': str(home / '.config'),
             'PATH': str(binary) + ':/usr/bin:/bin', 'MODELPLAN_CODEX': str(binary / 'codex'),
             'MODELPLAN_CODEXBAR': 'off', 'MODELPLAN_HISTORY': 'off', 'MODELPLAN_BASE': 'http://127.0.0.1:9',
             'MODELPLAN_APP_SMOKE': '1', 'MODELPLAN_E2E_JOURNEY': '1',
+            'MODELPLAN_E2E_OWNER_SHAPE': '1' if owner is not None else '0',
             'MODELPLAN_E2E_NATIVE_PANELS': '1' if variant == 'native' else '0', 'MODELPLAN_E2E_REPORT': str(report), 'NO_COLOR': '1'}
         # The fixture uses stdio only. Denying all network is stricter than localhost-only.
         sandbox = root / 'journey.sb'; sandbox.write_text(journey_sandbox())
@@ -201,16 +224,16 @@ def run(build, output, variant="headless"):
                         for facts in json.loads(report.read_text()).get('steps', []):
                             step = facts.get('step')
                             if step in STEPS and step not in printed:
-                                printed.add(step); results.append(print_step(step, facts, variant))
+                                printed.add(step); results.append(print_step(step, facts, variant, owner))
                     time.sleep(0.2)
                 if process.poll() is None:
                     os.killpg(process.pid, signal.SIGKILL); process.wait()
                 facts_by_step = {x.get('step'): x for x in json.loads(report.read_text()).get('steps', [])} if report.is_file() else {}
                 for step in STEPS:
                     if step not in printed:
-                        results.append(print_step(step, facts_by_step.get(step, {'blocked': 'app-report-missing'}), variant))
+                        results.append(print_step(step, facts_by_step.get(step, {'blocked': 'app-report-missing'}), variant, owner))
                 (output / 'result.json').write_text(json.dumps({'sourceCommit': receipt['sourceCommit'],
-                    'variant': variant, 'stepsPassed': sum(results), 'stepCount': len(STEPS), 'exitCode': process.returncode}, indent=2) + '\n')
+                    'variant': variant, 'profile': 'owner-shape' if owner is not None else 'fresh', 'stepsPassed': sum(results), 'stepCount': len(STEPS), 'exitCode': process.returncode}, indent=2) + '\n')
                 return process.returncode == 0 and len(results) == len(STEPS) and all(results)
             finally:
                 if process.poll() is None:
@@ -223,9 +246,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('build', type=Path); parser.add_argument('output', type=Path)
     parser.add_argument('--variant', choices=['headless', 'native'], default='headless')
+    parser.add_argument('--shape', type=Path, help='H40 structural metadata; never credential data')
     args = parser.parse_args()
     try:
-        okay = run(args.build.resolve(), args.output.resolve(), args.variant)
+        shape = None
+        if args.shape is not None:
+            if args.shape.stat().st_size > 1 << 20: raise ValueError('shape too large')
+            shape = json.loads(args.shape.read_text())
+        okay = run(args.build.resolve(), args.output.resolve(), args.variant, shape)
     except (OSError, ValueError, subprocess.SubprocessError):
         for step in STEPS:
             print_step(step, {'blocked': 'journey-launch-failed'}, args.variant)

@@ -92,3 +92,35 @@ H38 扩展在 M0 respin6 修复前保持**草稿**。起始 main 的第3、11阶
 ### 在 arm64 Mac 上运行
 
 选择支持的 Xcode 和 `cli/go.mod` 指定的 Go 后，执行上方命令；两个 variant 使用不同输出目录。CI 分别上传 `e2e-journey-report-headless`、`e2e-journey-report-native`。CLIJIT 负责 App–CLI schema／生成夹具，本测试消费真实二进制输出。此 CI 仅验证合成数据流，不代表真实账户、官方视觉或物理交互验收。
+
+## H40 retained-home draft checkpoint
+
+The workflow now runs the cross product of `headless`/`native` and `fresh`/`owner-shape`. Both profiles run all eleven journey stages, with an additional checkpoint 0 before consent mutations. Every checkpoint also rejects rows belonging to tools outside canonical consent. Retained startup requires the generated tool set/generation/privacy, actual applied Dock edge, and a no-value Claude card with a Keychain next step. Subsequent explicit Forget/Allow operations use the retained real UI controller in that same HOME; the fixture is never replaced with a fresh HOME mid-journey. Fresh profiles still require no provider reads before consent; an already-allowed retained tool may read at startup.
+
+`owner_shape.py` accepts H40's structural JSON and a **nonexistent** destination. It never looks up or reads the caller's HOME. Cache/config paths and byte sizes are reconstructed with synthetic filler (sparse zeros for opaque files, whitespace padding for typed JSON state). Consent tools, generation/privacy, saved Keychain status and credentials-file existence are reconstructed without any credential. A recorded credentials file becomes an empty placeholder only. Files use mode 0600. Unsafe paths, existing destinations/symlinks, collisions, truncated trees, ambiguous connection providers, oversized expansion and semantic files too small for the generated schema are rejected.
+
+`shapes/sample.json` is entirely hand-made: left placement, a legacy Z.ai connection without Z.ai consent, allowed Codex/Claude/Grok, Claude Keychain allowed with `keychain-confirmation-needed` saved, and no `.credentials.json`. It contains no real data, readings, identities, credentials or response bodies. The public schema supplies fixed synthetic consent timestamps/text-version/reader routes; the exported connections array shape and reduced CLI provider IDs supply a synthetic native/enabled configuration. Output `shape-receipt.json` lists these substitutions and fidelity limits; reduced CLI timings/sizes/statuses are **not** replayed as canned responses.
+
+H40's export has two fidelity gaps that must remain visible: its lowercase-only key filter collapses mixed-case fields to `<key>`, and it reads `community-v1.json` while current Dock preferences live in `settings-v1.json`. The hand-made sample explicitly supplies public preference keys and an `edge=left` enum; the generator preserves their keys/types in the community file and seeds that enum into the actual Settings store. An export without an identifiable Dock enum does not invent one and cannot pass the retained placement assertion. Array shapes keep only the first item, so unknown heterogeneous connection states cannot be recovered; ambiguous provider mapping fails. This checkpoint is not a claim that M1's as-yet-unposted shape has been reproduced exactly.
+
+```sh
+python3 desktop/native/tools/e2e-journey/owner_shape.py \
+  desktop/native/tools/e2e-journey/shapes/sample.json /tmp/new-synthetic-home
+# Or let the runner create its own new HOME:
+python3 desktop/native/tools/e2e-journey/run.py "$journey_root/build" "$journey_root/owner-native" \
+  --variant native --shape desktop/native/tools/e2e-journey/shapes/sample.json
+```
+
+Artifacts now include the profile suffix, for example `e2e-journey-report-native-owner-shape`. Swap the sample only after M1's structural export is available and development resumes. H41 pauses further development after this clean pushed draft; no ready/merge or owner-visible fix is claimed. Existing H38 failures remain strict. The pending-Codex stage can also fail its no-account precondition if the real reader has already completed; this is reported as missing scenario coverage, not misattributed as proof of a presenter failure.
+
+### H40 保留环境草稿检查点
+
+CI 运行 `headless`／`native` 与 `fresh`／`owner-shape` 的四种组合。两类环境都执行原十一阶段，并在修改授权前增加第0检查点；每个检查点还拒绝 canonical 授权外工具的 Dock 行。保留环境启动检查实际工具集合、授权代数／隐私模式、实际应用的 Dock 方向，以及 Claude 无数值且指向 Keychain 的真实卡片。之后在同一 HOME 中通过保留的真实控制器确认 Forget／Allow，不中途换成新 HOME。全新环境仍要求授权前无提供方读取；已授权的保留环境工具可以正常启动读取。
+
+`owner_shape.py` 只接受 H40 结构 JSON 和尚不存在的输出目录，从不查找或读取调用者 HOME。按原路径和字节大小创建缓存／配置：不透明文件使用稀疏零填充，结构状态 JSON 使用尾随空白补齐。恢复工具授权、代数、隐私、Keychain 已保存状态和凭据文件存在性，不包含凭据；仅在记录存在时创建空 `.credentials.json`。文件权限为0600。危险路径、已有目录／符号链接、路径冲突、截断树、不明确的 connection 工具、过大展开或装不下合成结构的文件均拒绝。
+
+`shapes/sample.json` 完全手写：Dock 保存为左侧、旧 Z.ai connection 但未授权 Z.ai、Codex／Claude／Grok 已允许、Claude Keychain 已允许但缓存为 `keychain-confirmation-needed`，且没有凭据文件。不使用真实数据、读数、身份、密钥或响应正文。授权时间／版本／读取器路由使用公开结构的固定合成值；connection 数组形状和精简 CLI 工具 ID 生成 native／enabled 合成配置。产物 `shape-receipt.json` 明示替代值及还原限制；不会将导出 CLI 的耗时／大小／状态伪造成响应。
+
+H40 导出存在两项还原限制：只接受小写的字段过滤会把混合大小写键合并为 `<key>`；脚本读取 `community-v1.json`，但当前 Dock 偏好实际在 `settings-v1.json`。手写样本明确提供公开偏好键及 `edge=left`，生成器在 community 文件保留键和类型，并在实际 Settings 文件设置该方向。若导出中没有可识别方向，不会猜测，也不能通过保留方向断言。数组仅保留首项形状，无法还原未知的异构 connection 状态；工具映射不明确则失败。目前尚未收到 M1 导出，不宣称已精确复现。上方命令可单独生成环境或运行完整 journey；产物名带环境后缀，如 `e2e-journey-report-native-owner-shape`。
+
+M1 结构导出到位且开发恢复后再替换样本。遵循 H41，此干净推送草稿之后暂停开发，不标 ready、不合并、不宣称已修复主人可见问题。原 H38 失败保持严格；若真实 Codex 读取已完成，待首次读取阶段也会因账户已存在而失败，这属于场景覆盖前置条件未成立，不能误报为呈现缺陷证据。

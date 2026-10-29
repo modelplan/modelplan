@@ -21,6 +21,7 @@ class JourneyOracleTests(unittest.TestCase):
 
     def setUp(self):
         self.facts = {
+            0: dict(profile='fresh'),
             1: dict(detected=True, grokDetected=True, listedInFirstRun=True, backendBound=True, providerReadsBeforeGrant=0),
             2: dict(granted=True, apiAvailable=True, releaseIdentityVerified=False, debugAdmission=True),
             3: dict(granted=True, connectionPresent=True, connectionNoReading=True, accountCount=0,
@@ -44,13 +45,13 @@ class JourneyOracleTests(unittest.TestCase):
                      renderedRows=[self.row('zai', 'Missing key / 缺少密钥', journey.MISSING_KEY_REASON)]),
         }
         for step, facts in self.facts.items():
-            allowed = [] if step in (1, 7) else ['codex']
+            allowed = [] if step in (0, 1, 7) else ['codex']
             if step >= 9: allowed = ['codex', 'grok']
             if step >= 10: allowed.append('claude')
             if step >= 11: allowed.append('zai')
             facts['rowInvariant'] = dict(canonicalKnown=True, allowedTools=allowed, rowCounts={tool: 1 for tool in allowed})
-            facts.update(variant='headless', nativePanelsEnabled=False, nativePanelsVisible=False)
-            facts['guidanceRows'] = [] if step in (1, 4, 5, 6, 7) else [self.row(tool) for tool in allowed]
+            facts.update(unexpectedRowCount=0, variant='headless', nativePanelsEnabled=False, nativePanelsVisible=False)
+            facts['guidanceRows'] = [] if step in (0, 1, 4, 5, 6, 7) else [self.row(tool) for tool in allowed]
             facts['nonFreshRowCount'] = len(facts['guidanceRows'])
 
     def test_all_eleven_headless_checkpoints_can_pass(self):
