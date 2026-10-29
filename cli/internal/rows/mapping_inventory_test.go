@@ -141,3 +141,35 @@ func TestReaderErrorEmitterVocabulary(t *testing.T) {
 		})
 	}
 }
+
+// Policy approval disables the read path independently of saved user consent.
+// In particular it must not fall back to failed/refresh or retain old values.
+func TestPolicyPendingIsAnAdmissionVeto(t *testing.T) {
+	for _, channel := range []SignalChannel{SignalError, SignalStatus, SignalBlocked} {
+		t.Run(string(channel), func(t *testing.T) {
+			out, known := MapSignal(channel, "policy_pending")
+			if !known || out.Code != Code("policy_pending") || out.State != StateOff || out.Action != ActionOpenSettingsConsent {
+				t.Fatalf("policy approval must disable the path without refresh: %+v, known=%v", out, known)
+			}
+			if !strings.Contains(out.Text.EN, "awaiting approval") || !strings.Contains(out.Text.ZH, "等待批准") {
+				t.Fatalf("missing bounded approval guidance: %+v", out.Text)
+			}
+		})
+	}
+	for _, source := range []SourceState{
+		{Status: "unavailable", ErrorCode: "policy_pending"},
+		{Reason: "policy_pending"},
+		{Blocked: "policy_pending"},
+		{Status: "policy_pending"},
+	} {
+		t.Run("source-"+source.Status+source.ErrorCode+source.Reason+source.Blocked, func(t *testing.T) {
+			in := sampleInput() // Includes an otherwise current, consented reading.
+			source.ToolID = "codex"
+			in.Sources = []SourceState{source}
+			row := rowByID(t, Build(in), "codex")
+			if row.State != StateOff || row.Reason.Code != Code("policy_pending") || len(row.Accounts) != 0 || row.NextStep == nil || row.NextStep.Action != ActionOpenSettingsConsent {
+				t.Fatalf("policy approval must veto cached values without retry/refresh: %+v", row)
+			}
+		})
+	}
+}

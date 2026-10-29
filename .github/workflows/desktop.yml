@@ -187,11 +187,16 @@ jobs:
       - name: Build the neutral app and all native checks
         run: swift build --package-path desktop/native --jobs 2
       - name: Native lane XCTest suites (selection, instruments, cockpit shell and field)
-        run: swift test --package-path desktop/native --jobs 2
+        # GeneratedDecoderTests checks the legacy (beta07-architecture) app decoder against current CLI captures.
+        # That app is frozen (foundation v2); its replacement is clients/swift/ModelPlanWire (U4) and U6/U8.
+        # The suite is deleted with the legacy app in U6.
+        run: swift test --package-path desktop/native --jobs 2 --skip GeneratedDecoderTests
       - name: Settings models and offscreen AppKit tests (no system effects)
         run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
       - name: App settings application tests (no window or system effects)
-        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2
+        # GeneratedConsentPortTests drives the frozen legacy app's consent port with current CLI fixtures; schema-2
+        # scoped grants cannot pass through it. Frozen with GeneratedDecoderTests (#315); deleted with the legacy app in U6.
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --skip GeneratedConsentPortTests
       - name: Build the integrated Community entry without launching or packaging
         run: swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --product ModelPlanCommunityApp
       - name: Field bridge protocol checks (synthetic page adapter)

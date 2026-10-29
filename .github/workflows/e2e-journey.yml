@@ -16,8 +16,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   e2e-journey:
-    # Draft PRs skip this macOS job; it runs once the PR is marked ready.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # Legacy (beta07-architecture) app journey. That app is frozen by foundation v2, and its consent contract
+    # no longer matches the CLI (schema-2 consent). It now runs only on manual dispatch. The U14 runner
+    # (tools/u14) carries the engine scenarios, and the new app's UI scenarios replace this job in U6/U8/U10.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     timeout-minutes: 25
     steps:
