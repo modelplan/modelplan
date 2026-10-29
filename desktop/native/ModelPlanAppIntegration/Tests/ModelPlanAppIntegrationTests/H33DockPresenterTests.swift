@@ -122,5 +122,57 @@ import ModelPlanSettings
         XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         XCTAssertNil(host.nativePanel)
     }
+    func testNativeFailureBeatsLegacyMissingAndDelayedOldOperationCannotWithdrawNewReadback() async throws {
+        for failure in ["parse_error", "timeout"] {
+            for connectionID in ["claude-code", "native:claude"] {
+                let value = try snapshot(connections: [["id": connectionID, "authorization": ["status": "yes"],
+                    "quota": ["status": "no", "reason": "missing"]]], sources: [["source": "native:claude", "status": "unavailable", "reason": failure]])
+                let result = model(value, consent: try consent(["claude"]))
+                let row = try XCTUnwrap(result.presentationRows.values.first)
+                XCTAssertFalse(row.reason.contains("Waiting"), "native failure must beat the legacy missing state")
+                XCTAssertTrue(row.reason.contains("unavailable"))
+            }
+        }
+        final class Port: CommunityConsentCommandPort {
+            let value: ConsentPreview
+            init(_ value: ConsentPreview) { self.value = value }
+            var availability: SettingsConnectionAvailability { .init(canInspect: true, canGrant: true, canForget: false) }
+            func readCanonicalConsent() async throws -> ConsentPreview { value }
+            func applyConsentJSON(_ payload: Data) async throws { XCTFail("Old mutation must not dispatch") }
+        }
+        actor Desktop: CLITransport { func execute(_ command: CLICommand) async throws -> CommandResult { throw TransportError.launchFailed } }
+        final class Delay {
+            var pending: CheckedContinuation<UInt64, Never>?
+            var value: UInt64 = 0
+            var entered = false
+            func holdFirst(_ token: UInt64) async -> UInt64 {
+                if entered { return token }
+                entered = true; value = token
+                return await withCheckedContinuation { pending = $0 }
+            }
+            func release() { pending?.resume(returning: value); pending = nil }
+        }
+        for mutation in [false, true] {
+            let desktop = Desktop(), delay = Delay()
+            let gate = ConsentGatedDesktopTransport(readOnly: desktop, normal: desktop)
+            let backend = CommunityConnectionBackend(port: Port(try consent(["codex"])), desktop: gate,
+                invalidateConsent: { await delay.holdFirst(await gate.invalidateConsent()) })
+            var presented = false
+            backend.onCanonicalInvalidated = { presented = false }
+            backend.onCanonicalReadback = { _ in presented = true }
+            let old = Task {
+                if mutation { return try await backend.applyStandardConsent(allow: [.codex], deny: [], request: .init(id: UUID(), expectedConsentGeneration: 1, consentTextVersion: 2)) }
+                return try await backend.detect()
+            }
+            for _ in 0..<100 where !delay.entered { await Task.yield() }
+            XCTAssertTrue(delay.entered)
+            _ = try await backend.detect()
+            XCTAssertTrue(presented)
+            delay.release()
+            do { _ = try await old.value; XCTFail("Old token must fail") } catch {}
+            XCTAssertTrue(presented, "delayed stale detect/mutation must not publish invalidation")
+        }
+    }
+
 
 }

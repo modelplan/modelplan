@@ -27,7 +27,10 @@ enum CommunityUnboundDockRows {
             if current { return ("Local account reading / 本地账户读数", "Check connected tools in Settings / 在设置检查已连接工具") }
             let source = sources.first { $0.source == "native:" + provider }
             let connection = connections.first { canonical($0.id) == provider }
-            let code = source?.status == "consent_required" ? "consent_required" : connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? source?.reason ?? source?.status
+            let code: String?
+            if let source, ["consent_required", "unavailable", "error", "stale"].contains(source.status) {
+                code = source.status == "consent_required" ? source.status : source.reason ?? source.status
+            } else { code = source?.reason ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? source?.status }
             if provider == "claude", code == "consent_required" {
                 return ("Keychain permission required / 需要钥匙串许可", "Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串")
             }
