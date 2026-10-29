@@ -100,6 +100,8 @@ def launch(app, output, *, expect_unverified=False):
                        'MODELPLAN_CACHE': str(home / 'cache'), 'XDG_CONFIG_HOME': str(home / 'config'),
                        'PATH': '/usr/bin:/bin', 'NO_COLOR': '1', 'MODELPLAN_APP_SMOKE': '1',
                        'MODELPLAN_APP_SMOKE_REPORT': str(report_path)}
+        # Negative control: the normal release binary must ignore the debug-only journey flag.
+        environment['MODELPLAN_E2E_JOURNEY'] = '1'
         # The app and its --help child inherit network denial. Synthetic HOME and
         # CFFIXED_USER_HOME redirect all app-owned preferences and CLI locations;
         # system AppKit/launch services retain their ordinary read access.
