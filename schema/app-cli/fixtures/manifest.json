@@ -1002,6 +1002,148 @@
       "encoding": "text",
       "exitCode": 3,
       "stderr": "no verified publication in the local cache; run `modelplan sync`\n"
+    },
+    {
+      "file": "fresh-plugin-install-claude-code-installed.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "synthetic host progress\nsynthetic host progress\n"
+    },
+    {
+      "file": "fresh-plugin-install-claude-code-instructions.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-plugin-install-claude-code-planned.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-plugin-install-claude-code-failed-first.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "synthetic host progress\nsynthetic host command error\nplugin install: host plugin installation failed; the next step was not run\n"
+    },
+    {
+      "file": "fresh-plugin-install-claude-code-failed-manual-step.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "synthetic host progress\nsynthetic host progress\nsynthetic host requires a manual step\nplugin install: host plugin installation failed; the next step was not run\n"
+    },
+    {
+      "file": "fresh-plugin-install-codex-installed.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "synthetic host progress\nsynthetic host progress\n"
+    },
+    {
+      "file": "fresh-plugin-install-codex-instructions.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-plugin-install-codex-planned.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-plugin-install-codex-failed-first.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "synthetic host progress\nsynthetic host command error\nplugin install: host plugin installation failed; the next step was not run\n"
+    },
+    {
+      "file": "fresh-plugin-install-codex-failed-manual-step.json",
+      "state": "fresh",
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "synthetic host progress\nsynthetic host progress\nsynthetic host requires a manual step\nplugin install: host plugin installation failed; the next step was not run\n"
     }
   ]
 }

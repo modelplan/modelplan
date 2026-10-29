@@ -3,8 +3,29 @@ import Foundation
 import XCTest
 import ModelPlanCore
 import CryptoKit
+import Darwin
 
 final class ConsentProcessTransportTests: XCTestCase {
+    func testDefaultEnvironmentInheritsAndExplicitEmptyDoesNot() async throws {
+        let key = "MODELPLAN_CONSENT_ENV_TEST"
+        let old = ProcessInfo.processInfo.environment[key]
+        setenv(key, "synthetic-marker", 1)
+        defer { if let old { setenv(key, old, 1) } else { unsetenv(key) } }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("environment-fixture")
+        try Data("#!/usr/bin/python3\nimport os,json\nprint(json.dumps({'marker':os.environ.get('MODELPLAN_CONSENT_ENV_TEST')}))\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        for explicitEmpty in [false, true] {
+            let port = ProcessCLITransport(executable: script, environment: explicitEmpty ? [:] : nil)
+            let result = try await port.readConsentJSON()
+            XCTAssertEqual(result.exitCode, 0)
+            let object = try XCTUnwrap(JSONSerialization.jsonObject(with: result.stdout) as? [String: Any])
+            if explicitEmpty { XCTAssertTrue(object["marker"] is NSNull) }
+            else { XCTAssertEqual(object["marker"] as? String, "synthetic-marker") }
+        }
+    }
     private func fixture() throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)

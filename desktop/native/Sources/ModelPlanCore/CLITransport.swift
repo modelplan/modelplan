@@ -94,7 +94,10 @@ private final class ProcessSession: @unchecked Sendable {
         guard !isCancelled else { throw TransportError.cancelled }
         let child = Process(), output = Pipe(), errors = Pipe()
         let inputPipe = input == nil ? nil : Pipe()
-        child.executableURL = executable; child.arguments = arguments; child.environment = environment
+        child.executableURL = executable; child.arguments = arguments
+        // Leave the inherited environment untouched unless the caller supplies an override.
+        // This uses Foundation’s default inheritance when no override was requested.
+        if let environment { child.environment = environment }
         child.standardOutput = output; child.standardError = errors; child.standardInput = inputPipe?.fileHandleForReading ?? FileHandle.nullDevice
         defer {
             try? inputPipe?.fileHandleForReading.close(); try? inputPipe?.fileHandleForWriting.close()
