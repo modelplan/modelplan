@@ -52,25 +52,48 @@ type readerPlanDetails struct {
 	ResetAt *time.Time `json:"resetAt,omitempty"`
 	Unified bool       `json:"unified"`
 }
+
+// readerFailure retains only a bounded reader code and the per-profile attempt
+// time. The rows projection owns conversion to its public reason vocabulary.
+type readerFailure struct {
+	Code string    `json:"code"`
+	At   time.Time `json:"at"`
+}
+
+type readerProfileAttempt struct {
+	ProfileKey string    `json:"profileKey"`
+	At         time.Time `json:"at"`
+	Discarded  bool      `json:"discarded,omitempty"`
+}
+
 type readerEntry struct {
-	ErrorCode  string         `json:"errorCode,omitempty"`
-	ProfileKey string         `json:"profileKey"`
-	Account    *Account       `json:"account,omitempty"`
-	Metadata   readerMetadata `json:"metadata,omitempty"`
-	Status     string         `json:"status"`
-	Notice     string         `json:"notice,omitempty"`
-	NextStep   string         `json:"nextStep,omitempty"`
+	AttemptedAt time.Time      `json:"attemptedAt,omitempty"`
+	LastFailure *readerFailure `json:"lastFailure,omitempty"`
+	Discarded   bool           `json:"discarded,omitempty"`
+	// CredentialReadState is set only on the missing-file Keychain path, never
+	// from the saved Keychain permission alone. busy is an in-flight read.
+	CredentialReadState string         `json:"credentialReadState,omitempty"`
+	ErrorCode           string         `json:"errorCode,omitempty"`
+	ProfileKey          string         `json:"profileKey"`
+	Account             *Account       `json:"account,omitempty"`
+	Metadata            readerMetadata `json:"metadata,omitempty"`
+	Status              string         `json:"status"`
+	Notice              string         `json:"notice,omitempty"`
+	NextStep            string         `json:"nextStep,omitempty"`
 }
 type readerState struct {
-	SchemaVersion   int           `json:"schemaVersion"`
-	Provider        string        `json:"provider"`
-	GrantKey        string        `json:"grantKey"`
-	AttemptedAt     time.Time     `json:"attemptedAt"`
-	NextAttemptAt   time.Time     `json:"nextAttemptAt"`
-	IntervalMinutes int           `json:"intervalMinutes"`
-	Failures        int           `json:"failures"`
-	NextProfile     int           `json:"nextProfile"`
-	Entries         []readerEntry `json:"entries"`
+	// Kept separately so reserving an attempt does not change legacy Sources
+	// or introduce a legacy account for an unread profile.
+	PendingAttempt  *readerProfileAttempt `json:"pendingAttempt,omitempty"`
+	SchemaVersion   int                   `json:"schemaVersion"`
+	Provider        string                `json:"provider"`
+	GrantKey        string                `json:"grantKey"`
+	AttemptedAt     time.Time             `json:"attemptedAt"`
+	NextAttemptAt   time.Time             `json:"nextAttemptAt"`
+	IntervalMinutes int                   `json:"intervalMinutes"`
+	Failures        int                   `json:"failures"`
+	NextProfile     int                   `json:"nextProfile"`
+	Entries         []readerEntry         `json:"entries"`
 }
 type readerContext struct {
 	Paths      Paths
@@ -211,6 +234,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if grantKey == "" {
 		return errors.New("identity key unavailable")
 	}
+	generationChanged := s.GrantKey != "" && s.GrantKey != grantKey
 	if s.GrantKey != grantKey {
 		s.Entries = []readerEntry{}
 		s.GrantKey = grantKey
@@ -244,6 +268,11 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return err
 	}
 	s.NextProfile = (index + 1) % len(profiles)
+	s.PendingAttempt = &readerProfileAttempt{ProfileKey: profileKey, At: now.UTC(), Discarded: generationChanged}
+	if !IdentityOff() {
+		// Allocation belongs to an authorized collection, never a cache read.
+		assignSubscription(p.Cache, readerProfileBasis(provider), profileKey, now)
+	}
 	if err := saveReaderState(p.Cache, s); err != nil {
 		return err
 	}
@@ -263,6 +292,15 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		e.ErrorCode = ReaderErrorCode(e.ErrorCode)
 	}
 	e.ProfileKey = profileKey
+	e.AttemptedAt = now.UTC()
+	e.Discarded = out.Invalidate || generationChanged
+	if e.Status != "ok" {
+		e.LastFailure = &readerFailure{Code: readerAttemptCode(e), At: now.UTC()}
+	} else {
+		e.LastFailure = nil
+		e.Discarded = false
+	}
+	s.PendingAttempt = nil
 	if e.Status != "ok" {
 		if !out.Invalidate {
 			e.Account, e.Metadata = previous.Account, previous.Metadata
@@ -314,6 +352,28 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	}
 	return saveReaderState(p.Cache, s)
 }
+
+// readerAttemptCode is a bounded input code, not the rows classifier. Preserve
+// actionable reader states whose meaning is more specific than ErrorCode (e.g.
+// expired); never persist a notice, provider message or unknown status as a code.
+func readerAttemptCode(e readerEntry) string {
+	if e.CredentialReadState != "" {
+		switch e.CredentialReadState {
+		case "unset", "denied", "canceled", "not-found", "unavailable", "keychain-confirmation-needed", "consent-required", "busy":
+			return e.CredentialReadState
+		}
+	}
+	switch e.Status {
+	case "expired", "expired_login", "login_expired", "busy", "consent_required", "denied", "off", "privacy_blocked":
+		return e.Status
+	}
+	if e.ErrorCode != "" {
+		return ReaderErrorCode(e.ErrorCode)
+	}
+	return statusErrorCode(e.Status)
+}
+
+func readerProfileBasis(provider string) string { return "reader-profile:" + provider }
 
 func sameReaderValues(a, b *Account) bool {
 	if a == nil || b == nil {

@@ -118,16 +118,21 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		if runtime.GOOS == "darwin" && !r.Grant.Keychain && r.Grant.KeychainConsent == "unset" {
 			out := fail("consent_required", consent.ClaudeKeychainUnsetNotice)
 			out.Entry.NextStep = consent.ClaudeKeychainNextStep
+			out.Entry.CredentialReadState = "unset"
 			return out
 		}
 		if !r.Grant.Keychain {
-			return fail("unavailable", "No supported Claude Code saved login", "file_missing")
+			out := fail("unavailable", "No supported Claude Code saved login", "file_missing")
+			if runtime.GOOS == "darwin" && r.Grant.KeychainConsent == "denied" {
+				out.Entry.CredentialReadState = "denied"
+			}
+			return out
 		}
 		k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
 			Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
 		})
 		if k.State != "ok" {
-			return readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep}}
+			return readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep, CredentialReadState: k.State}}
 		}
 		b, status = k.Value, ""
 	}
