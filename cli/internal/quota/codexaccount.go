@@ -121,7 +121,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.New("Codex reader not permitted")
 	}
 	commit := func(s *accountSnap) error {
-		return consent.Publish(state.Generation, func() error { return save(cache, s) })
+		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")
@@ -134,7 +134,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
-	if !consent.CurrentGeneration(state.Generation) {
+	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
 	}
 	ctx, cancel := context.WithTimeout(ctx, accountTimeout)

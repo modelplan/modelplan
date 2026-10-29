@@ -302,7 +302,7 @@ func TestClaudeDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	}
 }
 
-func TestKeychainGrantReadClearsALatchedBackgroundTimeout(t *testing.T) {
+func TestKeychainGrantReadsCredentialWithoutBypassingRemoteBudget(t *testing.T) {
 	p := claudeTestPaths(t)
 	status := 200
 	paths := []string{}
@@ -335,8 +335,8 @@ func TestKeychainGrantReadClearsALatchedBackgroundTimeout(t *testing.T) {
 		t.Fatal("background timeout was not latched as before", s.Entries)
 	}
 	// A later background attempt would return the latch without asking again.
-	// The grant read is foreground: it bypasses the latch and the schedule, and
-	// the user's "Always Allow" lets it read.
+	// The grant triggers one interactive credential operation while the shared
+	// remote budget stays closed.
 	claudeSecurity = func(ctx context.Context, _ string, _ ...string) (keychain.ProcessResult, error) {
 		d, _ := ctx.Deadline()
 		interactive = append(interactive, time.Until(d) > keychain.BackgroundTimeout)
@@ -348,14 +348,23 @@ func TestKeychainGrantReadClearsALatchedBackgroundTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ = loadReaderState(p.Cache, "claude")
-	if len(s.Entries) == 0 || s.Entries[0].Status != "ok" || s.Entries[0].Account == nil {
-		t.Fatal("grant read did not produce a reading", s.Entries)
+	if len(paths) != 0 || len(s.Entries) == 0 || s.Entries[0].Account != nil {
+		t.Fatal("Keychain grant bypassed remote budget", paths, s.Entries)
 	}
 	if len(interactive) != 2 || interactive[0] || !interactive[1] {
 		t.Fatal("expected one background then one foreground Keychain attempt", interactive)
 	}
 	if _, err := os.Stat(filepath.Join(p.Cache, "observed", "keychain", "claude-code.json")); !os.IsNotExist(err) {
 		t.Fatal("latched Keychain state survived a successful foreground read")
+	}
+	// After the backoff expires, a new explicit action reuses exactly one
+	// credential result for the budgeted remote operation.
+	if err := KeychainGrantRead(ctx, p, "claude", claudeTestNow.Add(11*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = loadReaderState(p.Cache, "claude")
+	if len(paths) == 0 || len(interactive) != 3 || s.Entries[0].Account == nil {
+		t.Fatal("due read did not reuse one credential operation", paths, interactive, s.Entries)
 	}
 	if err := KeychainGrantRead(ctx, p, "codex", claudeTestNow); err == nil {
 		t.Fatal("foreground path accepted a provider without a saved-login reader")

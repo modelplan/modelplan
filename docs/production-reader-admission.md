@@ -28,6 +28,24 @@ fence. Revoked reads cannot repopulate a successfully forgotten capture. Forget
 also clears managed-reader, runtime/config and local-history captures while
 retaining provider attempt/backoff gates, installation keys and Keychain Deny.
 
+## U2a admission gates (U2 integration)
+
+U2 consumes `quota.PolicyPending` for admission, projection and diagnostics.
+The U2a entry-point branch alone does not install those hooks. In the integrated
+build, Gemini Code Assist and Cursor plan/period account usage are disabled pending
+approval of their POST request sets. Admission wins over saved-login grants and
+legacy transition state: no remote calls, no scheduled account refresh, no old
+remote quota projection, and diagnostics report `unavailable:policy_pending`.
+Local-history paths retain their own consent. MiniMax ends its production read
+after HTTP 401 or 403 without trying the legacy endpoint. Historical POST parser,
+identity and budget fixtures use a test-only compiled-policy override; separate
+production regressions use the unchanged gate and valid synthetic logins.
+
+Gemini Code Assist 与 Cursor 套餐/周期 POST 账户用量路径在请求集获批前禁用，
+授权及旧版过渡状态均不能绕过：不发远程请求、不调度账户刷新、不显示旧远程额度，
+诊断为 `unavailable:policy_pending`。本机历史保留独立授权。
+MiniMax 收到 HTTP 401/403 后立即结束，不再请求旧版端点。
+
 ## Reader audit
 
 | Reader | Production path | Before this fix |

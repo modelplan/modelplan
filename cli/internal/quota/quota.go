@@ -11,6 +11,7 @@ package quota
 
 import (
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"math"
 	"sort"
@@ -214,6 +215,7 @@ type SourceStatus struct {
 }
 
 type Report struct {
+	ConsentStoreEpoch string         `json:"-"`
 	ConsentGeneration uint64         `json:"-"` // framework fence for downstream cache writers
 	SchemaVersion     int            `json:"schemaVersion"`
 	EvaluatedAt       time.Time      `json:"evaluatedAt"`
@@ -231,7 +233,8 @@ var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly"
 
 // Paths lets tests point every reader at a temporary tree.
 type Paths struct {
-	CLIVersion                  string // framework admission: minCli for the verified catalogue
+	Admission                   *consent.Admission // immutable command input; live reader/publication fences remain live
+	CLIVersion                  string             // framework admission: minCli for the verified catalogue
 	Cache, CodexHome, LocalFile string
 	CodexBarFile                string                    // ~/.config/modelplan/codexbar.json: providers read through CodexBar
 	ConnectionsFile             string                    // ~/.config/modelplan/connections.json: which backend reads each provider

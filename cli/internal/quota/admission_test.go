@@ -130,9 +130,7 @@ printf '[]'
 			if err := consent.Set(s, "cursor", true, "codexbar:cursor", "codexbar", cbNow); err != nil {
 				return err
 			}
-			r := s.Tools["cursor"]
-			r.BrowserSession = v.grant
-			s.Tools["cursor"] = r
+			consent.SetBrowserSession(s, "cursor", v.grant)
 			return nil
 		}); err != nil {
 			t.Fatal(err)

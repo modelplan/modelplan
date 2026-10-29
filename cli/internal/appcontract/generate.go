@@ -182,6 +182,13 @@ func Generate(root, helper string) (map[string][]byte, error) {
 			}
 		}
 	}
+	if err := s.captureRetiredConsent(tmp); err != nil {
+		return nil, err
+	}
+	if err := s.captureScopedConsent(tmp); err != nil {
+		return nil, err
+	}
+	states = append(states, "retired", "retired-legacy", "scoped")
 	// Offline publication failure has no JSON envelope: preserve the actual
 	// empty stdout and exit 3 rather than inventing a successful empty graph.
 	s.home, s.state = filepath.Join(tmp, "no-publication"), "fresh"
@@ -227,6 +234,9 @@ func (s *suite) setup() error {
 			s.env = append(s.env, k+"="+v)
 		}
 	}
+	if _, code, _, err := s.run([]string{"consent", "init", "--json"}, nil); err != nil || code != 0 {
+		return fmt.Errorf("consent init failed: %v", err)
+	}
 	return seedPublication(s.home)
 }
 
@@ -250,13 +260,14 @@ func (s *suite) run(args []string, input []byte) ([]byte, int, string, error) {
 	return out.Bytes(), code, stderr.String(), err
 }
 
-func (s *suite) grant(name string, generation uint64, allow, deny []string) ([]byte, error) {
+func (s *suite) grant(name string, generation uint64, allow, deny []string, forget ...[]string) ([]byte, error) {
 	read, _, _, err := s.run([]string{"consent", "--json"}, nil)
 	if err != nil {
 		return nil, err
 	}
 	var current struct {
-		ConsentTextVersion int `json:"consentTextVersion"`
+		ConsentTextVersion int    `json:"consentTextVersion"`
+		StoreEpoch         string `json:"storeEpoch"`
 	}
 	if err := json.Unmarshal(read, &current); err != nil {
 		return nil, err
@@ -265,7 +276,17 @@ func (s *suite) grant(name string, generation uint64, allow, deny []string) ([]b
 	if name != "grant" {
 		id = fmt.Sprintf("00000000-0000-4000-8000-%012d", len(s.entries)+2)
 	}
-	request, _ := json.Marshal(map[string]any{"requestId": id, "expectGeneration": generation, "consentTextVersion": current.ConsentTextVersion, "allow": allow, "deny": deny, "keychain": map[string]string{}})
+	if allow == nil {
+		allow = []string{}
+	}
+	if deny == nil {
+		deny = []string{}
+	}
+	payload := map[string]any{"requestId": id, "expectStoreEpoch": current.StoreEpoch, "expectGeneration": generation, "consentTextVersion": current.ConsentTextVersion, "allow": allow, "deny": deny, "keychain": map[string]string{}}
+	if len(forget) > 0 {
+		payload["forget"] = forget[0]
+	}
+	request, _ := json.Marshal(payload)
 	requestFile := s.state + "-" + name + ".request.json"
 	if err := s.v.Validate("consent-grant-request", request); err != nil {
 		return nil, err
@@ -336,10 +357,18 @@ func (s *suite) capture(name, schema string, args []string, input []byte, readon
 	}
 	if schema == "consent-grant-response" {
 		var reply struct {
-			OK    bool   `json:"ok"`
-			Error string `json:"error"`
+			OK        bool   `json:"ok"`
+			Error     string `json:"error"`
+			Committed bool   `json:"committed"`
+			Code      string `json:"code"`
 		}
 		_ = json.Unmarshal(raw, &reply)
+		if reply.Committed {
+			reply.OK = reply.Code == "ok"
+			if !reply.OK {
+				reply.Error = reply.Code
+			}
+		}
 		want := ""
 		switch name {
 		case "stale-generation":
@@ -436,6 +465,9 @@ func canonical(raw []byte, home string) ([]byte, error) {
 			return x
 		case string:
 			x = strings.ReplaceAll(x, home, "$HOME")
+			if (key == "storeEpoch" || key == "expectStoreEpoch") && x != "" {
+				return strings.Repeat("a", 32)
+			}
 			if key == "dataRevision" {
 				return ""
 			}

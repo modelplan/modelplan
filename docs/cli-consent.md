@@ -75,28 +75,55 @@ fail closed. Existing explicit native connections remain available until revoked
 legacy helper settings still require an audited current access class and cannot
 acquire browser permission. Catalogue consent never silently broadens them.
 
-`~/.config/modelplan/consent.json` (schema 1, mode 0600) is shared across copies.
-Per-tool records contain allowed/refused, consent-text version, timestamp,
-logical reader/backend and optional opaque profile descriptors. Source denials
-survive disconnect, reconnect, restart and updates. Keychain Deny is never
-automatically retried; only a future explicit Settings Retry may clear it. This
-PR adds no Keychain value adapter. Unknown consent-text versions cannot admit a
-reader. Consent text version 2 excludes browser access from the standard grant.
-Schema-1 records add explicit browser-grant and pending-cookie-cleanup flags;
-the latter persists after revocation until cleanup succeeds. Kernel locks release
-on process termination; atomic replacement serializes state changes. Reader
-admission precedes provider selection and collection, and generation validation
-and cache publication are serialized with consent changes. A paused refresh
-cannot publish after revocation; a paused statusline input is admitted only after
-input parsing. Local performance and quota-history writes use the same fences.
+`~/.config/modelplan/consent.json` uses schema 2 (mode 0600). Grants are
+recorded by stable read scope, such as `claude.local_history` and
+`claude.account_usage.saved_login`. Go constants live in
+`cli/internal/consent/scopes.go`. Tool records retain route metadata for legacy
+CLI entry points; they never extend a scope grant. Environment-only keys are
+unchecked until explicitly selected. Passive mode and source denials remain vetoes.
 
-The [App consent API](clients-and-readers.md#app-consent-api) also works with
-pre-API CLI copies sharing schema 1. API Keychain unset/deny choices persist the
-existing `deniedSources.keychain` veto, which those readers already enforce.
-Reserved `deniedSources` metadata distinguishes an initial unset choice from a
-source Deny and retains explicit allowed readback if an old writer drops the
-new `keychain` field. An explicit API allow may resolve unset; it never clears
-an existing user/OS Deny.
+The first v2 reader migrates schema 1 under the consent lock, preserves the
+original bytes in `consent.v1.bak`, and maps only the read paths the old grant
+provably covered. It retains denials, privacy, generation, pending erasure,
+request hashes and receipt results. Backup files never supply runtime permission.
+Schema-1 binaries reject schema 2, report readers off, and refuse mutations.
+All copies that need readers must update together.
+
+A random `storeEpoch` identifies the store. Generations are ordered only within
+that epoch. Every publication compares the full epoch/generation pair while
+holding the store lock, including the short cache commit. A reset at the same
+numeric generation cannot admit an old result. Load failures keep readers off
+and never overwrite the file. After explicit confirmation,
+`modelplan consent reset confirmed --json` preserves damaged bytes and creates
+an empty store with a new epoch and generation 1. Every permission must be given
+again; old configuration cannot restore defaults.
+
+For new clients, `modelplan consent init --json` establishes the epoch before a
+mutation; ordinary `consent --json` remains read-only on a fresh home and returns
+an empty epoch until initialization. Migration is the exception to read-only
+loading. Mutation requests carry `expectStoreEpoch` and `expectGeneration`.
+Readback includes per-scope facts alongside legacy tool rows. The CLI accepts
+scope IDs in `allow`, `deny` and `forget`; only allow requires a detected,
+admitted reader. Deny and Forget accept retired scopes and readers-off mode.
+Deny erases that scope's readings and keeps its denial and request budgets.
+Forget also erases its derived history and identity records. Independent key and
+saved-login readings keep separate cleanup paths.
+
+Receipts use explicit `(storeEpoch, requestId)` keys. Repeating the same request
+returns the original result; changing its payload is rejected. Epoch validation
+runs before receipt lookup. Permissions and receipts share one locked atomic
+replacement and the 256 KiB file bound. Interrupted cleanup stays durable and
+is retried on initialization or `modelplan consent cleanup --json`; retrying
+cleanup does not change generation or rewrite the original client receipt.
+
+The engine integration API is `consent.EnsureStore`, `consent.Capture` (or
+`NewAdmission`), `Admission.Fence`, `Admission.ScopeFacts`, `consent.ApplyGrant`,
+`consent.RetryCleanup` and `consent.Publish`. `ApplyGrant` takes compiled
+admission and scoped erasure hooks. `quota.EraseScope` is the production cleanup
+hook and preserves shared request budgets. `GrantReceipt.Replayed` is internal
+metadata so an engine never repeats a credential operation after receipt replay.
+An explicit Keychain grant starts one interactive credential operation; any
+remote quota request still passes the normal shared five-minute budget.
 
 `State.KeychainStatus` is shared by API readback and production admission.
 Existing native Claude `connect` grants implicitly permit Keychain and read back
@@ -105,15 +132,6 @@ native Claude uses this consent capability. The API rejects explicit choices
 for other routes with `keychain_not_supported` and reports their unused state
 as `unset`, including old API records that had stored an ineffective choice.
 New API grants start unset; omission preserves an existing implicit grant.
-
-Replay receipts and pending Forget IDs are encoded in true-valued keys under
-`hinted["consent-api/receipt/v1/<requestId>/<base64url-receipt>"]`. This reserved
-namespace cannot collide with tool IDs, and supported schema-1 writers preserve
-unknown keys in `hinted`. The API exposes decoded receipts internally rather
-than relying on a new top-level JSON field that an older writer would discard.
-Permissions and receipts still share one locked atomic replacement and the
-256 KiB file bound; no sidecar or schema upgrade is required. Frozen pre-API
-readers/writers in the regression suite verify both restrictions and replay.
 
 Catalogue routing cannot grant consent. `preferred: off` stops new reads;
 `codexbar.audited: false` blocks the helper, including explicit legacy connections
@@ -174,3 +192,12 @@ Passive 禁止自动导入工具凭据/钥匙串，Off 停止个人读取器。�
 用 `connect <工具> --browser-session` 单独查看 Safe Storage 和 CodexBar cookie 缓存说明并确认。
 忘记读数会按提供商清除该 cookie 缓存，失败则保留待清理标记以供显式重试。
 JSON 只预览，连接不触发读取或后台工作；确认前列出接收凭据的主机和所选地区。
+
+Schema 2 按读取范围保存授权，并在同一个锁内比较 `storeEpoch` 与 generation。
+迁移仅保留旧授权确实覆盖的范围，同时保留拒绝、隐私模式、回执及待清理记录；原文件保存为
+`consent.v1.bak`，备份不参与授权判断。旧版 CLI 拒绝 schema 2，不能继续读写授权。
+新客户端先用 `consent init --json` 建立 epoch，变更时携带 `expectStoreEpoch`。
+`deny` 撤销并删除该范围的读数，`forget` 额外删除派生历史及身份记录；两者均保留调用预算，
+即使读取器关闭或工具已退役也可执行。损坏文件不自动覆盖；明确确认后的
+`consent reset confirmed --json` 创建新 epoch，所有授权均需重新确认。
+钥匙串确认只触发一次交互式凭据操作，远程请求仍遵守共享的五分钟预算。
