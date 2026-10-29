@@ -54,6 +54,9 @@ import ModelPlanSettings
                                        placementSource: (any CommunityPlacementProducing)? = nil,
                                        canPresent: @escaping @MainActor () -> Bool,
                                        makeFirstRun: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) throws -> CommunityConnectionIntegration {
+        if let canonical = backend as? CommunityConnectionBackend {
+            canonical.bindPluginInstallerIfNeeded { CommunityPluginInstaller.live(bundle: Bundle.main.bundleURL, canPresent: canPresent) }
+        }
         let flow = try CommunityConnectionFlow(application: application, backend: backend,
             canPresent: canPresent, showSettings: { [weak base] pane in
                 await base?.windowHost.present(paneID: pane)

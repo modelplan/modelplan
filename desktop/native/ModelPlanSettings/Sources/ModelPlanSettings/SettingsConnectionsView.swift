@@ -122,13 +122,19 @@ import AppKit
         }
         label(.init("ModelPlan plugins", "ModelPlan 插件"), heading: true)
         if controller.availability.pluginTools.isEmpty {
-            label(.init("Plugin installation is unavailable in this build.", "此构建暂不支持插件安装。"))
+            label(.init("Plugin installation needs a verified component. Open About to check the component and setup instructions.", "插件安装组件尚未核验。请打开关于，检查组件与安装说明。"))
         }
         for tool in SettingsPluginTool.allCases {
             addArrangedSubview(button(.init("Install for " + tool.title + "…", "为 " + tool.title + " 安装…"),
                 id: "connections.plugin." + tool.rawValue, enabled: controller.availability.pluginTools.contains(tool) && !controller.isBusy) { [weak self] in
                 guard let self else { return }; self.controller.request(.installPlugin(tool), presentationID: self.presentationID)
             })
+        }
+        if case .pluginResult(let result) = controller.phase, !result.isInstalled {
+            addArrangedSubview(button(.init("Copy install commands", "复制安装命令"), id: "connections.pluginCopy." + result.tool.rawValue,
+                enabled: controller.canGuidePlugin(result.tool)) { [weak self] in self?.controller.copyPluginInstructions(result.tool) })
+            addArrangedSubview(button(.init("Open setup guide", "打开安装指南"), id: "connections.pluginGuide." + result.tool.rawValue,
+                enabled: controller.canGuidePlugin(result.tool)) { [weak self] in self?.controller.openPluginDocumentation(result.tool) })
         }
         if case .awaitingConfirmation(let confirmation) = controller.phase {
             let confirm = button(.init("Confirm request", "确认请求"), id: "connections.confirm", enabled: true) { [weak self] in

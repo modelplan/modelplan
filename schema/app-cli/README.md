@@ -5,9 +5,9 @@ These Draft 2020-12 schemas describe the public helper boundary. `commands.json`
 is the full argv inventory from `desktop/native/Sources/ModelPlanCore/CLITransport.swift`
 and the CommunityApp helper diagnostic. Connections and reader diagnostics are
 included for the Settings/support boundary; the current app transport does not
-invoke them. Plugin installation is reserved for the Settings integration being
-added by the app owner; its existing production CLI command is covered here
-before that integration lands. `common.json` contains shared definitions.
+invoke them. Settings invokes the two online plugin-install commands only after
+explicit confirmation, through its separate typed command port. Offline plugin
+planning remains CLI-only. `common.json` contains shared definitions.
 
 | Command | Schema | Collection / side effects |
 | --- | --- | --- |
@@ -82,9 +82,11 @@ For each of `claude-code` and `codex`, these actual-binary captures are committe
 `plugin_install_test.go` compares the schema's serialized fields/types/required
 set against the real Go `plugininstall.Result` and its status enum against every
 production status assignment. It also requires a capture for every tool/status.
-No parallel handwritten positive result set is introduced. M4's new typed
-Settings service/decoder tests should load these files via the existing
-`GeneratedAppCLIFixtures` loader and use the corresponding manifest exit code.
+No parallel handwritten positive result set is introduced. The native
+`PluginInstallFlowTests` consume these files through `GeneratedAppCLIFixtures`
+and use the corresponding manifest exit codes. The Settings service validates
+fixed commands/docs, tool, progress and exit status before mapping a safe receipt;
+it never renders host stderr or arbitrary producer URLs/commands.
 
 插件安装契约覆盖两个宿主的真实 CLI 输出；缺少宿主返回 `instructions`，
 宿主命令失败返回 `failed`，`--offline` 返回 `planned` 且不执行宿主。
