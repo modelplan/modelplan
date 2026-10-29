@@ -17,8 +17,9 @@ public struct EngineStoreSnapshot: Sendable {
     public internal(set) var invalidRowCount = 0
     public internal(set) var consent: WireConsentFacts?
     public internal(set) var history: WireHistoryPage?
-    public internal(set) var publication: WireJSONValue?
-    public internal(set) var pluginInstall: WireJSONValue?
+    public internal(set) var cockpit: WireCockpitData?
+    public internal(set) var publication: WirePublicationResult?
+    public internal(set) var pluginInstall: WirePluginInstallResult?
     public internal(set) var diagnostics: WireDiagnostics?
     public internal(set) var refresh: [WireRefreshScheduled]?
     public internal(set) var lastGrant: EngineGrantResult?
@@ -87,6 +88,9 @@ public struct EngineStoreCore: Sendable {
         case .history(let reply):
             snapshot.history = reply.envelope.data
             succeeded(.history)
+        case .cockpit(let reply):
+            snapshot.cockpit = reply.envelope.data
+            succeeded(.cockpit)
         case .pluginInstall(let reply):
             snapshot.pluginInstall = reply.envelope.data
             succeeded(.pluginInstall)
