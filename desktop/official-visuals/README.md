@@ -17,6 +17,12 @@ npm run build:official     # official edition from this folder
 
 The official build copies `LICENSE.md` into the app as `VISUAL-LICENSE.md`. Forks and redistributed builds use the community edition.
 
+The [runtime artwork pack](runtime/README.md) supplies the approved A5 recessed
+ignition and c01 canopy PNGs and cap-image baselines. Its manifest binds the exact
+files, hashes, sizes and reserved licence. The official build verifies and copies
+it into `runtime/`; the default community build excludes it. Native consumers
+integrate the manifest separately.
+
 ## Rules
 
 - Text files carry `SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0` (JSON files as a key). Binaries are listed with their SHA-256 in `source-policy.json` (`reservedVisuals.binaries`).

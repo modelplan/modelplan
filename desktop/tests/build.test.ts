@@ -21,10 +21,17 @@ test('--official assembles desktop/official-visuals/; the default community buil
   assert.equal(read('VISUAL-LICENSE.md'), readFileSync(join(official, 'LICENSE.md'), 'utf8'));
   assert.ok(read('app.css').endsWith(readFileSync(join(official, 'theme.css'), 'utf8')));
   assert.ok(read('main.js').includes('M0-8.2C2.8-6.2'), 'official logo is bundled');
+  assert.ok(existsSync(join(dist, 'runtime/manifest.json')), 'official runtime manifest is bundled');
+  const runtime = JSON.parse(read('runtime/manifest.json'));
+  for (const entry of runtime.files) {
+    assert.ok(readFileSync(join(dist, 'runtime', entry.file)).equals(readFileSync(join(official, 'runtime', entry.file))),
+      'official runtime bytes differ: ' + entry.file);
+  }
 
   build();
   assert.equal(JSON.parse(read('build-edition.json')).edition, 'community');
   assert.ok(!existsSync(join(dist, 'VISUAL-LICENSE.md')));
+  assert.ok(!existsSync(join(dist, 'runtime')), 'community build excludes the official runtime pack');
   assert.equal(read('app.css'), readFileSync(join(desktop, 'app/style.css'), 'utf8'));
   const out = readdirSync(dist).map(f => readFileSync(join(dist, f)));
   for (const f of officialFiles()) {
