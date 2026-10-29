@@ -2386,7 +2386,7 @@ public struct WirePublicationResult: Codable, Sendable {
     public let `publicationId`: String
     public let `publishedAt`: String?
     public let `units`: WirePublicationUnits
-    public let `selectionRevision`: String?
+    public let `selectionRevision`: WireJSONValue?
     public let `models`: [WireJSONValue]
     public let `lineups`: [WireJSONValue]
     public let `speedTiers`: [WireJSONValue]
@@ -2412,7 +2412,7 @@ public struct WirePublicationResult: Codable, Sendable {
         case `multiplierHorizon`
         case `planMetering`
     }
-    public init(`contractVersion`: Int, `capabilities`: [String: WirePublicationCapability], `schemaVersion`: Int, `publicationId`: String, `publishedAt`: String?, `units`: WirePublicationUnits, `selectionRevision`: String? = nil, `models`: [WireJSONValue], `lineups`: [WireJSONValue], `speedTiers`: [WireJSONValue], `resets`: [WireJSONValue], `windows`: [WireJSONValue], `multipliers`: [WireJSONValue]?, `multiplierHorizon`: WireJSONValue?, `planMetering`: WireJSONValue?) throws {
+    public init(`contractVersion`: Int, `capabilities`: [String: WirePublicationCapability], `schemaVersion`: Int, `publicationId`: String, `publishedAt`: String?, `units`: WirePublicationUnits, `selectionRevision`: WireJSONValue? = nil, `models`: [WireJSONValue], `lineups`: [WireJSONValue], `speedTiers`: [WireJSONValue], `resets`: [WireJSONValue], `windows`: [WireJSONValue], `multipliers`: [WireJSONValue]?, `multiplierHorizon`: WireJSONValue?, `planMetering`: WireJSONValue?) throws {
         self.`contractVersion` = `contractVersion`
         self.`capabilities` = `capabilities`
         self.`schemaVersion` = `schemaVersion`
@@ -2439,7 +2439,7 @@ public struct WirePublicationResult: Codable, Sendable {
         guard c.contains(.`publishedAt`) else { throw WireDecodeError.invalidIdentity }
         self.`publishedAt` = try c.decodeIfPresent(String.self, forKey: .`publishedAt`)
         self.`units` = try c.decode(WirePublicationUnits.self, forKey: .`units`)
-        self.`selectionRevision` = try c.decodeIfPresent(String.self, forKey: .`selectionRevision`)
+        self.`selectionRevision` = c.contains(.`selectionRevision`) ? try c.decode(WireJSONValue.self, forKey: .`selectionRevision`) : nil
         self.`models` = try c.decode([WireJSONValue].self, forKey: .`models`)
         self.`lineups` = try c.decode([WireJSONValue].self, forKey: .`lineups`)
         self.`speedTiers` = try c.decode([WireJSONValue].self, forKey: .`speedTiers`)
@@ -2687,7 +2687,7 @@ public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDeb
         self.`jsonrpc` = try c.decode(String.self, forKey: .`jsonrpc`)
         self.`id` = try c.decodeIfPresent(WireRequestID.self, forKey: .`id`)
         self.`method` = try c.decode(String.self, forKey: .`method`)
-        self.`params` = try? c.decodeIfPresent(WireJSONValue.self, forKey: .`params`)
+        self.`params` = c.contains(.`params`) ? try c.decode(WireJSONValue.self, forKey: .`params`) : nil
         try validate()
     }
     public func encode(to encoder: Encoder) throws {

@@ -709,7 +709,7 @@
           "field": "selectionRevision",
           "omission": true,
           "null": true,
-          "wrongType": false,
+          "wrongType": true,
           "strict": true
         },
         {

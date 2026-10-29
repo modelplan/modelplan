@@ -55,6 +55,8 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 		value := `{}`
 		if name == "ID" {
 			value = `9007199254740993`
+		} else if name == "SelectionRevision" {
+			value = `"synthetic"`
 		}
 		return reflect.ValueOf(json.RawMessage(value)), nil
 	}

@@ -142,3 +142,41 @@ func TestPublicationWireRootPreservesPublishedValues(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectionRevisionPresenceRegression(t *testing.T) {
+	for _, tc := range []struct{ name, revision string }{{"absent", ""}, {"null", "null"}, {"string", `"synthetic-revision"`}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var published digest.Publication
+			fixture := []byte(`{"contractVersion":1,"schemaVersion":1,"publicationId":"synthetic","publishedAt":null,"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"capabilities":{},"models":[],"lineups":[],"speedTiers":[],"resets":[],"windows":[],"multipliers":null,"multiplierHorizon":null,"planMetering":null}`)
+			if err := json.Unmarshal(fixture, &published); err != nil {
+				t.Fatal(err)
+			}
+			published.SelectionRevision = json.RawMessage(tc.revision)
+			handler, err := PublicationHandler(&publicationFixture{result: published})
+			if err != nil {
+				t.Fatal(err)
+			}
+			reply, err := handler.Handle(context.Background(), nil, appserver.Stamp{Epoch: "synthetic", Generation: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _ := json.Marshal(published)
+			got, err := json.Marshal(reply.Data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var a, b map[string]json.RawMessage
+			if err := json.Unmarshal(want, &a); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(got, &b); err != nil {
+				t.Fatal(err)
+			}
+			wantValue, wantPresent := a["selectionRevision"]
+			gotValue, gotPresent := b["selectionRevision"]
+			if wantPresent != gotPresent || !bytes.Equal(wantValue, gotValue) {
+				t.Fatalf("selectionRevision presence/value changed: want present=%v value=%s; got present=%v value=%s", wantPresent, wantValue, gotPresent, gotValue)
+			}
+		})
+	}
+}
