@@ -14,7 +14,7 @@ python3 -m unittest discover -s tools/u14/tests -v
 ```
 
 The dedicated hosted workflow runs `verify.py` on standard Ubuntu runners. It
-runs this suite, the source-policy gate, and both CLIs across all nine preference
+runs this suite, the source-policy gate, and both CLIs across all ten preference
 cases, then uploads the synthetic evidence (also on failure). To run the same
 profile locally, choose a new temporary destination outside the source checkout:
 
@@ -91,6 +91,13 @@ remains a known gap until U2 supplies its persisted store contract.
 | `all-corrupt`, `fresh` | Defaults | Defaults | Defaults |
 | `new-exists` | New file | New file | New file |
 | `corrupt-new` | Defaults, report error | Defaults, report error | Defaults, report error |
+| `invalid-progress` | Beta07, recover invalid onboarding | Native | Core |
+
+The retained Settings inputs use current completed progress (`setup65`, signature
+`7:setup65:0`). `invalid-progress` deliberately replaces only the Beta07 progress
+with an unknown step, leaving group-source selection intact. The U5 production
+consumer must assert completed-progress retention and invalid-progress recovery
+when that migration seam is wired.
 
 Migration is by **whole group**, never a field-by-field merge of the two Settings
 files. Core is independent. Sources remain unchanged; unmatched row ids remain

@@ -44,7 +44,8 @@
         "all-corrupt",
         "fresh",
         "new-exists",
-        "corrupt-new"
+        "corrupt-new",
+        "invalid-progress"
       ]
     },
     "covers": {

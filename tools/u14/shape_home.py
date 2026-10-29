@@ -13,7 +13,7 @@ SETTINGS_PATHS = [SUPPORT + 'Beta07/settings-v1.json', SUPPORT + 'Native/setting
 NEW_SETTINGS = SUPPORT + 'settings.json'
 CONSENT = '.config/modelplan/consent.json'
 CASES = ('coexistence', 'corrupt-beta07', 'missing-beta07', 'corrupt-native', 'corrupt-core',
-         'all-corrupt', 'fresh', 'new-exists', 'corrupt-new')
+         'all-corrupt', 'fresh', 'new-exists', 'corrupt-new', 'invalid-progress')
 CORRUPT = b'{synthetic-corrupt\n'
 
 
@@ -61,8 +61,8 @@ def settings(official):
                           'hiddenIDs': ['synthetic-unmatched-row']},
         'subscriptionSettings': {'synthetic-unmatched-row': {'alias': 'Synthetic', 'percentagePin': 'auto'}},
         'helpHints': {'seen': ['ignition'], 'opens': 1, 'reveals': 1},
-        'onboarding': {'step': 'setup', 'completed': True, 'trialDemonstrated': False,
-                       'definitionSignature': ['5:setup:0']}}}
+        'onboarding': {'step': 'setup65', 'completed': True, 'trialDemonstrated': False,
+                       'definitionSignature': ['7:setup65:0']}}}
 
 
 def preference_inputs(case):
@@ -73,6 +73,12 @@ def preference_inputs(case):
     community_source = 'native'
     if case == 'fresh':
         return {}, {'officialSettingsSource': 'defaults', 'communitySettingsSource': 'defaults', 'coreSource': 'defaults'}
+    if case == 'invalid-progress':
+        invalid = settings(True)
+        invalid['preferences']['onboarding'] = {
+            'step': 'synthetic-invalid-progress', 'completed': True,
+            'trialDemonstrated': False, 'definitionSignature': []}
+        files[SETTINGS_PATHS[0]] = encoded(invalid)
     if case == 'corrupt-beta07':
         files[SETTINGS_PATHS[0]] = CORRUPT
         source = 'native'

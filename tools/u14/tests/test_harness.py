@@ -60,6 +60,17 @@ class ShapeTests(unittest.TestCase):
                 if case == 'corrupt-new':
                     self.assertEqual((home / 'Library/Application Support/ModelPlan/settings.json').read_text(), '{synthetic-corrupt\n')
 
+    def test_retained_onboarding_and_invalid_progress_are_separate(self):
+        home, _ = self.build()
+        for path in SETTINGS_PATHS[:2]:
+            progress = load_json(home / path)['preferences']['onboarding']
+            self.assertEqual(progress['step'], 'setup65')
+            self.assertEqual(progress['definitionSignature'], ['7:setup65:0'])
+            self.assertTrue(progress['completed'])
+        invalid_home, _ = self.build('invalid-progress')
+        invalid = load_json(invalid_home / SETTINGS_PATHS[0])['preferences']['onboarding']
+        self.assertEqual(invalid['step'], 'synthetic-invalid-progress')
+
     def test_consent_states_and_shape_contract_rejections(self):
         for state in ('missing', 'corrupt'):
             shape = copy.deepcopy(self.shape)
