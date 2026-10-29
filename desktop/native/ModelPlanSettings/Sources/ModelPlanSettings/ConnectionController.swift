@@ -126,7 +126,8 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         let confirmation = SettingsConnectionConfirmation(id: UUID(), action: action, observation: observation)
         phase = .awaitingConfirmation(confirmation); changed(); return confirmation
     }
-    public func confirm(_ id: UUID) async {
+    /// Once confirmed, the dispatching surface owns the in-flight UI receipt.
+    public func confirm(_ id: UUID, presentationID: UUID? = nil) async {
         guard let service, case .awaitingConfirmation(let confirmation) = phase,
               confirmation.id == id, confirmation.observation == observation,
               canRequest(confirmation.action) else { return }
@@ -136,6 +137,7 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
         if case .applyStandardConsent(_, _, let chosen) = confirmation.action { keychainAllow = chosen } else { keychainAllow = [] }
         let request = SettingsConnectionRequestContext(id: confirmation.id, expectedConsentGeneration: snapshot?.consentGeneration,
                                                        consentTextVersion: snapshot?.consentPreview?.textVersion, keychainAllow: keychainAllow)
+        if let presentationID { self.presentationID = presentationID }
         phase = .running(confirmation.action); changed()
         guard generation == token, confirmation.observation == observation,
               phase == .running(confirmation.action), canRequest(confirmation.action) else { return }

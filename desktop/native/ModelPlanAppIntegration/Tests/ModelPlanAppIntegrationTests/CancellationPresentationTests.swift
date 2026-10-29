@@ -145,4 +145,55 @@ import ModelPlanCore
         XCTAssertEqual(port.reads, 1); XCTAssertEqual(port.mutations, 0)
     }
 
+    func testOtherSurfaceQueuedConfirmCannotCancelTheOwnersConfirmation() async throws {
+        let (application, entry, port) = try await composition()
+        defer { entry.flow.dispose() }
+        let owner = SettingsConnectionsView(editor: application.editor)
+        let other = SettingsConnectionsView(editor: application.editor)
+        func find(_ view: NSView, _ id: String) -> ConnectionButton? {
+            if let button = view as? ConnectionButton, button.accessibilityIdentifier() == id { return button }
+            return view.subviews.lazy.compactMap { find($0, id) }.first
+        }
+        let forget = try XCTUnwrap(find(owner, "connections.disconnect.codex"))
+        XCTAssertTrue(forget.isEnabled); forget.invoke?()
+        guard case .awaitingConfirmation(let request) = application.editor.connections.phase else { return XCTFail("Expected owner's confirmation") }
+        let confirm = try XCTUnwrap(find(other, "connections.confirm"))
+        XCTAssertTrue(confirm.isEnabled); confirm.invoke?(); other.suspend()
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(application.editor.connections.phase, .awaitingConfirmation(request))
+        XCTAssertEqual(port.reads, 1); XCTAssertEqual(port.mutations, 0)
+        let cancel = try XCTUnwrap(find(owner, "connections.cancel"))
+        XCTAssertTrue(cancel.isEnabled); cancel.invoke?()
+        XCTAssertEqual(application.editor.connections.phase, .cancelled)
+        await application.editor.connections.confirm(request.id)
+        XCTAssertEqual(port.mutations, 0)
+    }
+
+    func testConfirmingSurfaceOwnsTheDispatchedRequestWhenItSuspends() async throws {
+        let (application, entry, port) = try await composition()
+        defer { entry.flow.dispose() }
+        let owner = SettingsConnectionsView(editor: application.editor)
+        let confirming = SettingsConnectionsView(editor: application.editor)
+        func find(_ view: NSView, _ id: String) -> ConnectionButton? {
+            if let button = view as? ConnectionButton, button.accessibilityIdentifier() == id { return button }
+            return view.subviews.lazy.compactMap { find($0, id) }.first
+        }
+        try XCTUnwrap(find(owner, "connections.disconnect.codex")).invoke?()
+        guard case .awaitingConfirmation = application.editor.connections.phase else { return XCTFail("Expected confirmation") }
+        port.paused = true
+        try XCTUnwrap(find(confirming, "connections.confirm")).invoke?()
+        for _ in 0..<100 where port.pending == nil { await Task.yield() }
+        let pending = try XCTUnwrap(port.pending)
+        let before = application.editor.connections.snapshot
+        owner.suspend()
+        XCTAssertTrue(application.editor.connections.isBusy, "The initiating surface no longer owns this dispatched confirmation")
+        confirming.suspend()
+        XCTAssertEqual(application.editor.connections.phase, .idle)
+        pending.resume(returning: port.value)
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(application.editor.connections.phase, .idle)
+        XCTAssertEqual(application.editor.connections.snapshot, before)
+        XCTAssertEqual(port.mutations, 0)
+    }
+
 }

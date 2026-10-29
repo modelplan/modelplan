@@ -132,7 +132,11 @@ import AppKit
         }
         if case .awaitingConfirmation(let confirmation) = controller.phase {
             let confirm = button(.init("Confirm request", "确认请求"), id: "connections.confirm", enabled: true) { [weak self] in
-                guard let self else { return }; self.task = Task { await self.controller.confirm(confirmation.id) }
+                guard let self else { return }
+                self.task = Task {
+                    guard !Task.isCancelled else { return }
+                    await self.controller.confirm(confirmation.id, presentationID: self.presentationID)
+                }
             }
             let cancel = button(.init("Cancel", "取消"), id: "connections.cancel", enabled: true) { [weak self] in self?.controller.cancel() }
             addArrangedSubview(NSStackView(views: [confirm, cancel]))
