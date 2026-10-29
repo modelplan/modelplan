@@ -19,6 +19,8 @@ import ModelPlanAppIntegration
 @MainActor enum E2EJourney {
     private static var surface: JourneyFirstRunSurface?
     private static var records = [[String: Any]]()
+    private static weak var observedDock: StaticDockPreviewHost?
+    private static weak var observedConsent: CommunityCLIConsentPort?
     static func makeFirstRun(_ editor: SettingsEditor) -> any SettingsWindowSurface {
         let value = JourneyFirstRunSurface(editor); surface = value; return value
     }
@@ -31,7 +33,17 @@ import ModelPlanAppIntegration
         return predicate()
     }
     private static func record(_ step: Int, _ facts: [String: Any]) {
-        var value = facts; value["step"] = step; records.append(value)
+        var value = facts; value["step"] = step
+        let allowed = observedConsent?.journeyAllowedTools?.map { id -> String in
+            switch id { case "claude-code": return "claude"; case "zcode": return "zai"; case "opencode": return "opencodego"; default: return id }
+        }.sorted()
+        let rows = observedDock?.journeyRows ?? []
+        let counts = Dictionary(uniqueKeysWithValues: (allowed ?? []).map { tool in
+            (tool, rows.filter { ($0["providers"] as? [String])?.contains(tool) == true }.count)
+        })
+        let invariant: [String: Any] = ["canonicalKnown": allowed != nil, "allowedTools": allowed ?? [], "rowCounts": counts]
+        value["rowInvariant"] = invariant
+        records.append(value)
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_E2E_REPORT"],
               let data = try? JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "steps": records], options: [.sortedKeys]) else { return }
         try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -68,26 +80,28 @@ import ModelPlanAppIntegration
         if let button = view as? NSButton { return [button.title] + view.subviews.flatMap(labels) }
         return view.subviews.flatMap(labels)
     }
-    private static func allow(_ controller: SettingsConnectionController) async -> Bool {
+    private static func allow(_ controller: SettingsConnectionController, tools: Set<SettingsConnectionTool> = [.codex]) async -> Bool {
         guard let snapshot = controller.snapshot else { return false }
         var intent = SettingsConnectionIntent(snapshot: snapshot)
-        for tool in SettingsConnectionTool.allCases { intent.select(tool, enabled: tool == .codex) }
+        for tool in SettingsConnectionTool.allCases { intent.select(tool, enabled: tools.contains(tool)) }
         guard let confirmation = controller.requestAllow(intent) else { return false }
         await controller.confirm(confirmation.id)
-        return controller.snapshot?.tools.contains { $0.tool == .codex && $0.authorization == .allowed } == true
+        return tools.allSatisfy { tool in controller.snapshot?.tools.contains { $0.tool == tool && $0.authorization == .allowed } == true }
     }
     static func run(delegate: CommunityDelegate, dock: StaticDockPreviewHost, backend: CommunityConnectionBackend,
                     consent: CommunityCLIConsentPort) async {
+        observedDock = dock; observedConsent = consent
         _ = await wait(30) { delegate.settingsIntegration != nil }
         guard let integration = delegate.settingsIntegration as? CommunityConnectionIntegration else {
-            for step in 1...6 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
+            for step in 1...8 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
         }
         await integration.restorePreferences()
         let controller = integration.flow.application.editor.connections
         _ = await wait(20) { surface != nil && !controller.isBusy }
         let detected = controller.snapshot?.tools.contains { $0.tool == .codex && $0.presence == .detected } == true
+        let grokDetected = controller.snapshot?.tools.contains { $0.tool == .grok && $0.presence == .detected } == true
         let listed = surface?.controller.window?.contentView.map { labels($0).contains { $0.contains("Codex") } } == true
-        record(1, ["detected": detected, "listedInFirstRun": listed, "backendBound": controller.isBound(to: backend),
+        record(1, ["detected": detected, "grokDetected": grokDetected, "listedInFirstRun": listed, "backendBound": controller.isBound(to: backend),
                    "snapshotPresent": controller.snapshot != nil, "canonicalGenerationPresent": controller.snapshot?.consentGeneration != nil,
                    "toolCount": controller.snapshot?.tools.count ?? 0, "controllerPhase": String(describing: controller.phase),
                    "consentReadStatus": consent.journeyReadStatus ?? "disabled",
@@ -114,13 +128,22 @@ import ModelPlanAppIntegration
         let sawValue = fixtureValueIsRendered(dock)
         record(4, ["renderedRows": dock.journeyRows])
 
+        // Inspect the card made from the same fresh, bound row; never reconstruct age from a timestamp.
+        let boundRow = dock.journeyRows.first {
+            $0["provider"] as? String == "codex" && $0["hasSubscription"] as? Bool == true &&
+                $0["dataState"] as? String == "fresh" && $0["readout"] as? String == "37%"
+        }
+        let openedAgeCard = (boundRow?["rowIndex"] as? Int).map { dock.journeyOpenCard(at: $0) } ?? false
+        record(5, ["freshBoundRow": boundRow != nil, "cardOpened": openedAgeCard, "ageText": dock.journeyCardAge ?? ""])
+        dock.journeyDismissCard()
+
         let revokeAt = Date().timeIntervalSince1970
         if let confirmation = controller.requestForget(.codex) { await controller.confirm(confirmation.id) }
         let revoked = controller.snapshot?.tools.contains {
             $0.tool == .codex && ($0.authorization == .denied || $0.authorization == .noConsent)
         } == true
         _ = await wait(revoked ? 90 : 1) { freshFeed(dock, after: revokeAt) && values(dock).isEmpty }
-        record(5, ["revoked": revoked, "valueSeenBefore": sawValue, "values": values(dock),
+        record(6, ["revoked": revoked, "valueSeenBefore": sawValue, "values": values(dock),
                    "postRevokeSnapshot": freshFeed(dock, after: revokeAt), "rows": dock.journeySnapshot?.inputs.count ?? 0])
 
         // Change only the synthetic provider's own control file, never a ModelPlan cache or identity.
@@ -149,11 +172,24 @@ import ModelPlanAppIntegration
                   let view = surface.controller.window?.contentView else { return false }
             return labels(view).contains { $0.contains("Codex") } && controller.isBound(to: backend)
         }
-        record(6, ["regranted": regranted, "unreadableObserved": failures.count > failuresBefore,
+        record(7, ["regranted": regranted, "unreadableObserved": failures.count > failuresBefore,
                    "postErrorSnapshot": failures.last.map { freshFeed(dock, after: $0) } ?? false,
                    "rows": dock.journeyRows.count, "reasonRows": unreadableRows,
                    "values": values(dock), "rowActionDispatched": rowActionDispatched,
                    "settingsDestinationReached": settingsReached])
+
+        // First-ever Grok read: malformed synthetic auth, no credentials, account or connection seed.
+        let grokGrantAt = Date().timeIntervalSince1970
+        let grokGranted = await allow(controller, tools: [.codex, .grok])
+        _ = await wait(grokGranted ? 130 : 1) {
+            dock.journeyGrokFirstFailure["nativeErrorObserved"] as? Bool == true && freshFeed(dock, after: grokGrantAt)
+        }
+        let grokRows = dock.journeyRows.filter { ($0["providers"] as? [String])?.contains("grok") == true }
+        var grokFacts = dock.journeyGrokFirstFailure
+        grokFacts["granted"] = grokGranted
+        grokFacts["postGrantSnapshot"] = freshFeed(dock, after: grokGrantAt)
+        grokFacts["renderedRows"] = grokRows
+        record(8, grokFacts)
         exit(0)
     }
 }

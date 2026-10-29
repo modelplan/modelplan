@@ -17,7 +17,9 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
     private let apiAvailable: Bool
     #if DEBUG && MODELPLAN_E2E_JOURNEY
     private var journeyReadResult = "not-requested"
+    private var journeyCanonicalAllowedTools: [String]?
     public var journeyReadStatus: String? { CommunityJourneyCI.enabled ? journeyReadResult : nil }
+    public var journeyAllowedTools: [String]? { CommunityJourneyCI.enabled ? journeyCanonicalAllowedTools : nil }
     #endif
     public init(transport: any ConsentJSONTransport, apiAvailable: Bool = false) {
         self.transport = transport; self.apiAvailable = apiAvailable
@@ -49,7 +51,13 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
         #endif
         try Task.checkCancellation()
         guard result.exitCode == 0 else { throw SettingsConnectionFailure.requestFailed }
-        do { return try FeedDecoder.consentPreview(result.stdout) }
+        do {
+            let value = try FeedDecoder.consentPreview(result.stdout)
+            #if DEBUG && MODELPLAN_E2E_JOURNEY
+            if CommunityJourneyCI.enabled { journeyCanonicalAllowedTools = value.tools.filter(\.allowed).map(\.id) }
+            #endif
+            return value
+        }
         catch { throw SettingsConnectionFailure.invalidResponse }
     }
     public func applyConsentJSON(_ payload: Data) async throws {
