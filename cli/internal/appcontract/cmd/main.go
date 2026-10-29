@@ -16,6 +16,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(pluginHost())
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--headless" {
 		if err := copilot(); err != nil {
 			fmt.Fprintln(os.Stderr, err)

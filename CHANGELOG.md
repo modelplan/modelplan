@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Extend the app–CLI contract to plugin installation: schemas cover every existing status, and real-binary synthetic captures verify both host tools, offline planning and partial failures. Schema/type/status drift is checked against the production Go model; install behavior is unchanged.
+  App–CLI 契约新增插件安装：schema 覆盖全部现有状态，真实 CLI 的合成样例验证两个宿主、离线计划与部分失败；对照生产 Go 类型检查字段和状态漂移，不改变安装行为。
+
 - Desktop connections now reflect native Claude consent, Keychain choice, production admission and read status, with an actionable Settings next step. Tool CLI discovery includes npm-global, Volta and Bun; env-node scripts launch through a resolved Node/Bun runtime under a minimal GUI PATH, with a distinct missing-runtime reason.
   桌面连接状态现反映 Claude 原生授权、钥匙串选择、生产读取准入及读数状态，并提供可操作的设置入口。工具发现支持 npm-global、Volta 和 Bun；GUI 最小 PATH 下的 env-node 脚本通过已定位的 Node/Bun 运行，缺少运行时单独说明。
 

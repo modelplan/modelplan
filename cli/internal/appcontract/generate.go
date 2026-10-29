@@ -53,7 +53,7 @@ func Build(root, output, pkg string) error {
 }
 
 // Generate executes a real CLI built from this checkout. The helper is this
-// tool's own executable, used only for synthetic Copilot protocol replies.
+// tool's own executable, used only for synthetic provider/installer replies.
 func Generate(root, helper string) (map[string][]byte, error) {
 	v, err := NewValidator(root)
 	if err != nil {
@@ -194,6 +194,9 @@ func Generate(root, helper string) (map[string][]byte, error) {
 	if err := s.capture("publication-unavailable", "publication", []string{"publication", "--json", "--offline"}, nil, true, ""); err != nil {
 		return nil, err
 	}
+	if err := s.capturePluginInstalls(tmp); err != nil {
+		return nil, err
+	}
 	m := Manifest{Version: 1, Generator: "same-checkout CLI; make app-cli-fixtures", States: states, Entries: s.entries}
 	b, _ := json.MarshalIndent(m, "", "  ")
 	s.files["manifest.json"] = append(b, '\n')
@@ -302,7 +305,7 @@ func (s *suite) capture(name, schema string, args []string, input []byte, readon
 	if name == "publication-unavailable" {
 		expectedExit = 3
 	}
-	if code != expectedExit && schema != "consent-grant-response" {
+	if code != expectedExit && schema != "consent-grant-response" && schema != "plugin-install" {
 		return fmt.Errorf("unexpected %s exit %d: %s", name, code, stderr)
 	}
 	if schema == "desktop" {
