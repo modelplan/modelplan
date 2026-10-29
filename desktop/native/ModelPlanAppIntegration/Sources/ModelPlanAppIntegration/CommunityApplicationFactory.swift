@@ -19,6 +19,7 @@ import ModelPlanSettings
            let info = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
             context.about.appVersion = info["CFBundleShortVersionString"] as? String ?? info["CFBundleVersion"] as? String ?? "unknown"
         }
+        context.licenseNotices = CommunityBundledNotices.load(bundle: bundle)
         let verified = availability.reason == nil && availability.canInspect
         context.about.cliVersion = verified ? CommunityConsentBundleIdentity.version : "unknown"
         context.about.cliState = verified ? .ready : .unavailable
