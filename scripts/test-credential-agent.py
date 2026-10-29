@@ -317,6 +317,11 @@ def main():
                 next_agent.result(old_operation, rejected=True)
                 next_agent.request('refresh/request', dict(scopes=[SCOPE]))
                 next_agent.result(next_agent.credential(False))
+                # The matching background RPC wakes an already-budgeted reader;
+                # its acknowledgment precedes that reader's asynchronous I/O.
+                end = time.monotonic() + 8
+                while len(server.reads)-start < 2 and time.monotonic() < end:
+                    time.sleep(.01)
                 assert len(server.reads)-start == 2, 'new session failed after rejecting old callback'
                 return next_agent
             except BaseException:
