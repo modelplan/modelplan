@@ -13,8 +13,16 @@ network access, product login, Keychain access or dependency install is required
 python3 -m unittest discover -s tools/u14/tests -v
 ```
 
-The dedicated hosted workflow runs this command and the source-policy gate on
-standard Ubuntu runners. Native UI, real input, OS permissions and official
+The dedicated hosted workflow runs `verify.py` on standard Ubuntu runners. It
+runs this suite, the source-policy gate, and both CLIs across all nine preference
+cases, then uploads the synthetic evidence (also on failure). To run the same
+profile locally, choose a new temporary destination outside the source checkout:
+
+```sh
+python3 tools/u14/verify.py --output /tmp/u14-evidence-unique-run
+```
+
+The bundle records these L1 checks separately from real product scenarios. Native UI, real input, OS permissions and official
 visual confirmation remain separate checks.
 
 ## Shape baseline
@@ -142,7 +150,8 @@ capabilities; this tool cannot discover omitted repos or prove a reported pass.
 Outcomes are `pass`, `fail`, `not-run`, `unsupported`, or `timeout`. A missing
 capability or required baseline structure always produces `unsupported`, even
 if an input claims `pass`. Omitted executable scenarios become `not-run`. A
-reported pass/fail/timeout requires an evidence file. Artifact capabilities come
+reported pass/fail/timeout requires an evidence file. Optional `checks` bind
+named L1 checks and their evidence separately from product scenarios. Artifact capabilities come
 from actual hashed inputs; callers cannot claim a package or visual baseline
 with no artifact. This stage never marks the real app-server/UI scenarios passed
 on the strength of builder unit tests. Evidence paths do not appear in the

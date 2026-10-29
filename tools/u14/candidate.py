@@ -81,11 +81,9 @@ def generate_bundle(spec, baseline, destination):
     catalog = load_json(ROOT / 'scenarios.json')['scenarios']
     results = {}
     blobs = {}
-    for result in spec['results']:
-        if result['id'] in results or result['id'] not in {s['id'] for s in catalog}:
-            raise ValueError('duplicate or unknown scenario')
+    def evidence_result(result):
         if result['outcome'] in ('pass', 'fail', 'timeout') and not result['evidence']:
-            raise ValueError('executed scenario must have evidence')
+            raise ValueError('executed result must have evidence')
         refs = []
         for path in result['evidence']:
             data = regular_bytes(path)
@@ -93,7 +91,15 @@ def generate_bundle(spec, baseline, destination):
             ref = 'blobs/' + sha
             blobs[ref] = data
             refs.append({'ref': ref, 'sha256': sha})
-        results[result['id']] = {'outcome': result['outcome'], 'evidence': refs}
+        return {'id': result['id'], 'outcome': result['outcome'], 'evidence': refs}
+
+    for result in spec['results']:
+        if result['id'] in results or result['id'] not in {s['id'] for s in catalog}:
+            raise ValueError('duplicate or unknown scenario')
+        results[result['id']] = evidence_result(result)
+    checks = [evidence_result(result) for result in spec.get('checks', [])]
+    if len({check['id'] for check in checks}) != len(checks):
+        raise ValueError('duplicate check id')
     # Artifact capabilities are derived, never accepted from caller claims.
     derived = {'app-package', 'helper', 'official-visuals', 'visual-baselines', 'publication-data',
                'synthetic-home', 'preference-inputs', 'consent-v1'}
@@ -127,7 +133,7 @@ def generate_bundle(spec, baseline, destination):
                                        'version': platform.version(), 'machine': platform.machine()},
                                 'display': spec['display']},
                 'shapeBaseline': baseline, 'availableCapabilities': sorted(available),
-                'scenarioCatalogSha256': digest(catalog_bytes), 'scenarios': scenarios,
+                'scenarioCatalogSha256': digest(catalog_bytes), 'scenarios': scenarios, 'checks': checks,
                 'bundleFiles': [{'ref': p, 'sha256': digest(b)} for p, b in sorted(bundle_files.items())]}
     validate(manifest, 'candidate-manifest.schema.json')
     bundle = new_directory(destination)

@@ -25,7 +25,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Shape and evidence regressions
-        run: python3 -m unittest discover -s tools/u14/tests -v
-      - name: Public source policy
-        run: node scripts/check-source-policy.mjs
+      - name: U14 L1 profile with synthetic evidence
+        run: python3 tools/u14/verify.py --output "$RUNNER_TEMP/u14-evidence"
+      - name: Preserve evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u14-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/u14-evidence
+          if-no-files-found: error
+          retention-days: 14

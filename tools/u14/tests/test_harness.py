@@ -161,7 +161,10 @@ class CandidateTests(unittest.TestCase):
 
     def test_hashes_bind_app_helper_and_copied_evidence(self):
         self.spec['availableCapabilities'] += ['native-ui']
+        self.spec['checks'] = [{'id': 'schema-check', 'outcome': 'pass', 'evidence': [str(self.evidence)]}]
         m = self.generate()
+        self.assertEqual(m['checks'][0]['id'], 'schema-check')
+        self.assertEqual(m['checks'][0]['outcome'], 'pass')
         self.assertEqual(m['artifacts']['helper']['sha256'], hashlib.sha256(b'synthetic-helper').hexdigest())
         self.assertEqual(m['artifacts']['app']['kind'], 'tree')
         record = next(x for x in m['scenarios'] if x['id'] == 'A03')
