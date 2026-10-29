@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+// This file exists in cmd/modelplan only through the U14 Go build overlay.
+package main
+
+import (
+    "github.com/modelplan/modelplan/cli/internal/appserver"
+    "github.com/modelplan/modelplan/cli/internal/u14fixture"
+)
+
+func u14FixtureConfig(version string) appserver.Config {
+    return u14fixture.Config(version)
+}

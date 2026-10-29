@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "U2a-admission",
+  "requiredConstructor": "production U2 backend with fixture-only recording providers",
+  "accountScopes": ["gemini.account_usage.saved_login", "cursor.account_usage.saved_login"],
+  "localScopes": ["gemini.local_history", "cursor.local_history"],
+  "assertions": [
+    "One synthetic home shared by the app-server and independent CLI",
+    "Unapproved account POST scopes record zero requests and policy_pending",
+    "Seeded local history remains readable",
+    "MiniMax 401 and 403 each stop after exactly the first request, with a successful legacy reply available"
+  ],
+  "statusUntilU2Constructor": "not-run"
+}
