@@ -145,7 +145,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openDockControl)
+        consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel("Open console / 打开控制台")
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
@@ -271,17 +271,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         guard passIsCurrent(generation) else { return }
         model = next
-        // The supplied key/hull remains unchanged. Empty membership has a real Settings
-        // action and an explicit reason even when an official appearance supplies no rows.
-        if rows.isEmpty {
-            let reason = CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
-            let nextStep = passPreferences.language == .english ? "Open Settings to check connected tools." : "打开设置，检查已连接的工具。"
-            consoleButton.setAccessibilityLabel(reason + " " + nextStep)
-            consoleButton.toolTip = reason + " " + nextStep
-        } else {
-            consoleButton.setAccessibilityLabel("Open console / 打开控制台")
-            consoleButton.toolTip = nil
-        }
         if rows.isEmpty && appearance == nil {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
@@ -573,12 +562,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
-    @objc private func openDockControl() {
-        guard permitted, !retired else { return }
-        dismissCard()
-        if model?.inputs.isEmpty == true { showSettings?() }
-        else { showConsole?() }
-    }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() { guard permitted, !retired else { return }; inputGeneration &+= 1; rebuild(); edge.refresh() }
