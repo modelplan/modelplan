@@ -1,0 +1,2302 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. Generated from appserver/wire and rows; run go run ./internal/appserver/wire/cmd/schema.",
+  "$defs": {
+    "Account": {
+      "additionalProperties": false,
+      "properties": {
+        "accountLocator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "beta": {
+          "type": "boolean"
+        },
+        "credits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Credits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "freshUntil": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastFailure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Failure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan": {
+          "$ref": "#/$defs/Plan"
+        },
+        "route": {
+          "enum": [
+            "saved_login_api",
+            "runtime_rpc",
+            "local_log",
+            "api_key_api",
+            "local_sqlite",
+            "status_line",
+            "browser_session",
+            "manual",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "valueState": {
+          "enum": [
+            "current",
+            "retained",
+            "none"
+          ],
+          "type": "string"
+        },
+        "windows": {
+          "items": {
+            "$ref": "#/$defs/Window"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "route",
+        "subscriptionRef",
+        "accountLocator",
+        "plan",
+        "beta",
+        "credits",
+        "valueState",
+        "observedAt",
+        "freshUntil",
+        "lastFailure",
+        "windows"
+      ],
+      "type": "object"
+    },
+    "CancelParams": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RequestID"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "ConsentFacts": {
+      "additionalProperties": false,
+      "properties": {
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/ConsentScope"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "ConsentFactsEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/ConsentFacts"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "ConsentGrantParams": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "consentTextVersion": {
+          "type": "integer"
+        },
+        "deny": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expectGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expectStoreEpoch": {
+          "type": "string"
+        },
+        "forget": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "keychain": {
+          "additionalProperties": {
+            "enum": [
+              "allow",
+              "deny"
+            ],
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "expectStoreEpoch",
+        "expectGeneration",
+        "consentTextVersion",
+        "allow",
+        "deny"
+      ],
+      "type": "object"
+    },
+    "ConsentReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanupPending": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "code": {
+          "enum": [
+            "ok",
+            "cleanup_pending",
+            "stale_generation",
+            "stale_consent_text",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "committed": {
+          "type": "boolean"
+        },
+        "committedGeneration": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "committed",
+        "committedGeneration",
+        "code"
+      ],
+      "type": "object"
+    },
+    "ConsentReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/ConsentReceipt"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "ConsentScope": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanupPending": {
+          "type": "boolean"
+        },
+        "defaultCheck": {
+          "type": "boolean"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "disabledReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "policy_pending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "keychain": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "deny",
+                "unset"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retired": {
+          "type": "boolean"
+        },
+        "route": {
+          "enum": [
+            "saved_login_api",
+            "runtime_rpc",
+            "local_log",
+            "api_key_api",
+            "local_sqlite",
+            "status_line",
+            "browser_session",
+            "manual",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "allowed",
+            "denied",
+            "unset"
+          ],
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "tool",
+        "route",
+        "detected",
+        "retired",
+        "state",
+        "defaultCheck",
+        "keychain",
+        "cleanupPending"
+      ],
+      "type": "object"
+    },
+    "CredentialRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "interactive": {
+          "type": "boolean"
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "provider",
+        "scope",
+        "interactive"
+      ],
+      "type": "object"
+    },
+    "CredentialResult": {
+      "additionalProperties": false,
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "accessToken"
+              ]
+            },
+            {
+              "required": [
+                "expiresAt"
+              ]
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "ok"
+          }
+        }
+      },
+      "properties": {
+        "accessToken": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operationId": {
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "ok",
+            "canceled",
+            "denied",
+            "not_found",
+            "interaction_required",
+            "timeout",
+            "error"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "outcome"
+      ],
+      "then": {
+        "properties": {
+          "accessToken": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "accessToken"
+        ]
+      },
+      "type": "object"
+    },
+    "Credits": {
+      "additionalProperties": false,
+      "properties": {
+        "balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "balance",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Diagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "lastErrorClass": {
+          "type": "string"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "$ref": "#/$defs/ScopeDiag"
+          },
+          "type": "array"
+        },
+        "serverVersion": {
+          "type": "string"
+        },
+        "uptimeSeconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "serverVersion",
+        "uptimeSeconds",
+        "scopes"
+      ],
+      "type": "object"
+    },
+    "DiagnosticsEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/Diagnostics"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "Empty": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/RPCError"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jsonrpc": {
+          "const": "2.0"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "error"
+      ],
+      "type": "object"
+    },
+    "ErrorContext": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "ExpiryState": {
+      "additionalProperties": false,
+      "properties": {
+        "nextStep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextStep"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/Reason"
+        },
+        "state": {
+          "enum": [
+            "off",
+            "needs_action",
+            "needs_consent",
+            "pending",
+            "unsupported",
+            "needs_keychain",
+            "failed",
+            "empty",
+            "stale",
+            "fresh"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "reason",
+        "nextStep"
+      ],
+      "type": "object"
+    },
+    "Failure": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "code": {
+          "enum": [
+            "ok",
+            "estimated",
+            "stale_reading",
+            "observation_time_unknown",
+            "not_read_yet",
+            "reader_busy",
+            "consent_changed",
+            "no_manual_reading",
+            "no_usage_windows",
+            "consent_required",
+            "consent_denied",
+            "consent_outdated",
+            "keychain_unset",
+            "keychain_denied",
+            "keychain_canceled",
+            "keychain_not_found",
+            "keychain_unavailable",
+            "keychain_confirmation_needed",
+            "login_expired",
+            "runtime_missing",
+            "update_required",
+            "key_missing",
+            "tool_not_found",
+            "catalogue_retired",
+            "http_401",
+            "unsupported_login",
+            "privacy_blocked",
+            "catalogue_off",
+            "not_admitted",
+            "codexbar_not_audited",
+            "codexbar_not_read",
+            "codexbar_access_unknown",
+            "browser_session_consent_required",
+            "no_reader",
+            "cleanup_pending",
+            "file_missing",
+            "file_unreadable",
+            "parse_error",
+            "schema_changed",
+            "http_403",
+            "http_429",
+            "http_5xx",
+            "network",
+            "timeout",
+            "other",
+            "readers_off",
+            "no_consent",
+            "no_dock_rows"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Health": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "degraded",
+            "stopping"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "code"
+      ],
+      "type": "object"
+    },
+    "HealthEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/Health"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "HistoryItem": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "at",
+        "model",
+        "tokens",
+        "window",
+        "value"
+      ],
+      "type": "object"
+    },
+    "HistoryPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/HistoryItem"
+          },
+          "type": "array"
+        },
+        "nextCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "HistoryPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/HistoryPage"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "HistoryQueryParams": {
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "tokens",
+            "quota_cycles",
+            "sessions"
+          ],
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "ref": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "tool",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "InitializeParams": {
+      "additionalProperties": false,
+      "properties": {
+        "appVersion": {
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "protocolVersion",
+        "appVersion",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "InitializeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "serverVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "serverVersion",
+        "capabilities"
+      ],
+      "type": "object"
+    },
+    "InitializeResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/InitializeResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "Name": {
+      "additionalProperties": false,
+      "properties": {
+        "en": {
+          "type": "string"
+        },
+        "userAuthored": {
+          "type": "boolean"
+        },
+        "zh": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "en",
+        "zh"
+      ],
+      "type": "object"
+    },
+    "NextStep": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "open_settings_consent",
+            "open_settings_keychain",
+            "open_tool",
+            "install_runtime",
+            "refresh",
+            "update_cli",
+            "none"
+          ],
+          "type": "string"
+        },
+        "availableAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disabledReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "cooldown",
+                "read_only",
+                "offline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "action",
+        "text"
+      ],
+      "type": "object"
+    },
+    "Notification": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "consent/changed"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "consentGeneration": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "data": {
+                  "$ref": "#/$defs/ConsentFacts"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sessionId": {
+                  "type": "string"
+                },
+                "storeEpoch": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "storeEpoch",
+                "consentGeneration",
+                "data"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "credentials/request"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "consentGeneration": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "data": {
+                  "$ref": "#/$defs/CredentialRequest"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sessionId": {
+                  "type": "string"
+                },
+                "storeEpoch": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "storeEpoch",
+                "consentGeneration",
+                "data"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "engine/health"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "consentGeneration": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "data": {
+                  "$ref": "#/$defs/Health"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sessionId": {
+                  "type": "string"
+                },
+                "storeEpoch": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "storeEpoch",
+                "consentGeneration",
+                "data"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "rows/changed"
+            },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "consentGeneration": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "data": {
+                  "$ref": "#/$defs/RowsSnapshot"
+                },
+                "scopes": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sessionId": {
+                  "type": "string"
+                },
+                "storeEpoch": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "sessionId",
+                "storeEpoch",
+                "consentGeneration",
+                "data"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Plan": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Name"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "RPCError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/ErrorContext"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "data"
+      ],
+      "type": "object"
+    },
+    "Reason": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "ok",
+            "estimated",
+            "stale_reading",
+            "observation_time_unknown",
+            "not_read_yet",
+            "reader_busy",
+            "consent_changed",
+            "no_manual_reading",
+            "no_usage_windows",
+            "consent_required",
+            "consent_denied",
+            "consent_outdated",
+            "keychain_unset",
+            "keychain_denied",
+            "keychain_canceled",
+            "keychain_not_found",
+            "keychain_unavailable",
+            "keychain_confirmation_needed",
+            "login_expired",
+            "runtime_missing",
+            "update_required",
+            "key_missing",
+            "tool_not_found",
+            "catalogue_retired",
+            "http_401",
+            "unsupported_login",
+            "privacy_blocked",
+            "catalogue_off",
+            "not_admitted",
+            "codexbar_not_audited",
+            "codexbar_not_read",
+            "codexbar_access_unknown",
+            "browser_session_consent_required",
+            "no_reader",
+            "cleanup_pending",
+            "file_missing",
+            "file_unreadable",
+            "parse_error",
+            "schema_changed",
+            "http_403",
+            "http_429",
+            "http_5xx",
+            "network",
+            "timeout",
+            "other",
+            "readers_off",
+            "no_consent",
+            "no_dock_rows"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "code",
+        "text"
+      ],
+      "type": "object"
+    },
+    "RefreshRequestParams": {
+      "additionalProperties": false,
+      "properties": {
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "RefreshResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "items": {
+            "$ref": "#/$defs/RefreshScheduled"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "RefreshScheduled": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "disabledReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "cooldown",
+                "read_only",
+                "offline",
+                "policy_pending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "at"
+      ],
+      "type": "object"
+    },
+    "Request": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "$/cancel"
+            },
+            "params": {
+              "$ref": "#/$defs/CancelParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "consent/get"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "consent/grant"
+            },
+            "params": {
+              "$ref": "#/$defs/ConsentGrantParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "credentials/result"
+            },
+            "params": {
+              "$ref": "#/$defs/CredentialResult"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "diagnostics/get"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "history/query"
+            },
+            "params": {
+              "$ref": "#/$defs/HistoryQueryParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "initialize"
+            },
+            "params": {
+              "$ref": "#/$defs/InitializeParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "refresh/request"
+            },
+            "params": {
+              "$ref": "#/$defs/RefreshRequestParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "rows/subscribe"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
+              "const": "shutdown"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RequestID": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "Response": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Error"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "result": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InitializeResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/RowsSnapshotEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/ConsentFactsEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/ConsentReceiptEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/DiagnosticsEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/HealthEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/HistoryPageEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/RefreshResultEnvelope"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consentGeneration": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "data": {
+                      "$ref": "#/$defs/Empty"
+                    },
+                    "scopes": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "sessionId": {
+                      "type": "string"
+                    },
+                    "storeEpoch": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sessionId",
+                    "storeEpoch",
+                    "consentGeneration",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "id",
+            "result"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Row": {
+      "additionalProperties": false,
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/Account"
+          },
+          "type": "array"
+        },
+        "consent": {
+          "enum": [
+            "allowed",
+            "implicit",
+            "denied",
+            "unset",
+            "not_required",
+            "retired"
+          ],
+          "type": "string"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "tool",
+            "declared"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "$ref": "#/$defs/Name"
+        },
+        "nextStep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextStep"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "order": {
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "#/$defs/Reason"
+        },
+        "state": {
+          "enum": [
+            "off",
+            "needs_action",
+            "needs_consent",
+            "pending",
+            "unsupported",
+            "needs_keychain",
+            "failed",
+            "empty",
+            "stale",
+            "fresh"
+          ],
+          "type": "string"
+        },
+        "stateAfterExpiry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExpiryState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "surfaces": {
+          "items": {
+            "enum": [
+              "dock",
+              "menu",
+              "settings"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vendorKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "order",
+        "name",
+        "vendorKey",
+        "surfaces",
+        "consent",
+        "state",
+        "reason",
+        "nextStep",
+        "accounts",
+        "expiresAt",
+        "stateAfterExpiry"
+      ],
+      "type": "object"
+    },
+    "RowsProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "rowsSummary": {
+          "$ref": "#/$defs/RowsSummary"
+        },
+        "rowsVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rowsVersion",
+        "rows",
+        "rowsSummary"
+      ],
+      "type": "object"
+    },
+    "RowsSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "projection": {
+          "$ref": "#/$defs/RowsProjection"
+        },
+        "sequence": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sequence",
+        "projection"
+      ],
+      "type": "object"
+    },
+    "RowsSnapshotEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/RowsSnapshot"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "RowsSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "nextStep": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NextStep"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/Reason"
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "readers_off",
+            "no_consent",
+            "empty",
+            "pending"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "$ref": "#/$defs/Text"
+        }
+      },
+      "required": [
+        "state",
+        "reason",
+        "text",
+        "nextStep"
+      ],
+      "type": "object"
+    },
+    "ScopeDiag": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "ok",
+            "estimated",
+            "stale_reading",
+            "observation_time_unknown",
+            "not_read_yet",
+            "reader_busy",
+            "consent_changed",
+            "no_manual_reading",
+            "no_usage_windows",
+            "consent_required",
+            "consent_denied",
+            "consent_outdated",
+            "keychain_unset",
+            "keychain_denied",
+            "keychain_canceled",
+            "keychain_not_found",
+            "keychain_unavailable",
+            "keychain_confirmation_needed",
+            "login_expired",
+            "runtime_missing",
+            "update_required",
+            "key_missing",
+            "tool_not_found",
+            "catalogue_retired",
+            "http_401",
+            "unsupported_login",
+            "privacy_blocked",
+            "catalogue_off",
+            "not_admitted",
+            "codexbar_not_audited",
+            "codexbar_not_read",
+            "codexbar_access_unknown",
+            "browser_session_consent_required",
+            "no_reader",
+            "cleanup_pending",
+            "file_missing",
+            "file_unreadable",
+            "parse_error",
+            "schema_changed",
+            "http_403",
+            "http_429",
+            "http_5xx",
+            "network",
+            "timeout",
+            "other",
+            "readers_off",
+            "no_consent",
+            "no_dock_rows"
+          ],
+          "type": "string"
+        },
+        "lastRead": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextDueAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "off",
+            "needs_action",
+            "needs_consent",
+            "pending",
+            "unsupported",
+            "needs_keychain",
+            "failed",
+            "empty",
+            "stale",
+            "fresh"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "state",
+        "code",
+        "lastRead",
+        "nextDueAt"
+      ],
+      "type": "object"
+    },
+    "Text": {
+      "additionalProperties": false,
+      "properties": {
+        "en": {
+          "type": "string"
+        },
+        "zh": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "en",
+        "zh"
+      ],
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "type": "boolean"
+        },
+        "durationSeconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "$ref": "#/$defs/Text"
+        },
+        "limitKey": {
+          "type": "string"
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "poolKey": {
+          "type": "string"
+        },
+        "remainingPercent": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetMode": {
+          "enum": [
+            "fixed",
+            "rolling",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "resetsAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "enum": [
+            "session",
+            "daily",
+            "weekly",
+            "monthly",
+            "other"
+          ],
+          "type": "string"
+        },
+        "validUntil": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "durationSeconds",
+        "label",
+        "limitKey",
+        "poolKey",
+        "resetMode",
+        "remainingPercent",
+        "resetsAt",
+        "observedAt",
+        "current",
+        "validUntil"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://modelplan.ai/schema/app-cli/app-server.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/Request"
+    },
+    {
+      "$ref": "#/$defs/Response"
+    },
+    {
+      "$ref": "#/$defs/Notification"
+    }
+  ],
+  "x-limits": {
+    "controlBytes": 4194304,
+    "controlMessages": 256,
+    "credentialsPerProvider": 1,
+    "dataMessages": 64,
+    "frameBytes": 8388608,
+    "queries": 2,
+    "requests": 16,
+    "writeTimeoutSeconds": 10
+  }
+}

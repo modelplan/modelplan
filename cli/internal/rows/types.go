@@ -53,6 +53,7 @@ type ExpiryState struct {
 }
 
 type Account struct {
+	Route           Route      `json:"route"`
 	SubscriptionRef *string    `json:"subscriptionRef"`
 	AccountLocator  *string    `json:"accountLocator"`
 	Plan            Plan       `json:"plan"`

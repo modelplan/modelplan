@@ -60,6 +60,10 @@ Account (one per subscription/profile shown under the row)
                     allocate one (allocation happens only in an authorised collection, exactly like subscription refs);
                     never positional, never a hash. Per-account preferences use subscriptionRef, else accountLocator,
                     else fall back to the row's preferences until a reference exists
+  route             saved_login_api | runtime_rpc | local_log | local_sqlite | api_key_api | status_line |
+                    browser_session | manual | unknown: how this account's
+                    values were read, so "source shown on every value" has a field; declared plans use manual, and
+                    unknown or absent input becomes unknown (raw source text never becomes a route)
   plan              {id, name {en, zh}}: from the plan allow-list; an unknown harness plan becomes {id: "unknown"};
                     declared plans keep the user's text with userAuthored = true
   beta              bool
@@ -148,8 +152,8 @@ Then the rules apply in order:
 |---|---|---|---|
 | 1 | admission veto | off / needs_action | privacy_blocked, catalogue_off, update_required, key_missing, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required, not_admitted |
 | 2 | consent: unset (and not implicit), denied, outdated, or changed mid-read | needs_consent / pending | consent_required, consent_denied, consent_outdated, consent_changed |
-| 3 | no reader exists for the tool | unsupported | no_reader |
-| 4 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
+| 3 | tool missing from the machine, or retired | needs_action | tool_not_found, catalogue_retired |
+| 4 | no reader exists for the tool | unsupported | no_reader |
 | 5 | the credential read is **actually blocked** by the credential store (Keychain unset/denied/canceled/not found/unavailable/confirmation needed, and no readable credentials file), and C is empty | needs_keychain | keychain_unset, keychain_denied, keychain_canceled, keychain_not_found, keychain_unavailable, keychain_confirmation_needed |
 | 6 | C and R both empty, and the latest attempt failed | failed / needs_action | reader error codes; login_expired, runtime_missing and http_401 give needs_action |
 | 7 | C and R both empty, and the latest attempt succeeded with no windows | empty | no_usage_windows |
@@ -163,7 +167,7 @@ Notes:
 - **Credential-store versus reader permission.** Row 2 is driven only by the consent record from the consent API (allowed/denied/unset/outdated), never by a reader's status string. When Claude's credential path reports `consent_required` because the Keychain choice is unset and no `.credentials.json` exists (`claudeaccount.go:118`), the mapping turns it into `keychain_unset`, which is row 5. Likewise the Keychain vocabulary's `consent-required` (`security.go:66`) maps to `keychain_unset`, and its `busy` maps to `reader_busy` (row 8).
 - Row 2 is about the tool's reader consent. Row 5 is only about the credential store blocking an actual read. They are separate predicates, and row 5 comes before the generic failure in row 6. A recorded Keychain choice that blocks nothing is a Settings fact on the consent API, so a fresh Claude reading from `.credentials.json` stays `fresh`.
 - **Case "A current, B none".** Row 10 applies and the row is `fresh`. Account B is listed with `valueState = none` and its own `lastFailure`.
-- **Ordering guarantees.** Rows 1–5 come before any value-based state, so a stale value never hides a veto. Row 3 comes before row 8, so an unsupported tool never stays pending.
+- **Ordering guarantees.** Rows 1–5 come before any value-based state, so a stale value never hides a veto. Missing or retired tools (row 3) come before no reader (row 4), preserving the actionable membership rule. Row 4 comes before row 8, so an unsupported tool never stays pending.
 - **Login or generation change.** The old account becomes `valueState = none`. Its numbers are dropped, not shown as stale for the new login.
 - **Required captures.** Every overlap named here has its own capture: a Keychain first-failure, A current with B none, a value whose time is null or in the future, and an empty reading.
 
@@ -310,7 +314,7 @@ No compatibility is kept with released app builds before the official release (o
 3. **Success, then a failed refresh 5 minutes later?** The account becomes `retained` with `lastFailure`, so the row is `stale` (#9). It is not shown as fresh.
 4. **Two accounts, one current and one retained?** The row is `stale`. Each account carries its own `valueState`, and the menu minimum skips the retained account's windows.
 5. **Keychain unset but a credentials file works?** The row stays `fresh`. `needs_keychain` appears only when the read is actually blocked (#5).
-6. **Unsupported tool?** `unsupported` (#3), before the pending check (#8), so it is never pending forever.
+6. **Unsupported tool?** Missing or retired tools take priority (#3). Otherwise `unsupported` (#4) comes before the pending check (#8), so it is never pending forever.
 7. **Empty reading, or a null or future time?** An empty reading is `empty` (#7). A value whose time is null or in the future is `retained` with `observation_time_unknown`, so the row is `stale` (#9) and the age shows as unknown.
 8. **Unknown Codex limit or plan?** It gets a generic label, plan `unknown`, and `limitKey` / `poolKey` = `other`. The raw text is never exported, not even inside ids.
 9. **Settings needs Keychain, Forget and generation facts?** Those stay on the consent API, joined by id. Rows never encode permissions.

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Package rows defines the CLI-owned display projection in
-// schema/app-cli/rows-design.md. It is independent of readers, consent storage,
-// and snapshot serialization so those adapters can share one immutable Input
-// without import cycles. Building rows must never collect, allocate identities,
-// or change quota --json. This first change defines types only.
+// Package rows builds the CLI-owned display projection from immutable facts.
+// It is independent of readers, consent storage and snapshot serialization.
+// Build performs no I/O, allocation of identities or mutation of its input.
+// The publishing adapter owns consent retry/fencing; quota --json is separate.
 package rows
