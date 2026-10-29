@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "synthetic-example-1",
+  "profile": "linux-engine-only",
+  "intendedLevel": "L1",
+  "build": {"type": "community", "configuration": "debug"},
+  "sources": [{"repository": "modelplan/modelplan", "path": "."}],
+  "artifacts": {
+    "app": null,
+    "helper": null,
+    "helperVersion": null,
+    "officialVisualsManifest": null,
+    "visualBaselines": []
+  },
+  "publicationRevision": null,
+  "display": {"state": "unsupported"},
+  "availableCapabilities": [],
+  "results": []
+}

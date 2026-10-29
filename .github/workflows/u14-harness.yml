@@ -1,0 +1,37 @@
+name: U14 harness
+on:
+  pull_request:
+    paths:
+      - tools/u14/**
+      - .github/workflows/u14-harness.yml
+  push:
+    branches: [main]
+    paths:
+      - tools/u14/**
+      - .github/workflows/u14-harness.yml
+permissions:
+  contents: read
+concurrency:
+  group: u14-harness-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: U14 L1 profile with synthetic evidence
+        run: python3 tools/u14/verify.py --output "$RUNNER_TEMP/u14-evidence"
+      - name: Preserve evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u14-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/u14-evidence
+          if-no-files-found: error
+          retention-days: 14
