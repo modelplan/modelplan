@@ -509,3 +509,61 @@ extension RealBinaryTests {
         let reaped = await process.finish(); XCTAssertTrue(reaped)
     }
 }
+
+extension RealBinaryTests {
+    func testRealInitializeRPCErrorFailsAllStartsAndRecoversFresh() async throws {
+        try await assertInitializeFailureRecovers(mode: "initialize-error-once", rpcCode: -32603)
+    }
+    func testRealUnavailableInitializeFailsAllStartsAndRecoversFresh() async throws {
+        try await assertInitializeFailureRecovers(mode: "initialize-unavailable-once", rpcCode: nil)
+    }
+    func assertInitializeFailureRecovers(mode: String, rpcCode: Int?) async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        var runtime = ClientRuntime(); runtime.requestTimeout = .seconds(1)
+        let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: mode), home: home), consumer: probe, runtime: runtime)
+        addTeardownBlock { await client.stop() }
+        let firstDone = CompletionFlag(); let secondDone = CompletionFlag()
+        let first = Task { () -> EngineClientError? in
+            do { _ = try await client.start(); await firstDone.complete(); return nil }
+            catch { await firstDone.complete(); return error as? EngineClientError }
+        }
+        let second = Task { () -> EngineClientError? in
+            do { _ = try await client.start(); await secondDone.complete(); return nil }
+            catch { await secondDone.complete(); return error as? EngineClientError }
+        }
+        try await eventually { await client.starts.count == 2 }
+        try await eventually { self.traceContains(home, method: "initialize-error-held") }
+        let oldSession = await client.sessionID
+        let oldPID = await client.processIdentifier
+        XCTAssertEqual(kill(try XCTUnwrap(oldPID), 0), 0, "peer must remain alive until client retires it")
+        try Data().write(to: home.appendingPathComponent("release-initialize-error"))
+        // The peer deliberately stays alive after its correlated error. Waiting
+        // beyond the configured deadline catches an internal entry being removed
+        // while the separate public start continuations remain stranded.
+        try await eventually({
+            let first = await firstDone.value(); let second = await secondDone.value()
+            return first && second
+        }, timeout: 1.2)
+        for result in [await first.value, await second.value] {
+            if let rpcCode {
+                guard case .rpc(let code, let context)? = result else { return XCTFail("initialize error did not terminate every start with its typed RPC failure") }
+                XCTAssertEqual(code, rpcCode); XCTAssertEqual(context.sessionId, oldSession)
+            } else {
+                guard case .notReady? = result else { return XCTFail("unavailable initialize did not terminate every start") }
+            }
+        }
+        let oldWaiters = await client.starts.count; XCTAssertEqual(oldWaiters, 0)
+        let pendingInitialize = await client.pending.values.contains { $0.purpose == .initialize }
+        XCTAssertFalse(pendingInitialize)
+        let currentPID = await client.processIdentifier; XCTAssertNil(currentPID)
+        try await eventually { await probe.crashDelays() == [1] }
+        let delays = await probe.crashDelays(); XCTAssertEqual(delays, [1], "initialize failure must count toward supervised backoff")
+        let recovered = try await client.start()
+        XCTAssertNotEqual(recovered.sessionID, oldSession)
+        let freshPID = await client.processIdentifier; XCTAssertNotEqual(freshPID, oldPID)
+        let trace = try String(contentsOf: home.appendingPathComponent("proxy.trace"), encoding: .utf8)
+        XCTAssertEqual(trace.split(separator: "\n").filter { $0.contains("\"method\":\"initialize\"") }.count, 2)
+        try await eventually { await probe.rowCount() > 0 }
+    }
+}

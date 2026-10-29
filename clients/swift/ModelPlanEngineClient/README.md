@@ -80,6 +80,9 @@ Rows may coalesce after header observation; required control overflow closes the
 session. A malformed feature result fails that feature without clearing healthy
 rows. Raw frames/stderr/tokens are never included in events, errors or logs.
 
+Initialize errors and deadlines complete every pending start with a terminal
+failure and retire the child through supervision, even if the peer stays alive.
+Failed initialization counts toward backoff; later starts use a fresh handshake.
 Each launch has a new handshake session ID. Restarts preserve the consent floor,
 retire credentials and use 1/2/4/8-second delays; the fifth crash within ten minutes
 stops until explicit retry. Protocol-major mismatch stops without retrying the

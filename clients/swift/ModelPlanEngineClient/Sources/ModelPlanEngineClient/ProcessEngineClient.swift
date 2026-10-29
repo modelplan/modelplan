@@ -239,6 +239,13 @@ public actor ProcessEngineClient: EngineClient {
         restartTask = nil
         if shouldLaunch && !stopped { launch() }
     }
+    func initializationFailed(_ id: UUID, error: EngineClientError) {
+        guard child?.id == id else { return }
+        // Public start continuations are separate from the internal initialize
+        // request. Resolve them before normal retirement cancels that request.
+        failStarts(error)
+        ended(id, protocolFault: false)
+    }
     func protocolMismatch() {
         stopped = true; requiresRetry = true; fatalMismatch = true
         failStarts(.protocolMismatch)
@@ -334,7 +341,7 @@ public actor ProcessEngineClient: EngineClient {
         if entry.sent { sendCancel(entry.id) }
         let error: EngineClientError = (entry.receiptKnown ? nil : entry.grant).map { .mutationOutcomeUnknown(requestID: $0.requestId, expected: EngineConsentFloor(storeEpoch: $0.expectStoreEpoch, generation: $0.expectGeneration)) } ?? .deadlineExceeded(entry.sent ? .cancelled : .notSent)
         finishRequest(key, error: error)
-        if entry.purpose == .initialize { ended(id, protocolFault: false) }
+        if entry.purpose == .initialize { initializationFailed(id, error: error) }
         if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)) }
     }
     func cancelRequest(_ key: String) {

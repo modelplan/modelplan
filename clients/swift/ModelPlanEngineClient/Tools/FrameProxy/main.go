@@ -177,6 +177,25 @@ func main() {
 			continue
 		}
 		notification, _ := m["method"].(string)
+		if (p.plan.Mode == "initialize-error-once" || p.plan.Mode == "initialize-unavailable-once") && method == "initialize" {
+			// Keep the ordinary Go child and proxy alive after the injected
+			// failure. Only the first supervised launch fails; its successor
+			// performs the unmodified real handshake.
+			marker, err := os.OpenFile(filepath.Join(os.Getenv("HOME"), "initialize-error-used"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+			if err == nil {
+				_ = marker.Close()
+				env := object(m["result"])
+				failure := map[string]any{"jsonrpc": "2.0", "id": m["id"], "error": map[string]any{"code": -32603, "message": "internal_error", "data": map[string]any{"sessionId": env["sessionId"], "storeEpoch": env["storeEpoch"], "consentGeneration": env["consentGeneration"]}}}
+				if p.plan.Mode == "initialize-unavailable-once" {
+					env["storeEpoch"] = "unavailable"
+					failure = m
+				}
+				p.mu.Unlock()
+				p.trace("initialize-error-held", false)
+				p.release("release-initialize-error", failure)
+				continue
+			}
+		}
 		if p.plan.Mode == "oversized" && !p.triggered {
 			p.triggered = true
 			p.mu.Unlock()

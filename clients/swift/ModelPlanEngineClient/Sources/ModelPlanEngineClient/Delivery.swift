@@ -205,7 +205,8 @@ extension ProcessEngineClient {
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {
                         epochUncertain = true; invalidate(.epochChanged, next: nil)
-                        failStarts(.notReady); emit(.featureFailure(.consent, .notReady))
+                        emit(.featureFailure(.consent, .notReady))
+                        initializationFailed(id, error: .notReady)
                     }
                     return
                 }
@@ -250,8 +251,9 @@ extension ProcessEngineClient {
                     _ = observe(EngineConsentFloor(storeEpoch: epoch, generation: generation))
                 }
                 if let key, let entry = pending[key] {
-                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .rpc(code: failure.error.code, context: failure.error.data))) }
                     let error = EngineClientError.rpc(code: failure.error.code, context: failure.error.data)
+                    if entry.purpose == .initialize { initializationFailed(id, error: error); return }
+                    if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)) }
                     if entry.purpose == .request, gateClosed {
                         emit(.featureFailure(entry.method == "history/query" ? .history : .consent, error), revision: revision, request: key, error: error)
                     } else { finishRequest(key, error: error) }
