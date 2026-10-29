@@ -156,17 +156,6 @@
       ]
     },
     {
-      "file": "RowsProjection.json",
-      "type": "RowsProjection",
-      "optional": [],
-      "required": [
-        "rowsVersion",
-        "consentGeneration",
-        "rows",
-        "rowsSummary"
-      ]
-    },
-    {
       "file": "RowsReason.json",
       "type": "RowsReason",
       "optional": [],
@@ -501,10 +490,17 @@
     {
       "file": "WireFailure.json",
       "type": "WireFailure",
-      "optional": [],
+      "optional": [
+        {
+          "field": "id",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
       "required": [
         "jsonrpc",
-        "id",
         "error"
       ]
     },
@@ -689,6 +685,16 @@
       "required": [
         "jsonrpc",
         "method"
+      ]
+    },
+    {
+      "file": "WireRowsProjection.json",
+      "type": "WireRowsProjection",
+      "optional": [],
+      "required": [
+        "rowsVersion",
+        "rows",
+        "rowsSummary"
       ]
     },
     {

@@ -12,7 +12,6 @@
       "sequence": 7,
       "projection": {
         "rowsVersion": 1,
-        "consentGeneration": 7,
         "rows": [
           {
             "id": "codex",

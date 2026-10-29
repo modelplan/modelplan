@@ -677,47 +677,6 @@ public struct RowsPlan: Codable, Sendable {
     }
 }
 
-public struct RowsProjection: Codable, Sendable {
-    public let `rowsVersion`: Int
-    public let `consentGeneration`: UInt64
-    public let `rows`: [RowsRow]
-    public let `rowsSummary`: RowsRowsSummary
-    private enum CodingKeys: String, CodingKey {
-        case `rowsVersion`
-        case `consentGeneration`
-        case `rows`
-        case `rowsSummary`
-    }
-    public init(`rowsVersion`: Int, `consentGeneration`: UInt64, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
-        self.`rowsVersion` = `rowsVersion`
-        self.`consentGeneration` = `consentGeneration`
-        self.`rows` = `rows`
-        self.`rowsSummary` = `rowsSummary`
-        try validate()
-    }
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
-        self.`consentGeneration` = try c.decode(UInt64.self, forKey: .`consentGeneration`)
-        self.`rows` = try c.decode([RowsRow].self, forKey: .`rows`)
-        self.`rowsSummary` = try c.decode(RowsRowsSummary.self, forKey: .`rowsSummary`)
-        try validate()
-    }
-    public func encode(to encoder: Encoder) throws {
-        try validate()
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(`rowsVersion`, forKey: .`rowsVersion`)
-        try c.encode(`consentGeneration`, forKey: .`consentGeneration`)
-        try c.encode(`rows`, forKey: .`rows`)
-        try c.encode(`rowsSummary`, forKey: .`rowsSummary`)
-    }
-    private func validate() throws {
-        guard `consentGeneration` >= 0 else { throw WireDecodeError.invalidBound }
-        guard rowsVersion == WireProtocol.rowsVersion else { throw WireDecodeError.invalidVersion }
-        guard Set(rows.map { $0.id }).count == rows.count else { throw WireDecodeError.invalidIdentity }
-    }
-}
-
 public struct RowsReason: Codable, Sendable {
     public let `code`: RowsCode
     public let `text`: RowsText
@@ -1690,7 +1649,6 @@ public struct WireEnvelope<T: Codable & Sendable>: Codable, Sendable {
         try WireValidation.identity(`sessionId`)
         try WireValidation.identity(`storeEpoch`)
         for scope in (scopes ?? []) { try WireValidation.identity(scope) }
-        if let snapshot = data as? WireRowsSnapshot, snapshot.projection.consentGeneration != consentGeneration { throw WireDecodeError.invalidAuthorization }
     }
 }
 
@@ -1731,14 +1689,14 @@ public struct WireErrorContext: Codable, Sendable {
 
 public struct WireFailure: Codable, Sendable {
     public let `jsonrpc`: String
-    public let `id`: WireRequestID
+    public let `id`: WireRequestID?
     public let `error`: WireRPCError
     private enum CodingKeys: String, CodingKey {
         case `jsonrpc`
         case `id`
         case `error`
     }
-    public init(`jsonrpc`: String, `id`: WireRequestID, `error`: WireRPCError) throws {
+    public init(`jsonrpc`: String, `id`: WireRequestID?, `error`: WireRPCError) throws {
         self.`jsonrpc` = `jsonrpc`
         self.`id` = `id`
         self.`error` = `error`
@@ -1749,7 +1707,8 @@ public struct WireFailure: Codable, Sendable {
         let extra = try decoder.container(keyedBy: WireCodingKey.self)
         if extra.allKeys.contains(where: { $0.stringValue == "result" }) { throw WireDecodeError.invalidFrame }
         self.`jsonrpc` = try c.decode(String.self, forKey: .`jsonrpc`)
-        self.`id` = try c.decode(WireRequestID.self, forKey: .`id`)
+        guard c.contains(.`id`) else { throw WireDecodeError.invalidIdentity }
+        self.`id` = try c.decodeIfPresent(WireRequestID.self, forKey: .`id`)
         self.`error` = try c.decode(WireRPCError.self, forKey: .`error`)
         try validate()
     }
@@ -2261,14 +2220,49 @@ public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDeb
     public var debugDescription: String { description }
 }
 
+public struct WireRowsProjection: Codable, Sendable {
+    public let `rowsVersion`: Int
+    public let `rows`: [RowsRow]
+    public let `rowsSummary`: RowsRowsSummary
+    private enum CodingKeys: String, CodingKey {
+        case `rowsVersion`
+        case `rows`
+        case `rowsSummary`
+    }
+    public init(`rowsVersion`: Int, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
+        self.`rowsVersion` = `rowsVersion`
+        self.`rows` = `rows`
+        self.`rowsSummary` = `rowsSummary`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
+        self.`rows` = try c.decode([RowsRow].self, forKey: .`rows`)
+        self.`rowsSummary` = try c.decode(RowsRowsSummary.self, forKey: .`rowsSummary`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`rowsVersion`, forKey: .`rowsVersion`)
+        try c.encode(`rows`, forKey: .`rows`)
+        try c.encode(`rowsSummary`, forKey: .`rowsSummary`)
+    }
+    private func validate() throws {
+        guard rowsVersion == WireProtocol.rowsVersion else { throw WireDecodeError.invalidVersion }
+        guard Set(rows.map { $0.id }).count == rows.count else { throw WireDecodeError.invalidIdentity }
+    }
+}
+
 public struct WireRowsSnapshot: Codable, Sendable {
     public let `sequence`: UInt64
-    public let `projection`: RowsProjection
+    public let `projection`: WireRowsProjection
     private enum CodingKeys: String, CodingKey {
         case `sequence`
         case `projection`
     }
-    public init(`sequence`: UInt64, `projection`: RowsProjection) throws {
+    public init(`sequence`: UInt64, `projection`: WireRowsProjection) throws {
         self.`sequence` = `sequence`
         self.`projection` = `projection`
         try validate()
@@ -2276,7 +2270,7 @@ public struct WireRowsSnapshot: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`sequence` = try c.decode(UInt64.self, forKey: .`sequence`)
-        self.`projection` = try c.decode(RowsProjection.self, forKey: .`projection`)
+        self.`projection` = try c.decode(WireRowsProjection.self, forKey: .`projection`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {

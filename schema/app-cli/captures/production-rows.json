@@ -9,7 +9,6 @@
       "sequence": 1,
       "projection": {
         "rowsVersion": 1,
-        "consentGeneration": 7,
         "rows": [
           {
             "id": "declared:team",

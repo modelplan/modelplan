@@ -29,6 +29,7 @@ var support string
 type field struct {
 	Go, JSON, Swift        string
 	Optional, Omit, Strict bool
+	RequiredNullable       bool
 	Rule                   map[string]any
 }
 type declaration struct {
@@ -265,7 +266,15 @@ func (m *model) fields(d *declaration) error {
 			m.Used[key] = true
 			s = key
 		}
-		d.Fields = append(d.Fields, field{Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: pointer || omit, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
+		requiredNullable := false
+		if choices, ok := rule["anyOf"].([]any); ok && !pointer && !omit {
+			for _, choice := range choices {
+				if option, ok := choice.(map[string]any); ok && option["type"] == "null" {
+					requiredNullable = true
+				}
+			}
+		}
+		d.Fields = append(d.Fields, field{RequiredNullable: requiredNullable, Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: pointer || omit || requiredNullable, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
 	}
 	return nil
 }
@@ -352,7 +361,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			ty += "?"
 		}
 		arg := ident(f.JSON) + ": " + ty
-		if f.Optional {
+		if f.Optional && !f.RequiredNullable {
 			arg += " = nil"
 		}
 		args = append(args, arg)
@@ -379,6 +388,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        // Non-success credentials may not carry a token or expiry, even explicit null.\n        let outcome = try c.decode(WireCredentialOutcome.self, forKey: .outcome)\n        if outcome.rawValue != \"ok\" && (c.contains(.accessToken) || c.contains(.expiresAt)) { throw WireDecodeError.invalidAuthorization }")
 	}
 	for _, f := range d.Fields {
+		if f.RequiredNullable {
+			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
+		}
 		call := "decode"
 		prefix := "try "
 		if f.Optional {
@@ -448,7 +460,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		}
 	case "WireInitializeParams", "WireInitializeResult":
 		fmt.Fprintln(b, "        try WireValidation.protocolVersion(protocolVersion)")
-	case "RowsProjection":
+	case "RowsProjection", "WireRowsProjection":
 		fmt.Fprintln(b, "        guard rowsVersion == WireProtocol.rowsVersion else { throw WireDecodeError.invalidVersion }\n        guard Set(rows.map { $0.id }).count == rows.count else { throw WireDecodeError.invalidIdentity }")
 	case "RowsRow":
 		fmt.Fprintln(b, "        try WireValidation.identity(id)\n        if kind.rawValue == \"tool\" { try WireValidation.toolID(id) }\n        if kind.rawValue == \"declared\" && (!id.hasPrefix(\"declared:\") || id.count <= 9) { throw WireDecodeError.invalidIdentity }\n        if [\"denied\", \"unset\", \"retired\"].contains(consent.rawValue) && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }")
@@ -458,8 +470,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        if committed && committedGeneration == nil { throw WireDecodeError.invalidAuthorization }\n        guard code.isKnown else { throw WireDecodeError.invalidAuthorization }")
 	case "WireCredentialResult":
 		fmt.Fprintln(b, "        if outcome.rawValue == \"ok\" {\n            guard let token = accessToken, !token.isEmpty else { throw WireDecodeError.invalidAuthorization }\n        } else if accessToken != nil || expiresAt != nil { throw WireDecodeError.invalidAuthorization }")
-	case "WireEnvelope":
-		fmt.Fprintln(b, "        if let snapshot = data as? WireRowsSnapshot, snapshot.projection.consentGeneration != consentGeneration { throw WireDecodeError.invalidAuthorization }")
+
 	}
 	fmt.Fprintln(b, "    }")
 	if d.Swift == "WireCredentialResult" {

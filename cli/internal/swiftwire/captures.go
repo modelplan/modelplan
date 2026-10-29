@@ -25,7 +25,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
-		reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[rows.Projection](),
+		reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
 	}
 	out := []captureRoot{}
 	for _, t := range roots {
@@ -196,7 +196,7 @@ func Captures(root string) (map[string][]byte, error) {
 		for _, f := range d.Fields {
 			if f.Optional {
 				safeNull := !(r.Name == "WireCredentialResult" && f.JSON == "accessToken")
-				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: safeNull, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict})
+				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: safeNull && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict})
 			} else {
 				c.Required = append(c.Required, f.JSON)
 			}
@@ -223,10 +223,15 @@ func Captures(root string) (map[string][]byte, error) {
 	if err = rows.Validate(input, projection); err != nil {
 		return nil, err
 	}
-	b, err = json.MarshalIndent(wire.Success[wire.RowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`9007199254740993`), Result: wire.Envelope[wire.RowsSnapshot]{SessionID: "s-synthetic", StoreEpoch: "e-synthetic", ConsentGeneration: 7, Data: wire.RowsSnapshot{Sequence: 1, Projection: projection}}}, "", "  ")
+	b, err = json.MarshalIndent(wire.Success[wire.RowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`9007199254740993`), Result: wire.Envelope[wire.RowsSnapshot]{SessionID: "s-synthetic", StoreEpoch: "e-synthetic", ConsentGeneration: 7, Data: wire.RowsSnapshot{Sequence: 1, Projection: wire.Project(projection)}}}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	files["production-rows.json"] = append(b, '\n')
+	b, err = json.MarshalIndent(wire.Failure{JSONRPC: wire.JSONRPC, ID: json.RawMessage("null"), Error: wire.RPCError{Code: wire.CodeParseError, Message: wire.ErrorName(wire.CodeParseError), Data: wire.ErrorContext{SessionID: "s-synthetic"}}}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	files["null-error.json"] = append(b, '\n')
 	return files, nil
 }

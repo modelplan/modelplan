@@ -71,7 +71,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 47)
+        XCTAssertEqual(fields, 48)
     }
 
     func testRequiredFieldsRemainRequired() throws {
@@ -153,7 +153,7 @@ final class DecodeTests: XCTestCase {
         var envelope = try object("WireEnvelope.json")
         envelope["sessionId"] = ""
         XCTAssertThrowsError(try WireDecoder.decode(WireEnvelope<WireRowsSnapshot>.self, from: encoded(envelope)))
-        envelope = try object("WireEnvelope.json"); envelope["consentGeneration"] = 8
+        envelope = try object("WireEnvelope.json"); envelope["consentGeneration"] = -1
         XCTAssertThrowsError(try WireDecoder.decode(WireEnvelope<WireRowsSnapshot>.self, from: encoded(envelope)))
         var initialize = try object("WireInitializeResult.json")
         initialize["protocolVersion"] = "99.0"
@@ -211,15 +211,17 @@ final class DecodeTests: XCTestCase {
         var success = try object("WireSuccess.json")
         success["error"] = ["code": -32099]
         XCTAssertThrowsError(try WireDecoder.decode(WireSuccess<WireRowsSnapshot>.self, from: encoded(success)))
+        let failure = try WireDecoder.decode(WireFailure.self, from: data("null-error.json"))
+        XCTAssertNil(failure.id)
         let maximum = try WireDecoder.decode(WireRequestID.self, from: Data("18446744073709551615".utf8))
         XCTAssertEqual(maximum, .unsigned(UInt64.max))
     }
 
     func testDuplicateRowsAndOversizedFramesAreRejected() throws {
-        var projection = try object("RowsProjection.json")
+        var projection = try object("WireRowsProjection.json")
         let row = try XCTUnwrap(projection["rows"] as? [[String: Any]])[0]
         projection["rows"] = [row, row]
-        XCTAssertThrowsError(try WireDecoder.decode(RowsProjection.self, from: encoded(projection)))
+        XCTAssertThrowsError(try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection)))
         XCTAssertThrowsError(try WireDecoder.decode(WireEmpty.self, from: Data(repeating: 32, count: WireProtocol.maxFrameBytes + 1)))
     }
 }
