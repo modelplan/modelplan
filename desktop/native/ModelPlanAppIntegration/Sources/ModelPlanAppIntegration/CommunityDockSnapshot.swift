@@ -11,13 +11,14 @@ public struct CommunityDockSnapshot: Sendable {
     public let unavailableReason: String?
     public let readerDiagnostics: [CommunityReaderDiagnostic]
     public let emptyDiagnostic: CommunityReaderDiagnostic?
+    let presentationRows: [String: CommunityUnboundDockRow]
 
     public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date,
                 readerFacts: [CommunityReaderFacts]? = nil) {
         let reasons = CommunityReaderReason.project(snapshot: snapshot, diagnostics: diagnostics, now: now, facts: readerFacts ?? [])
         readerDiagnostics = reasons.readers; emptyDiagnostic = reasons.empty
         guard let snapshot else {
-            inputs = []; subscriptions = []
+            inputs = []; subscriptions = []; presentationRows = [:]
             unavailableReason = diagnostics.personal ?? "personal-not-loaded"
             return
         }
@@ -79,7 +80,9 @@ public struct CommunityDockSnapshot: Sendable {
                 vendor: sources.joined(separator: " / "), toolNames: sources,
                 source: input.dataState == .fresh ? .fresh : input.dataState == .stale ? .stale : .unavailable))
         }
-        inputs = adapted; subscriptions = catalogue
+        let extra = CommunityUnboundDockRows.make(snapshot, diagnostics: diagnostics, now: now)
+        presentationRows = Dictionary(uniqueKeysWithValues: extra.map { ($0.input.id, $0) })
+        inputs = adapted + extra.map(\.input); subscriptions = catalogue
     }
 
     private static func period(_ kind: String) -> DockQuotaPeriod {
