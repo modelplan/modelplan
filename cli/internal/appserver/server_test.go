@@ -624,3 +624,26 @@ func TestRequestDeadlineProducesTerminalResponse(t *testing.T) {
 		t.Fatal("deadline left request without terminal response")
 	}
 }
+
+func TestReceiptReplayKeepsCommittedEnvelopeStamp(t *testing.T) {
+	backend := newMemoryBackend()
+	_, err := backend.Grant(context.Background(), deny("original", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = backend.Grant(context.Background(), deny("later", 2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := startClient(t, Config{Backend: backend})
+	c.initialize(t)
+	c.send(t, 2, "consent/grant", deny("original", 1))
+	var receipt wire.Envelope[wire.ConsentReceipt]
+	response := c.response(t, 2)
+	if err := json.Unmarshal(response["result"], &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt.StoreEpoch != "epoch-test" || receipt.ConsentGeneration != 2 || receipt.Data.CommittedGeneration == nil || *receipt.Data.CommittedGeneration != receipt.ConsentGeneration {
+		t.Fatal("receipt was mislabeled with a later context")
+	}
+}

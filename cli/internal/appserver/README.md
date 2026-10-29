@@ -31,13 +31,19 @@ Required pointer fields encode explicit null; `omitempty` fields may be absent.
 `HistoryItem.model` is nullable. Consent context appears only in the envelope;
 `wire.Project` strips the standalone projection's duplicate generation without
 changing the standalone command contract. `credentials/result.accessToken` is
-the sole token field, legal only for a successful credential outcome.
+the sole token field, legal only for a successful credential outcome. Its
+`String`, `GoString` and `slog.LogValue` methods redact the entire credential
+value; intentional wire JSON encoding remains available. Query kinds and both
+disabled-reason vocabularies are typed enums. History limit/reference bounds
+come from the Go fields' schema tags.
 
 ## Shared backend and handlers
 
 `Backend.Get` returns an immutable, generation-fenced view. `Grant` takes the
 expected epoch/generation and returns a durable receipt, including a committed
-receipt when cancellation or cleanup follows the commit. `Publish` checks the
+receipt when cancellation or cleanup follows the commit. The response envelope
+retains that transaction's committed epoch/generation, including on replay;
+`committedGeneration` matches the envelope, even after the store advances. `Publish` checks the
 stamp atomically with a bounded enqueue callback; pipe writes never hold the
 store lock. Data is checked again against the shared stamp before writing.
 `Changes` triggers a current-state reread; events coalesce without losing a

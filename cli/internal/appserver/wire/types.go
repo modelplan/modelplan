@@ -109,16 +109,16 @@ func Project(value rows.Projection) RowsProjection {
 }
 
 type ConsentScope struct {
-	Scope          string          `json:"scope"`
-	Tool           string          `json:"tool"`
-	Route          rows.Route      `json:"route"`
-	Detected       bool            `json:"detected"`
-	Retired        bool            `json:"retired"`
-	State          ConsentState    `json:"state"`
-	DefaultCheck   bool            `json:"defaultCheck"`
-	Keychain       *KeychainChoice `json:"keychain"`
-	CleanupPending bool            `json:"cleanupPending"`
-	Disabled       *string         `json:"disabledReason,omitempty"`
+	Scope          string               `json:"scope"`
+	Tool           string               `json:"tool"`
+	Route          rows.Route           `json:"route"`
+	Detected       bool                 `json:"detected"`
+	Retired        bool                 `json:"retired"`
+	State          ConsentState         `json:"state"`
+	DefaultCheck   bool                 `json:"defaultCheck"`
+	Keychain       *KeychainChoice      `json:"keychain"`
+	CleanupPending bool                 `json:"cleanupPending"`
+	Disabled       *ScopeDisabledReason `json:"disabledReason,omitempty"`
 }
 
 type ConsentFacts struct {
@@ -136,6 +136,9 @@ type ConsentGrantParams struct {
 	Keychain         map[string]KeychainChoice `json:"keychain,omitempty"`
 }
 
+// ConsentReceipt's response envelope carries the transaction's committed
+// (storeEpoch,consentGeneration). CommittedGeneration equals that envelope's
+// generation, including cleanup_pending and replay, even if the store advances.
 type ConsentReceipt struct {
 	RequestID           string      `json:"requestId"`
 	Committed           bool        `json:"committed"`
@@ -165,17 +168,17 @@ type RefreshRequestParams struct {
 }
 
 type RefreshScheduled struct {
-	Scope          string    `json:"scope"`
-	At             time.Time `json:"at"`
-	DisabledReason *string   `json:"disabledReason,omitempty"`
+	Scope          string                 `json:"scope"`
+	At             time.Time              `json:"at"`
+	DisabledReason *RefreshDisabledReason `json:"disabledReason,omitempty"`
 }
 
 type HistoryQueryParams struct {
-	Kind   string `json:"kind"`
-	Tool   string `json:"tool"`
-	Ref    string `json:"ref,omitempty"`
-	Cursor string `json:"cursor,omitempty"`
-	Limit  int    `json:"limit"`
+	Kind   HistoryKind `json:"kind"`
+	Tool   string      `json:"tool"`
+	Ref    string      `json:"ref,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Cursor string      `json:"cursor,omitempty"`
+	Limit  int         `json:"limit" schema:"minimum=1,maximum=500"`
 }
 
 type HistoryItem struct {

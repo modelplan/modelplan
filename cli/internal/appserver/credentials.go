@@ -55,9 +55,13 @@ func (s *Server) requestCredential(need CredentialNeed, explicit bool) (string, 
 		return "", err
 	}
 	s.mu.Lock()
-	if !s.initialized || s.stopping || !s.clientCapabilities["credentials"] {
+	if !s.initialized || s.stopping {
 		s.mu.Unlock()
 		return "", ProtocolError{wire.CodeNotInitialized}
+	}
+	if !s.clientCapabilities["credentials"] {
+		s.mu.Unlock()
+		return "", ProtocolError{wire.CodeCredentialRejected}
 	}
 	allowed := false
 	for _, scope := range s.view.Consent.Scopes {
