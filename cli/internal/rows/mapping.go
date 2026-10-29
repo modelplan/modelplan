@@ -32,6 +32,7 @@ var outcomes = map[Code]Outcome{
 	CodeUnsupportedLogin:              {State: StateNeedsAction, Code: CodeUnsupportedLogin, Action: ActionOpenSettingsConsent, Text: Text{EN: "This saved sign-in is not supported", ZH: "不支持此已保存的登录"}},
 	CodePrivacyBlocked:                {State: StateOff, Code: CodePrivacyBlocked, Action: ActionOpenSettingsConsent, Text: Text{EN: "Privacy settings block this reader", ZH: "隐私设置阻止此读取器"}},
 	CodeCatalogueOff:                  {State: StateOff, Code: CodeCatalogueOff, Action: ActionOpenSettingsConsent, Text: Text{EN: "This reader route is disabled", ZH: "此读取路由已停用"}},
+	CodePolicyPending:                 {State: StateOff, Code: CodePolicyPending, Action: ActionOpenSettingsConsent, Text: Text{EN: "This scope is awaiting approval", ZH: "此读取范围正在等待批准"}},
 	CodeNotAdmitted:                   {State: StateOff, Code: CodeNotAdmitted, Action: ActionOpenSettingsConsent, Text: Text{EN: "This reader is not admitted", ZH: "此读取器未获准运行"}},
 	CodeCodexBarNotAudited:            {State: StateOff, Code: CodeCodexBarNotAudited, Action: ActionOpenSettingsConsent, Text: Text{EN: "This helper route has not been audited", ZH: "此辅助路由尚未审核"}},
 	CodeCodexBarNotRead:               {State: StateOff, Code: CodeCodexBarNotRead, Action: ActionOpenSettingsConsent, Text: Text{EN: "This helper route does not read usage", ZH: "此辅助路由不读取用量"}},
@@ -83,14 +84,14 @@ type signalKey struct {
 }
 
 var signalCodes = map[signalKey]Code{
-	{SignalError, "policy_pending"}:   CodeNotAdmitted,
-	{SignalBlocked, "policy_pending"}: CodeNotAdmitted,
-	{SignalStatus, "policy_pending"}:  CodeNotAdmitted,
 	// These generic statuses defer to errorCode/reason; without one lookup is
 	// the separately tested unknown fallback, never intentional generic success.
 	{SignalStatus, "error"}:       "",
 	{SignalStatus, "unavailable"}: "",
 
+	{SignalError, "policy_pending"}:                     CodePolicyPending,
+	{SignalStatus, "policy_pending"}:                    CodePolicyPending,
+	{SignalBlocked, "policy_pending"}:                   CodePolicyPending,
 	{SignalError, "runtime_missing"}:                    CodeRuntimeMissing,
 	{SignalError, "http_401"}:                           CodeHTTP401,
 	{SignalError, "unsupported_login"}:                  CodeUnsupportedLogin,
