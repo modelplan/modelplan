@@ -82,13 +82,17 @@ type consentRequest struct {
 }
 
 type consentResult struct {
-	StoreEpoch    string        `json:"storeEpoch"`
-	OK            bool          `json:"ok"`
-	Error         string        `json:"error,omitempty"`
-	RequestID     string        `json:"requestId"`
-	Generation    uint64        `json:"generation"`
-	Tools         []consentTool `json:"tools"`
-	PendingForget []string      `json:"pendingForget,omitempty"`
+	Committed           bool          `json:"committed"`
+	CommittedGeneration *uint64       `json:"committedGeneration"`
+	Code                string        `json:"code"`
+	CleanupError        string        `json:"cleanupError,omitempty"`
+	StoreEpoch          string        `json:"storeEpoch"`
+	OK                  bool          `json:"ok"`
+	Error               string        `json:"error,omitempty"`
+	RequestID           string        `json:"requestId"`
+	Generation          uint64        `json:"generation"`
+	Tools               []consentTool `json:"tools"`
+	PendingForget       []string      `json:"pendingForget,omitempty"`
 }
 
 var consentRequestID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -326,10 +330,13 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				s.Tools[id] = r
 			}
 			receipt.PendingForget = pending
-			response := consentResult{StoreEpoch: s.StoreEpoch, OK: len(pending) == 0, RequestID: request.RequestID, Generation: s.Generation,
+			generation := s.Generation
+			response := consentResult{Committed: true, CommittedGeneration: &generation, Code: "ok", StoreEpoch: s.StoreEpoch, OK: len(pending) == 0, RequestID: request.RequestID, Generation: s.Generation,
 				Tools: consentTools(*s, report), PendingForget: pending}
 			if len(pending) != 0 {
 				response.Error = "cleanup_pending"
+				response.Code = "cleanup_pending"
+				response.CleanupError = "cleanup_incomplete"
 			}
 			receipt.Result, _ = json.Marshal(response)
 			s.Requests[consent.ReceiptKey(s.StoreEpoch, request.RequestID)] = receipt
@@ -442,9 +449,12 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				}
 			}
 		}
-		response := consentResult{StoreEpoch: s.StoreEpoch, OK: true, RequestID: request.RequestID, Generation: s.Generation + 1, Tools: consentTools(*s, report)}
+		generation := s.Generation + 1
+		response := consentResult{Committed: true, CommittedGeneration: &generation, Code: "ok", StoreEpoch: s.StoreEpoch, OK: true, RequestID: request.RequestID, Generation: s.Generation + 1, Tools: consentTools(*s, report)}
 		if len(request.Deny) != 0 {
 			response.OK, response.Error, response.PendingForget = false, "cleanup_pending", request.Deny
+			response.Code = "cleanup_pending"
+			response.CleanupError = "cleanup_incomplete"
 		}
 		result, _ = json.Marshal(response)
 		if s.Requests == nil {
@@ -454,6 +464,15 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 		committed = true
 		return nil
 	}, finalize)
+	if err != nil {
+		var committed *consent.FinalizationError
+		if errors.As(err, &committed) {
+			if receipt, ok := committed.Receipt(consent.ReceiptKey(request.ExpectStoreEpoch, request.RequestID)); ok {
+				result = receipt.Result
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		code := err.Error()
 		switch code {

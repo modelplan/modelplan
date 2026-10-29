@@ -116,12 +116,16 @@ func setToolScopes(s *State, tool string, r Record) {
 		copy := r
 		copy.Allowed = r.Allowed && !r.DeniedSources[d.Class]
 		s.Scopes[id] = copy
+		if !copy.Allowed {
+			s.RevokeScope(id)
+		}
 	}
 	// A whole-tool revoke also tightens scopes of retired routes.
 	if !r.Allowed {
 		for id, old := range s.Scopes {
 			if strings.HasPrefix(id, tool+".") {
 				old.Allowed = false
+				s.RevokeScope(id)
 				s.Scopes[id] = old
 			}
 		}
@@ -198,6 +202,7 @@ func SetBrowserSession(s *State, tool string, browser bool) {
 	opposite := HelperScope(tool, !browser)
 	if old, exists := s.Scopes[opposite]; exists {
 		old.Allowed = false
+		s.RevokeScope(opposite)
 		s.Scopes[opposite] = old
 	}
 	r := s.Tools[tool]

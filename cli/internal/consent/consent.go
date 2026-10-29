@@ -51,6 +51,7 @@ type State struct {
 	StoreEpoch     string            `json:"storeEpoch"`
 	Scopes         map[string]Record `json:"scopes"`
 	RequireConsent bool              `json:"requireConsent,omitempty"`
+	Revoked        map[string]uint64 `json:"revokeWatermarks,omitempty"`
 	Generation     uint64            `json:"generation"`
 	Privacy        string            `json:"privacy"`
 	Tools          map[string]Record `json:"tools"`
@@ -77,7 +78,7 @@ func Path() string {
 	return filepath.Join(home, ".config", "modelplan", "consent.json")
 }
 func Empty() State {
-	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Hinted: map[string]bool{}}
+	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Revoked: map[string]uint64{}, Hinted: map[string]bool{}}
 }
 func loadRaw(file string) (State, []byte, error) {
 	s := Empty()
@@ -98,6 +99,11 @@ func loadRaw(file string) (State, []byte, error) {
 	}
 	if s.SchemaVersion == 2 && (!validEpoch(s.StoreEpoch) || s.Scopes == nil) {
 		return Empty(), nil, errors.New("invalid consent epoch or scopes")
+	}
+	for scope, generation := range s.Revoked {
+		if !ValidScope(scope) || generation > s.Generation {
+			return Empty(), nil, errors.New("invalid revoke watermark")
+		}
 	}
 	for id, r := range s.Scopes {
 		if !ValidScope(id) || r.ConsentTextVersion < 1 {
@@ -236,10 +242,21 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 		return err
 	}
 	if finalize != nil {
-		if err = finalize(&s); err != nil {
-			return err
+		committed := &FinalizationError{fence: s.Fence(), receipts: map[string]Receipt{}}
+		for key, receipt := range s.Requests {
+			committed.receipts[key] = copyReceipt(receipt)
 		}
-		return save(file, s)
+		err = finalize(&s)
+		if errors.Is(err, ErrUnchanged) {
+			return nil
+		}
+		if err == nil {
+			err = save(file, s)
+		}
+		if err != nil {
+			committed.cause = err
+			return committed
+		}
 	}
 	return nil
 }
@@ -317,6 +334,9 @@ func Deny(file, tool, source string) error {
 					record.DeniedSources = map[string]bool{}
 				}
 				record.DeniedSources[source] = true
+				if source != "keychain" {
+					s.RevokeScope(id)
+				}
 				if source == "keychain" {
 					record.Keychain = "denied"
 				}

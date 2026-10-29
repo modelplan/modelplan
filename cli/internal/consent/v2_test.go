@@ -269,3 +269,62 @@ func TestCleanupRetryPreservesGenerationAndOriginalReceipt(t *testing.T) {
 		t.Fatal("cleanup retry rewrote original response", replay, result, err)
 	}
 }
+
+func TestFinalizationFailureReturnsDurableCommittedReceipt(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "consent.json")
+	s, err := EnsureStore(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0700) })
+	request := Grant{RequestID: "readonly-cleanup", ExpectStoreEpoch: s.StoreEpoch, Deny: []string{"retired.old_path"}}
+	result, err := ApplyGrant(file, request, GrantHooks{Cleanup: func(string, bool) error { return os.Chmod(dir, 0500) }})
+	if err != nil {
+		t.Fatal("durable revoke returned as an ordinary permission error", err)
+	}
+	if !result.Committed || result.StoreEpoch != s.StoreEpoch || result.CommittedGeneration == nil || *result.CommittedGeneration != 1 || result.Code != "cleanup_pending" {
+		t.Fatal("committed floor lost", result)
+	}
+	disk, err := Load(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var durable GrantReceipt
+	if err := json.Unmarshal(disk.Requests[ReceiptKey(s.StoreEpoch, request.RequestID)].Result, &durable); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(result, durable) {
+		t.Fatal("memory and durable receipt differ", result, durable)
+	}
+	replay, err := ApplyGrant(file, request, GrantHooks{})
+	replay.Replayed = false
+	if err != nil || !reflect.DeepEqual(replay, durable) {
+		t.Fatal("durable replay changed outcome", replay, err)
+	}
+}
+
+func TestFailureBeforeFirstSaveIsNotCommitted(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permission fault requires unprivileged user")
+	}
+	dir := t.TempDir()
+	file := filepath.Join(dir, "consent.json")
+	state, err := EnsureStore(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(file)
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0700) })
+	result, err := ApplyGrant(file, Grant{RequestID: "precommit-fault", ExpectStoreEpoch: state.StoreEpoch, Deny: []string{"retired.old_path"}}, GrantHooks{})
+	if err == nil || result.Committed {
+		t.Fatal("failed first save reported committed", result, err)
+	}
+	after, _ := os.ReadFile(file)
+	if !bytes.Equal(before, after) {
+		t.Fatal("failed first save changed store")
+	}
+}

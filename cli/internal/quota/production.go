@@ -83,7 +83,8 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		}
 		generation := state.Generation
 		fence := state.Fence()
-		g := ReaderGrant{Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
+		scope := state.ScopeFor(id, consent.Credential)
+		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
 			Publish: func(write func() error) error { return consent.Publish(fence, write) },
 			StillValid: func() bool {
 				current, effective := consent.Current()
@@ -156,11 +157,11 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 	generation := hex.EncodeToString(sum[:])
 	switch provider {
 	case "copilot":
-		return WithCopilotAccess(ctx, CopilotAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		return WithCopilotAccess(ctx, CopilotAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "antigravity":
-		return WithAntigravityAccess(ctx, AntigravityAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		return WithAntigravityAccess(ctx, AntigravityAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "zai":
-		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 		if g.ConfigSource != nil {
 			ctx = context.WithValue(ctx, zaiConfigSourceKey{}, *g.ConfigSource)
 		}

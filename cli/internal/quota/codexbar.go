@@ -346,17 +346,18 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
-	ErrorCode   string    `json:"errorCode,omitempty"`
-	CursorState string    `json:"cursorState,omitempty"`
-	Region      string    `json:"region,omitempty"`
-	KeyEnv      string    `json:"keyEnv,omitempty"`
-	Provider    string    `json:"provider"`
-	Source      string    `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
-	Status      string    `json:"status"`           // ok | estimated | error
-	Error       string    `json:"error,omitempty"`
-	Plan        string    `json:"plan,omitempty"`
-	ObservedAt  time.Time `json:"observedAt"`
-	Windows     []Window  `json:"windows,omitempty"`
+	Admission   *consent.CaptureStamp `json:"admission,omitempty"`
+	ErrorCode   string                `json:"errorCode,omitempty"`
+	CursorState string                `json:"cursorState,omitempty"`
+	Region      string                `json:"region,omitempty"`
+	KeyEnv      string                `json:"keyEnv,omitempty"`
+	Provider    string                `json:"provider"`
+	Source      string                `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
+	Status      string                `json:"status"`           // ok | estimated | error
+	Error       string                `json:"error,omitempty"`
+	Plan        string                `json:"plan,omitempty"`
+	ObservedAt  time.Time             `json:"observedAt"`
+	Windows     []Window              `json:"windows,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
@@ -467,6 +468,9 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 		}
 		out, err := runCodexBarGeneration(ctx, bin, prov, access, state.Fence())
 		e := parseCodexBar(out, prov, home, now)
+		if e.Status == "ok" {
+			e.Admission = state.CaptureStamp(state.ScopeFor(prov, consent.Bridge))
+		}
 		if e.identity != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
 		}
@@ -730,6 +734,9 @@ func applyCodexBar(r *Report, p Paths, now time.Time) {
 	for _, prov := range enabled {
 		st := SourceStatus{Source: "codexbar:" + prov}
 		e, ok := by[prov]
+		if ok && e.Status == "ok" && !captureAllowed(p, prov, e.Admission, true) {
+			ok = false
+		}
 		switch {
 		case s == nil:
 			st.Status, st.Reason = "missing", "no CodexBar reading yet"

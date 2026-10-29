@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,8 +101,8 @@ func TestRetiredScopeErasesCachesWithoutCompiledReader(t *testing.T) {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			t.Fatal(err)
 		}
-		stale := filepath.Join(dir, "history-v1-retired-tool-profile.json")
-		other := filepath.Join(dir, "history-v1-codex-profile.json")
+		stale := filepath.Join(dir, "history-v1-retired-tool-"+strings.Repeat("a", 64)+".json")
+		other := filepath.Join(dir, "history-v1-codex-"+strings.Repeat("a", 64)+".json")
 		for _, file := range []string{stale, other} {
 			if err := os.WriteFile(file, []byte(`{}`), 0600); err != nil {
 				t.Fatal(err)
@@ -117,4 +118,34 @@ func TestRetiredScopeErasesCachesWithoutCompiledReader(t *testing.T) {
 			t.Fatal("other tool history erased", err)
 		}
 	})
+}
+
+func TestHistoryForgetPreservesHyphenatedNeighbor(t *testing.T) {
+	for _, tool := range []string{"retired", "grok"} {
+		t.Run(tool, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			hash := strings.Repeat("a", 64)
+			target := filepath.Join(dir, "history-v1-"+tool+"-"+hash+".json")
+			neighbor := filepath.Join(dir, "history-v1-"+tool+"-other-"+hash+".json")
+			for _, file := range []string{target, neighbor} {
+				if err := os.WriteFile(file, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := EraseScope(Paths{Cache: cache}, tool+".local_history", true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatal("target history survived", err)
+			}
+			if _, err := os.Stat(neighbor); err != nil {
+				t.Fatal("neighboring tool history erased", err)
+			}
+		})
+	}
 }

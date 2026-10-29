@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"net/http"
 	"os"
@@ -17,11 +18,13 @@ import (
 // native connection is the consent: only an enabled connection dispatches Collect.
 // Passive blocks the authenticated runtime, including potential Keychain reads.
 type CopilotAccess struct {
-	StillValid func() bool
-	Publish    func(func() error) error
-	Allowed    bool
-	Denied     bool
-	Privacy    string
+	Admission      *consent.CaptureStamp
+	CaptureAllowed func(*consent.CaptureStamp) bool
+	StillValid     func() bool
+	Publish        func(func() error) error
+	Allowed        bool
+	Denied         bool
+	Privacy        string
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
@@ -139,6 +142,9 @@ func ReadCopilotCache(ctx context.Context, cache string, now time.Time) CopilotR
 		return r
 	}
 	s := loadCopilotState(cache)
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeCopilotRuntimeUsage, access.CaptureAllowed) {
+		s.Good = nil
+	}
 	r.Availability = s.Availability
 	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
@@ -176,6 +182,9 @@ func ReadCopilotCache(ctx context.Context, cache string, now time.Time) CopilotR
 	return r
 }
 func copilotCachedEntry(s copilotState, now time.Time, generation string) codexbarEntry {
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeCopilotRuntimeUsage, nil) {
+		s.Good = nil
+	}
 	availability := s.Availability
 	if s.LoginGeneration != generation {
 		availability = "stale"
@@ -220,6 +229,10 @@ var copilotAttempts sync.Map
 
 func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := copilotAdmission(ctx)
+	if access.Admission == nil {
+		state, _ := consent.Current()
+		access.Admission = state.CaptureStamp(consent.ScopeCopilotRuntimeUsage)
+	}
 	if blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext(blocked)}
 	}
@@ -257,6 +270,7 @@ func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: copilotNext("consent_required")}
 	}
 	if e.Status == "ok" {
+		e.Admission = access.Admission
 		s.Good = &e
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0

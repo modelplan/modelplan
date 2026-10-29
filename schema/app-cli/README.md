@@ -235,3 +235,13 @@ Schema 1 is migrated under lock and retained as `consent.v1.bak`. Schema-1
 binaries refuse schema 2. Reset is an explicit confirmed command, creates a
 new epoch at generation 1, and never restores defaults or receipts from the old
 epoch. A Keychain grant's credential interaction cannot bypass remote budgets.
+
+Both scoped and legacy tool mutation receipts preserve the durable commit
+outcome if final cleanup/status persistence fails. `committedGeneration` and
+`storeEpoch` remain the committed floor, `code` is `cleanup_pending`, and bounded
+`cleanupError` is separate from the receipt outcome. A replay returns the same
+durable result. A failure before the first save is an ordinary non-commit error.
+
+Capture provenance and per-scope revoke watermarks are internal storage metadata,
+not additional private data in account wire DTOs. They prevent retained quota
+from returning after a pending revoke/regrant or epoch reset.
