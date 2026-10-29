@@ -1,0 +1,16 @@
+{
+  "command": [
+    "consent",
+    "--json"
+  ],
+  "syntheticHomeOnly": true,
+  "ownerHomeDenied": true,
+  "networkDenied": true,
+  "allReadersOff": true,
+  "rawSourceHelperSHA256": "06e0be93fd4529673b0328d1066c09e8bde766dd6010bceec05668f42a56eef3",
+  "outputSHA256": "75cc95fe116e053129de5d86b2bf1a590f240d6f21fe33451f57245cf6ff3b24",
+  "bytes": 1825,
+  "exit": 0,
+  "purpose": "new complete real pinned-CLI contract fixture; not duplicate diagnosis or owner observation",
+  "cliVersion": "0.5.45"
+}
