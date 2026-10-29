@@ -24,7 +24,8 @@
       "provider": "copilot",
       "read": "copilot --headless --no-auto-update --stdio: account.getQuota; Copilot-managed sign-in, no credential file opened by modelplan (MODELPLAN_COPILOT selects executable)",
       "reading": {
-        "reason": "Check Copilot connectivity and wait until the next eligible read",
+        "errorCode": "parse_error",
+        "reason": "parse_error",
         "source": "native:copilot",
         "status": "unavailable"
       },

@@ -149,7 +149,7 @@
       "kind": "quota",
       "quota": {
         "binding": "unknown",
-        "reason": "unavailable",
+        "reason": "parse_error",
         "status": "no"
       },
       "read": "copilot --headless --no-auto-update --stdio: account.getQuota; Copilot-managed sign-in, no credential file opened by modelplan (MODELPLAN_COPILOT selects executable)",
@@ -405,7 +405,7 @@
     "from": null,
     "recording": false
   },
-  "dataRevision": "111691811193f05a6f468eadfadb77041842da3b4cebe1af020cc53ffad7fdaa",
+  "dataRevision": "cb1a86d45a9aca6288e6f302f1460614f80bda40d4294737e51f318f9b8fc3ae",
   "events": [],
   "generatedAt": "2030-01-02T03:04:05Z",
   "hourly": [],
@@ -555,7 +555,8 @@
       "status": "unsupported_schema"
     },
     {
-      "reason": "Check Copilot connectivity and wait until the next eligible read",
+      "errorCode": "parse_error",
+      "reason": "parse_error",
       "source": "native:copilot",
       "status": "unavailable"
     }

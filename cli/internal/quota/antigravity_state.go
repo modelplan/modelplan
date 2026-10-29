@@ -34,6 +34,7 @@ func WithAntigravityAccess(ctx context.Context, access AntigravityAccess) contex
 // AntigravityResult keeps availability, freshness and beta independent. CLIJIT must
 // project these alongside the legacy account DTO. No membership is inferred.
 type AntigravityResult struct {
+	ErrorCode     string    `json:"errorCode,omitempty"`
 	Availability  string    `json:"availability"`
 	Freshness     string    `json:"freshness"`
 	Confidence    string    `json:"confidence"`
@@ -44,6 +45,7 @@ type AntigravityResult struct {
 	Reading       *Account  `json:"reading,omitempty"`
 }
 type antigravityState struct {
+	ErrorCode       string         `json:"errorCode,omitempty"`
 	SchemaVersion   int            `json:"schemaVersion"`
 	AttemptAt       time.Time      `json:"attemptAt"`
 	NextAt          time.Time      `json:"nextAt"`
@@ -138,6 +140,9 @@ func ReadAntigravityCache(ctx context.Context, cache string, now time.Time) Anti
 	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
 	}
+	if r.Availability != "ok" && r.Availability == s.Availability && s.ErrorCode != "" {
+		r.ErrorCode = ReaderErrorCode(s.ErrorCode)
+	}
 	r.NextAttemptAt = s.NextAt
 	// A last-good reading belongs only to its capture generation. Cache-only
 	// requests for a new generation must not expose the preceding login's quota.
@@ -176,10 +181,10 @@ func antigravityCachedEntry(s antigravityState, now time.Time, generation string
 		if availability == "ok" {
 			availability = "stale"
 		}
-		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext(availability)}
+		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: antigravityNext(availability)}
 	}
 	if s.Good == nil {
-		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext(s.Availability)}
+		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: antigravityNext(s.Availability)}
 	}
 	e := *s.Good
 	// The native dispatcher must receive the latest attempt's availability,
@@ -187,6 +192,7 @@ func antigravityCachedEntry(s antigravityState, now time.Time, generation string
 	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
 	if availability != "ok" {
 		e.Status = "error"
+		e.ErrorCode = s.ErrorCode
 		e.Error = antigravityNext(availability)
 	}
 	e.Windows = nil
@@ -245,8 +251,10 @@ func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now t
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0
 		s.Availability = "ok"
+		s.ErrorCode = ""
 		s.NextAt = now.Add(10 * time.Minute).UTC()
 	} else {
+		s.ErrorCode = ReaderErrorCode(e.ErrorCode)
 		s.Failures = min(s.Failures+1, 4)
 		wait := time.Duration(10*(1<<(s.Failures-1))) * time.Minute
 		if s.Failures == 4 {

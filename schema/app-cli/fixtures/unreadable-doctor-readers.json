@@ -48,7 +48,7 @@
       "detected": "yes",
       "last": "unknown",
       "provider": "copilot",
-      "state": "unavailable:reader_error",
+      "state": "unavailable:reader_error:parse_error",
       "windows": 0
     },
     {

@@ -53,7 +53,13 @@ denial is committed but deletion needs a retry. A replay can retain an older
 receipt shape without additive `hostDetails`.
 
 Use IDs, enums, booleans, timestamps and observations as machine values. `hosts`,
-`notice`, `nextStep`, names and human reasons are display strings. Only
+`notice`, `nextStep`, names and human reasons are display strings. Native reader
+failures expose optional `sources[].errorCode` (also `connections[].reading.errorCode`
+in the connections command), with the bounded vocabulary in
+`common.json#/$defs/readerErrorCode`. Native failure reasons and desktop
+`connections[].quota.reason` use these same machine codes; doctor readers
+includes the code in `unavailable:reader_error:<code>`. Raw errors are never part
+of that contract. The unreadable synthetic runtime yields `parse_error`. Only
 `hostDetails[].host` supplies bare DNS metadata, never a URL or a permission to
 contact that host. The existing display labels remain unchanged.
 

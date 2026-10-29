@@ -149,7 +149,7 @@
       "kind": "quota",
       "quota": {
         "binding": "unknown",
-        "reason": "missing",
+        "reason": "other",
         "status": "no"
       },
       "read": "copilot --headless --no-auto-update --stdio: account.getQuota; Copilot-managed sign-in, no credential file opened by modelplan (MODELPLAN_COPILOT selects executable)",
@@ -405,7 +405,7 @@
     "from": null,
     "recording": false
   },
-  "dataRevision": "35adc1e4a639797be4a64b1dec710416f4a03c594cbec3cc8dff6e3f5b8f1faa",
+  "dataRevision": "da872a7c5ca88c6a38e0e0bbd4b9617ce7c635d9109c0a121ca2bd68b66faaa8",
   "events": [],
   "generatedAt": "2030-01-02T03:04:05Z",
   "hourly": [],

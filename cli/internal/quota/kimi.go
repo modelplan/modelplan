@@ -52,15 +52,20 @@ func fetchKimi(ctx context.Context, c *http.Client, region, key string, now time
 	var raw json.RawMessage
 	if err := getJSON(ctx, &client, host+"/coding/v1/usages", key, &raw); err != nil {
 		e.Error = err.Error()
+		e.ErrorCode = errorCode(err)
 		return e
 	}
 	return parseKimi(raw, now)
 }
 
 func parseKimi(b []byte, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC(), Plan: "Kimi Code", Error: "unsupported Kimi quota format"}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC(), Plan: "Kimi Code", Error: "unsupported Kimi quota format"}
 	var body map[string]json.RawMessage
-	if json.Unmarshal(b, &body) != nil || body == nil || body["error"] != nil {
+	if err := json.Unmarshal(b, &body); err != nil {
+		e.ErrorCode = jsonErrorCode(err)
+		return e
+	}
+	if body == nil || body["error"] != nil {
 		return e
 	}
 	// Some monitors accept the same payload in a data envelope.
@@ -179,6 +184,7 @@ func parseKimi(b []byte, now time.Time) codexbarEntry {
 	}
 	if len(e.Windows) > 0 {
 		e.Status, e.Error = "ok", ""
+		e.ErrorCode = ""
 	}
 	return e
 }
@@ -236,15 +242,15 @@ func kimiReserve(cache string, now time.Time) error { return kimiFinish(cache, n
 func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != ""
-	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
+	fail := func(state, notice string, codes ...string) readerOutcome {
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice, ErrorCode: failureCode(state, codes)}, Invalidate: changed}
 	}
 	if r.Grant.Region != "" && r.Grant.Region != "china" {
 		return fail("unavailable", "Kimi Code saved login is supported in China only")
 	}
 	for _, name := range []string{"KIMI_CODE_API_KEY", "KIMI_CODE_BASE_URL", "KIMI_CODE_OAUTH_HOST", "KIMI_OAUTH_HOST", "KIMI_AUTH_TOKEN", "kimi_auth_token"} {
 		if os.Getenv(name) != "" {
-			return fail("unavailable", "This Kimi Code selected login/endpoint is not supported yet")
+			return fail("unavailable", "This Kimi Code selected login/endpoint is not supported yet", "unsupported_login")
 		}
 	}
 	path := filepath.Join(r.Profile.Root, "credentials", "kimi-code.json")
@@ -254,13 +260,16 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 		Access string          `json:"access_token"`
 		Expiry json.RawMessage `json:"expires_at"`
 	}
-	if status != "" || json.Unmarshal(b, &credential) != nil {
-		return fail("unavailable", "No supported Kimi Code saved login")
+	if status != "" {
+		return fail("unavailable", "No supported Kimi Code saved login", fileErrorCode(status))
+	}
+	if json.Unmarshal(b, &credential) != nil {
+		return fail("unavailable", "No supported Kimi Code saved login", "parse_error")
 	}
 	credentialKey := readerHash(r.Paths.Cache, "kimi-login:credential", credential.Access)
 	changed = meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
 	if credential.Access == "" || len(credential.Access) > 16<<10 || strings.ContainsAny(credential.Access, " \t\r\n") {
-		return fail("unavailable", "No supported Kimi Code saved login")
+		return fail("unavailable", "No supported Kimi Code saved login", "unsupported_login")
 	}
 	expires := kimiNumber(credential.Expiry, false)
 	if expires == nil || *expires <= float64(r.Now.Add(time.Minute).Unix()) {
@@ -272,14 +281,14 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 	if parts := strings.Split(credential.Access, "."); len(parts) == 3 {
 		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 		if err != nil {
-			return fail("unavailable", "Unsupported Kimi Code saved token")
+			return fail("unavailable", "Unsupported Kimi Code saved token", "unsupported_login")
 		}
 		var claims struct {
 			Subject string `json:"sub"`
 			Expiry  int64  `json:"exp"`
 		}
 		if json.Unmarshal(payload, &claims) != nil {
-			return fail("unavailable", "Unsupported Kimi Code saved token")
+			return fail("unavailable", "Unsupported Kimi Code saved token", "unsupported_login")
 		}
 		if claims.Expiry > 0 && claims.Expiry <= r.Now.Add(time.Minute).Unix() {
 			return fail("expired", "Open Kimi Code to refresh")
@@ -290,20 +299,24 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 	}
 	deviceBytes, deviceStatus := readBounded(filepath.Join(r.Profile.Root, "device_id"), 1024)
 	device := strings.TrimSpace(string(deviceBytes))
-	if deviceStatus != "" || !kimiLoginID.MatchString(device) {
+	if deviceStatus != "" {
+		return fail("unavailable", "Kimi Code device identity unavailable", fileErrorCode(deviceStatus))
+	}
+	if !kimiLoginID.MatchString(device) {
 		return fail("unavailable", "Kimi Code device identity is missing or unsupported; open Kimi Code")
 	}
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
 	}
 	var raw json.RawMessage
-	state, retry := kimiLoginGet(ctx, c, credential.Access, device, &raw, r.Now)
+	state, retry, code := kimiLoginGet(ctx, c, credential.Access, device, &raw, r.Now)
 	if state != "" {
 		out := fail(state, "Kimi Code usage temporarily unavailable")
 		if state == "expired" || state == "denied" {
 			out.Entry.NextStep = "Open Kimi Code to refresh"
 		}
 		out.Invalidate = changed
+		out.Entry.ErrorCode = code
 		out.RetryAfter = retry
 		return out
 	}
@@ -315,7 +328,7 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 		}
 	}
 	if parsed.Status != "ok" || !usable {
-		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Kimi Code quota format is not supported yet"}, Invalidate: changed}
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Kimi Code quota format is not supported yet"}, Invalidate: changed}
 	}
 	after, err := os.Lstat(path)
 	if before == nil || err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
@@ -335,10 +348,10 @@ func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) read
 	return readerOutcome{Entry: readerEntry{Status: "ok", Account: a, Metadata: meta}}
 }
 
-func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out any, now time.Time) (string, time.Time) {
+func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out any, now time.Time) (string, time.Time, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kimiLoginHost+"/coding/v1/usages", nil)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -354,7 +367,7 @@ func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, transportErrorCode(err)
 	}
 	defer resp.Body.Close()
 	retry := time.Time{}
@@ -368,19 +381,25 @@ func kimiLoginGet(ctx context.Context, c *http.Client, token, device string, out
 	switch resp.StatusCode {
 	case 200:
 	case 401:
-		return "expired", retry
+		return "expired", retry, "http_401"
 	case 403:
-		return "denied", retry
+		return "denied", retry, "http_403"
 	case 429:
-		return "rate-limited", retry
+		return "rate-limited", retry, "http_429"
 	default:
-		return "unavailable", retry
+		return "unavailable", retry, httpErrorCode(resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody || json.Unmarshal(b, out) != nil {
-		return "unsupported_schema", retry
+	if err != nil {
+		return "unavailable", retry, transportErrorCode(err)
 	}
-	return "", retry
+	if len(b) > nativeMaxBody {
+		return "unsupported_schema", retry, "schema_changed"
+	}
+	if err := json.Unmarshal(b, out); err != nil {
+		return "unsupported_schema", retry, jsonErrorCode(err)
+	}
+	return "", retry, ""
 }
 
 func kimiNumber(b json.RawMessage, integer bool) *float64 {

@@ -136,7 +136,10 @@
             },
             "reason": {
               "type": "string",
-              "description": "Display text only; never parse as an endpoint or permission."
+              "description": "Display reason for legacy/local sources; native reader failures use a sanitised machine error code."
+            },
+            "errorCode": {
+              "$ref": "common.json#/$defs/readerErrorCode"
             }
           },
           "required": [

@@ -33,6 +33,7 @@ func WithZaiConfigAccess(ctx context.Context, access ZaiConfigAccess) context.Co
 // ZaiConfigResult keeps availability, freshness and beta independent. CLIJIT must
 // project these alongside the legacy account DTO. No membership is inferred.
 type ZaiConfigResult struct {
+	ErrorCode     string    `json:"errorCode,omitempty"`
 	Availability  string    `json:"availability"`
 	Freshness     string    `json:"freshness"`
 	Confidence    string    `json:"confidence"`
@@ -43,6 +44,7 @@ type ZaiConfigResult struct {
 	Reading       *Account  `json:"reading,omitempty"`
 }
 type zaiConfigState struct {
+	ErrorCode       string         `json:"errorCode,omitempty"`
 	SchemaVersion   int            `json:"schemaVersion"`
 	AttemptAt       time.Time      `json:"attemptAt"`
 	NextAt          time.Time      `json:"nextAt"`
@@ -136,6 +138,9 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
 	}
+	if r.Availability != "ok" && r.Availability == s.Availability && s.ErrorCode != "" {
+		r.ErrorCode = ReaderErrorCode(s.ErrorCode)
+	}
 	r.NextAttemptAt = s.NextAt
 	// A last-good reading belongs only to its capture generation. Cache-only
 	// requests for a new generation must not expose the preceding login's quota.
@@ -174,10 +179,10 @@ func zaiConfigCachedEntry(s zaiConfigState, now time.Time, generation string) co
 		if availability == "ok" {
 			availability = "stale"
 		}
-		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(availability)}
+		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: zaiConfigNext(availability)}
 	}
 	if s.Good == nil {
-		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(s.Availability)}
+		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: zaiConfigNext(s.Availability)}
 	}
 	e := *s.Good
 	// The native dispatcher must receive the latest attempt's availability,
@@ -185,6 +190,7 @@ func zaiConfigCachedEntry(s zaiConfigState, now time.Time, generation string) co
 	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
 	if availability != "ok" {
 		e.Status = "error"
+		e.ErrorCode = s.ErrorCode
 		e.Error = zaiConfigNext(availability)
 	}
 	e.Windows = nil
@@ -243,8 +249,10 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0
 		s.Availability = "ok"
+		s.ErrorCode = ""
 		s.NextAt = now.Add(10 * time.Minute).UTC()
 	} else {
+		s.ErrorCode = ReaderErrorCode(e.ErrorCode)
 		s.Failures = min(s.Failures+1, 4)
 		wait := time.Duration(10*(1<<(s.Failures-1))) * time.Minute
 		if s.Failures == 4 {

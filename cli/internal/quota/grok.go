@@ -109,15 +109,24 @@ func grokMergeProvider(table, base *grokProviderConfig) (*grokProviderConfig, bo
 // Return the selected first-party scope, or fail before credential/HTTP I/O.
 // A complex per-model credential catalogue is deliberately not guessed as OAuth.
 func grokAuthScope(root string) (string, bool) {
+	scope, ok, _ := grokAuthScopeCode(root)
+	return scope, ok
+}
+func grokAuthScopeCode(root string) (string, bool, string) {
 	for _, name := range []string{"GROK_AUTH", "GROK_AUTH_PROVIDER_COMMAND", "GROK_DEPLOYMENT_KEY", "GROK_LOCAL_AUTH"} {
 		if v := os.Getenv(name); v != "" && v != "0" && v != "false" {
-			return "", false
+			return "", false, "unsupported_login"
 		}
 	}
 	var cfg grokLocalConfig
 	b, status := readBounded(filepath.Join(root, "config.toml"), 256<<10)
-	if status != "missing" && (status != "" || toml.Unmarshal(b, &cfg) != nil) {
-		return "", false
+	if status != "missing" {
+		if status != "" {
+			return "", false, fileErrorCode(status)
+		}
+		if toml.Unmarshal(b, &cfg) != nil {
+			return "", false, "parse_error"
+		}
 	}
 	// [auth] is a top-level alias. An explicit grok_com_config key wins;
 	// provider tables are not deep-merged between the alias and explicit section.
@@ -138,24 +147,24 @@ func grokAuthScope(root string) (string, bool) {
 		login.OAuth2 = cfg.Auth.OAuth2
 	}
 	if login.Preferred != nil && *login.Preferred != "oidc" {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	if (login.External != nil && *login.External != "") || cfg.Endpoints.Deployment != "" || login.ForcedTeam != nil {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	if login.OAuth2 != nil && (login.OAuth2.Principal != "" || login.OAuth2.PrincipalType != "") {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	for _, model := range cfg.Models {
 		if model.Key != "" || model.Env != "" {
-			return "", false
+			return "", false, "unsupported_login"
 		}
 	}
 	oidcIssuer, oidcClient := os.Getenv("GROK_OIDC_ISSUER"), os.Getenv("GROK_OIDC_CLIENT_ID")
 	oauthIssuer, oauthClient := os.Getenv("GROK_OAUTH2_ISSUER"), os.Getenv("GROK_OAUTH2_CLIENT_ID")
 	// A partially named environment provider is ambiguous and unsupported here.
 	if (oidcIssuer == "") != (oidcClient == "") || (oauthIssuer == "") != (oauthClient == "") {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	var oidc, oauth2 *grokProviderConfig
 	if oidcIssuer != "" {
@@ -169,24 +178,24 @@ func grokAuthScope(root string) (string, bool) {
 	var valid bool
 	oidc, valid = grokMergeProvider(login.OIDC, oidc)
 	if !valid {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	oauth2, valid = grokMergeProvider(login.OAuth2, oauth2)
 	if !valid {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	selected := oidc
 	if selected == nil {
 		selected = oauth2
 	}
 	if selected == nil || selected.Issuer == nil || selected.Client == nil {
-		return "", false
+		return "", false, "unsupported_login"
 	}
 	issuer, client := *selected.Issuer, *selected.Client
 	if strings.TrimRight(issuer, "/") != "https://auth.x.ai" || !grokID.MatchString(client) {
-		return "", false
+		return "", false, "unsupported_login"
 	}
-	return "https://auth.x.ai::" + client, true
+	return "https://auth.x.ai::" + client, true, ""
 }
 
 func grokExpiry(auth grokAuth, now time.Time) bool {
@@ -223,25 +232,31 @@ func grokExpiry(auth grokAuth, now time.Time) bool {
 func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != "" || meta.AccountKey != ""
-	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
+	fail := func(state, notice string, codes ...string) readerOutcome {
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice, ErrorCode: failureCode(state, codes)}, Invalidate: changed}
 	}
-	scope, ok := grokAuthScope(r.Profile.Root)
+	scope, ok, scopeCode := grokAuthScopeCode(r.Profile.Root)
 	if !ok {
-		return fail("unavailable", "This Grok Build auth configuration is not supported yet")
+		return fail("unavailable", "This Grok Build auth configuration is not supported yet", scopeCode)
 	}
 	path := r.Profile.AccountFile
 	if path == "" {
 		path = filepath.Join(r.Profile.Root, "auth.json")
 	}
 	if !filepath.IsAbs(path) {
-		return fail("unavailable", "Unsupported Grok Build account path")
+		return fail("unavailable", "Unsupported Grok Build account path", "unsupported_login")
 	}
 	before, _ := os.Lstat(path)
 	b, status := readBounded(path, 256<<10)
 	var store map[string]grokAuth
-	if status != "" || json.Unmarshal(b, &store) != nil || len(store) > 64 {
-		return fail("unavailable", "No supported Grok Build saved session")
+	if status != "" {
+		return fail("unavailable", "No supported Grok Build saved session", fileErrorCode(status))
+	}
+	if json.Unmarshal(b, &store) != nil {
+		return fail("unavailable", "No supported Grok Build saved session", "parse_error")
+	}
+	if len(store) > 64 {
+		return fail("unavailable", "No supported Grok Build saved session", "schema_changed")
 	}
 	auth, found := store[scope]
 	credentialKey := readerHash(r.Paths.Cache, "grok:credential", auth.Key)
@@ -249,19 +264,19 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 	accountKey := readerHash(r.Paths.Cache, "grok:account", identity)
 	changed = (meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)) || (meta.AccountKey != "" && (accountKey == "" || meta.AccountKey != accountKey))
 	if !found || (auth.Mode != "oidc" && auth.Mode != "external") || strings.TrimRight(auth.Issuer, "/") != "https://auth.x.ai" || !grokID.MatchString(auth.User) || auth.Key == "" || len(auth.Key) > 16<<10 || strings.ContainsAny(auth.Key, " \t\r\n") {
-		return fail("unavailable", "This Grok Build login type is not supported yet")
+		return fail("unavailable", "This Grok Build login type is not supported yet", "unsupported_login")
 	}
 	if auth.Client != "" && scope != "https://auth.x.ai::"+auth.Client {
-		return fail("unavailable", "Grok Build login scope mismatch")
+		return fail("unavailable", "Grok Build login scope mismatch", "unsupported_login")
 	}
 	if forced := os.Getenv("GROK_FORCE_LOGIN_TEAM_ID"); forced != "" && forced != auth.Team {
-		return fail("unavailable", "Grok Build selected team mismatch")
+		return fail("unavailable", "Grok Build selected team mismatch", "unsupported_login")
 	}
 	if value := os.Getenv("GROK_OAUTH2_PRINCIPAL_ID"); value != "" && value != auth.Principal {
-		return fail("unavailable", "Grok Build selected principal mismatch")
+		return fail("unavailable", "Grok Build selected principal mismatch", "unsupported_login")
 	}
 	if value := os.Getenv("GROK_OAUTH2_PRINCIPAL_TYPE"); value != "" && value != auth.PrincipalType {
-		return fail("unavailable", "Grok Build selected principal mismatch")
+		return fail("unavailable", "Grok Build selected principal mismatch", "unsupported_login")
 	}
 	if !grokExpiry(auth, r.Now) {
 		out := fail("expired", "Open Grok Build to refresh")
@@ -272,19 +287,20 @@ func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOut
 		return fail("unavailable", "Identity key unavailable")
 	}
 	var billing grokBilling
-	state, retry := grokBillingGet(ctx, c, auth, &billing, r.Now)
+	state, retry, code := grokBillingGet(ctx, c, auth, &billing, r.Now)
 	if state != "" {
 		out := fail(state, "Grok Build usage temporarily unavailable")
 		if state == "expired" || state == "denied" {
 			out.Entry.NextStep = "Open Grok Build to refresh"
 		}
 		out.Invalidate = changed
+		out.Entry.ErrorCode = code
 		out.RetryAfter = retry
 		return out
 	}
 	a, ok := parseGrokBilling(billing, r.Now)
 	if !ok {
-		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Grok Build billing format is not supported yet"}, Invalidate: changed}
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Grok Build billing format is not supported yet"}, Invalidate: changed}
 	}
 	after, statErr := os.Lstat(path)
 	if before == nil || statErr != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
@@ -442,10 +458,10 @@ func parseGrokBilling(b grokBilling, now time.Time) (*Account, bool) {
 	return a, len(a.Windows) > 0 || a.Credits != nil || (cfg.Percent != nil && reset != nil)
 }
 
-func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any, now time.Time) (string, time.Time) {
+func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any, now time.Time) (string, time.Time, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, grokHost+"/v1/billing?format=credits", nil)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	req.Header.Set("Authorization", "Bearer "+auth.Key)
 	req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
@@ -459,7 +475,7 @@ func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any,
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, transportErrorCode(err)
 	}
 	defer resp.Body.Close()
 	retry := time.Time{}
@@ -473,17 +489,23 @@ func grokBillingGet(ctx context.Context, c *http.Client, auth grokAuth, out any,
 	switch resp.StatusCode {
 	case 200:
 	case 401:
-		return "expired", retry
+		return "expired", retry, "http_401"
 	case 403:
-		return "denied", retry
+		return "denied", retry, "http_403"
 	case 429:
-		return "rate-limited", retry
+		return "rate-limited", retry, "http_429"
 	default:
-		return "unavailable", retry
+		return "unavailable", retry, httpErrorCode(resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody || json.Unmarshal(b, out) != nil {
-		return "unsupported_schema", retry
+	if err != nil {
+		return "unavailable", retry, transportErrorCode(err)
 	}
-	return "", retry
+	if len(b) > nativeMaxBody {
+		return "unsupported_schema", retry, "schema_changed"
+	}
+	if err := json.Unmarshal(b, out); err != nil {
+		return "unsupported_schema", retry, jsonErrorCode(err)
+	}
+	return "", retry, ""
 }

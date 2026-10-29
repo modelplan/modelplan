@@ -169,6 +169,25 @@
         "error"
       ],
       "additionalProperties": true
+    },
+    "readerErrorCode": {
+      "type": "string",
+      "description": "Sanitised machine failure code; never raw provider, filesystem or subprocess text.",
+      "enum": [
+        "file_missing",
+        "file_unreadable",
+        "parse_error",
+        "schema_changed",
+        "http_401",
+        "http_403",
+        "http_429",
+        "http_5xx",
+        "network",
+        "timeout",
+        "runtime_missing",
+        "unsupported_login",
+        "other"
+      ]
     }
   }
 }

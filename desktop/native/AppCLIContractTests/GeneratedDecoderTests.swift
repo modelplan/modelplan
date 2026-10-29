@@ -22,7 +22,11 @@ final class GeneratedDecoderTests: XCTestCase {
                 if entry.state == "unreadable" {
                     let source = try XCTUnwrap(snapshot.sources?.first { $0.source == "native:copilot" })
                     XCTAssertNotEqual(source.status, "ok")
-                    XCTAssertFalse((source.reason ?? "").isEmpty)
+                    XCTAssertEqual(source.reason, "parse_error")
+                    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                    let sources = try XCTUnwrap(object["sources"] as? [[String: Any]])
+                    let wireSource = try XCTUnwrap(sources.first { $0["source"] as? String == "native:copilot" })
+                    XCTAssertEqual(wireSource["errorCode"] as? String, "parse_error")
                 }
             case "consent":
                 let preview = try FeedDecoder.consentPreview(data)

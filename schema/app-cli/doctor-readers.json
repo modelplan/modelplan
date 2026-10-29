@@ -53,7 +53,7 @@
           },
           "state": {
             "type": "string",
-            "description": "Machine value; not display text."
+            "description": "Machine diagnostic state; native failure is unavailable:reader_error:<sanitised error code>, never raw error text."
           },
           "windows": {
             "type": "integer",

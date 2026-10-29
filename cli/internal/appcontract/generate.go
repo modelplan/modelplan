@@ -307,8 +307,8 @@ func (s *suite) capture(name, schema string, args []string, input []byte, readon
 	}
 	if schema == "desktop" {
 		var snap struct {
-			Accounts []any                                     `json:"accounts"`
-			Sources  []struct{ Source, Status, Reason string } `json:"sources"`
+			Accounts []any                                                `json:"accounts"`
+			Sources  []struct{ Source, Status, Reason, ErrorCode string } `json:"sources"`
 		}
 		if err := json.Unmarshal(raw, &snap); err != nil {
 			return err
@@ -322,7 +322,7 @@ func (s *suite) capture(name, schema string, args []string, input []byte, readon
 		if s.state == "unreadable" {
 			found := false
 			for _, source := range snap.Sources {
-				if source.Source == "native:copilot" && source.Status != "ok" && source.Reason != "" {
+				if source.Source == "native:copilot" && source.Status != "ok" && source.ErrorCode == "parse_error" && source.Reason == source.ErrorCode {
 					found = true
 				}
 			}

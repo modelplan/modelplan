@@ -13,8 +13,20 @@
       "0": "JSON snapshot, including empty/unreadable/revoked state",
       "1": "cache location unavailable"
     },
-    "displayText": "notes/reasons are display; source IDs, states, booleans and numeric observations are machine values"
+    "displayText": "Notes/names are display; source IDs, states, booleans and numeric observations are machine values. Native sources.errorCode, their failure reason, and native connections.quota.reason use sanitised machine failure codes."
   },
   "$ref": "../desktop-v1.json",
-  "description": "Desktop snapshot. Normal polls may schedule admitted readers; read-only does not collect."
+  "description": "Desktop snapshot. Normal polls may schedule admitted readers; read-only does not collect.",
+  "properties": {
+    "sources": {
+      "type": "array",
+      "items": {
+        "properties": {
+          "errorCode": {
+            "$ref": "common.json#/$defs/readerErrorCode"
+          }
+        }
+      }
+    }
+  }
 }
