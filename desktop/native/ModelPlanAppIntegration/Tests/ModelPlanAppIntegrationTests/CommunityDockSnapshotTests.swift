@@ -38,6 +38,38 @@ import ModelPlanSettings
         var ready = StoreDiagnostics(); ready.personal = nil
         return CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics ?? ready, now: now)
     }
+    func testAccountPresentationWithoutMembershipKeepsRealValueAndNoInventedSubscription() throws {
+        let joined = try snapshot(accounts: [account(nil, source: "codex", windows: [window()])])
+        let result = adapt(joined)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        XCTAssertEqual(result.inputs[0].windows.first?.remainingPercent, 75)
+        XCTAssertEqual(result.inputs[0].dataState, .fresh)
+        XCTAssertNotNil(result.presentationRows[result.inputs[0].id])
+    }
+    func testConsentedUnreadableConnectionHasReasonAndNextStepWithoutQuotaOrMembership() throws {
+        let joined = try snapshot(accounts: [], extras: ["connections": [
+            ["id": "claude", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "consent_required"]],
+            ["id": "codex", "authorization": ["status": "no"], "quota": ["status": "missing"]]
+        ]])
+        let result = adapt(joined)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        let status = try XCTUnwrap(result.presentationRows[result.inputs[0].id])
+        XCTAssertTrue(status.reason.contains("Keychain"))
+        XCTAssertTrue(status.nextStep.contains("Settings"))
+        XCTAssertTrue(status.input.windows.isEmpty)
+        XCTAssertEqual(status.input.dataState, .unavailable)
+    }
+
+    func testAccountAgePreservesOriginalObservationAndNeverUsesRenderTime() throws {
+        let joined = try snapshot(accounts: [account(nil, source: "codex", windows: [window()])])
+        let row = try XCTUnwrap(adapt(joined).presentationRows.values.first)
+        XCTAssertEqual(row.originalObservedAt, now.addingTimeInterval(-5))
+        XCTAssertTrue(row.sourceAndAge(at: now).contains("5s"))
+        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(10)).contains("15s"))
+        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(-10)).contains("unknown"))
+    }
     func testReaderDiagnosticsUseDecodedCurrentZeroWithoutAddingMembership() throws {
         let joined = try readerSnapshot(accounts: [account("real", source: "codex", windows: [window(remaining: 0)])],
             extras: ["sources": [["source": "codex", "status": "ok"]]])
@@ -71,7 +103,9 @@ import ModelPlanSettings
         XCTAssertEqual(reader.freshness, .stale)
         XCTAssertEqual(reader.consent, .unknown)
         XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
-        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        XCTAssertNil(result.inputs[0].windows.first?.remainingPercent)
     }
     func testReaderUnknownSourceStatusDoesNotInventFailureOrDenial() throws {
         let joined = try readerSnapshot(accounts: [], extras: ["sources": [["source": "codex",
@@ -87,7 +121,9 @@ import ModelPlanSettings
         let result = adapt(try readerSnapshot(accounts: [account(nil, source: "codex", windows: [])]))
         XCTAssertEqual(result.emptyDiagnostic?.english, "Subscription binding is not verified.")
         XCTAssertEqual(result.emptyDiagnostic?.chinese, "订阅归属尚未验证。")
-        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        XCTAssertTrue(result.inputs[0].windows.isEmpty)
     }
     private func readerSnapshot(accounts: [[String: Any]], generated: TimeInterval = -10,
                                 valid: TimeInterval = 300, extras: [String: Any] = [:]) throws -> JoinedSnapshot {
@@ -106,7 +142,8 @@ import ModelPlanSettings
         XCTAssertEqual(reader.category, .unbound)
         XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
         XCTAssertNil(result.unavailableReason)
-        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
         XCTAssertTrue(result.subscriptions.isEmpty)
     }
     func testReaderNotDetectedRequiresExplicitPresenceEvidence() throws {
@@ -170,7 +207,8 @@ import ModelPlanSettings
             let joined = JoinedSnapshot.make(personal: source.personal, presentation: source.presentation, publication: publication)
             XCTAssertEqual(joined.scoredUnavailableReason, "publication-mismatch")
             let result = adapt(joined)
-            XCTAssertEqual(result.inputs.map(\.id), id.map { [$0] } ?? [])
+            XCTAssertEqual(result.inputs.map(\.id), id.map { [$0] } ?? ["presentation.account.0"])
+            XCTAssertEqual(result.subscriptions.map(\.id), id.map { [$0] } ?? [])
             XCTAssertFalse(result.inputs.contains { $0.id == "public-only" })
             if id == nil {
                 XCTAssertEqual(result.emptyDiagnostic?.category, .unbound)
@@ -194,7 +232,9 @@ import ModelPlanSettings
         XCTAssertNil(reader.providerID)
         XCTAssertNil(reader.beta, "Core does not expose beta yet; the mapper must not infer it")
         XCTAssertFalse(String(reflecting: reader).contains(raw))
-        XCTAssertTrue(result.inputs.isEmpty)
+        XCTAssertEqual(result.inputs.count, 1)
+        XCTAssertTrue(result.subscriptions.isEmpty)
+        XCTAssertFalse(result.inputs[0].name.contains(raw))
     }
     func testReaderEmptyAuthorizationDoesNotBecomeGranted() throws {
         let result = adapt(try readerSnapshot(accounts: [], extras: [
@@ -232,8 +272,8 @@ import ModelPlanSettings
             account("uncertain", verified: false, windows: [window(remaining: 2)]),
         ], memberships: ["member-only", "bound", "bound"])
         let result = adapt(joined)
-        XCTAssertEqual(result.inputs.map(\.id), ["member-only", "bound", "uncertain"])
-        XCTAssertEqual(result.subscriptions.map(\.id), result.inputs.map(\.id))
+        XCTAssertEqual(result.inputs.map(\.id), ["member-only", "bound", "uncertain", "presentation.account.1"])
+        XCTAssertEqual(result.subscriptions.map(\.id), ["member-only", "bound", "uncertain"])
         XCTAssertTrue(result.inputs[0].windows.isEmpty)
         XCTAssertEqual(result.inputs[0].dataState, .unavailable)
         XCTAssertEqual(try DockInstrumentProjection.evaluate(result.inputs[1], now: now).remainingPercent, 75)
@@ -401,6 +441,56 @@ import ModelPlanSettings
         closing.render(snapshot: joined, diagnostics: ready); closing.apply(original)
         XCTAssertEqual(closing.dockView.accessibilityChildren()?.count ?? 0, 0, "appearance callout cannot resurrect a closed view")
     }
+    func testActualHostPresentsAccountAndConnectionRowsWithAgeAndLiveSettingsActions() async throws {
+        _ = NSApplication.shared
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        for official in [false, true] {
+            for accountRow in [false, true] {
+                let joined = try snapshot(accounts: accountRow ? [account(nil, source: "codex", windows: [window()])] : [],
+                    extras: accountRow ? [:] : ["connections": [["id": "claude", "authorization": ["status": "yes"],
+                        "quota": ["status": "no", "reason": "consent_required"]]]])
+                let id = try XCTUnwrap(adapt(joined).inputs.first?.id)
+                var supplied = [DockInstrumentReading]()
+                let appearance: StaticDockPreviewHost.Appearance?
+                if official {
+                    appearance = { view, rows, _ in
+                        supplied = rows; try view.applyCommunity(rows)
+                        return StaticDockGeometry(hoverRects: [view.bounds])
+                    }
+                } else { appearance = nil }
+                let host = StaticDockPreviewHost(appearance: appearance, currentDate: { self.now }, createsNativePanels: false)
+                defer { host.close() }
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("source-row-host-" + UUID().uuidString)
+                defer { try? FileManager.default.removeItem(at: folder) }
+                let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: folder.appendingPathComponent("settings.json"))) { host.apply($0) }
+                var settings = 0, console = 0
+                host.showSettings = { settings += 1 }; host.showConsole = { console += 1 }
+                await coordinator.reload()
+                var ready = StoreDiagnostics(); ready.personal = nil
+                host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
+                if official { XCTAssertEqual(supplied.map(\.subscriptionID), [id]) }
+                XCTAssertNil(host.nativePanel)
+                host.dockView.onAction?(.subscription(id))
+                let labels = descendants(host.card).compactMap { $0 as? NSTextField }
+                let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
+                XCTAssertTrue(source.stringValue.contains(accountRow ? "5s" : "unknown"))
+                XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
+                if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
+                let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+                let target = try XCTUnwrap(button.target as? NSObject), action = try XCTUnwrap(button.action)
+                _ = target.perform(action, with: button)
+                XCTAssertEqual(settings, 1); XCTAssertEqual(console, 0)
+                host.dockView.onAction?(.subscription(id))
+                let retained = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+                let retainedTarget = try XCTUnwrap(retained.target as? NSObject), retainedAction = try XCTUnwrap(retained.action)
+                _ = try await coordinator.editor.commit(.showDock(false))
+                _ = retainedTarget.perform(retainedAction, with: retained)
+                XCTAssertEqual(settings, 1, "retired card action must not open Settings")
+                XCTAssertNil(host.nativePanel)
+            }
+        }
+    }
+
     private func retainedConsoleButton(in view: NSView) throws -> NSButton {
         if let button = view as? NSButton, button.title == "Console / 控制台" { return button }
         for child in view.subviews { if let value = try? retainedConsoleButton(in: child) { return value } }

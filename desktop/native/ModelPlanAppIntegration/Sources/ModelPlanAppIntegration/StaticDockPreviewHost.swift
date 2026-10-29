@@ -145,7 +145,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.target = self; consoleButton.action = #selector(openDockControl)
         consoleButton.setAccessibilityLabel("Open console / 打开控制台")
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
@@ -271,6 +271,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         guard passIsCurrent(generation) else { return }
         model = next
+        // The supplied key/hull remains unchanged. Empty membership has a real Settings
+        // action and an explicit reason even when an official appearance supplies no rows.
+        if rows.isEmpty {
+            let reason = CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            let nextStep = passPreferences.language == .english ? "Open Settings to check connected tools." : "打开设置，检查已连接的工具。"
+            consoleButton.setAccessibilityLabel(reason + " " + nextStep)
+            consoleButton.toolTip = reason + " " + nextStep
+        } else {
+            consoleButton.setAccessibilityLabel("Open console / 打开控制台")
+            consoleButton.toolTip = nil
+        }
         if rows.isEmpty && appearance == nil {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
@@ -545,6 +556,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
             if emptyStatus != nil || !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
         }
+        if let model {
+            for row in model.presentationRows.values.sorted(by: { $0.input.id < $1.input.id }) {
+                let item = NSMenuItem(title: row.input.name + ": " + row.reason + " — " + row.nextStep, action: #selector(openSettings), keyEquivalent: "")
+                item.target = self
+                menu.addItem(item)
+            }
+        }
         for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
@@ -555,6 +573,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    @objc private func openDockControl() {
+        guard permitted, !retired else { return }
+        dismissCard()
+        if model?.inputs.isEmpty == true { showSettings?() }
+        else { showConsole?() }
+    }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() { guard permitted, !retired else { return }; inputGeneration &+= 1; rebuild(); edge.refresh() }
@@ -564,8 +588,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               let input = model?.inputs.first(where: { $0.id == id }),
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
-                stateLabel: input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期",
-                enterLabel: "Console / 控制台", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
+                sourceAndAge: model?.presentationRows[id]?.sourceAndAge(at: currentDate()) ?? "",
+                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期"),
+                additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
+                enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; card.isHidden = false
@@ -574,7 +600,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
             self.dismissCard()
             guard self.permitted, !self.retired else { return }
-            self.showConsole?()
+            if self.model?.presentationRows[id] != nil { self.showSettings?() }
+            else { self.showConsole?() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
