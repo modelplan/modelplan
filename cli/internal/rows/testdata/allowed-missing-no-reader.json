@@ -1,0 +1,58 @@
+{
+  "provenance": "synthetic rows.Build output; model-level fixture, not CLI stdout",
+  "projection": {
+    "rowsVersion": 1,
+    "consentGeneration": 7,
+    "rows": [
+      {
+        "id": "codex",
+        "kind": "tool",
+        "order": 1,
+        "name": {
+          "en": "Codex",
+          "zh": "Codex"
+        },
+        "vendorKey": "openai",
+        "surfaces": [
+          "dock",
+          "menu",
+          "settings"
+        ],
+        "consent": "allowed",
+        "state": "needs_action",
+        "reason": {
+          "code": "tool_not_found",
+          "text": {
+            "en": "The allowed tool is not detected",
+            "zh": "未检测到已授权的工具"
+          }
+        },
+        "nextStep": {
+          "action": "open_settings_consent",
+          "text": {
+            "en": "Review reader consent in Settings",
+            "zh": "在设置中检查读取授权"
+          }
+        },
+        "accounts": [],
+        "expiresAt": null,
+        "stateAfterExpiry": null
+      }
+    ],
+    "rowsSummary": {
+      "state": "ok",
+      "reason": {
+        "code": "ok",
+        "text": {
+          "en": "Readings and actions are available",
+          "zh": "读数或操作可用"
+        }
+      },
+      "text": {
+        "en": "Readings and actions are available",
+        "zh": "读数或操作可用"
+      },
+      "nextStep": null
+    }
+  }
+}
