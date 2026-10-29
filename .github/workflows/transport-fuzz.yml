@@ -1,0 +1,64 @@
+name: Transport fuzz
+on:
+  pull_request:
+    paths:
+      - cli/internal/appserver/**
+      - cli/internal/swiftwire/**
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - schema/app-cli/captures/**
+      - scripts/test-transport-fuzz.sh
+      - .github/workflows/transport-fuzz.yml
+  push:
+    branches: [main]
+    paths:
+      - cli/internal/appserver/**
+      - cli/internal/swiftwire/**
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - schema/app-cli/captures/**
+      - scripts/test-transport-fuzz.sh
+      - .github/workflows/transport-fuzz.yml
+permissions:
+  contents: read
+concurrency:
+  group: transport-fuzz-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Go native fuzz, thirty seconds per target
+        run: bash scripts/test-transport-fuzz.sh 30s
+      - name: Linux Swift mutation and framing fuzz
+        shell: bash
+        env:
+          MODELPLAN_SWIFT_FUZZ_SECONDS: '30'
+        run: |
+          set -euo pipefail
+          swift --version | tee .tmp/transport-fuzz/swift-version.txt
+          swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --jobs 2 --filter MutationFuzzTests 2>&1 | tee .tmp/transport-fuzz/swift.log
+      - name: Public source policy
+        run: node scripts/check-source-policy.mjs
+      - name: Preserve bounded synthetic fuzz evidence and any crashers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transport-fuzz-${{ github.sha }}
+          retention-days: 14
+          path: |
+            .tmp/transport-fuzz/
+            cli/internal/appserver/testdata/fuzz/
+            cli/internal/appserver/queries/testdata/fuzz/
+      - name: Remove this run's completed scratch
+        if: always()
+        run: rm -rf -- .tmp

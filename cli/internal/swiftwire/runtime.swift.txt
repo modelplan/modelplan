@@ -135,7 +135,13 @@ public enum WireDecoder {
         try decodeWithDiagnostics(type, from: data).value
     }
     public static func decodeWithDiagnostics<T: Decodable>(_ type: T.Type, from data: Data) throws -> WireDecoded<T> {
-        guard data.count <= WireProtocol.maxFrameBytes else { throw WireDecodeError.invalidFrame }
+        // Older Foundation dictionary fast paths can trap on malformed keys.
+        // Validate syntax first; discard this tree and decode the original bytes
+        // below so identifiers never pass through NSNumber/Double conversion.
+        guard data.count <= WireProtocol.maxFrameBytes,
+              String(data: data, encoding: .utf8) != nil else { throw WireDecodeError.invalidFrame }
+        do { _ = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) }
+        catch { throw WireDecodeError.invalidFrame }
         let tree = try JSONDecoder().decode(WireJSONValue.self, from: data)
         let credential = type == WireCredentialResult.self
         let credentialRequest: Bool
