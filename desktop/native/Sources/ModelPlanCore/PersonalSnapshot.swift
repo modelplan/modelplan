@@ -206,11 +206,13 @@ public struct SourceStatus: Decodable, Sendable {
     public let source: String
     public let status: String
     public let reason: String?
+    public let nextStep: String?
 }
 
 public struct ConnectionStage: Decodable, Sendable {
     public let status: String
     public let reason: String?
+    public let nextStep: String?
     public let via: String?
     public let at: WireInstant?
     public let binding: String?

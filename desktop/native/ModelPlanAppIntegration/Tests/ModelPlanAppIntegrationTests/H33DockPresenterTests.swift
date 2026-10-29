@@ -17,11 +17,11 @@ import ModelPlanSettings
         var ledger = ExpiryLedger()
         return .make(personal: personal, presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil)
     }
-    private func consent(_ ids: [String], mode: String = "automatic") throws -> ConsentPreview {
+    private func consent(_ ids: [String], mode: String = "automatic", generation: UInt64 = 1) throws -> ConsentPreview {
         let tools = ids.map { ["id": $0, "displayName": $0, "backend": "native", "readerId": "native:" + $0,
             "accessClass": "standard", "detected": true, "allowed": true, "keychain": "unset", "hosts": []] as [String: Any] }
         var capture = try GeneratedAppCLIFixtures.object("consented-consent.json")
-        capture["mode"] = mode; capture["tools"] = tools // Explicit presenter-scope mutations of the generated capture.
+        capture["mode"] = mode; capture["generation"] = generation; capture["tools"] = tools // Explicit presenter-scope mutations of the generated capture.
         return try FeedDecoder.consentPreview(JSONSerialization.data(withJSONObject: capture))
     }
     private func model(_ snapshot: JoinedSnapshot, consent: ConsentPreview? = nil) -> CommunityDockSnapshot {
@@ -119,7 +119,7 @@ import ModelPlanSettings
         XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         port.fail = true
         do { _ = try await backend.detect(); XCTFail("Expected readback failure") } catch {}
-        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") }, "Failed inspection retains the last canonical presentation")
         XCTAssertNil(host.nativePanel)
     }
     func testNativeFailurePrecedesLegacyMissingOnActualHost() async throws {
@@ -192,6 +192,104 @@ import ModelPlanSettings
             do { _ = try await old.value; XCTFail("Old token must fail") } catch {}
             XCTAssertTrue(presented, "delayed stale detect/mutation must not publish invalidation")
         }
+    }
+
+    func testH37EveryAllowedToolAndNativeFailureHasNamedReasonAndNextStep() throws {
+        let value = try snapshot(sources: [
+            ["source": "native:grok", "status": "error", "reason": "reader_error", "nextStep": "Open Grok settings"],
+            ["source": "native:amp", "status": "unavailable", "reason": "reader_error"]
+        ])
+        let result = model(value, consent: try consent(["grok", "antigravity", "minimax", "qwen"]))
+        XCTAssertEqual(result.inputs.count, 5)
+        XCTAssertEqual(Set(result.inputs.map(\.name)), Set(["Grok", "Antigravity", "MiniMax", "Qwen", "Amp"]))
+        let grok = try XCTUnwrap(result.presentationRows.values.first { $0.input.name == "Grok" })
+        XCTAssertTrue(grok.reason.contains("unavailable")); XCTAssertEqual(grok.nextStep, "Open Grok settings")
+        XCTAssertTrue(result.presentationRows.values.allSatisfy { !$0.reason.isEmpty && !$0.nextStep.isEmpty })
+        XCTAssertTrue(result.subscriptions.isEmpty)
+    }
+    func testH37KeychainAndPendingExpiredSchemaStatesKeepTheirSpecificGuidance() throws {
+        for code in ["keychain_choice_needed", "keychain_denied"] {
+            let value = try snapshot(sources: [["source": "native:claude", "status": "unavailable",
+                "reason": code, "nextStep": "Open Claude Keychain choice"]])
+            let row = try XCTUnwrap(model(value).presentationRows.values.first)
+            XCTAssertTrue(row.reason.contains("Keychain")); XCTAssertEqual(row.nextStep, "Open Claude Keychain choice")
+        }
+        for status in ["expired", "unsupported_schema", "not-enabled", "no-reading", "not read yet"] {
+            let value = try snapshot(sources: [["source": "native:grok", "status": status]])
+            let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).presentationRows.values.first)
+            if ["expired", "unsupported_schema"].contains(status) { XCTAssertFalse(row.reason.contains("Waiting")) }
+            else { XCTAssertTrue(row.reason.contains("Waiting")) }
+        }
+    }
+
+    func testH37RetainedPresentationDoesNotRestoreExecutionAndCommittedRevokeWithdraws() async throws {
+        final class Port: CommunityConsentCommandPort {
+            var value: ConsentPreview
+            let revoked: ConsentPreview
+            var fail = false, failAfterMutation = false
+            init(_ value: ConsentPreview, _ revoked: ConsentPreview) { self.value = value; self.revoked = revoked }
+            var availability: SettingsConnectionAvailability { .init(canInspect: true, canGrant: true, canForget: true) }
+            func readCanonicalConsent() async throws -> ConsentPreview { if fail { throw SettingsConnectionFailure.requestFailed }; return value }
+            func applyConsentJSON(_ payload: Data) async throws { value = revoked; fail = failAfterMutation }
+        }
+        actor Marker: CLITransport {
+            let text: String
+            init(_ text: String) { self.text = text }
+            func execute(_ command: CLICommand) async throws -> CommandResult { .init(exitCode: 0, stdout: Data(text.utf8)) }
+        }
+        let port = Port(try consent(["codex"]), try consent([], generation: 2))
+        let gate = ConsentGatedDesktopTransport(readOnly: Marker("read-only"), normal: Marker("normal"))
+        let backend = CommunityConnectionBackend(port: port, desktop: gate)
+        var presented = false
+        backend.onCanonicalReadback = { _ in presented = true }
+        backend.onCanonicalInvalidated = { presented = false }
+        _ = try await backend.detect()
+        let normal = try await gate.execute(.desktop); XCTAssertEqual(String(data: normal.stdout, encoding: .utf8), "normal")
+        port.fail = true
+        do { _ = try await backend.detect(); XCTFail("Expected inspection failure") } catch {}
+        XCTAssertTrue(presented, "last canonical presentation remains during failed inspection")
+        let restricted = try await gate.execute(.desktop); XCTAssertEqual(String(data: restricted.stdout, encoding: .utf8), "read-only")
+        port.fail = false; _ = try await backend.detect(); port.failAfterMutation = true
+        do { _ = try await backend.applyStandardConsent(allow: [], deny: [.codex], request: .init(id: UUID(), expectedConsentGeneration: 1, consentTextVersion: 2)); XCTFail("Expected post-revoke readback failure") }
+        catch { XCTAssertEqual(error as? SettingsConnectionFailure, .mutationReadbackUnavailable) }
+        XCTAssertFalse(presented, "acknowledged revoke withdraws even if its next readback fails")
+        let revoked = try await gate.execute(.desktop); XCTAssertEqual(String(data: revoked.stdout, encoding: .utf8), "read-only")
+    }
+
+    func testH37PendingReasonAndNativeFailurePrecedenceAreDistinct() throws {
+        let pending = try snapshot(connections: [["id": "grok", "authorization": ["status": "yes"],
+            "quota": ["status": "no", "reason": "not read yet", "nextStep": "Wait for the first Grok reading"]]])
+        let row = try XCTUnwrap(model(pending, consent: try consent(["grok"])).presentationRows.values.first)
+        XCTAssertTrue(row.reason.contains("Waiting")); XCTAssertEqual(row.nextStep, "Wait for the first Grok reading")
+        let failure = try snapshot(connections: [["id": "grok", "quota": ["status": "no-reading", "reason": "missing"]]],
+            sources: [["source": "native:grok", "status": "unavailable", "reason": "timeout"]])
+        let failed = try XCTUnwrap(model(failure, consent: try consent(["grok"])).presentationRows.values.first)
+        XCTAssertFalse(failed.reason.contains("Waiting")); XCTAssertTrue(failed.reason.contains("unavailable"))
+    }
+    func testH37NativeOnlyFirstFailureReachesActualHostCardAndSettingsAction() async throws {
+        _ = NSApplication.shared
+        let value = try snapshot(sources: [["source": "native:grok", "status": "error", "reason": "reader_error", "nextStep": "Open Grok Settings"]])
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("h37-grok-host-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await app.reload()
+        var opens = 0; host.showSettings = { opens += 1 }
+        var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+        host.updateDockConsent(try consent(["grok"])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
+        let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).inputs.first)
+        XCTAssertEqual(row.name, "Grok"); XCTAssertTrue(row.alias?.contains("Grok") == true)
+        let menu = host.menu().items.map(\.title).joined(separator: " ")
+        XCTAssertTrue(menu.contains("Grok")); XCTAssertTrue(menu.contains("Open Grok Settings"))
+        host.dockView.onAction?(.subscription(row.id))
+        func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
+        let labels = views(host.card).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
+        XCTAssertTrue(labels.contains { $0.stringValue == "Open Grok Settings" })
+        let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+        _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
+        XCTAssertEqual(opens, 1); XCTAssertNil(host.nativePanel)
     }
 
 
