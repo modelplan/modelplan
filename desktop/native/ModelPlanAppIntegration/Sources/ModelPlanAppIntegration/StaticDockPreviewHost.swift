@@ -194,6 +194,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         rebuild()
     }
+    private var dockConsent: ConsentPreview?
+    public func updateDockConsent(_ preview: ConsentPreview?) {
+        guard !retired else { return }
+        inputGeneration &+= 1
+        dockConsent = preview
+        rebuild()
+    }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard !retired else { return }
         inputGeneration &+= 1
@@ -232,7 +239,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let passPreferences = preferences
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
-        let next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts)
+        let next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts, canonicalConsent: dockConsent)
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
@@ -628,3 +635,5 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }
+
+extension StaticDockPreviewHost: CommunityDockConsentReceiving {}

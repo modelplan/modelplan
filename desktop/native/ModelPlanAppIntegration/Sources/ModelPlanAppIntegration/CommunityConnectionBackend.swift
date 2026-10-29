@@ -24,6 +24,7 @@ public extension CommunityConsentCommandPort {
     private var pendingCleanup = Set<SettingsConnectionTool>()
     /// Composition routes this into the existing runtime store, never a second producer or timer.
     public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
+    public var onCanonicalInvalidated: (@MainActor () -> Void)?
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
     }
@@ -36,6 +37,8 @@ public extension CommunityConsentCommandPort {
         guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
+        onCanonicalInvalidated?()
+        try check(token)
         let value = try await port.readCanonicalConsent()
         try check(token)
         guard value.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
@@ -58,6 +61,8 @@ public extension CommunityConsentCommandPort {
         }
         revision &+= 1; let token = revision
         let gate = await desktop.invalidateConsent()
+        onCanonicalInvalidated?()
+        try check(token)
         let before = try await port.readCanonicalConsent()
         try check(token)
         guard before.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
