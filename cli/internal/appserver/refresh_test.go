@@ -213,3 +213,50 @@ func TestDeferredRefreshRejectsRevokeAndEqualGenerationReset(t *testing.T) {
 		})
 	}
 }
+
+func TestRefreshUsesBoundCredentialAgentWithoutSecondOperation(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := func(context.Context) ([]byte, string) { return []byte("synthetic-agent-result"), "" }
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic", Credential: credential,
+			Profiles: []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	completed := make(chan string, 1)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialRequest: func(CredentialNeed) (string, error) {
+			t.Error("scheduler opened a second credential operation")
+			return "", nil
+		},
+		Run: func(ctx context.Context, p quota.Paths, _ string, _ time.Time) error {
+			grant, ok := p.ReaderAccessGrant("claude")
+			if !ok || grant.Credential == nil {
+				completed <- "missing callback"
+				return nil
+			}
+			value, status := grant.Credential(ctx)
+			completed <- string(value) + status
+			return nil
+		},
+	})
+	defer scheduler.Close()
+	result, _, err := scheduler.Request(context.Background(), wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}})
+	if err != nil || len(result) != 1 || result[0].DisabledReason != nil {
+		t.Fatal("agent-backed refresh was not scheduled", result, err)
+	}
+	select {
+	case value := <-completed:
+		if value != "synthetic-agent-result" {
+			t.Fatal("scheduler replaced the bound credential agent")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("agent-backed reader did not run")
+	}
+}
