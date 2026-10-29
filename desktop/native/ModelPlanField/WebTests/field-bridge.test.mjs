@@ -161,3 +161,16 @@ test('visibility overrides during an unfinished apply do not queue another apply
   await turn();
   assert.equal(fixture.events.at(-1).type, 'captureResult');
 });
+
+test('availability tuple preserves false and unknown without defaulting true', async () => {
+  const fixture = setup();
+  const value = configuration();
+  value.projection.models[0].efforts[0].available = false;
+  await configure(fixture, 1, value);
+  assert.equal(fixture.applied[0][0].projection.models[0].efforts[0].available, false);
+  const unknown = configuration(); unknown.projection.models[0].efforts[0].available = null;
+  await configure(fixture, 2, unknown);
+  assert.equal(fixture.applied[1][0].projection.models[0].efforts[0].available, null);
+  const malformed = configuration(); malformed.projection.models[0].efforts[0].available = 'yes';
+  assert.equal(fixture.bridge.receive(command('configure', 3, {configuration: malformed, paused: false})), false);
+});

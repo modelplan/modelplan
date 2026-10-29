@@ -22,18 +22,22 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var settings: SettingsApplication?
     private weak var help: InstrumentHelpComposition?
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
-    private let makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)?
+    private let makeMainScreen: (@MainActor () -> MainScreenView)?
+    private let makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)?
     public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in },
-                makeCockpit: (@MainActor (MainScreenView) -> CockpitInstrumentComposition)? = nil) {
-        self.openWebsite = openWebsite; self.makeCockpit = makeCockpit
+                makeCockpit: (@MainActor (MainScreenView) throws -> CockpitInstrumentComposition)? = nil,
+                makeMainScreen: (@MainActor () -> MainScreenView)? = nil) {
+        self.openWebsite = openWebsite; self.makeCockpit = makeCockpit; self.makeMainScreen = makeMainScreen
     }
     public func makeOverview() -> any NativeOverviewSurface {
         if let current { return current }
-        let surface = CommunityInstrumentView(openWebsite: openWebsite)
+        let surface = CommunityInstrumentView(mainScreen: makeMainScreen?(), openWebsite: openWebsite)
         if let makeCockpit {
-            let composition = makeCockpit(surface.mainScreen)
-            do { try surface.attachCockpit(composition) }
-            catch { composition.dispose(); surface.fail() }
+            do {
+                let composition = try makeCockpit(surface.mainScreen)
+                do { try surface.attachCockpit(composition) }
+                catch { composition.dispose(); surface.fail() }
+            } catch { surface.fail() }
         }
         current = surface
         if let settings { surface.apply(settings) }
@@ -59,9 +63,9 @@ public struct PublicationSourceStamp: Equatable, Sendable {
 
 /// Live read-only public model/effort consumer using M3's existing native MainScreenView.
 /// This is not the complete four-region cockpit, Dock, renderer or an official appearance provider.
-@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface {
+@MainActor public final class CommunityInstrumentView: NSObject, CommunityInstrumentSurface, CommunityPublicCatalogueConsumer, CommunityInstrumentSettingsRouting {
     public let view: NSView = InstrumentContainer()
-    public let mainScreen = MainScreenView()
+    public let mainScreen: MainScreenView
     public let modelPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     public private(set) var orderedModelIDs: [String] = []
     public private(set) var selectedModelID: String?
@@ -74,12 +78,15 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     public private(set) var cockpitComposition: CockpitInstrumentComposition?
     public var requestedInstrumentScope: InstrumentScope { cockpitComposition?.requestedScope ?? .all }
     /// Settings/favourites and other application effects stay with the upper owner.
+    public var requestSubscriptionsSettings: (() async -> Void)?
     public var onInstrumentIntent: ((InstrumentSurfaceIntent) -> Void)?
     private let status = NSTextField(wrappingLabelWithString: "")
     private var settings: SettingsApplication?
     private var selection: AssembledModelSelection?
     private var diagnostics = StoreDiagnostics()
     private var instrumentSnapshot: JoinedSnapshot?
+    private var publicCatalogue: PublicPublication?
+    public func render(publication: PublicPublication?) { publicCatalogue = publication }
     private var rendering = false
     private var publishRequested = false, compareRequested = false
     private var retired = false
@@ -88,8 +95,8 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private var needsSelection = false
     public var instrumentLanguage: InstrumentLanguage { settings?.effective.language == .english ? .english : .chinese }
     private let openWebsite: @MainActor (InstrumentWebsiteLink) -> Void
-    public init(openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
-        self.openWebsite = openWebsite
+    public init(mainScreen suppliedMainScreen: MainScreenView? = nil, openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }) {
+        self.mainScreen = suppliedMainScreen ?? MainScreenView(); self.openWebsite = openWebsite
         super.init()
         // Process-local AppKit focus notifications; no activation, event monitor or global shortcut.
         NotificationCenter.default.addObserver(self,selector:#selector(applicationLostFocus(_:)),
@@ -137,6 +144,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
                 self.openWebsite(link)
             case .modelSelected(let id): self.selectedModelID = id; self.requestFreshSelection?()
             case .requestScope: self.requestFreshSelection?()
+            case .openSubscriptionsSettings:
+                Task { [weak self] in
+                    guard let self, !self.retired, self.isPresented, !self.renderFailure else { return }
+                    await self.requestSubscriptionsSettings?()
+                }
             default: break
             }
             self.onInstrumentIntent?(intent)
@@ -219,7 +231,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         (view as? InstrumentContainer)?.optionChanged = nil;(view as? InstrumentContainer)?.escape=nil
         mainScreen.onHelpEscape=nil
         mainScreen.closeForCockpit(); mainScreen.onIntents = nil
-        cockpitComposition?.dispose(); cockpitComposition = nil; onInstrumentIntent = nil; instrumentSnapshot = nil
+        cockpitComposition?.dispose(); cockpitComposition = nil; onInstrumentIntent = nil; requestSubscriptionsSettings = nil; instrumentSnapshot = nil
         requestFreshSelection = nil; contentSizeChanged = nil
     }
     @objc private func pickedModel(_ sender: NSPopUpButton) {
@@ -320,6 +332,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         } catch { fail() }
     }
     private func clearForPendingLanguage() {
+        cockpitComposition?.field?.setPresented(false)
         cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true
         modelPicker.isEnabled = false
@@ -328,6 +341,7 @@ public struct PublicationSourceStamp: Equatable, Sendable {
         status.isHidden = false; helpBinding?.suspend()
     }
     fileprivate func fail() {
+        cockpitComposition?.field?.setPresented(false)
         cockpitComposition?.surface.clearObservation(); cockpitComposition?.rootView.isHidden = true
         mainScreen.closeForCockpit(); mainScreen.isHidden = true; renderFailure = true
         status.stringValue = instrumentLanguage == .chinese ? "当前数据暂无法在原生视图显示" : "Current data cannot be displayed in the native view"
@@ -337,6 +351,11 @@ public struct PublicationSourceStamp: Equatable, Sendable {
     private func publishCockpit(_ composition: CockpitInstrumentComposition,
                                 selection: AssembledModelSelection, compare: Bool) {
         do {
+            try composition.field?.update(publication: publicCatalogue, selection: selection,
+                appearance: .init(theme: view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .night : .day,
+                                  locale: instrumentLanguage == .english ? .english : .chinese),
+                reduceMotion: settings?.effective.reduceMotion ?? true,
+                reduceTransparency: settings?.effective.reduceTransparency ?? true)
             try composition.update(.init(snapshot: instrumentSnapshot, selection: selection,
                 scope: composition.requestedScope, language: instrumentLanguage,
                 publishedAt: sourceStamp.publishedAt, now: sourceStamp.observedAt,

@@ -14,3 +14,8 @@ import ModelPlanCore
     var usageAccessMenuItem: NSMenuItem { get }
     func updateUsageState(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date)
 }
+
+/// Optional navigation on the actual retained integration, without a Settings import in Root.
+@MainActor public protocol CommunitySubscriptionsSettingsPresenting: CommunitySettingsIntegration {
+    func presentSubscriptionsSettings() async
+}

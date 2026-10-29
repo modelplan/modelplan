@@ -1,12 +1,26 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import ModelPlanCore
+import ModelPlanInstruments
 import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanSettings
 
 /// Consent/Settings composition shared by the normal executable and construction checks.
 @MainActor public enum CommunityApplicationFactory {
+    /// Both normal entries and wiring checks call this exact composition factory.
+    public static func makeSurfaces(
+        supply: CommunityCockpitSupply? = nil,
+        preferences: PreferenceFile? = nil,
+        makeFieldWindow: (@MainActor () -> any CommunityFieldWindow)? = nil,
+        openWebsite: @escaping @MainActor (InstrumentWebsiteLink) -> Void = { _ in }
+    ) -> CommunityInstrumentSurfaceProvider {
+        let supply = supply ?? .neutral()
+        return CommunityInstrumentSurfaceProvider(openWebsite: openWebsite, makeCockpit: { main in
+            try CommunityCockpitFactory.make(mainScreen: main, supply: supply, preferences: preferences, window: makeFieldWindow?() ?? CommunityFieldPanel())
+        }, makeMainScreen: { MainScreenView(recipeProvider: supply.recipes.mainScreen) })
+    }
+
     public static func makeConsentPort(bundle: URL, transport: any ConsentJSONTransport) -> CommunityCLIConsentPort {
         CommunityCLIConsentPort(transport: transport, apiAvailable: CommunityConsentBundleIdentity.matches(bundle: bundle))
     }

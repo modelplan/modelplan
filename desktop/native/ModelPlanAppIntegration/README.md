@@ -190,3 +190,45 @@ Option help without clearing its local trial, and the next Escape retains the or
 An appearance may supply bounded sliver pixels, their normalization scale and the registered along-axis anchor in `StaticDockGeometry`. The host keeps those pixels current when data changes without a frame change, uses the actual window's backing scale/rounded size, and reuses the existing event-driven refresh hooks for attachment, backing and theme changes. A disposed sliver retains neither actionable pixels nor a reveal action. This API contains no official palette or shape.
 
 New/missing Settings choices use a remaining-based critical threshold of 25 and leave active-display following off. Critical status uses **remaining <= threshold** for new and saved choices alike: exactly 25 is critical at threshold 25, and exactly 16 is critical at a saved threshold of 16. Stored numeric thresholds and explicit follow, collapse and sliver-alert choices are never rewritten. Use SettingsApplication.dockReading and SettingsApplication.subscriptionNowSnapshot to forward the same effective threshold to both consumers. SubscriptionNowSnapshot requires an explicit redBelow argument; standalone callers without Settings must choose their policy explicitly rather than silently overriding saved choices. Display selection and dragging persistence are added by the stacked placement change. Reader activation and physical/multi-monitor acceptance remain separate.
+
+### Normal cockpit and field factory
+
+`CommunityApp` calls `CommunityApplicationFactory.makeSurfaces`, which mounts the
+existing cockpit composition, instruments and required `CommunityCockpitField`
+host. The one host/store observation supplies the public catalogue separately
+from the personal join, so a missing personal account does not hide public models.
+The neutral field compares published recommendation values and applies public-ID
+focus to its actual comparison content. It starts no WebGL renderer. Explicit
+selection changes reuse `PreferenceFile` for public-ID/preset values only.
+Close restores the supplier with the latest normal scope, never field extras.
+Hidden/closed surfaces revoke field actions and retire the owned comparison panel.
+
+`CommunityCockpitSupply` carries the existing skin, exact registered instrument
+frames and strict current-scope still callback. Official material/asset integration
+remains subject to the H31 official-build gate; the neutral checks do not prove an
+official renderer, appearance, packaged app or the ten owner journey steps.
+Unknown configuration values stay absent, and ambiguous supplied tags are withheld.
+
+`CommunityFieldProductionWiringTests` constructs the same factory as the normal
+entry and fails when the cockpit/field mount or required supplier frames are
+removed. Its window/lifecycle delivery is synthetic; it does not launch the app,
+read a real account, take a capture or exercise a renderer. It covers persistence
+failure/retry and latest-scope restoration through the real mounted host.
+
+The supplier must also provide `CommunityCockpitInstrumentRecipes` (engines,
+faders and main screen) and `containsFieldPoint(point, currentScope)`. The normal
+factory injects all three providers before constructing the instrument views.
+The normal leaf checks the supplied aperture for pointer hits before its children;
+points use local Y-down coordinates and the same current scope/theme/profile/scale
+as the displayed still. The public neutral supplier explicitly provides its own
+rectangle. A private supplier must provide its exact aperture and compact-capable
+recipes; the neutral minimum sizes are not relaxed. Compact injection tests use
+empty synthetic recipes and do not prove official paint or a real matte.
+
+The normal factory owns its constructed shell (`ownsShell:true`). Composition
+disposal first revokes field callbacks/current scope, then disposes instruments
+and stops the shell only if both instrument slot leases still belong to that
+composition. Stopped wrappers are detached by identity. A replacement installed
+during field/window retirement retains its shell; a borrowed shell remains
+caller-owned. Retaining a retired owned shell must expose no state/layout,
+backdrop bytes or station layers. No private resource/assertion is weakened.

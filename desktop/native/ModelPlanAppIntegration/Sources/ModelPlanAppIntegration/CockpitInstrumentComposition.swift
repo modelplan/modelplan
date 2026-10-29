@@ -50,6 +50,7 @@ public struct CockpitInstrumentObservation: Sendable {
 @MainActor public final class CockpitInstrumentComposition {
     public let surface: InstrumentSurfaceView
     public let rootView: NSView
+    public internal(set) var field: CommunityCockpitField?
     public private(set) var requestedScope: InstrumentScope = .all
     public var onIntent: ((InstrumentSurfaceIntent) -> Void)?
     public var onHelpChange: ((InstrumentSurfaceRegion, HelpExplanation?, CGRect?) -> Void)?
@@ -58,6 +59,7 @@ public struct CockpitInstrumentObservation: Sendable {
     private let provider: any CockpitInstrumentInputProviding
     private let layout: () throws -> InstrumentSurfaceFrames
     private let unmount: () -> Void
+    private var stopOwnedRoot: () -> Void = {}
     private var disposed = false
     private var hostPresented = false, shellPresented = true
     public init(mainScreen: MainScreenView, rootView: NSView, provider: any CockpitInstrumentInputProviding,
@@ -78,12 +80,14 @@ public struct CockpitInstrumentObservation: Sendable {
         surface.binding.onHelpChange = { [weak self] region, help, rect in self?.onHelpChange?(region, help, rect) }
         surface.binding.onHintInput = { [weak self] region, input in self?.onHintInput?(region, input) }
     }
-    /// The caller supplies an already configured frozen shell; no slot positions or dimensions are invented.
+    /// The caller supplies a configured shell; geometry is unchanged. Borrowed roots stay caller-owned.
+    /// The normal factory passes ownsShell:true and retires it only while both slot leases still belong here.
     public convenience init(mainScreen: MainScreenView, shell: CockpitShellSurface,
                             provider: any CockpitInstrumentInputProviding,
-                            engineTable: EngineTableView? = nil, faders: FaderBankView? = nil,
+                            engineTable: EngineTableView? = nil, faders: FaderBankView? = nil, ownsShell: Bool = false,
                             frames: @escaping () throws -> InstrumentSurfaceFrames) {
         var engineSlot: CockpitInstrumentSlotView?, consoleSlot: CockpitInstrumentSlotView?
+        var stoppedOwnedRoot = false
         self.init(mainScreen: mainScreen, rootView: shell, provider: provider, engineTable: engineTable, faders: faders, frames: {
             let value = try frames()
             guard shell.surfaceLayout?.slots[.engines]?.size == value.engines,
@@ -95,13 +99,21 @@ public struct CockpitInstrumentObservation: Sendable {
             engineSlot = e; consoleSlot = c
             shell.setContent(e, for: .engines); shell.setContent(c, for: .console)
         }, unmount: {
-            if let engineSlot, engineSlot.ownsRegistration, engineSlot.superview === shell {
+            if let engineSlot, (engineSlot.ownsRegistration || stoppedOwnedRoot), engineSlot.superview === shell {
                 shell.setContent(nil, for: .engines)
             }
-            if let consoleSlot, consoleSlot.ownsRegistration, consoleSlot.superview === shell {
+            if let consoleSlot, (consoleSlot.ownsRegistration || stoppedOwnedRoot), consoleSlot.superview === shell {
                 shell.setContent(nil, for: .console)
             }
         })
+        stopOwnedRoot = { [weak shell, weak engineSlot, weak consoleSlot] in
+            // Revalidate after field disposal callouts: a replacement now owns its own slots/root.
+            guard ownsShell, let shell, let engineSlot, let consoleSlot,
+                  engineSlot.ownsRegistration, consoleSlot.ownsRegistration,
+                  engineSlot.superview === shell, consoleSlot.superview === shell else { return }
+            stoppedOwnedRoot = true
+            shell.stop()
+        }
         shellPresented = engineSlot?.allowed == true && consoleSlot?.allowed == true
         let changed: (Bool) -> Void = { [weak self, weak engineSlot, weak consoleSlot] _ in
             guard let self, !self.disposed else { return }
@@ -137,11 +149,17 @@ public struct CockpitInstrumentObservation: Sendable {
     }
     private func applyPresentation() throws {
         let allowed = hostPresented && shellPresented
+        field?.setPresented(allowed)
         if surface.isPresented != allowed { try surface.setPresentationAllowed(allowed) }
     }
-    public func close() { guard !disposed else { return }; hostPresented = false; surface.close() }
+    public func close() { guard !disposed else { return }; hostPresented = false; field?.setPresented(false); surface.close() }
     public func dispose() {
         guard !disposed else { return }; disposed = true
-        surface.dispose(); unmount(); onIntent = nil; onHelpChange = nil; onHintInput = nil; onFailure = nil
+        hostPresented = false
+        let retiredField = field; field = nil
+        retiredField?.dispose(); surface.dispose()
+        // Stop after field retirement, before detaching our stopped slot wrappers.
+        stopOwnedRoot(); stopOwnedRoot = {}; unmount()
+        onIntent = nil; onHelpChange = nil; onHintInput = nil; onFailure = nil
     }
 }

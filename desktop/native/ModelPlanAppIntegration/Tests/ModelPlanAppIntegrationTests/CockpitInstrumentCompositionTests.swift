@@ -123,8 +123,12 @@ import ModelPlanCockpitShell
     }
     func testDisposingReplacedCompositionDoesNotUnmountOrCloseItsReplacement() async throws {
         let shell = CockpitShellSurface(skin: NeutralCockpitShellSkin()), layout = try frames()
+        try shell.configure(.init(profile: .full, closed: false, appearance: .init(scale: 1)))
+        defer { shell.stop() }
+        let retainedBytes = shell.backdropBytes
         let a = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
             provider: SyntheticInstrumentInputs(), frames: { layout })
+        let retiredEngineWrapper = try XCTUnwrap(a.surface.engines.superview)
         let provider = SyntheticInstrumentInputs()
         let b = CockpitInstrumentComposition(mainScreen: MainScreenView(), shell: shell,
             provider: provider, frames: { layout })
@@ -133,7 +137,10 @@ import ModelPlanCockpitShell
         // without publishing pixels: this regression exercises slot ownership, not layout admission.
         let input = try provider.input(for: observation())
         try b.surface.update(input, frames: layout)
+        // A caller may reuse the retired wrapper elsewhere; that does not renew A's engine lease.
+        shell.setContent(retiredEngineWrapper, for: .records)
         a.dispose()
+        XCTAssertNotNil(shell.state); XCTAssertEqual(shell.backdropBytes, retainedBytes)
         XCTAssertTrue(b.surface.engines.isDescendant(of: shell))
         XCTAssertTrue(b.surface.console.isDescendant(of: shell))
         XCTAssertEqual(b.surface.input?.observationID, input.observationID)
@@ -141,5 +148,6 @@ import ModelPlanCockpitShell
         XCTAssertFalse(b.surface.engines.isDescendant(of: shell))
         XCTAssertFalse(b.surface.console.isDescendant(of: shell))
         XCTAssertNil(b.surface.input)
+        XCTAssertNotNil(shell.state, "A borrowed shell remains caller-owned")
     }
 }
