@@ -316,7 +316,7 @@
     },
     {
       "id": "U2a-admission",
-      "intent": "Real app-server on one synthetic shared home: unapproved Gemini/Cursor POST scopes make zero calls; MiniMax makes no request after 401 or 403 (or remains disabled); local history is kept.",
+      "intent": "Real app-server and independent CLI share one synthetic home: approved Gemini/Cursor POST scopes require opt-in and send only pinned request sets within the shared budget; MiniMax stops on 401/403; local history is kept.",
       "units": [
         "U2a",
         "U10",
@@ -329,7 +329,7 @@
         "synthetic-home"
       ],
       "structures": [],
-      "priorJourney": "Production shared backend and independent CLI: policy_pending account scopes make zero POST calls; MiniMax 401/403 stop before a demonstrated legacy response; positive Gemini and optional Cursor numeric-export history retain identical typed values. Shared cooldown deadlines, persisted budget hashes and raw request counts survive standalone CLI refresh."
+      "priorJourney": "Production constructor and shared backend: O-class POST scopes start unset and unchecked, are separately grantable, and produce quota through exact two-request POST sets. Local history values and all shared cooldown deadlines/budget hashes survive account reads and standalone CLI refresh."
     },
     {
       "id": "U3-backpressure",
@@ -464,8 +464,8 @@
       "priorJourney": "Production U2 store, receipts and fences. Recording history provider only; no native UI or final-package proof."
     },
     {
-      "id": "U2a-post-veto",
-      "intent": "Valid synthetic Gemini/Cursor logins and persisted grants still make zero account calls under policy_pending, through the app-server and independent CLI.",
+      "id": "U2a-post-pins",
+      "intent": "Approved Gemini/Cursor O-class scopes are unchecked and separately grantable. Only the pinned method, host, path, header placement and body are listed; at most two calls per logical read and independent CLI refresh retains the shared budget.",
       "units": [
         "U2a",
         "U10",

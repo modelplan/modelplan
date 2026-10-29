@@ -20,7 +20,7 @@ var (
 // A local-history scope can pass admission but can never send an HTTP request.
 // Concurrent calls are serialized so none can slip past a 401 or 403 response.
 // Credentialed redirects are stopped even when the caller uses a default Client.
-// POST request pins are compiled here, but admission keeps them policy_pending.
+// Owner-approved POST methods and closed body schemas are compiled here.
 //
 // Create a fresh transport for the card's bounded request set, never per request.
 type ReadTransport struct {

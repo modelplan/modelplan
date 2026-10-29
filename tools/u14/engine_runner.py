@@ -274,19 +274,53 @@ def backpressure(binary, home):
             'proofScope': 'production U2 receipts and transport; recording history provider', 'wireMessages': messages, 'cleanup': 'exited'}
 
 
-ADMISSION_COMPONENTS = ('U2a-post-veto', 'U2a-minimax-auth-stop', 'U2a-minimax-legacy-control',
+ADMISSION_COMPONENTS = ('U2a-post-pins', 'U2a-minimax-auth-stop', 'U2a-minimax-legacy-control',
                         'U2a-local-history-gemini', 'U2a-local-history-cursor',
                         'U3b-refresh-shared-budget')
+
+
+POST_PINS = {
+    'gemini': [('POST', 'cloudcode-pa.googleapis.com', '/v1internal:loadCodeAssist'),
+               ('POST', 'cloudcode-pa.googleapis.com', '/v1internal:retrieveUserQuota')],
+    'cursor': [('POST', 'cursor.com', '/api/dashboard/get-plan-info'),
+               ('POST', 'api2.cursor.sh', '/aiserver.v1.DashboardService/GetCurrentPeriodUsage')],
+}
 
 
 def evaluate_admission(observation):
     """Qualify measured subchecks; a missing typed producer cannot pass."""
     require(observation.get('sharedSyntheticHome') is True, 'admission-home-not-shared')
     require(observation.get('unexpectedCalls') == 0, 'unlisted-provider-called')
+    from datetime import datetime
     for provider in ('gemini', 'cursor'):
         item = observation['postScopes'][provider]
-        require(item['calls'] == 0 and item['disabledReason'] == 'policy_pending', 'unapproved-post-admitted')
-        require(item['syntheticLoginPresent'] is True, 'post-zero-calls-without-valid-login')
+        require(item['initialState'] == 'unset' and item['defaultCheck'] is False,
+                'approved-post-preselected')
+        require(item['grantable'] is True and item['beforeConsentCalls'] == 0,
+                'post-consent-boundary-failed')
+        require(item['syntheticLoginPresent'] is True, 'post-missing-valid-login')
+        require(set(item['cases']) == {'404', '401', '403'}, 'post-case-missing')
+        require(item['calls'] == sum(case['calls'] for case in item['cases'].values()),
+                'post-request-count-not-measured')
+        for case in item['cases'].values():
+            requests = case['requests']
+            require(case['calls'] == len(requests) == 2 and
+                    [(r['method'], r['host'], r['path']) for r in requests] == POST_PINS[provider],
+                    'post-request-set-not-pinned')
+            require(all(r['event'] == provider + '-post' and r['status'] == 200 and
+                        r['bodyMatched'] and r['headersMatched'] and r['credentialMatched']
+                        for r in requests), 'post-request-shape-not-pinned')
+            require(case['readingAvailable'], 'post-reading-not-produced')
+            before, after = case['beforeCli'], case['afterCli']
+            require(before.get('disabledReason') == after.get('disabledReason') == 'cooldown' and
+                    before['scope'] == after['scope'] == provider + '.account_usage.saved_login' and
+                    before['at'] == after['at'], 'post-shared-budget-deferral-changed')
+            require(datetime.fromisoformat(before['at'].replace('Z', '+00:00')) >=
+                    datetime.fromisoformat(case['nextAttemptAt'].replace('Z', '+00:00')),
+                    'post-shared-budget-deadline-bypassed')
+            require(len(case['budgetBeforeSha256']) == 64 and
+                    case['budgetBeforeSha256'] == case['budgetAfterSha256'],
+                    'post-independent-cli-reset-budget')
     require('gemini' in observation['localHistory'] and 'cursor' in observation['localHistory'], 'history-evidence-missing')
     for provider in ('gemini', 'cursor'):
         history = observation['localHistory'][provider]
@@ -303,7 +337,6 @@ def evaluate_admission(observation):
                 item['legacyReplyAvailable'] is True and item['legacyCalls'] == 0,
                 'minimax-retried-after-auth-failure')
         require(item['budgetBeforeSha256'] == item['budgetAfterSha256'], 'independent-cli-reset-budget')
-    from datetime import datetime
     budgets = observation['sharedRefreshBudget']
     require(set(budgets) == {'404', '401', '403'}, 'shared-budget-case-missing')
     for budget in budgets.values():
@@ -318,7 +351,7 @@ def evaluate_admission(observation):
                 budget['requestsBefore'] > 0 and budget['requestsBefore'] == budget['requestsAfter'],
                 'independent-cli-reset-budget')
     components = {
-        'U2a-post-veto': {'outcome': 'pass', 'providers': observation['postScopes']},
+        'U2a-post-pins': {'outcome': 'pass', 'providers': observation['postScopes']},
         'U2a-minimax-auth-stop': {'outcome': 'pass', 'cases': observation['minimax']},
         'U2a-minimax-legacy-control': {'outcome': 'pass', **control},
         'U2a-local-history-gemini': {'outcome': 'pass', **observation['localHistory']['gemini']},
@@ -386,6 +419,19 @@ def _wait_native_capture(home, status):
         time.sleep(.01)
 
 
+def _wait_post_capture(home, provider):
+    import json, time
+    path = Path(home) / '.cache/modelplan/observed/readers' / (provider + '.json')
+    deadline = time.monotonic() + 5
+    while True:
+        if path.exists():
+            capture = json.loads(regular_bytes(path))
+            if any(item.get('status') == 'ok' and item.get('account') for item in capture.get('entries', [])):
+                return
+        require(time.monotonic() < deadline, provider + '-post-capture-not-committed')
+        time.sleep(.01)
+
+
 def admission(binary, home, plan):
     from datetime import datetime, timezone
     from shape_home import build_home
@@ -400,7 +446,9 @@ def admission(binary, home, plan):
         baseline = build_home(shape, case)
         fixture_input(case, minimaxStatus=status)
         current = state(case)
-        for tool in ('gemini', 'cursor', 'minimax'):
+        for tool in ('gemini', 'cursor'):
+            current['tools'].pop(tool, None)
+        for tool in ('minimax',):
             current['tools'][tool] = {'allowed': True, 'readerId': 'native:' + tool, 'backend': 'native',
                                       'consentTextVersion': 2, 'at': '2000-01-01T00:00:00Z'}
         current['tools']['minimax'].update(region='international', keyEnv='MINIMAX_CODING_API_KEY')
@@ -424,7 +472,7 @@ def admission(binary, home, plan):
         cursor_export_sha = digest(regular_bytes(cursor_export))
         cli(binary, case, ['usage', 'gemini', 'enable', '--json'])
         cli(binary, case, ['consent', 'init', '--json'])
-        cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=['cursor.local_history']))
+        cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=plan['localScopes']))
         engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
         engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
         with engine:
@@ -433,12 +481,25 @@ def admission(binary, home, plan):
             external = cli(binary, case, ['consent', '--json'])
             require(external['storeEpoch'] == hello['storeEpoch'], 'independent-cli-not-sharing-store')
             facts = engine.request('consent/get')['result']['data']['scopes']
+            ungranted = engine.request('refresh/request', {'scopes': plan['accountScopes']})
+            require('error' not in ungranted and
+                    all(item.get('disabledReason') for item in ungranted['result']['data']),
+                    'post-scope-admitted-before-consent')
+            require(not any(item['provider'] in ('gemini', 'cursor') for item in _http_events(case)),
+                    'post-request-before-consent')
             for tool in ('gemini', 'cursor'):
                 fact = next(item for item in facts if item['scope'] == tool + '.account_usage.saved_login')
-                require(fact['state'] == 'allowed' and fact.get('disabledReason') == 'policy_pending', 'policy-pending-not-authoritative')
-                rejected = engine.request('consent/grant', decision(case, allow=[fact['scope']]))
-                require(rejected.get('error', {}).get('code') == -32021, 'unapproved-post-grant-accepted')
-                observations['postScopes'].setdefault(tool, {'calls': 0, 'disabledReason': fact['disabledReason'], 'syntheticLoginPresent': True})
+                require(fact['state'] == 'unset' and fact['defaultCheck'] is False and
+                        'disabledReason' not in fact, 'approved-post-not-unchecked-and-grantable')
+                granted = engine.request('consent/grant', decision(case, allow=[fact['scope']]))
+                require(granted.get('result', {}).get('data', {}).get('committed'), 'approved-post-grant-rejected')
+                observations['postScopes'].setdefault(tool, {'calls': 0, 'initialState': fact['state'],
+                    'defaultCheck': fact['defaultCheck'], 'grantable': True,
+                    'beforeConsentCalls': 0, 'syntheticLoginPresent': True, 'cases': {}})
+                if tool == 'gemini':
+                    cursor = next(item for item in engine.request('consent/get')['result']['data']['scopes']
+                                  if item['scope'] == 'cursor.account_usage.saved_login')
+                    require(cursor['state'] == 'unset', 'one-post-grant-enabled-other-scope')
             local = engine.request('refresh/request', {'scopes': plan['localScopes']})
             require('error' not in local and len(local['result']['data']) == 2 and
                     all('disabledReason' not in item for item in local['result']['data']),
@@ -449,13 +510,19 @@ def admission(binary, home, plan):
                 require(len(before[tool]) == 2 and sum(item['tokens'] for item in before[tool]) == tokens,
                         tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
-            require('error' not in remote and all(item.get('disabledReason') for item in remote['result']['data']), 'policy-pending-refresh-accepted')
+            require('error' not in remote and all('disabledReason' not in item for item in remote['result']['data']), 'approved-post-refresh-deferred')
+            for tool in ('gemini', 'cursor'):
+                _wait_post_capture(case, tool)
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in scheduled and all('disabledReason' not in item for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
             _wait_native_capture(case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))
             requests_before = len([item for item in _http_events(case) if item['provider'] == 'minimax'])
+            post_budgets = {tool: case / '.cache/modelplan/observed/reader-attempts' / (tool + '.json')
+                            for tool in ('gemini', 'cursor')}
+            post_budget_before = {tool: digest(regular_bytes(path)) for tool, path in post_budgets.items()}
+            post_before = engine.request('refresh/request', {'scopes': plan['accountScopes']})['result']['data']
             deferred_before = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in deferred_before and len(deferred_before['result']['data']) == 1,
                     'shared-budget-deferral-missing')
@@ -463,6 +530,7 @@ def admission(binary, home, plan):
             deferred_after = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in deferred_after and len(deferred_after['result']['data']) == 1,
                     'shared-budget-deferral-missing')
+            post_after = engine.request('refresh/request', {'scopes': plan['accountScopes']})['result']['data']
             trace = _http_events(case)
             mini = [item for item in trace if item['provider'] == 'minimax']
             observations['sharedRefreshBudget'][str(status)] = {
@@ -471,9 +539,22 @@ def admission(binary, home, plan):
                 'budgetBeforeSha256': budget_before, 'budgetAfterSha256': digest(regular_bytes(budget)),
                 'requestsBefore': requests_before, 'requestsAfter': len(mini)}
             require(all(item['method'] == 'GET' and item['host'] == 'api.minimax.io' and item['credentialMatched'] for item in mini), 'unexpected-minimax-request')
-            observations['unexpectedCalls'] += sum(item['provider'] not in ('minimax', 'gemini', 'cursor') for item in trace)
+            observations['unexpectedCalls'] += sum(item['event'] == 'unlisted-provider-request' for item in trace)
             for tool in ('gemini', 'cursor'):
-                observations['postScopes'][tool]['calls'] += sum(item['provider'] == tool for item in trace)
+                requests = [item for item in trace if item['provider'] == tool]
+                observations['postScopes'][tool]['calls'] += len(requests)
+                scope = tool + '.account_usage.saved_login'
+                rows = fresh_rows(engine)
+                reading = any(row['id'] == tool and any(account['windows'] for account in row['accounts'])
+                              for row in rows['rows'])
+                observations['postScopes'][tool]['cases'][str(status)] = {
+                    'calls': len(requests), 'requests': requests, 'readingAvailable': reading,
+                    'beforeCli': next(item for item in post_before if item['scope'] == scope),
+                    'afterCli': next(item for item in post_after if item['scope'] == scope),
+                    'nextAttemptAt': load_json(post_budgets[tool])['nextAttemptAt'],
+                    'budgetBeforeSha256': post_budget_before[tool],
+                    'budgetAfterSha256': digest(regular_bytes(post_budgets[tool]))}
+
                 require(digest(regular_bytes(credentials[tool]['path'])) == credentials[tool]['sha256'], 'tool-login-file-changed')
             local_history = {}
             for tool in ('gemini', 'cursor'):
