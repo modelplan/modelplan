@@ -157,11 +157,18 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil {
-		status, reason := "error", short(err.Error())
+		// Runtime and process errors may contain credentials, paths or identities.
+		// Discard their text before either returning the failure or caching it.
+		status, reason := "error", errorCode(err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			reason = "timeout"
+		}
+		safeErr := codeError(reason, reason)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
 			status, reason = toolcli.RuntimeMissing, toolcli.RuntimeNextStep
+			safeErr = toolcli.ErrRuntimeMissing
 		}
-		return errors.Join(err, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
+		return errors.Join(safeErr, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
 	}
 	s := snapFrom(resp, now)
 	if resp.identity != "" {
@@ -269,7 +276,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				continue
 			}
 			if m.Error != nil {
-				return nil, errors.New(m.Error.Message)
+				return nil, codeError("other", "other")
 			}
 			return m.Result, nil
 		}
