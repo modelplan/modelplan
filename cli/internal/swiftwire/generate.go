@@ -96,7 +96,11 @@ func load(root string) (*model, error) {
 		if pkg == "wire" {
 			dir = "appserver/wire"
 		}
-		for _, file := range []string{"types.go", "enums.go"} {
+		files := []string{"types.go", "enums.go"}
+		if pkg == "wire" {
+			files = append(files, "cockpit.go", "results.go")
+		}
+		for _, file := range files {
 			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, "cli/internal", dir, file), nil, 0)
 			if err != nil {
 				return nil, err
@@ -202,7 +206,7 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
-	if name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
+	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
 		return true
 	}
 	switch field {
@@ -266,7 +270,7 @@ func (m *model) fields(d *declaration) error {
 			m.Used[key] = true
 			s = key
 		}
-		requiredNullable := false
+		requiredNullable := pointer && !omit && d.Swift == "WirePublicationResult"
 		if choices, ok := rule["anyOf"].([]any); ok && !pointer && !omit {
 			for _, choice := range choices {
 				if option, ok := choice.(map[string]any); ok && option["type"] == "null" {
@@ -439,7 +443,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	for _, f := range d.Fields {
 		value := ident(f.JSON)
 		switch f.JSON {
-		case "id", "sessionId", "storeEpoch", "expectStoreEpoch", "requestId", "operationId", "scope", "tool", "provider":
+		case "id", "sessionId", "storeEpoch", "expectStoreEpoch", "requestId", "operationId", "scope", "tool", "provider", "publicationId":
 			if f.Swift == "String" {
 				if f.Optional {
 					fmt.Fprintf(b, "        if let value = %s { try WireValidation.identity(value) }\n", value)
@@ -448,7 +452,11 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 				}
 			}
 		case "subscriptionRef", "accountLocator":
-			fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
+			if f.Optional {
+				fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
+			} else {
+				fmt.Fprintf(b, "        try WireValidation.reference(%s)\n", value)
+			}
 		}
 		if f.JSON == "scopes" && f.Swift == "[String]" {
 			values := "scopes"
@@ -489,6 +497,15 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        for scope in allow + deny + (forget ?? []) { try WireValidation.identity(scope) }\n        for (scope, choice) in keychain ?? [:] {\n            try WireValidation.identity(scope)\n            guard [\"allow\", \"deny\"].contains(choice.rawValue) else { throw WireDecodeError.invalidAuthorization }\n        }")
 	case "WireConsentReceipt":
 		fmt.Fprintln(b, "        if committed && committedGeneration == nil { throw WireDecodeError.invalidAuthorization }\n        guard code.isKnown else { throw WireDecodeError.invalidAuthorization }")
+	case "WirePluginInstallResult":
+		fmt.Fprintln(b, `        guard tool.isKnown, status.isKnown, commands.count == 2,
+              commands.allSatisfy({ !$0.isEmpty && $0.allSatisfy { !$0.isEmpty } }) else { throw WireDecodeError.invalidFrame }
+        switch status {
+        case .installed: guard completed == commands.count else { throw WireDecodeError.invalidFrame }
+        case .instructions, .planned: guard completed == 0 else { throw WireDecodeError.invalidFrame }
+        case .failed: guard completed < commands.count else { throw WireDecodeError.invalidFrame }
+        default: throw WireDecodeError.invalidFrame
+        }`)
 	case "WireCredentialResult":
 		fmt.Fprintln(b, "        if outcome.rawValue == \"ok\" {\n            guard let token = accessToken, !token.isEmpty else { throw WireDecodeError.invalidAuthorization }\n        } else if accessToken != nil || expiresAt != nil { throw WireDecodeError.invalidAuthorization }")
 

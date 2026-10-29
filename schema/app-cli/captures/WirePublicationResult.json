@@ -1,0 +1,38 @@
+{
+  "contractVersion": 1,
+  "capabilities": {
+    "codex.runtime_usage": {
+      "status": "synthetic",
+      "reason": "synthetic"
+    }
+  },
+  "schemaVersion": 1,
+  "publicationId": "synthetic",
+  "publishedAt": "synthetic",
+  "units": {
+    "ability": "synthetic",
+    "cost": "synthetic",
+    "time": "synthetic"
+  },
+  "selectionRevision": "synthetic",
+  "models": [
+    {}
+  ],
+  "lineups": [
+    {}
+  ],
+  "speedTiers": [
+    {}
+  ],
+  "resets": [
+    {}
+  ],
+  "windows": [
+    {}
+  ],
+  "multipliers": [
+    {}
+  ],
+  "multiplierHorizon": {},
+  "planMetering": {}
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "tool": "codex",
+  "status": "planned",
+  "commands": [
+    [
+      "codex",
+      "plugin",
+      "marketplace",
+      "add",
+      "modelplan/modelplan"
+    ],
+    [
+      "codex",
+      "plugin",
+      "add",
+      "modelplan-codex@modelplan"
+    ]
+  ],
+  "completed": 0,
+  "docs": "https://github.com/modelplan/modelplan/tree/main/codex"
+}

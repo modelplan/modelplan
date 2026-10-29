@@ -119,7 +119,7 @@ func TestRealBinaryPluginInstallMatchesStandaloneContract(t *testing.T) {
 				if err := json.Unmarshal(response["result"], &result); err != nil {
 					t.Fatal(err)
 				}
-				if result.Data.Tool != tool || result.Data.Status != test.status || result.Data.Completed != test.completed {
+				if string(result.Data.Tool) != tool || string(result.Data.Status) != test.status || result.Data.Completed != test.completed {
 					t.Fatalf("wrong install result: %+v", result.Data)
 				}
 				raw, _ := json.Marshal(result.Data)
