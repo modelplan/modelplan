@@ -206,7 +206,7 @@ func strict(name, field string) bool {
 		return true
 	}
 	switch field {
-	case "id", "sessionId", "storeEpoch", "consentGeneration", "expectStoreEpoch", "expectGeneration", "requestId", "operationId", "scope", "tool", "subscriptionRef", "accountLocator", "keychain", "consent", "state", "scopes":
+	case "id", "sessionId", "storeEpoch", "consentGeneration", "expectStoreEpoch", "expectGeneration", "requestId", "operationId", "scope", "tool", "subscriptionRef", "accountLocator", "keychain", "consent", "state", "scopes", "ref", "cursor":
 		return true
 	}
 	return false
@@ -347,6 +347,14 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		}
 		fmt.Fprintf(b, "    public let %s: %s%s\n", ident(f.JSON), f.Swift, optional)
 	}
+	if d.Swift == "RowsRow" {
+		fmt.Fprintln(b, "    public let invalid: Bool")
+	}
+	for _, f := range d.Fields {
+		if f.Swift == "[RowsRow]" {
+			fmt.Fprintf(b, "    public var invalidRowCount: Int { %s.filter { $0.invalid }.count }\n", ident(f.JSON))
+		}
+	}
 	if len(d.Fields) > 0 {
 		fmt.Fprintln(b, "    private enum CodingKeys: String, CodingKey {")
 		for _, f := range d.Fields {
@@ -370,6 +378,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	for _, f := range d.Fields {
 		fmt.Fprintf(b, "        self.%s = %s\n", ident(f.JSON), ident(f.JSON))
 	}
+	if d.Swift == "RowsRow" {
+		fmt.Fprintln(b, "        self.invalid = false")
+	}
 	fmt.Fprintln(b, "        try validate()\n    }")
 	fmt.Fprintln(b, "    public init(from decoder: Decoder) throws {")
 	if len(d.Fields) > 0 {
@@ -388,6 +399,10 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        // Non-success credentials may not carry a token or expiry, even explicit null.\n        let outcome = try c.decode(WireCredentialOutcome.self, forKey: .outcome)\n        if outcome.rawValue != \"ok\" && (c.contains(.accessToken) || c.contains(.expiresAt)) { throw WireDecodeError.invalidAuthorization }")
 	}
 	for _, f := range d.Fields {
+		if f.Swift == "[RowsRow]" {
+			fmt.Fprintf(b, "        var rowElements = try c.nestedUnkeyedContainer(forKey: .%s)\n        var decodedRows: [RowsRow] = []\n        while !rowElements.isAtEnd {\n            let rowDecoder = try rowElements.superDecoder()\n            decodedRows.append(try WireRowDecoding.decode(from: rowDecoder))\n        }\n        self.%s = decodedRows\n", ident(f.JSON), ident(f.JSON))
+			continue
+		}
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
 		}
@@ -400,6 +415,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			}
 		}
 		fmt.Fprintf(b, "        self.%s = %sc.%s(%s.self, forKey: .%s)\n", ident(f.JSON), prefix, call, f.Swift, ident(f.JSON))
+	}
+	if d.Swift == "RowsRow" {
+		fmt.Fprintln(b, "        self.invalid = false")
 	}
 	fmt.Fprintln(b, "        try validate()\n    }\n    public func encode(to encoder: Encoder) throws {\n        try validate()")
 	if len(d.Fields) > 0 {
@@ -415,6 +433,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintf(b, "        try c.%s(%s, forKey: .%s)\n", call, ident(f.JSON), ident(f.JSON))
 	}
 	fmt.Fprintln(b, "    }\n    private func validate() throws {")
+	if d.Swift == "RowsRow" {
+		fmt.Fprintln(b, "        guard !invalid else { throw WireDecodeError.invalidRowEncoding }")
+	}
 	for _, f := range d.Fields {
 		value := ident(f.JSON)
 		switch f.JSON {
@@ -463,7 +484,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	case "RowsProjection", "WireRowsProjection":
 		fmt.Fprintln(b, "        guard rowsVersion == WireProtocol.rowsVersion else { throw WireDecodeError.invalidVersion }\n        guard Set(rows.map { $0.id }).count == rows.count else { throw WireDecodeError.invalidIdentity }")
 	case "RowsRow":
-		fmt.Fprintln(b, "        try WireValidation.identity(id)\n        if kind.rawValue == \"tool\" { try WireValidation.toolID(id) }\n        if kind.rawValue == \"declared\" && (!id.hasPrefix(\"declared:\") || id.count <= 9) { throw WireDecodeError.invalidIdentity }\n        if [\"denied\", \"unset\", \"retired\"].contains(consent.rawValue) && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }")
+		fmt.Fprintln(b, "        try WireValidation.identity(id)\n        if kind.rawValue == \"tool\" { try WireValidation.toolID(id) }\n        if kind.rawValue == \"declared\" && (!id.hasPrefix(\"declared:\") || id.count <= 9) { throw WireDecodeError.invalidIdentity }\n        if ([\"denied\", \"unset\"].contains(consent.rawValue) || reason.code.rawValue == \"cleanup_pending\") && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }")
 	case "WireConsentGrantParams":
 		fmt.Fprintln(b, "        for scope in allow + deny + (forget ?? []) { try WireValidation.identity(scope) }\n        for (scope, choice) in keychain ?? [:] {\n            try WireValidation.identity(scope)\n            guard [\"allow\", \"deny\"].contains(choice.rawValue) else { throw WireDecodeError.invalidAuthorization }\n        }")
 	case "WireConsentReceipt":
@@ -473,6 +494,24 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 
 	}
 	fmt.Fprintln(b, "    }")
+	if d.Swift == "RowsRow" {
+		fmt.Fprintln(b, `    fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.id = invalidID
+        self.kind = .unknown("invalid_row")
+        self.order = invalidOrder
+        self.name = try RowsName(en: "Unavailable reading", zh: "读数不可用")
+        self.vendorKey = nil
+        self.surfaces = invalidSurfaces
+        self.consent = .unset
+        self.state = .failed
+        self.reason = try RowsReason(code: .unknown("invalid_row"), text: RowsText(en: "Reading unavailable", zh: "读数不可用"))
+        self.nextStep = nil
+        self.accounts = []
+        self.expiresAt = nil
+        self.stateAfterExpiry = nil
+        self.invalid = true
+    }`)
+	}
 	if d.Swift == "WireCredentialResult" {
 		fmt.Fprintln(b, "    public var description: String { \"WireCredentialResult([redacted])\" }\n    public var debugDescription: String { description }")
 	}

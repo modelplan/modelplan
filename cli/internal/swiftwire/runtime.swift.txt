@@ -1,12 +1,13 @@
 // This support code is emitted with the DTOs; it never stores engine state.
 public enum WireDecodeError: Error, Sendable {
-    case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement
+    case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement, invalidRowEncoding
 }
 
 private struct WireCodingKey: CodingKey {
     let stringValue: String
     let intValue: Int? = nil
     init?(stringValue: String) { self.stringValue = stringValue }
+    init(_ value: String) { self.stringValue = value }
     init?(intValue: Int) { return nil }
 }
 
@@ -95,9 +96,45 @@ public indirect enum WireJSONValue: Codable, Sendable, Equatable {
     }
 }
 
+public struct WireDecoded<Value> {
+    public let value: Value
+    public let invalidRowCount: Int
+}
+extension WireDecoded: Sendable where Value: Sendable {}
+
+private final class WireDecodeCounter {
+    var invalidRows = 0
+}
+private let wireDecodeCounterKey = CodingUserInfoKey(rawValue: "modelplan.invalidRows")!
+
+private enum WireRowDecoding {
+    static func decode(from decoder: Decoder) throws -> RowsRow {
+        do { return try RowsRow(from: decoder) }
+        catch let error as WireDecodeError {
+            // Only semantic row validation is isolated. An undecodable identity
+            // binding or structurally malformed payload is still a malformed frame.
+            switch error {
+            case .invalidIdentity, .invalidAuthorization, .invalidVersion, .invalidBound:
+                let fields = try decoder.container(keyedBy: WireCodingKey.self)
+                let id = try fields.decode(String.self, forKey: WireCodingKey("id"))
+                guard !id.isEmpty else { throw WireDecodeError.invalidFrame }
+                let order = try fields.decode(Int.self, forKey: WireCodingKey("order"))
+                let surfaces = try fields.decode([RowsSurface].self, forKey: WireCodingKey("surfaces"))
+                let placeholder = try RowsRow(invalidID: id, invalidOrder: order, invalidSurfaces: surfaces)
+                (decoder.userInfo[wireDecodeCounterKey] as? WireDecodeCounter)?.invalidRows += 1
+                return placeholder
+            default: throw error
+            }
+        }
+    }
+}
+
 public enum WireDecoder {
     // M0 owns feature isolation and the state/floor; this function never updates a store.
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try decodeWithDiagnostics(type, from: data).value
+    }
+    public static func decodeWithDiagnostics<T: Decodable>(_ type: T.Type, from data: Data) throws -> WireDecoded<T> {
         guard data.count <= WireProtocol.maxFrameBytes else { throw WireDecodeError.invalidFrame }
         let tree = try JSONDecoder().decode(WireJSONValue.self, from: data)
         let credential = type == WireCredentialResult.self
@@ -106,7 +143,11 @@ public enum WireDecoder {
            fields["method"] == .string("credentials/result") { credentialRequest = true }
         else { credentialRequest = false }
         try checkTokens(tree, path: [], directCredential: credential, credentialRequest: credentialRequest)
-        return try JSONDecoder().decode(type, from: data)
+        let counter = WireDecodeCounter()
+        let decoder = JSONDecoder()
+        decoder.userInfo[wireDecodeCounterKey] = counter
+        let value = try decoder.decode(type, from: data)
+        return WireDecoded(value: value, invalidRowCount: counter.invalidRows)
     }
     private static func checkTokens(_ value: WireJSONValue, path: [String], directCredential: Bool, credentialRequest: Bool) throws {
         switch value {

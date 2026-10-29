@@ -198,6 +198,85 @@ final class DecodeTests: XCTestCase {
         XCTAssertThrowsError(try WireDecoder.decode(WireSuccess<WireRowsSnapshot>.self, from: encoded(rows)))
     }
 
+    func testRealGoRetiredAccountRemainsValidAlongsideHealthyRow() throws {
+        let result = try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: data("retired-with-account.json"))
+        let rows = result.value.result.data.projection.rows
+        XCTAssertEqual(Set(rows.map(\.id)), Set(["codex", "claude"]))
+        let retired = try XCTUnwrap(rows.first { $0.id == "codex" })
+        XCTAssertEqual(retired.consent, .retired)
+        XCTAssertEqual(retired.reason.code, .catalogueRetired)
+        XCTAssertEqual(retired.accounts.count, 1)
+        XCTAssertFalse(retired.invalid)
+        XCTAssertTrue(rows.allSatisfy { !$0.invalid })
+        XCTAssertEqual(result.invalidRowCount, 0)
+        XCTAssertEqual(result.value.result.data.projection.invalidRowCount, 0)
+    }
+
+    func testSemanticRowFailureKeepsHealthyRowsAndExposesSafePlaceholder() throws {
+        for mutation in ["denied", "unset", "cleanup", "unknown-consent", "unknown-kind", "bad-account-reference"] {
+            var message = try object("retired-with-account.json")
+            var envelope = try XCTUnwrap(message["result"] as? [String: Any])
+            var snapshot = try XCTUnwrap(envelope["data"] as? [String: Any])
+            var projection = try XCTUnwrap(snapshot["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            let offset = try XCTUnwrap(rows.firstIndex { ($0["id"] as? String) == "claude" })
+            if mutation == "denied" || mutation == "unset" { rows[offset]["consent"] = mutation }
+            if mutation == "unknown-consent" { rows[offset]["consent"] = "future_grant" }
+            if mutation == "unknown-kind" { rows[offset]["kind"] = "future_identity_kind" }
+            if mutation == "cleanup" {
+                var reason = try XCTUnwrap(rows[offset]["reason"] as? [String: Any])
+                reason["code"] = "cleanup_pending"; rows[offset]["reason"] = reason
+            }
+            if mutation == "bad-account-reference" {
+                var accounts = try XCTUnwrap(rows[offset]["accounts"] as? [[String: Any]])
+                accounts[0]["subscriptionRef"] = "unverified-reference"
+                rows[offset]["accounts"] = accounts
+            }
+            rows[offset]["invalid"] = false // Wire data cannot bypass the local marker.
+            projection["rows"] = rows; snapshot["projection"] = projection
+            envelope["data"] = snapshot; message["result"] = envelope
+            let result = try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: encoded(message))
+            let recovered = result.value.result.data.projection
+            XCTAssertEqual(Set(recovered.rows.map(\.id)), Set(["claude", "codex"]), mutation)
+            XCTAssertEqual(result.invalidRowCount, 1, mutation)
+            XCTAssertEqual(recovered.invalidRowCount, 1, mutation)
+            let invalid = try XCTUnwrap(recovered.rows.first { $0.id == "claude" })
+            XCTAssertTrue(invalid.invalid, mutation)
+            XCTAssertTrue(invalid.accounts.isEmpty, mutation)
+            XCTAssertNil(invalid.vendorKey); XCTAssertNil(invalid.nextStep)
+            XCTAssertNil(invalid.expiresAt); XCTAssertNil(invalid.stateAfterExpiry)
+            let healthy = try XCTUnwrap(recovered.rows.first { $0.id == "codex" })
+            XCTAssertFalse(healthy.invalid, mutation)
+            XCTAssertEqual(healthy.accounts.count, 1, mutation)
+            XCTAssertEqual(healthy.accounts[0].windows[0].remainingPercent, 75, mutation)
+            XCTAssertThrowsError(try JSONEncoder().encode(result.value), mutation)
+        }
+        let clean = try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: data("retired-with-account.json"))
+        XCTAssertEqual(clean.invalidRowCount, 0) // Diagnostics belong to this decode, not a global latch.
+    }
+
+    func testEnvelopeFailuresAndMalformedFramesStillRejectWholeMessage() throws {
+        for field in ["sessionId", "storeEpoch", "consentGeneration"] {
+            var message = try object("retired-with-account.json")
+            var envelope = try XCTUnwrap(message["result"] as? [String: Any])
+            if field == "consentGeneration" { envelope[field] = -1 } else { envelope[field] = "" }
+            message["result"] = envelope
+            XCTAssertThrowsError(try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: encoded(message)), field)
+        }
+        XCTAssertThrowsError(try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: Data("{".utf8)))
+    }
+
+    func testQueryReferenceAndCursorNeverSilentlyChangeMeaning() throws {
+        for field in ["ref", "cursor"] {
+            let malformedValues: [Any] = [123, ["unexpected": true]]
+            for malformed in malformedValues {
+                var query = try object("WireHistoryQueryParams.json")
+                query[field] = malformed
+                XCTAssertThrowsError(try WireDecoder.decode(WireHistoryQueryParams.self, from: encoded(query)), field)
+            }
+        }
+    }
+
     func testCredentialRequestWrapperAndAmbiguousResponsesFailClosed() throws {
         var request = try object("WireRequest.json")
         request["method"] = "credentials/result"

@@ -4,6 +4,7 @@ package swiftwire
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/appcontract"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"os"
 	"path/filepath"
@@ -99,4 +100,60 @@ func TestRealGoCapturesAndMutationCoverage(t *testing.T) {
 		t.Fatal("real Go encoding lost production row")
 	}
 	t.Logf("%d DTO roots, %d optional fields (%d strict, %d display)", len(index.Cases), optional, strict, display)
+}
+
+func TestRetiredAccountCaptureAndClientGuard(t *testing.T) {
+	root := repoRoot(t)
+	capture, err := retiredAccountCapture()
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := appcontract.NewValidator(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = validator.Validate("app-server", capture); err != nil {
+		t.Fatal(err)
+	}
+	var message wire.Success[wire.RowsSnapshot]
+	if err = json.Unmarshal(capture, &message); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range message.Result.Data.Projection.Rows {
+		if row.ID == "codex" {
+			found = string(row.Consent) == "retired" && string(row.Reason.Code) == "catalogue_retired" && len(row.Accounts) == 1
+		}
+	}
+	if !found || len(message.Result.Data.Projection.Rows) != 2 {
+		t.Fatal("missing valid retired account plus healthy row")
+	}
+	generated, err := Generate(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(generated, []byte(`["denied", "unset", "retired"]`)) {
+		t.Fatal("valid Go retired-account capture is rejected by the generated client guard")
+	}
+}
+
+func TestQueryBindingsRemainStrict(t *testing.T) {
+	files, err := Captures(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index captureIndex
+	if err = json.Unmarshal(files["index.json"], &index); err != nil {
+		t.Fatal(err)
+	}
+	for _, capture := range index.Cases {
+		if capture.Type != "WireHistoryQueryParams" {
+			continue
+		}
+		for _, field := range capture.Optional {
+			if (field.Field == "ref" || field.Field == "cursor") && field.WrongType {
+				t.Errorf("query binding %s silently loses a malformed value", field.Field)
+			}
+		}
+	}
 }

@@ -233,5 +233,43 @@ func Captures(root string) (map[string][]byte, error) {
 		return nil, err
 	}
 	files["null-error.json"] = append(b, '\n')
+	files["retired-with-account.json"], err = retiredAccountCapture()
+	if err != nil {
+		return nil, err
+	}
 	return files, nil
+}
+
+// retiredAccountCapture is built and validated by the real projector. Retirement
+// preserves admitted accounts; it is not revocation or an unset grant.
+func retiredAccountCapture() ([]byte, error) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	observed, fresh, resets := now.Add(-time.Minute), now.Add(time.Hour), now.Add(2*time.Hour)
+	duration := int64(18000)
+	remaining := 75.0
+	input := rows.Input{Now: now, ConsentGeneration: 7,
+		Catalogue: []rows.CatalogueEntry{
+			{ToolID: "codex", Detected: true, ReaderExists: true, Retired: true},
+			{ToolID: "claude", Detected: true, ReaderExists: true},
+		},
+		Consents: []rows.ConsentRecord{
+			{ToolID: "codex", State: rows.ConsentAllowed, Generation: 7},
+			{ToolID: "claude", State: rows.ConsentAllowed, Generation: 7},
+		},
+	}
+	for _, tool := range []string{"codex", "claude"} {
+		route := rows.RouteRuntimeRPC
+		if tool == "claude" {
+			route = rows.RouteSavedLoginAPI
+		}
+		input.Profiles = append(input.Profiles, rows.ProfileState{ToolID: tool, ProfileKey: tool, LatestAttempt: rows.AttemptResultSucceeded, ObservedAt: &observed, WithinFreshness: true, FreshUntil: &fresh})
+		input.Accounts = append(input.Accounts, rows.AccountInput{ToolID: tool, ProfileKey: tool, Source: "native:" + tool, Route: route, PlanID: "pro", Windows: []rows.WindowInput{{Kind: "five_hour", DurationSeconds: &duration, RemainingPercent: &remaining, ObservedAt: &observed, ResetsAt: &resets}}})
+	}
+	projection := rows.Build(input)
+	if err := rows.Validate(input, projection); err != nil {
+		return nil, err
+	}
+	message := wire.Success[wire.RowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`31`), Result: wire.Envelope[wire.RowsSnapshot]{SessionID: "s-retired", StoreEpoch: "e-retired", ConsentGeneration: 7, Scopes: []string{"claude.account_usage.saved_login", "codex.runtime_usage"}, Data: wire.RowsSnapshot{Sequence: 1, Projection: wire.Project(projection)}}}
+	b, err := json.MarshalIndent(message, "", "  ")
+	return append(b, '\n'), err
 }

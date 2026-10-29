@@ -25,8 +25,10 @@ let rows = message.result.data.projection.rows
 Do not render a decoded message before the app's state store checks its session,
 store epoch, committed generation floor, scopes and subscription sequence. A
 failed history decode must leave the independent rows projection intact; a
-failed identity/authorization decode must not publish partial data. The package
-never replaces failures with an empty row set. It does not prove the state/floor
+failed envelope identity/authorization check must reject the message. A row
+semantic failure is isolated to an `invalid: true` placeholder with the original
+stable id, order and surfaces; its accounts, values and actions are cleared.
+Valid rows survive. The package never replaces the snapshot with an empty row set. It does not prove the state/floor
 or native integration, which remain M0's work.
 
 ## One source and reproducible generation
@@ -68,7 +70,8 @@ changes must regenerate the package; this client does not invent those vocabular
 | Pointer | Optional; absent/null becomes nil, including without `omitempty` |
 | Non-pointer with `omitempty` | Optional presence; absent/null becomes nil |
 | Optional display field with a wrong type | Locally nil; row membership remains intact |
-| Invalid identity or authorization | Explicit failure; never silently grants or accepts a partial identity |
+| Row semantic failure with a recoverable stable id | Invalid placeholder; healthy rows survive, no accounts/values/actions on the placeholder |
+| Envelope identity/authorization failure or malformed frame | Whole message fails explicitly |
 | Unknown display enum/field | `.unknown(String)` / ignored field |
 
 Encoding preserves JSON-tag behavior: nil pointer fields without `omitempty`
@@ -76,8 +79,12 @@ encode explicit null; omitted fields encode only when present. Nullable history
 `model` therefore survives missing/null/wrong-display-type inputs without losing
 rows. Session/epoch/operation/scope identities must be nonempty and control-free;
 account/subscription references follow the producer's 16-hex representation.
-Duplicate row ids, unknown consent/Keychain/credential outcomes, incompatible
-protocol major versions, invalid rows versions and invalid unsigned consent generations fail conservatively. The wire row
+Malformed or ambiguous row identities, incompatible protocol/rows versions and
+invalid envelope consent contexts reject the message. Within a row, semantic
+identity/authorization failures produce a placeholder; standalone consent and
+credential authorization failures remain explicit. Retired rows retain the
+accounts the Go producer permits; denied, unset and cleanup-pending rows may
+not carry accounts. The wire row
 projection carries no consent context: it appears only in the envelope. Producer schema numeric bounds are generated
 (for example history `limit` 1...500). Minor versions may extend display values.
 The app still owns the committed floor and the checks across sessions.
@@ -101,6 +108,9 @@ MODELPLAN_CAPTURE_DIR="$PWD/schema/app-cli/captures" \
 ```
 
 `Captures` marshals actual Go wire DTOs with deterministic synthetic values.
+The additional `retired-with-account.json` is built by the production projector,
+validated by `rows.Validate` and the wire schema, and retains a retired account
+alongside a healthy tool. Semantic mutations of one row must preserve the other.
 The additional `production-rows.json` passes through `rows.Build`, `rows.Validate`,
 `wire.Project` and the real Go success/envelope encoding. `null-error.json` is
 a real Go error with a null request id; this id accepts null but remains required. `index.json` enumerates 39 DTO roots
@@ -113,8 +123,9 @@ The decoder dispatch harness is generated from the same root registry.
 The hosted macOS `swift test` job drives those encodings and every mutation
 through the generated production decoder. Credential-success token removal is
 an explicit negative control, even though the token is structurally optional.
-The 15 strict nullable/optional fields fail on malformed identity/authorization types;
-33 display fields degrade locally. Raw JSON params accept legal JSON extension
+The 17 strict nullable/optional fields fail on malformed identity/authorization types;
+31 display fields degrade locally. History query `ref` and `cursor` are strict
+identity/query bindings: a present wrong type is an error, never a lost filter. Raw JSON params accept legal JSON extension
 values. Tests also cover required fields, future enums/fields, row ids, unknown
 history models, duplicate rows, exact integers above 2^53, explicit null encoding,
 protocol/version/generation failures, credential redaction and token canaries.
@@ -123,3 +134,20 @@ Swift is not available on the Linux development host. A successful Go generator
 check is **not** Swift compilation or decoder proof. The hosted macOS test and
 its uploaded synthetic evidence are the L1 Swift result. The full app, process
 supervision, real providers and macOS UI remain separate integration/L2 work.
+
+## Invalid row diagnostics
+
+`WireDecoder.decodeWithDiagnostics` returns the decoded `value` and an
+`invalidRowCount` for that call. `WireRowsProjection.invalidRowCount` exposes the
+same count on the projection. The per-call counter never becomes a global latch;
+M0 can add it to diagnostics without retaining rejected data or raw errors.
+
+A placeholder's `RowsRow.invalid` is client-only metadata, not a wire field or an
+authorization grant. Its fixed bilingual label and invalid-row reason carry no
+provider values. It preserves the stable id/order/surfaces so other rows and
+presentation preferences survive. Its accounts, expiry values, vendor binding
+and actions are empty. Encoding a placeholder back to wire JSON throws; valid
+rows keep the producer's normal encoding, without an `invalid` field. An
+unrecoverable identity binding or structurally malformed payload still cannot
+produce a safe placeholder and rejects the malformed frame. Envelope failures
+are never swallowed by the row isolation boundary.

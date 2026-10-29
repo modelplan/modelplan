@@ -574,15 +574,15 @@
           "field": "ref",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false
+          "wrongType": false,
+          "strict": true
         },
         {
           "field": "cursor",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false
+          "wrongType": false,
+          "strict": true
         }
       ],
       "required": [

@@ -11,13 +11,14 @@ public enum WireProtocol {
 
 // This support code is emitted with the DTOs; it never stores engine state.
 public enum WireDecodeError: Error, Sendable {
-    case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement
+    case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement, invalidRowEncoding
 }
 
 private struct WireCodingKey: CodingKey {
     let stringValue: String
     let intValue: Int? = nil
     init?(stringValue: String) { self.stringValue = stringValue }
+    init(_ value: String) { self.stringValue = value }
     init?(intValue: Int) { return nil }
 }
 
@@ -106,9 +107,45 @@ public indirect enum WireJSONValue: Codable, Sendable, Equatable {
     }
 }
 
+public struct WireDecoded<Value> {
+    public let value: Value
+    public let invalidRowCount: Int
+}
+extension WireDecoded: Sendable where Value: Sendable {}
+
+private final class WireDecodeCounter {
+    var invalidRows = 0
+}
+private let wireDecodeCounterKey = CodingUserInfoKey(rawValue: "modelplan.invalidRows")!
+
+private enum WireRowDecoding {
+    static func decode(from decoder: Decoder) throws -> RowsRow {
+        do { return try RowsRow(from: decoder) }
+        catch let error as WireDecodeError {
+            // Only semantic row validation is isolated. An undecodable identity
+            // binding or structurally malformed payload is still a malformed frame.
+            switch error {
+            case .invalidIdentity, .invalidAuthorization, .invalidVersion, .invalidBound:
+                let fields = try decoder.container(keyedBy: WireCodingKey.self)
+                let id = try fields.decode(String.self, forKey: WireCodingKey("id"))
+                guard !id.isEmpty else { throw WireDecodeError.invalidFrame }
+                let order = try fields.decode(Int.self, forKey: WireCodingKey("order"))
+                let surfaces = try fields.decode([RowsSurface].self, forKey: WireCodingKey("surfaces"))
+                let placeholder = try RowsRow(invalidID: id, invalidOrder: order, invalidSurfaces: surfaces)
+                (decoder.userInfo[wireDecodeCounterKey] as? WireDecodeCounter)?.invalidRows += 1
+                return placeholder
+            default: throw error
+            }
+        }
+    }
+}
+
 public enum WireDecoder {
     // M0 owns feature isolation and the state/floor; this function never updates a store.
     public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try decodeWithDiagnostics(type, from: data).value
+    }
+    public static func decodeWithDiagnostics<T: Decodable>(_ type: T.Type, from data: Data) throws -> WireDecoded<T> {
         guard data.count <= WireProtocol.maxFrameBytes else { throw WireDecodeError.invalidFrame }
         let tree = try JSONDecoder().decode(WireJSONValue.self, from: data)
         let credential = type == WireCredentialResult.self
@@ -117,7 +154,11 @@ public enum WireDecoder {
            fields["method"] == .string("credentials/result") { credentialRequest = true }
         else { credentialRequest = false }
         try checkTokens(tree, path: [], directCredential: credential, credentialRequest: credentialRequest)
-        return try JSONDecoder().decode(type, from: data)
+        let counter = WireDecodeCounter()
+        let decoder = JSONDecoder()
+        decoder.userInfo[wireDecodeCounterKey] = counter
+        let value = try decoder.decode(type, from: data)
+        return WireDecoded(value: value, invalidRowCount: counter.invalidRows)
     }
     private static func checkTokens(_ value: WireJSONValue, path: [String], directCredential: Bool, credentialRequest: Bool) throws {
         switch value {
@@ -818,6 +859,7 @@ public struct RowsRow: Codable, Sendable {
     public let `accounts`: [RowsAccount]
     public let `expiresAt`: WireTimestamp?
     public let `stateAfterExpiry`: RowsExpiryState?
+    public let invalid: Bool
     private enum CodingKeys: String, CodingKey {
         case `id`
         case `kind`
@@ -847,6 +889,7 @@ public struct RowsRow: Codable, Sendable {
         self.`accounts` = `accounts`
         self.`expiresAt` = `expiresAt`
         self.`stateAfterExpiry` = `stateAfterExpiry`
+        self.invalid = false
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -864,6 +907,7 @@ public struct RowsRow: Codable, Sendable {
         self.`accounts` = try c.decode([RowsAccount].self, forKey: .`accounts`)
         self.`expiresAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`expiresAt`)
         self.`stateAfterExpiry` = try? c.decodeIfPresent(RowsExpiryState.self, forKey: .`stateAfterExpiry`)
+        self.invalid = false
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -884,13 +928,30 @@ public struct RowsRow: Codable, Sendable {
         try c.encode(`stateAfterExpiry`, forKey: .`stateAfterExpiry`)
     }
     private func validate() throws {
+        guard !invalid else { throw WireDecodeError.invalidRowEncoding }
         try WireValidation.identity(`id`)
         guard `kind`.isKnown else { throw WireDecodeError.invalidAuthorization }
         guard `consent`.isKnown else { throw WireDecodeError.invalidAuthorization }
         try WireValidation.identity(id)
         if kind.rawValue == "tool" { try WireValidation.toolID(id) }
         if kind.rawValue == "declared" && (!id.hasPrefix("declared:") || id.count <= 9) { throw WireDecodeError.invalidIdentity }
-        if ["denied", "unset", "retired"].contains(consent.rawValue) && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }
+        if (["denied", "unset"].contains(consent.rawValue) || reason.code.rawValue == "cleanup_pending") && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }
+    }
+    fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.id = invalidID
+        self.kind = .unknown("invalid_row")
+        self.order = invalidOrder
+        self.name = try RowsName(en: "Unavailable reading", zh: "读数不可用")
+        self.vendorKey = nil
+        self.surfaces = invalidSurfaces
+        self.consent = .unset
+        self.state = .failed
+        self.reason = try RowsReason(code: .unknown("invalid_row"), text: RowsText(en: "Reading unavailable", zh: "读数不可用"))
+        self.nextStep = nil
+        self.accounts = []
+        self.expiresAt = nil
+        self.stateAfterExpiry = nil
+        self.invalid = true
     }
 }
 
@@ -1873,8 +1934,8 @@ public struct WireHistoryQueryParams: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`kind` = try c.decode(WireHistoryQueryParamsKind.self, forKey: .`kind`)
         self.`tool` = try c.decode(String.self, forKey: .`tool`)
-        self.`ref` = try? c.decodeIfPresent(String.self, forKey: .`ref`)
-        self.`cursor` = try? c.decodeIfPresent(String.self, forKey: .`cursor`)
+        self.`ref` = try c.decodeIfPresent(String.self, forKey: .`ref`)
+        self.`cursor` = try c.decodeIfPresent(String.self, forKey: .`cursor`)
         self.`limit` = try c.decode(Int.self, forKey: .`limit`)
         try validate()
     }
@@ -2224,6 +2285,7 @@ public struct WireRowsProjection: Codable, Sendable {
     public let `rowsVersion`: Int
     public let `rows`: [RowsRow]
     public let `rowsSummary`: RowsRowsSummary
+    public var invalidRowCount: Int { `rows`.filter { $0.invalid }.count }
     private enum CodingKeys: String, CodingKey {
         case `rowsVersion`
         case `rows`
@@ -2238,7 +2300,13 @@ public struct WireRowsProjection: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
-        self.`rows` = try c.decode([RowsRow].self, forKey: .`rows`)
+        var rowElements = try c.nestedUnkeyedContainer(forKey: .`rows`)
+        var decodedRows: [RowsRow] = []
+        while !rowElements.isAtEnd {
+            let rowDecoder = try rowElements.superDecoder()
+            decodedRows.append(try WireRowDecoding.decode(from: rowDecoder))
+        }
+        self.`rows` = decodedRows
         self.`rowsSummary` = try c.decode(RowsRowsSummary.self, forKey: .`rowsSummary`)
         try validate()
     }
