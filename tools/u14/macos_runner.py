@@ -136,7 +136,7 @@ def build_app(work):
     archive = new_directory(work/'archives')
     env = dict(os.environ)
     env.update({'GOCACHE':str(work/'go-cache'),'GOMODCACHE':str(work/'go-mod'),
-                'TMPDIR':str(work/'tmp'), 'CGO_ENABLED':'0','GOOS':'darwin','GOFLAGS':''})
+                'TMPDIR':str(work/'tmp'), 'CGO_ENABLED':'0','GOOS':'darwin','GOFLAGS':'-modcacherw'})
     (work/'tmp').mkdir(mode=0o700)
     version='0.0.0+u14.'+git(REPO,'rev-parse','HEAD')[:12]
     checksums=[]

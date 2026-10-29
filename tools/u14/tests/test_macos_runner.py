@@ -153,3 +153,51 @@ class MacosHarnessTests(unittest.TestCase):
         self.assertNotIn('self-hosted',workflow)
         self.assertIn('if: always()',workflow)
         self.assertIn('/bundle',workflow)
+
+    def test_build_keeps_its_owned_module_cache_writable(self):
+        commands=[]
+        def build_command(args,cwd,env,timeout,log):
+            commands.append((args,env))
+            if args[0]=='go':
+                Path(args[args.index('-o')+1]).write_bytes(b'synthetic executable')
+        work=self.root/'build';work.mkdir()
+        with mock.patch.object(mac,'command',side_effect=build_command), \
+                mock.patch.object(mac,'verify_app'),mock.patch.object(mac,'git',return_value='a'*40), \
+                mock.patch.dict(os.environ,{'GOFLAGS':'-race','GOMODCACHE':'/shared-cache'}):
+            mac.build_app(work)
+        go_commands=[(args,env) for args,env in commands if args[0]=='go']
+        self.assertEqual(len(go_commands),2)
+        for args,env in go_commands:
+            self.assertIn('-modcacherw',env['GOFLAGS'].split())
+            self.assertEqual(env['GOMODCACHE'],str(work/'go-mod'))
+        self.assertEqual({env['GOARCH'] for args,env in go_commands},{'arm64','amd64'})
+
+    def test_cleanup_failure_is_separate_from_already_uploaded_scenario_evidence(self):
+        import json
+        import subprocess
+        import textwrap
+        workflow=(ROOT.parent.parent/'.github/workflows/u14-macos.yml').read_text()
+        name="      - name: Remove this job's generated scratch"
+        self.assertLess(workflow.index('uses: actions/upload-artifact@v4'),workflow.index(name))
+        harness=workflow.split('      - name: Build actual bundle',1)[1].split('      - name: Preserve only',1)[0]
+        self.assertNotIn('continue-on-error:',harness)
+        step=workflow.split(name,1)[1]
+        self.assertIn('if: always()',step)
+        self.assertIn('continue-on-error: true',step)
+        run=step.split('        run: ',1)[1]
+        script=textwrap.dedent(run[2:]) if run.startswith('|\n') else run.splitlines()[0]
+        bundle=self.root/'.tmp/u14-macos/bundle';bundle.mkdir(parents=True)
+        manifest=bundle/'manifest.json'
+        original=json.dumps({'scenarios':[{'id':'A01','outcome':'unsupported'}]}).encode()
+        manifest.write_bytes(original)
+        tools=self.root/'cleanup-bin';tools.mkdir()
+        remove=tools/'rm';remove.write_text('#!/bin/sh\nexit 73\n');remove.chmod(0o700)
+        summary=self.root/'job-summary.md'
+        result=subprocess.run(['bash','-e','-c',script],capture_output=True,text=True,
+                              env={'PATH':str(tools)+':/usr/bin:/bin','GITHUB_WORKSPACE':str(self.root),
+                                   'GITHUB_STEP_SUMMARY':str(summary)})
+        self.assertEqual(result.returncode,1)
+        self.assertIn('::warning',result.stdout)
+        self.assertIn('cleanup',summary.read_text())
+        self.assertIn('failed',summary.read_text())
+        self.assertEqual(manifest.read_bytes(),original)

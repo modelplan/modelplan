@@ -53,7 +53,10 @@ and [screenshot API](https://developer.apple.com/documentation/screencapturekit/
 
 Owned process groups are stopped on failure or timeout. The GUI phase has a
 20-minute watchdog; the hosted job has a 45-minute limit. Only the part-B bundle
-is uploaded, for 14 days; the job deletes its generated scratch. The manifest
+is uploaded, for 14 days, before the job deletes its generated scratch. Builds
+use an owned writable Go module cache (`GOFLAGS=-modcacherw`). Cleanup has a
+separate job-summary status; a removal failure emits a warning and cannot replace
+the harness outcome or prevent its evidence upload. The manifest
 binds the exact source SHA, app tree hash, bundled helper hash/version, part-A
 baseline, observed display (when available), scenario catalog and evidence blobs.
 Infrastructure outcomes and feature outcomes are separate checks.

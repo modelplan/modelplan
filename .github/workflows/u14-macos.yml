@@ -67,4 +67,12 @@ jobs:
           retention-days: 14
       - name: Remove this job's generated scratch
         if: always()
-        run: rm -rf "$GITHUB_WORKSPACE/.tmp/u14-macos" "$GITHUB_WORKSPACE/.tmp/tmp"
+        continue-on-error: true
+        run: |
+          if rm -rf "$GITHUB_WORKSPACE/.tmp/u14-macos" "$GITHUB_WORKSPACE/.tmp/tmp"; then
+            printf '### Scratch cleanup\n\npassed\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '::warning title=U14 scratch cleanup::Scratch removal failed; scenario outcomes remain in the uploaded part-B bundle.'
+            printf '### Scratch cleanup\n\nfailed; scenario outcomes and the uploaded part-B evidence are unchanged.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
