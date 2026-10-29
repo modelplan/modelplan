@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "U14 shape v1",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "baselineVersion": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$"
+    },
+    "fidelity": {
+      "type": "string",
+      "enum": [
+        "hand-built",
+        "approved-shape-export"
+      ]
+    },
+    "approvalRef": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "covers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "minItems": 0,
+      "maxItems": 1000,
+      "uniqueItems": true
+    },
+    "knownGaps": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      },
+      "minItems": 1,
+      "maxItems": 1000
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+      },
+      "minItems": 0,
+      "maxItems": 1000,
+      "uniqueItems": true
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "state": {
+                "enum": [
+                  "json"
+                ]
+              },
+              "shape": {
+                "$ref": "#/$defs/node"
+              }
+            },
+            "required": [
+              "path",
+              "state",
+              "shape"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "state": {
+                "enum": [
+                  "empty",
+                  "corrupt"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "state"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 1000
+    },
+    "consent": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "missing",
+            "corrupt",
+            "v1"
+          ]
+        },
+        "privacy": {
+          "type": "string",
+          "enum": [
+            "automatic",
+            "passive"
+          ]
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "allowed",
+              "denied",
+              "unset"
+            ]
+          },
+          "maxProperties": 100,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          }
+        }
+      },
+      "required": [
+        "state",
+        "privacy",
+        "tools"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "baselineVersion",
+    "fidelity",
+    "approvalRef",
+    "covers",
+    "knownGaps",
+    "tools",
+    "files",
+    "consent"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "object"
+              ]
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/node"
+              },
+              "maxProperties": 100,
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,79}$"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "fields"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "array"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/node"
+              },
+              "minItems": 0,
+              "maxItems": 100
+            }
+          },
+          "required": [
+            "kind",
+            "items"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "anyOf": [
+    {
+      "properties": {
+        "fidelity": {
+          "const": "hand-built"
+        },
+        "approvalRef": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "properties": {
+        "fidelity": {
+          "const": "approved-shape-export"
+        },
+        "approvalRef": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  ]
+}
