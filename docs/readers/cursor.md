@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Cursor reader card
 
-**Status: draft POST approval card, revision 1, reviewed 2026-10-29. Default: keep disabled.**
-This card records a proposed request pin, not an approval or an enablement change.
-`cursor.account_usage.saved_login` remains subject to `policy_pending`; neither an
-old connection nor a saved-login grant overrides the [POST gate](integration-standard.md#1-classify-the-read-path-not-the-tool).
+**Status: POST request set approved as pinned, revision 1, 2026-10-29.**
+Owner approval covers only the methods, authorities, paths and closed body schemas
+below. This documentation does not change the compiled policy or grant user consent.
+The saved-login scope remains O-class, standard and not pre-selected
+(`defaultCheck: false`); a user opts in per scope. Runtime enablement and its
+recording-transport verification are a separate wired change.
 
-- Client source: [cursor.go at d9d1f01e17e96dcced1802debe230856154f20a1](https://github.com/modelplan/modelplan/blob/d9d1f01e17e96dcced1802debe230856154f20a1/cli/internal/quota/cursor.go). These reader bytes also match the U2a gate handoff; [PolicyPending at d36622f](https://github.com/modelplan/modelplan/blob/d36622f1789300b109c4bb31aacc9d33de608416/cli/internal/quota/admission_policy.go) is the separate veto entry point.
+- Client source: [cursor.go at d9d1f01e17e96dcced1802debe230856154f20a1](https://github.com/modelplan/modelplan/blob/d9d1f01e17e96dcced1802debe230856154f20a1/cli/internal/quota/cursor.go). These reader bytes also match the U2a gate handoff; [PolicyPending at d36622f](https://github.com/modelplan/modelplan/blob/d36622f1789300b109c4bb31aacc9d33de608416/cli/internal/quota/admission_policy.go) is the historical veto entry point.
 - Vendor source: [Cursor Admin API](https://cursor.com/docs/account/teams/admin-api), checked 2026-10-29. It documents team/admin-key APIs, not the private saved-login plan/period RPCs below. No public vendor implementation or no-side-effects contract for those RPCs was established.
 - References compared: [CodexBar CursorStatusProbe](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/Cursor/CursorStatusProbe.swift) and [app-auth adapter](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/Cursor/CursorStatusProbe%2BAppAuth.swift), `ee890b5f392e70d6e20162d3e95cf9f1be265b60` (MIT); [Token Monitor probe](https://github.com/Javis603/token-monitor/blob/e1c393cca85668aaf5e52798a291277e34999dca/src/shared/providers/cursor/probe.js) and [auth source](https://github.com/Javis603/token-monitor/blob/e1c393cca85668aaf5e52798a291277e34999dca/src/shared/providers/cursor/auth.js), `e1c393cca85668aaf5e52798a291277e34999dca` (MIT).
 
@@ -172,11 +174,11 @@ approved-POST schema/transport or live-server safety result is claimed.
 
 ## Choice
 
-Proposed capability and tier: exactly C1+C2, H/O, standard and unchecked, **only
-if later approved and otherwise admitted**. Current choice: disabled. A Cookie
+Approved capability and tier: exactly C1+C2, H/O, standard and unchecked
+(`defaultCheck: false`), subject to per-scope consent and shared admission/budget
+rules. A Cookie
 header does not reclassify the app-owned sign-in as a browser-session grant.
-Local-history consent remains separate; the absent Cursor count adapter is not
-papered over with a remote reading. Reject credential persistence, browser import,
+Local-history consent remains separate and is never replaced by a remote reading. Reject credential persistence, browser import,
 extra endpoint waterfalls, arbitrary destinations and GET substitution.
 
 Licence: original card/schema analysis of the public client; no upstream code is
@@ -184,11 +186,11 @@ ported. Linked MIT reference code retains its own grant and notices.
 
 ## Owner decision
 
-- [ ] **Approve as pinned** — record this card revision and client/source SHA; authorize only C1/C2, these authorities and the empty-body schemas.
-- [ ] **Approve with changes** — specify changed requests/auth/data capability, publish a revised pin, then rerun the transport and red-line scenarios.
-- [x] **Keep disabled — default while no owner decision is recorded.**
+Owner decision 2026-10-29: approved as pinned
 
-Decision/date/approved pin: **pending**. POST approval is not user consent,
-a waiver of red lines, authority for an Admin API key, or L2 admission. Resolve
-the explicit evidence gaps and pass the owner-shaped U14 scenario before
-catalogue enablement. This card and its draft PR do not enable the scope.
+Approved pin: revision 1 of this card and the client source
+`d9d1f01e17e96dcced1802debe230856154f20a1` linked above. Approval covers only
+the listed request set and body schemas. It does not grant user consent, change
+the O-class unchecked default, waive red lines or establish L2 acceptance.
+The tests and evidence gaps above describe the pinned review and historical
+gate fixtures; the enabled production implementation is verified separately.

@@ -1,12 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Gemini Code Assist reader card
 
-**Status: draft POST approval card, revision 1, reviewed 2026-10-29. Default: keep disabled.**
-This card records a proposed request pin, not an approval or an enablement change.
-`gemini.account_usage.saved_login` remains subject to `policy_pending`. A saved-login
-grant cannot override the [POST gate](integration-standard.md#1-classify-the-read-path-not-the-tool).
+**Status: POST request set approved as pinned, revision 1, 2026-10-29.**
+Owner approval covers only the methods, authorities, paths and closed body schemas
+below. This documentation does not change the compiled policy or grant user consent.
+The saved-login scope remains O-class, standard and not pre-selected
+(`defaultCheck: false`); a user opts in per scope. Runtime enablement and its
+recording-transport verification are a separate wired change.
 
-- Client source: [gemini.go at d9d1f01e17e96dcced1802debe230856154f20a1](https://github.com/modelplan/modelplan/blob/d9d1f01e17e96dcced1802debe230856154f20a1/cli/internal/quota/gemini.go). These reader bytes also match the U2a gate handoff; [PolicyPending at d36622f](https://github.com/modelplan/modelplan/blob/d36622f1789300b109c4bb31aacc9d33de608416/cli/internal/quota/admission_policy.go) is the separate veto entry point.
+- Client source: [gemini.go at d9d1f01e17e96dcced1802debe230856154f20a1](https://github.com/modelplan/modelplan/blob/d9d1f01e17e96dcced1802debe230856154f20a1/cli/internal/quota/gemini.go). These reader bytes also match the U2a gate handoff; [PolicyPending at d36622f](https://github.com/modelplan/modelplan/blob/d36622f1789300b109c4bb31aacc9d33de608416/cli/internal/quota/admission_policy.go) is the historical veto entry point.
 - Vendor source: Gemini CLI [server.ts](https://github.com/google-gemini/gemini-cli/blob/363a13119a57354f469732577518b9d6b319d1d6/packages/core/src/code_assist/server.ts), [types.ts](https://github.com/google-gemini/gemini-cli/blob/363a13119a57354f469732577518b9d6b319d1d6/packages/core/src/code_assist/types.ts), commit `363a13119a57354f469732577518b9d6b319d1d6` (Apache-2.0).
 - References compared: [CodexBar GeminiStatusProbe](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Providers/Gemini/GeminiStatusProbe.swift), `ee890b5f392e70d6e20162d3e95cf9f1be265b60` (MIT); [Pulse GeminiUsageService](https://github.com/qunqin24/Pulse/blob/7668384cbcf357bba7dee4af85b4052a59c6e35d/Sources/Pulse/Providers/Profiled/GeminiUsageService.swift), v1.12.4, `7668384cbcf357bba7dee4af85b4052a59c6e35d` (Apache-2.0).
 
@@ -195,9 +197,9 @@ No approved-POST transport/body-schema or live-server safety result is claimed.
 
 ## Choice
 
-Proposed capability and tier: the exact H/O saved-login request set above,
-standard and unchecked, **only if later approved and otherwise admitted**.
-Current choice: disabled. Local history keeps its separate consent and does not
+Approved capability and tier: the exact H/O saved-login request set above,
+standard and unchecked (`defaultCheck: false`), subject to per-scope consent
+and the shared admission/budget rules. Local history keeps its separate consent and does not
 stand in for account quota. Reject token refresh, arbitrary selectors/hosts,
 project enumeration, browser/CLI fallbacks and method substitution.
 
@@ -206,11 +208,11 @@ ported. Linked MIT/Apache-2.0 sources retain their notices and terms.
 
 ## Owner decision
 
-- [ ] **Approve as pinned** — record this card revision and client/source SHA; authorize only G1/G2 and these closed schemas.
-- [ ] **Approve with changes** — specify changed fields/request set/eligible accounts, publish a revised code pin, then rerun the transport and red-line scenarios.
-- [x] **Keep disabled — default while no owner decision is recorded.**
+Owner decision 2026-10-29: approved as pinned
 
-Decision/date/approved pin: **pending**. A POST approval is not a grant of user
-consent, a waiver of red lines, or L2 admission. Resolve the explicit evidence
-gaps and run the owner-shaped U14 scenario before catalogue enablement. This
-card and its draft PR do not enable the scope.
+Approved pin: revision 1 of this card and the client source
+`d9d1f01e17e96dcced1802debe230856154f20a1` linked above. Approval covers only
+the listed request set and body schemas. It does not grant user consent, change
+the O-class unchecked default, waive red lines or establish L2 acceptance.
+The tests and evidence gaps above describe the pinned review and historical
+gate fixtures; the enabled production implementation is verified separately.
