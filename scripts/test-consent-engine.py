@@ -9,6 +9,7 @@ No network download, user HOME or real login is used by this runner.
 import argparse
 import concurrent.futures
 import hashlib
+import fcntl
 import http.server
 import json
 import os
@@ -194,6 +195,34 @@ def main():
                 assert sum(bool(r.get('committed')) for r in replies) == 1, replies
                 assert sum(r.get('error') == 'stale_generation' for r in replies) == 1, replies
                 outcomes.append(dict(scenario='U2-two-process-writers', outcome='pass'))
+
+            for lifecycle in ('pending-regrant', 'completed-reset'):
+                h = Home(root / lifecycle, args.cli, proxy)
+                h.allow()
+                h.refresh()
+                initial = h.run(['quota', '--json', '--offline'], check=True)
+                assert len(json.loads(initial.stdout)['accounts']) == 1
+                calls = h.calls()
+                assert calls.count('account.getQuota') == 1
+                if lifecycle == 'pending-regrant':
+                    with Path(str(h.store) + '.readers.lock').open('a') as lock:
+                        fcntl.flock(lock, fcntl.LOCK_EX)
+                        receipt = h.mutate(deny=['copilot.runtime_usage'])
+                        assert receipt['code'] == 'cleanup_pending'
+                    h.allow()
+                else:
+                    old_epoch = h.state()['storeEpoch']
+                    h.store.write_text('damaged completed-capture store')
+                    h.run(['consent', 'reset', 'confirmed', '--json'], check=True)
+                    assert h.state()['storeEpoch'] != old_epoch
+                    before_grant = h.run(['quota', '--json', '--offline'], check=True)
+                    assert not json.loads(before_grant.stdout)['accounts']
+                    h.allow()
+                offline = h.run(['quota', '--json', '--offline'], check=True)
+                assert not json.loads(offline.stdout)['accounts'], lifecycle + ': completed old capture reappeared'
+                h.refresh()
+                assert h.calls() == calls, lifecycle + ': grant/reset bypassed shared read budget'
+                outcomes.append(dict(scenario='U2-completed-capture-' + lifecycle, outcome='pass'))
 
             for action in ('deny', 'forget'):
                 h = Home(root / ('retired-' + action), args.cli, proxy)

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -82,7 +81,8 @@ func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, adm
 	if err == nil && ((tool == "gemini" && !setting.Enabled) || (tool == "qwen" && !setting.Qwen)) {
 		allowed = false
 	}
-	a := HistoryAccess{Allowed: allowed, Denied: decided && record.DeniedSources[consent.Local], Privacy: mode}
+	scope := state.ScopeFor(tool, consent.Local)
+	a := HistoryAccess{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Allowed: allowed, Denied: decided && record.DeniedSources[consent.Local], Privacy: mode}
 	if (tool == "gemini" && os.Getenv("MODELPLAN_GEMINI") == "off") || (tool == "qwen" && os.Getenv("MODELPLAN_QWEN") == "off") {
 		a.Privacy = consent.Off
 		mode = consent.Off
@@ -214,9 +214,8 @@ func ForgetProductionHistoryLocked(cache, tool string) error {
 	if err != nil {
 		return err
 	}
-	prefix := "history-v1-" + tool + "-"
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), prefix) && strings.HasSuffix(entry.Name(), ".json") {
+		if owner, valid := HistoryCacheTool(entry.Name()); valid && owner == tool {
 			if err := os.Remove(filepath.Join(cache, "observed", entry.Name())); err != nil {
 				return errors.New("local history cleanup unavailable")
 			}

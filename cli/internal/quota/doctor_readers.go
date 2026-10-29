@@ -181,7 +181,7 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 				if state != "ok" {
 					failure = state
 				}
-				if e.Account != nil {
+				if e.Account != nil && captureAllowed(p, id, e.Admission, false) {
 					row.Windows += diagnosticWindows(e.Account.Windows, now)
 					if e.Account.ObservedAt.After(last) {
 						last = e.Account.ObservedAt

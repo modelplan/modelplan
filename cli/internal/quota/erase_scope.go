@@ -34,7 +34,7 @@ func EraseScope(p Paths, scope string, forget bool) error {
 			return err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), "history-v1-"+tool+"-") && strings.HasSuffix(entry.Name(), ".json") {
+			if owner, valid := localusage.HistoryCacheTool(entry.Name()); valid && owner == tool {
 				if err := os.Remove(filepath.Join(p.Cache, "observed", entry.Name())); err != nil {
 					return err
 				}

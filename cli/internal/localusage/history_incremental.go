@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 // existing installation key; ProfileRef is an opaque keyed reference. Neither
 // credentials nor raw identities are needed. No access is granted by detection.
 type HistoryAccess struct {
+	Admission           *consent.CaptureStamp
+	CaptureAllowed      func(*consent.CaptureStamp) bool
 	StillValid          func() bool
 	Publish             func(func() error) error
 	Allowed, Denied     bool
@@ -80,6 +83,7 @@ type historyCursor struct {
 	Align         bool `json:"align,omitempty"`
 }
 type historyState struct {
+	Admission       *consent.CaptureStamp    `json:"admission,omitempty"`
 	ValidationBytes int64                    `json:"validationBytes"`
 	SchemaVersion   int                      `json:"schemaVersion"`
 	Availability    string                   `json:"availability"`
@@ -182,6 +186,17 @@ func historySave(path string, v any) bool {
 func historyReadState(cache, tool string, a HistoryAccess) historyState {
 	s := historyState{}
 	if !historyLoad(historyPath(cache, tool, a), &s, 8<<20) || s.SchemaVersion != 1 || len(s.Files) > 256 || len(s.Entries) > 20000 {
+		s = historyState{SchemaVersion: 1}
+	}
+	scope := historyConsentScope(tool)
+	valid := false
+	if a.CaptureAllowed != nil {
+		valid = a.CaptureAllowed(s.Admission)
+	} else {
+		state, err := consent.Load(consent.Path())
+		valid = err == nil && state.CaptureAllowed(s.Admission, scope)
+	}
+	if !valid {
 		s = historyState{SchemaVersion: 1}
 	}
 	if s.Files == nil {
@@ -383,6 +398,11 @@ func RefreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 // The projection seam uses the same discovery, validation, complete-line cursor
 // advancement and atomic state writer as count-oriented history.
 func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAccess, now time.Time, projection *projectionRun) HistoryResult {
+	admission := a.Admission
+	if admission == nil {
+		state, _ := consent.Current()
+		admission = state.CaptureStamp(historyConsentScope(tool))
+	}
 	floor := 5 * time.Minute
 	if projection != nil {
 		floor = ProjectionInterval
@@ -784,6 +804,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		return ReadHistoryCache(cache, tool, a, now)
 	}
 	save := func() error {
+		s.Admission = admission
 		if !historySave(historyPath(cache, tool, a), s) {
 			return errors.New("history cache unavailable")
 		}
@@ -831,4 +852,11 @@ func ForgetHistoryProfile(cache, tool string, a HistoryAccess) error {
 		return fmt.Errorf("local history cleanup unavailable")
 	}
 	return nil
+}
+
+func historyConsentScope(tool string) string {
+	if tool == projectionTool {
+		tool = "claude"
+	}
+	return tool + ".local_history"
 }

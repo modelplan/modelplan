@@ -33,12 +33,13 @@ const (
 )
 
 type accountSnap struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	ObservedAt    time.Time `json:"observedAt"`
-	Status        string    `json:"status"` // ok | error
-	Error         string    `json:"error,omitempty"`
-	Plan          string    `json:"plan,omitempty"`
-	Windows       []Window  `json:"windows,omitempty"`
+	Admission     *consent.CaptureStamp `json:"admission,omitempty"`
+	SchemaVersion int                   `json:"schemaVersion"`
+	ObservedAt    time.Time             `json:"observedAt"`
+	Status        string                `json:"status"` // ok | error
+	Error         string                `json:"error,omitempty"`
+	Plan          string                `json:"plan,omitempty"`
+	Windows       []Window              `json:"windows,omitempty"`
 	// Credits: available reset credits; Expiries has one entry per credit whose details were
 	// returned (nil time = never expires). Count may exceed len(Expiries).
 	Credits *struct {
@@ -121,6 +122,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.New("Codex reader not permitted")
 	}
 	commit := func(s *accountSnap) error {
+		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
@@ -373,8 +375,18 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 
 // applyAccount merges a recent account reading into the Codex account from the logs: newest
 // observation per window, the account's plan and its reset credits. Without logs it stands alone.
-func applyAccount(r *Report, cache string, now time.Time) {
+func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
+	admission := consent.Capture()
+	if len(admissions) > 0 {
+		admission = admissions[0]
+	}
+	if !admission.Allows("codex", consent.Runtime) {
+		return
+	}
 	s := loadAccount(cache)
+	if s != nil && !admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
+		return
+	}
 	if s != nil && s.Status == toolcli.RuntimeMissing && now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now) {
 		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: toolcli.RuntimeMissing, Reason: toolcli.RuntimeNextStep, ErrorCode: "runtime_missing"})
 	}
