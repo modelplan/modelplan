@@ -1,11 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/app-cli/consent-grant-request.json",
-  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
   "x-behavior": {
-    "stdin": "one JSON object <=65536 bytes; disjoint allow/deny; IDs must be detected at commit time",
-    "atomic": "compare generation and current text version under the shared lock; stale changes nothing",
-    "scope": "standard routes only; native Claude is the only keychain choice; recording itself never prompts; a committed claude+Keychain allow is followed by one foreground Claude read that may (see consent-grant-response.json x-behavior.keychain)"
+    "stdin": "one JSON object <=65536 bytes; disjoint allow/deny/forget; allow requires detected, admitted scopes",
+    "atomic": "compare store epoch and generation under shared lock; old epochs reject before receipt lookup",
+    "scope": "per-scope identifiers; legacy tool IDs explicitly expand only their compiled covered routes; deny and forget accept retired scopes even with readers off",
+    "keychain": "credential interaction is separate from the shared five-minute remote budget"
   },
   "type": "object",
   "properties": {
@@ -27,7 +28,7 @@
       "items": {
         "type": "string",
         "description": "Machine value; not display text.",
-        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        "pattern": "^[a-z][a-z0-9-]{0,47}(\\.[a-z][a-z0-9_]{0,47}){0,3}$"
       },
       "uniqueItems": true
     },
@@ -36,27 +37,40 @@
       "items": {
         "type": "string",
         "description": "Machine value; not display text.",
-        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        "pattern": "^[a-z][a-z0-9-]{0,47}(\\.[a-z][a-z0-9_]{0,47}){0,3}$"
       },
       "uniqueItems": true
     },
     "keychain": {
       "type": "object",
-      "properties": {
-        "claude": {
-          "enum": [
-            "allow",
-            "deny"
-          ]
-        }
+      "propertyNames": {
+        "pattern": "^claude(\\.account_usage\\.saved_login)?$"
       },
-      "additionalProperties": false
+      "additionalProperties": {
+        "enum": [
+          "allow",
+          "deny"
+        ]
+      }
+    },
+    "expectStoreEpoch": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "forget": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,47}(\\.[a-z][a-z0-9_]{0,47}){1,3}$"
+      },
+      "uniqueItems": true
     }
   },
   "required": [
     "requestId",
     "expectGeneration",
-    "consentTextVersion"
+    "consentTextVersion",
+    "expectStoreEpoch"
   ],
   "additionalProperties": false
 }

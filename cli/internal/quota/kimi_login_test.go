@@ -63,7 +63,7 @@ func kimiLoginServer(t *testing.T, token string, mode *string, hits *int) {
 		_, _ = w.Write(kimiFixture(t, "ratios"))
 	}))
 	oldHost, oldClient := kimiLoginHost, nativeClient
-	kimiLoginHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "api.kimi.com")
 	t.Cleanup(func() { srv.Close(); kimiLoginHost, nativeClient = oldHost, oldClient })
 }
 
@@ -219,7 +219,7 @@ func TestKimiLoginRefusesCredentialRedirect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
 	defer srv.Close()
 	oldHost, oldClient := kimiLoginHost, nativeClient
-	kimiLoginHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "api.kimi.com")
 	defer func() { kimiLoginHost, nativeClient = oldHost, oldClient }()
 	if err := RefreshNative(context.Background(), p, kimiNow); err != nil {
 		t.Fatal(err)

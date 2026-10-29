@@ -1,5 +1,16 @@
 # Cursor native quota (beta)
 
+**U2a policy, integrated with U2:** Cursor plan and period usage's saved-login account-usage
+scope is disabled pending owner approval of its POST request set. The U2 integration
+makes zero remote calls even with retained consent, suppresses old remote quota
+and reports `policy_pending`. Local-history consent and readers are independent.
+The protocol details below describe the dormant compatibility implementation,
+not an enabled remote read path.
+
+**随 U2 集成的 U2a 准入门限：** POST 账户用量路径尚待所有者批准，现已禁用；即使保留了授权，
+生产读取也不发远程请求，不显示旧的远程额度，诊断返回 `policy_pending`。
+本机历史路径及其独立授权不受影响。下文记录保留的兼容实现，并非已启用的远程路径。
+
 The saved-login reader needs explicit shared consent through
 `quota.Paths.ReaderAccess`. Existing connection settings alone do not grant access.
 CLIJIT owns detection, consent records and worker/command wiring. Consent line:

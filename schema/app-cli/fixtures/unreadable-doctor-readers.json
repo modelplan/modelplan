@@ -68,6 +68,16 @@
       "detected": "no",
       "last": "unknown",
       "provider": "cursor",
+      "state": "unavailable:policy_pending",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "cursor:history",
       "state": "unavailable:not_admitted",
       "windows": 0
     },
@@ -88,7 +98,7 @@
       "detected": "no",
       "last": "unknown",
       "provider": "gemini",
-      "state": "unavailable:not_admitted",
+      "state": "unavailable:policy_pending",
       "windows": 0
     },
     {

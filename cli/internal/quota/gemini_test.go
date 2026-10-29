@@ -18,6 +18,7 @@ var geminiNow = time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 
 func geminiTestPaths(t *testing.T) Paths {
 	t.Helper()
+	allowPOSTProtocolFixture(t, "gemini")
 	isolateHome(t)
 	for _, name := range []string{"MODELPLAN_READERS", "MODELPLAN_NATIVE", "MODELPLAN_IDENTITY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "CODE_ASSIST_ENDPOINT", "CODE_ASSIST_API_VERSION", "GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_PROJECT_ID", "GEMINI_FORCE_ENCRYPTED_FILE_STORAGE"} {
 		t.Setenv(name, "")
@@ -107,7 +108,7 @@ func geminiServer(t *testing.T, mode *string, paths *[]string) {
 		_, _ = w.Write(b)
 	}))
 	oldHost, oldClient := geminiHost, nativeClient
-	geminiHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cloudcode-pa.googleapis.com")
 	t.Cleanup(func() { srv.Close(); geminiHost, nativeClient = oldHost, oldClient })
 }
 
@@ -290,7 +291,7 @@ func TestGeminiDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
 	defer srv.Close()
 	oldHost, oldClient := geminiHost, nativeClient
-	geminiHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cloudcode-pa.googleapis.com")
 	defer func() { geminiHost, nativeClient = oldHost, oldClient }()
 	if err := RefreshNative(context.Background(), p, geminiNow); err != nil {
 		t.Fatal(err)

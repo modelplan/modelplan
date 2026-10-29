@@ -6,5 +6,7 @@
   "consentTextVersion": 2,
   "generation": 0,
   "mode": "automatic",
+  "scopes": [],
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": []
 }

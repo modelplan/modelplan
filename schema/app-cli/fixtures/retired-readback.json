@@ -1,0 +1,55 @@
+{
+  "consentText": {
+    "en": "Allow ModelPlan on this user account—App, plugins and all CLI copies—to read usage for the selected tools using their existing sign-in, through native readers or audited standard CodexBar access. CodexBar is downloaded automatically with a verified checksum; you do not install it. Your credential is sent only to the provider hosts shown for that tool; it is never sent to ModelPlan servers or stored by ModelPlan. macOS may ask for Keychain access for our own readers; standard CodexBar access has Keychain and browser-cookie import disabled. Browser-session access is excluded and requires separate per-provider consent. You can turn this off in Settings.",
+    "zh": "允许此用户账户下的 ModelPlan App、插件和所有 CLI 副本，使用所选工具已有的登录，通过原生读取器或经审计的标准 CodexBar 访问读取用量。CodexBar 会自动下载并校验校验和，无需自行安装。凭据仅发送至各工具所列的服务商主机，绝不发送至 ModelPlan 服务器，也不由 ModelPlan 保存。macOS 可能为原生读取器请求钥匙串访问权限；标准 CodexBar 访问禁用钥匙串和浏览器 Cookie 导入。浏览器会话访问不在本次授权范围内，须按服务商单独授权。可随时在设置中关闭。"
+  },
+  "consentTextVersion": 2,
+  "generation": 2,
+  "mode": "automatic",
+  "scopes": [
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": false,
+      "keychain": null,
+      "retired": false,
+      "route": "local_log",
+      "scope": "codex.local_history",
+      "state": "denied",
+      "tool": "codex"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": false,
+      "keychain": null,
+      "retired": false,
+      "route": "runtime_rpc",
+      "scope": "codex.runtime_usage",
+      "state": "denied",
+      "tool": "codex"
+    }
+  ],
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tools": [
+    {
+      "accessClass": "not-read",
+      "allowed": false,
+      "backend": "off",
+      "detected": false,
+      "displayName": "Codex",
+      "hostDetails": [
+        {
+          "host": "chatgpt.com",
+          "note": "Codex runtime"
+        }
+      ],
+      "hosts": [
+        "https://chatgpt.com (Codex runtime)"
+      ],
+      "id": "codex",
+      "keychain": "unset",
+      "readerId": "native:codex"
+    }
+  ]
+}

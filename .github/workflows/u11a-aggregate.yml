@@ -1,0 +1,31 @@
+name: U11a aggregation
+on:
+  pull_request:
+    paths:
+      - scripts/u11a-aggregate.py
+      - scripts/tests/test_u11a_aggregate.py
+      - scripts/testdata/u11a/**
+      - docs/u11a-aggregation.md
+      - .github/workflows/u11a-aggregate.yml
+  push:
+    branches: [main]
+    paths:
+      - scripts/u11a-aggregate.py
+      - scripts/tests/test_u11a_aggregate.py
+      - scripts/testdata/u11a/**
+      - docs/u11a-aggregation.md
+      - .github/workflows/u11a-aggregate.yml
+permissions:
+  contents: read
+concurrency:
+  group: u11a-aggregate-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  synthetic-samples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s scripts/tests -p test_u11a_aggregate.py -v

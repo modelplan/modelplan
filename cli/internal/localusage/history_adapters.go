@@ -84,6 +84,8 @@ func historyAllowed(tool, rel string) bool {
 	p := strings.Split(filepath.ToSlash(rel), "/")
 	name := p[len(p)-1]
 	switch tool {
+	case "cursor":
+		return len(p) == 1 && name == "usage.jsonl"
 	case projectionTool:
 		return len(p) == 3 && p[0] == "projects" && projectionSessionName(name)
 	case "amp":
@@ -104,7 +106,7 @@ func historyAllowed(tool, rel string) bool {
 	return false
 }
 
-var historyDepths = map[string]int{"amp": 0, "droid": 1, "copilot": 1, "kimi": 2, "grok": 2, "qwen": 3, "gemini": 3}
+var historyDepths = map[string]int{"cursor": 0, "amp": 0, "droid": 1, "copilot": 1, "kimi": 2, "grok": 2, "qwen": 3, "gemini": 3}
 
 func historyDepth(tool string) int {
 	if tool == projectionTool {
@@ -127,6 +129,11 @@ func historySession(tool, rel string) string {
 
 func decodeHistory(tool string, b []byte, jsonl bool, state *historyDecodeState) ([]historyDatum, error) {
 	switch tool {
+	case "cursor":
+		if !jsonl {
+			return nil, errUnsupportedHistory
+		}
+		return decodeCursorCounts(b)
 	case "qwen", "gemini":
 		var records []record
 		var err error

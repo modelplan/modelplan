@@ -1,0 +1,30 @@
+{
+  "code": "ok",
+  "committed": true,
+  "committedGeneration": 1,
+  "generation": 1,
+  "ok": true,
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tools": [
+    {
+      "accessClass": "standard",
+      "allowed": true,
+      "backend": "native",
+      "detected": true,
+      "displayName": "Codex",
+      "hostDetails": [
+        {
+          "host": "chatgpt.com",
+          "note": "Codex runtime"
+        }
+      ],
+      "hosts": [
+        "https://chatgpt.com (Codex runtime)"
+      ],
+      "id": "codex",
+      "keychain": "unset",
+      "readerId": "native:codex"
+    }
+  ]
+}

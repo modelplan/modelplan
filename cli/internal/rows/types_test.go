@@ -84,3 +84,19 @@ func TestInputCannotBePublishedAsRows(t *testing.T) {
 		t.Fatalf("raw projection inputs were serializable: %s", b)
 	}
 }
+
+func TestAccountRouteIsRequiredAndBounded(t *testing.T) {
+	for _, route := range []string{"saved_login_api", "runtime_rpc", "local_log", "api_key_api", "local_sqlite", "status_line", "browser_session", "manual", "unknown", "", "private_token@example.test"} {
+		in := sampleInput()
+		in.Accounts[0].Route = Route(route)
+		out := Build(in)
+		account := object(t, out.Rows[0].Accounts[0])
+		want := route
+		if route == "" || route == "private_token@example.test" {
+			want = "unknown"
+		}
+		if string(account["route"]) != `"`+want+`"` {
+			t.Fatalf("route %q: got %s, want %q", route, account["route"], want)
+		}
+	}
+}

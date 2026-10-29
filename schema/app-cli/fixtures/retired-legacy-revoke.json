@@ -1,0 +1,23 @@
+{
+  "code": "ok",
+  "committed": true,
+  "committedGeneration": 2,
+  "generation": 2,
+  "ok": true,
+  "requestId": "00000000-0000-4000-8000-000000000091",
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tools": [
+    {
+      "accessClass": "not-read",
+      "allowed": false,
+      "backend": "off",
+      "detected": false,
+      "displayName": "retired-tool",
+      "hostDetails": [],
+      "hosts": [],
+      "id": "retired-tool",
+      "keychain": "unset",
+      "readerId": "native:retired-tool"
+    }
+  ]
+}

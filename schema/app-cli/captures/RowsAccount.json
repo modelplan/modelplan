@@ -1,0 +1,43 @@
+{
+  "route": "saved_login_api",
+  "subscriptionRef": "0123456789abcdef",
+  "accountLocator": "0123456789abcdef",
+  "plan": {
+    "id": "codex",
+    "name": {
+      "en": "synthetic",
+      "zh": "synthetic"
+    }
+  },
+  "beta": false,
+  "credits": {
+    "balance": 42.5,
+    "unit": "synthetic"
+  },
+  "valueState": "current",
+  "observedAt": "2026-10-29T12:00:00.123456789Z",
+  "freshUntil": "2026-10-29T12:00:00.123456789Z",
+  "lastFailure": {
+    "code": "ok",
+    "at": "2026-10-29T12:00:00.123456789Z"
+  },
+  "windows": [
+    {
+      "id": "codex",
+      "role": "session",
+      "durationSeconds": 1,
+      "label": {
+        "en": "synthetic",
+        "zh": "synthetic"
+      },
+      "limitKey": "synthetic",
+      "poolKey": "synthetic",
+      "resetMode": "fixed",
+      "remainingPercent": 42.5,
+      "resetsAt": "2026-10-29T12:00:00.123456789Z",
+      "observedAt": "2026-10-29T12:00:00.123456789Z",
+      "current": false,
+      "validUntil": "2026-10-29T12:00:00.123456789Z"
+    }
+  ]
+}
