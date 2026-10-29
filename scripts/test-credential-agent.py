@@ -141,10 +141,18 @@ class Agent:
         return self.identifier
 
     def request(self, method, params):
-        identifier = self.send(method, params)
-        result = self.wait(lambda message: message.get('id') == identifier)
-        assert 'error' not in result, 'unexpected RPC error: ' + method
-        return result['result']
+        end = time.monotonic() + 3
+        while True:
+            identifier = self.send(method, params)
+            result = self.wait(lambda message: message.get('id') == identifier)
+            # A concurrent fenced reader commit may refuse a read publication.
+            # Retry only this recoverable read error, within one bounded window.
+            code = result.get('error', {}).get('code')
+            if method in ('rows/subscribe', 'diagnostics/get') and code == -32023 and time.monotonic() < end:
+                time.sleep(.01)
+                continue
+            assert 'error' not in result, 'unexpected RPC error: ' + method + ' code=' + str(code)
+            return result['result']
 
     def grant(self, keychain=True):
         state = self.state()
