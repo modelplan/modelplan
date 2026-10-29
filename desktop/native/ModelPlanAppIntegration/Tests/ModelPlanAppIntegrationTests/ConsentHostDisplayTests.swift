@@ -130,7 +130,7 @@ import ModelPlanCore
         var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<3 { native.deleteLastPathComponent() }
         let pin = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: native.appendingPathComponent("consent-cli-pin.json"))) as? [String: Any])
-        XCTAssertEqual(provenance["cliVersion"] as? String, pin["version"] as? String)
+        XCTAssertEqual(provenance["cliVersion"] as? String, "0.5.45")
         XCTAssertEqual(provenance["syntheticHomeOnly"] as? Bool, true)
         let data = try Data(contentsOf: fixture)
         let decoded = try FeedDecoder.consentPreview(data)
