@@ -8,6 +8,13 @@ import ModelPlanShell
     private let surfaces: any NativeSurfaceProvider
     private let injectedTransport: (any CLITransport)?
     private let statusItemTitle: String
+    private let statusItemImage: NSImage?
+    private let menuBarProvider: (any CommunityMenuBarProviding)?
+    public private(set) var menuBarPresentation = CommunityMenuBarPresentation.empty
+    public private(set) lazy var menuBarReadingItem: NSMenuItem = {
+        let item = NSMenuItem(title: menuBarPresentation.detail, action: nil, keyEquivalent: "")
+        item.isEnabled = false; return item
+    }()
     private let companion: (any CommunityCompanionSurface)?
     private let makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)?
     private var settings: (any CommunitySettingsIntegration)?
@@ -22,9 +29,14 @@ import ModelPlanShell
     public init(surfaces: any NativeSurfaceProvider,
                 companion: (any CommunityCompanionSurface)? = nil,
                 transport: (any CLITransport)? = nil, statusItemTitle: String = "ModelPlan",
+                statusItemImage: NSImage? = nil, menuBarProvider: (any CommunityMenuBarProviding)? = nil,
                 makeSettings: (@MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration)? = nil) {
         self.surfaces = surfaces; self.companion = companion; self.makeSettings = makeSettings
-        self.injectedTransport = transport; self.statusItemTitle = statusItemTitle; super.init()
+        self.injectedTransport = transport; self.statusItemTitle = statusItemTitle
+        self.statusItemImage = (statusItemImage ?? NSImage(named: NSImage.actionTemplateName))?.copy() as? NSImage
+        self.menuBarProvider = menuBarProvider
+        self.statusItemImage?.isTemplate = true; self.statusItemImage?.size = .init(width: 18, height: 18)
+        super.init()
     }
     /// A single runtime/store owns either the explicit preview feed or the pinned live helper.
     func makeRuntime() -> CommunityRuntime {
@@ -130,8 +142,8 @@ import ModelPlanShell
             }
         }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = statusItemTitle
         let menu = NSMenu()
+        menu.addItem(menuBarReadingItem); menu.addItem(.separator())
         let show = menu.addItem(withTitle: "Status…", action: #selector(showStatus), keyEquivalent: "")
         show.target = self
         menu.addItem(withTitle: "Intel untested; 3D may stutter", action: nil, keyEquivalent: "")
@@ -175,6 +187,7 @@ import ModelPlanShell
     private func render() {
         guard let runtime, !terminating else { return }
         let snapshot = runtime.store.view(), diagnostics = runtime.store.diagnostics
+        updateMenuBar(snapshot: snapshot, diagnostics: diagnostics, now: Date())
         (settings as? any CommunityUsageRemediation)?.updateUsageState(snapshot: snapshot, diagnostics: diagnostics, now: Date())
         companion?.render(snapshot: snapshot, diagnostics: diagnostics)
         overview?.render(snapshot: snapshot, diagnostics: diagnostics)
@@ -182,6 +195,20 @@ import ModelPlanShell
             let selection = runtime.selection(for: consumer)
             consumer.render(selection: selection, publishedAt: runtime.store.modelSelectionFeeds().publication?.publishedAt?.date, now: Date())
         }
+    }
+    /// Shared by the real status button and in-memory construction checks; never creates an item/window.
+    func updateMenuBar(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date, button: NSButton? = nil) {
+        let next = menuBarProvider?.make(snapshot: snapshot, diagnostics: diagnostics, now: now) ?? .empty
+        menuBarPresentation = next; menuBarReadingItem.title = next.detail
+        guard let button = button ?? status?.button else { return }
+        statusItemImage?.isTemplate = true
+        button.image = statusItemImage
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = nil
+        button.attributedTitle = NSAttributedString(string: next.title)
+        button.imagePosition = next.title.isEmpty ? .imageOnly : .imageLeading
+        button.toolTip = statusItemTitle + " — " + next.detail
+        button.setAccessibilityLabel(statusItemTitle + " — " + next.detail)
     }
     public func windowWillClose(_ notification: Notification) {
         guard let closing = notification.object as? NSWindow, closing === window else { return }
