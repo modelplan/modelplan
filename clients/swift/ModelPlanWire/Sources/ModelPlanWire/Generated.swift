@@ -318,6 +318,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
     case `privacyBlocked`
     case `catalogueOff`
     case `notAdmitted`
+    case `policyPending`
     case `codexbarNotAudited`
     case `codexbarNotRead`
     case `codexbarAccessUnknown`
@@ -369,6 +370,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case "privacy_blocked": self = .`privacyBlocked`
         case "catalogue_off": self = .`catalogueOff`
         case "not_admitted": self = .`notAdmitted`
+        case "policy_pending": self = .`policyPending`
         case "codexbar_not_audited": self = .`codexbarNotAudited`
         case "codexbar_not_read": self = .`codexbarNotRead`
         case "codexbar_access_unknown": self = .`codexbarAccessUnknown`
@@ -422,6 +424,7 @@ public enum RowsCode: Codable, Sendable, Equatable {
         case .`privacyBlocked`: return "privacy_blocked"
         case .`catalogueOff`: return "catalogue_off"
         case .`notAdmitted`: return "not_admitted"
+        case .`policyPending`: return "policy_pending"
         case .`codexbarNotAudited`: return "codexbar_not_audited"
         case .`codexbarNotRead`: return "codexbar_not_read"
         case .`codexbarAccessUnknown`: return "codexbar_access_unknown"
