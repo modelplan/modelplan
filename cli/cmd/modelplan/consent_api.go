@@ -127,7 +127,10 @@ func persistedConsentTool(id string, r consent.Record) detect.Tool {
 	reader := r.ReaderID
 	kind, key, ok := strings.Cut(reader, ":")
 	if !ok || (kind != "native" && kind != "codexbar") || !consent.ValidTool(key) {
-		reader = ""
+		// A legacy or revoked record can lack route metadata. Keep the required
+		// logical display id valid without persisting it or claiming a reader
+		// exists. This helper never supplies the detected map used for grants.
+		reader = "native:" + id
 	}
 	name := id
 	for _, entry := range detect.Fallback().Detectors {

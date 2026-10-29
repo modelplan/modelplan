@@ -36,12 +36,13 @@
           "enum": [
             "native",
             "codexbar",
+            "codexbar-compat",
             "off"
           ]
         },
         "readerId": {
           "type": "string",
-          "description": "Machine value; not display text.",
+          "description": "Logical route metadata, not proof of reader availability or permission. A retired record without valid stored metadata uses native:<toolId> for display/revocation only.",
           "pattern": "^(native|codexbar):[a-z][a-z0-9-]*$"
         },
         "keychain": {

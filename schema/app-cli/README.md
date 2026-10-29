@@ -90,6 +90,23 @@ Settings service/decoder tests should load these files via the existing
 宿主命令失败返回 `failed`，`--offline` 返回 `planned` 且不执行宿主。
 样例仅在合成 HOME 中运行假宿主，不安装真实插件、不访问网络。
 
+## Retired consent records
+
+The same-checkout binary generator also captures `retired` (real grant, catalogue
+retirement, rejected re-grant, revoke receipt, then readback) and `retired-legacy`
+(a synthetic persisted grant with no reader/backend metadata, rejected re-grant,
+revoke receipt, then readback). Every raw command response is schema-validated
+before normalization; read-only views must leave the synthetic home unchanged.
+
+A retired record's `readerId` is logical display/revocation metadata. If its
+stored route is missing or invalid, the CLI emits `native:<toolId>` without
+persisting that fallback or claiming reader availability. New grants still
+require current detection. The backend enum includes `codexbar-compat` as a
+compatibility alias; the CLI normalizes persisted alias values to `codexbar`.
+
+退役授权的样例覆盖真实 CLI 的授权、目录移除、拒绝重新授权、撤销回执与读回，
+也覆盖缺少旧读取器元数据的记录。显示用的回退标识不写回授权，也不允许新授权。
+
 ## Scheduling and consent
 
 A normal desktop poll returns its current snapshot before detached work finishes.

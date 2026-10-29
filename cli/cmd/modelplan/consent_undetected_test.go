@@ -186,3 +186,12 @@ func TestConsentAPIPersistedBackendUsesWireVocabulary(t *testing.T) {
 		})
 	}
 }
+
+func TestPersistedConsentReaderFallbackIsDisplayOnly(t *testing.T) {
+	for _, stored := range []string{"", "legacy-reader", "native:/synthetic/credential-path", "unknown:retired-tool"} {
+		row := persistedConsentTool("retired-tool", consent.Record{ReaderID: stored})
+		if row.ReaderID != "native:retired-tool" || row.Preferred != "off" || row.Detected {
+			t.Fatalf("invalid persisted route became grant evidence: %+v", row)
+		}
+	}
+}

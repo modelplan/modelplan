@@ -182,6 +182,10 @@ func Generate(root, helper string) (map[string][]byte, error) {
 			}
 		}
 	}
+	if err := s.captureRetiredConsent(tmp); err != nil {
+		return nil, err
+	}
+	states = append(states, "retired", "retired-legacy")
 	// Offline publication failure has no JSON envelope: preserve the actual
 	// empty stdout and exit 3 rather than inventing a successful empty graph.
 	s.home, s.state = filepath.Join(tmp, "no-publication"), "fresh"
