@@ -97,9 +97,6 @@ func Generate(root string) ([]byte, error) {
 	cred["else"] = object{"not": object{"anyOf": []any{object{"required": []string{"accessToken"}}, object{"required": []string{"expiresAt"}}}}}
 	grant := b.defs["ConsentGrantParams"].(object)
 	grant["properties"].(object)["keychain"] = object{"type": "object", "additionalProperties": object{"type": "string", "enum": []string{"allow", "deny"}}}
-	history := b.defs["HistoryQueryParams"].(object)["properties"].(object)
-	history["limit"] = object{"type": "integer", "minimum": 1, "maximum": 500}
-	history["kind"] = object{"enum": []string{"tokens", "quota_cycles", "sessions"}}
 	b.defs["RequestID"] = object{"anyOf": []any{object{"type": "string"}, object{"type": "integer"}}}
 	b.defs["CancelParams"].(object)["properties"].(object)["id"] = object{"$ref": "#/$defs/RequestID"}
 	errorProps := b.defs["Error"].(object)["properties"].(object)
@@ -201,6 +198,26 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				name = field.Name
 			}
 			props[name] = b.schema(field.Type, true)
+			for _, constraint := range strings.Split(field.Tag.Get("schema"), ",") {
+				key, value, ok := strings.Cut(constraint, "=")
+				if !ok {
+					continue
+				}
+				property := props[name].(object)
+				switch key {
+				case "minimum", "maximum", "minLength", "maxLength":
+					number, err := strconv.Atoi(value)
+					if err != nil {
+						panic("invalid numeric wire constraint")
+					}
+					property[key] = number
+				case "pattern":
+					property[key] = value
+				default:
+					panic("unknown wire constraint")
+				}
+			}
+
 			optional := false
 			for _, option := range tag[1:] {
 				optional = optional || option == "omitempty"

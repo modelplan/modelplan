@@ -170,3 +170,66 @@ func TestErrorIDAndRefreshResultShape(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRequiredNullableFieldsCannotBecomeOptional(t *testing.T) {
+	for _, test := range []struct {
+		value any
+		keys  []string
+	}{
+		{wire.HistoryItem{}, []string{"model", "tokens", "window", "value"}},
+		{wire.ConsentScope{}, []string{"keychain"}},
+		{wire.ConsentReceipt{}, []string{"committedGeneration"}},
+		{wire.ScopeDiag{}, []string{"lastRead", "nextDueAt"}},
+	} {
+		raw, err := json.Marshal(test.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		for _, key := range test.keys {
+			if string(fields[key]) != "null" {
+				t.Fatalf("required nullable %T.%s was omitted or lost null: %s", test.value, key, raw)
+			}
+		}
+	}
+}
+
+func TestHistoryBoundsAndTypedDisabledReasons(t *testing.T) {
+	s := schema(t, "HistoryQueryParams")
+	query := wire.HistoryQueryParams{Kind: wire.HistoryTokens, Tool: "codex", Ref: "0123456789abcdef", Limit: 1}
+	if err := validate(t, s, query); err != nil {
+		t.Fatal(err)
+	}
+	query.Limit = 500
+	if err := validate(t, s, query); err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{0, 501} {
+		query.Limit = limit
+		if err := validate(t, s, query); err == nil {
+			t.Fatal("out-of-range history limit accepted")
+		}
+	}
+	query.Limit = 1
+	query.Ref = "private@example.test"
+	if err := validate(t, s, query); err == nil {
+		t.Fatal("unbounded history reference accepted")
+	}
+	query.Ref = "0123456789abcdef"
+	query.Kind = wire.HistoryKind("provider-free-text")
+	if err := validate(t, s, query); err == nil {
+		t.Fatal("untyped history kind accepted")
+	}
+	disabled := wire.ScopePolicyPending
+	facts := wire.ConsentFacts{Scopes: []wire.ConsentScope{{Scope: "gemini.account_usage.saved_login", Tool: "gemini", Route: rows.RouteSavedLoginAPI, State: wire.ConsentUnset, Disabled: &disabled}}}
+	if err := validate(t, schema(t, "ConsentFacts"), facts); err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []wire.RefreshDisabledReason{wire.RefreshCooldown, wire.RefreshReadOnly, wire.RefreshOffline, wire.RefreshPolicyPending} {
+		scheduled := wire.RefreshScheduled{Scope: "codex.runtime_usage", At: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC), DisabledReason: &reason}
+		if err := validate(t, schema(t, "RefreshScheduled"), scheduled); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

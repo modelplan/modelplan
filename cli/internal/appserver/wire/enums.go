@@ -105,3 +105,24 @@ func ErrorName(code int) string {
 		return "internal"
 	}
 }
+
+type HistoryKind string
+
+const (
+	HistoryTokens      HistoryKind = "tokens"
+	HistoryQuotaCycles HistoryKind = "quota_cycles"
+	HistorySessions    HistoryKind = "sessions"
+)
+
+type ScopeDisabledReason string
+
+const ScopePolicyPending ScopeDisabledReason = "policy_pending"
+
+type RefreshDisabledReason string
+
+const (
+	RefreshCooldown      RefreshDisabledReason = "cooldown"
+	RefreshReadOnly      RefreshDisabledReason = "read_only"
+	RefreshOffline       RefreshDisabledReason = "offline"
+	RefreshPolicyPending RefreshDisabledReason = "policy_pending"
+)

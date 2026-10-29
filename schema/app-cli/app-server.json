@@ -320,6 +320,9 @@
         "disabledReason": {
           "anyOf": [
             {
+              "enum": [
+                "policy_pending"
+              ],
               "type": "string"
             },
             {
@@ -916,7 +919,8 @@
             "tokens",
             "quota_cycles",
             "sessions"
-          ]
+          ],
+          "type": "string"
         },
         "limit": {
           "maximum": 500,
@@ -924,6 +928,8 @@
           "type": "integer"
         },
         "ref": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
           "type": "string"
         },
         "tool": {
@@ -1449,6 +1455,12 @@
         "disabledReason": {
           "anyOf": [
             {
+              "enum": [
+                "cooldown",
+                "read_only",
+                "offline",
+                "policy_pending"
+              ],
               "type": "string"
             },
             {
