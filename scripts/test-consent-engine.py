@@ -169,6 +169,8 @@ def main():
                 (h.root / 'block').touch()
                 reading = pool.submit(h.refresh)
                 await_file(h.root / 'reading')
+                original = h.run(['consent', 'grant', '--json'], old_allow, check=True)
+                assert json.loads(original.stdout)['committed']
                 h.store.write_text('damaged synthetic store')
                 r = h.run(['consent', 'reset', 'confirmed', '--json'], check=True)
                 reset = json.loads(r.stdout)
@@ -192,6 +194,25 @@ def main():
                 assert sum(bool(r.get('committed')) for r in replies) == 1, replies
                 assert sum(r.get('error') == 'stale_generation' for r in replies) == 1, replies
                 outcomes.append(dict(scenario='U2-two-process-writers', outcome='pass'))
+
+            for action in ('deny', 'forget'):
+                h = Home(root / ('retired-' + action), args.cli, proxy)
+                scope = 'retired-tool.account_usage.saved_login'
+                state = h.state()
+                state['scopes'][scope] = dict(allowed=True, consentTextVersion=2)
+                h.store.write_text(json.dumps(state))
+                readers = h.root / 'cache/observed/readers'
+                readers.mkdir(parents=True)
+                retained = readers / 'retired-tool.json'
+                retained.write_text(json.dumps(dict(schemaVersion=1, provider='retired-tool',
+                    nextAttemptAt='2099-01-01T00:00:00Z', entries=[dict(status='ok',
+                    profileKey='synthetic', account=dict(source='retired-tool', windows=[]))])))
+                h.env['MODELPLAN_READERS'] = 'off'
+                h.mutate(**{action: [scope]})
+                assert not retained.exists(), 'retired capture survived ' + action
+                assert not h.state()['scopes'][scope]['allowed']
+                assert not h.calls(), 'retired cleanup started a runtime'
+                outcomes.append(dict(scenario='U2-retired-reader-' + action + '-while-off', outcome='pass'))
 
             for old in args.old:
                 version, path = old.split('=', 1)

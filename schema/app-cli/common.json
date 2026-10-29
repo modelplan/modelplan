@@ -234,6 +234,12 @@
         },
         "cleanupPending": {
           "type": "boolean"
+        },
+        "disabledReason": {
+          "type": "string",
+          "enum": [
+            "policy_pending"
+          ]
         }
       },
       "required": [

@@ -31,7 +31,7 @@ func grantScopes(r consentRequest, stdout io.Writer, st *store.Store) int {
 				return consent.Record{}, errors.New("reader_unavailable")
 			}
 			// First-batch POST paths remain disabled until their cards are approved.
-			if d.ID == consent.ScopeGeminiAccountUsageSavedLogin || d.ID == consent.ScopeCursorAccountUsageSavedLogin {
+			if scope, pending := quota.PolicyPending(d.Tool); pending && scope == d.ID {
 				return consent.Record{}, errors.New("policy_pending")
 			}
 			record := consent.Record{ReaderID: t.ReaderID, Backend: t.Preferred}

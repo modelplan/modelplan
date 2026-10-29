@@ -147,12 +147,18 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 		if n.KeyEnv != "" && !managed {
 			class = consent.ExplicitKey
 		}
+		_, policyPending := PolicyPending(id)
+		if policyPending {
+			admitted = false
+		}
 		row := ReaderDiagnostic{Provider: id, Detected: yesNo(presence[id]), Consent: diagnosticConsent(policy, id, class), Admitted: yesNo(admitted), Last: "unknown", State: "unavailable:not_admitted", Beta: n.Managed != nil || id == "copilot" || id == "antigravity" || (id == "zai" && g.ConfigSource != nil)}
 		// Legacy explicit connections are existing consent, even without a new record.
 		if _, decided := policy.Tools[id]; !decided && (admitted || (x.Origin == "connections.json" && x.Backend == BackendNative)) {
 			row.Consent = "granted"
 		}
 		switch {
+		case policyPending:
+			row.State = "unavailable:policy_pending"
 		case !admitted:
 			row.State = diagnosticBlocked(x.Blocked)
 			if row.Consent == "denied" {

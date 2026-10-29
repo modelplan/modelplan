@@ -393,7 +393,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 			return err
 		}
 	}
-	if n := nativeReaders[tool]; n != nil && n.Managed != nil && scopeClass != consent.ExplicitKey && scopeClass != consent.Bridge {
+	if n := nativeReaders[tool]; (n == nil || n.Managed != nil) && scopeClass != consent.ExplicitKey && scopeClass != consent.Bridge {
 		if _, err := os.Stat(readerPath(p.Cache, tool)); err == nil {
 			if err := ForgetReader(p.Cache, tool); err != nil {
 				return err

@@ -164,7 +164,7 @@ func TestMiniMaxFallbackBoundaries(t *testing.T) {
 		body     string
 		fallback bool
 	}{
-		{"not-found", 404, "", true}, {"forbidden", 403, "", true}, {"unauthorized", 401, "", true}, {"method", 405, "", true},
+		{"not-found", 404, "", true}, {"forbidden", 403, "", false}, {"unauthorized", 401, "", false}, {"method", 405, "", true},
 		{"vendor-auth", 200, `{"base_resp":{"status_code":1004,"status_msg":"synthetic-key-secret"}}`, true},
 		{"rate-limited", 429, "", false}, {"server", 500, "", false}, {"redirect", 302, "", false},
 		{"invalid", 200, "{", false}, {"unsupported", 200, `{}`, false},

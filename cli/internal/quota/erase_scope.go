@@ -27,6 +27,19 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		if err := localusage.ForgetProductionHistoryLocked(p.Cache, tool); err != nil {
 			return err
 		}
+		// Retired adapters can leave captures in the established cache namespace.
+		// Remove those by validated tool ID even when no current parser owns them.
+		entries, err := os.ReadDir(filepath.Join(p.Cache, "observed"))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "history-v1-"+tool+"-") && strings.HasSuffix(entry.Name(), ".json") {
+				if err := os.Remove(filepath.Join(p.Cache, "observed", entry.Name())); err != nil {
+					return err
+				}
+			}
+		}
 		if tool == "claude" {
 			if err := os.Remove(filepath.Join(p.Cache, "observed", "claude-code.json")); err != nil && !os.IsNotExist(err) {
 				return err
@@ -36,7 +49,7 @@ func EraseScope(p Paths, scope string, forget bool) error {
 	}
 	d, known := consent.Definition(scope)
 	if !known {
-		return nil
-	} // retired route has no remaining compiled cache owner
+		return forgetTool(p, tool, false, forget, "")
+	} // Erase established cache formats even after a reader retires.
 	return forgetTool(p, tool, false, forget, d.Class)
 }

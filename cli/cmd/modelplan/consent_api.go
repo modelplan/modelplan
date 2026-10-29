@@ -234,7 +234,14 @@ func consentCmd(args []string, stdin io.Reader, stdout io.Writer, st *store.Stor
 		for _, t := range detection(st).Tools {
 			detected[t.ProviderID] = t.Detected
 		}
-		return printJSON(stdout, consentView{StoreEpoch: s.StoreEpoch, Scopes: consent.NewAdmission(s, consentMode(s)).ScopeFacts(detected), Generation: s.Generation, ConsentTextVersion: consent.TextVersion,
+		facts := consent.NewAdmission(s, consentMode(s)).ScopeFacts(detected)
+		for i := range facts {
+			if scope, pending := quota.PolicyPending(facts[i].Tool); pending && scope == facts[i].Scope {
+				code := "policy_pending"
+				facts[i].Disabled = &code
+			}
+		}
+		return printJSON(stdout, consentView{StoreEpoch: s.StoreEpoch, Scopes: facts, Generation: s.Generation, ConsentTextVersion: consent.TextVersion,
 			Mode: consentMode(s), ConsentText: map[string]string{"en": consent.Text, "zh": consent.TextZH}, Tools: consentTools(s, detection(st))})
 	}
 	request, err := decodeConsentRequest(stdin)

@@ -48,6 +48,13 @@ func TestEpochResetFencesLateReadAndOldAllow(t *testing.T) {
 		t.Fatal(err)
 	}
 	admitted, _ := Load(Path())
+	// Commit an allow whose expected generation will equal the reset floor, then
+	// retry that exact request (including its ID and payload) after reset.
+	allow.RequestID = "retry-old-allow"
+	allow.ExpectGeneration = admitted.Generation
+	if _, err := ApplyGrant(Path(), allow, hooks); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(Path(), []byte("damaged"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +82,6 @@ func TestEpochResetFencesLateReadAndOldAllow(t *testing.T) {
 	if err := Publish(admitted.Fence(), func() error { late = true; return nil }); err == nil || late {
 		t.Fatal("old read published across reset")
 	}
-	allow.ExpectGeneration = reset.Generation
 	if _, err := ApplyGrant(Path(), allow, hooks); err == nil || err.Error() != "consent_stale" {
 		t.Fatal("old-epoch allow accepted", err)
 	}
