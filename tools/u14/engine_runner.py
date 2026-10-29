@@ -129,6 +129,28 @@ def fresh_rows(engine):
         time.sleep(.01)
 
 
+def null_selectors(binary, home):
+    fixture_input(home)
+    with EngineProcess(binary, home, 'u14-null-selectors') as engine:
+        fixture_hello(engine)
+        valid = {'kind': 'tokens', 'tool': 'codex', 'limit': 1}
+        require('result' in engine.request('history/query', valid), 'history-positive-control-failed')
+        before = events(home)
+        require(before.count('history-admission') == 1 and before.count('provider-history-get') == 1,
+                'history-source-not-observable')
+        cases = ({'ref': None}, {'cursor': None}, {'ref': None, 'cursor': None})
+        for selectors in cases:
+            rejected = engine.request('history/query', {**valid, **selectors})
+            require(rejected.get('error', {}).get('code') == -32602, 'null-selector-not-invalid-params')
+            require(events(home) == before, 'null-selector-reached-admission-or-read')
+        engine.shutdown()
+        return {'outcome': 'pass', 'cases': ['ref:null', 'cursor:null', 'ref:null,cursor:null'],
+                'admissionCallsBefore': 1, 'admissionCallsAfter': 1,
+                'providerCallsBefore': 1, 'providerCallsAfter': 1,
+                'proofScope': 'registered production history handler; recording history source',
+                'wireMessages': engine.messages, 'cleanup': 'exited'}
+
+
 def zero_rows(binary, home, mode):
     fixture_input(home, mode)
     with EngineProcess(binary, home, 'u14-model-' + mode) as engine:
@@ -156,18 +178,19 @@ def zero_rows(binary, home, mode):
                 'wireMessages': engine.messages, 'cleanup': 'exited'}
 
 
-def empty_states(binary, home):
+def empty_states(binary, home, fault_binary):
     from shape_home import build_home
     from contracts import ROOT, load_json
-    observations, messages = [], []
+    observations, messages, bindings = [], [], []
     for empty in ('readers_off', 'pending', 'no_consent', 'empty'):
         case = Path(home) / empty
         build_home(load_json(ROOT / 'examples/synthetic-shape.json'), case)
-        fixture_input(case, 'omitted', empty)
+        if empty == 'pending':
+            fixture_input(case, 'omitted', empty)
         if empty == 'no_consent':
             cli(binary, case, ['consent', 'init', '--json'])
             tighten(binary, case, deny=['codex.local_history', 'codex.runtime_usage', 'claude.local_history'])
-        engine = EngineProcess(binary, case, 'u14-empty-' + empty)
+        engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
         with engine:
@@ -178,9 +201,10 @@ def empty_states(binary, home):
             if empty in ('readers_off', 'pending'):
                 require(all(not row['accounts'] for row in projection['rows']), 'private-values-in-off-or-pending-state')
             observations.append(empty)
+            bindings.append({'state': empty, 'binaryRole': 'fixture' if empty == 'pending' else 'plain'})
             engine.shutdown()
             messages.extend(engine.messages)
-    return {'outcome': 'pass', 'states': observations, 'wireMessages': messages,
+    return {'outcome': 'pass', 'states': observations, 'cases': bindings, 'wireMessages': messages,
             'proofScope': 'production U2; repeated-revoke fault only for pending', 'cleanup': 'exited'}
 
 
@@ -250,37 +274,118 @@ def backpressure(binary, home):
             'proofScope': 'production U2 receipts and transport; recording history provider', 'wireMessages': messages, 'cleanup': 'exited'}
 
 
+ADMISSION_COMPONENTS = ('U2a-post-veto', 'U2a-minimax-auth-stop', 'U2a-minimax-legacy-control',
+                        'U2a-local-history-gemini', 'U2a-local-history-cursor')
+
+
 def evaluate_admission(observation):
-    """Acceptance assertions for the future production-U2/provider adapter."""
+    """Qualify measured subchecks; a missing typed producer cannot pass."""
     require(observation.get('sharedSyntheticHome') is True, 'admission-home-not-shared')
+    require(observation.get('unexpectedCalls') == 0, 'unlisted-provider-called')
     for provider in ('gemini', 'cursor'):
         item = observation['postScopes'][provider]
         require(item['calls'] == 0 and item['disabledReason'] == 'policy_pending', 'unapproved-post-admitted')
-        history = observation['localHistory'][provider]
+        require(item['syntheticLoginPresent'] is True, 'post-zero-calls-without-valid-login')
+    for provider, history in observation['localHistory'].items():
+        if history.get('outcome') == 'unsupported':
+            require(provider == 'cursor', 'supported-history-not-executed')
+            continue
         require(history['before'] > 0 and history['after'] == history['before'], 'local-history-lost')
+        require(len(history['beforeSha256']) == 64 and history['afterSha256'] == history['beforeSha256'],
+                'local-history-values-changed')
+    require('gemini' in observation['localHistory'] and 'cursor' in observation['localHistory'], 'history-evidence-missing')
+    control = observation['legacyControl']
+    require(control['calls'] == 2 and control['statuses'] == [404, 200] and control['readingAvailable'],
+            'legacy-positive-control-failed')
     for status in ('401', '403'):
         item = observation['minimax'][status]
-        require(item['calls'] == 1 and item['legacyReplyAvailable'] is True and
-                item['legacyCalls'] == 0, 'minimax-retried-after-auth-failure')
-    return {'outcome': 'pass', 'proofScope': 'production U2 admission with recording providers'}
+        require(item['calls'] == 1 and item['statuses'] == [int(status)] and
+                item['legacyReplyAvailable'] is True and item['legacyCalls'] == 0,
+                'minimax-retried-after-auth-failure')
+        require(item['budgetBeforeSha256'] == item['budgetAfterSha256'], 'independent-cli-reset-budget')
+    cursor = observation['localHistory']['cursor']
+    components = {
+        'U2a-post-veto': {'outcome': 'pass', 'providers': observation['postScopes']},
+        'U2a-minimax-auth-stop': {'outcome': 'pass', 'cases': observation['minimax']},
+        'U2a-minimax-legacy-control': {'outcome': 'pass', **control},
+        'U2a-local-history-gemini': {'outcome': 'pass', **observation['localHistory']['gemini']},
+        'U2a-local-history-cursor': ({'outcome': 'unsupported', 'reason': cursor['reason']}
+                                    if cursor.get('outcome') == 'unsupported' else {'outcome': 'pass', **cursor}),
+    }
+    return {'outcome': 'unsupported' if cursor.get('outcome') == 'unsupported' else 'pass',
+            'subscenarios': components, 'proofScope': 'production constructor and guarded readers; recording HTTP provider'}
+
+
+def _http_events(home):
+    from contracts import load_json
+    import json
+    path = Path(home) / '.u14-http-events.jsonl'
+    if not path.exists():
+        return []
+    data = regular_bytes(path)
+    require(len(data) < 64 << 10 and (not data or data.endswith(b'\n')), 'http-trace-incomplete-or-oversized')
+    return [json.loads(line) for line in data.splitlines()]
+
+
+def _history_items(engine, tool, wait=False):
+    import time
+    deadline = time.monotonic() + 5
+    while True:
+        result = engine.request('history/query', {'kind': 'tokens', 'tool': tool, 'limit': 10})
+        if 'result' in result:
+            return result['result']['data']['items']
+        if not wait:
+            return result
+        require(time.monotonic() < deadline, 'local-history-not-readable')
+        time.sleep(.02)
+
+
+def _seed_post_logins(home):
+    import base64, platform, sqlite3
+    from contracts import encoded, write_private
+    canary = 'U14-SYNTHETIC-GEMINI-ACCESS'
+    gemini = Path(home) / '.gemini/oauth_creds.json'
+    write_private(gemini, encoded({'access_token': canary, 'expiry_date': 4070908800000}))
+    root = Path(home) / ('Library/Application Support' if platform.system() == 'Darwin' else '.config')
+    cursor = root / 'Cursor/User/globalStorage/state.vscdb'
+    cursor.parent.mkdir(mode=0o700, parents=True)
+    payload = base64.urlsafe_b64encode(encoded({'sub': 'auth|synthetic-u14-account', 'exp': 4070908800})).rstrip(b'=').decode()
+    token = 'e30.' + payload + '.synthetic-signature'
+    with sqlite3.connect(cursor) as database:
+        database.execute('CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value)')
+        database.execute('INSERT INTO ItemTable VALUES (?, ?)', ('cursorAuth/accessToken', token))
+    cursor.chmod(0o600)
+    return {'gemini': {'path': gemini, 'sha256': digest(regular_bytes(gemini))},
+            'cursor': {'path': cursor, 'sha256': digest(regular_bytes(cursor))}}, (canary, token)
+
+
+def _wait_native_capture(home, status):
+    import json, time
+    path = Path(home) / '.cache/modelplan/observed/native.json'
+    deadline = time.monotonic() + 5
+    while True:
+        if path.exists():
+            capture = json.loads(regular_bytes(path))
+            for provider in capture.get('providers', []):
+                if provider.get('provider') == 'minimax' and provider.get('status') == ('ok' if status == 404 else 'error'):
+                    return
+        require(time.monotonic() < deadline, 'minimax-capture-not-committed')
+        time.sleep(.01)
 
 
 def admission(binary, home, plan):
-    import json, time
     from datetime import datetime, timezone
     from shape_home import build_home
     from contracts import ROOT, load_json, encoded, write_private
-    observations = {'sharedSyntheticHome': True, 'postScopes': {}, 'localHistory': {}, 'minimax': {}}
+    observations = {'sharedSyntheticHome': True, 'unexpectedCalls': 0, 'postScopes': {},
+                    'localHistory': {}, 'minimax': {}, 'cases': []}
     messages = []
-    unsupported = []
-    for status in (401, 403):
+    for status in (404, 401, 403):
         case = Path(home) / str(status)
         shape = load_json(ROOT / 'examples/synthetic-shape.json')
         shape['files'] = [entry for entry in shape['files'] if entry['path'] != '.config/modelplan/connections.json']
-        build_home(shape, case)
+        baseline = build_home(shape, case)
         fixture_input(case, minimaxStatus=status)
-        # Synthetic migration input establishes existing grants. Policy gates
-        # must remain effective even when an older writer saved an account grant.
         current = state(case)
         for tool in ('gemini', 'cursor', 'minimax'):
             current['tools'][tool] = {'allowed': True, 'readerId': 'native:' + tool, 'backend': 'native',
@@ -289,6 +394,7 @@ def admission(binary, home, plan):
         (case / '.config/modelplan/consent.json').unlink()
         write_private(case / '.config/modelplan/consent.json', encoded(current))
         (case / '.cursor').mkdir(mode=0o700)
+        credentials, canaries = _seed_post_logins(case)
         stamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         for i in range(2):
             path = case / f'.gemini/tmp/project/chats/session-synthetic-{i}.json'
@@ -304,50 +410,74 @@ def admission(binary, home, plan):
         with engine:
             hello = engine.initialize()
             require(hello['storeEpoch'] not in ('unavailable', 'u14-fixture-epoch'), 'admission-used-fake-consent-backend')
+            external = cli(binary, case, ['consent', '--json'])
+            require(external['storeEpoch'] == hello['storeEpoch'], 'independent-cli-not-sharing-store')
             facts = engine.request('consent/get')['result']['data']['scopes']
             for tool in ('gemini', 'cursor'):
-                fact = next(x for x in facts if x['scope'] == tool + '.account_usage.saved_login')
+                fact = next(item for item in facts if item['scope'] == tool + '.account_usage.saved_login')
                 require(fact['state'] == 'allowed' and fact.get('disabledReason') == 'policy_pending', 'policy-pending-not-authoritative')
-                observations['postScopes'][tool] = {'calls': 0, 'disabledReason': fact['disabledReason']}
-            remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
-            require('error' not in remote and all(x.get('disabledReason') for x in remote['result']['data']), 'policy-pending-refresh-accepted')
+                rejected = engine.request('consent/grant', decision(case, allow=[fact['scope']]))
+                require(rejected.get('error', {}).get('code') == -32021, 'unapproved-post-grant-accepted')
+                observations['postScopes'].setdefault(tool, {'calls': 0, 'disabledReason': fact['disabledReason'], 'syntheticLoginPresent': True})
             local = engine.request('refresh/request', {'scopes': ['gemini.local_history']})
-            require('error' not in local and all(x.get('disabledReason') != 'read_only' for x in local['result']['data']), 'production-local-dispatcher-not-linked')
-            deadline = time.monotonic() + 5
-            while True:
-                history = engine.request('history/query', {'kind': 'tokens', 'tool': 'gemini', 'limit': 10})
-                if 'result' in history:
-                    break
-                require(time.monotonic() < deadline, 'gemini-local-history-not-readable')
-                time.sleep(.02)
-            require(len(history['result']['data']['items']) == 2, 'gemini-local-history-lost')
-            observations['localHistory']['gemini'] = {'before': 2, 'after': 2}
-            cursor_history = engine.request('history/query', {'kind': 'tokens', 'tool': 'cursor', 'limit': 10})
-            if 'error' in cursor_history and cursor_history['error']['code'] == -32050:
-                unsupported = ['Cursor typed local-history source is unavailable in the production reader inventory']
-            else:
-                require('result' in cursor_history, 'cursor-local-history-failed')
-                observations['localHistory']['cursor'] = {'before': 2, 'after': len(cursor_history['result']['data']['items'])}
+            require('error' not in local and all(item.get('disabledReason') != 'read_only' for item in local['result']['data']), 'production-local-dispatcher-not-linked')
+            before = _history_items(engine, 'gemini', wait=True)
+            require(len(before) == 2 and sum(item['tokens'] for item in before) == 24, 'gemini-history-seed-not-readable')
+            remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
+            require('error' not in remote and all(item.get('disabledReason') for item in remote['result']['data']), 'policy-pending-refresh-accepted')
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
-            require('error' not in scheduled and all('disabledReason' not in x for x in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
-            events_file = case / '.u14-http-events.jsonl'
-            deadline = time.monotonic() + 5
-            while not events_file.exists():
-                require(time.monotonic() < deadline, 'minimax-first-request-missing')
-                time.sleep(.02)
-            # A second request and an independent CLI share the persisted gate.
+            require('error' not in scheduled and all('disabledReason' not in item for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
+            _wait_native_capture(case, status)
+            budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
+            budget_before = digest(regular_bytes(budget))
             engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             cli(binary, case, ['connections', 'refresh', '--quiet'], environment=engine.environment)
-            calls = [json.loads(line)['event'] for line in regular_bytes(events_file).splitlines()]
-            require(calls == ['minimax-current'], 'auth-failure-retried-or-unapproved-provider-called')
-            observations['minimax'][str(status)] = {'calls': 1, 'legacyReplyAvailable': True, 'legacyCalls': 0}
-            after = engine.request('history/query', {'kind': 'tokens', 'tool': 'gemini', 'limit': 10})
-            require(len(after['result']['data']['items']) == 2, 'account-policy-veto-erased-local-history')
-            engine.shutdown(); messages.extend(engine.messages)
-    if unsupported:
-        return {'outcome': 'unsupported', 'productionU2Executed': True, 'unsupported': unsupported,
-                'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}
-    return {**evaluate_admission(observations), 'productionU2Executed': True,
+            trace = _http_events(case)
+            mini = [item for item in trace if item['provider'] == 'minimax']
+            require(all(item['method'] == 'GET' and item['host'] == 'api.minimax.io' and item['credentialMatched'] for item in mini), 'unexpected-minimax-request')
+            observations['unexpectedCalls'] += sum(item['provider'] not in ('minimax', 'gemini', 'cursor') for item in trace)
+            for tool in ('gemini', 'cursor'):
+                observations['postScopes'][tool]['calls'] += sum(item['provider'] == tool for item in trace)
+                require(digest(regular_bytes(credentials[tool]['path'])) == credentials[tool]['sha256'], 'tool-login-file-changed')
+            after = _history_items(engine, 'gemini', wait=True)
+            local_history = {'before': len(before), 'after': len(after),
+                             'beforeSha256': digest(encoded(before)), 'afterSha256': digest(encoded(after))}
+            require(local_history['beforeSha256'] == local_history['afterSha256'], 'local-history-values-changed')
+            observations['localHistory']['gemini'] = local_history
+            cursor = _history_items(engine, 'cursor')
+            require(isinstance(cursor, dict) and cursor.get('error', {}).get('code') == -32050,
+                    'cursor-history-capability-changed-rebind-scenario')
+            observations['localHistory']['cursor'] = {'outcome': 'unsupported',
+                'reason': 'Cursor typed local-history producer/readback is unavailable'}
+            if status == 404:
+                rows = fresh_rows(engine)
+                reading = any(row['id'] == 'minimax' and any(window.get('remainingPercent') == 75
+                              for account in row['accounts'] for window in account['windows']) for row in rows['rows'])
+                observations['legacyControl'] = {'calls': len(mini), 'statuses': [item['status'] for item in mini],
+                                                 'readingAvailable': reading}
+            else:
+                observations['minimax'][str(status)] = {'calls': len(mini), 'statuses': [item['status'] for item in mini],
+                    'legacyReplyAvailable': observations['legacyControl']['readingAvailable'],
+                    'legacyCalls': sum(item['event'] == 'minimax-legacy' for item in mini),
+                    'budgetBeforeSha256': budget_before, 'budgetAfterSha256': digest(regular_bytes(budget))}
+            require(all(canary not in str(engine.messages) for canary in (*canaries, 'U14-SYNTHETIC-MINIMAX-KEY')), 'synthetic-credential-reflected')
+            for directory in (case / '.cache/modelplan', case / '.config/modelplan'):
+                for file in directory.rglob('*'):
+                    if file.is_file():
+                        retained = regular_bytes(file)
+                        require(all(canary.encode() not in retained for canary in (*canaries, 'U14-SYNTHETIC-MINIMAX-KEY')),
+                                'synthetic-credential-copied-to-engine-storage')
+            verify_baseline(case, baseline, mutable=('.config/modelplan/consent.json',))
+            observations['cases'].append({'status': status, 'shapeSha256': baseline['shapeSha256'],
+                'storeEpoch': hello['storeEpoch'], 'httpTraceSha256': digest(encoded(trace)), 'requests': trace,
+                'localHistory': local_history, 'credentialInputsUnchanged': True, 'credentialCanariesAbsentFromEngineStorage': True})
+            engine.shutdown()
+            messages.extend(engine.messages)
+    result = evaluate_admission(observations)
+    if result['outcome'] == 'unsupported':
+        result['unsupported'] = [observations['localHistory']['cursor']['reason']]
+    return {**result, 'productionU2Executed': True, 'productionConstructorUnchanged': True,
+            'testedLevel': 'L1 engine-only', 'L2DeviceOutcome': 'not-run',
             'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}
 
 

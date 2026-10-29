@@ -24,7 +24,11 @@ func TestDailyLongFromLogs(t *testing.T) {
 	utc(t)
 	cache, logs := t.TempDir(), t.TempDir()
 	cwd := filepath.Join(t.TempDir(), "secret-project")
-	os.MkdirAll(cwd, 0o700)
+	// TMPDIR may live inside a checkout. Give this fixture its own repository
+	// boundary so projectRoot observes the intended synthetic project label.
+	if err := os.MkdirAll(filepath.Join(cwd, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	p := filepath.Join(logs, "rollout-2026-10-17T09-00-00-019a7c3e-thread.jsonl")
 	writeLines(t, p, append([]string{
 		cx(0, "session_meta", fmt.Sprintf(`{"id":"019a7c3e-secret-thread","source":"cli","cwd":%q}`, cwd)),

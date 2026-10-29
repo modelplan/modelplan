@@ -74,6 +74,13 @@ func (f *fixture) event(code string) error {
 	return err
 }
 func (f *fixture) AdmitHistory(ctx context.Context, stamp appserver.Stamp, p wire.HistoryQueryParams) (queries.HistoryAdmission, error) {
+	f.mu.Lock()
+	err := f.event("history-admission")
+	f.mu.Unlock()
+	if err != nil {
+		return queries.HistoryAdmission{}, err
+	}
+
 	if p.Tool != "codex" && f.fallback != nil {
 		return f.fallback.AdmitHistory(ctx, stamp, p)
 	}
