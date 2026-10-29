@@ -60,6 +60,10 @@ Account (one per subscription/profile shown under the row)
                     allocate one (allocation happens only in an authorised collection, exactly like subscription refs);
                     never positional, never a hash. Per-account preferences use subscriptionRef, else accountLocator,
                     else fall back to the row's preferences until a reference exists
+  route             saved_login_api | runtime_rpc | local_log | local_sqlite | api_key_api | status_line |
+                    browser_session | manual | unknown: how this account's
+                    values were read, so "source shown on every value" has a field; declared plans use manual, and
+                    unknown or absent input becomes unknown (raw source text never becomes a route)
   plan              {id, name {en, zh}}: from the plan allow-list; an unknown harness plan becomes {id: "unknown"};
                     declared plans keep the user's text with userAuthored = true
   beta              bool
