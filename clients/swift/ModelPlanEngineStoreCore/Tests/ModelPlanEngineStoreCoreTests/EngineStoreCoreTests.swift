@@ -85,17 +85,17 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertEqual(snapshot.connection, .ready(context()))
         XCTAssertEqual(snapshot.delivery, context())
         XCTAssertEqual(snapshot.lastResponseRequestID, .string("grant"))
-        XCTAssertEqual(try bytes(snapshot.rows), bytes(capture(WireRowsSnapshot.self, "WireRowsSnapshot.json")))
+        XCTAssertEqual(try bytes(snapshot.rows), try bytes(capture(WireRowsSnapshot.self, "WireRowsSnapshot.json")))
         XCTAssertEqual(snapshot.invalidRowCount, 2)
-        XCTAssertEqual(try bytes(snapshot.consent), bytes(capture(WireConsentFacts.self, "WireConsentFacts.json")))
-        XCTAssertEqual(try bytes(snapshot.history), bytes(capture(WireHistoryPage.self, "WireHistoryPage.json")))
+        XCTAssertEqual(try bytes(snapshot.consent), try bytes(capture(WireConsentFacts.self, "WireConsentFacts.json")))
+        XCTAssertEqual(try bytes(snapshot.history), try bytes(capture(WireHistoryPage.self, "WireHistoryPage.json")))
         XCTAssertEqual(snapshot.publication, .object(["synthetic": .bool(true)]))
         XCTAssertEqual(snapshot.pluginInstall, .object(["synthetic": .bool(true)]))
-        XCTAssertEqual(try bytes(snapshot.diagnostics), bytes(capture(WireDiagnostics.self, "WireDiagnostics.json")))
-        XCTAssertEqual(try bytes(snapshot.refresh), bytes([capture(WireRefreshScheduled.self, "WireRefreshScheduled.json")]))
-        XCTAssertEqual(try bytes(snapshot.lastGrant?.receipt), bytes(capture(WireConsentReceipt.self, "WireConsentReceipt.json")))
+        XCTAssertEqual(try bytes(snapshot.diagnostics), try bytes(capture(WireDiagnostics.self, "WireDiagnostics.json")))
+        XCTAssertEqual(try bytes(snapshot.refresh), try bytes([capture(WireRefreshScheduled.self, "WireRefreshScheduled.json")]))
+        XCTAssertEqual(try bytes(snapshot.lastGrant?.receipt), try bytes(capture(WireConsentReceipt.self, "WireConsentReceipt.json")))
         XCTAssertEqual(snapshot.lastGrant?.committedAt, context().floor)
-        XCTAssertEqual(try bytes(snapshot.health), bytes(capture(WireHealth.self, "WireHealth.json")))
+        XCTAssertEqual(try bytes(snapshot.health), try bytes(capture(WireHealth.self, "WireHealth.json")))
     }
 
     func testClearTableResetsEveryPrivateFieldBeforeReturningEffect() throws {
@@ -140,8 +140,8 @@ final class EngineStoreCoreTests: XCTestCase {
             for feature in features {
                 _ = core.apply(.featureFailure(feature, .featureDecode(feature)))
                 _ = core.apply(.featureFailure(feature, .unsupportedCapability))
-                XCTAssertEqual(try bytes(core.snapshot.rows), bytes(rows), "independent rows changed: \(feature)")
-                XCTAssertEqual(try bytes(core.snapshot.history), bytes(history))
+                XCTAssertEqual(try bytes(core.snapshot.rows), try bytes(rows), "independent rows changed: \(feature)")
+                XCTAssertEqual(try bytes(core.snapshot.history), try bytes(history))
             }
             XCTAssertEqual(core.snapshot.failures.map(\.feature), features)
             for failure in core.snapshot.failures {
@@ -149,7 +149,7 @@ final class EngineStoreCoreTests: XCTestCase {
             }
             _ = core.apply(recovery)
             XCTAssertEqual(core.snapshot.failures.map(\.feature), features.filter { $0 != recovered })
-            XCTAssertEqual(try bytes(core.snapshot.rows), bytes(rows))
+            XCTAssertEqual(try bytes(core.snapshot.rows), try bytes(rows))
         }
     }
 
@@ -172,7 +172,7 @@ final class EngineStoreCoreTests: XCTestCase {
                                            supersededByLaterConsent: true)
             _ = core.apply(.response(requestID: id, .grant(result)))
             XCTAssertEqual(core.snapshot.delivery, current)
-            XCTAssertEqual(try bytes(core.snapshot.consent), bytes(facts))
+            XCTAssertEqual(try bytes(core.snapshot.consent), try bytes(facts))
             XCTAssertEqual(try bytes(core.snapshot.rows), originalRows)
             XCTAssertEqual(core.snapshot.lastResponseRequestID, id)
             XCTAssertEqual(core.snapshot.lastGrant?.committedAt, committedAt)
@@ -194,7 +194,7 @@ final class EngineStoreCoreTests: XCTestCase {
                                     storeEpoch: fresh.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: fresh)
         _ = core.apply(.response(requestID: .signed(42), .rows(response, invalidRowCount: 0)))
         XCTAssertEqual(core.snapshot.delivery, fresh)
-        XCTAssertEqual(try bytes(core.snapshot.rows), bytes(rows))
+        XCTAssertEqual(try bytes(core.snapshot.rows), try bytes(rows))
         XCTAssertNil(core.snapshot.history)
         XCTAssertNil(core.snapshot.consent)
         XCTAssertNil(core.snapshot.publication)
