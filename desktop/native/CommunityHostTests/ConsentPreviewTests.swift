@@ -4,17 +4,21 @@ import XCTest
 import ModelPlanCore
 
 final class ConsentPreviewTests: XCTestCase {
-    private let valid = #"{"generation":0,"consentTextVersion":2,"mode":"off","consentText":{"en":"Allow","zh":"允许"},"tools":[{"id":"codex","displayName":"Codex","accessClass":"standard","detected":true,"allowed":false,"backend":"native","readerId":"native:codex","keychain":"unset","hosts":["example.test"]}]}"#
-    func testFreshOffReadbackPreservesUnknownPermissionAndExactNotice() throws {
-        let value = try FeedDecoder.consentPreview(Data(valid.utf8))
-        XCTAssertEqual(value.mode, .off)
-        XCTAssertEqual(value.tools[0].keychain, .unset)
-        XCTAssertFalse(value.tools[0].allowed)
-        XCTAssertEqual(value.consentText.zh, "允许")
-        XCTAssertEqual(value.tools[0].hosts, ["example.test"])
+    func testRealReadbackPreservesUnknownKeychainAndExactNotice() throws {
+        let data = try GeneratedAppCLIFixtures.data("consented-consent.json")
+        let value = try FeedDecoder.consentPreview(data)
+        let raw = try GeneratedAppCLIFixtures.object("consented-consent.json")
+        XCTAssertEqual(value.mode, .automatic)
+        let claude = try XCTUnwrap(value.tools.first { $0.id == "claude" })
+        XCTAssertEqual(claude.keychain, .unset)
+        XCTAssertFalse(claude.allowed)
+        XCTAssertEqual(value.consentText.zh, (raw["consentText"] as? [String: String])?["zh"])
+        XCTAssertEqual(claude.hosts, ["https://api.anthropic.com"])
     }
-    func testUnknownCanonicalModesAndInventedKeychainStatesFailClosed() {
-        for text in [valid.replacingOccurrences(of: "\"off\"", with: "\"enabled\""),
+    func testUnknownCanonicalModesAndInventedKeychainStatesFailClosed() throws {
+        let data = try GeneratedAppCLIFixtures.data("consented-consent.json")
+        let valid = try XCTUnwrap(String(data: data, encoding: .utf8))
+        for text in [valid.replacingOccurrences(of: "\"automatic\"", with: "\"enabled\""),
                      valid.replacingOccurrences(of: "\"unset\"", with: "\"notRequired\"")] {
             XCTAssertThrowsError(try FeedDecoder.consentPreview(Data(text.utf8)))
         }

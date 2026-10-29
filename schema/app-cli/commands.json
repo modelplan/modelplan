@@ -1,0 +1,104 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. Actual app helper argv plus required supporting diagnostics.",
+  "commands": [
+    {
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "callsite": "desktop/native/Sources/ModelPlanCore/CLITransport.swift"
+    },
+    {
+      "schema": "help",
+      "arguments": [
+        "--help"
+      ],
+      "callsite": "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanCommunityApp/CommunityApp.swift"
+    },
+    {
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "callsite": "supporting diagnostic"
+    },
+    {
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "callsite": "supporting diagnostic"
+    },
+    {
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "callsite": "supporting diagnostic"
+    }
+  ]
+}

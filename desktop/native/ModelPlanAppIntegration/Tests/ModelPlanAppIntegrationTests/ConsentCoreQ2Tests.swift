@@ -15,9 +15,12 @@ import ModelPlanCore
         func readConsentJSON() async throws -> CommandResult {
             reads += 1
             if failAllReads || (revoked && failReadback) { throw TransportError.launchFailed }
-            return .init(exitCode: 0, stdout: Data("""
-            {"generation":\(revoked ? 2 : 1),"consentTextVersion":2,"mode":"automatic","consentText":{"en":"Synthetic consent","zh":"合成授权"},"tools":[{"id":"claude","displayName":"Claude","accessClass":"standard","detected":true,"allowed":\(!revoked),"backend":"native","readerId":"native:claude","keychain":"unset","hosts":["example.test"]}]}
-            """.utf8))
+            var object = try GeneratedAppCLIFixtures.object(revoked ? "revoked-consent.json" : "consented-consent.json")
+            let tools = try XCTUnwrap(object["tools"] as? [[String: Any]])
+            var claude = try XCTUnwrap(tools.first { $0["id"] as? String == "claude" })
+            claude["allowed"] = !revoked // This test intentionally simulates a granted Claude row.
+            object["tools"] = [claude]
+            return .init(exitCode: 0, stdout: try JSONSerialization.data(withJSONObject: object))
         }
         func grantConsentJSON(_ payload: Data) async throws -> CommandResult {
             writes += 1
@@ -26,9 +29,11 @@ import ModelPlanCore
             XCTAssertEqual(value["allow"] as? [String], [])
             XCTAssertEqual(value["keychain"] as? [String: String], [:])
             revoked = true
-            var reply: [String: Any] = ["ok": ordinarySuccess, "requestId": badReceipt ? UUID().uuidString : value["requestId"]!,
-                "generation": 2, "tools": [], "pendingForget": ordinarySuccess ? [] : pendingIDs]
-            if !ordinarySuccess { reply["error"] = "cleanup_pending" }
+            var reply = try GeneratedAppCLIFixtures.object(ordinarySuccess ? "revoked-revoke.json" : "cleanup-pending-revoke.json")
+            reply["requestId"] = badReceipt ? UUID().uuidString : value["requestId"]!
+            reply["pendingForget"] = ordinarySuccess ? [] : pendingIDs
+            // Generated cleanup is Copilot/Codex; keep this test's intentional Claude scope/fault.
+            reply["tools"] = []
             return .init(exitCode: ordinarySuccess ? 0 : 1, stdout: try JSONSerialization.data(withJSONObject: reply))
         }
         func counts() -> [Int] { [reads, writes] }

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/consent-grant-response.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none",
+    "network": "none",
+    "writes": "one atomic consent/generation/receipt commit; deny revokes first and performs scoped Forget",
+    "exitCodes": {
+      "0": "ok=true receipt",
+      "1": "ok=false error; cleanup_pending may include a committed generation and pendingForget",
+      "2": "usage on stderr"
+    },
+    "idempotency": "same request ID/body replays original response without another write or cleanup; older receipts may omit additive hostDetails",
+    "permission": "receipt is not current permission; reread consent after mutation",
+    "keychain": "no prompt/helper; pending browser cookie cleanup remains explicit"
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "format": "uuid"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/receiptTool"
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "requestId",
+        "generation",
+        "tools"
+      ],
+      "additionalProperties": true
+    },
+    {
+      "$ref": "common.json#/$defs/consentError"
+    }
+  ]
+}

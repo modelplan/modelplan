@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/connections-text.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none; presence/cache metadata only",
+    "network": "none",
+    "writes": "none",
+    "exitCodes": {
+      "0": "successful JSON object",
+      "1": "unavailable; JSON error for consent, stderr/empty output for other commands",
+      "2": "usage on stderr"
+    },
+    "displayText": "notice, nextStep, names, messages, and legacy hosts are display only"
+  },
+  "type": "string",
+  "description": "Human-readable status only. Do not parse permission or endpoints from labels."
+}

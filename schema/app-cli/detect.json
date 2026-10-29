@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/detect.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none; presence/cache metadata only",
+    "network": "none",
+    "writes": "none",
+    "exitCodes": {
+      "0": "successful JSON object",
+      "1": "unavailable; JSON error for consent, stderr/empty output for other commands",
+      "2": "usage on stderr"
+    },
+    "displayText": "notice, nextStep, names, messages, and legacy hosts are display only"
+  },
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "catalogueSource": {
+      "type": "string",
+      "description": "Machine value; not display text.",
+      "enum": [
+        "built-in",
+        "publication"
+      ]
+    },
+    "catalogueRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "displayName": {
+            "type": "string",
+            "description": "Display text only; never parse as an endpoint or permission."
+          },
+          "readerId": {
+            "type": "string",
+            "description": "Machine value; not display text."
+          },
+          "preferred": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "enum": [
+              "native",
+              "codexbar",
+              "off"
+            ]
+          },
+          "codexbar": {
+            "type": "object",
+            "properties": {
+              "audited": {
+                "type": "boolean"
+              },
+              "accessClass": {
+                "type": "string",
+                "description": "Machine value; not display text."
+              }
+            },
+            "required": [
+              "audited"
+            ],
+            "additionalProperties": true
+          },
+          "minCli": {
+            "type": "string",
+            "description": "Machine value; not display text."
+          },
+          "beta": {
+            "type": "boolean"
+          },
+          "detectionStatus": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "enum": [
+              "signals",
+              "no-safe-signal"
+            ]
+          },
+          "signals": {
+            "type": "null"
+          },
+          "detected": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "description": "Machine value; not display text."
+          },
+          "nextStep": {
+            "type": "string",
+            "description": "Display text only; never parse as an endpoint or permission."
+          }
+        },
+        "required": [
+          "providerId",
+          "displayName",
+          "readerId",
+          "preferred",
+          "codexbar",
+          "minCli",
+          "beta",
+          "detectionStatus",
+          "signals",
+          "detected",
+          "status"
+        ],
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "catalogueSource",
+    "catalogueRevision",
+    "tools"
+  ],
+  "additionalProperties": true
+}

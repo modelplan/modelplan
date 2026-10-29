@@ -29,11 +29,13 @@ import ModelPlanCore
     // Synthetic reproduction uses the literal host forms reported from pinned v0.5.43;
     // the separately recorded full CLI capture is checked by the pinned-fixture test.
     private func payload(_ hosts: [Any], id: String = "claude") throws -> Data {
-        try JSONSerialization.data(withJSONObject: ["generation": 1, "consentTextVersion": 2,
-            "mode": "automatic", "consentText": ["en": "Synthetic consent", "zh": "合成授权"],
-            "tools": [["id": id, "displayName": "Synthetic tool", "accessClass": "standard",
-                "detected": true, "allowed": false, "backend": "native", "readerId": "native:" + id,
-                "keychain": "unset", "hosts": hosts]]])
+        var object = try GeneratedAppCLIFixtures.object("consented-consent.json")
+        let tools = try XCTUnwrap(object["tools"] as? [[String: Any]])
+        var tool = try XCTUnwrap(tools.first { $0["id"] as? String == id })
+        tool["allowed"] = false; tool["hosts"] = hosts
+        tool.removeValue(forKey: "hostDetails") // Deliberate legacy compatibility mutation.
+        object["tools"] = [tool]
+        return try JSONSerialization.data(withJSONObject: object)
     }
     private func control(_ view: NSView, _ id: String) throws -> ConnectionButton {
         func find(_ view: NSView) -> ConnectionButton? {
