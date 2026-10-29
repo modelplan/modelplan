@@ -130,6 +130,7 @@ const (
 	CodePrivacyBlocked                Code = "privacy_blocked"
 	CodeCatalogueOff                  Code = "catalogue_off"
 	CodeNotAdmitted                   Code = "not_admitted"
+	CodePolicyPending                 Code = "policy_pending"
 	CodeCodexBarNotAudited            Code = "codexbar_not_audited"
 	CodeCodexBarNotRead               Code = "codexbar_not_read"
 	CodeCodexBarAccessUnknown         Code = "codexbar_access_unknown"

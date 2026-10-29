@@ -319,7 +319,7 @@ func profileFailure(p ProfileState) Code {
 }
 func admissionCode(code Code) bool {
 	switch code {
-	case CodePrivacyBlocked, CodeCatalogueOff, CodeUpdateRequired, CodeKeyMissing, CodeCodexBarNotAudited, CodeCodexBarNotRead, CodeCodexBarAccessUnknown, CodeBrowserSessionConsentRequired, CodeNotAdmitted:
+	case CodePolicyPending, CodePrivacyBlocked, CodeCatalogueOff, CodeUpdateRequired, CodeKeyMissing, CodeCodexBarNotAudited, CodeCodexBarNotRead, CodeCodexBarAccessUnknown, CodeBrowserSessionConsentRequired, CodeNotAdmitted:
 		return true
 	}
 	return false

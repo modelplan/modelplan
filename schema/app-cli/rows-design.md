@@ -189,10 +189,13 @@ The closed set of codes, with the state and next-step action each one gives:
 | update_required | needs_action | update_cli |
 | key_missing, tool_not_found, catalogue_retired, http_401, unsupported_login | needs_action | open_settings_consent |
 | privacy_blocked, catalogue_off, not_admitted, codexbar_not_audited, codexbar_not_read, codexbar_access_unknown, browser_session_consent_required | off | open_settings_consent |
+| policy_pending | off | open_settings_consent |
 | no_reader | unsupported | none |
 | cleanup_pending | off (Settings surface only) | open_settings_consent |
 | file_missing, file_unreadable, parse_error, schema_changed, http_403, http_429, http_5xx, network, timeout | failed (row 6, when there is no value; with a retained value the row is stale and the code lives in `lastFailure`) | refresh |
 | other | failed | refresh |
+
+`policy_pending` intentionally disables an unapproved read path independently of saved user consent. It vetoes retained values, offers no retry or refresh, and Settings explains that the scope is awaiting approval. It is not a reader failure.
 
 A single Go table maps every status, reason, errorCode and blocked value to `(state, code, action)`. The emitting sites are `sources.go`, `readerstate.go`, `quota_native.go`, `claudeaccount.go`, `keychain/security.go`, `connect.go` (the Blocked values), `codexbar.go`, `detect` (`unknown` and `no-safe-signal`), `consent_api.go`, `reader_errors.go`, and the per-reader admission files (`copilot_state.go`, `antigravity_state.go`, `zaiconfig_state.go`, and any other `*_state.go` that sets a blocked or availability value). Three tests guard the table:
 
