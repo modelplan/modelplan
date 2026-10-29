@@ -1,11 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 # U3c query interfaces
 
-This package extends the published U3 `Handler` seam. It is an **interface only**
-stage: it does not register methods in the production constructor, implement a
-consent store, query raw tool credentials, or refresh providers. The source
-adapter and shared backend remain responsible for production scope admission.
-The cockpit handler is still outstanding.
+The ordinary `modelplan app-server` constructor registers history, cockpit and
+publication against the shared backend. It owns no separate consent store and
+queries never refresh providers. `CockpitHandler` admits every current scope,
+returns Go-computed `wire.CockpitData`, and retains the original stamp/scopes for
+the shared publication/write fence. Scope changes or a new epoch discard data.
+The [cockpit contract](../../../../docs/cockpit-query.md) describes its typed
+projection and verified subscription groups. Cursor token history uses the
+[optional existing local numeric export](../../../../docs/cursor-local-history.md),
+independently of its still-disabled account POST scope.
 
 `HistoryHandler(HistoryConfig)` returns a private, query-limited handler using
 the existing `wire.HistoryQueryParams`, `HistoryItem` and `HistoryPage` DTOs.
@@ -56,6 +60,10 @@ go test -race ./internal/appserver/queries -count=1
 | U3c-CANCEL | Invalid parameters and canceled requests never read history, including cancellation that occurs during admission. |
 | U3c-PUBLICATION | Existing typed public fields and nulls are preserved; personal fields are excluded; untrusted parameters and raw source errors are refused; an absent cache is not created. |
 
-The fixtures use a synthetic backend and in-memory source, not an independent
-production consent implementation. Full real-binary handlers, shared-store
-revoke/Forget races and final U2/U3 integration are not proven by this stage.
+Handler unit tests use synthetic sources. The command package also tests the
+ordinary executable's registered methods and typed Cursor producer, including
+continuation, explicit-null/wrong-type rejection and row isolation. A source-delay
+only overlay exercises real-process late results after external CLI revoke and
+epoch reset with the same production backend and constructor. U14 must seed the
+supported Cursor export and refresh it before upgrading its unsupported result.
+Native bridge/UI, live exporter accuracy and final-package evidence are not-run.

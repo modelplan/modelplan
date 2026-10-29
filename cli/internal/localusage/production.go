@@ -27,6 +27,8 @@ func HistoryProviders() []string {
 
 func productionHistoryRoot(home, tool string) string {
 	switch tool {
+	case "cursor":
+		return filepath.Join(home, ".cursor", "token-usage")
 	case "claude":
 		root := os.Getenv("CLAUDE_CONFIG_DIR")
 		if root == "" {

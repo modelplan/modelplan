@@ -128,6 +128,93 @@
       ],
       "type": "object"
     },
+    "CockpitAccount": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/Account"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "account"
+      ],
+      "type": "object"
+    },
+    "CockpitData": {
+      "additionalProperties": false,
+      "properties": {
+        "projection": {
+          "$ref": "#/$defs/RowsProjection"
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/CockpitSubscription"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "projection",
+        "subscriptions"
+      ],
+      "type": "object"
+    },
+    "CockpitDataEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/CockpitData"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "CockpitSubscription": {
+      "additionalProperties": false,
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/$defs/CockpitAccount"
+          },
+          "type": "array"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "accounts"
+      ],
+      "type": "object"
+    },
     "ConsentFacts": {
       "additionalProperties": false,
       "properties": {
@@ -1603,6 +1690,30 @@
               "const": "2.0"
             },
             "method": {
+              "const": "cockpit/query"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "consent/get"
             },
             "params": {
@@ -1881,6 +1992,9 @@
                 },
                 {
                   "$ref": "#/$defs/HistoryPageEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/CockpitDataEnvelope"
                 },
                 {
                   "$ref": "#/$defs/PluginInstallResultEnvelope"
