@@ -328,6 +328,7 @@ The estimate is redone after U3 and U6.
   - A reversible item with no answer in 30 minutes takes its default and goes into the candidate's change report. An irreversible item escalates to the owner after 4 hours.
   - Work is dispatched with `herdr agent prompt`, never by simulated typing.
 - **Briefs** follow `writing-for-agents`: every step has a checkable completion criterion.
+- **Model cost.** Mechanical and research work goes to lower-cost models: GLM Flash, or Codex Terra or Luna. That covers releases, pins, integration-card research and fixture generation. Codex Sol is kept for implementation and review that need it, and for cross-layer work.
 
 ## Out of scope
 

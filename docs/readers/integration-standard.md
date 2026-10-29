@@ -100,7 +100,7 @@ To add or repair a reader:
 7. **Copy code only under a clear licence.** MIT and Apache-2.0 may be ported with attribution; Apache also needs its NOTICE. Record the port in `docs/borrowed/<source>.md`. Anything without a licence file is ideas only.
 8. **Ship at L2.** The reader passes the owner-shaped fixture (ADR 0006) before it is enabled in the catalogue.
 
-Research and card drafting use public material only. That work may go to a lower-cost model, such as GLM Flash or Codex at medium effort. The coordinator reviews the card's choice. A reader lane implements it.
+Research and card drafting use public material only. That work goes to a lower-cost model: GLM Flash, or Codex Terra or Luna. Codex Sol is kept for implementation and review that need it. The coordinator reviews the card's choice. A reader lane implements it.
 
 ## 5. Integration card template
 
