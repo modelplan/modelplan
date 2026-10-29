@@ -18,7 +18,6 @@ var (
 // ReadTransport enforces the first-batch fixed request set for one admitted read.
 // It records no credentials. The caller reserves the cross-process vendor budget
 // before creating it, and must not create another transport to retry a rejection.
-// U2 admission and app-server wiring consume this interface in the wired stage.
 // A local-history scope can pass admission but can never send an HTTP request.
 // Concurrent calls are serialized so none can slip past a 401 or 403 response.
 // Credentialed redirects are stopped even when the caller uses a default Client.

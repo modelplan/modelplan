@@ -1,10 +1,14 @@
-# Reader admission interface
+# Reader admission gates
 
-This is the U2a **interface only** stage. The U2 scope identifiers come from
+U2a publishes the first-batch admission policy and recording regressions.
+`quota.PolicyPending(provider) (scope string, pending bool)` is the exported
+entry point for production admission, scheduling, cache projection and diagnostics.
+Those hooks are integrated by U2; this branch alone does not enable the POST veto.
+The MiniMax production stop-on-401/403 fix is included here. The U2 scope identifiers come from
 [4814e20](https://github.com/modelplan/modelplan/commit/4814e20d36f50dfd0a88cdb87a5f448ef39c22ed).
-Production dispatchers do not yet use this package. Consent, revocation,
-persistence and the shared cross-process vendor budget remain the caller's
-responsibility. No legacy path is removed by this stage.
+Consent, revocation, persistence and the shared cross-process vendor budget
+remain the caller's responsibility. The existing reader implementations stay
+available for isolated protocol fixtures; no protocol/card approval is implied.
 
 `CheckAdmission` rejects the Gemini Code Assist and Cursor account-usage scopes
 with `policy_pending`, independently of a user's saved-login grant. Their local
@@ -24,8 +28,13 @@ Do not create another transport to retry an authorization failure.
 outbound request, including calls beyond its scripted responses. It opens no
 socket and keeps no credentials, headers or request bodies. Tests place it
 **inside** the admission transport so records represent calls past the gate.
-The MiniMax consumer test supplies that boundary to the existing real dispatcher
-and quota decoder; this harness injection is not production wiring.
+The production tests supply the recorder directly to the real dispatcher and
+quota decoder, without an admission wrapper. The POST production regressions
+require the U2 hooks and intentionally fail on the standalone interface branch.
+They must pass unchanged on the integrated U2 commit. They exercise valid synthetic
+logins, retained consent, diagnostics refresh, and old cached remote captures.
+The production MiniMax reader itself stops after HTTP 401/403. The additional
+`ReadTransport` tests exercise the stricter transport boundary independently.
 
 Run from `cli/`:
 
@@ -36,9 +45,9 @@ go test -race ./internal/readers/... -count=1
 
 | Scenario | L1 pass condition |
 | --- | --- |
-| U2a-POST | Both Gemini endpoints and Cursor plan/period endpoints make zero recorded calls; changing the method to GET cannot bypass admission. Unguarded negative controls make calls and fail the zero-call oracle. |
-| U2a-AUTH | MiniMax 401 and 403, in both regions, leave exactly the current-path GET in the recording, including through the existing dispatcher. An unguarded legacy retry fails that oracle. A valid quota response still decodes. |
-| U2a-LOCAL | Both local-history scope IDs remain admitted while their remote scope is blocked; the existing Gemini history reader retains seeded token counts. A vendor-wide deny loses those records. |
+| U2a-POST | Real production refresh and diagnostics with saved-login grants make zero recorded calls, do not schedule a remote read, suppress retained remote captures and report `policy_pending`. Transport tests cover both Gemini endpoints and Cursor plan/period plus attempted GET bypasses. Unguarded negative controls fail the zero-call oracle. |
+| U2a-AUTH | MiniMax 401 and 403, in both regions, leave exactly the current-path GET in the recording through the production dispatcher. The old legacy retry failed that oracle. A valid quota response still decodes. |
+| U2a-LOCAL | Both local-history scope IDs remain eligible while their remote scope is blocked; Gemini's production local-history reader retains seeded token counts on the same home and consent. A vendor-wide deny loses those records. |
 | U2a-DESTINATIONS | Inference paths, changed parameters, cross-region fallback, redirects and excess requests never reach the recording transport. Concurrent callers cannot bypass an authorization stop. |
 
 ## U14 scenario intent
@@ -59,5 +68,5 @@ one synthetic shared home with fake providers and an approved shape baseline:
 4. Bind outcomes to source SHAs, the synthetic profile, scenario IDs and the
    packaged subject when applicable. U10 cites this U14 evidence.
 
-This L2 scenario is not run by these interface tests and remains required for
+This L2 scenario is not run by these local tests and remains required for
 completion. Real accounts, native UI and L3 are outside this L1 evidence.

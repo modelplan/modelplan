@@ -18,9 +18,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
-// Qualified consumer: the existing dispatcher and decoder run unchanged with
-// the new transport supplied by this interface-stage harness. Production
-// admission wiring is a separate stage; this test does not claim it is enabled.
+// Run the production dispatcher and decoder with a recording transport instead
+// of a network. No admission wrapper is supplied for the authorization regression.
 func runMiniMax(t *testing.T, transport http.RoundTripper, region string) string {
 	t.Helper()
 	testenv.IsolateHome(t)
@@ -58,13 +57,13 @@ func runMiniMax(t *testing.T, transport http.RoundTripper, region string) string
 }
 
 // Red line: a real MiniMax collection must not send the legacy request after
-// 401/403. The baseline dispatcher without the guard is the failing example.
+// 401/403. The former production legacy retry is the failing example.
 func TestAdmissionMiniMaxRealConsumerStopsAfterRejection(t *testing.T) {
 	for region, host := range map[string]string{"international": "api.minimax.io", "china": "api.minimaxi.com"} {
 		for _, status := range []int{401, 403} {
 			t.Run(fmt.Sprintf("%s/%d", region, status), func(t *testing.T) {
 				record := readertest.NewTransport(readertest.Response{StatusCode: status}, readertest.Response{StatusCode: 200, Body: `{"model_remains":[{"model_name":"general","current_interval_remaining_percent":76}]}`})
-				result := runMiniMax(t, readers.NewReadTransport(consent.ScopeMiniMaxAccountUsageAPIKey, record), region)
+				result := runMiniMax(t, record, region)
 				want := []readertest.Request{{Method: "GET", Host: host, Path: "/v1/token_plan/remains"}}
 				if err := checkRequests(record.Requests(), want); err != nil {
 					t.Fatal(err)
