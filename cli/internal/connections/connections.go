@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/localusage"
@@ -104,11 +105,17 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			reason := "no-reading"
 			if s, ok := status[src]; ok && s.Status != "ok" {
 				reason = s.Status
+				if strings.HasPrefix(src, "native:") && s.Status != "consent_required" && s.Status != "off" {
+					reason = quota.ReaderErrorCode(s.ErrorCode)
+				}
 			}
 			return Level{Status: "no", Reason: reason, Binding: "unknown"}
 		}
 		t := a.ObservedAt.UTC()
 		l := Level{Status: "yes", At: &t, Binding: "unknown"}
+		if s, ok := status[src]; ok && strings.HasPrefix(src, "native:") && s.Status != "ok" {
+			l.Reason = quota.ReaderErrorCode(s.ErrorCode)
+		}
 		if a.Subscription != nil {
 			l.Binding = a.Subscription.Status // the reader saw the account (quota's identity.go)
 		}

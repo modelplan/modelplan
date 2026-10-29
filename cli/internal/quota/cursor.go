@@ -91,10 +91,14 @@ func readCursorSessionAt(ctx context.Context, path string, now time.Time) (curso
 	// used only for a keyed binding comparison, never for a compatibility call.
 	session := cursorSession{}
 	fail := func() (cursorSession, error) {
-		return session, errors.New("Cursor local sign-in unavailable or unsupported; sign in through Cursor")
+		return session, codeError("unsupported_login", "Cursor local sign-in unavailable or unsupported; sign in through Cursor")
 	}
 	if fi, err := os.Lstat(path); err != nil || !fi.Mode().IsRegular() {
-		return fail()
+		code := "file_unreadable"
+		if os.IsNotExist(err) {
+			code = "file_missing"
+		}
+		return session, codeError(code, "Cursor local sign-in unavailable")
 	}
 	// Never create WAL sidecars. Immutable mode is safe only without live WAL.
 	wal, shm := false, false
@@ -127,7 +131,7 @@ func readCursorSessionAt(ctx context.Context, path string, now time.Time) (curso
 	// The SQL bounds credential allocation and reads no other ItemTable values.
 	err = db.QueryRowContext(ctx, `SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' AND length(value) BETWEEN 1 AND 16384 LIMIT 1`).Scan(&b)
 	if err != nil {
-		return fail()
+		return session, codeError(cursorStoreErrorCode(err), "Cursor local store unavailable")
 	}
 	// Cursor has used ASCII UTF-16LE BLOBs as well as UTF-8 TEXT.
 	if len(b)%2 == 0 && len(b) > 0 {
@@ -166,10 +170,10 @@ func readCursorSessionAt(ctx context.Context, path string, now time.Time) (curso
 		Exp int64  `json:"exp"`
 	}
 	if json.Unmarshal(payload, &claims) != nil {
-		return fail()
+		return session, codeError("parse_error", "Cursor login parse failed")
 	}
 	if claims.Exp <= now.Add(time.Minute).Unix() {
-		return session, errors.New("expired")
+		return session, codeError("unsupported_login", "expired")
 	}
 	sub := strings.Split(claims.Sub, "|")
 	user := sub[len(sub)-1]
@@ -186,7 +190,7 @@ func cursorJSON(ctx context.Context, c *http.Client, method, endpoint string, s 
 	}
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
 	if err != nil {
-		return errors.New("Cursor request failed")
+		return codeError("other", "Cursor request failed")
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -203,7 +207,7 @@ func cursorJSON(ctx context.Context, c *http.Client, method, endpoint string, s 
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.New("Cursor request failed or timed out")
+		return codeError(transportErrorCode(err), "Cursor request failed or timed out")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -211,10 +215,10 @@ func cursorJSON(ctx context.Context, c *http.Client, method, endpoint string, s 
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
 	if err != nil || len(b) > nativeMaxBody {
-		return errors.New("Cursor response too large or cut off")
+		return codeError("schema_changed", "Cursor response too large or cut off")
 	}
 	if json.Unmarshal(b, out) != nil {
-		return errors.New("unsupported Cursor response")
+		return codeError("parse_error", "unsupported Cursor response")
 	}
 	return nil
 }
@@ -416,9 +420,10 @@ type cursorResponseError struct {
 func (e cursorResponseError) Error() string { return "Cursor HTTP " + strconv.Itoa(e.code) }
 
 func cursorAccountFailure(err error, now time.Time) readerOutcome {
-	out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor usage temporarily unavailable"}}
+	out := readerOutcome{Entry: readerEntry{Status: "unavailable", ErrorCode: errorCode(err), Notice: "Cursor usage temporarily unavailable"}}
 	var response cursorResponseError
 	if errors.As(err, &response) {
+		out.Entry.ErrorCode = httpErrorCode(response.code)
 		switch response.code {
 		case 401:
 			out.Entry.Status = "expired"
@@ -454,7 +459,7 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
 	if err != nil {
-		out := readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "This Cursor saved-login type is not supported yet", NextStep: "Open Cursor to refresh"}, Invalidate: changed}
+		out := readerOutcome{Entry: readerEntry{Status: "unavailable", ErrorCode: errorCode(err), Notice: "This Cursor saved-login type is not supported yet", NextStep: "Open Cursor to refresh"}, Invalidate: changed}
 		if err.Error() == "expired" {
 			out.Entry.Status = "expired"
 		}
@@ -478,7 +483,7 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 		}
 		plan, details := parseCursorPlan(raw)
 		if details == nil {
-			return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Cursor plan format is not supported yet"}, Invalidate: changed}
+			return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor plan format is not supported yet"}, Invalidate: changed}
 		}
 		meta = readerMetadata{CredentialKey: credentialKey, AccountKey: accountKey, VerifiedAt: r.Now.UTC(), Plan: plan, PlanDetails: details}
 	}
@@ -490,7 +495,7 @@ func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) 
 	}
 	windows, ok := parseCursorPeriod(usage, meta.PlanDetails, r.Now)
 	if !ok {
-		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Cursor period-usage format is not supported yet"}, Invalidate: changed}
 	}
 	if stamp == "" || cursorStateAt(path) != stamp {
 		return readerOutcome{Entry: readerEntry{Status: "unavailable", Notice: "Cursor sign-in changed during the read; refresh required"}, Invalidate: true}
@@ -572,4 +577,23 @@ func parseCursorPeriod(raw []byte, details *readerPlanDetails, now time.Time) ([
 		return nil, false
 	}
 	return []Window{{Kind: kindOf(details.Minutes), Limit: "Included", WindowMinutes: details.Minutes, ResetsAt: details.ResetAt, UsedPercent: pct, ObservedAt: now.UTC(), ResetMode: "fixed"}}, true
+}
+
+func cursorStoreErrorCode(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return "unsupported_login"
+	}
+	var sqlite interface{ Code() int }
+	if errors.As(err, &sqlite) {
+		switch sqlite.Code() & 255 {
+		case 11, 26:
+			return "parse_error"
+		case 1:
+			return "schema_changed"
+		}
+	}
+	return "file_unreadable"
 }

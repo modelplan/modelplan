@@ -57,13 +57,13 @@ type claudeCredential struct {
 	} `json:"claudeAiOauth"`
 }
 
-func claudeFailure(state, notice string) readerOutcome {
-	return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}}
+func claudeFailure(state, notice string, codes ...string) readerOutcome {
+	return readerOutcome{Entry: readerEntry{Status: state, Notice: notice, ErrorCode: failureCode(state, codes)}}
 }
 
 // Refuse API keys, alternate hosts, cloud logins and auth helpers locally. The
 // second lane owns GLM-from-config; this reader must never send its key to Claude.
-func claudeLoginUnsupported(root string) bool {
+func claudeLoginUnsupported(root string) string {
 	env := map[string]string{}
 	b, status := readBounded(filepath.Join(root, "settings.json"), 256<<10)
 	if status != "missing" {
@@ -71,46 +71,49 @@ func claudeLoginUnsupported(root string) bool {
 			Env          map[string]string `json:"env"`
 			APIKeyHelper json.RawMessage   `json:"apiKeyHelper"`
 		}
-		if status != "" || json.Unmarshal(b, &settings) != nil {
-			return true
+		if status != "" {
+			return fileErrorCode(status)
+		}
+		if json.Unmarshal(b, &settings) != nil {
+			return "parse_error"
 		}
 		if len(settings.APIKeyHelper) > 0 && string(settings.APIKeyHelper) != "null" {
-			return true
+			return "unsupported_login"
 		}
 		env = settings.Env
 	}
 	for _, name := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"} {
 		if v := os.Getenv(name); v != "" && v != "0" && v != "false" {
-			return true
+			return "unsupported_login"
 		}
 		if v := env[name]; v != "" && v != "0" && v != "false" {
-			return true
+			return "unsupported_login"
 		}
 	}
 	for _, base := range []string{os.Getenv("ANTHROPIC_BASE_URL"), env["ANTHROPIC_BASE_URL"]} {
 		if base != "" && strings.TrimRight(base, "/") != claudeOAuthHost {
-			return true
+			return "unsupported_login"
 		}
 	}
-	return false
+	return ""
 }
 
 func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != ""
-	fail := func(state, notice string) readerOutcome {
-		out := claudeFailure(state, notice)
+	fail := func(state, notice string, codes ...string) readerOutcome {
+		out := claudeFailure(state, notice, codes...)
 		out.Invalidate = changed
 		return out
 	}
-	if claudeLoginUnsupported(r.Profile.Root) {
-		return fail("unavailable", "This Claude Code login type is not supported yet")
+	if code := claudeLoginUnsupported(r.Profile.Root); code != "" {
+		return fail("unavailable", "This Claude Code login type is not supported yet", code)
 	}
 	b, status := readBounded(filepath.Join(r.Profile.Root, ".credentials.json"), 64<<10)
 	if status == "missing" {
 		profiles := claudeProfiles()
 		if len(profiles) != 1 || profiles[0].Root != r.Profile.Root || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
-			return fail("unavailable", "No supported Claude Code saved login")
+			return fail("unavailable", "No supported Claude Code saved login", "file_missing")
 		}
 		if runtime.GOOS == "darwin" && !r.Grant.Keychain && r.Grant.KeychainConsent == "unset" {
 			out := fail("consent_required", consent.ClaudeKeychainUnsetNotice)
@@ -118,7 +121,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 			return out
 		}
 		if !r.Grant.Keychain {
-			return fail("unavailable", "No supported Claude Code saved login")
+			return fail("unavailable", "No supported Claude Code saved login", "file_missing")
 		}
 		k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
 			Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
@@ -129,11 +132,14 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		b, status = k.Value, ""
 	}
 	if status != "" {
-		return fail("unavailable", "Claude Code saved login is unreadable")
+		return fail("unavailable", "Claude Code saved login is unreadable", fileErrorCode(status))
 	}
 	var credential claudeCredential
-	if json.Unmarshal(b, &credential) != nil || credential.OAuth == nil {
-		return fail("unavailable", "This Claude Code login type is not supported yet")
+	if json.Unmarshal(b, &credential) != nil {
+		return fail("unavailable", "Claude Code saved login is invalid", "parse_error")
+	}
+	if credential.OAuth == nil {
+		return fail("unavailable", "This Claude Code login type is not supported yet", "unsupported_login")
 	}
 	oauth := credential.OAuth
 	credentialKey := readerHash(r.Paths.Cache, "claude:credential", oauth.AccessToken)
@@ -142,7 +148,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		return fail("expired", "Open Claude Code to refresh")
 	}
 	if !contains(oauth.Scopes, "user:profile") {
-		return fail("unavailable", "This Claude Code login scope is not supported yet")
+		return fail("unavailable", "This Claude Code login scope is not supported yet", "unsupported_login")
 	}
 	if credentialKey == "" {
 		return fail("unavailable", "Identity key unavailable")
@@ -151,10 +157,11 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	var binding *Binding
 	if cold {
 		var profile claudeOAuthProfile
-		state, retry := claudeGet(ctx, c, "/api/oauth/profile", oauth.AccessToken, &profile, r.Now)
+		state, retry, code := claudeGet(ctx, c, "/api/oauth/profile", oauth.AccessToken, &profile, r.Now)
 		if state != "" {
 			out := claudeFailure(state, claudeNextStep(state))
 			out.Invalidate = changed
+			out.Entry.ErrorCode = code
 			out.RetryAfter = retry
 			return out
 		}
@@ -177,10 +184,11 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		}
 	}
 	var usage map[string]json.RawMessage
-	state, retry := claudeGet(ctx, c, "/api/oauth/usage", oauth.AccessToken, &usage, r.Now)
+	state, retry, code := claudeGet(ctx, c, "/api/oauth/usage", oauth.AccessToken, &usage, r.Now)
 	if state != "" {
 		out := claudeFailure(state, claudeNextStep(state))
 		out.Invalidate = changed
+		out.Entry.ErrorCode = code
 		out.RetryAfter = retry
 		return out
 	}
@@ -243,10 +251,10 @@ func claudeNextStep(state string) string {
 	return "Claude usage temporarily unavailable"
 }
 
-func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, now time.Time) (string, time.Time) {
+func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, now time.Time) (string, time.Time, string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, claudeOAuthHost+path, nil)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -257,7 +265,7 @@ func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, n
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, transportErrorCode(err)
 	}
 	defer resp.Body.Close()
 	retry := time.Time{}
@@ -271,21 +279,27 @@ func claudeGet(ctx context.Context, c *http.Client, path, token string, v any, n
 	switch resp.StatusCode {
 	case 200:
 	case 401:
-		return "expired", retry
+		return "expired", retry, "http_401"
 	case 403:
-		return "denied", retry
+		return "denied", retry, "http_403"
 	case 404:
-		return "not-supported", retry
+		return "not-supported", retry, "schema_changed"
 	case 429:
-		return "rate-limited", retry
+		return "rate-limited", retry, "http_429"
 	default:
-		return "unavailable", retry
+		return "unavailable", retry, httpErrorCode(resp.StatusCode)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody || json.Unmarshal(b, v) != nil {
-		return "unsupported_schema", retry
+	if err != nil {
+		return "unavailable", retry, transportErrorCode(err)
 	}
-	return "", retry
+	if len(b) > nativeMaxBody {
+		return "unsupported_schema", retry, "schema_changed"
+	}
+	if err := json.Unmarshal(b, v); err != nil {
+		return "unsupported_schema", retry, jsonErrorCode(err)
+	}
+	return "", retry, ""
 }
 
 func parseClaudeUsage(raw map[string]json.RawMessage, now time.Time) ([]Window, bool) {

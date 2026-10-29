@@ -206,10 +206,11 @@ func (a *Account) InPool(w *Window) bool {
 }
 
 type SourceStatus struct {
-	Beta   bool   `json:"beta,omitempty"`
-	Source string `json:"source"`
-	Status string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema; CodexBar also: stale | estimated | unavailable
-	Reason string `json:"reason,omitempty"`
+	ErrorCode string `json:"errorCode,omitempty"`
+	Beta      bool   `json:"beta,omitempty"`
+	Source    string `json:"source"`
+	Status    string `json:"status"` // ok | missing | empty | invalid | unreadable | unsafe_path | too_large | unsupported_schema; CodexBar also: stale | estimated | unavailable
+	Reason    string `json:"reason,omitempty"`
 }
 
 type Report struct {

@@ -53,6 +53,7 @@ type readerPlanDetails struct {
 	Unified bool       `json:"unified"`
 }
 type readerEntry struct {
+	ErrorCode  string         `json:"errorCode,omitempty"`
 	ProfileKey string         `json:"profileKey"`
 	Account    *Account       `json:"account,omitempty"`
 	Metadata   readerMetadata `json:"metadata,omitempty"`
@@ -256,6 +257,11 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return errors.New("reader consent changed")
 	}
 	e := out.Entry
+	if e.Status == "ok" {
+		e.ErrorCode = ""
+	} else if e.ErrorCode != "" {
+		e.ErrorCode = ReaderErrorCode(e.ErrorCode)
+	}
 	e.ProfileKey = profileKey
 	if e.Status != "ok" {
 		if !out.Invalidate {
@@ -383,8 +389,14 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 	seen := map[string]bool{}
 	for _, e := range s.Entries {
 		st := SourceStatus{Beta: true, Source: "native:" + provider, Status: e.Status, Reason: e.Notice}
+		if e.Status != "ok" && e.ErrorCode != "" {
+			st.ErrorCode = ReaderErrorCode(e.ErrorCode)
+		}
 		if e.NextStep != "" {
 			st.Reason = e.NextStep
+		}
+		if st.ErrorCode != "" {
+			st.Reason = st.ErrorCode
 		}
 		if e.Account != nil {
 			a := *e.Account

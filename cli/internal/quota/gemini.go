@@ -92,24 +92,24 @@ func geminiRecalled(key string, now time.Time) geminiProject {
 	return v
 }
 
-func geminiUnsupported(root string) bool {
+func geminiUnsupported(root string) string {
 	if os.Getenv("GEMINI_FORCE_ENCRYPTED_FILE_STORAGE") == "true" {
-		return true
+		return "unsupported_login"
 	}
 	for _, name := range []string{"GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI"} {
 		if v := os.Getenv(name); v != "" && v != "0" && v != "false" {
-			return true
+			return "unsupported_login"
 		}
 	}
 	if v := os.Getenv("CODE_ASSIST_ENDPOINT"); v != "" && strings.TrimRight(v, "/") != "https://cloudcode-pa.googleapis.com" {
-		return true
+		return "unsupported_login"
 	}
 	if v := os.Getenv("CODE_ASSIST_API_VERSION"); v != "" && v != "v1internal" {
-		return true
+		return "unsupported_login"
 	}
 	b, status := readBounded(filepath.Join(root, "settings.json"), 256<<10)
 	if status == "missing" {
-		return false
+		return ""
 	}
 	var settings struct {
 		Security struct {
@@ -118,11 +118,17 @@ func geminiUnsupported(root string) bool {
 			} `json:"auth"`
 		} `json:"security"`
 	}
-	if status != "" || json.Unmarshal(b, &settings) != nil {
-		return true
+	if status != "" {
+		return fileErrorCode(status)
+	}
+	if json.Unmarshal(b, &settings) != nil {
+		return "parse_error"
 	}
 	selected := settings.Security.Auth.SelectedType
-	return selected != "" && selected != "oauth-personal"
+	if selected != "" && selected != "oauth-personal" {
+		return "unsupported_login"
+	}
+	return ""
 }
 
 func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
@@ -141,18 +147,21 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	// Unknown/malformed/unsupported bindings cannot retain another account's
 	// numbers. Once decoded, an equal token can retain its original-age capture.
 	changed := meta.CredentialKey != ""
-	fail := func(state, notice string) readerOutcome {
-		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice}, Invalidate: changed}
+	fail := func(state, notice string, codes ...string) readerOutcome {
+		return readerOutcome{Entry: readerEntry{Status: state, Notice: notice, ErrorCode: failureCode(state, codes)}, Invalidate: changed}
 	}
-	if geminiUnsupported(r.Profile.Root) {
-		return fail("unavailable", "This Gemini CLI login type is not supported yet")
+	if code := geminiUnsupported(r.Profile.Root); code != "" {
+		return fail("unavailable", "This Gemini CLI login type is not supported yet", code)
 	}
 	credentialPath := filepath.Join(r.Profile.Root, "oauth_creds.json")
 	before, _ := os.Lstat(credentialPath)
 	b, status := readBounded(credentialPath, 64<<10)
 	var credential geminiCredential
-	if status != "" || json.Unmarshal(b, &credential) != nil {
-		return fail("unavailable", "No supported Gemini CLI OAuth file login; secure-store-only login is not supported yet")
+	if status != "" {
+		return fail("unavailable", "Gemini CLI login unavailable", fileErrorCode(status))
+	}
+	if json.Unmarshal(b, &credential) != nil {
+		return fail("unavailable", "Gemini CLI login invalid", "parse_error")
 	}
 	credentialKey := readerHash(r.Paths.Cache, "gemini:credential", credential.AccessToken)
 	changed = scopeChanged || (meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey))
@@ -172,7 +181,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 	if configured != "" {
 		if !geminiProjectID.MatchString(configured) {
 			changed = changed || meta.ScopeKey != ""
-			return fail("unavailable", "Unsupported configured Gemini project")
+			return fail("unavailable", "Unsupported configured Gemini project", "unsupported_login")
 		}
 		if configuredKey == "" {
 			changed = meta.CredentialKey != ""
@@ -207,9 +216,10 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 			request["cloudaicompanionProject"] = configured
 		}
 		var assist geminiAssist
-		state, retry := geminiJSON(ctx, c, "loadCodeAssist", credential.AccessToken, request, &assist, r.Now)
+		state, retry, code := geminiJSON(ctx, c, "loadCodeAssist", credential.AccessToken, request, &assist, r.Now)
 		if state != "" {
 			out := fail(state, geminiNextStep(state))
+			out.Entry.ErrorCode = code
 			out.RetryAfter = retry
 			return out
 		}
@@ -221,7 +231,7 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		changed = changed || (meta.ScopeKey != "" && scopeKey != meta.ScopeKey)
 		plan := geminiTier(assist.CurrentTier.ID)
 		if !geminiProjectID.MatchString(id) || scopeKey == "" || plan == "" || (configured != "" && id != configured) {
-			return fail("unavailable", "Gemini project or tier is not supported yet; open Gemini CLI")
+			return fail("unavailable", "Gemini project or tier is not supported yet; open Gemini CLI", "schema_changed")
 		}
 		project = geminiProject{ID: id, Plan: plan, At: r.Now.UTC()}
 		meta = readerMetadata{CredentialKey: credentialKey, ScopeKey: scopeKey, VerifiedAt: r.Now.UTC(), Plan: plan}
@@ -232,16 +242,17 @@ func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerO
 		wallet = geminiCredits(creditValues, r.Now)
 	}
 	var quota geminiQuota
-	state, retry := geminiJSON(ctx, c, "retrieveUserQuota", credential.AccessToken, map[string]string{"project": project.ID}, &quota, r.Now)
+	state, retry, code := geminiJSON(ctx, c, "retrieveUserQuota", credential.AccessToken, map[string]string{"project": project.ID}, &quota, r.Now)
 	if state != "" {
 		out := fail(state, geminiNextStep(state))
 		out.Invalidate = changed
+		out.Entry.ErrorCode = code
 		out.RetryAfter = retry
 		return out
 	}
 	windows, ok := parseGeminiQuota(quota, r.Now)
 	if !ok {
-		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", Notice: "This Gemini quota format is not supported yet"}, Invalidate: changed}
+		return readerOutcome{Entry: readerEntry{Status: "unsupported_schema", ErrorCode: "schema_changed", Notice: "This Gemini quota format is not supported yet"}, Invalidate: changed}
 	}
 	after, statErr := os.Lstat(credentialPath)
 	if before == nil || statErr != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
@@ -410,17 +421,17 @@ func geminiNextStep(state string) string {
 	return "Gemini quota temporarily unavailable"
 }
 
-func geminiJSON(ctx context.Context, c *http.Client, method, token string, body, out any, now time.Time) (string, time.Time) {
+func geminiJSON(ctx context.Context, c *http.Client, method, token string, body, out any, now time.Time) (string, time.Time, string) {
 	if method != "loadCodeAssist" && method != "retrieveUserQuota" {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	b, err := json.Marshal(body)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, geminiHost+"/v1internal:"+method, bytes.NewReader(b))
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, "other"
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
@@ -431,7 +442,7 @@ func geminiJSON(ctx context.Context, c *http.Client, method, token string, body,
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return "unavailable", time.Time{}
+		return "unavailable", time.Time{}, transportErrorCode(err)
 	}
 	defer resp.Body.Close()
 	retry := time.Time{}
@@ -445,17 +456,23 @@ func geminiJSON(ctx context.Context, c *http.Client, method, token string, body,
 	switch resp.StatusCode {
 	case 200:
 	case 401:
-		return "expired", retry
+		return "expired", retry, "http_401"
 	case 403:
-		return "denied", retry
+		return "denied", retry, "http_403"
 	case 429:
-		return "rate-limited", retry
+		return "rate-limited", retry, "http_429"
 	default:
-		return "unavailable", retry
+		return "unavailable", retry, httpErrorCode(resp.StatusCode)
 	}
 	b, err = io.ReadAll(io.LimitReader(resp.Body, nativeMaxBody+1))
-	if err != nil || len(b) > nativeMaxBody || json.Unmarshal(b, out) != nil {
-		return "unsupported_schema", retry
+	if err != nil {
+		return "unavailable", retry, transportErrorCode(err)
 	}
-	return "", retry
+	if len(b) > nativeMaxBody {
+		return "unsupported_schema", retry, "schema_changed"
+	}
+	if err := json.Unmarshal(b, out); err != nil {
+		return "unsupported_schema", retry, jsonErrorCode(err)
+	}
+	return "", retry, ""
 }
