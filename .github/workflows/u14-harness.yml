@@ -4,6 +4,7 @@ on:
     paths:
       - tools/u14/**
       - cli/internal/u14fixture/**
+      - cli/internal/readers/**
       - cli/internal/consent/**
       - cli/internal/quota/**
       - cli/internal/appserver/**
@@ -18,6 +19,7 @@ on:
     paths:
       - tools/u14/**
       - cli/internal/u14fixture/**
+      - cli/internal/readers/**
       - cli/internal/consent/**
       - cli/internal/quota/**
       - cli/internal/appserver/**
@@ -47,23 +49,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Prepare disposable scratch
+        run: mkdir -p .tmp
       - name: Fixture tooling tests and vet
         working-directory: cli
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp
         run: go vet ./internal/appserver/... ./internal/u14fixture/... && go test ./internal/appserver/... ./internal/u14fixture/... ./cmd/modelplan
       - name: Real-binary driver regressions
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp
         run: python3 -m unittest discover -s tools/u14/tests -p test_runner.py -v
       - name: U14 L1 profile with synthetic evidence
-        run: python3 tools/u14/verify.py --output "$RUNNER_TEMP/u14-l1"
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp
+        run: python3 tools/u14/verify.py --output .tmp/u14-l1
       - name: Real-binary engine scenarios and part-B bundle
-        run: python3 tools/u14/run.py --output "$RUNNER_TEMP/u14-engine"
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp
+        run: python3 tools/u14/run.py --output .tmp/u14-engine
       - name: Preserve evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: u14-evidence-${{ github.sha }}
           path: |
-            ${{ runner.temp }}/u14-engine/bundle/
-            ${{ runner.temp }}/u14-engine/summary.json
-            ${{ runner.temp }}/u14-l1/bundle/
+            ${{ github.workspace }}/.tmp/u14-engine/bundle/
+            ${{ github.workspace }}/.tmp/u14-engine/summary.json
+            ${{ github.workspace }}/.tmp/u14-l1/bundle/
           if-no-files-found: error
           retention-days: 14
+      - name: Remove completed scratch
+        if: always()
+        run: rm -rf .tmp

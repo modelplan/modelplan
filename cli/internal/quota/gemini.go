@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"math"
 	"net/http"
@@ -132,6 +133,7 @@ func geminiUnsupported(root string) string {
 }
 
 func collectGemini(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	c = accountReadClient(consent.ScopeGeminiAccountUsageSavedLogin, c)
 	meta := r.Previous.Metadata
 	configured := os.Getenv("GOOGLE_CLOUD_PROJECT")
 	if configured == "" {

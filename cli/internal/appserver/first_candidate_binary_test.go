@@ -303,6 +303,21 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 		if runtimeReadCount(t, trace) != 1 {
 			t.Fatal("first refresh did not make one logical read")
 		}
+		// Wait for the completed capture, so shutdown cannot mask a second
+		// request or a collector failure after the first quota request.
+		capturePath := filepath.Join(home, "cache", "observed", "codex-account.json")
+		var capture struct {
+			Status string `json:"status"`
+		}
+		for time.Now().Before(deadline) {
+			if raw, err := os.ReadFile(capturePath); err == nil && json.Unmarshal(raw, &capture) == nil {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if capture.Status != "ok" {
+			t.Fatal("logical read did not complete successfully")
+		}
 		second := refreshReply(t, c, 3, consent.ScopeCodexRuntimeUsage)
 		if second[0].DisabledReason == nil || *second[0].DisabledReason != wire.RefreshCooldown {
 			t.Fatalf("second refresh was not deferred: %+v", second)
@@ -315,6 +330,23 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 		finishCandidate(t, c)
 		if runtimeReadCount(t, trace) != 1 {
 			t.Fatal("independent CLI bypassed the shared budget")
+		}
+		traceBytes, err := os.ReadFile(trace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods := []string{}
+		for _, line := range bytes.Split(bytes.TrimSpace(traceBytes), []byte{'\n'}) {
+			var request struct {
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(line, &request); err != nil {
+				t.Fatal(err)
+			}
+			methods = append(methods, request.Method)
+		}
+		if !reflect.DeepEqual(methods, []string{"initialize", "initialized", "account/rateLimits/read", "account/read"}) {
+			t.Fatalf("logical read escaped its two-request set: %v", methods)
 		}
 		if stderr.Len() != 0 {
 			t.Fatalf("unexpected stderr: %s", stderr.String())

@@ -1,33 +1,71 @@
 // SPDX-License-Identifier: MIT
 // Virtual quota file supplied only by the U14 fake-provider Go build overlay.
 package quota
+
 import (
- "bytes"
- "encoding/json"
- "errors"
- "io"
- "net/http"
- "os"
- "path/filepath"
+    "bytes"
+    "encoding/json"
+    "errors"
+    "io"
+    "net/http"
+    "os"
+    "path/filepath"
 )
+
 type u14RecordingTransport struct{}
-func u14HTTPClient()*http.Client{return &http.Client{Timeout:nativeTimeout,Transport:u14RecordingTransport{}}}
-func (u14RecordingTransport)RoundTrip(request *http.Request)(*http.Response,error){
- home:=os.Getenv("HOME")
- marker,err:=os.ReadFile(filepath.Join(home,".u14-baseline.json"))
- if err!=nil || !bytes.Contains(marker,[]byte(`"shapeSha256"`)){return nil,errors.New("synthetic baseline required")}
- var input struct{Status int `json:"minimaxStatus"`}
- raw,err:=os.ReadFile(filepath.Join(home,".u14-engine-fixture.json"))
- if err!=nil || json.Unmarshal(raw,&input)!=nil{return nil,errors.New("synthetic provider unavailable")}
- event:="unlisted-provider-request";status:=503;body:=[]byte(`{}`)
- if request.Method=="GET" && request.URL.Scheme=="https" && (request.URL.Host=="api.minimax.io" || request.URL.Host=="api.minimaxi.com") && request.URL.RawQuery=="" {
-  switch request.URL.Path {
-  case miniMaxCurrentPath:event="minimax-current";status=input.Status
-  case miniMaxLegacyPath:event="minimax-legacy";status=200;body=[]byte(`{"data":{"model_remains":[{"model_name":"general","current_interval_remaining_percent":75}]}}`)
-  }
- }
- file,err:=os.OpenFile(filepath.Join(home,".u14-http-events.jsonl"),os.O_CREATE|os.O_WRONLY|os.O_APPEND,0600)
- if err!=nil{return nil,err};raw,_=json.Marshal(map[string]string{"event":event});_,err=file.Write(append(raw,'\n'));file.Close();if err!=nil{return nil,err}
- if event=="unlisted-provider-request" || status!=200 && status!=401 && status!=403{return nil,errors.New("fixture destination refused")}
- return &http.Response{StatusCode:status,Header:make(http.Header),Body:io.NopCloser(bytes.NewReader(body)),Request:request},nil
+func u14HTTPClient() *http.Client {
+    return &http.Client{Timeout: nativeTimeout, Transport: u14RecordingTransport{}}
+}
+// Only compiled labels and booleans enter the trace. No request credential,
+// header value, body, arbitrary URL or response body is retained.
+func (u14RecordingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+    home := os.Getenv("HOME")
+    marker, err := os.ReadFile(filepath.Join(home, ".u14-baseline.json"))
+    if err != nil || !bytes.Contains(marker, []byte(`"shapeSha256"`)) {
+        return nil, errors.New("synthetic baseline required")
+    }
+    var input struct { Status int `json:"minimaxStatus"` }
+    raw, err := os.ReadFile(filepath.Join(home, ".u14-engine-fixture.json"))
+    if err != nil || json.Unmarshal(raw, &input) != nil {
+        return nil, errors.New("synthetic provider unavailable")
+    }
+    event, provider, host, path := "unlisted-provider-request", "other", "other", "unlisted"
+    method := "OTHER"
+    if request.Method == "GET" || request.Method == "POST" { method = request.Method }
+    status, body := 503, []byte(`{}`)
+    switch request.URL.Host {
+    case "cloudcode-pa.googleapis.com": provider, host = "gemini", "cloudcode-pa.googleapis.com"
+    case "cursor.com", "api2.cursor.sh": provider, host = "cursor", request.URL.Host
+    case "api.minimax.io", "api.minimaxi.com":
+        provider, host = "minimax", request.URL.Host
+        if method == "GET" && request.URL.Scheme == "https" && request.URL.RawQuery == "" && request.URL.User == nil {
+            switch request.URL.Path {
+            case miniMaxCurrentPath: event, path, status = "minimax-current", miniMaxCurrentPath, input.Status
+            case miniMaxLegacyPath:
+                event, path, status = "minimax-legacy", miniMaxLegacyPath, 200
+                body = []byte(`{"data":{"model_remains":[{"model_name":"general","current_interval_remaining_percent":75}]}}`)
+            }
+        }
+    }
+    record := struct {
+        Event string `json:"event"`
+        Provider string `json:"provider"`
+        Method string `json:"method"`
+        Host string `json:"host"`
+        Path string `json:"path"`
+        Status int `json:"status"`
+        CredentialMatched bool `json:"credentialMatched"`
+    }{event, provider, method, host, path, status,
+        provider == "minimax" && request.Header.Get("Authorization") == "Bearer U14-SYNTHETIC-MINIMAX-KEY"}
+    file, err := os.OpenFile(filepath.Join(home, ".u14-http-events.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+    if err != nil { return nil, err }
+    raw, _ = json.Marshal(record)
+    _, err = file.Write(append(raw, '\n'))
+    file.Close()
+    if err != nil { return nil, err }
+    if event == "unlisted-provider-request" || (status != 200 && status != 401 && status != 403 && status != 404) {
+        return nil, errors.New("fixture destination refused")
+    }
+    return &http.Response{StatusCode: status, Header: make(http.Header),
+        Body: io.NopCloser(bytes.NewReader(body)), Request: request}, nil
 }

@@ -462,6 +462,107 @@
       ],
       "structures": [],
       "priorJourney": "Production U2 store, receipts and fences. Recording history provider only; no native UI or final-package proof."
+    },
+    {
+      "id": "U2a-post-veto",
+      "intent": "Valid synthetic Gemini/Cursor logins and persisted grants still make zero account calls under policy_pending, through the app-server and independent CLI.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
+    },
+    {
+      "id": "U2a-minimax-auth-stop",
+      "intent": "MiniMax stops after the first 401 or 403; no legacy request follows, and a second app request plus independent CLI retain the budget.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
+    },
+    {
+      "id": "U2a-minimax-legacy-control",
+      "intent": "A separate compatibility control observes current 404 then legacy 200 and a positive reading, proving the legacy fake response is available.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
+    },
+    {
+      "id": "U2a-local-history-gemini",
+      "intent": "Gemini local token history remains readable with identical typed value hashes after blocked account refreshes and MiniMax auth failures.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
+    },
+    {
+      "id": "U2a-local-history-cursor",
+      "intent": "Cursor typed local-history readability is unsupported pending a production producer.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Component evidence of U2a-admission on the provider-only binary; Linux engine evidence does not earn device L2."
+    },
+    {
+      "id": "U3-null-selectors",
+      "intent": "The registered production history handler rejects ref:null, cursor:null and both null before admission/read.",
+      "units": [
+        "U3",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "sensitive-queries",
+        "synthetic-home",
+        "fake-providers"
+      ],
+      "structures": [],
+      "priorJourney": "Real-executable regression for strict optional selector input semantics; recording history source only."
     }
   ]
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"net/http"
 	"net/url"
@@ -452,6 +453,7 @@ func cursorAccountFailure(err error, now time.Time) readerOutcome {
 // At most plan + period usage, never the former summary/plan/legacy waterfall.
 // No credentials or local-store stats are read by the JSON/cache projection.
 func collectCursorAccount(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	c = accountReadClient(consent.ScopeCursorAccountUsageSavedLogin, c)
 	path := filepath.Join(r.Profile.Root, "state.vscdb")
 	stamp := cursorStateAt(path)
 	session, err := readCursorSessionAt(ctx, path, r.Now)

@@ -87,8 +87,7 @@ func TestZaiConfigConsentPassiveCadenceAndRedaction(t *testing.T) {
 	defer server.Close()
 	oldHost, oldClient := zaiHosts["global"], nativeClient
 	t.Cleanup(func() { zaiHosts["global"] = oldHost; nativeClient = oldClient })
-	zaiHosts["global"] = server.URL
-	nativeClient = server.Client()
+	nativeClient = readerFixtureClient(t, server, "api.z.ai", "open.bigmodel.cn")
 	source := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-canary"}}`)}
 	cache := t.TempDir()
 	ctx := context.Background()
@@ -141,7 +140,7 @@ func TestZaiConfigCapturedGenerationSurvivesRegionSwitch(t *testing.T) {
 	defer server.Close()
 	global, cn, client := zaiHosts["global"], zaiHosts["bigmodel-cn"], nativeClient
 	t.Cleanup(func() { zaiHosts["global"] = global; zaiHosts["bigmodel-cn"] = cn; nativeClient = client })
-	zaiHosts["global"], zaiHosts["bigmodel-cn"], nativeClient = server.URL, server.URL, server.Client()
+	nativeClient = readerFixtureClient(t, server, "api.z.ai", "open.bigmodel.cn")
 	sourceA := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-A-canary"}}`)}
 	sourceB := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://open.bigmodel.cn/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-B-canary"}}`)}
 	ctxA := WithZaiConfigAccess(context.Background(), ZaiConfigAccess{Allowed: true, LoginGeneration: strings.Repeat("a", 64)})
@@ -186,7 +185,7 @@ func TestZaiConfigSameGenerationFailureRetainsOriginalAge(t *testing.T) {
 	defer server.Close()
 	host, client := zaiHosts["global"], nativeClient
 	t.Cleanup(func() { zaiHosts["global"] = host; nativeClient = client })
-	zaiHosts["global"], nativeClient = server.URL, server.Client()
+	nativeClient = readerFixtureClient(t, server, "api.z.ai", "open.bigmodel.cn")
 	source := ZaiConfigSource{Tool: "claude-code", SettingsPath: zaiConfigTestFile(t, `{"env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic","ANTHROPIC_AUTH_TOKEN":"key-canary"}}`)}
 	ctx := WithZaiConfigAccess(context.Background(), ZaiConfigAccess{Allowed: true, LoginGeneration: strings.Repeat("a", 64)})
 	cache := t.TempDir()

@@ -159,9 +159,11 @@ class Agent:
             # Retry only this recoverable read error, within one bounded window.
             code = result.get('error', {}).get('code')
             if method in ('rows/subscribe', 'diagnostics/get') and code == -32023 and time.monotonic() < end:
+                self.read_retries += 1
                 time.sleep(.01)
                 continue
             assert 'error' not in result, 'unexpected RPC error: ' + method + ' code=' + str(code)
+
             return result['result']
 
     def grant(self, keychain=True):

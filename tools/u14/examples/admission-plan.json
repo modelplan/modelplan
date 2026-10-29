@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "U2a-admission",
-  "requiredConstructor": "production U2 backend with fixture-only recording providers",
+  "requiredConstructor": "unchanged production app-server constructor; native HTTP client constructor replaced only in a provider overlay",
   "accountScopes": [
     "gemini.account_usage.saved_login",
     "cursor.account_usage.saved_login"
@@ -12,11 +12,21 @@
   ],
   "assertions": [
     "One synthetic home shared by the app-server and independent CLI",
+    "Valid synthetic Gemini OAuth and Cursor SQLite login inputs exclude missing credentials as the reason for zero calls",
     "Unapproved account POST scopes record zero requests and policy_pending",
     "Seeded local history remains readable",
-    "MiniMax 401 and 403 each stop after exactly the first request, with a successful legacy reply available"
+    "MiniMax 401 and 403 each stop after exactly the first request, with a successful legacy reply available",
+    "Gemini typed-history hashes remain equal, and the independent CLI preserves the shared MiniMax budget"
   ],
   "knownUnsupported": [
     "Cursor typed local-history producer/readback is unavailable"
-  ]
+  ],
+  "componentScenarioIds": [
+    "U2a-post-veto",
+    "U2a-minimax-auth-stop",
+    "U2a-minimax-legacy-control",
+    "U2a-local-history-gemini",
+    "U2a-local-history-cursor"
+  ],
+  "proofLevel": "L1 engine-only on Linux; dedicated test Mac L2 remains not-run"
 }
