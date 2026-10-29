@@ -11,10 +11,10 @@ import (
 )
 
 // The production local history entry point shares the home and tool consent
-// with the disabled remote reader; a remote policy gate must not erase it.
-func TestProductionPOSTGateKeepsGeminiLocalHistory(t *testing.T) {
+// with the approved remote reader; absent remote consent must not erase it.
+func TestProductionPOSTApprovalKeepsUnconsentedGeminiLocalHistory(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
-	paths := postProductionPaths(t, "gemini", now)
+	paths := postProductionPaths(t, "gemini", now, false)
 	home := os.Getenv("HOME")
 	file := filepath.Join(home, ".gemini", "tmp", "synthetic-project", "chats", "session-synthetic.json")
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {

@@ -9,9 +9,9 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
-// These tests validate dormant pins directly; they never approve a POST scope
-// or substitute the production admission policy.
-func TestDormantPOSTBodySchemas(t *testing.T) {
+// These synthetic body cases use the same pins as the production transport;
+// they never substitute the compiled admission policy.
+func TestApprovedPOSTBodySchemas(t *testing.T) {
 	for _, tc := range []struct {
 		kind, body string
 		valid      bool
@@ -38,7 +38,7 @@ func TestDormantPOSTBodySchemas(t *testing.T) {
 	}
 }
 
-func TestDormantPOSTPinsAndCredentialPlacement(t *testing.T) {
+func TestApprovedPOSTPinsAndCredentialPlacement(t *testing.T) {
 	for _, tc := range []struct {
 		scope, endpoint, body string
 		headers               http.Header
@@ -61,8 +61,8 @@ func TestDormantPOSTPinsAndCredentialPlacement(t *testing.T) {
 			if !ok || !pin.validHeaders(r) || !pin.validBody(r) {
 				t.Fatal("reviewed request rejected")
 			}
-			if CheckAdmission(tc.scope) != ErrPolicyPending {
-				t.Fatal("dormant pin enabled scope")
+			if CheckAdmission(tc.scope) != nil {
+				t.Fatal("approved pin blocked scope")
 			}
 			r.Header.Add("User-Agent", "extra")
 			if pin.validHeaders(r) {

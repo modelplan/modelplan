@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestAccountUsageProductionTransportRejectsOffHost(t *testing.T) {
 			}
 		})
 	}
-	for _, provider := range []string{"claude", "kimi-login", "grok"} {
+	for _, provider := range []string{"claude", "kimi-login", "grok", "gemini", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
 			var paths Paths
 			var host *string
@@ -100,6 +101,11 @@ func TestAccountUsageProductionTransportRejectsOffHost(t *testing.T) {
 				host = &kimiLoginHost
 			case "grok":
 				paths, host = grokTestPaths(t), &grokHost
+			case "gemini":
+				paths, host = geminiTestPaths(t), &geminiHost
+			case "cursor":
+				paths, _ = cursorAdmittedPaths(t)
+				host = &cursorHost
 			}
 			old, client := *host, nativeClient
 			t.Cleanup(func() { *host, nativeClient = old, client })
@@ -233,6 +239,119 @@ func TestProductionReaderClientsEnforceReadBoundary(t *testing.T) {
 					t.Fatalf("extra request reached recording: %v", record.Requests())
 				}
 			})
+		}
+	}
+}
+
+// Keep the real constructor, consent, shared budget and collector. The seam
+// observes the production-created client without replacing its guard.
+func TestProductionApprovedPOSTClientsKeepOneGuardAndDeadline(t *testing.T) {
+	for _, provider := range []string{"gemini", "cursor"} {
+		for _, slot := range []int{0, 1} {
+			for _, status := range []int{200, 401, 403, 307} {
+				if status == 200 && slot == 1 {
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/%d/%d", provider, slot, status), func(t *testing.T) {
+					at := geminiNow
+					scope := consent.ScopeGeminiAccountUsageSavedLogin
+					files := []string{"assist.json", "quota.json"}
+					endpoint := "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+					body := `{"project":"synthetic-project-001"}`
+					if provider == "gemini" {
+						_ = geminiTestPaths(t)
+					} else {
+						_, _ = cursorAdmittedPaths(t)
+						at = cursorNow
+						scope = consent.ScopeCursorAccountUsageSavedLogin
+						files = []string{"merged-plan.json", "period-usage.json"}
+						endpoint = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
+						body = `{}`
+					}
+					productionConsent(t, provider, true)
+					paths := ProductionPaths(t.TempDir(), "1.0.0")
+					responses := []readertest.Response{}
+					for i, file := range files {
+						raw, err := os.ReadFile("testdata/" + provider + "/" + file)
+						if err != nil {
+							t.Fatal(err)
+						}
+						response := readertest.Response{StatusCode: 200, Body: string(raw)}
+						if status != 200 && i == slot {
+							response = readertest.Response{StatusCode: status, Header: http.Header{"Location": {"https://unreviewed.invalid/credential-target"}}}
+						}
+						responses = append(responses, response)
+					}
+					record := readertest.NewTransport(responses...)
+					var deadlines []time.Time
+					base := &http.Client{Transport: readerFixtureRoundTripper(func(r *http.Request) (*http.Response, error) {
+						deadline, ok := r.Context().Deadline()
+						if !ok || time.Until(deadline) > nativeTimeout {
+							t.Error("logical read has no bounded deadline")
+						}
+						deadlines = append(deadlines, deadline)
+						return record.RoundTrip(r)
+					})}
+					previousFactory, previousClient := accountReadClient, nativeClient
+					var clients []*http.Client
+					accountReadClient = func(s string, c *http.Client) *http.Client {
+						if s != scope {
+							t.Errorf("wrong POST scope: %s", s)
+						}
+						client := previousFactory(s, c)
+						if _, ok := client.Transport.(*readers.ReadTransport); !ok {
+							t.Error("production POST bypassed transport")
+						}
+						clients = append(clients, client)
+						return client
+					}
+					nativeClient = base
+					t.Cleanup(func() { accountReadClient, nativeClient = previousFactory, previousClient })
+					_ = RefreshNative(context.Background(), paths, at)
+					want := 2
+					if status != 200 {
+						want = slot + 1
+					}
+					if len(clients) != 1 || len(record.Requests()) != want {
+						t.Fatalf("logical POST guard/request set: clients=%d requests=%v", len(clients), record.Requests())
+					}
+					for _, deadline := range deadlines {
+						if deadline != deadlines[0] {
+							t.Fatal("deadline restarted between POST stages")
+						}
+					}
+					expected := readers.ErrReadExhausted
+					if status == 401 || status == 403 {
+						expected = readers.ErrAuthorizationStopped
+					}
+					if status == 307 {
+						expected = readers.ErrRequestNotAllowed
+					}
+					for range 3 {
+						request, err := http.NewRequest("POST", endpoint, strings.NewReader(body))
+						if err != nil {
+							t.Fatal(err)
+						}
+						request.Header.Set("Accept", "application/json")
+						request.Header.Set("Content-Type", "application/json")
+						request.Header.Set("User-Agent", "modelplan")
+						request.Header.Set("Authorization", "Bearer synthetic-canary")
+						if provider == "cursor" {
+							request.Header.Set("Connect-Protocol-Version", "1")
+						}
+						response, err := clients[0].Do(request)
+						if response != nil {
+							response.Body.Close()
+						}
+						if !errors.Is(err, expected) {
+							t.Fatalf("POST boundary escaped: %v", err)
+						}
+					}
+					if len(record.Requests()) != want {
+						t.Fatal("POST retry or redirect reached provider")
+					}
+				})
+			}
 		}
 	}
 }
