@@ -32,11 +32,20 @@ func RestartDelay(crashes []time.Time, now time.Time, protocolMismatch bool) (ti
 	return delay, true
 }
 
+// ChildEnvironmentKeys is the single launch-environment contract. Generators
+// publish it for non-Go launchers; return a fresh slice so callers cannot change it.
+func ChildEnvironmentKeys() []string {
+	return []string{"HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"}
+}
+
 // ChildEnvironment creates an allow-listed copy without inspecting the host
 // environment. Native launchers must also close unrelated FDs, drain stdout and
 // stderr concurrently, and close/reap the child on exit/cancel.
 func ChildEnvironment(input []string) []string {
-	allowed := map[string]bool{"HOME": true, "PATH": true, "TMPDIR": true, "LANG": true, "LC_ALL": true, "LC_CTYPE": true, "Z_AI_API_KEY": true, "OPENCODE_API_KEY": true, "MINIMAX_CODING_API_KEY": true, "KIMI_CODE_API_KEY": true}
+	allowed := map[string]bool{}
+	for _, key := range ChildEnvironmentKeys() {
+		allowed[key] = true
+	}
 	result := []string{}
 	seen := map[string]bool{}
 	for _, entry := range input {

@@ -1,0 +1,16 @@
+{
+  "$comment": "SPDX-License-Identifier: MIT. Generated from appserver.ChildEnvironmentKeys; run go run ./internal/swiftwire/cmd --write from cli/.",
+  "version": 1,
+  "allowedKeys": [
+    "HOME",
+    "KIMI_CODE_API_KEY",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "MINIMAX_CODING_API_KEY",
+    "OPENCODE_API_KEY",
+    "PATH",
+    "TMPDIR",
+    "Z_AI_API_KEY"
+  ]
+}

@@ -3,7 +3,7 @@ import Foundation
 import ModelPlanWire
 
 public enum EngineStopReason: Sendable, Equatable {
-    case requested, crashLimit, protocolMismatch, consumerUnavailable
+    case requested, crashLimit, protocolMismatch, consumerUnavailable, processCleanupFailed
 }
 
 public enum EngineConnectionState: Sendable, Equatable {
@@ -31,6 +31,8 @@ public enum EngineClientError: Error, Sendable {
     case deadlineExceeded(EngineRequestDisposition)
     case interrupted(EngineRequestDisposition)
     case mutationOutcomeUnknown(requestID: String, expected: EngineConsentFloor)
+    /// A validated commit remains known even if consumer delivery is interrupted.
+    case receiptDeliveryInterrupted(requestID: String, committedAt: EngineConsentFloor)
     case supersededEpoch(requestID: String?)
     case staleValue, protocolViolation, protocolMismatch
     case featureDecode(EngineFeature)
@@ -62,7 +64,8 @@ public enum EngineClientEvent: Sendable {
 
 /// M0's EngineStore consumes serially, normally on MainActor.
 /// Returning acknowledges the event. Clear every private view/cache/cockpit value
-/// before returning from clearPrivateViews. Do not retain response Tasks as a
+/// before returning from clearPrivateViews. consume must not await an RPC whose
+/// response requires this same consumer; start follow-up RPCs outside that turn. Do not retain response Tasks as a
 /// second private-value publication path. The package owns all protocol gating.
 public protocol EngineClientEventConsumer: Sendable {
     func consume(_ event: EngineClientEvent) async
@@ -76,7 +79,7 @@ public protocol CredentialAgent: Sendable {
     func handle(_ operation: EngineCredentialOperation) async -> WireCredentialResult
 }
 
-/// Contract only; no conforming process client is provided by this stage.
+/// The single protocol/supervision boundary implemented by ProcessEngineClient.
 ///
 /// The implementation alone owns sessions, sequence, equality-only epochs,
 /// generation floors, bounded framing/queues, deadlines and process supervision.
