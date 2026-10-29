@@ -25,6 +25,12 @@ import ModelPlanSettings
         func show(paneID: String?) { presentations += 1 }
         func hide() {}
     }
+    private actor CanonicalTransport: ConsentJSONTransport {
+        let data: Data
+        init(_ data: Data) { self.data = data }
+        func readConsentJSON() async throws -> CommandResult { .init(exitCode: 0, stdout: data) }
+        func grantConsentJSON(_ payload: Data) async throws -> CommandResult { throw TransportError.launchFailed }
+    }
     private func flags() -> () -> Void {
         let keys = ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY"]
         let old = keys.map { ProcessInfo.processInfo.environment[$0] }
@@ -69,16 +75,23 @@ import ModelPlanSettings
         await app.reload(); render(host, try snapshot()); host.setPresentationAllowed(true)
         XCTAssertNotNil(host.journeySnapshot); XCTAssertNotNil(host.journeyFeedGeneratedAt)
         XCTAssertEqual(host.journeyRows.count, 1); XCTAssertFalse(host.journeyReasonRows.isEmpty)
-        let port = CommunityCLIConsentPort(transport: Desktop())
+        let canonical = try JSONSerialization.data(withJSONObject: GeneratedAppCLIFixtures.object("consented-consent.json"))
+        let port = CommunityCLIConsentPort(transport: CanonicalTransport(canonical), apiAvailable: true)
+        _ = try await port.readCanonicalConsent()
         XCTAssertNotNil(port.journeyReadStatus)
+        XCTAssertNotNil(port.journeyAllowedTools)
+        XCTAssertTrue(host.journeyOpenCard(at: 0)); XCTAssertNotNil(host.journeyCardAge)
         for missing in ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY"] {
             unsetenv(missing)
             XCTAssertFalse(CommunityJourneyCI.enabled)
             XCTAssertNil(host.journeySnapshot); XCTAssertNil(host.journeyFeedGeneratedAt)
             XCTAssertTrue(host.journeyRows.isEmpty); XCTAssertTrue(host.journeyReasonRows.isEmpty)
-            XCTAssertNil(port.journeyReadStatus)
+            XCTAssertTrue(host.journeyGrokFirstFailure.isEmpty); XCTAssertNil(host.journeyCardAge)
+            XCTAssertNil(port.journeyReadStatus); XCTAssertNil(port.journeyAllowedTools)
             XCTAssertFalse(host.journeyOpenCard(at: 0)); XCTAssertFalse(host.journeyPressCardEnter())
+            host.journeyDismissCard()
             setenv(missing, "1", 1)
+            XCTAssertNotNil(host.journeyCardAge, "A disabled driver must not dismiss the retained card")
         }
         XCTAssertEqual(host.journeyRows.count, 1, "Flags gate observations without changing the retained model")
     }
@@ -97,6 +110,28 @@ import ModelPlanSettings
         XCTAssertTrue(host.journeySnapshot?.subscriptions.isEmpty == true)
         render(host, try snapshot(source: "other"))
         XCTAssertFalse(host.journeyRows.contains { $0["accountAssociated"] as? Bool == true })
+        render(host, try snapshot(source: "native:grok"))
+        XCTAssertEqual(host.journeyRows.first?["providers"] as? [String], ["grok"])
+    }
+    func testNativeOnlyFirstFailureObservationDoesNotInventAccountOrConnection() async throws {
+        _ = NSApplication.shared
+        let restore = flags(); defer { restore() }
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        let app = SettingsApplicationCoordinator(store: try store()) { host.apply($0) }
+        await app.reload()
+        let iso = ISO8601DateFormatter()
+        let object: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot",
+            "generatedAt": iso.string(from: now), "validUntil": iso.string(from: now.addingTimeInterval(300)),
+            "accounts": [], "connections": [], "sources": [["source": "native:grok", "status": "unavailable", "reason": "parse_error"]]]
+        let personal = try FeedDecoder.personal(JSONSerialization.data(withJSONObject: object))
+        var ledger = ExpiryLedger()
+        render(host, .make(personal: personal, presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil))
+        XCTAssertEqual(host.journeyGrokFirstFailure["nativeErrorObserved"] as? Bool, true)
+        XCTAssertEqual(host.journeyGrokFirstFailure["accountCount"] as? Int, 0)
+        XCTAssertEqual(host.journeyGrokFirstFailure["connectionCount"] as? Int, 0)
+        render(host, try snapshot())
+        XCTAssertEqual(host.journeyGrokFirstFailure["nativeErrorObserved"] as? Bool, false)
     }
     func testUnreadableCardMustReachRetainedSettingsAndBrokenRoutesCannotQualify() async throws {
         _ = NSApplication.shared
