@@ -9,6 +9,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - Extend the app–CLI contract to plugin installation: schemas cover every existing status, and real-binary synthetic captures verify both host tools, offline planning and partial failures. Schema/type/status drift is checked against the production Go model; install behavior is unchanged.
   App–CLI 契约新增插件安装：schema 覆盖全部现有状态，真实 CLI 的合成样例验证两个宿主、离线计划与部分失败；对照生产 Go 类型检查字段和状态漂移，不改变安装行为。
 
+## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-29)
+
 - Desktop connections now reflect native Claude consent, Keychain choice, production admission and read status, with an actionable Settings next step. Tool CLI discovery includes npm-global, Volta and Bun; env-node scripts launch through a resolved Node/Bun runtime under a minimal GUI PATH, with a distinct missing-runtime reason.
   桌面连接状态现反映 Claude 原生授权、钥匙串选择、生产读取准入及读数状态，并提供可操作的设置入口。工具发现支持 npm-global、Volta 和 Bun；GUI 最小 PATH 下的 env-node 脚本通过已定位的 Node/Bun 运行，缺少运行时单独说明。
 
@@ -17,6 +19,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Native reader failures now retain bounded error codes for file access, JSON/schema changes, HTTP/auth responses, transport failures and runtime discovery. `doctor readers` text/JSON and desktop connection reasons expose codes only. Cursor's explicit consent now admits a missing standard profile so it reports `file_missing` rather than silently remaining unadmitted, while privacy, catalogue and unsafe-profile vetoes remain enforced.
   原生读取器失败现保留文件访问、JSON/格式变化、HTTP/认证响应、网络和运行时发现等固定错误码；`doctor readers` 文本/JSON 与桌面连接原因仅输出代码。Cursor 显式授权后，缺失的标准资料目录可进入只读诊断并报告 `file_missing`，不再无声地拒绝准入；保留隐私、目录路由与不安全路径限制。
+
+- Both plugins and their bundled Skill pin CLI v0.5.46 and its published archive checksums.
 
 ## CLI v0.5.45, Codex plugin 0.15.37 and Claude Code plugin 0.7.36 (2026-10-28)
 

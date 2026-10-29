@@ -157,19 +157,32 @@ import ModelPlanShell
         render()
         runtime.start()
     }
+    /// Used by the normal Status window path; binding does not construct or show a window.
+    func configureOverview(_ surface: any NativeOverviewSurface) {
+        overview = surface
+        if let consumer = surface as? any CommunityInstrumentSurface {
+            consumer.requestFreshSelection = { [weak self] in self?.render() }
+            consumer.contentSizeChanged = { [weak self, weak surface] in
+                guard let self, let surface, self.overview === surface,
+                      let consumer = surface as? any CommunityInstrumentSurface,
+                      self.window?.contentView === surface.view else { return }
+                self.window?.setContentSize(consumer.preferredContentSize)
+            }
+        }
+        if let navigation = surface as? any CommunityInstrumentSettingsRouting {
+            navigation.requestSubscriptionsSettings = { [weak self, weak surface] in
+                guard let self, let surface, !self.terminating, self.overview === surface,
+                      (surface as? any CommunityInstrumentSurface)?.isPresented == true,
+                      let settings = self.settings as? any CommunitySubscriptionsSettingsPresenting else { return }
+                await settings.presentSubscriptionsSettings()
+            }
+        }
+    }
     @objc private func showStatus() {
         guard let runtime, !terminating, runtime.lifecycle.canPresent else { return }
         if window == nil {
-            let surface = surfaces.makeOverview(); overview = surface
-            if let consumer = surface as? any CommunityInstrumentSurface {
-                consumer.requestFreshSelection = { [weak self] in self?.render() }
-                consumer.contentSizeChanged = { [weak self, weak surface] in
-                    guard let self, let surface, self.overview === surface,
-                          let consumer = surface as? any CommunityInstrumentSurface,
-                          self.window?.contentView === surface.view else { return }
-                    self.window?.setContentSize(consumer.preferredContentSize)
-                }
-            }
+            let surface = surfaces.makeOverview()
+            configureOverview(surface)
             let size = (surface as? any CommunityInstrumentSurface)?.preferredContentSize ?? CGSize(width:440,height:210)
             let panel = NSWindow(contentRect:NSRect(origin:.zero,size:size),
                 styleMask:[.titled,.closable],backing:.buffered,defer:false)
@@ -191,6 +204,7 @@ import ModelPlanShell
         (settings as? any CommunityUsageRemediation)?.updateUsageState(snapshot: snapshot, diagnostics: diagnostics, now: Date())
         companion?.render(snapshot: snapshot, diagnostics: diagnostics)
         overview?.render(snapshot: snapshot, diagnostics: diagnostics)
+        (overview as? any CommunityPublicCatalogueConsumer)?.render(publication: runtime.store.modelSelectionFeeds().publication)
         if runtime.lifecycle.canPresent, let consumer = overview as? any CommunityInstrumentSurface, consumer.isPresented {
             let selection = runtime.selection(for: consumer)
             consumer.render(selection: selection, publishedAt: runtime.store.modelSelectionFeeds().publication?.publishedAt?.date, now: Date())

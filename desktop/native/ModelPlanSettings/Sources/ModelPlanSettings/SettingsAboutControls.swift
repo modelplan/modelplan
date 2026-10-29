@@ -45,10 +45,10 @@ enum SettingsSurfaceAction {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     func apply(_ notices: [SettingsLicenseNotice], language: SettingsLanguage) {
         let licenses = notices.isEmpty
-            ? SettingsWords.text("Bundled notices are not available in this build.", "此版本尚未提供随包许可声明。", language)
+            ? SettingsWords.text("Bundled licence notices could not be loaded. Reinstall ModelPlan from its official download.", "无法载入随包许可声明。请从官方渠道重新安装 ModelPlan。", language)
             : notices.map { $0.component + " — " + $0.license + "\n" + $0.text }.joined(separator: "\n\n")
         let value = licenses + "\n\n" + SettingsAbout.trademarkNotice.value(language)
         if text.string != value { text.string = value }
-        text.setAccessibilityLabel(SettingsWords.text("Third-party license notices", "第三方许可声明", language))
+        text.setAccessibilityLabel(SettingsWords.text("Bundled licence notices", "随包许可声明", language))
     }
 }

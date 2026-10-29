@@ -5,6 +5,8 @@ public struct CommunityPreferences: Codable, Equatable, Sendable {
     public var schemaVersion = 1
     public var localeIdentifier: String? = nil
     public var favouriteModelIDs: [String] = []
+    /// Public model IDs and field-local preset only; optional for existing v1 files.
+    public var fieldPickerValue: Data? = nil
     public init() {}
 }
 /// App-owned UI preferences only. Never stores credentials, raw CLI output or personal history.

@@ -21,8 +21,7 @@ import ModelPlanCommunityHost
     private let makeFirstRun: @MainActor (SettingsEditor) -> any SettingsWindowSurface
     private var surface: (any SettingsWindowSurface)?
     private var generation: UInt64 = 0
-    private var observer: UUID?, navigation: UUID?
-    private var projected: SettingsConnectionSnapshot?
+    private var navigation: UUID?
     private var disposed = false
 
     public init(application: SettingsApplicationCoordinator, backend: (any SettingsConnectionAllowing)? = nil,
@@ -40,15 +39,12 @@ import ModelPlanCommunityHost
             editor.unbindFirstRunPresentation(navigation); self.navigation = nil
             throw SettingsConnectionFailure.unavailable
         }
-        observer = editor.connections.observe { [weak self] in self?.projectCurrentSnapshot() }
         var context = editor.context; context.capabilities.firstRunPreviewAvailable = true
         application.update(context: context)
-        projectCurrentSnapshot()
     }
     deinit {
-        let editor = application.editor, observer = observer, navigation = navigation
+        let editor = application.editor, navigation = navigation
         Task { @MainActor in
-            if let observer { editor.connections.removeObserver(observer) }
             if let navigation { editor.unbindFirstRunPresentation(navigation) }
         }
     }
@@ -57,14 +53,10 @@ import ModelPlanCommunityHost
         guard !disposed else { return }
         application.editor.connections.receive(facts.connections)
         guard !disposed, application.editor.connections.snapshot == facts.connections else { return }
-        projected = facts.connections
         application.update(context: facts.updating(application.editor.context))
     }
-    private func projectCurrentSnapshot() {
-        guard !disposed, let value = application.editor.connections.snapshot, value != projected else { return }
-        projected = value // Set before notifying the shared application/editor observers.
-        application.update(context: CommunityConnectionFacts(connections: value).updating(application.editor.context))
-    }
+    // Canonical consent observers update the connection controller, not subscription membership.
+    // The retained Dock catalogue callback owns that context; full runtime facts use apply(...) explicitly.
     public func restoreFirstRunIfNeeded() async {
         generation &+= 1; let token = generation
         guard !disposed, !Task.isCancelled else { return }
@@ -119,13 +111,12 @@ import ModelPlanCommunityHost
     public func dispose() {
         guard !disposed else { return }; disposed = true; suspend()
         let editor = application.editor
-        if let observer { editor.connections.removeObserver(observer); self.observer = nil }
         if let navigation { editor.unbindFirstRunPresentation(navigation); self.navigation = nil }
     }
 }
 
 /// Wrap the existing session in the private entry; no root-host protocol or second editor is needed.
-@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation {
+@MainActor public final class CommunityConnectionIntegration: NSObject, CommunityUsageRemediation, CommunitySubscriptionsSettingsPresenting {
     public let flow: CommunityConnectionFlow
     private let base: any CommunitySettingsIntegration
     private var restoration: Task<Void, Never>?
@@ -145,6 +136,7 @@ import ModelPlanCommunityHost
         try flow.requireBackend()
         self.base = base; self.flow = flow
     }
+    public func presentSubscriptionsSettings() async { await flow.perform(.connections) }
     @objc private func openSettings() { Task { await flow.openSettings() } }
     @objc private func openUsageAccess() {
         let step = currentUsageNextStep
