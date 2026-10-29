@@ -38,13 +38,14 @@ func fetchMiniMax(ctx context.Context, c *http.Client, region, key string, now t
 		e.Error = "MiniMax environment key is missing; quota is unknown"
 		return e
 	}
-	// Both attempts share one deadline and one region. No auth refresh or cookie jar.
+	// Both attempts share one deadline and one region. HTTP 401/403 end the read.
+	// Only endpoint compatibility failures may try legacy; no auth refresh or cookie jar.
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	for i, path := range []string{miniMaxCurrentPath, miniMaxLegacyPath} {
 		b, status, err := miniMaxJSON(ctx, c, host+path, key)
 		if err != nil {
-			if i == 0 && (status == 401 || status == 403 || status == 404 || status == 405) {
+			if i == 0 && (status == 404 || status == 405) {
 				continue
 			}
 			e.Error = err.Error()

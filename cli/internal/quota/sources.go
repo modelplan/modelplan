@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"io/fs"
 	"os"
@@ -54,11 +55,12 @@ type ccWindow struct {
 }
 
 type ccSnapshot struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	Source        string    `json:"source"`
-	ObservedAt    time.Time `json:"observedAt"`
-	Harness       Harness   `json:"harness"`
-	Windows       []Window  `json:"windows"`
+	Admission     *consent.CaptureStamp `json:"admission,omitempty"`
+	SchemaVersion int                   `json:"schemaVersion"`
+	Source        string                `json:"source"`
+	ObservedAt    time.Time             `json:"observedAt"`
+	Harness       Harness               `json:"harness"`
+	Windows       []Window              `json:"windows"`
 	// SessionKey tells this session's model and effort from another's (the usage windows are
 	// the account's either way); a hash, so the snapshot holds no session id.
 	SessionKey string `json:"sessionKey,omitempty"`
@@ -123,12 +125,13 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	if a.Harness.Model == "" && len(a.Windows) == 0 {
 		return nil
 	}
-	snap := ccSnapshot{SchemaVersion: 1, Source: "claude-code-statusline", ObservedAt: a.ObservedAt, Harness: *a.Harness, Windows: a.Windows, SessionKey: SessionKey(in.SessionID)}
+	state, _ := consent.Current()
+	snap := ccSnapshot{Admission: state.CaptureStamp(consent.ScopeClaudeLocalHistory), SchemaVersion: 1, Source: "claude-code-statusline", ObservedAt: a.ObservedAt, Harness: *a.Harness, Windows: a.Windows, SessionKey: SessionKey(in.SessionID)}
 	p := snapshotPath(cache)
 	var prev *ccSnapshot
 	if old, err := os.ReadFile(p); err == nil {
 		var x ccSnapshot
-		if json.Unmarshal(old, &x) == nil && x.SchemaVersion == 1 {
+		if json.Unmarshal(old, &x) == nil && x.SchemaVersion == 1 && state.CaptureAllowed(x.Admission, consent.ScopeClaudeLocalHistory) {
 			prev = &x
 		}
 	}
@@ -151,6 +154,10 @@ func AttachRecent(cache string, a *Account) {
 	b, status := readBounded(snapshotPath(cache), 64<<10)
 	var s ccSnapshot
 	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
+		return
+	}
+	state, _ := consent.Current()
+	if !state.CaptureAllowed(s.Admission, consent.ScopeClaudeLocalHistory) {
 		return
 	}
 	for i := range a.Windows {
@@ -207,6 +214,12 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 	var s ccSnapshot
 	if json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 {
 		st.Status = "invalid"
+		return nil, st
+	}
+	state, _ := consent.Current()
+	if !state.CaptureAllowed(s.Admission, consent.ScopeClaudeLocalHistory) {
+		st.Status = "missing"
+		st.Reason = "no reading under current consent"
 		return nil, st
 	}
 	a := Account{Source: "claude-code", ObservedAt: s.ObservedAt, Harness: &s.Harness, Windows: s.Windows}

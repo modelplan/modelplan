@@ -68,7 +68,7 @@
       "detected": "no",
       "last": "unknown",
       "provider": "cursor",
-      "state": "unavailable:not_admitted",
+      "state": "unavailable:policy_pending",
       "windows": 0
     },
     {
@@ -88,7 +88,7 @@
       "detected": "no",
       "last": "unknown",
       "provider": "gemini",
-      "state": "unavailable:not_admitted",
+      "state": "unavailable:policy_pending",
       "windows": 0
     },
     {

@@ -1,7 +1,11 @@
 {
+  "code": "ok",
+  "committed": true,
+  "committedGeneration": 2,
   "generation": 2,
   "ok": true,
   "requestId": "00000000-0000-4000-8000-000000000054",
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": [
     {
       "accessClass": "standard",

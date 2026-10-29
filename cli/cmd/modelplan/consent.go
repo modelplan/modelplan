@@ -207,7 +207,7 @@ func connectDetected(stdin io.Reader, stdout, stderr io.Writer, st *store.Store,
 		return 0
 	}
 	err = consent.Change(consent.Path(), func(current *consent.State) error {
-		if current.Generation != s.Generation {
+		if current.Fence() != s.Fence() {
 			return errors.New("consent changed while choosing; retry")
 		}
 		current.Privacy = s.Privacy
@@ -215,13 +215,13 @@ func connectDetected(stdin io.Reader, stdout, stderr io.Writer, st *store.Store,
 			if x.Group == "advanced" {
 				continue
 			}
-			if err := consent.Set(current, x.Tool, x.Selected, x.ReaderID, x.Backend, time.Now()); err != nil {
-				return err
-			}
 			r := current.Tools[x.Tool]
 			r.Region = x.Region
 			r.KeyEnv = x.KeyEnv
 			current.Tools[x.Tool] = r
+			if err := consent.Set(current, x.Tool, x.Selected, x.ReaderID, x.Backend, time.Now()); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

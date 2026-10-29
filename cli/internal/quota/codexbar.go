@@ -346,17 +346,18 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
-	ErrorCode   string    `json:"errorCode,omitempty"`
-	CursorState string    `json:"cursorState,omitempty"`
-	Region      string    `json:"region,omitempty"`
-	KeyEnv      string    `json:"keyEnv,omitempty"`
-	Provider    string    `json:"provider"`
-	Source      string    `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
-	Status      string    `json:"status"`           // ok | estimated | error
-	Error       string    `json:"error,omitempty"`
-	Plan        string    `json:"plan,omitempty"`
-	ObservedAt  time.Time `json:"observedAt"`
-	Windows     []Window  `json:"windows,omitempty"`
+	Admission   *consent.CaptureStamp `json:"admission,omitempty"`
+	ErrorCode   string                `json:"errorCode,omitempty"`
+	CursorState string                `json:"cursorState,omitempty"`
+	Region      string                `json:"region,omitempty"`
+	KeyEnv      string                `json:"keyEnv,omitempty"`
+	Provider    string                `json:"provider"`
+	Source      string                `json:"source,omitempty"` // CodexBar's: api | web | cli | oauth | local | …
+	Status      string                `json:"status"`           // ok | estimated | error
+	Error       string                `json:"error,omitempty"`
+	Plan        string                `json:"plan,omitempty"`
+	ObservedAt  time.Time             `json:"observedAt"`
+	Windows     []Window              `json:"windows,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go), from CodexBar's account id or, for a
 	// native reader, the API key; neither is kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
@@ -442,7 +443,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 		return errors.New("no CodexBar provider enabled")
 	}
 	if bin == "" {
-		return consent.Publish(state.Generation, func() error {
+		return consent.Publish(state.Fence(), func() error {
 			return saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "CodexBar CLI not found"})
 		})
 	}
@@ -454,7 +455,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 	home, _ := os.UserHomeDir()
 	s := &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "ok", Providers: []codexbarEntry{}}
 	for _, prov := range enabled {
-		if !consent.CurrentGeneration(state.Generation) {
+		if !consent.CurrentFence(state.Fence()) {
 			return errors.New("consent changed; refresh stopped")
 		}
 		access := "standard"
@@ -465,8 +466,11 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 				}
 			}
 		}
-		out, err := runCodexBarGeneration(ctx, bin, prov, access, state.Generation)
+		out, err := runCodexBarGeneration(ctx, bin, prov, access, state.Fence())
 		e := parseCodexBar(out, prov, home, now)
+		if e.Status == "ok" {
+			e.Admission = state.CaptureStamp(state.ScopeFor(prov, consent.Bridge))
+		}
 		if e.identity != "" && !IdentityOff() {
 			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
 		}
@@ -475,7 +479,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 		}
 		s.Providers = append(s.Providers, e)
 	}
-	return consent.Publish(state.Generation, func() error { return saveCodexBar(p.Cache, s) })
+	return consent.Publish(state.Fence(), func() error { return saveCodexBar(p.Cache, s) })
 }
 
 func saveCodexBar(cache string, s *codexbarSnap) error {
@@ -511,10 +515,10 @@ func runCodexBar(ctx context.Context, bin, provider string, access ...string) ([
 	if len(access) == 1 {
 		class = access[0]
 	}
-	return runCodexBarGeneration(ctx, bin, provider, class, state.Generation)
+	return runCodexBarGeneration(ctx, bin, provider, class, state.Fence())
 }
 
-func runCodexBarGeneration(ctx context.Context, bin, provider, class string, generation uint64) ([]byte, error) {
+func runCodexBarGeneration(ctx context.Context, bin, provider, class string, fence consent.Fence) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, codexbarTimeout)
 	defer cancel()
 	config, cleanup, err := codexBarUsageConfig(ctx, bin, provider, class)
@@ -522,7 +526,7 @@ func runCodexBarGeneration(ctx context.Context, bin, provider, class string, gen
 		return nil, err
 	}
 	defer cleanup()
-	if !consent.CurrentGeneration(generation) {
+	if !consent.CurrentFence(fence) {
 		return nil, errors.New("consent changed; helper usage not started")
 	}
 	cmd := exec.CommandContext(ctx, bin, "--provider", provider, "--format", "json", "--json-only")
@@ -730,6 +734,9 @@ func applyCodexBar(r *Report, p Paths, now time.Time) {
 	for _, prov := range enabled {
 		st := SourceStatus{Source: "codexbar:" + prov}
 		e, ok := by[prov]
+		if ok && e.Status == "ok" && !captureAllowed(p, prov, e.Admission, true) {
+			ok = false
+		}
 		switch {
 		case s == nil:
 			st.Status, st.Reason = "missing", "no CodexBar reading yet"

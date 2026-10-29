@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,11 +16,13 @@ import (
 // ZaiConfigAccess is CLIJIT's fail-closed admission seam. Explicit configured
 // keys are allowed in Passive mode. No credential-store import is performed.
 type ZaiConfigAccess struct {
-	StillValid func() bool
-	Publish    func(func() error) error
-	Allowed    bool
-	Denied     bool
-	Privacy    string
+	Admission      *consent.CaptureStamp
+	CaptureAllowed func(*consent.CaptureStamp) bool
+	StillValid     func() bool
+	Publish        func(func() error) error
+	Allowed        bool
+	Denied         bool
+	Privacy        string
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
@@ -134,6 +137,9 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 		return r
 	}
 	s := loadZaiConfigState(cache)
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeZaiAccountUsageAPIKey, access.CaptureAllowed) {
+		s.Good = nil
+	}
 	r.Availability = s.Availability
 	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
@@ -171,6 +177,9 @@ func ReadZaiConfigCache(ctx context.Context, cache string, now time.Time) ZaiCon
 	return r
 }
 func zaiConfigCachedEntry(s zaiConfigState, now time.Time, generation string) codexbarEntry {
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeZaiAccountUsageAPIKey, nil) {
+		s.Good = nil
+	}
 	availability := s.Availability
 	if s.LoginGeneration != generation {
 		availability = "stale"
@@ -208,6 +217,10 @@ var zaiConfigAttempts sync.Map
 
 func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := zaiConfigAdmission(ctx)
+	if access.Admission == nil {
+		state, _ := consent.Current()
+		access.Admission = state.CaptureStamp(consent.ScopeZaiAccountUsageAPIKey)
+	}
 	if blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext(blocked)}
 	}
@@ -245,6 +258,7 @@ func collectZaiConfig(ctx context.Context, _ *http.Client, cache string, now tim
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: zaiConfigNext("consent_required")}
 	}
 	if e.Status == "ok" {
+		e.Admission = access.Admission
 		s.Good = &e
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0

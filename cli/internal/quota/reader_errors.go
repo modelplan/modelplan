@@ -13,7 +13,7 @@ import (
 // even when a cache, subprocess or provider invents a new code.
 func ReaderErrorCode(code string) string {
 	switch code {
-	case "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "other":
+	case "policy_pending", "file_missing", "file_unreadable", "parse_error", "schema_changed", "http_401", "http_403", "http_429", "http_5xx", "network", "timeout", "runtime_missing", "unsupported_login", "other":
 		return code
 	default:
 		return "other"

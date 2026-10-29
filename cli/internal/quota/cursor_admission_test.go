@@ -14,6 +14,7 @@ import (
 
 func cursorAdmittedPaths(t *testing.T) (Paths, string) {
 	t.Helper()
+	allowPOSTProtocolFixture(t, "cursor")
 	isolateHome(t)
 	t.Setenv("MODELPLAN_READERS", "")
 	t.Setenv("MODELPLAN_NATIVE", "")

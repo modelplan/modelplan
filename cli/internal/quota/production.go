@@ -21,18 +21,28 @@ import (
 // ProductionPaths is the single CLI/App/hooks constructor. It reads ModelPlan
 // consent and presence metadata only, never a login file or a provider endpoint.
 func ProductionPaths(cache, version string) Paths {
+	p := ProductionPathsWithAdmission(cache, version, consent.Capture())
+	// Existing refresh/worker callers reselect after taking reader locks. Only
+	// an explicit snapshot attempt freezes selection; their gates stay live.
+	p.Admission = nil
+	return p
+}
+
+// ProductionPathsWithAdmission shares the command's permission input with every
+// cache reader. ReaderGrant.StillValid and Publish deliberately remain live.
+func ProductionPathsWithAdmission(cache, version string, admission consent.Admission) Paths {
 	home, _ := os.UserHomeDir()
 	codex := os.Getenv("CODEX_HOME")
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	p := Paths{CLIVersion: version, Cache: cache, CodexHome: codex,
+	p := Paths{Admission: &admission, CLIVersion: version, Cache: cache, CodexHome: codex,
 		LocalFile:       filepath.Join(home, ".config", "modelplan", "local.json"),
 		CodexBarFile:    filepath.Join(home, ".config", "modelplan", "codexbar.json"),
 		ConnectionsFile: filepath.Join(home, ".config", "modelplan", "connections.json"),
 		CodexThread:     os.Getenv("CODEX_THREAD_ID"), ClaudeSession: os.Getenv("CLAUDE_CODE_SESSION_ID"),
 		ReaderAccess: &ReaderAccess{Grants: map[string]ReaderGrant{}}}
-	state, mode := consent.Current()
+	state, mode := admission.State(), admission.Mode()
 	if mode == consent.Off || nativeOff() {
 		return p
 	}
@@ -48,12 +58,12 @@ func ProductionPaths(cache, version string) Paths {
 	if record, exists := state.Tools["claude"]; exists && record.Allowed && record.ConsentTextVersion == consent.TextVersion && record.Backend == BackendNative && !record.BrowserSession && (record.ReaderID == "native:claude" || record.ReaderID == "native:claude-code") {
 		route, known := routes["claude"]
 		if !known || (route.Preferred == "native" && strings.HasPrefix(route.ReaderID, "native:") && detect.Compatible(version, route.MinCLI)) {
-			root, access := localusage.ProductionHistoryAccess(home, "claude", false)
+			root, access := localusage.ProductionHistoryAccessWithAdmission(home, "claude", false, admission)
 			if access.Allowed && !access.Denied && access.Privacy != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off" && detect.LocalRoot(root) {
-				generation, priorValid := state.Generation, access.StillValid
+				fence, priorValid := state.Fence(), access.StillValid
 				access.StillValid = func() bool {
 					current, effective := consent.Current()
-					return current.Generation == generation && effective != consent.Off && !nativeOff() && os.Getenv("MODELPLAN_HISTORY") != "off" && (priorValid == nil || priorValid())
+					return current.Fence() == fence && effective != consent.Off && !nativeOff() && os.Getenv("MODELPLAN_HISTORY") != "off" && (priorValid == nil || priorValid())
 				}
 				p.ClaudeSessionRoot, p.ClaudeSessionAccess = root, &access
 			}
@@ -72,11 +82,13 @@ func ProductionPaths(cache, version string) Paths {
 			continue
 		}
 		generation := state.Generation
-		g := ReaderGrant{Generation: strconv.FormatUint(generation, 10), Region: record.Region,
-			Publish: func(write func() error) error { return consent.Publish(generation, write) },
+		fence := state.Fence()
+		scope := state.ScopeFor(id, consent.Credential)
+		g := ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) }, Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
+			Publish: func(write func() error) error { return consent.Publish(fence, write) },
 			StillValid: func() bool {
 				current, effective := consent.Current()
-				return effective == consent.Automatic && !nativeOff() && current.Generation == generation
+				return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
 			}}
 		if g.Region != "" && !contains(n.Regions, g.Region) {
 			continue
@@ -145,11 +157,11 @@ func productionReaderContext(ctx context.Context, p Paths, provider string) cont
 	generation := hex.EncodeToString(sum[:])
 	switch provider {
 	case "copilot":
-		return WithCopilotAccess(ctx, CopilotAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		return WithCopilotAccess(ctx, CopilotAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "antigravity":
-		return WithAntigravityAccess(ctx, AntigravityAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		return WithAntigravityAccess(ctx, AntigravityAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 	case "zai":
-		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
+		ctx = WithZaiConfigAccess(ctx, ZaiConfigAccess{Admission: captureFor(p, provider, false), CaptureAllowed: g.CaptureAllowed, Allowed: valid, LoginGeneration: generation, StillValid: g.StillValid, Publish: g.Publish})
 		if g.ConfigSource != nil {
 			ctx = context.WithValue(ctx, zaiConfigSourceKey{}, *g.ConfigSource)
 		}

@@ -246,3 +246,96 @@ func lookupSubscription(cache, basis, identity string) string {
 	h.Write([]byte(basis + "\x00" + strings.TrimSpace(identity)))
 	return m.Refs[hex.EncodeToString(h.Sum(nil))].Ref
 }
+
+// lookupReaderHash uses the existing installation key without creating a key,
+// reference, lock or directory. Profile matching in read-only commands must not
+// call readerHash, which initializes the identity store during collection.
+func lookupReaderHash(cache, domain, value string) string {
+	if cache == "" || value == "" {
+		return ""
+	}
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	var m subscriptionMap
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 {
+		return ""
+	}
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 {
+		return ""
+	}
+	h := hmac.New(sha256.New, key)
+	_, _ = h.Write([]byte("reader:" + domain + "\x00" + value))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// readerProfileLocator returns only a reference already bound to this exact
+// profile in the existing identity store. Profile hashes never leave the cache.
+func readerProfileLocator(cache, provider, profileKey string) string {
+	if IdentityOff() || profileKey == "" {
+		return ""
+	}
+	basis := readerProfileBasis(provider)
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	var m subscriptionMap
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 {
+		return ""
+	}
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 {
+		return ""
+	}
+	h := hmac.New(sha256.New, key)
+	_, _ = h.Write([]byte(basis + "\x00" + profileKey))
+	item, ok := m.Refs[hex.EncodeToString(h.Sum(nil))]
+	if !ok || item.Basis != basis {
+		return ""
+	}
+	ref := item.Ref
+	// Syntax is supplementary to the exact identity-store membership above;
+	// a profile hash is never a reference.
+	raw, err := hex.DecodeString(ref)
+	if err != nil || len(raw) != 8 || hex.EncodeToString(raw) != ref {
+		return ""
+	}
+	return ref
+}
+
+// existingReaderSubscription verifies provenance in the local reference table;
+// accepting an arbitrary hex string from a reading is not a privacy boundary.
+func existingReaderSubscription(cache, provider string, binding *Binding) string {
+	if IdentityOff() || binding == nil || binding.Status != "verified" {
+		return ""
+	}
+	// Gemini's verified Binding and identity store intentionally use different
+	// existing vocabularies. Validate both independently; changing either one
+	// would alter legacy quota output or lose the already allocated reference.
+	bases := map[string]struct{ binding, stored string }{
+		"claude": {"claude-oauth", "claude-oauth"},
+		"cursor": {"cursor-auth", "cursor-auth"},
+		"gemini": {"gemini-cli-local-account-project", "gemini-cli-account-project"},
+		"grok":   {"grok-auth-principal", "grok-auth-principal"},
+		"kimi":   {"kimi-code-login:china", "kimi-code-login:china"},
+	}[provider]
+	if bases.binding == "" || binding.Basis != bases.binding {
+		return ""
+	}
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	var m subscriptionMap
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 {
+		return ""
+	}
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 {
+		return ""
+	}
+	raw, err := hex.DecodeString(binding.Ref)
+	if err != nil || len(raw) != 8 || hex.EncodeToString(raw) != binding.Ref {
+		return ""
+	}
+	for _, item := range m.Refs {
+		if item.Ref == binding.Ref && item.Basis == bases.stored {
+			return binding.Ref
+		}
+	}
+	return ""
+}

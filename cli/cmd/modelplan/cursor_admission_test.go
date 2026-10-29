@@ -14,7 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
-func TestCursorConsentGrantAdmitsMissingStandardProfile(t *testing.T) {
+func TestCursorConsentGrantKeepsPOSTScopePolicyPending(t *testing.T) {
 	home := consentAPIHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0700); err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestCursorConsentGrantAdmitsMissingStandardProfile(t *testing.T) {
 	for _, r := range diagnostic.Readers {
 		if r.Provider == "cursor" {
 			found = true
-			if r.State != "unavailable:reader_error:file_missing" {
+			if r.State != "unavailable:policy_pending" {
 				t.Fatal(r)
 			}
 		}
@@ -74,7 +74,7 @@ func TestCursorConsentGrantAdmitsMissingStandardProfile(t *testing.T) {
 	for _, c := range desktop.Connections {
 		if c.ID == "native:cursor" {
 			found = true
-			if c.Quota.Reason != "file_missing" {
+			if c.Quota.Reason != "policy_pending" {
 				t.Fatal(c)
 			}
 		}
@@ -84,7 +84,7 @@ func TestCursorConsentGrantAdmitsMissingStandardProfile(t *testing.T) {
 	}
 	for _, r := range quota.ReaderDiagnostics(p, time.Now()) {
 		if r.Provider == "cursor" {
-			if r.Detected != "yes" || r.Consent != "granted" || r.Admitted != "yes" {
+			if r.Detected != "yes" || r.Consent != "granted" || r.Admitted != "no" {
 				t.Fatal(r)
 			}
 			return

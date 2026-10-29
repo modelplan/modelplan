@@ -25,14 +25,21 @@ func consentAPIHome(t *testing.T) string {
 	home := consentFixtureHome(t)
 	t.Setenv("MODELPLAN_NATIVE", "")
 	t.Setenv("MODELPLAN_CODEXBAR", "")
+	if _, err := consent.EnsureStore(consent.Path()); err != nil {
+		t.Fatal(err)
+	}
 	return home
 }
 
 func apiRequest(t *testing.T, n int, generation uint64, allow, deny []string, keychain map[string]string) string {
 	t.Helper()
 	v := consent.TextVersion
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
 	b, err := json.Marshal(consentRequest{RequestID: fmt.Sprintf("00000000-0000-4000-8000-%012d", n),
-		ExpectGeneration: &generation, ConsentTextVersion: &v, Allow: allow, Deny: deny, Keychain: keychain})
+		ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: &generation, ConsentTextVersion: &v, Allow: allow, Deny: deny, Keychain: keychain})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +155,7 @@ func TestConsentAPICASReadbackReplayAndProductionAdmission(t *testing.T) {
 	}
 	p := quota.ProductionPaths(filepath.Join(home, "modelplan-cache"), version)
 	g, ok := p.ReaderAccessGrant("claude")
-	if !ok || g.Generation != "1" || !g.SavedLogin || !g.Keychain || !g.StillValid() {
+	if !ok || !strings.HasSuffix(g.Generation, ":1") || !g.SavedLogin || !g.Keychain || !g.StillValid() {
 		t.Fatal("grant did not reach production admission", g, ok)
 	}
 	before := tree(t, home)
@@ -163,7 +170,7 @@ func TestConsentAPICASReadbackReplayAndProductionAdmission(t *testing.T) {
 		t.Fatal("old in-flight production grant survived generation change")
 	}
 	updated, ok := quota.ProductionPaths(p.Cache, version).ReaderAccessGrant("claude")
-	if !ok || updated.Generation != "2" || updated.Keychain || !updated.StillValid() {
+	if !ok || !strings.HasSuffix(updated.Generation, ":2") || updated.Keychain || !updated.StillValid() {
 		t.Fatal(updated, ok)
 	}
 	// Replay returns the original receipt even after another consent change.
@@ -387,7 +394,7 @@ func TestConsentAPIFailedForgetKeepsDurableRevocationAndReceipt(t *testing.T) {
 		t.Fatal(code, out, stderr)
 	}
 	s, err := consent.Load(consent.Path())
-	if err != nil || s.Tools["claude"].Allowed || !s.Tools["claude"].BrowserCookieCache || len(s.Requests[r.RequestID].PendingForget) != 1 {
+	if err != nil || s.Tools["claude"].Allowed || !s.Tools["claude"].BrowserCookieCache || len(s.Requests[consent.ReceiptKey(s.StoreEpoch, r.RequestID)].PendingForget) != 1 {
 		t.Fatal(s, err)
 	}
 	before := tree(t, home)
@@ -395,7 +402,7 @@ func TestConsentAPIFailedForgetKeepsDurableRevocationAndReceipt(t *testing.T) {
 	if replayCode != code || replay != out || !reflect.DeepEqual(before, tree(t, home)) {
 		t.Fatal("failed cleanup replay changed result or wrote files", replay)
 	}
-	if consent.CurrentGeneration(2) {
+	if consent.CurrentFence(consent.Fence{StoreEpoch: s.StoreEpoch, Generation: 2}) {
 		t.Fatal("revocation did not invalidate old generation")
 	}
 	if _, err := os.Stat(filepath.Join(home, "helper-was-started")); !os.IsNotExist(err) {

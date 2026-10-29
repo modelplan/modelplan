@@ -19,14 +19,22 @@ func legacyRevokeCodex(t *testing.T) {
 	t.Helper()
 	// Invoke the actual frozen pre-API Change/Load/Set implementation, not this
 	// version's serializer. It knows neither Record.Keychain nor State.Requests.
+	before, err := os.ReadFile(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := legacy.Change(legacy.Path(), func(s *legacy.State) error {
 		return legacy.Set(s, "codex", false, "", "", time.Now())
-	}); err != nil {
-		t.Fatal("pre-API unrelated consent write", err)
+	}); err == nil {
+		t.Fatal("schema-1 writer accepted schema 2")
+	}
+	after, _ := os.ReadFile(consent.Path())
+	if !bytes.Equal(before, after) {
+		t.Fatal("old writer changed schema-2 store")
 	}
 }
 
-func TestConsentAPIKeychainRestrictionsSurvivePreAPIReadersAndWriters(t *testing.T) {
+func TestConsentAPIKeychainRestrictionsSurviveSchemaOneReadersAndWriters(t *testing.T) {
 	for _, choice := range []string{"deny", ""} {
 		t.Run("choice="+choice, func(t *testing.T) {
 			home := consentAPIHome(t)
@@ -38,7 +46,7 @@ func TestConsentAPIKeychainRestrictionsSurvivePreAPIReadersAndWriters(t *testing
 			grantConsentAPI(t, apiRequest(t, 1, 0, []string{"claude"}, nil, choices))
 			assertRestriction := func() {
 				old, err := legacy.Load(legacy.Path())
-				if err != nil || old.Allows("claude", "keychain", legacy.Automatic) || !old.Allows("claude", legacy.Credential, legacy.Automatic) {
+				if err == nil || old.Allows("claude", "keychain", legacy.Automatic) || old.Allows("claude", legacy.Credential, legacy.Automatic) {
 					t.Fatal("pre-API reader ignored Keychain restriction or lost saved-login grant", old, err)
 				}
 				if consent.Allowed("claude", "keychain") {
@@ -56,7 +64,7 @@ func TestConsentAPIKeychainRestrictionsSurvivePreAPIReadersAndWriters(t *testing
 			assertRestriction()
 			legacyRevokeCodex(t)
 			b, err := os.ReadFile(consent.Path())
-			if err != nil || bytes.Contains(b, []byte(`"keychain": "`)) {
+			if err != nil || !bytes.Contains(b, []byte(`"schemaVersion": 2`)) {
 				t.Fatal("fixture did not drop the new Keychain field", string(b), err)
 			}
 			assertRestriction()
@@ -64,13 +72,13 @@ func TestConsentAPIKeychainRestrictionsSurvivePreAPIReadersAndWriters(t *testing
 	}
 }
 
-func TestConsentAPISuccessReceiptSurvivesPreAPIWriter(t *testing.T) {
+func TestConsentAPISuccessReceiptSurvivesRejectedSchemaOneWriter(t *testing.T) {
 	home := consentAPIHome(t)
 	input := apiRequest(t, 1, 0, []string{"claude"}, nil, nil)
 	result := grantConsentAPI(t, input)
 	legacyRevokeCodex(t)
 	s, err := consent.Load(consent.Path())
-	if err != nil || s.Generation != 2 || len(s.Requests) != 1 || s.Tools["codex"].Allowed {
+	if err != nil || s.Generation != 1 || len(s.Requests) != 1 || s.Tools["codex"].Allowed {
 		t.Fatal("legacy write lost receipt or failed to apply its own decision", s, err)
 	}
 	before := tree(t, home)
@@ -79,7 +87,7 @@ func TestConsentAPISuccessReceiptSurvivesPreAPIWriter(t *testing.T) {
 	}
 }
 
-func TestConsentAPIPendingForgetReceiptSurvivesPreAPIWriter(t *testing.T) {
+func TestConsentAPIPendingForgetReceiptSurvivesRejectedSchemaOneWriter(t *testing.T) {
 	home := consentAPIHome(t)
 	grantConsentAPI(t, apiRequest(t, 1, 0, []string{"claude"}, nil, nil))
 	observed := filepath.Join(home, "modelplan-cache", "observed")
@@ -98,7 +106,7 @@ func TestConsentAPIPendingForgetReceiptSurvivesPreAPIWriter(t *testing.T) {
 	}
 	legacyRevokeCodex(t)
 	s, err := consent.Load(consent.Path())
-	if err != nil || s.Generation != 3 || s.Tools["claude"].Allowed || len(s.Requests[response.RequestID].PendingForget) != 1 {
+	if err != nil || s.Generation != 2 || s.Tools["claude"].Allowed || len(s.Requests[consent.ReceiptKey(s.StoreEpoch, response.RequestID)].PendingForget) != 1 {
 		t.Fatal("pre-API writer lost revocation/Forget obligation", s, err)
 	}
 	if err := os.Remove(lock); err != nil {
@@ -116,11 +124,11 @@ func TestConsentAPIPendingForgetReceiptSurvivesPreAPIWriter(t *testing.T) {
 	}
 }
 
-func TestConsentAPIUnsetCanBeExplicitlyAllowedAfterPreAPIWrite(t *testing.T) {
+func TestConsentAPIUnsetCanBeExplicitlyAllowedAfterRejectedSchemaOneWrite(t *testing.T) {
 	consentAPIHome(t)
 	grantConsentAPI(t, apiRequest(t, 1, 0, []string{"claude"}, nil, nil))
 	legacyRevokeCodex(t)
-	result := grantConsentAPI(t, apiRequest(t, 2, 2, []string{"claude"}, nil, map[string]string{"claude": "allow"}))
+	result := grantConsentAPI(t, apiRequest(t, 2, 1, []string{"claude"}, nil, map[string]string{"claude": "allow"}))
 	if apiTools(result.Tools)["claude"].Keychain != "allowed" || !consent.Allowed("claude", "keychain") {
 		t.Fatal("explicit permission could not resolve unset", result)
 	}
@@ -128,10 +136,10 @@ func TestConsentAPIUnsetCanBeExplicitlyAllowedAfterPreAPIWrite(t *testing.T) {
 	if view := readConsentAPI(t); apiTools(view.Tools)["claude"].Keychain != "allowed" {
 		t.Fatal("pre-API write lost explicit allowed readback", view)
 	}
-	if err := legacy.Deny(legacy.Path(), "claude", "keychain"); err != nil {
+	if err := consent.Deny(consent.Path(), "claude", "keychain"); err != nil {
 		t.Fatal(err)
 	}
-	result = grantConsentAPI(t, apiRequest(t, 3, 5, []string{"claude"}, nil, map[string]string{"claude": "allow"}))
+	result = grantConsentAPI(t, apiRequest(t, 3, 3, []string{"claude"}, nil, map[string]string{"claude": "allow"}))
 	if apiTools(result.Tools)["claude"].Keychain != "denied" || consent.Allowed("claude", "keychain") {
 		t.Fatal("API cleared a pre-API source Deny", result)
 	}

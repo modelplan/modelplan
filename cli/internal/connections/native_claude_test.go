@@ -35,8 +35,8 @@ func TestNativeClaudeConsentKeychainAndAdmission(t *testing.T) {
 	set := func(choice string, allowed bool) {
 		t.Helper()
 		if err := consent.Change(consent.Path(), func(s *consent.State) error {
-			s.Tools["claude"] = consent.Record{Allowed: allowed, ConsentTextVersion: consent.TextVersion, Backend: "native", ReaderID: "native:claude", Keychain: choice}
-			return nil
+			s.Tools["claude"] = consent.Record{Keychain: choice}
+			return consent.Set(s, "claude", allowed, "native:claude", "native", time.Now())
 		}); err != nil {
 			t.Fatal(err)
 		}
