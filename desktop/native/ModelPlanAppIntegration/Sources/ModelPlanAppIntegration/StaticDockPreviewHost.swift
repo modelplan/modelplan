@@ -107,6 +107,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard CommunityJourneyCI.enabled else { return [] }
         return Array((model?.presentationRows.values.map { ["reason": $0.reason, "nextStep": $0.nextStep] } ?? []).prefix(16))
     }
+    private func journeyProvider(_ source: String) -> String {
+        var value = source.lowercased()
+        for prefix in ["native:", "codexbar:"] where value.hasPrefix(prefix) { value = String(value.dropFirst(prefix.count)) }
+        switch value { case "openai": return "codex"; case "claude-code": return "claude"; default: return value }
+    }
     /// Join each actual rendered AX row to its own reported account window locators.
     /// The report carries no account/subscription identifiers and never infers membership.
     public var journeyRows: [[String: Any]] {
@@ -118,14 +123,46 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 input.windows.contains { $0.id.hasPrefix("account.\(accountIndex).window.") } ? account.source : nil
             }
             let codex = sources.contains { ["codex", "openai"].contains($0.lowercased()) }
+            var providers = Set(sources.map(journeyProvider))
+            for account in snapshot?.personal.accounts ?? [] where account.subscription?.subscriptionRef == input.id {
+                providers.insert(journeyProvider(account.source))
+            }
+            if providers.isEmpty {
+                for tool in SettingsConnectionTool.allCases where input.name == tool.title {
+                    providers.insert(tool.rawValue)
+                }
+            }
             let readout = node.accessibilityValue() as? String ?? ""
             let percent = readout.hasSuffix("%") ? Double(readout.dropLast()) : nil
             let reason = model.presentationRows[input.id]
             return ["rowIndex": index, "provider": codex || input.name == "Codex" ? "codex" : "other",
+                    "providers": providers.sorted(), "dataState": String(describing: input.dataState),
                     "accountAssociated": codex, "hasSubscription": model.subscriptions.contains { $0.id == input.id },
                     "readout": readout, "remainingPercent": percent.map { $0 as Any } ?? NSNull(),
                     "reason": reason?.reason ?? "", "nextStep": reason?.nextStep ?? ""]
         }.prefix(16))
+    }
+    /// Fixed aggregate facts from the same CLI feed; never returns raw reader output.
+    public var journeyGrokFirstFailure: [String: Any] {
+        guard CommunityJourneyCI.enabled, let personal = snapshot?.personal else { return [:] }
+        return ["nativeErrorObserved": personal.sources?.contains {
+                    $0.source == "native:grok" && ["error", "unavailable"].contains($0.status) && $0.reason == "parse_error"
+                } == true,
+                "accountCount": (personal.accounts ?? []).filter { journeyProvider($0.source) == "grok" }.count,
+                "connectionCount": (personal.connections ?? []).filter { journeyProvider($0.id) == "grok" }.count]
+    }
+    /// Read the age label mounted by the actual card factory, including absence as an empty string.
+    public var journeyCardAge: String? {
+        guard CommunityJourneyCI.enabled, !card.isHidden else { return nil }
+        func find(_ view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.accessibilityIdentifier() == "dock.card.text.source" { return field }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        return find(card)?.stringValue ?? ""
+    }
+    public func journeyDismissCard() {
+        guard CommunityJourneyCI.enabled else { return }
+        card.onDismiss?()
     }
     /// Use the retained row/card wiring and actual enter button; these never install a route.
     public func journeyOpenCard(at index: Int) -> Bool {
