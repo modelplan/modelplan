@@ -15,8 +15,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-      - working-directory: cli
+      - name: CLI tests
+        working-directory: cli
         run: go vet ./... && go test ./...
+      # Child go-build inputs are outside Go's test-cache dependency tracking.
+      - name: Real-binary app contract schemas and fixture drift (uncached)
+        run: make app-cli-contract-check
   codex:
     runs-on: ubuntu-latest
     strategy:

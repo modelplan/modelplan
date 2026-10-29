@@ -1,0 +1,11 @@
+{
+  "allow": [],
+  "consentTextVersion": 2,
+  "deny": [
+    "copilot",
+    "codex"
+  ],
+  "expectGeneration": 1,
+  "keychain": {},
+  "requestId": "00000000-0000-4000-8000-000000000068"
+}

@@ -1,0 +1,195 @@
+{
+  "message": "Paste this whole output back to the coordinator; it contains no personal data.",
+  "readers": [
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "amp:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "antigravity",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "yes",
+      "last": "unknown",
+      "provider": "claude",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "yes",
+      "last": "unknown",
+      "provider": "claude:session",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "yes",
+      "beta": true,
+      "consent": "granted",
+      "detected": "yes",
+      "last": "unknown",
+      "provider": "copilot",
+      "state": "unavailable:reader_error:parse_error",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "granted",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "copilot:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "cursor",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "droid:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "gemini",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "gemini:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "grok",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "grok:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "kimi",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "kimi:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": false,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "kiro",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": false,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "minimax",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": false,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "opencodego",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": true,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "qwen:history",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
+      "beta": false,
+      "consent": "none",
+      "detected": "no",
+      "last": "unknown",
+      "provider": "zai",
+      "state": "unavailable:not_admitted",
+      "windows": 0
+    }
+  ]
+}

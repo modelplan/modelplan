@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/help.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "network": "none",
+    "credentials": "none",
+    "writes": "none",
+    "backgroundRefresh": "never",
+    "exitCodes": {
+      "0": "help text"
+    }
+  },
+  "type": "string",
+  "description": "Display-only command usage.",
+  "minLength": 1
+}
