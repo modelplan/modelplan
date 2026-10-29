@@ -5,6 +5,7 @@ on:
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
   pull_request:
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 permissions:
   contents: read
@@ -64,6 +65,7 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   macos:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
     runs-on: macos-latest
     defaults:
@@ -97,6 +99,7 @@ jobs:
           retention-days: 14
 
   app-smoke:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # The actual universal Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -141,6 +144,7 @@ jobs:
   native:
     name: native (${{ matrix.os }})
     # Standard free hosted images, newest installed Xcode; no signing or secrets.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -252,7 +256,7 @@ jobs:
     name: native runtime (macos-14, latest-Xcode binaries)
     needs: native
     # Still exercise latest-Xcode binaries if the older image cannot build them.
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: macos-14
     timeout-minutes: 10
     steps:

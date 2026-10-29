@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 concurrency:
   # PR heads share a group, so a newer push cancels the older run; each main commit gets its own group
   # and is never cancelled or left pending behind a later main commit.
@@ -41,7 +42,8 @@ jobs:
   claude-code:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # Draft PRs run Linux only; macOS runs once the PR is ready (macOS runners are scarce).
+        os: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
