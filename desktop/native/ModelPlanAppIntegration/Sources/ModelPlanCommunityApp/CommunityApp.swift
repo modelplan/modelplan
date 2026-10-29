@@ -9,7 +9,12 @@ import ModelPlanCore
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        // Headless native panels keep the real store on desktop polling, not visible-account refresh.
+        let dock = ProductionDockFactory.community(createsNativePanels: !CommunityJourneyCI.enabled)
+        #else
         let dock = ProductionDockFactory.community()
+        #endif
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
@@ -48,9 +53,23 @@ import ModelPlanCore
                     surfaces.bindHelp(help)
                     return help
                 })
+            #if DEBUG && MODELPLAN_E2E_JOURNEY
+            if CommunityJourneyCI.enabled {
+                return try CommunityApplicationFactory.connectSettings(base: base, application: application, backend: backend, placementSource: dock,
+                    canPresent: { [weak gate] in gate?.canPresent == true }, makeFirstRun: E2EJourney.makeFirstRun)
+            }
+            #endif
             return try CommunityApplicationFactory.connectSettings(base: base, application: application, backend: backend, placementSource: dock,
                 canPresent: { [weak gate] in gate?.canPresent == true })
         }
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        if CommunityJourneyCI.enabled {
+            NSApplication.shared.delegate = delegate
+            Task { @MainActor in await E2EJourney.run(delegate: delegate, dock: dock, backend: backend) }
+            withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
+            return
+        }
+        #endif
         // Inspect only the composition retained by normal Settings configuration; do not start the runtime.
         if ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] == "1" {
             _ = NSApplication.shared

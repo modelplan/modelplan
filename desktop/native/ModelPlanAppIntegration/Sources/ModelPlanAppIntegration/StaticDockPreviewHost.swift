@@ -99,6 +99,14 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var application: SettingsApplication?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
+    #if DEBUG && MODELPLAN_E2E_JOURNEY
+    /// Read the very model fed to the retained Dock; no additional producer or projection.
+    public var journeySnapshot: CommunityDockSnapshot? { model }
+    public var journeyFeedGeneratedAt: Date? { snapshot?.personal.generatedAt.date }
+    public var journeyReasonRows: [[String: String]] {
+        Array((model?.presentationRows.values.map { ["reason": $0.reason, "nextStep": $0.nextStep] } ?? []).prefix(16))
+    }
+    #endif
     private var preferences = SettingsPreferences()
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])

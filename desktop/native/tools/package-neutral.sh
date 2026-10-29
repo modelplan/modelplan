@@ -7,10 +7,12 @@ app_package="$native_root/ModelPlanAppIntegration"
 archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.txt}
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
+configuration=release
 case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
-    *) echo 'Optional third argument must be --unverified (CI/non-release only)' >&2; exit 1 ;;
+    --e2e-journey) identity_mode=unverified; configuration=debug ;;
+    *) echo 'Optional third argument must be --unverified or --e2e-journey (CI only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
@@ -22,9 +24,16 @@ output_dir=$(cd "$output_dir" && pwd)
 export CLANG_MODULE_CACHE_PATH="$output_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$output_dir/module-cache"
 for architecture in arm64 x86_64; do
+    if [ "$configuration" = debug ]; then
+        swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
+            --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration debug \
+            --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp \
+            -Xswiftc -DMODELPLAN_E2E_JOURNEY
+    else
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
         --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp
+    fi
     archive_arch=$architecture
     if [ "$architecture" = x86_64 ]; then archive_arch=amd64; fi
     archive="modelplan_darwin_$archive_arch.tar.gz"
@@ -37,9 +46,9 @@ done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 # The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
-cp -R "$output_dir/build-arm64/arm64-apple-macosx/release/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
-xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/release/ModelPlanCommunityApp" \
-    "$output_dir/build-x86_64/x86_64-apple-macosx/release/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
+xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
+    "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
 xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

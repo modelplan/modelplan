@@ -1,0 +1,53 @@
+name: e2e-journey
+on:
+  pull_request:
+    paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml"]
+  push:
+    branches: [main]
+    paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: e2e-journey-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  e2e-journey:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = []
+          for app in Path('/Applications').glob('Xcode*.app'):
+              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
+          if not candidates:
+              raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PY
+      - name: Test journey oracle and synthetic provider
+        run: python3 -m unittest discover -s desktop/native/tools/e2e-journey -p 'test_*.py' -v
+      - name: Build same-commit CLI and debug-only neutral app
+        run: python3 desktop/native/tools/e2e-journey/build.py "$RUNNER_TEMP/e2e-build"
+      - name: Run real app journey without network or accounts
+        run: python3 desktop/native/tools/e2e-journey/run.py "$RUNNER_TEMP/e2e-build" "$RUNNER_TEMP/e2e-report"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-journey-report
+          path: ${{ runner.temp }}/e2e-report/
+          if-no-files-found: warn
+          retention-days: 3

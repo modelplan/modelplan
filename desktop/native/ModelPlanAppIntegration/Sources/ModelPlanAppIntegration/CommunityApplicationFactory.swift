@@ -8,7 +8,12 @@ import ModelPlanSettings
 /// Consent/Settings composition shared by the normal executable and construction checks.
 @MainActor public enum CommunityApplicationFactory {
     public static func makeConsentPort(bundle: URL, transport: any ConsentJSONTransport) -> CommunityCLIConsentPort {
-        CommunityCLIConsentPort(transport: transport, apiAvailable: CommunityConsentBundleIdentity.matches(bundle: bundle))
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        if CommunityJourneyCI.enabled {
+            return CommunityCLIConsentPort(transport: transport, apiAvailable: true)
+        }
+        #endif
+        return CommunityCLIConsentPort(transport: transport, apiAvailable: CommunityConsentBundleIdentity.matches(bundle: bundle))
     }
     public static func makeSettingsContext(bundle: URL, availability: SettingsConnectionAvailability,
                                            operatingSystem: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion) -> SettingsPageContext {
