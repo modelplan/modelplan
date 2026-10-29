@@ -26,7 +26,7 @@ func appServerCmd(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 	// U2 supplies the schema-2 backend. The inert constructor fails closed until
 	// that integration is available; no legacy tool-level grant is consulted.
-	server := appserver.New(appserver.Config{Version: version, Backend: appserver.UnavailableBackend{}})
+	server := appserver.New(appserver.Config{Version: version, Backend: appserver.UnavailableBackend{}, Handlers: map[string]appserver.Handler{"plugin/install": appserver.PluginInstallHandler(false, false)}})
 	if err := server.Serve(context.Background(), in, out); err != nil {
 		fmt.Fprintln(stderr, "app-server: internal")
 		return exitErr

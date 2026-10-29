@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/plugininstall"
 )
 
 type object = map[string]any
@@ -69,6 +70,8 @@ func Generate(root string) ([]byte, error) {
 	// Named schema roots keep generated consumers independent of reflection's
 	// spelling of generic instantiations.
 	roots := map[string]reflect.Type{
+		"PluginInstallParams":  reflect.TypeFor[wire.PluginInstallParams](),
+		"PluginInstallResult":  reflect.TypeFor[plugininstall.Result](),
 		"InitializeParams":     reflect.TypeFor[wire.InitializeParams](),
 		"InitializeResult":     reflect.TypeFor[wire.InitializeResult](),
 		"RowsSnapshot":         reflect.TypeFor[wire.RowsSnapshot](),
@@ -104,7 +107,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "refresh/request": "RefreshRequestParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -122,7 +125,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "PluginInstallResult"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env
@@ -205,7 +208,7 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				}
 				property := props[name].(object)
 				switch key {
-				case "minimum", "maximum", "minLength", "maxLength":
+				case "minimum", "maximum", "minLength", "maxLength", "maxItems":
 					number, err := strconv.Atoi(value)
 					if err != nil {
 						panic("invalid numeric wire constraint")
@@ -213,6 +216,12 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 					property[key] = number
 				case "pattern":
 					property[key] = value
+				case "uniqueItems":
+					flag, err := strconv.ParseBool(value)
+					if err != nil {
+						panic("invalid boolean wire constraint")
+					}
+					property[key] = flag
 				default:
 					panic("unknown wire constraint")
 				}

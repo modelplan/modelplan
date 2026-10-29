@@ -83,6 +83,9 @@ type signalKey struct {
 }
 
 var signalCodes = map[signalKey]Code{
+	{SignalError, "policy_pending"}:   CodeNotAdmitted,
+	{SignalBlocked, "policy_pending"}: CodeNotAdmitted,
+	{SignalStatus, "policy_pending"}:  CodeNotAdmitted,
 	// These generic statuses defer to errorCode/reason; without one lookup is
 	// the separately tested unknown fallback, never intentional generic success.
 	{SignalStatus, "error"}:       "",
