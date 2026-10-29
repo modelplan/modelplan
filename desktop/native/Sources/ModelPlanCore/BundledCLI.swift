@@ -4,7 +4,7 @@ import CryptoKit
 
 /// Fixed bundle helper, pinned by a resource included in the app's code signature.
 /// Hash verification and process IO occur off the main actor. No PATH or unsigned fallback.
-public actor BundledCLI: CLITransport, ConsentJSONTransport {
+public actor BundledCLI: CLITransport, ConsentJSONTransport, PluginInstallJSONTransport {
     private let bundle: URL
     private let environment: [String: String]?
     private let desktopReadMode: DesktopReadMode
@@ -20,6 +20,9 @@ public actor BundledCLI: CLITransport, ConsentJSONTransport {
     }
     public func grantConsentJSON(_ payload: Data) async throws -> CommandResult {
         try await verifiedTransport().grantConsentJSON(payload)
+    }
+    public func installPluginJSON(_ tool: PluginInstallTool) async throws -> CommandResult {
+        try await verifiedTransport().installPluginJSON(tool)
     }
     private func verifiedTransport() throws -> ProcessCLITransport {
         if verified == nil {

@@ -6,7 +6,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: public-source-policy-${{ github.event.pull_request.number || github.ref }}
+  # PR heads share a group, so a newer push cancels the older run; each main commit gets its own group
+  # and is never cancelled or left pending behind a later main commit.
+  group: public-source-policy-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:

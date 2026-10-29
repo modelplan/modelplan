@@ -175,6 +175,25 @@ public enum SettingsConnectionPhase: Equatable, Sendable {
             changed()
         } catch { failed(error, token: token) }
     }
+    public func canGuidePlugin(_ tool: SettingsPluginTool) -> Bool {
+        guard isAvailable, !isBusy, availability.pluginTools.contains(tool),
+              case .pluginResult(let result) = phase, result.tool == tool, result.status != .installed,
+              let guide = service as? any SettingsPluginGuiding else { return false }
+        return guide.canGuidePlugin(tool)
+    }
+    @discardableResult public func copyPluginInstructions(_ tool: SettingsPluginTool) -> Bool { guidePlugin(tool, copy: true) }
+    @discardableResult public func openPluginDocumentation(_ tool: SettingsPluginTool) -> Bool { guidePlugin(tool, copy: false) }
+    private func guidePlugin(_ tool: SettingsPluginTool, copy: Bool) -> Bool {
+        guard canGuidePlugin(tool), case .pluginResult(let result) = phase,
+              let guide = service as? any SettingsPluginGuiding else { return false }
+        generation &+= 1; let token = generation
+        let accepted = copy ? guide.copyPluginInstructions(tool) : guide.openPluginDocumentation(tool)
+        guard generation == token, phase == .pluginResult(result) else { return accepted }
+        let delivery = SettingsPluginGuideDelivery(copied: copy ? accepted : result.guideDelivery?.copied,
+            documentationRequested: copy ? result.guideDelivery?.documentationRequested : accepted)
+        phase = .pluginResult(.init(tool: result.tool, status: result.status, completedSteps: result.completedSteps, guideDelivery: delivery))
+        changed(); return accepted
+    }
     private func canRequest(_ action: SettingsConnectionAction) -> Bool {
         switch action {
         case .applyStandardConsent(let allow, let deny, let keychain):

@@ -16,6 +16,7 @@ type candidate struct {
 	sources      []SourceState
 	veto         Code
 	keychain     Code
+	busy         bool
 }
 
 // Build projects one immutable set of facts. It performs no I/O, identity
@@ -232,6 +233,7 @@ func buildCandidate(in Input, c *candidate) Row {
 			f.Latest = p.LatestAttempt
 			f.Failure = profileFailure(p)
 		}
+		c.busy = c.busy || p.Busy
 		f.Busy = f.Busy || p.Busy || p.CoolingDown
 	}
 	if f.Latest == AttemptResultNever && len(c.profiles) == 0 {
@@ -247,11 +249,12 @@ func buildCandidate(in Input, c *candidate) Row {
 				case StateFailed, StateNeedsAction:
 					f.Latest = AttemptResultFailed
 					f.Failure = out.Code
-				case StateEmpty:
+				case StateEmpty, StateFresh:
 					f.Latest = AttemptResultSucceeded
 				case StatePending:
 					if out.Code == CodeReaderBusy {
 						f.Busy = true
+						c.busy = true
 					}
 				}
 			} else if s.Status != "" || s.Reason != "" {
@@ -372,7 +375,7 @@ func nextStep(in Input, c *candidate, outcome Outcome) *NextStep {
 		step.Text = Text{EN: "Add a manual reading in Settings", ZH: "在设置中填写手动读数"}
 	}
 	if outcome.Action == ActionRefresh {
-		cooling := false
+		cooling := c.busy || c.keychain == CodeReaderBusy
 		for _, p := range c.profiles {
 			at := knownTime(p.NextAttemptAt)
 			cooling = cooling || p.Busy || p.CoolingDown && (at == nil || at.After(in.Now))

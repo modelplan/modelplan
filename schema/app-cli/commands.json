@@ -108,7 +108,7 @@
         "claude-code",
         "--json"
       ],
-      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+      "callsite": "desktop/native/Sources/ModelPlanCore/PluginInstall.swift"
     },
     {
       "schema": "plugin-install",
@@ -119,7 +119,7 @@
         "--json",
         "--offline"
       ],
-      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+      "callsite": "CLI planning only; not invoked by Settings"
     },
     {
       "schema": "plugin-install",
@@ -129,7 +129,7 @@
         "codex",
         "--json"
       ],
-      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+      "callsite": "desktop/native/Sources/ModelPlanCore/PluginInstall.swift"
     },
     {
       "schema": "plugin-install",
@@ -140,7 +140,7 @@
         "--json",
         "--offline"
       ],
-      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+      "callsite": "CLI planning only; not invoked by Settings"
     }
   ]
 }

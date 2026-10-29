@@ -205,3 +205,35 @@ func TestMixedGenerationAndUnsupportedKeychainFactsFailClosed(t *testing.T) {
 		t.Fatal("unknown consent became permission")
 	}
 }
+
+func TestEmptySuccessAndBusyRetainedGuidance(t *testing.T) {
+	in := sampleInput()
+	in.Accounts[0].Windows = nil
+	out := Build(in)
+	if rowByID(t, out, "codex").Reason.Code != CodeNoUsageWindows {
+		t.Fatal("empty success stayed pending")
+	}
+	if err := Validate(in, out); err != nil {
+		t.Fatal(err)
+	}
+	in = sampleInput()
+	in.Profiles = nil
+	in.Accounts = nil
+	in.Sources = []SourceState{{ToolID: "codex", Status: "ok"}}
+	if rowByID(t, Build(in), "codex").Reason.Code != CodeNoUsageWindows {
+		t.Fatal("legacy empty success stayed pending")
+	}
+	in = sampleInput()
+	in.Profiles[0].LatestAttempt = AttemptResultFailed
+	in.Profiles[0].LastFailure = &FailureInput{Code: "network", At: ptr(testNow)}
+	in.Profiles[0].Busy = true
+	row := rowByID(t, Build(in), "codex")
+	if row.State != StateStale || row.NextStep.DisabledReason == nil {
+		t.Fatal("busy retained row allowed another refresh")
+	}
+	in.Profiles[0].LoginChanged = true
+	row = rowByID(t, Build(in), "codex")
+	if row.Accounts[0].Plan.ID != "unknown" {
+		t.Fatal("discarded login retained its old plan label")
+	}
+}

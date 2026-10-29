@@ -92,6 +92,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 			} else {
 				// Old subscription identity and values cannot follow a changed login/grant.
 				a.SubscriptionRef = nil
+				a.Plan = planValue("", c.declared)
 			}
 			for i := range a.Windows {
 				a.Windows[i].Current = a.ValueState == ValueStateCurrent && a.Windows[i].RemainingPercent != nil && a.Windows[i].ValidUntil != nil && in.Now.Before(*a.Windows[i].ValidUntil)
