@@ -53,7 +53,13 @@ import ModelPlanSettings
         let delegate = CommunityDelegate(surfaces: surfaces, companion: companion, transport: transport,
                                          statusItemTitle: statusItemTitle, statusItemImage: CommunityMenuBarResources.templateImage(),
                                          menuBarProvider: CommunityMenuBarProjector(), makeSettings: makeSettings)
-        consentBackend.onCanonicalReadback = { [weak delegate] _ in delegate?.refreshAfterCanonicalConsent() }
+        consentBackend.onCanonicalInvalidated = { [weak receiver = companion as? any CommunityDockConsentReceiving] in
+            receiver?.updateDockConsent(nil)
+        }
+        consentBackend.onCanonicalReadback = { [weak delegate, weak receiver = companion as? any CommunityDockConsentReceiving] value in
+            receiver?.updateDockConsent(value)
+            delegate?.refreshAfterCanonicalConsent()
+        }
         return delegate
     }
 }

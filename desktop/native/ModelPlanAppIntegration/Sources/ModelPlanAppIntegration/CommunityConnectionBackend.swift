@@ -18,14 +18,22 @@ public extension CommunityConsentCommandPort {
 @MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
+    private let invalidateConsent: @MainActor () async -> UInt64
     private var revision: UInt64 = 0
     private weak var presentationEditor: SettingsEditor?
     private var generationFloor: UInt64 = 0
     private var pendingCleanup = Set<SettingsConnectionTool>()
     /// Composition routes this into the existing runtime store, never a second producer or timer.
     public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
+    public var onCanonicalInvalidated: (@MainActor () -> Void)?
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
+        self.invalidateConsent = { await desktop.invalidateConsent() }
+    }
+    // Deterministic actor-return scheduling seam; production always uses the real desktop gate.
+    init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport,
+         invalidateConsent: @escaping @MainActor () async -> UInt64) {
+        self.port = port; self.desktop = desktop; self.invalidateConsent = invalidateConsent
     }
     func bindPresentation(to editor: SettingsEditor) throws {
         guard presentationEditor == nil || presentationEditor === editor else { throw CommunityConnectionWiringError.differentApplication }
@@ -35,7 +43,10 @@ public extension CommunityConsentCommandPort {
     public func detect() async throws -> SettingsConnectionSnapshot {
         guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
-        let gate = await desktop.invalidateConsent()
+        let gate = await invalidateConsent()
+        try check(token)
+        onCanonicalInvalidated?()
+        try check(token)
         let value = try await port.readCanonicalConsent()
         try check(token)
         guard value.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
@@ -57,7 +68,10 @@ public extension CommunityConsentCommandPort {
             throw SettingsConnectionFailure.unavailable
         }
         revision &+= 1; let token = revision
-        let gate = await desktop.invalidateConsent()
+        let gate = await invalidateConsent()
+        try check(token)
+        onCanonicalInvalidated?()
+        try check(token)
         let before = try await port.readCanonicalConsent()
         try check(token)
         guard before.generation >= generationFloor else { throw SettingsConnectionFailure.stale }

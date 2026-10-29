@@ -35,7 +35,7 @@ final class CommunityReaderFactsBindingTests: XCTestCase {
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics)
         let model = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts)
-        XCTAssertEqual(model.inputs.count, 2, "An empty account must not suppress its authorized connection status")
+        XCTAssertEqual(model.inputs.count, 1, "The account row carries its connection reason without a duplicate")
         XCTAssertTrue(model.subscriptions.isEmpty)
         XCTAssertTrue(model.inputs[0].windows.isEmpty)
         XCTAssertEqual(model.readerDiagnostics.first?.category, .consentOrPrivacy)
@@ -47,8 +47,9 @@ final class CommunityReaderFactsBindingTests: XCTestCase {
         let model = CommunityDockSnapshot(snapshot: nil, diagnostics: StoreDiagnostics(), now: now, readerFacts: facts)
         XCTAssertTrue(model.inputs.isEmpty)
         XCTAssertEqual(model.emptyDiagnostic?.category, .notConnectedYet)
-        XCTAssertEqual(CommunityReaderStatusPresentation.emptyText(model, english: false), "读取器连接尚未完成。")
-        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english: true), ["Claude: Reader connection is not complete yet."])
+        XCTAssertEqual(CommunityReaderStatusPresentation.emptyText(model, english: false), "读取器连接尚未完成。 打开设置检查已连接工具。")
+        XCTAssertEqual(CommunityReaderStatusPresentation.emptyText(model, english: true), "Reader connection is not complete yet. Open Settings to check connected tools.")
+        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english: true), ["Claude: Reader connection is not complete yet. Open Settings to check this tool."])
         let raw = "/synthetic/private/alice@example.invalid/auth.json"
         let unknown = CommunityDockSnapshot(snapshot: nil, diagnostics: StoreDiagnostics(), now: now, readerFacts: [.init(providerID: raw, reasonCode: raw)])
         XCTAssertFalse(CommunityReaderStatusPresentation.menuLines(unknown, english: true).joined().contains(raw))

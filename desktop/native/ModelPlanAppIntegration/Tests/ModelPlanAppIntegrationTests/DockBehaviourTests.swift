@@ -451,7 +451,7 @@ import ModelPlanSettings
         XCTAssertEqual(gap.rows().count, 0)
         XCTAssertTrue(try gap.menuText().contains("Reader connection is not complete yet."))
         let labels = try gap.panel().contentView?.subviews.flatMap(\.subviews).compactMap { $0 as? NSTextField } ?? []
-        XCTAssertTrue(labels.contains { $0.stringValue == "Reader connection is not complete yet." })
+        XCTAssertTrue(labels.contains { $0.stringValue == "Reader connection is not complete yet. Open Settings to check connected tools." })
         report(6, "synthetic-local=37% stale=reason-only not-detected=0-rows no-consent=0-rows not-connected=0-rows demo-rows=0")
     }
 
