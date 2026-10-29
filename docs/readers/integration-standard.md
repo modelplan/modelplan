@@ -1,6 +1,8 @@
 # Reader integration standard
 
-Status: revision 2. The owner accepted the direction, the K default and the POST gate on 2026-10-29. Part of foundation v2. Use this standard before you add a reader or repair one.
+Status: revision 3. The owner accepted the direction, the K default and the POST gate on 2026-10-29. Part of foundation v2. Use this standard before you add a reader or repair one.
+
+**Transition.** Cards are written reader by reader, but admission gates apply now and override the transition: the POST gate, known red-line violations, readers off and every revoke. Only a reader that already meets the red lines keeps running until its card is written. Foundation v2 unit U2a delivers the gates for the first batch.
 It covers four things: how we classify a reader path, the lines we never cross, how we learn from other quota monitors, and what each integration must produce.
 Related documents:
 
@@ -50,7 +52,16 @@ Classify each path on four axes:
 | advanced, off by default | auth C | Not on first run; Settings per subscription | Unchanged |
 | not-read | Any path that breaks a red line with no compliant alternative | Shown with the reason | Unchanged |
 
-- **Runtime reads are not automatically safe.** An R path is not "local" or "zero network": the owning runtime calls its vendor. Each R path needs a side-effect review of the runtime version: no refresh it would not do on its own, no paid call, no state change. The UI says "Read by <tool>'s own runtime", not "local reading".
+- **Runtime reads are not automatically safe.** An R path is not "local" or "zero network": the owning runtime calls its vendor. The UI says "Read by <tool>'s own runtime", not "local reading".
+  - **The rule.** A query from ModelPlan must not cause the runtime to refresh a token, write state or make a paid call on our behalf.
+  - **What recording proves.** Recording the outer RPC proves what we sent, not what the runtime did inside.
+  - **What the card records instead:**
+    - the runtime version reviewed;
+    - the vendor's no-refresh mechanism, if one exists (for example `refreshToken:false`);
+    - the observable evidence;
+    - what is still unknown.
+
+    An unknown stays marked unknown. "Runtime reviewed" is not a proof.
 - **K default [owner, 2026-10-29].** A key the user explicitly configured for ModelPlan (through `modelplan connect` or Settings) keeps its current enabled behaviour. A key merely present in the environment is offered unchecked and is used only after consent.
 - **Promotion.** O becomes pre-selected only by owner decision, after two beta cycles with no credential incident and a re-review, per vendor and per path version. Promotion changes the initial choice for undecided users only. It never overrides a denial, a revoke or Passive mode.
 - **POST gate [owner, 2026-10-29].** A POST read is allowed only for a vendor the owner approves. Its method, host, path and request-body schema are pinned in code and covered by the recording-transport test. The integration card presents the exact request for the owner's approval. Until a vendor is approved, its POST account-usage scope is disabled: today that means Gemini Code Assist and Cursor plan and period usage. Their local-history scopes are unaffected. Do not convert a POST to a GET and do not self-exempt a "read-only" POST.
@@ -61,10 +72,10 @@ Each red line is defined by an **observable forbidden event**, a **place where i
 
 | Red line | Forbidden event | Enforced at | Test seam and failing example |
 |---|---|---|---|
-| Never refresh, rewrite or revoke another tool's tokens or config | Any write to the tool's credential stores, config or Keychain item; any refresh-grant request; a runtime launched with flags that refresh | Reader capability set (no refresh function); filesystem, keychain and process fakes | Fake FS, keychain and process: a reader that writes `.credentials.json` or calls the token endpoint fails. Runtime R paths: recorded runtime calls checked against the reviewed method list for that runtime version |
-| Never persist or copy credentials | A token byte sequence outside `credentials/result` or in-memory request use | Store writers and log and diagnostics serializers | Canary tokens planted in fixtures. A scan of every cache file, log line, diagnostics output, error and cockpit message fails on a hit |
-| No inference or paid calls | A request whose method, host, path or parameters are not on the reader's allow-list, or more calls than the reader's per-read limit | HTTP client with a per-reader allow-list of (method, host, path, parameter schema) | Recording transport: a call to an official host's inference path fails, as does a second call within one read |
-| Budget: at most one remote read per vendor every 5 minutes, with backoff, shared by the CLI, plugins and app | Two remote reads for one vendor inside the window, from any process | Shared budget file and provider lock | Concurrent CLI, plugin and app-server runs on one home: the recording transport counts the calls |
+| Never refresh, rewrite or revoke another tool's tokens or config | Any write to the tool's credential stores, config or Keychain item; any refresh-grant request from ModelPlan; a runtime launched with flags that refresh, or a runtime call the card does not list as no-refresh | Reader capability set (no refresh function); filesystem, keychain and process fakes | Fake FS, keychain and process: a reader that writes `.credentials.json` or calls the token endpoint fails. Runtime R paths: recorded runtime calls checked against the reviewed method list for that runtime version |
+| Never persist or copy credentials | A token byte sequence outside `credentials/result` or in-memory request use, in anything ModelPlan writes | Store writers and log and diagnostics serializers | Canary tokens planted in fixtures. A scan of every ModelPlan cache file, log line, diagnostics output, error and cockpit message fails on a hit. The one bounded exception is the advanced browser-session class (C): CodexBar keeps a session cookie in its own Keychain item, never in a ModelPlan store. It exists only while C is granted for that subscription, and Forget clears it. A separate test checks the clearing |
+| No inference or paid calls | A request whose method, host, path or parameters are not on the reader's allow-list, or a request beyond the card's fixed request set for one read | HTTP client with a per-reader allow-list of (method, host, path, parameter schema) | Recording transport: a call to an official host's inference path fails, as does any request outside the card's set (for example a third call in a two-request read) |
+| Budget: at most one remote read per vendor every 5 minutes, with backoff, shared by the CLI, plugins and app. A read is the card's fixed set of at most two requests (`clients-and-readers.md` §4, unchanged), so Cursor's plan + period and Gemini's project + quota are one read | Two admitted reads for one vendor inside the window, from any process | Shared budget file and provider lock | Concurrent CLI, plugin and app-server runs on one home: the recording transport counts the calls |
 | Stop on 401 or 403 | Any further request after a 401 or 403 for that scope, with or without changed parameters | Reader classifier plus the HTTP client | Recording transport: MiniMax's legacy-endpoint retry after 401 or 403 fails this test and must be removed |
 | Detection reads presence only | Opening a file's contents, reading a Keychain value, or launching a process during detection | Detector given fake FS, keychain and process with presence-only methods | A detector that calls `read` or `exec` fails |
 | No browser data scanned for detection | Any access under browser profile directories during detection | Same fakes | Fails on any access |
@@ -72,7 +83,7 @@ Each red line is defined by an **observable forbidden event**, a **place where i
 | Source and time on every value | A displayed value without a `route` code, or a time invented when the source has none | Row schema (`route` required; time nullable) and the renderer | A fixture with a null time must show "time unknown" |
 | Fixed destinations; no credential-carrying redirect | Following a redirect on a credentialed request | HTTP client with redirects disabled on credentialed requests | A fake server that redirects: the request must stop |
 | Per-vendor circuit breaker and remote switch-off | A read after the vendor is switched off | Catalogue flag checked at admission | Test with the flag set |
-| Keychain only through the app's identity and consent | Any call to `/usr/bin/security`, or a Keychain read without an interactive operation the user started | ADR 0003 credential operation | A process fake fails on `security`. A non-interactive operation must not prompt |
+| Keychain only through the app's identity and consent | Any call to `/usr/bin/security`; a Keychain read for a scope without its scope consent and Keychain consent; any prompt during a non-interactive operation. A consented background read with UI disabled is allowed | ADR 0003 credential operation | A process fake fails on `security`. A fake Security.framework adapter checks the scope, the consent and the interaction flag of each call: a non-interactive call that allows UI fails |
 
 ## 3. Reference projects
 
@@ -80,7 +91,7 @@ Look at the official vendor source first. Then compare at least two of these pro
 
 | Project | Licence | Language | Notes for us |
 |---|---|---|---|
-| [CodexBar](https://github.com/steipete/CodexBar) | MIT | Swift | Widest provider coverage and the most users. In 0.81.0, some providers refresh tokens, launch CLIs or cache credentials, so never copy those paths |
+| [CodexBar](https://github.com/steipete/CodexBar) | MIT | Swift | Widest provider coverage. In 0.81.0, some providers refresh tokens, launch CLIs or cache credentials, so never copy those paths |
 | [Pulse](https://github.com/qunqin24/Pulse) | Apache-2.0 | Swift | 70+ tools, including Keychain and browser-auth handling. Some quota paths are only profiled from fixtures |
 | [Token Monitor](https://github.com/Javis603/token-monitor) | MIT | Electron and Node | Cross-platform. Includes a headless agent |
 | [ccusage](https://github.com/ccusage/ccusage) | MIT (LICENSE file) | Rust and TypeScript | The reference for parsing Claude and Codex local JSONL |
@@ -108,8 +119,12 @@ To add or repair a reader:
    - implement a compliant path the references did not use;
    - mark the tool `not-read`, show the reason, and record it in the card.
 6. **Turn every reported pitfall into a synthetic fixture** before writing the reader, and make sure the fixture fails first.
-7. **Copy code only under a clear licence.** MIT and Apache-2.0 may be ported with attribution; Apache also needs its NOTICE. Record the port in `docs/borrowed/<source>.md`. Anything without a licence file is ideas only.
-8. **Ship at L2.** The reader passes the owner-shaped fixture (ADR 0006) before it is enabled in the catalogue.
+7. **Copy code only under a clear licence.**
+   - MIT and Apache-2.0 code may be ported with attribution.
+   - For Apache-2.0, keep the licence headers. If upstream ships a NOTICE file, carry its content.
+   - Record the port in `docs/borrowed/<source>.md`.
+   - Anything without a licence file is ideas only.
+8. **Ship at L2.** Before the reader is enabled in the catalogue, it passes the scenarios its card declares on the owner-shaped home (ADR 0006).
 
 Research and card drafting use public material only. That work goes to a lower-cost model: GLM Flash, or Codex Terra or Luna. Codex Sol is kept for implementation and review that need it. The coordinator reviews the card's choice. A reader lane implements it.
 
@@ -164,7 +179,7 @@ This is the state of the code on main `f830589`, checked in the Codex review of 
 | Droid | L: history. No quota reader | Card decides whether a compliant quota path exists |
 | Qwen Code | L: native records with incremental history (`localusage/qwen.go`). Optional aggregate export; the two are de-duplicated (`production.go:135–146`) | Keep both, with the de-duplication rule |
 
-**First batch** (each failed on the owner's Mac): Claude, Gemini, Grok, Kimi, Kiro and Cursor. Copilot and MiniMax follow.
+**First batch** (each failed on the owner's Mac): Claude, Gemini, Grok, Kimi, Kiro and Cursor. Copilot and MiniMax follow. The admission gates (see Transition, at the top) apply to all of them now: Gemini Code Assist and Cursor make zero remote calls until their POST cards are approved, and MiniMax stays disabled until its retry after 401 or 403 is removed.
 
 ## 7. Keep the research; update it, don't repeat it
 

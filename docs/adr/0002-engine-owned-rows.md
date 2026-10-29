@@ -9,11 +9,14 @@ The app rebuilt "one row per tool" from `accounts`, `sources`, `connections`, `s
 ## Decision
 
 - The engine computes one `Row` per tool: membership, a total classifier, closed reason codes, next-step actions, per-account value state, clock fields and privacy-safe ids.
-- The app renders rows. It applies only presentation preferences and the clock rules the row carries.
+- The app renders rows. It applies only presentation preferences and the clock rules the row carries. Go never reads app preferences.
 - A tool that is missing or retired is classified before `no_reader`.
 - Consent is per read scope, not per tool. Consent facts carry their generation, and the app never joins facts and rows from different generations.
 - Each account carries a safe `route` code that names its source.
-- Empty states are explicit: `readers_off`, `pending`, `no_consent`, and "all hidden". With a valid consent, the row set equals the expected set by stable id.
+- Empty states are explicit, and each has one owner.
+  - The engine emits the full row set, never filtered by app preferences, with the engine states `readers_off`, `pending`, `no_consent` and empty.
+  - The app applies hidden rows and order. When every row is hidden, it shows its own "all hidden" state, which never goes back into the engine snapshot.
+  - The check: after the surface's filter, the shown stable ids equal the expected ids, each once.
 - This ADR supersedes `rows-design.md` v4 in its classifier order and its display-only scope.
 
 ## Consequences

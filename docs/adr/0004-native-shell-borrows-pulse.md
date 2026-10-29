@@ -22,7 +22,7 @@ An evaluation of Pulse v1.12.4 found:
   - the `FloatingPanel` event and ordering techniques;
   - `LoginItem`, without default-on;
   - their geometry tests and design notes.
-- Keep the Apache-2.0 headers and add a NOTICE file.
+- Keep the Apache-2.0 licence headers. If upstream ships a NOTICE file, carry its content, as the licence requires.
 - Put hover, reveal, collapse and drag state in one AppKit controller that we own, tested with synthetic real input.
 - Do not take providers, settings, the private appearance selector, `BotMark`, `DropletTether` or the update stack.
 - Record every borrowed module in `docs/borrowed/pulse.md`.

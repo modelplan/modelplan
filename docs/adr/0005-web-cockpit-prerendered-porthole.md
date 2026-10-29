@@ -11,7 +11,7 @@ The cockpit was being redrawn in AppKit and Core Animation from a web prototype,
 - **Cockpit.**
   - A native window hosts one WKWebView that runs the cockpit bundle built from the prototype code: instruments, art, HUD and porthole.
   - Data comes over a narrow, typed `CockpitBridge`.
-    - Allowed: display DTOs (rows, Go-computed cockpit and history data, publication summary) and a fixed set of user actions.
+    - Allowed: display DTOs (rows, Go-computed cockpit and history data, publication summary), a `clear` message carrying a new consent generation, and a fixed set of user actions.
     - Refused: credentials, consent mutation, plugin install, arbitrary commands, files or URLs, and non-main frames.
     - Messages carry a generation, a request id and a size limit, under navigation limits and a CSP.
   - The page pauses when hidden or occluded and is released when the window closes. There is no hidden prewarmed page by default; open times and memory after close are measured first.
@@ -29,6 +29,6 @@ The cockpit was being redrawn in AppKit and Core Animation from a web prototype,
 
 ## Consequences
 
-- Cockpit visual tests run in headless Chrome on Linux CI, with no Mac GUI slot.
-- The native instrument views, the field bridge, the still registration machinery and the capture pipeline are deleted once the web cockpit lands.
+- Headless Chrome on Linux CI is the fast screen for cockpit visuals, with no Mac GUI slot. The final visual proof is the real WKWebView in the final package on macOS, against owner-confirmed baselines.
+- The native instrument views, the field bridge, the still registration machinery and the capture pipeline are deleted in the wave that completes the web cockpit, after its WKWebView and package proof pass. Their regression scenarios stay.
 - The cockpit adds one WebContent process while it is open.

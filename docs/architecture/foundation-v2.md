@@ -1,12 +1,18 @@
 # Mac App foundation v2
 
-Status: revision 2 for review. Revision 1 was reviewed by Codex (xhigh); this revision answers its ten P1 and ten P2 findings and adds the agreed supplements.
-The owner approved the direction and four decisions on 2026-10-29, after a three-way review by Claude (coordinator), Codex (GPT-6.1-Sol, xhigh) and GLM-5.3. Each statement below is marked:
+Status: revision 3 for review. Codex (xhigh) reviewed revisions 1 and 2. This revision closes the revision 2 re-review. It fixes:
+- the delivery graph;
+- the consent store boundary for old writers;
+- the fence on history and cockpit queries;
+- the admission gates;
+- the proof rules.
+The owner approved the direction and its decisions on 2026-10-29, after a three-way review by Claude (coordinator), Codex (GPT-6.1-Sol, xhigh) and GLM-5.3. Markers:
 
-- **[owner]**: an owner decision.
-- **[agreed]**: the three-way consensus.
-- **[impl]**: an implementation choice in this document, open to review.
-- **[pending]**: needs an owner decision. The safe default applies until then.
+- **[owner]**: an owner decision, dated when it came after the direction.
+- **[agreed]**: the three-way consensus on a design rule.
+- **[impl]**: an implementation detail of this revision. It can change in review without owner approval. Numbers such as queue sizes and caps are [impl].
+
+Unmarked text (the delivery plan, the test lists, the checklist) is the current plan. An accepted direction does not mean each protocol detail was approved line by line. Nothing here is implemented yet.
 
 Related:
 - the protocol in [`schema/app-cli/app-server.md`](../../schema/app-cli/app-server.md);
@@ -54,23 +60,29 @@ The owner tested five beta07 candidates (respin1 to respin5). Each one failed on
 3. **[owner] Keychain under the app's own identity.** The app reads the Keychain with Security.framework under a stable self-signed signing identity, and hands an access token to Go in memory only. ADR 0003.
 4. **[owner] Native shell, Pulse-derived.** The Dock, menu bar and Settings stay native. Placement geometry and AppKit patterns are ported from Pulse file by file. ADR 0004.
 5. **[owner] The cockpit runs the prototype web code.** A WKWebView sits in a native window, behind a narrow typed bridge. The v1 porthole is prerendered. ADR 0005.
-6. **[owner] Proof levels.** L1 CI, L2 the owner-shaped home and dedicated test Mac, L3 the owner's Mac. Review is risk-tiered. ADR 0006.
+6. **[owner] Proof levels.**
+   - L1: checks.
+   - L2: declared scenarios on the owner-shaped home and the dedicated test Mac.
+   - L3: the owner's Mac.
+
+   A level is earned by checks on a stated subject, never by a merge. Review is risk-tiered. ADR 0006.
 7. **[owner] Official runtime visuals ship from the public repo** once they are final, shipped and rights-clear. Sources stay private (ADR 0049).
 
 ## Seams under test
 
-Each seam is tested at the highest point that reaches the owner-visible result:
+Each seam has tests that reach the owner-visible result. A fix keeps its regression test at the seam where the failure belongs:
 
 | Seam | What is driven | What is observed |
 |---|---|---|
 | Engine boundary | The real `modelplan app-server` binary, in both a fresh and an owner-shaped home | The notifications and responses, validated against the schema and the row invariants. Real Go encodings go through the production Swift decoder |
 | App boundary | Recorded app-server transcripts | The rendered Dock and menu-bar model, compared to the expected row set by stable id |
-| Consent and Forget | The app-server plus an independent CLI process | No restored value after a revoke or Forget, whatever the interleaving |
+| Consent and Forget | The app-server plus an independent CLI process, including an old released CLI | No restored value after a revoke or Forget, whatever the interleaving |
+| Sensitive queries | `history/query` and `cockpit/query` results that straddle a revoke or re-grant | No private value shown after the revoke; an old cursor or late result returns nothing |
 | Credential operation | A fake Security.framework adapter plus the real app-server; L3 on the real Mac | Credential outcomes, late-result rejection, prompt policy, token canaries |
 | Native shell | AppKit windows with synthetic real input | Saved edge vs actual edge, sliver, reveal, drag, displays |
 | Cockpit | The cockpit bundle in headless Chrome (fast screen) and in WKWebView on macOS (final) | Screenshots against owner-confirmed baselines; bridge rejection cases |
 | Product identity | The final package | App SHA, bundled engine hash, official-asset manifest and publication revision all match the reviewed candidate |
-| Whole journey | The e2e job: real app, real app-server, fake providers, owner-shaped home | The owner journey checklist (Appendix A) |
+| Whole journey | The e2e job: real app, real app-server, fake providers, owner-shaped home | The Appendix A scenarios that run at L2 |
 
 ## User stories
 
@@ -124,7 +136,10 @@ Each seam is tested at the highest point that reaches the owner-visible result:
 
 30. As the owner, a problem I reported counts as fixed only at L3 on the real candidate, compared against my report.
 31. As a lane, I see which tickets I can start from their blocking edges.
-32. As a lane, a reversible question resolves by default after 30 minutes. An irreversible one escalates to the owner after 4 hours.
+32. As a lane, my question is handled by its approved default rule when one matches:
+    - Authorised routine work goes ahead at once.
+    - A pending question whose type has an approved waiting policy takes its default after 30 minutes.
+    - An irreversible change, a new permission or a public disclosure waits for an answer, and escalates to the owner after 4 hours.
 
 ## Implementation decisions
 
@@ -141,6 +156,31 @@ Each seam is tested at the highest point that reaches the owner-visible result:
 - Go owns scope definition, persistence, readback and admission. The existing class and `DeniedSources` machinery is reused, with complete mutation, readback, migration and admission semantics.
 - An old tool-level grant carries over only to the scopes it provably covered. New scopes never inherit it.
 - Promoting a scope to pre-selected changes only the initial choice for users who have not decided. It never overrides a denial, a revoke, or Passive mode.
+- **[agreed, fixes P1-R03] Store boundary for old writers.** Per-scope consent changes what a grant means, so it cannot be an additive field: a shipped schema-1 writer would ignore the new field and write tool-level grants back.
+  - **Schema bump.** The consent store moves to `schemaVersion: 2` in place (`~/.config/modelplan/consent.json`).
+  - **Shipped CLIs already honour this boundary** (`cli/internal/consent/consent.go`, main `f830589`):
+    - `consent.Load` rejects any `schemaVersion` other than 1;
+    - `Current()` then reports readers `off`;
+    - the mutation path returns the load error instead of writing.
+
+    An old copy therefore reads nothing and writes nothing.
+  - **[impl] Migration.**
+    1. The first v2-capable engine takes the store lock and reads schema 1.
+    2. It maps each tool grant to the scopes that grant provably covered, and keeps denials and pending Forget entries.
+    3. It writes schema 2 atomically.
+    4. It keeps the schema-1 file as `consent.v1.bak`, never reads it again for decisions, and deletes it after the official release.
+  - **[impl] Recovery.** A schema-2 file that fails to load is never overwritten. Readers stay off, and `doctor` and Settings show "consent store unreadable" with a reset action. After confirmation, the reset writes an empty schema-2 store.
+  - **Consequence.**
+    - Every CLI copy on the machine that reads quota must be v2-capable. The app's bundled engine, the plugin pins and the Skill's install pin move in the same release.
+    - Until a plugin updates, its old copy shows readers off. It never reads under stale grants.
+  - **Regression (U2).** Run the current plugin-pinned release and the latest released CLI against a schema-2 home. After a revoke in the new engine, the old copy's grant, refresh and Forget commands must not change the store, restore a value or make a remote call. Only the versions this scenario runs are claimed.
+- **[agreed, fixes P2-R11] Revoke and Forget.** Both go through `consent/grant`; there is no separate method.
+  - **Revoke.** `deny` revokes a scope: the scope becomes denied and its cached readings are erased. The denial is recorded, so promotion or re-detection never re-enables the scope.
+  - **Forget.** `forget` does what `deny` does, and also erases the scope's derived history and identity records.
+  - **Unfinished cleanup.** Erasure that cannot finish is recorded as `cleanup_pending` and retried. The denial itself is already committed.
+  - **Budget.** Budget state is kept across a revoke, so a re-grant cannot buy an extra remote read.
+  - **Tightening is always accepted.** Deny and Forget work when readers are off, when the tool is no longer detected or is retired, and when no reader exists. Only `allow` is subject to admission gates.
+  - **Idempotency.** The same `requestId` with a different payload is rejected (`request_mismatch`), using the stored request hash. Receipts persist in the store, so a retry after a restart replays the original receipt.
 
 ### Engine process (`modelplan app-server`)
 
@@ -158,12 +198,15 @@ Each seam is tested at the highest point that reaches the owner-visible result:
   - Messages carrying an old `sessionId` are dropped.
   - A new session resets sequence but never lowers the committed consent-generation floor.
   - `rows/subscribe` returns the snapshot together with its sequence. Notifications with a lower or equal sequence in the same session are dropped, so the subscribe boundary is atomic.
-- **[impl] Flow control.**
-  - One writer per direction. Frames are at most 8 MiB, with a bounded outbound queue.
-  - Full row snapshots coalesce: only the latest is kept. Consent receipts and credential outcomes are never coalesced or dropped.
-  - Each request has a deadline and can be cancelled.
-  - A slow history or Keychain call never blocks a revoke or a health message.
-  - Swift has one engine-state store that consumes the stream and fans out to the Dock, the menu bar and Settings.
+- **[impl, fixes P2-R10] Flow control.** The exact rules are in `app-server.md`, section "Flow control". In short:
+  - **Two outbound classes, one writer per direction.**
+    - Control messages are sent before query results and are never coalesced. They are consent receipts, `consent/changed`, credential requests, health and errors.
+    - Row snapshots coalesce to the latest.
+  - **Caps.** In-flight requests, queries and credential operations each have a limit. A request over a limit gets a `busy` error at once, so nothing waits without bound.
+  - **Frames.** A frame is limited while it is scanned. An unterminated line is rejected at 8 MiB without buffering more.
+  - **Deadlines.** Each request has a deadline and can be cancelled. A slow history or Keychain call never blocks a revoke or a health message.
+  - **Lost receipts.** A receipt can still be lost when the connection drops. The app recovers it by retrying the same `requestId`, or by reading consent back in the next session.
+  - **One store.** Swift has one engine-state store that consumes the stream and fans out to the Dock, the menu bar and Settings.
 - **[agreed, fixes P1-02] Cross-process safety is kept, not deleted.**
   - The app-server removes duplicate scheduling and detached refresh workers from the app path. It keeps using the shared mechanisms every CLI copy relies on:
     - provider locks and budgets;
@@ -188,10 +231,26 @@ Each seam is tested at the highest point that reaches the owner-visible result:
   - classifier rows 3 and 4 swap, so a missing or retired tool comes before `no_reader`;
   - the scope extends from "display projection only" to the whole app, through the app-server.
 - **[agreed]** Rows carry a safe `route` code for each account (for example `saved_login_api`, `runtime_rpc`, `local_log`, `api_key_api`), so "source shown on every value" has a field to show. Time can be null; the app shows "time unknown" and never invents a time.
-- **[agreed, fixes P1-05] Empty states are explicit.**
-  - With a valid consent, the Dock row set equals the engine's expected set by stable id, with exactly one row per tool and no duplicates.
-  - Legitimate empty states each have their own summary and UI: `readers_off`, `pending` (consent changing), `no_consent`, and "all hidden by you".
-  - When identity or consent is uncertain, clearing sensitive values wins over showing a row.
+- **[agreed, fixes P1-05 and P2-R08] Empty states are explicit, and each has one owner.**
+  - **Engine.** The engine emits the full row set before any presentation filter, with one row per tool and no duplicates. Its summary states are engine states: `readers_off`, `pending` (consent changing), `no_consent`, and an empty set.
+  - **App.** The app applies its presentation preferences (hidden rows, order) to that set. When every row is hidden, the app shows its own "all hidden by you" state. It never writes that state back into the engine snapshot, and Go never reads app preferences.
+  - **The check.** After the surface's filter, the stable ids shown equal the expected ids, declared plans included, each exactly once. When the expected set is empty, the matching empty state is shown.
+  - **Uncertainty.** When identity or consent is uncertain, clearing sensitive values wins over showing a row.
+
+### Sensitive query results
+
+- **[agreed, fixes P1-R04]** `history/query` and `cockpit/query` return private values, so they follow the same fence as rows.
+  - **Engine.** The engine admits the query under the current consent of every scope it touches, reads, and checks the generation again before it answers. If the generation moved, it answers `consent_changed` with no items.
+  - **Context.** Every result carries its context in the response envelope: the `sessionId`, the scopes covered and the `consentGeneration` it was admitted under. Items do not repeat these fields.
+  - **Cursors.** A cursor is opaque. It is bound to the session, the scopes, the account reference and the generation. After a revoke or re-grant it returns `cursor_stale`, so an old cursor never recovers data.
+  - **App.** When the app sees a higher generation in any message, it:
+    - clears every history and cockpit view and derived cache for the affected scopes;
+    - drops any result admitted under a lower generation;
+    - sends `CockpitBridge` a `clear` with the new generation, and the page discards anything older.
+  - **Acceptance.**
+    - Rows stay correct while a history or cockpit result arrives late across a revoke.
+    - An open page removes private values at once.
+    - After a re-grant, an old cursor or a late response cannot bring data back.
 
 ### Swift client
 
@@ -204,7 +263,7 @@ Each seam is tested at the highest point that reaches the owner-visible result:
   2. an unknown display value degrades locally;
   3. a broken identity, type or version fails explicitly and leaves the app in a safe state.
 - **[owner] No merge logic.** The Dock, the menu bar and Settings read rows and consent facts directly.
-- **[agreed] Deletion, in the same wave as the replacement and with evidence in the PR:**
+- **[agreed] Deletion.** Each item goes in the wave that completes its replacement, never with the interface PR alone. Before it goes, the replacement's new call chain, its consent fence, the real package and its regressions must all pass. Historical regression scenarios stay; they are not a compatibility layer. The items:
   - `CommunityUnboundDockRows`;
   - the row and category logic in `CommunityReaderReason`;
   - the Dock's use of the `Projection` stale rule;
@@ -244,17 +303,27 @@ Each seam is tested at the highest point that reaches the owner-visible result:
   - **Ported after review:** `LoginItem` without default-on, and `DockPresence` without `AppSettings`.
   - **Not ported:** the private selector, providers, `BotMark`, `DropletTether` and the update stack.
 - **[agreed]** Hover, reveal, collapse and drag state live in one AppKit controller that we own. It is tested with synthetic real input.
-- **[agreed, fixes P2-05] Preferences and migration.**
-  - The new file is `~/Library/Application Support/ModelPlan/settings.json`, carrying a `schemaVersion`.
-  - On first run it migrates from, in priority order:
-    1. the production Beta07 `ModelPlan/Beta07/settings-v1.json`;
-    2. the Community `ModelPlan/Native/settings-v1.json`;
-    3. the surface file `ModelPlan/Native/community-v1.json`.
-  - Fields migrated: Dock placement (saved edge, ratio, display UUID), hidden rows, order and per-account window choice. Old row preference ids are mapped to the new row and account ids.
-  - The migration writes the new file atomically and leaves the old files untouched.
-  - Defaults: with no file, the right edge when available. A system-Dock or adjacent-display fallback is tested separately. A saved left edge is kept. A corrupt file opens on the right, reports the error and is not overwritten. An unplugged display falls back to the main display and keeps the stored UUID.
-  - The saved edge and the actual edge are stored separately, and the actual edge is never written back as the default.
-  - The H40 shape export is updated to include each of the files above. The owner-shaped home reproduces them synthetically and never reads owner files.
+- **[agreed, fixes P2-05 and P2-R12] Preferences and migration.**
+  - **The new file** is `~/Library/Application Support/ModelPlan/settings.json`, carrying a `schemaVersion`. It has two sections. Today's two stores hold different data and are used together, and neither overwrites the other (`ModelPlanSettings/Preferences.swift`, main `f830589`).
+  - **Migration by field group.** It runs on first run only; when the new file exists, nothing is migrated.
+
+    | Group | Today's source | Fields | New section |
+    |---|---|---|---|
+    | Settings | The build's own file: `ModelPlan/Beta07/settings-v1.json` for the official build, `ModelPlan/Native/settings-v1.json` for the Community build. If it is missing or corrupt, the other one. The two are never merged field by field | Appearance: theme, size, motion, transparency, percentage mode and display, red threshold. Dock: edge, display UUID, along-fraction, auto-hide and reveal, magnification. Rows: order and visibility (`subscriptions`), per-subscription settings. Other: menu display, shortcuts, language, opening, notifications, help hints, onboarding progress, open at login, automatic updates | `settings` |
+    | Core | `ModelPlan/Native/community-v1.json`, independent of the Settings group | Locale, favourite model ids, field picker value | `core` |
+    | Not migrated | `readerConsent` in the Settings file | Old app-side consent UI state | — |
+
+  - **Consent stays in the engine.** `readerConsent` is never promoted to engine consent. Consent migrates in the engine (see "Store boundary for old writers").
+  - **Row ids.** Old row-preference ids are mapped to the new row and account ids. An id with no match is kept in the file, unused, so the existing reconnect behaviour still finds it.
+  - **Recovery.** The migration writes the new file atomically and leaves the old files untouched. A corrupt source falls back to the other source of the same group. If none loads, defaults apply and the error is reported.
+  - **Defaults.**
+    - With no file, the Dock goes on the right edge when that edge is available. A system-Dock or adjacent-display fallback is tested separately.
+    - A saved left edge is kept.
+    - A corrupt new file opens on the right, reports the error and is not overwritten.
+    - An unplugged display falls back to the main display, and the stored UUID is kept.
+  - **Saved and actual edge.** They are stored separately, and the actual edge is never written back as the default.
+  - **Coexistence cases.** A synthetic home with all three old files, and one with a corrupt Beta07 file, each migrate to the expected sections.
+  - **Shape export.** The H40 shape export covers each of the files above. The owner-shaped home reproduces them synthetically and never reads owner files.
   - `doctor` prints the path in use.
 - **[impl] Borrowed libraries:** LaunchAtLogin-Modern and KeyboardShortcuts (MIT), recorded in `docs/borrowed/`. Sparkle integration is not part of this foundation; the existing update path stays.
 
@@ -264,6 +333,7 @@ Each seam is tested at the highest point that reaches the owner-visible result:
 - **[agreed, fixes P1-08 and P2-08] `CockpitBridge`.** A narrow, typed host bridge, not a pass-through.
   - **Allowed:**
     - display DTOs pushed by the host: rows, `cockpit/query` and `history/query` results, publication summary;
+    - a `clear` message carrying a new consent generation, after which the page discards older data;
     - a fixed set of user actions: choose setup, open Settings, open history page.
   - **Refused:** credentials, consent mutation, plugin install, arbitrary commands, files or URLs, and any message from a non-main frame or another origin.
   - **Message rules:** messages carry `generation` and `requestId` and a size limit. Navigation is restricted, and there is a CSP.
@@ -291,16 +361,18 @@ Each seam is tested at the highest point that reaches the owner-visible result:
   - the official-asset manifest hash;
   - the publication revision.
 
-  The owner receives exactly the file that passed L3.
+  The owner receives the same bundle that passed L2 and the integrated review, and runs L3 on it. Acceptance and release use that same bundle; it is never rebuilt.
 - **[agreed] Release coupling.**
   - The app bundles one exact engine version and hash. Plugin and Skill pins stay independent.
-  - All CLI copies on a machine share the data directory under the storage rules in `clients-and-readers.md` section 2. Each store has a schema version, minimum reader and writer versions, and unknown-version handling. A copy that cannot write a store safely refuses to write.
+  - All CLI copies on a machine share the data directory. Each store has a schema version and an unknown-version rule.
+    - A store whose meaning does not change stays additive, as `clients-and-readers.md` section 2 says.
+    - A store whose meaning changes (consent, in this foundation) bumps its schema to a version that shipped copies reject, as described above. It never relies on old copies honouring a new field.
   - A protocol minor version adds methods, fields or enum values through capability negotiation, and the generator and its consumers update together.
   - The version number of the first app-server release is a release choice. 0.6.0 is proposed.
-- **[agreed] Rollback** means installing the previous test build, under three rules:
-  - A rolled-back build must never re-enable a revoked scope: the consent store's minimum writer version blocks older writers from rewriting consent they do not understand.
-  - New stores are additive where possible, and an older writer that would drop unknown fields refuses to write.
-  - Rollback is tested for consent, readings and preferences.
+- **[agreed, fixes P1-R03] Rollback** means installing the previous test build, under three rules:
+  - A rolled-back build never re-enables a revoked scope. A build from before the consent schema bump cannot load the schema-2 store, so it shows readers off and writes nothing. To read again, the user moves forward to a v2-capable build.
+  - Other stores stay additive, and their old readers ignore unknown fields.
+  - Rollback is tested for consent, readings and preferences, together with the old-writer regression above.
 - **[agreed] CI path filters** also cover official assets, the cockpit bundle, schemas, the generator and packaging entry points.
 
 ### Security model
@@ -334,7 +406,7 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
 ## Testing decisions
 
 - A good test drives a seam from the table above and asserts what the owner would see.
-- Every fix lands with a test that fails before it.
+- A fix that changes behaviour lands with a test that fails before it, at the seam where the failure belongs. A docs fix, or a refactor with no behaviour change, needs no new test. Extend an existing test rather than copying it.
 - **Fixtures.**
   - Real-binary captures for every row state.
   - The respin5 cases:
@@ -344,7 +416,10 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
     - each preference file listed above, including a retained left edge;
     - a corrupt preference file.
   - Per-scope consent, including a local-only grant on a tool that has an O scope.
-- **Owner-shaped home.** Rebuilt from the updated shape export before each beta, in the e2e job for every PR touching `cli/`, `desktop/native/`, the cockpit bundle or the official assets.
+- **Owner-shaped home.**
+  - The e2e job rebuilds it from an approved, versioned shape baseline for every PR that touches `cli/`, `desktop/native/`, the cockpit bundle or the official assets.
+  - The baseline states the structures it covers and its known gaps.
+  - The baseline is updated only when the structure changes or L3 exposes a gap, within an approved run. It is never re-exported as a routine step before each beta.
 - **Race tests.**
   - An independent CLI revokes or Forgets while a read is in flight.
   - The revoke is committed but cleanup fails.
@@ -352,6 +427,8 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
   - The app and the CLI modify consent at the same time.
   - A late credential result arrives after a revoke.
   - A message from an old session arrives after a restart.
+  - A history or cockpit result arrives after a revoke, and an old cursor is used after a re-grant.
+  - An old released CLI runs grant, refresh and Forget against a schema-2 store.
 - **Red-line tests.** These use a recording transport, a fake filesystem, a fake keychain, a fake process and a fake network. They assert forbidden events: method, host, path and parameters; retries after 401 or 403; writes outside allowed stores; token canaries outside `credentials/result`. See `integration-standard.md` section 2.
 - **Visual tests.** Offscreen native at 1x and 2x and both themes; the cockpit in headless Chrome, then in WKWebView; owner-confirmed baselines.
 - **Shell tests with real input.**
@@ -359,52 +436,77 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
 
 ## Delivery
 
-Each unit has one final owner (DRI), a consumer, an acceptance command and environment, and a condition for deleting the old path. A unit's **start** may need less than its **completion**.
+- **One DRI.** Each unit has one final owner (DRI); any collaborators are named after it.
+- **Start and completion.** A unit's **start** may need less than its **completion**. Completion edges are transitive: a candidate is complete only when everything its units depend on for completion is complete.
+- **What each ticket names:**
+  - its consumer;
+  - its exact inputs (a SHA, schema version or artefact hash);
+  - its scenarios and environment;
+  - an acceptance command: an existing one, or "new in this ticket" with its inputs and pass rule;
+  - the condition for deleting the old path.
 
 | Unit | Delivers | Start needs | Completion needs | DRI | Consumer and acceptance |
 |---|---|---|---|---|---|
 | U1 Rows core | Classifier, mapping, membership, rows 3↔4 swap, oracle tests (#299) | — | — | CLIJIT | Oracle and table tests, L1 |
-| U2 Consent and reader state | Per-scope consent (P1-01), the fence and Publish rules (P1-02), #295, #294, removing the #298 bypass, multi-writer tests | — | U1 | FEEDFIX | Race tests, L2 |
-| U3 app-server core | Handshake, sessions, supervision contract, `rows/*`, `consent/*`, `diagnostics/get`, `credentials/request/result` | U1 types | U1, U2 | CLIJIT | Protocol tests against the real binary, L2 |
-| U3b app-server data handlers | `refresh/request`, `history/query` (`HistoryItem`), `cockpit/query`, `publication/get`, `plugin/install` | U3 | U3 | READERS | Real-binary handler tests |
+| U2 Consent and reader state | Per-scope consent, consent schema 2 and its migration, the fence and Publish rules, revoke and Forget semantics, #295, #294, removing the #298 bypass, multi-writer and old-writer regressions | — | U1 | FEEDFIX | Race and old-writer tests, L2 |
+| U2a Reader admission, first batch | Admission gates on the first batch. Unapproved POST account-usage scopes (Gemini Code Assist, Cursor) make zero remote calls. MiniMax sends no request after a 401 or 403, or stays disabled until it doesn't. Local-history scopes are unaffected | U2 scope ids | U2 | READERS | Recording-transport tests, L1 |
+| U3 app-server core | Handshake, sessions, envelope, flow control, supervision contract, `rows/*`, `consent/*`, `diagnostics/get`, `credentials/request/result`, `engine/health` | U1 types | U1, U2 | CLIJIT | Protocol tests against the real binary, L2 |
+| U3b First-candidate handlers | `refresh/request` (shared budget), `plugin/install` (same contract as `plugin install --json`) | U3 | U3 | READERS | Real-binary handler tests |
+| U3c Cockpit handlers | `history/query` (`HistoryItem`, cursors), `cockpit/query`, `publication/get`, with the sensitive-query fence | U3 | U2, U3 | READERS | Real-binary handler tests, including late results after a revoke |
 | U4 Generated Swift client | Wire DTOs, generator, engine-state store, decode policy, mutation tests | U3 schema | U3 | CLIJIT, with M0 as consumer | Real Go encodings through the production decoder |
-| U5 Shell from Pulse | Ported modules, controller, settings file and migration, real-input tests | — | — | M0 | Real-input and migration tests, L2 on the test Mac |
-| U6 Dock and menu on rows | Render rows, delete the merge code and `onCanonicalInvalidated` (after the fence test) | U4, U5 | U2, U4, U5 | M0 | Owner-shaped e2e, L2 |
-| U7 Keychain identity | Signing identity in packaging, Security.framework adapter, credential operation | U3 | U2, U3 | M0, with CLIJIT for the Go side | Credential race tests, L3 two-build check |
-| U8 Settings on app-server | Per-scope consent UI (O unselected), revoke for undetected tools, diagnostics | U4 | U2, U4 | M4 | e2e, L2 |
-| U9 Official visuals public | Asset pack and manifest, public official build, baselines | Owner-confirmed item list | — | M2/M3 | Manifest and visual checks |
-| U10 First candidate | Package with product identity, L1/L2, 5-min smoke, integrated review, L3 | — | U2, U6, U7, U8, U9 (release gate) | M0, with M1 for L3 | Appendix A |
-| U11 Cockpit web | Bundle, `CockpitBridge`, lifecycle, visual tests | U3b | U3b, U9 | Cockpit lane | Bridge-rejection tests, WKWebView baselines |
-| U12 Prerendered porthole | Private pipeline, public asset pack and manifest, default-still check | U9 | U9 | M3 | Manifest and default-still CI |
-| U13 v1 candidate | U10 plus U11 and U12; upgrade, wake and rollback checks; L3 | — | U10, U11, U12 | M0, with M1 for L3 | Appendix A |
+| U5 Shell from Pulse | Ported modules, controller, settings file and migration by field group, real-input tests | — | — | M0 | Real-input and migration tests, L2 on the test Mac |
+| U6 Dock and menu on rows | Render rows, refresh through U3b, delete the merge code and `onCanonicalInvalidated` (after the fence test) | U4, U5 | U2, U3b, U4, U5, U14 | M0 | Owner-shaped e2e, L2 |
+| U7 Keychain identity (implementation-ready) | Signing identity in packaging, Security.framework adapter, credential operation | U3 | U2, U3 | M0, with CLIJIT for the Go side | On the test Mac: two signed builds of one identity, a synthetic Keychain item, interactive, background and late-callback cases, budget. L2 |
+| U8 Settings on app-server | Per-scope consent UI (O unselected), revoke and Forget for undetected tools, diagnostics, plugin install (#297) through U3b | U4 | U2, U3b, U4, U14 | M4 | e2e, L2 |
+| U9 Official visuals public | Asset pack and manifest, public official build, baselines | Owner-confirmed item list | — | M0, with M2 and M3 for the assets | Manifest and visual checks |
+| U14 e2e harness, shape baseline, candidate manifest | The e2e runner on the app-server (the scenario intents of #300), the versioned shape-baseline builder, the candidate manifest and evidence-bundle generator | U3 | U3 | RELPIPE | Consumed by U6, U8 and U10. Feature scenarios stay with each feature's DRI, and a failure goes back to that DRI |
+| U10 First candidate | Package with product identity; L1, L2, 5-minute smoke, integrated review, then L3 | — | U2, U2a, U6, U7, U8, U9, U14 (release gate) | M0, with M1 for L3 | The Appendix A items marked U10. The real two-build Keychain check (A14) stays pending until the next reviewed candidate |
+| U11 Cockpit web | Bundle, `CockpitBridge` (with `clear`), lifecycle, visual tests | U3c | U3c, U9 | Cockpit lane | Bridge-rejection and clear tests, WKWebView baselines |
+| U12 Prerendered porthole | Private pipeline, public asset pack and manifest, default-still check | U9 | U9 | Cockpit lane, with M3 for the art | Manifest and default-still CI |
+| U13 v1 candidate | U10 plus U11 and U12; upgrade, wake and rollback checks; L3 | — | U10, U11, U12 | M0, with M1 for L3 | The Appendix A items marked U13, with A14 completed |
+
+**Methods the first candidate consumes:**
+- `initialize`, `shutdown`;
+- `rows/subscribe`, `rows/changed`;
+- `consent/get`, `consent/grant`, `consent/changed`;
+- `credentials/request`, `credentials/result`;
+- `refresh/request`, `plugin/install`;
+- `diagnostics/get`, `engine/health`.
+
+The cockpit methods (U3c) are not on its path.
 
 The first real chain is U1, then U2 and U3, then U4, then U6 (rows, consent, Swift, Dock). Work widens only after that chain passes L2. These units become tickets after this revision passes review.
 
-**Migration of in-flight work:**
+**Existing work and contracts to migrate.** The capability and its regressions move; old PRs are not re-implemented as they were.
 
-| PR | Goes into |
+| Work | Goes into |
 |---|---|
 | #299 (with the oracle test) | U1 |
 | #295, #294 | U2 |
-| #297 (plugin install UI) | U8, behind `plugin/install` |
-| #300 (e2e native-panel cases) | The e2e harness, re-pointed to the app-server |
-| #298 (Keychain grant read) | U2 removes its budget bypass; U7 replaces its Keychain path |
+| #297 (plugin install UI, merged) | U8, behind `plugin/install` (U3b) |
+| #300 (e2e native-panel cases) | U14, the scenario intents only. Its old respin6 gate does not return |
+| #298 (Keychain grant read, merged) | U2 removes its budget bypass; U7 replaces its Keychain path |
 
 **Estimate from design freeze:** the first candidate in 5–8 working days, v1 in 10–15. That assumes no new tools, approved visuals, available lanes and test Mac, and reused readers. The estimate is redone after the first chain (U6).
 
 ## Process
 
-See [`docs/agents/development-process.md`](https://github.com/guanbear/modelplans.ai/blob/main/docs/agents/development-process.md) in the private repo, which is in review.
+The working process lives in the private repo's development-process document, which is in review. Each task contract pins the version it follows by SHA. This foundation depends on these rules from it:
+- one final DRI per unit;
+- start and completion edges;
+- proof earned by checks on a stated subject (ADR 0006);
+- deletion only after the replacement's evidence;
+- an owner-reported issue closed only at L3.
 
 ## Supersedes and status
 
 | Document | What changes |
 |---|---|
-| `clients-and-readers.md` §3–§6 | First-run "pre-check all standard" becomes per-scope defaults; `/usr/bin/security` stable-identity rule is replaced by ADR 0003; the browser cookie cache rule is unchanged (advanced class) |
-| `rows-design.md` v4 | Classifier rows 3↔4 swap; scope extends from display projection to the whole app; `route` added per account; empty-state rules as above |
-| `integration-standard.md` | Applies from the next reader change; existing readers keep running until their card is written |
-
-Every row in this document is marked [owner], [agreed], [impl] or [pending]. [impl] rows may change in review without owner approval. [pending] rows wait for the owner.
+| `clients-and-readers.md` §2 | The additive rule stays for stores whose meaning does not change. Consent moves to schema 2, which shipped copies reject (see "Store boundary for old writers") |
+| `clients-and-readers.md` §3–§6 | Three changes; the one-read definition (a fixed set of at most two requests) is unchanged. First-run "pre-check all standard" becomes per-scope defaults. ADR 0003 replaces the `/usr/bin/security` stable-identity rule. The advanced browser-session class is unchanged: CodexBar keeps its session cookie in its own Keychain item, and Forget clears it |
+| `rows-design.md` v4 | Classifier rows 3↔4 swap; scope extends from display projection to the whole app; `route` added per account; empty states split between engine and app as above |
+| `integration-standard.md` | Cards are written reader by reader, but admission gates apply now and override the transition: the POST gate, known red-line violations (the MiniMax retry), readers off and every revoke. Only a reader that already meets the red lines keeps running until its card is written. U2a delivers the first-batch gates |
+| ADR 0006 | Synced with the proof and review rules above |
 
 ## Out of scope
 
@@ -421,27 +523,35 @@ Every row in this document is marked [owner], [agreed], [impl] or [pending]. [im
 - The self-signed identity may not prevent prompts on every update. If L3 shows prompts, accept one prompt per update until Developer ID.
 - Pulse has one maintainer and frequent churn, so upstream fixes need manual review.
 - A web cockpit adds a WebContent process while it is open, and its memory must stay within the measured limit.
-- The owner-shaped home is only as good as the latest shape export.
+- The owner-shaped home is only as good as its shape baseline. The baseline's known gaps are listed with it.
 
 ## Appendix A: L3 checklist (owner journey and reported issues)
 
-Each candidate is checked against these items. Every check uses a local screenshot or the diagnostics export, compared against the original report where one exists.
+Each item has a scenario id, the candidate it applies to, the L2 evidence it needs first, and the part only L3 can show.
 
-1. Fresh first run lists the detected tools and scopes, with the defaults of user story 2.
-2. Consent per scope, and Claude Keychain consent with the prompt only after the user's action.
-3. **The Dock row set matches the consented set by id**: no zero rows when consent is valid, no duplicates. This was the respin1–5 failure.
-4. **A tool whose first read failed** shows one row with a reason and a next step.
-5. **Every value shows its age.** Stale values are labelled.
-6. **Refresh** stays within budget, and a value refreshes after its due time.
-7. The menu bar shows the lowest current value and follows the Dock's preferences.
-8. **Dock default edge** is right on first run, and a saved left edge is kept. Owner report (beta06, respin5).
-9. **Official red key** ring and material match the confirmed baseline. Owner report (beta06, respin5).
-10. The sliver is visible, and reveal and collapse work.
-11. Drag to each edge, and display unplug and replug.
-12. The Settings edge shows the actual placement. Owner report (beta06).
-13. The read-only and no-consent paths show their summary states. Owner report (beta06).
-14. Claude Keychain: Always Allow survives the next build.
-15. Revoke removes values at once, and a CLI-side revoke is reflected.
-16. VoiceOver labels on Dock cards.
-17. Copy diagnostics is sanitized.
-18. The product identity of the candidate matches the reviewed one.
+- **What a run covers.** A candidate runs the items that apply to it, plus the item for every reported issue it claims to fix. All of this fits in one owner GUI run of at most 20 minutes.
+- **Destructive preconditions** (a fresh first run, no consent) are proven at L2 on a synthetic profile. The owner's real state is only used as it is: never reset, revoked or forgotten.
+- **Unfinished items.** An item that does not fit or cannot run is recorded `pending` or `not-run`, never passed.
+- **Closing a reported issue.** It closes only when its item passes at L3, compared against the original report.
+
+| Id | Check | Applies to | L2 first | L3 part |
+|---|---|---|---|---|
+| A01 | First run lists detected tools and scopes, with the defaults of user story 2 | U10 | Fresh synthetic profile | The owner's detected set, from the existing state |
+| A02 | Consent per scope; the Claude Keychain prompt appears only after the user's action | U10 | Synthetic Keychain: interactive and background cases | The real prompt timing |
+| A03 | **Row set matches by id.** After the surface's filter, the shown ids equal the expected ids, each once. An empty expected set shows its specific empty state. This was the respin1–5 failure | U10 | Owner-shaped e2e | The owner's real Dock |
+| A04 | A tool whose first read failed shows one row with a reason and a next step | U10 | Owner-shaped e2e | The owner's real failing tool, if there is one |
+| A05 | Every value shows its age, and stale values are labelled | U10 | Captures | Visual check |
+| A06 | Refresh stays within budget, and a value refreshes after its due time | U10 | Budget tests on one home | One observed refresh, without forcing extra refreshes |
+| A07 | The menu bar shows the lowest current value and follows the Dock's preferences | U10 | e2e | Visual check |
+| A08 | The Dock is on the right edge on first run, and a saved left edge is kept. Owner report (beta06, respin5) | U10 | Migration and real-input tests on the test Mac | The owner's real saved edge |
+| A09 | The official red key's ring and material match the confirmed baseline. Owner report (beta06, respin5) | U10 | Visual check on the final package | The owner's visual confirmation |
+| A10 | The sliver is visible; reveal and collapse work | U10 | Real-input tests | Visual check |
+| A11 | Drag to each edge; display unplug and replug | U10 | Real-input tests; unplug only where the test Mac can do it | The owner's real displays where available, otherwise `not-run` |
+| A12 | The Settings edge shows the actual placement. Owner report (beta06) | U10 | Real-input tests | Visual check |
+| A13 | Readers-off and no-consent paths show their summary states. Owner report (beta06) | U10 | Synthetic profile | Not recreated on the owner's Mac; L2 evidence only |
+| A14 | Claude Keychain: Always Allow survives the next build | Started by U10, completed by the next reviewed candidate | U7 two-build test on the test Mac | The real Keychain, across two reviewed candidates |
+| A15 | Revoke removes values at once, and a CLI-side revoke is reflected | U10 | Race tests | Not run on the owner's profile; L2 evidence only |
+| A16 | VoiceOver labels on Dock cards | U10 | Accessibility tests | Spot check |
+| A17 | Copy diagnostics is sanitized | U10 | Canary scan | The owner's export, checked locally and never uploaded |
+| A18 | The candidate's identity matches the reviewed one | U10, U13 | Manifest | Hashes on the owner's Mac |
+| A19 | The cockpit matches the confirmed design: porthole still or fallback, keyboard reach, memory after close | U13 | U11 and U12 evidence: WKWebView baselines, the default-still check, lifecycle measures | The owner's visual confirmation |

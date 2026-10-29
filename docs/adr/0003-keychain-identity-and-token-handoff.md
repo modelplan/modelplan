@@ -34,4 +34,5 @@ Claude's login on the owner's Mac exists only in the Keychain. The CLI read it t
 - Existing access-list entries are not changed. A trust entry the user once gave `/usr/bin/security` stays until the owner removes it by hand.
 - A standalone CLI run cannot read a Keychain-only login. It says so with a recovery step, and never falls back to `/usr/bin/security`.
 - Rotating the certificate changes the identity, and users re-approve once. Gatekeeper still treats the build as unidentified until Developer ID notarization.
-- The real-Mac (L3) check verifies that "Always Allow" survives two consecutive builds.
+- The test Mac proves the two-build behaviour first, with a synthetic Keychain item and two signed builds of one identity. That is the implementation-ready gate.
+- The real-Mac (L3) check then verifies that "Always Allow" survives two consecutive reviewed candidates. It stays pending until the second one.
