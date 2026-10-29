@@ -40,7 +40,67 @@ public struct EngineStoreCore: Sendable {
     public init() {}
 
     public mutating func apply(_ event: EngineClientEvent) -> EngineStoreEffect {
-        // Interface baseline: event-sequence tests qualify the donor extraction.
+        switch event {
+        case .connection(let connection):
+            snapshot.connection = connection
+        case .clearPrivateViews(let invalidation):
+            let connection = snapshot.connection
+            snapshot = EngineStoreSnapshot()
+            snapshot.connection = connection
+            return .clearPrivateViews(invalidation)
+        case .context(let context):
+            snapshot.delivery = context
+        case .response(let requestID, let response):
+            snapshot.lastResponseRequestID = requestID
+            apply(response)
+        case .rowsChanged(let reply, let count):
+            snapshot.rows = reply.envelope.data
+            snapshot.invalidRowCount = count
+            succeeded(.rows)
+        case .consentChanged(let reply):
+            snapshot.consent = reply.envelope.data
+            succeeded(.consent)
+        case .health(let reply):
+            snapshot.health = reply.envelope.data
+        case .featureFailure(let feature, let error):
+            snapshot.failures.removeAll { $0.feature == feature }
+            snapshot.failures.append(.init(feature: feature, error: error))
+        }
         return .none
     }
+
+    private mutating func apply(_ response: EngineResponse) {
+        switch response {
+        case .rows(let reply, let count):
+            snapshot.rows = reply.envelope.data
+            snapshot.invalidRowCount = count
+            succeeded(.rows)
+        case .consent(let reply):
+            snapshot.consent = reply.envelope.data
+            succeeded(.consent)
+        case .grant(let result):
+            // Historical receipts are transaction metadata, never current facts
+            // or a replacement delivery context/authorization.
+            snapshot.lastGrant = result
+        case .refresh(let reply):
+            snapshot.refresh = reply.envelope.data
+        case .history(let reply):
+            snapshot.history = reply.envelope.data
+            succeeded(.history)
+        case .pluginInstall(let reply):
+            snapshot.pluginInstall = reply.envelope.data
+            succeeded(.pluginInstall)
+        case .publication(let reply):
+            snapshot.publication = reply.envelope.data
+            succeeded(.publication)
+        case .diagnostics(let reply):
+            snapshot.diagnostics = reply.envelope.data
+            succeeded(.diagnostics)
+        }
+    }
+
+    private mutating func succeeded(_ feature: EngineFeature) {
+        snapshot.failures.removeAll { $0.feature == feature }
+    }
+
 }

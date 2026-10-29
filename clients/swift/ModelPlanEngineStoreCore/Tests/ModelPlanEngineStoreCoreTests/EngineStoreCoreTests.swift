@@ -205,4 +205,30 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertNil(core.snapshot.health)
         XCTAssertTrue(core.snapshot.failures.isEmpty)
     }
+
+    func testRepeatedEmptyClearStillRequestsNativeViewClearing() {
+        var core = EngineStoreCore()
+        for revision in [UInt64(1), UInt64(2)] {
+            let invalidation = EngineInvalidation(revision: revision, reason: .connectionLost, previous: nil, nextFloor: nil)
+            let effect = core.apply(.clearPrivateViews(invalidation))
+            assertEmptyPrivate(core.snapshot)
+            XCTAssertEqual(core.snapshot.connection, .idle)
+            guard case .clearPrivateViews(let returned) = effect else { XCTFail("empty clear lost its effect"); continue }
+            XCTAssertEqual(returned.revision, revision)
+            XCTAssertNil(returned.previous)
+            XCTAssertNil(returned.nextFloor)
+        }
+    }
+
+    func testReceiptAloneCannotCreateCurrentConsentOrContext() throws {
+        var core = EngineStoreCore()
+        let result = EngineGrantResult(receipt: try capture(WireConsentReceipt.self, "WireConsentReceipt.json"),
+                                      committedAt: context(7).floor, delivery: context(9), supersededByLaterConsent: true)
+        _ = core.apply(.response(requestID: .string("metadata-only"), .grant(result)))
+        XCTAssertNil(core.snapshot.delivery)
+        XCTAssertNil(core.snapshot.consent)
+        XCTAssertNil(core.snapshot.rows)
+        XCTAssertEqual(core.snapshot.lastGrant?.committedAt, context(7).floor)
+        XCTAssertEqual(core.snapshot.lastResponseRequestID, .string("metadata-only"))
+    }
 }
