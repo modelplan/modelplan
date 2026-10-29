@@ -1500,6 +1500,9 @@
         "beta": {
           "type": "boolean"
         },
+        "errorCode": {
+          "type": "string"
+        },
         "reason": {
           "type": "string"
         },

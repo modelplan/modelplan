@@ -144,7 +144,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 			used := 83.125
 			account := &Account{Source: hidden, Plan: hidden, Via: hidden, ObservedAt: at, Subscription: &Binding{Ref: hidden, Status: hidden, Basis: hidden}, Windows: []Window{{Kind: hidden, Limit: hidden, UnknownReason: hidden, UsedPercent: &used}}}
 			for _, status := range []string{"ok", hidden} {
-				s := &readerState{SchemaVersion: 1, Provider: "claude", GrantKey: hidden, Entries: []readerEntry{{ProfileKey: hidden, Status: status, Notice: hidden, NextStep: hidden, Metadata: readerMetadata{CredentialKey: hidden, AccountKey: hidden, OrganizationKey: hidden, Plan: hidden, ScopeKey: hidden}, Account: account}}}
+				s := &readerState{SchemaVersion: 1, Provider: "claude", GrantKey: hidden, Entries: []readerEntry{{ProfileKey: hidden, Status: status, ErrorCode: hidden, Notice: hidden, NextStep: hidden, Metadata: readerMetadata{CredentialKey: hidden, AccountKey: hidden, OrganizationKey: hidden, Plan: hidden, ScopeKey: hidden}, Account: account}}}
 				if err := saveReaderState(cache, s); err != nil {
 					t.Fatal(err)
 				}
@@ -192,7 +192,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal(row)
 							}
 						case "state":
-							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable))$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|other))?)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed state", row)
 							}
 						case "last":

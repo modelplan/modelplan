@@ -34,6 +34,7 @@ func fetchOpenCodeGo(ctx context.Context, c *http.Client, region, key string, no
 	var r map[string]any
 	if err := getJSON(ctx, c, host+"/zen/go/v1/usage", key, &r); err != nil {
 		e.Error = err.Error()
+		e.ErrorCode = errorCode(err)
 		return e
 	}
 	return parseOpenCodeGo(r, now)
@@ -48,7 +49,7 @@ var (
 )
 
 func parseOpenCodeGo(r map[string]any, now time.Time) codexbarEntry {
-	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
+	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
 	usage, _ := r["usage"].(map[string]any)
 	rolling, _ := usage["rolling"].(map[string]any)
 	if rolling == nil {
@@ -76,6 +77,7 @@ func parseOpenCodeGo(r map[string]any, now time.Time) codexbarEntry {
 		e.Windows = append(e.Windows, w)
 	}
 	e.Status = "ok"
+	e.ErrorCode = ""
 	return e
 }
 

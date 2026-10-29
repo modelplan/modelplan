@@ -346,6 +346,7 @@ func untar(archive []byte, dir string) error {
 // ---- The cached reading.
 
 type codexbarEntry struct {
+	ErrorCode   string    `json:"errorCode,omitempty"`
 	CursorState string    `json:"cursorState,omitempty"`
 	Region      string    `json:"region,omitempty"`
 	KeyEnv      string    `json:"keyEnv,omitempty"`

@@ -140,7 +140,7 @@ func TestNativeZaiRefresh(t *testing.T) {
 	_ = RefreshNative(context.Background(), p, failedAt)
 	r = Read(p, failedAt)
 	for _, s := range r.Sources {
-		if s.Source == "native:zai" && (s.Status != "unavailable" || s.Reason != "the API key was rejected (HTTP 401)") {
+		if s.Source == "native:zai" && (s.Status != "unavailable" || s.Reason != "http_401") {
 			t.Fatalf("status = %+v", s)
 		}
 	}

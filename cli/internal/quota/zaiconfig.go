@@ -3,7 +3,6 @@ package quota
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -53,12 +52,19 @@ func ZaiConfigRegion(base string) string {
 // inode. Only bounded regular files from the authorised profile are inspected.
 func zaiConfigFile(path string) ([]byte, error) {
 	if !filepath.IsAbs(path) {
-		return nil, errors.New("configuration unavailable")
+		return nil, codeError("file_unreadable", "configuration unavailable")
 	}
 	for p := filepath.Clean(path); ; p = filepath.Dir(p) {
 		fi, err := os.Lstat(p)
-		if err != nil || fi.Mode()&os.ModeSymlink != 0 {
-			return nil, errors.New("configuration unavailable")
+		if err != nil {
+			code := "file_unreadable"
+			if os.IsNotExist(err) {
+				code = "file_missing"
+			}
+			return nil, codeError(code, "configuration unavailable")
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return nil, codeError("file_unreadable", "configuration unavailable")
 		}
 		if p == filepath.Dir(p) {
 			break
@@ -66,27 +72,31 @@ func zaiConfigFile(path string) ([]byte, error) {
 	}
 	before, err := os.Lstat(path)
 	if err != nil || !before.Mode().IsRegular() || before.Size() > 256<<10 {
-		return nil, errors.New("configuration unavailable")
+		return nil, codeError("file_unreadable", "configuration unavailable")
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, errors.New("configuration unavailable")
+		return nil, codeError("file_unreadable", "configuration unavailable")
 	}
 	defer f.Close()
 	after, err := f.Stat()
 	if err != nil || !os.SameFile(before, after) {
-		return nil, errors.New("configuration unavailable")
+		return nil, codeError("file_unreadable", "configuration unavailable")
 	}
 	b, err := io.ReadAll(io.LimitReader(f, 256<<10+1))
 	if err != nil || len(b) > 256<<10 {
-		return nil, errors.New("configuration unavailable")
+		return nil, codeError("file_unreadable", "configuration unavailable")
 	}
 	return b, nil
 }
 func zaiConfiguredKey(source ZaiConfigSource) (region, key, state string) {
+	region, key, state, _ = zaiConfiguredKeyCode(source)
+	return
+}
+func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code string) {
 	b, err := zaiConfigFile(source.SettingsPath)
 	if err != nil {
-		return "", "", "not_detected"
+		return "", "", "not_detected", errorCode(err)
 	}
 	switch source.Tool {
 	case "claude-code":
@@ -98,11 +108,11 @@ func zaiConfiguredKey(source ZaiConfigSource) (region, key, state string) {
 			} `json:"env"`
 		}
 		if json.Unmarshal(b, &cfg) != nil {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "parse_error"
 		}
 		region = ZaiConfigRegion(cfg.Env.Base)
 		if region == "" {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "unsupported_login"
 		}
 		key = cfg.Env.Token
 		if key == "" {
@@ -120,63 +130,63 @@ func zaiConfiguredKey(source ZaiConfigSource) (region, key, state string) {
 			} `json:"provider"`
 		}
 		if json.Unmarshal(b, &cfg) != nil || source.OpenCodeProvider == "" {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "unsupported_login"
 		}
 		provider, ok := cfg.Provider[source.OpenCodeProvider]
 		if !ok {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "unsupported_login"
 		}
 		region = ZaiConfigRegion(provider.Options.Base)
 		if region == "" {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "unsupported_login"
 		}
 		key = provider.Options.Key
 		if strings.HasPrefix(key, "{env:") && strings.HasSuffix(key, "}") {
 			name := strings.TrimSuffix(strings.TrimPrefix(key, "{env:"), "}")
 			if !envName.MatchString(name) {
-				return "", "", "not_supported_yet"
+				return "", "", "not_supported_yet", "unsupported_login"
 			}
 			key = os.Getenv(name)
 		} else if strings.ContainsAny(key, "{}") {
-			return "", "", "not_supported_yet"
+			return "", "", "not_supported_yet", "unsupported_login"
 		}
 		if key == "" && source.AuthPath != "" {
 			b, err = zaiConfigFile(source.AuthPath)
 			if err != nil {
-				return "", "", "not_detected"
+				return "", "", "not_detected", errorCode(err)
 			}
 			var auth map[string]struct {
 				Type string `json:"type"`
 				Key  string `json:"key"`
 			}
 			if json.Unmarshal(b, &auth) != nil || auth[source.OpenCodeProvider].Type != "api" {
-				return "", "", "not_supported_yet"
+				return "", "", "not_supported_yet", "unsupported_login"
 			}
 			key = auth[source.OpenCodeProvider].Key
 		}
 	default:
-		return "", "", "not_supported_yet"
+		return "", "", "not_supported_yet", "unsupported_login"
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return "", "", "expired_login"
+		return "", "", "expired_login", "unsupported_login"
 	}
 	if len(key) > 4096 || strings.ContainsAny(key, "\r\n\x00") {
-		return "", "", "not_supported_yet"
+		return "", "", "not_supported_yet", "unsupported_login"
 	}
-	return region, key, ""
+	return region, key, "", ""
 }
 func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.Time) codexbarEntry {
 	source, ok := ctx.Value(zaiConfigSourceKey{}).(ZaiConfigSource)
 	if !ok {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext("not_supported_yet")}
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
 	}
-	region, key, state := zaiConfiguredKey(source)
-	if source.Region != "" && region != source.Region {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext("not_supported_yet")}
-	}
+	region, key, state, code := zaiConfiguredKeyCode(source)
 	if state != "" {
-		return codexbarEntry{Status: "error", Error: zaiConfigNext(state)}
+		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}
+	}
+	if source.Region != "" && region != source.Region {
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
 	}
 	if c == nil {
 		c = nativeClient
