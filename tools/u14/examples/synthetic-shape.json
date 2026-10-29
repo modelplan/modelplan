@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": "synthetic-v1",
+  "fidelity": "hand-built",
+  "approvalRef": null,
+  "covers": [
+    "tool-presence",
+    "config-structure",
+    "preference-files",
+    "consent-v1"
+  ],
+  "knownGaps": [
+    "Hand-built example, never an exact copy or an owner-approved baseline.",
+    "No local history content; scenario-specific reader fixtures are required."
+  ],
+  "tools": [
+    "claude",
+    "codex",
+    "gemini"
+  ],
+  "files": [
+    {
+      "path": ".claude/settings.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "env": {
+            "kind": "object",
+            "fields": {
+              "SYNTHETIC_SETTING": {
+                "kind": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": ".claude/.credentials.json",
+      "state": "empty"
+    },
+    {
+      "path": ".codex/config.toml",
+      "state": "empty"
+    },
+    {
+      "path": ".gemini/settings.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {}
+      }
+    },
+    {
+      "path": ".config/modelplan/connections.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "schemaVersion": {
+            "kind": "number"
+          },
+          "connections": {
+            "kind": "array",
+            "items": []
+          }
+        }
+      }
+    }
+  ],
+  "consent": {
+    "state": "v1",
+    "privacy": "automatic",
+    "tools": {
+      "claude": "denied",
+      "codex": "allowed",
+      "gemini": "unset"
+    }
+  }
+}
