@@ -99,6 +99,48 @@
         "--json"
       ],
       "callsite": "supporting diagnostic"
+    },
+    {
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json"
+      ],
+      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+    },
+    {
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "claude-code",
+        "--json",
+        "--offline"
+      ],
+      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+    },
+    {
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json"
+      ],
+      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
+    },
+    {
+      "schema": "plugin-install",
+      "arguments": [
+        "plugin",
+        "install",
+        "codex",
+        "--json",
+        "--offline"
+      ],
+      "callsite": "planned Settings plugin-install integration; production entry: cli/cmd/modelplan/plugin_install.go"
     }
   ]
 }

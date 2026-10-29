@@ -50,6 +50,19 @@ fixtures remain separate test cases.
 App–CLI 契约变更须在同一 PR 更新 schema、重新生成真实 CLI 的合成样例，并同步更新
 CLI 与 Swift 两侧测试。字段展示文本不能充当主机名、授权状态或刷新指令。
 
+The [plugin-install schema](../schema/app-cli/plugin-install.json) and its
+[generated capture guide](../schema/app-cli/README.md#plugin-installation) cover
+`plugin install claude-code|codex --json`, including `--offline` planning. The
+existing command returns `instructions` (exit 0) for a missing host and `failed`
+(exit 1, possibly with one completed command) for a host command error. A
+host-present manual-step error is also `failed`. App installer decoder tests
+must load these captures and use the manifest exit codes rather than inventing
+a separate success/failure shape. The app owner wires the confirmed Settings
+action separately; this contract addition changes no install behavior.
+
+插件安装接口同样使用真实 CLI 合成样例；缺少宿主并非失败状态，宿主命令失败可保留
+已完成步骤。App 授权操作与解码测试须采用同一契约。
+
 ### App consent API
 
 `modelplan consent --json` is a cache-only, presence-only read. It returns

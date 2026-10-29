@@ -15,6 +15,10 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
 @MainActor public final class CommunityCLIConsentPort: CommunityConsentCommandPort {
     private let transport: any ConsentJSONTransport
     private let apiAvailable: Bool
+    #if DEBUG && MODELPLAN_E2E_JOURNEY
+    private var journeyReadResult = "not-requested"
+    public var journeyReadStatus: String? { CommunityJourneyCI.enabled ? journeyReadResult : nil }
+    #endif
     public init(transport: any ConsentJSONTransport, apiAvailable: Bool = false) {
         self.transport = transport; self.apiAvailable = apiAvailable
     }
@@ -23,7 +27,26 @@ public struct CommunityConsentCleanupPending: Error, Sendable {
     }
     public func readCanonicalConsent() async throws -> ConsentPreview {
         guard apiAvailable else { throw SettingsConnectionFailure.unavailable }
-        let result = try await transport.readConsentJSON()
+        let result: CommandResult
+        do { result = try await transport.readConsentJSON() }
+        catch {
+            #if DEBUG && MODELPLAN_E2E_JOURNEY
+            if CommunityJourneyCI.enabled {
+                journeyReadResult = (error as? TransportError).map { String(describing: $0) } ?? "transport-failed"
+            }
+            #endif
+            throw error
+        }
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        if CommunityJourneyCI.enabled {
+            journeyReadResult = "exit-\(result.exitCode)" + (result.stdout.isEmpty ? ":empty-output" : ":output")
+            if result.exitCode != 0, result.stdout.count <= 65536,
+               let object = try? JSONSerialization.jsonObject(with: result.stdout) as? [String: Any],
+               let code = object["error"] as? String, ["consent_unavailable", "invalid_request"].contains(code) {
+                journeyReadResult += ":" + code
+            }
+        }
+        #endif
         try Task.checkCancellation()
         guard result.exitCode == 0 else { throw SettingsConnectionFailure.requestFailed }
         do { return try FeedDecoder.consentPreview(result.stdout) }
