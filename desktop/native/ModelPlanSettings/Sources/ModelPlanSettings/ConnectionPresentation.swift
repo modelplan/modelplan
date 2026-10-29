@@ -93,8 +93,8 @@ public enum SettingsConnectionPresentation {
             return .init("Revoke access and Forget cached readings for \(tool.title)? This deletes its scoped cached readings. Other tools are kept.",
                          "撤销 \(tool.title) 的权限并忘记缓存读数？这会删除该工具范围内的缓存读数，保留其他工具。")
         case .installPlugin(let tool):
-            return .init("Request ModelPlan plugin installation for \(tool.title)? The runtime may change host configuration and use the network. Confirming here is a request, not proof of installation.",
-                         "请求为 \(tool.title) 安装 ModelPlan 插件？运行时可能更改宿主配置并使用网络。此处确认仅表示请求，不证明安装完成。")
+            return .init("Install the ModelPlan plugin for \(tool.title)? Its CLI may change host configuration and use the network. If the CLI cannot be found, install commands will be copied and the setup guide requested. Completion is shown after the installer responds.",
+                         "为 \(tool.title) 安装 ModelPlan 插件？其 CLI 可能更改宿主配置并使用网络。若找不到 CLI，会复制安装命令并请求打开安装指南；安装器返回后才显示完成状态。")
         }
     }
     public static func status(_ phase: SettingsConnectionPhase) -> SettingsText {
@@ -118,12 +118,27 @@ public enum SettingsConnectionPresentation {
             case .requestFailed: return .init("The component did not return a verified result. Open About to check the component and instructions before retrying.", "组件未返回可核验结果。请在关于中检查组件与说明，再决定是否重试。")
             }
         case .pluginResult(let result):
+            let base: SettingsText
             switch result.status {
-            case .installed: return .init("Plugin installed (reported by runtime)", "运行时报告插件已安装")
-            case .planned: return .init("Installation planned; not installed", "已规划安装；尚未安装")
-            case .instructions: return .init("Installation instructions available; not installed", "可提供安装说明；尚未安装")
-            case .failed: return .init("Plugin installation failed", "插件安装失败")
+            case .installed: base = .init("Installer reported the plugin installed.", "安装器报告插件已安装。")
+            case .planned: base = .init("Installation planned; not installed. Copy commands or open the setup guide.", "已规划安装，尚未安装。可复制命令或打开安装指南。")
+            case .instructions: base = .init("The host CLI was not found by the installer; the plugin is not installed. Copy commands or open the setup guide.", "安装器未找到宿主 CLI，插件尚未安装。可复制命令或打开安装指南。")
+            case .failed:
+                base = result.completedSteps == 1
+                    ? .init("Installation stopped after the first step. Open the setup guide before continuing.", "安装在第一步完成后中止，请先打开安装指南再继续。")
+                    : .init("Plugin installation did not finish. Open the setup guide before retrying.", "插件安装未完成，请先打开安装指南再决定是否重试。")
             }
+            guard let delivery = result.guideDelivery else { return base }
+            var en = base.english, zh = base.chinese
+            if let copied = delivery.copied {
+                en += copied ? " Commands copied." : " Commands could not be copied; use Copy install commands."
+                zh += copied ? " 已复制命令。" : " 未能复制命令，请点“复制安装命令”。"
+            }
+            if let requested = delivery.documentationRequested {
+                en += requested ? " Setup guide opening requested." : " Setup guide could not open; use Open setup guide."
+                zh += requested ? " 已请求打开安装指南。" : " 未能打开安装指南，请点“打开安装指南”。"
+            }
+            return .init(en, zh)
         }
     }
 }

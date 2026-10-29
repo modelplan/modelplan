@@ -15,7 +15,7 @@ public extension CommunityConsentCommandPort {
 }
 
 /// Single Settings service over canonical consent and the same runtime's desktop gate.
-@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding {
+@MainActor public final class CommunityConnectionBackend: SettingsConnectionAllowing, SettingsConnectionAvailabilityProviding, SettingsPluginGuiding {
     private let port: any CommunityConsentCommandPort
     private let desktop: ConsentGatedDesktopTransport
     private let invalidateConsent: @MainActor () async -> UInt64
@@ -23,12 +23,13 @@ public extension CommunityConsentCommandPort {
     private weak var presentationEditor: SettingsEditor?
     private var generationFloor: UInt64 = 0
     private var pendingCleanup = Set<SettingsConnectionTool>()
+    private var pluginInstaller: (any CommunityPluginInstalling)?
     /// Composition routes this into the existing runtime store, never a second producer or timer.
     public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
     /// Presentation withdrawal is only for an acknowledged revocation; failed inspection retains its last facts.
     public var onCanonicalInvalidated: (@MainActor () -> Void)?
-    public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
-        self.port = port; self.desktop = desktop
+    public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport, pluginInstaller: (any CommunityPluginInstalling)? = nil) {
+        self.port = port; self.desktop = desktop; self.pluginInstaller = pluginInstaller
         self.invalidateConsent = { await desktop.invalidateConsent() }
     }
     // Deterministic actor-return scheduling seam; production always uses the real desktop gate.
@@ -36,11 +37,21 @@ public extension CommunityConsentCommandPort {
          invalidateConsent: @escaping @MainActor () async -> UInt64) {
         self.port = port; self.desktop = desktop; self.invalidateConsent = invalidateConsent
     }
+    func bindPluginInstallerIfNeeded(_ make: () -> any CommunityPluginInstalling) {
+        if pluginInstaller == nil { pluginInstaller = make() }
+    }
+    public func canGuidePlugin(_ tool: SettingsPluginTool) -> Bool { pluginInstaller?.canGuidePlugin(tool) == true }
+    public func copyPluginInstructions(_ tool: SettingsPluginTool) -> Bool { pluginInstaller?.copyPluginInstructions(tool) == true }
+    public func openPluginDocumentation(_ tool: SettingsPluginTool) -> Bool { pluginInstaller?.openPluginDocumentation(tool) == true }
     func bindPresentation(to editor: SettingsEditor) throws {
         guard presentationEditor == nil || presentationEditor === editor else { throw CommunityConnectionWiringError.differentApplication }
         presentationEditor = editor
     }
-    public var settingsConnectionAvailability: SettingsConnectionAvailability { port.availability }
+    public var settingsConnectionAvailability: SettingsConnectionAvailability {
+        let consent = port.availability
+        return .init(reason: consent.reason, canInspect: consent.canInspect, canGrant: consent.canGrant,
+                     canForget: consent.canForget, pluginTools: pluginInstaller?.supportedTools ?? [])
+    }
     public func detect() async throws -> SettingsConnectionSnapshot {
         guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
@@ -121,7 +132,8 @@ public extension CommunityConsentCommandPort {
         try await applyStandardConsent(allow: [], deny: [tool], request: request)
     }
     public func installPlugin(_ tool: SettingsPluginTool, request: SettingsConnectionRequestContext) async throws -> SettingsPluginInstallResult {
-        throw SettingsConnectionFailure.unavailable
+        guard let pluginInstaller, pluginInstaller.supportedTools.contains(tool) else { throw SettingsConnectionFailure.unavailable }
+        return try await pluginInstaller.install(tool)
     }
     private func check(_ token: UInt64) throws {
         try Task.checkCancellation()

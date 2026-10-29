@@ -172,11 +172,24 @@ public enum SettingsPluginTool: String, CaseIterable, Sendable {
     public var title: String { self == .claudeCode ? "Claude Code" : "Codex" }
 }
 public enum SettingsPluginInstallStatus: String, Sendable { case installed, planned, instructions, failed }
+public struct SettingsPluginGuideDelivery: Equatable, Sendable {
+    public let copied: Bool?, documentationRequested: Bool?
+    public init(copied: Bool? = nil, documentationRequested: Bool? = nil) { self.copied = copied; self.documentationRequested = documentationRequested }
+}
+@MainActor public protocol SettingsPluginGuiding: AnyObject {
+    func canGuidePlugin(_ tool: SettingsPluginTool) -> Bool
+    func copyPluginInstructions(_ tool: SettingsPluginTool) -> Bool
+    func openPluginDocumentation(_ tool: SettingsPluginTool) -> Bool
+}
 /// No command arrays, paths, URLs or raw error text cross this boundary.
 public struct SettingsPluginInstallResult: Equatable, Sendable {
     public let tool: SettingsPluginTool
     public let status: SettingsPluginInstallStatus
-    public init(tool: SettingsPluginTool, status: SettingsPluginInstallStatus) { self.tool = tool; self.status = status }
+    public let completedSteps: Int?
+    public let guideDelivery: SettingsPluginGuideDelivery?
+    public init(tool: SettingsPluginTool, status: SettingsPluginInstallStatus, completedSteps: Int? = nil, guideDelivery: SettingsPluginGuideDelivery? = nil) {
+        self.tool = tool; self.status = status; self.completedSteps = completedSteps; self.guideDelivery = guideDelivery
+    }
     public var isInstalled: Bool { status == .installed }
 }
 public enum SettingsConnectionFailure: String, Error, Sendable {
