@@ -5,6 +5,7 @@ on:
     paths:
       - clients/swift/ModelPlanEngineClient/**
       - clients/swift/ModelPlanWire/**
+      - schema/app-cli/child-environment.json
       - cli/cmd/modelplan/**
       - cli/internal/appserver/**
       - cli/internal/consent/**
@@ -15,6 +16,7 @@ on:
     paths:
       - clients/swift/ModelPlanEngineClient/**
       - clients/swift/ModelPlanWire/**
+      - schema/app-cli/child-environment.json
       - cli/cmd/modelplan/**
       - cli/internal/appserver/**
       - cli/internal/consent/**
@@ -54,6 +56,7 @@ jobs:
             go version
             swift --version
           } > .tmp/source.txt
+          (cd cli && go test ./internal/swiftwire/... -run '^TestChildEnvironmentContractMatchesSupervisor$')
           (cd cli && go build -trimpath -o ../.tmp/modelplan ./cmd/modelplan)
           go build -trimpath -o .tmp/frame-proxy clients/swift/ModelPlanEngineClient/Tools/FrameProxy/main.go
           shasum -a 256 .tmp/modelplan .tmp/frame-proxy > .tmp/binaries.sha256

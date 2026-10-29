@@ -9,6 +9,11 @@ public enum WireProtocol {
     public static let maxFrameBytes = 8388608
 }
 
+// Generated from Go supervision; key names only, never environment values.
+public enum WireChildEnvironment {
+    public static let allowedKeys: Set<String> = ["HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"]
+}
+
 // This support code is emitted with the DTOs; it never stores engine state.
 public enum WireDecodeError: Error, Sendable {
     case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement, invalidRowEncoding

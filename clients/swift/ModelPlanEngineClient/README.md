@@ -28,8 +28,11 @@ await client.stop()
 ```
 
 The executable receives `app-server`, optionally `--offline` and `--read-only`.
-The environment is explicit, with required HOME/TMPDIR and an allow-list in
-`validateConfiguration`; no host environment is inherited. Do not put credential
+The environment is explicit, with required HOME/TMPDIR. `validateConfiguration`
+uses `WireChildEnvironment.allowedKeys`, generated from Go supervision's
+`ChildEnvironmentKeys` into ModelPlanWire and
+`schema/app-cli/child-environment.json`; there is no handwritten Swift key list.
+No host environment is inherited. Do not put credential
 agent tokens there. Sources/ModelPlanEngineClient/Interface.swift lists the public
 protocols/events/errors; Values.swift contains immutable metadata/configuration.
 

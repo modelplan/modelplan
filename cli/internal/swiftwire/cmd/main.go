@@ -29,7 +29,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	outputs := map[string][]byte{filepath.Join(*root, "clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift"): generated}
+	environment, err := swiftwire.ChildEnvironmentContract()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	outputs := map[string][]byte{
+		filepath.Join(*root, "clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift"): generated,
+		filepath.Join(*root, "schema/app-cli/child-environment.json"):                             environment,
+	}
 	for name, data := range files {
 		path := filepath.Join(*root, "schema/app-cli/captures", name)
 		if name == "CaptureTypes.swift" {

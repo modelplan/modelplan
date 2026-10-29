@@ -202,7 +202,7 @@ public actor ProcessEngineClient: EngineClient {
         }
     }
     func validateConfiguration() throws {
-        let allowed: Set<String> = ["HOME", "PATH", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "Z_AI_API_KEY", "OPENCODE_API_KEY", "MINIMAX_CODING_API_KEY", "KIMI_API_KEY"]
+        let allowed = WireChildEnvironment.allowedKeys
         guard configuration.executableURL.isFileURL,
               FileManager.default.isExecutableFile(atPath: configuration.executableURL.path),
               !configuration.applicationVersion.isEmpty,
