@@ -51,7 +51,8 @@ import ModelPlanSettings
                                     statusItemTitle: String = "ModelPlan",
                                     makeSettings: @escaping @MainActor (LifecycleCoordinator) throws -> any CommunitySettingsIntegration) -> CommunityDelegate {
         let delegate = CommunityDelegate(surfaces: surfaces, companion: companion, transport: transport,
-                                         statusItemTitle: statusItemTitle, makeSettings: makeSettings)
+                                         statusItemTitle: statusItemTitle, statusItemImage: CommunityMenuBarResources.templateImage(),
+                                         menuBarProvider: CommunityMenuBarProjector(), makeSettings: makeSettings)
         consentBackend.onCanonicalInvalidated = { [weak receiver = companion as? any CommunityDockConsentReceiving] in
             receiver?.updateDockConsent(nil)
         }

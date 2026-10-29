@@ -218,6 +218,7 @@ jobs:
           done
           integrated_bin_dir=$(swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --show-bin-path)
           cp "$integrated_bin_dir/ModelPlanCommunityApp" "$native_artifact_dir/"
+          cp -R "$integrated_bin_dir/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$native_artifact_dir/"
           xcrun vtool -show-build "$integrated_bin_dir/ModelPlanCommunityApp"
           otool -L "$integrated_bin_dir/ModelPlanCommunityApp"
           cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"

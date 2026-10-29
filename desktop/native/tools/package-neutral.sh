@@ -36,6 +36,8 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
+# The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/release/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/release/ModelPlanCommunityApp" \
     "$output_dir/build-x86_64/x86_64-apple-macosx/release/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
 xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"

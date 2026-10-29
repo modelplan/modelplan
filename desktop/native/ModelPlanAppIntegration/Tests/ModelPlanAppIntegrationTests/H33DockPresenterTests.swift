@@ -122,7 +122,8 @@ import ModelPlanSettings
         XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         XCTAssertNil(host.nativePanel)
     }
-    func testNativeFailureBeatsLegacyMissingAndDelayedOldOperationCannotWithdrawNewReadback() async throws {
+    func testNativeFailurePrecedesLegacyMissingOnActualHost() async throws {
+        _ = NSApplication.shared
         for failure in ["parse_error", "timeout"] {
             for connectionID in ["claude-code", "native:claude"] {
                 let value = try snapshot(connections: [["id": connectionID, "authorization": ["status": "yes"],
@@ -131,8 +132,27 @@ import ModelPlanSettings
                 let row = try XCTUnwrap(result.presentationRows.values.first)
                 XCTAssertFalse(row.reason.contains("Waiting"), "native failure must beat the legacy missing state")
                 XCTAssertTrue(row.reason.contains("unavailable"))
+                let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+                defer { host.close() }
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent("native-failure-host-" + UUID().uuidString)
+                defer { try? FileManager.default.removeItem(at: root) }
+                let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+                await app.reload()
+                var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
+                host.updateDockConsent(try consent(["claude"]))
+                host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
+                let menu = host.menu().items.map(\.title).joined(separator: " ")
+                XCTAssertTrue(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
+                XCTAssertFalse(menu.contains(failure))
+                host.dockView.onAction?(.subscription(row.input.id))
+                func labels(_ view: NSView) -> [NSTextField] { (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(labels) }
+                XCTAssertTrue(labels(host.card).contains { $0.stringValue.contains("Reading unavailable") })
+                XCTAssertFalse(labels(host.card).contains { $0.stringValue.contains(failure) })
+                XCTAssertNil(host.nativePanel)
             }
         }
+    }
+    func testSupersededDetectAndMutationCannotWithdrawNewCanonicalPresentation() async throws {
         final class Port: CommunityConsentCommandPort {
             let value: ConsentPreview
             init(_ value: ConsentPreview) { self.value = value }
