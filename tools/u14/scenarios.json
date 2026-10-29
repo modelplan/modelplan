@@ -1,26 +1,451 @@
 {
   "schemaVersion": 1,
   "scenarios": [
-    {"id":"A01","intent":"First run lists detected tools and read scopes with per-scope defaults.","units":["U8","U10"],"capabilities":["engine","native-ui","synthetic-home"],"structures":["tool-presence"],"priorJourney":"Fresh synthetic HOME, no consent; add O unchecked and configured-key versus environment-key defaults."},
-    {"id":"A02","intent":"Per-scope consent; Keychain prompts only after an explicit Settings action.","units":["U7","U8","U10"],"capabilities":["app-server","native-ui","fake-keychain"],"structures":[],"priorJourney":"Claude without credential file and Keychain grant retains guidance; add interactive and background prompt checks."},
-    {"id":"A03","intent":"Every surface shows exactly the expected stable row ids once; filtered empty sets show their specific state.","units":["U6","U10"],"capabilities":["engine","native-ui","synthetic-home"],"structures":["tool-presence"],"priorJourney":"All eleven checkpoints: one actual mounted Dock row per allowed tool, actual native panels visible; preserve headless coverage separately."},
-    {"id":"A04","intent":"First-read failure retains the row with a human reason and a next step.","units":["U6","U10"],"capabilities":["engine","native-ui","synthetic-home"],"structures":[],"priorJourney":"Every non-fresh retained card opens; Codex waiting-for-first-read, Claude Keychain-only guidance and Z.ai missing-key copy each have explicit assertions."},
-    {"id":"A05","intent":"Each value shows an observation age; failed refresh marks stale; unknown/future timestamps stay unknown.","units":["U6","U10"],"capabilities":["engine","native-ui"],"structures":[],"priorJourney":"Preserve fresh bound-card age and stale/failed refresh cases; add omitted/null/present unknown history model without changing Dock rows."},
-    {"id":"A06","intent":"Normal refresh occurs after its due time within the shared per-vendor budget.","units":["U2","U3b","U6","U10"],"capabilities":["app-server","native-ui","fake-providers","recording-transport"],"structures":[],"priorJourney":"Native refresh dispatch and subsequent snapshot through the production path; headless has zero UI dispatches. Wait the normal five-minute cadence; never reset budget or directly force refresh."},
-    {"id":"A07","intent":"Menu bar picks the lowest current value and follows Dock visibility and used/remaining preferences.","units":["U6","U10"],"capabilities":["engine","native-ui","synthetic-home"],"structures":["preference-files"],"priorJourney":"Extend retained row membership and stale-account cases to the menu bar using the same rows."},
-    {"id":"A08","intent":"Fresh Dock uses right; retained left survives migration and relaunch; corruption and field-group fallback preserve sources.","units":["U5","U10"],"capabilities":["native-ui","real-input","synthetic-home"],"structures":["preference-files"],"priorJourney":"Additional retained-profile seam: three-file coexistence; corrupt Beta07 fallback; independent Core; no readerConsent promotion; unmatched row ids preserved."},
-    {"id":"A09","intent":"Final official red-key ring and material match owner-confirmed visual baselines.","units":["U9","U10"],"capabilities":["app-package","official-visuals","visual-baselines","native-ui"],"structures":[],"priorJourney":"Additional official-package proof; Community journey cannot earn this result."},
-    {"id":"A10","intent":"Sliver is visible, hover reveals and leaving collapses.","units":["U5","U10"],"capabilities":["native-ui","real-input"],"structures":[],"priorJourney":"Actual native panels remain visible at checkpoints; extend to actual pointer delivery."},
-    {"id":"A11","intent":"Drag to each edge and unplug/replug a display; unsupported unplug remains unsupported.","units":["U5","U10"],"capabilities":["native-ui","real-input","display-hotplug"],"structures":[],"priorJourney":"New real-input/display coverage, separate from headless and panel-existence assertions."},
-    {"id":"A12","intent":"Settings reports actual placement separately from saved edge.","units":["U5","U8","U10"],"capabilities":["native-ui","real-input"],"structures":["preference-files"],"priorJourney":"New Settings/placement integration check."},
-    {"id":"A13","intent":"Readers-off, pending, no-consent and all-hidden have distinct summary states.","units":["U6","U8","U10"],"capabilities":["engine","native-ui","synthetic-home"],"structures":[],"priorJourney":"Preserve no-consent/empty checkpoints; all-hidden is owned by the app. Synthetic L2 only; never reset owner consent."},
-    {"id":"A14","intent":"Always Allow survives two signed builds of the same identity; real-account part spans reviewed candidates.","units":["U7","U10","U13"],"capabilities":["native-ui","synthetic-keychain","two-signed-builds"],"structures":[],"priorJourney":"Additional two-build test; old journey never grants or probes real Keychain. U10 starts; next reviewed candidate completes real L3."},
-    {"id":"A15","intent":"Revoke/Forget immediately removes values, including independent CLI, late read/query/credential results, old cursors and old writers.","units":["U2","U3","U3c","U6","U8","U10"],"capabilities":["app-server","independent-cli","fake-providers","synthetic-home"],"structures":[],"priorJourney":"Extend revocation checkpoints to cross-process races, cleanup_pending and receipt replay. Synthetic L2 only; never revoke owner state."},
-    {"id":"A16","intent":"VoiceOver announces tool name, state and remaining value; actionable controls are reachable.","units":["U6","U8","U10"],"capabilities":["native-ui","accessibility"],"structures":[],"priorJourney":"New accessibility proof, beyond opening mounted native cards."},
-    {"id":"A17","intent":"Copy diagnostics is sanitized; token canaries never reach stores, logs, errors or UI.","units":["U3","U7","U8","U10"],"capabilities":["app-server","native-ui","token-canaries"],"structures":[],"priorJourney":"Preserve bounded source observations and no raw provider output. Owner diagnostics are checked locally, never uploaded."},
-    {"id":"A18","intent":"Candidate source SHAs, App/helper hashes and version, official manifest/baselines and publication revision match the reviewed package.","units":["U9","U10","U13","U14"],"capabilities":["app-package","helper","official-visuals","visual-baselines","publication-data"],"structures":[],"priorJourney":"Preserve same-commit app/CLI and release identity verification; bind final artifacts instead of treating debug-hook runs as release proof."},
-    {"id":"A19","intent":"Cockpit matches confirmed WKWebView baselines; still or fallback, keyboard reach and memory after close.","units":["U11","U12","U13"],"capabilities":["native-ui","wkwebview","visual-baselines","performance-measurement"],"structures":[],"priorJourney":"U13-only extension; no coverage claimed by the old Dock journey."},
-    {"id":"U2a-admission","intent":"Real app-server on one synthetic shared home: unapproved Gemini/Cursor POST scopes make zero calls; MiniMax makes no request after 401 or 403 (or remains disabled); local history is kept.","units":["U2a","U10","U14"],"capabilities":["app-server","fake-providers","recording-transport","local-history-fixtures","synthetic-home"],"structures":[],"priorJourney":"New admission scenario; count requests and assert unchanged local-history scope/data for each status, never infer success from a missing reader."},
-    {"id":"U3-backpressure","intent":"Stop reading stdout; two queries finish, a revoke arrives and health changes. Session ends within the write timeout; restart and replay the committed revoke receipt without undoing it.","units":["U3","U14"],"capabilities":["app-server","sensitive-queries","pipe-backpressure","synthetic-home"],"structures":[],"priorJourney":"New protocol flow-control scenario; control priority, busy caps, row coalescing, bounded exit and durable receipt replay, per the pinned U3 interface."}
+    {
+      "id": "A01",
+      "intent": "First run lists detected tools and read scopes with per-scope defaults.",
+      "units": [
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui",
+        "synthetic-home"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Fresh synthetic HOME, no consent; add O unchecked and configured-key versus environment-key defaults."
+    },
+    {
+      "id": "A02",
+      "intent": "Per-scope consent; Keychain prompts only after an explicit Settings action.",
+      "units": [
+        "U7",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "app-server",
+        "native-ui",
+        "fake-keychain"
+      ],
+      "structures": [],
+      "priorJourney": "Claude without credential file and Keychain grant retains guidance; add interactive and background prompt checks."
+    },
+    {
+      "id": "A03",
+      "intent": "Every surface shows exactly the expected stable row ids once; filtered empty sets show their specific state.",
+      "units": [
+        "U6",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui",
+        "synthetic-home"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "All eleven checkpoints: one actual mounted Dock row per allowed tool, actual native panels visible; preserve headless coverage separately."
+    },
+    {
+      "id": "A04",
+      "intent": "First-read failure retains the row with a human reason and a next step.",
+      "units": [
+        "U6",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Every non-fresh retained card opens; Codex waiting-for-first-read, Claude Keychain-only guidance and Z.ai missing-key copy each have explicit assertions."
+    },
+    {
+      "id": "A05",
+      "intent": "Each value shows an observation age; failed refresh marks stale; unknown/future timestamps stay unknown.",
+      "units": [
+        "U6",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui"
+      ],
+      "structures": [],
+      "priorJourney": "Preserve fresh bound-card age and stale/failed refresh cases; add omitted/null/present unknown history model without changing Dock rows."
+    },
+    {
+      "id": "A06",
+      "intent": "Normal refresh occurs after its due time within the shared per-vendor budget.",
+      "units": [
+        "U2",
+        "U3b",
+        "U6",
+        "U10"
+      ],
+      "capabilities": [
+        "app-server",
+        "native-ui",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [],
+      "priorJourney": "Native refresh dispatch and subsequent snapshot through the production path; headless has zero UI dispatches. Wait the normal five-minute cadence; never reset budget or directly force refresh."
+    },
+    {
+      "id": "A07",
+      "intent": "Menu bar picks the lowest current value and follows Dock visibility and used/remaining preferences.",
+      "units": [
+        "U6",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui",
+        "synthetic-home"
+      ],
+      "structures": [
+        "preference-files"
+      ],
+      "priorJourney": "Extend retained row membership and stale-account cases to the menu bar using the same rows."
+    },
+    {
+      "id": "A08",
+      "intent": "Fresh Dock uses right; retained left survives migration and relaunch; corruption and field-group fallback preserve sources.",
+      "units": [
+        "U5",
+        "U10"
+      ],
+      "capabilities": [
+        "native-ui",
+        "real-input",
+        "synthetic-home"
+      ],
+      "structures": [
+        "preference-files"
+      ],
+      "priorJourney": "Additional retained-profile seam: three-file coexistence; corrupt Beta07 fallback; independent Core; no readerConsent promotion; unmatched row ids preserved."
+    },
+    {
+      "id": "A09",
+      "intent": "Final official red-key ring and material match owner-confirmed visual baselines.",
+      "units": [
+        "U9",
+        "U10"
+      ],
+      "capabilities": [
+        "app-package",
+        "official-visuals",
+        "visual-baselines",
+        "native-ui"
+      ],
+      "structures": [],
+      "priorJourney": "Additional official-package proof; Community journey cannot earn this result."
+    },
+    {
+      "id": "A10",
+      "intent": "Sliver is visible, hover reveals and leaving collapses.",
+      "units": [
+        "U5",
+        "U10"
+      ],
+      "capabilities": [
+        "native-ui",
+        "real-input"
+      ],
+      "structures": [],
+      "priorJourney": "Actual native panels remain visible at checkpoints; extend to actual pointer delivery."
+    },
+    {
+      "id": "A11",
+      "intent": "Drag to each edge and unplug/replug a display; unsupported unplug remains unsupported.",
+      "units": [
+        "U5",
+        "U10"
+      ],
+      "capabilities": [
+        "native-ui",
+        "real-input",
+        "display-hotplug"
+      ],
+      "structures": [],
+      "priorJourney": "New real-input/display coverage, separate from headless and panel-existence assertions."
+    },
+    {
+      "id": "A12",
+      "intent": "Settings reports actual placement separately from saved edge.",
+      "units": [
+        "U5",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "native-ui",
+        "real-input"
+      ],
+      "structures": [
+        "preference-files"
+      ],
+      "priorJourney": "New Settings/placement integration check."
+    },
+    {
+      "id": "A13",
+      "intent": "Readers-off, pending, no-consent and all-hidden have distinct summary states.",
+      "units": [
+        "U6",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "engine",
+        "native-ui",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Preserve no-consent/empty checkpoints; all-hidden is owned by the app. Synthetic L2 only; never reset owner consent."
+    },
+    {
+      "id": "A14",
+      "intent": "Always Allow survives two signed builds of the same identity; real-account part spans reviewed candidates.",
+      "units": [
+        "U7",
+        "U10",
+        "U13"
+      ],
+      "capabilities": [
+        "native-ui",
+        "synthetic-keychain",
+        "two-signed-builds"
+      ],
+      "structures": [],
+      "priorJourney": "Additional two-build test; old journey never grants or probes real Keychain. U10 starts; next reviewed candidate completes real L3."
+    },
+    {
+      "id": "A15",
+      "intent": "Revoke/Forget immediately removes values, including independent CLI, late read/query/credential results, old cursors and old writers.",
+      "units": [
+        "U2",
+        "U3",
+        "U3c",
+        "U6",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "app-server",
+        "independent-cli",
+        "fake-providers",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Extend revocation checkpoints to cross-process races, cleanup_pending and receipt replay. Synthetic L2 only; never revoke owner state."
+    },
+    {
+      "id": "A16",
+      "intent": "VoiceOver announces tool name, state and remaining value; actionable controls are reachable.",
+      "units": [
+        "U6",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "native-ui",
+        "accessibility"
+      ],
+      "structures": [],
+      "priorJourney": "New accessibility proof, beyond opening mounted native cards."
+    },
+    {
+      "id": "A17",
+      "intent": "Copy diagnostics is sanitized; token canaries never reach stores, logs, errors or UI.",
+      "units": [
+        "U3",
+        "U7",
+        "U8",
+        "U10"
+      ],
+      "capabilities": [
+        "app-server",
+        "native-ui",
+        "token-canaries"
+      ],
+      "structures": [],
+      "priorJourney": "Preserve bounded source observations and no raw provider output. Owner diagnostics are checked locally, never uploaded."
+    },
+    {
+      "id": "A18",
+      "intent": "Candidate source SHAs, App/helper hashes and version, official manifest/baselines and publication revision match the reviewed package.",
+      "units": [
+        "U9",
+        "U10",
+        "U13",
+        "U14"
+      ],
+      "capabilities": [
+        "app-package",
+        "helper",
+        "official-visuals",
+        "visual-baselines",
+        "publication-data"
+      ],
+      "structures": [],
+      "priorJourney": "Preserve same-commit app/CLI and release identity verification; bind final artifacts instead of treating debug-hook runs as release proof."
+    },
+    {
+      "id": "A19",
+      "intent": "Cockpit matches confirmed WKWebView baselines; still or fallback, keyboard reach and memory after close.",
+      "units": [
+        "U11",
+        "U12",
+        "U13"
+      ],
+      "capabilities": [
+        "native-ui",
+        "wkwebview",
+        "visual-baselines",
+        "performance-measurement"
+      ],
+      "structures": [],
+      "priorJourney": "U13-only extension; no coverage claimed by the old Dock journey."
+    },
+    {
+      "id": "U2a-admission",
+      "intent": "Real app-server on one synthetic shared home: unapproved Gemini/Cursor POST scopes make zero calls; MiniMax makes no request after 401 or 403 (or remains disabled); local history is kept.",
+      "units": [
+        "U2a",
+        "U10",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "fake-providers",
+        "recording-transport",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Real app-server and independent CLI on one synthetic home; granted account scopes, zero calls and policy_pending; MiniMax 401/403 with successful legacy replies available; seeded Gemini/Cursor local history retained. Execution waits for the production U2 constructor."
+    },
+    {
+      "id": "U3-backpressure",
+      "intent": "Stop reading stdout; two queries finish, a revoke arrives and health changes. Session ends within the write timeout; restart and replay the committed revoke receipt without undoing it.",
+      "units": [
+        "U3",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "sensitive-queries",
+        "pipe-backpressure",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "New protocol flow-control scenario; control priority, busy caps, row coalescing, bounded exit and durable receipt replay, per the pinned U3 interface."
+    },
+    {
+      "id": "U14-protocol-smoke",
+      "intent": "Unmodified real CLI: handshake, fail-closed readers-off rows, diagnostics, token-param rejection and shutdown.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    },
+    {
+      "id": "U14-zero-rows-omitted",
+      "intent": "An omitted synthetic provider history model leaves both real-binary rows intact.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    },
+    {
+      "id": "U14-zero-rows-null",
+      "intent": "A null synthetic provider history model leaves both real-binary rows intact.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    },
+    {
+      "id": "U14-zero-rows-reported",
+      "intent": "A reported synthetic provider history model leaves both real-binary rows intact.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    },
+    {
+      "id": "U14-zero-rows-corrupt",
+      "intent": "A malformed synthetic provider history model fails only history and leaves rows intact.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    },
+    {
+      "id": "U14-empty-states",
+      "intent": "Engine readers_off, pending, no_consent and empty remain distinct; app all-hidden is unsupported.",
+      "units": [
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "synthetic-home",
+        "fake-providers",
+        "recording-transport"
+      ],
+      "structures": [
+        "tool-presence"
+      ],
+      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+    }
   ]
 }

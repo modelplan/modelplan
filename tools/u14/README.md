@@ -1,12 +1,14 @@
 # U14 synthetic home and candidate evidence
 
-Stage: **interface only**. These tools build test inputs and bind reported results
-to source and artifact identities. They do not run the app, migrate preferences,
-collect credentials, publish a release, or earn a proof level. The app-server
-runner follows when its interface is pinned. U6, U8 and U10 consume that runner;
-feature failures remain with their feature owner.
+The baseline/evidence tools and the real-binary engine runner share one scenario
+registry. The runner drives `modelplan app-server` through anonymous pipes on
+synthetic homes, with a constructor-only overlay for recording providers and
+fault injection. Results are scoped to transport/engine fixture proof. U6, U8
+and U10 consume the later native integration; feature failures stay with their
+feature owner.
 
-Python 3.12+, Git, and the standard library are sufficient. No private checkout,
+For the standalone baseline/evidence tools, Python 3.12+, Git and the standard
+library are sufficient. No private checkout,
 network access, product login, Keychain access or dependency install is required.
 
 ```sh
@@ -180,10 +182,88 @@ unapproved POST calls, terminal MiniMax 401/403 and retained local history.
 `U3-backpressure` adds stopped-output flow control and revoke-receipt replay.
 The registry records feature units, required capabilities and baseline structures.
 
-This list is a plan, not execution evidence. U3 must provide the real app-server
-interface before the runner can implement it. Headless engine replay, Community
+The registry is a plan, not execution evidence; run bundles record what actually
+executed. The current engine runner consumes the pinned U3 runtime. Headless engine replay, Community
 native UI, official package, real input and owner L3 have different capabilities;
 record each profile's actual outcomes separately. U14 remains open until U6, U8
 and U10 consume the runner. A14's real-account check spans two reviewed candidates;
 A19 belongs to U13. Destructive first-run/revoke cases run only on synthetic
 profiles, never by resetting owner state.
+
+## Real-binary engine runner
+
+The engine stage requires Go 1.24+, Python 3.12+ and Git. The standalone baseline
+and candidate tools still require only Python and Git. A new run must start from
+a clean committed checkout and write outside it:
+
+```sh
+python3 tools/u14/run.py --output /tmp/u14-engine-unique-run
+python3 tools/u14/run.py --output /tmp/u14-pressure-unique-run \
+  --scenarios U3-backpressure U14-zero-rows-omitted
+```
+
+The default engine IDs are `U14-protocol-smoke`, `U3-backpressure`,
+`U14-zero-rows-{omitted,null,reported,corrupt}`, `U14-empty-states` and
+`U2a-admission`. `--scenarios` selects registry IDs; unselected available engine
+scenarios remain `not-run`, and UI/device capabilities remain `unsupported`.
+The ordinary fail-closed binary is always exercised as a separate check.
+
+The runner builds two exact CLI binaries. The ordinary build has no fixture
+imports. A Go build overlay replaces exactly the `appserver.New` constructor
+argument and supplies a virtual factory file. It links only synthetic backend,
+recording-provider and fault-injection tooling. Production `main.run`,
+`appServerCmd`, `Server.Serve`, framing, queues and timeout constants are unchanged.
+No runtime environment switch, test flag or endpoint override is added to an
+ordinary build. The builder rejects a changed constructor rather than silently
+substituting a fixture for a new production backend.
+
+The child environment has only synthetic HOME/PATH/TMPDIR and locale; no API keys,
+real HOME, product login or Keychain is inherited. Stdout uses bounded frame and
+request waits; stderr is drained concurrently and only its byte count/digest is
+retained by the driver. Cleanup closes and reaps only the run's own child. Shape
+file hashes are checked before and after scenarios.
+
+The recording transport never resolves a host or opens a socket. It admits only
+one fixed synthetic history GET and refuses all other methods, hosts, paths and
+parameters. Provider history with an absent/null/reported model is decoded into
+the actual Go wire DTO; a malformed model produces `history_unavailable`.
+Each case observes the same real app-server row projection before and after.
+These are newly constructed synthetic derivatives of the historical optional-model
+failure; no handoff file, owner value, legacy compatibility decoder or private
+path is included. Separate inputs exercise engine `readers_off`, `pending`,
+`no_consent` and `empty`. The app's all-hidden state waits for UI integration.
+
+Backpressure stops draining the actual stdout pipe after a large frame starts.
+Two recording-provider queries complete; a revoke commits and the backend health
+change is read while data remains blocked. The process exits at the production
+10-second write timeout. A fresh process/session on the same synthetic home
+replays the fixture's stored receipt, preserving its committed epoch/generation,
+and exposes no restored values. The test receipt file is a fixture-only store,
+not U2 persistence, locking, migration, budget or admission proof.
+
+Every accepted run writes `bundle/manifest.json`, its digest, hash-addressed
+scenario/check evidence and `summary.json`, including on scenario failure or
+timeout. Invalid inputs/dirty sources are rejected before a run starts. The
+manifest identifies the source, exact fixture helper hash/version and shape
+baseline. The `runner-build` check binds both exact binary hashes, schema-checker
+hash, original/fixture constructor hashes and overlay hashes. `overlaySha256`
+binds a normalized relative-path plan; `goOverlaySha256` additionally identifies
+the actual temporary Go overlay mapping without exporting local paths.
+Temporary build files and homes are excluded from CI uploads. Every observed
+complete wire frame is checked with the existing Go app-contract schema validator.
+
+The proof scope is **transport/engine fixture proof**. It does not earn final
+package, native UI, U2 persistence or admission acceptance. The pending admission
+entrypoint probes the ordinary constructor and records `not-run` until the real
+U2 backend and recording-provider binding exist. Its executable acceptance
+assertions require zero unapproved Gemini/Cursor POSTs with `policy_pending`,
+retained seeded local histories on a shared home, and exactly one MiniMax request
+after each 401/403 even with a successful legacy response available. Negative
+controls reject each forbidden event. No fixture receipt can satisfy this scenario.
+When U2 is linked into U3, rebind it to the production constructor on the synthetic
+home; keep the overlay only for provider/fault injection.
+
+One standard hosted Linux job runs fixture checks, pipe regressions, the baseline
+L1 profile and real engine scenarios. It uploads only the two evidence bundles
+and engine summary, including on failure. MACREV reviews the runner; U6, U8 and
+U10 remain its qualified consumers before U14 closes.
