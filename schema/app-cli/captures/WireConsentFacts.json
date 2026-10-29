@@ -10,7 +10,7 @@
       "defaultCheck": false,
       "keychain": "allow",
       "cleanupPending": false,
-      "disabledReason": "synthetic"
+      "disabledReason": "policy_pending"
     }
   ]
 }

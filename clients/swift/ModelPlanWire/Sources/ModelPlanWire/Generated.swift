@@ -1395,7 +1395,7 @@ public struct WireConsentScope: Codable, Sendable {
     public let `defaultCheck`: Bool
     public let `keychain`: WireKeychainChoice?
     public let `cleanupPending`: Bool
-    public let `disabledReason`: String?
+    public let `disabledReason`: WireScopeDisabledReason?
     private enum CodingKeys: String, CodingKey {
         case `scope`
         case `tool`
@@ -1408,7 +1408,7 @@ public struct WireConsentScope: Codable, Sendable {
         case `cleanupPending`
         case `disabledReason`
     }
-    public init(`scope`: String, `tool`: String, `route`: RowsRoute, `detected`: Bool, `retired`: Bool, `state`: WireConsentState, `defaultCheck`: Bool, `keychain`: WireKeychainChoice? = nil, `cleanupPending`: Bool, `disabledReason`: String? = nil) throws {
+    public init(`scope`: String, `tool`: String, `route`: RowsRoute, `detected`: Bool, `retired`: Bool, `state`: WireConsentState, `defaultCheck`: Bool, `keychain`: WireKeychainChoice? = nil, `cleanupPending`: Bool, `disabledReason`: WireScopeDisabledReason? = nil) throws {
         self.`scope` = `scope`
         self.`tool` = `tool`
         self.`route` = `route`
@@ -1432,7 +1432,7 @@ public struct WireConsentScope: Codable, Sendable {
         self.`defaultCheck` = try c.decode(Bool.self, forKey: .`defaultCheck`)
         self.`keychain` = try c.decodeIfPresent(WireKeychainChoice.self, forKey: .`keychain`)
         self.`cleanupPending` = try c.decode(Bool.self, forKey: .`cleanupPending`)
-        self.`disabledReason` = try? c.decodeIfPresent(String.self, forKey: .`disabledReason`)
+        self.`disabledReason` = try? c.decodeIfPresent(WireScopeDisabledReason.self, forKey: .`disabledReason`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -1881,6 +1881,31 @@ public struct WireHistoryItem: Codable, Sendable {
     }
 }
 
+public enum WireHistoryKind: Codable, Sendable, Equatable {
+    case `tokens`
+    case `quotaCycles`
+    case `sessions`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "tokens": self = .`tokens`
+        case "quota_cycles": self = .`quotaCycles`
+        case "sessions": self = .`sessions`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`tokens`: return "tokens"
+        case .`quotaCycles`: return "quota_cycles"
+        case .`sessions`: return "sessions"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireHistoryPage: Codable, Sendable {
     public let `items`: [WireHistoryItem]
     public let `nextCursor`: String?
@@ -1910,7 +1935,7 @@ public struct WireHistoryPage: Codable, Sendable {
 }
 
 public struct WireHistoryQueryParams: Codable, Sendable {
-    public let `kind`: WireHistoryQueryParamsKind
+    public let `kind`: WireHistoryKind
     public let `tool`: String
     public let `ref`: String?
     public let `cursor`: String?
@@ -1922,7 +1947,7 @@ public struct WireHistoryQueryParams: Codable, Sendable {
         case `cursor`
         case `limit`
     }
-    public init(`kind`: WireHistoryQueryParamsKind, `tool`: String, `ref`: String? = nil, `cursor`: String? = nil, `limit`: Int) throws {
+    public init(`kind`: WireHistoryKind, `tool`: String, `ref`: String? = nil, `cursor`: String? = nil, `limit`: Int) throws {
         self.`kind` = `kind`
         self.`tool` = `tool`
         self.`ref` = `ref`
@@ -1932,7 +1957,7 @@ public struct WireHistoryQueryParams: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`kind` = try c.decode(WireHistoryQueryParamsKind.self, forKey: .`kind`)
+        self.`kind` = try c.decode(WireHistoryKind.self, forKey: .`kind`)
         self.`tool` = try c.decode(String.self, forKey: .`tool`)
         self.`ref` = try c.decodeIfPresent(String.self, forKey: .`ref`)
         self.`cursor` = try c.decodeIfPresent(String.self, forKey: .`cursor`)
@@ -1955,31 +1980,6 @@ public struct WireHistoryQueryParams: Codable, Sendable {
     }
 }
 
-public enum WireHistoryQueryParamsKind: Codable, Sendable, Equatable {
-    case `tokens`
-    case `quotaCycles`
-    case `sessions`
-    case unknown(String)
-    public init(rawValue: String) {
-        switch rawValue {
-        case "tokens": self = .`tokens`
-        case "quota_cycles": self = .`quotaCycles`
-        case "sessions": self = .`sessions`
-        default: self = .unknown(rawValue)
-        }
-    }
-    public var rawValue: String {
-        switch self {
-        case .`tokens`: return "tokens"
-        case .`quotaCycles`: return "quota_cycles"
-        case .`sessions`: return "sessions"
-        case .unknown(let value): return value
-        }
-    }
-    public var isKnown: Bool { if case .unknown = self { return false }; return true }
-    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
-    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
-}
 public struct WireInitializeParams: Codable, Sendable {
     public let `sessionId`: String
     public let `protocolVersion`: String
@@ -2177,6 +2177,34 @@ public enum WireReceiptCode: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public enum WireRefreshDisabledReason: Codable, Sendable, Equatable {
+    case `cooldown`
+    case `readOnly`
+    case `offline`
+    case `policyPending`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "cooldown": self = .`cooldown`
+        case "read_only": self = .`readOnly`
+        case "offline": self = .`offline`
+        case "policy_pending": self = .`policyPending`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`cooldown`: return "cooldown"
+        case .`readOnly`: return "read_only"
+        case .`offline`: return "offline"
+        case .`policyPending`: return "policy_pending"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireRefreshRequestParams: Codable, Sendable {
     public let `scopes`: [String]?
     private enum CodingKeys: String, CodingKey {
@@ -2204,13 +2232,13 @@ public struct WireRefreshRequestParams: Codable, Sendable {
 public struct WireRefreshScheduled: Codable, Sendable {
     public let `scope`: String
     public let `at`: WireTimestamp
-    public let `disabledReason`: String?
+    public let `disabledReason`: WireRefreshDisabledReason?
     private enum CodingKeys: String, CodingKey {
         case `scope`
         case `at`
         case `disabledReason`
     }
-    public init(`scope`: String, `at`: WireTimestamp, `disabledReason`: String? = nil) throws {
+    public init(`scope`: String, `at`: WireTimestamp, `disabledReason`: WireRefreshDisabledReason? = nil) throws {
         self.`scope` = `scope`
         self.`at` = `at`
         self.`disabledReason` = `disabledReason`
@@ -2220,7 +2248,7 @@ public struct WireRefreshScheduled: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`scope` = try c.decode(String.self, forKey: .`scope`)
         self.`at` = try c.decode(WireTimestamp.self, forKey: .`at`)
-        self.`disabledReason` = try? c.decodeIfPresent(String.self, forKey: .`disabledReason`)
+        self.`disabledReason` = try? c.decodeIfPresent(WireRefreshDisabledReason.self, forKey: .`disabledReason`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -2396,6 +2424,25 @@ public struct WireScopeDiag: Codable, Sendable {
     }
 }
 
+public enum WireScopeDisabledReason: Codable, Sendable, Equatable {
+    case `policyPending`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "policy_pending": self = .`policyPending`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`policyPending`: return "policy_pending"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireSuccess<T: Codable & Sendable>: Codable, Sendable {
     public let `jsonrpc`: String
     public let `id`: WireRequestID
