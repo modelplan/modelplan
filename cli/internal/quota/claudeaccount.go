@@ -30,7 +30,7 @@ var claudeAccountReader = &nativeReader{
 
 // Compiled endpoint; never selected by settings, detection or publication data.
 var claudeOAuthHost = "https://api.anthropic.com"
-var claudeSecurity keychain.Execute // tests inject a process; nil uses /usr/bin/security
+var claudeSecurity keychain.Execute // legacy injected adapter; nil has no app identity
 var claudeID = regexp.MustCompile(`^[A-Za-z0-9-]{1,128}$`)
 
 func claudeProfiles() []ReaderProfile {
@@ -131,7 +131,8 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		if r.Grant.Credential != nil {
 			b, status = r.Grant.Credential(ctx)
 			if status != "" {
-				return readerOutcome{Entry: readerEntry{Status: status, CredentialReadState: status}}
+				clear(b)
+				return claudeCredentialFailure(status)
 			}
 		} else {
 			k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
@@ -146,6 +147,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 	if status != "" {
 		return fail("unavailable", "Claude Code saved login is unreadable", fileErrorCode(status))
 	}
+	defer clear(b)
 	var credential claudeCredential
 	if json.Unmarshal(b, &credential) != nil {
 		return fail("unavailable", "Claude Code saved login is invalid", "parse_error")
@@ -154,6 +156,7 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 		return fail("unavailable", "This Claude Code login type is not supported yet", "unsupported_login")
 	}
 	oauth := credential.OAuth
+	defer func() { oauth.AccessToken = "" }()
 	credentialKey := readerHash(r.Paths.Cache, "claude:credential", oauth.AccessToken)
 	changed = meta.CredentialKey != "" && (credentialKey == "" || meta.CredentialKey != credentialKey)
 	if oauth.AccessToken == "" || len(oauth.AccessToken) > 16<<10 || strings.ContainsAny(oauth.AccessToken, "\r\n") || oauth.ExpiresAt <= r.Now.UnixMilli() {

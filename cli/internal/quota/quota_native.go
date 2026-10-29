@@ -606,19 +606,31 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	}
 	// This operation is interactive even when the remote budget is closed. Keep
 	// its credential only in this stack frame and reuse it if a remote read is due.
-	k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
-	if k.State != "ok" {
-		return errors.New("credential operation: " + k.State)
-	}
-	defer func() {
-		for i := range k.Value {
-			k.Value[i] = 0
+	credential := g.Credential
+	if credential == nil {
+		if claudeSecurity == nil {
+			return errors.New(claudeAppRequired)
 		}
-	}()
+		credential = func(ctx context.Context) ([]byte, string) {
+			k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
+			if k.State != "ok" {
+				return nil, k.State
+			}
+			return k.Value, ""
+		}
+	}
+	value, status := credential(ctx)
+	defer clear(value)
+	if status != "" {
+		return recordClaudeCredentialOutcome(p, g, profileKey, status, now)
+	}
 	if g.StillValid != nil && !g.StillValid() {
 		return errors.New("reader consent changed")
 	}
-	g.Credential = func(context.Context) ([]byte, string) { return k.Value, "" }
+	if err := recordClaudeCredentialOutcome(p, g, profileKey, "ok", now); err != nil {
+		return err
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
 	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
 	p.ReaderAccess = access
 	return refreshManaged(ctx, p, provider, now)

@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"reflect"
@@ -187,6 +188,7 @@ func (s *Server) cancelAll() {
 	}
 	for key, op := range s.credentials {
 		op.timer.Stop()
+		op.reject()
 		delete(s.credentials, key)
 	}
 }
@@ -291,7 +293,13 @@ func (s *Server) dispatch(r wire.Request) {
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
 			result, err := s.backend.Grant(ctx, p)
 			if err != nil && !result.Receipt.Committed {
-				return Reply{}, err
+				stamp := result.Stamp
+				if stamp.Epoch == "" {
+					if view, getErr := s.backend.Get(ctx); getErr == nil {
+						stamp = view.Stamp
+					}
+				}
+				return Reply{}, responseContextError{err: err, stamp: stamp}
 			}
 			// Even a canceled request returns a committed receipt, including cleanup.
 			reply := Reply{Stamp: result.Stamp, Data: result.Receipt}
@@ -430,7 +438,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 		s.sendError(r.ID, wire.CodeBusy)
 		return
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	ctx, cancel := context.WithTimeout(context.WithValue(s.ctx, sessionContextKey{}, s.session), timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
 		s.controls++
@@ -471,7 +479,16 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 			if data {
 				s.out.release()
 			}
-			s.sendError(r.ID, errorCode(err))
+			message := s.errorMessage(r.ID, errorCode(err))
+			var authoritative responseContextError
+			if errors.As(err, &authoritative) {
+				message.Error.Data.StoreEpoch, message.Error.Data.ConsentGeneration = nil, nil
+				if authoritative.stamp.Epoch != "" {
+					message.Error.Data.StoreEpoch = &authoritative.stamp.Epoch
+					message.Error.Data.ConsentGeneration = &authoritative.stamp.Generation
+				}
+			}
+			s.out.controlMessage(message)
 			return
 		}
 
@@ -647,6 +664,7 @@ func (s *Server) readView(ctx context.Context) error {
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
+			op.reject()
 			delete(s.credentials, key)
 		}
 	}

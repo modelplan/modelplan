@@ -77,9 +77,17 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		if err := json.Unmarshal(m["result"], &snapshot); err != nil {
 			t.Fatal(err)
 		}
-		if snapshot.Data.Projection.RowsSummary.State != rows.SummaryStateReadersOff || len(snapshot.Data.Projection.Rows) != 0 {
-			t.Fatal("unavailable U2 backend did not fail closed")
+		// Detection also includes compiled system executable locations. An empty
+		// synthetic home must contain no personal readings for any such tool.
+		if snapshot.Data.Projection.RowsSummary.State != rows.SummaryStateEmpty && snapshot.Data.Projection.RowsSummary.State != rows.SummaryStateNoConsent {
+			t.Fatalf("unexpected empty state: %s", m["result"])
 		}
+		for _, row := range snapshot.Data.Projection.Rows {
+			if len(row.Accounts) != 0 {
+				t.Fatal("personal reading on an empty synthetic home")
+			}
+		}
+
 		c.send(t, 3, "diagnostics/get", wire.Empty{})
 		m = c.response(t, 3)
 		if m["error"] != nil {
@@ -105,12 +113,11 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		if stderr.Len() != 0 {
 			t.Fatalf("unexpected stderr: %s", stderr.String())
 		}
-		entries, err := os.ReadDir(home)
-		if err != nil {
-			t.Fatal(err)
+		if snapshot.StoreEpoch == "" || snapshot.StoreEpoch == "unavailable" {
+			t.Fatal("shared epoch missing")
 		}
-		if len(entries) != 0 {
-			t.Fatal("unavailable backend wrote the synthetic home")
+		if _, err := os.Stat(filepath.Join(home, ".config", "modelplan", "consent.json")); err != nil {
+			t.Fatal("shared store missing", err)
 		}
 	})
 	t.Run("major mismatch terminates", func(t *testing.T) {

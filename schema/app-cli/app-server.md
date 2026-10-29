@@ -1,6 +1,6 @@
 # `modelplan app-server` protocol (v1 sketch, revision 3)
 
-Status: interface frozen on 2026-10-29 with foundation v2. Bodies are not implemented. After review, dedicated Go wire DTOs are the source of truth:
+Status: interface frozen on 2026-10-29 with foundation v2. The executable binds the shared consent/read-state backend and the refresh, credential, installation and query adapters. Dedicated Go wire DTOs are the source of truth:
 
 - field names;
 - presence: `omitempty` means the field may be absent;
@@ -21,6 +21,12 @@ Related:
 - Every request has a deadline and can be cancelled with `$/cancel { id }`.
 - A response carries either `result` or `error`, never both.
 
+The ordinary command accepts `--offline` and `--read-only`; these bind the shared
+backend, refresh scheduler, credential broker and plugin installer. Unsupported
+history kinds/providers return `history_unavailable`; available token histories
+read the engine's sanitized cache only. An unreadable consent store yields a
+degraded, readers-off backend until an explicit repair/reset and restart.
+
 ## Envelope
 
 The session and the consent context travel in one place: a wrapper around every result, every server notification's params, and every error's `data`. DTOs do not repeat these fields.
@@ -32,6 +38,7 @@ The session and the consent context travel in one place: a wrapper around every 
 | App requests | No `sessionId`, except `initialize`: the pipe is the session |
 
 - `consentGeneration` is the generation the content was produced or admitted under, within `storeEpoch`, the consent store's random epoch (it changes only when a damaged store is reset). The app orders consent by `(storeEpoch, consentGeneration)`.
+- A rejected `consent/grant` uses the backend's authoritative stamp in `error.data`, independently of watcher delivery.
 - `scopes` lists the consent scopes the content covers. It is set on results that carry private values: rows, history and cockpit.
 
 Initialize:
@@ -318,3 +325,12 @@ A committed `consent/grant` always returns a result with a `ConsentReceipt`, `cl
 9. **Revoke and Forget are final.** After a revoke or Forget from any process, no value for that scope is cached, emitted or shown again. That includes a query result or cursor issued before the revoke.
 10. **Tightening is always accepted.** Deny and forget succeed with readers off, for undetected and retired tools, and when no reader exists.
 11. **No unbounded waits.** Control messages are never delayed behind data messages, and no request waits without bound: over a cap, it gets `busy`.
+
+
+The real-executable checks are `go test ./internal/appserver/...` from `cli/`
+(first-candidate commands, shared runtime budget/deferrals and lifecycle) and
+`python3 -m unittest discover -s tools/u14/tests -p test_runner.py` (shared-store
+revoke/reset, positive reading removal, query isolation/cursors/caps/cancellation,
+recording-provider admission and stopped stdout). The U14 bundle records exact
+source/binary/overlay hashes and outcomes. Native agent prompting and signed app
+supervision require their own device evidence; Linux engine checks do not earn it.

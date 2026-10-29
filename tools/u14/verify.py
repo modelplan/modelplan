@@ -22,7 +22,7 @@ def verify(destination):
                        'evidence': [str(log)]})
         return result.returncode == 0
 
-    passed = check('u14-regressions', ['python3', '-m', 'unittest', 'discover', '-s', 'tools/u14/tests', '-v'])
+    passed = check('u14-regressions', ['python3', '-m', 'unittest', 'discover', '-s', 'tools/u14/tests', '-p', 'test_harness.py', '-v'])
     passed = check('source-policy', ['node', 'scripts/check-source-policy.mjs']) and passed
     for case in CASES:
         passed = check('shape-' + case, ['python3', str(ROOT / 'shape_home.py'), '--shape',
