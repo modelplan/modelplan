@@ -11,9 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
-	"github.com/modelplan/modelplan/cli/internal/readers"
 	"github.com/modelplan/modelplan/cli/internal/readers/readertest"
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
@@ -79,7 +77,7 @@ func TestAdmissionMiniMaxRealConsumerStopsAfterRejection(t *testing.T) {
 // The actual decoder still accepts a valid quota capture through the guard.
 func TestAdmissionMiniMaxRealConsumerAcceptsQuota(t *testing.T) {
 	record := readertest.NewTransport(readertest.Response{StatusCode: 200, Body: `{"model_remains":[{"model_name":"general","current_interval_remaining_percent":76}]}`})
-	if result := runMiniMax(t, readers.NewReadTransport(consent.ScopeMiniMaxAccountUsageAPIKey, record), "international"); result != "ok" {
+	if result := runMiniMax(t, record, "international"); result != "ok" {
 		t.Fatalf("valid capture rejected: %s", result)
 	}
 	if err := checkRequests(record.Requests(), []readertest.Request{{Method: "GET", Host: "api.minimax.io", Path: "/v1/token_plan/remains"}}); err != nil {
