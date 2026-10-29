@@ -119,7 +119,9 @@
     "CancelParams": {
       "additionalProperties": false,
       "properties": {
-        "id": {}
+        "id": {
+          "$ref": "#/$defs/RequestID"
+        }
       },
       "required": [
         "id"
@@ -585,9 +587,18 @@
         "error": {
           "$ref": "#/$defs/RPCError"
         },
-        "id": {},
+        "id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestID"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "jsonrpc": {
-          "type": "string"
+          "const": "2.0"
         }
       },
       "required": [
@@ -1295,34 +1306,6 @@
       ],
       "type": "object"
     },
-    "Projection": {
-      "additionalProperties": false,
-      "properties": {
-        "consentGeneration": {
-          "minimum": 0,
-          "type": "integer"
-        },
-        "rows": {
-          "items": {
-            "$ref": "#/$defs/Row"
-          },
-          "type": "array"
-        },
-        "rowsSummary": {
-          "$ref": "#/$defs/RowsSummary"
-        },
-        "rowsVersion": {
-          "type": "integer"
-        }
-      },
-      "required": [
-        "rowsVersion",
-        "consentGeneration",
-        "rows",
-        "rowsSummary"
-      ],
-      "type": "object"
-    },
     "RPCError": {
       "additionalProperties": false,
       "properties": {
@@ -1420,6 +1403,40 @@
         }
       },
       "required": [],
+      "type": "object"
+    },
+    "RefreshResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "items": {
+            "$ref": "#/$defs/RefreshScheduled"
+          },
+          "type": "array"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
       "type": "object"
     },
     "RefreshScheduled": {
@@ -1740,6 +1757,9 @@
                   "$ref": "#/$defs/HistoryPageEnvelope"
                 },
                 {
+                  "$ref": "#/$defs/RefreshResultEnvelope"
+                },
+                {
                   "additionalProperties": false,
                   "properties": {
                     "consentGeneration": {
@@ -1906,11 +1926,34 @@
       ],
       "type": "object"
     },
+    "RowsProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/Row"
+          },
+          "type": "array"
+        },
+        "rowsSummary": {
+          "$ref": "#/$defs/RowsSummary"
+        },
+        "rowsVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rowsVersion",
+        "rows",
+        "rowsSummary"
+      ],
+      "type": "object"
+    },
     "RowsSnapshot": {
       "additionalProperties": false,
       "properties": {
         "projection": {
-          "$ref": "#/$defs/Projection"
+          "$ref": "#/$defs/RowsProjection"
         },
         "sequence": {
           "minimum": 0,

@@ -101,6 +101,11 @@ func Generate(root string) ([]byte, error) {
 	history["limit"] = object{"type": "integer", "minimum": 1, "maximum": 500}
 	history["kind"] = object{"enum": []string{"tokens", "quota_cycles", "sessions"}}
 	b.defs["RequestID"] = object{"anyOf": []any{object{"type": "string"}, object{"type": "integer"}}}
+	b.defs["CancelParams"].(object)["properties"].(object)["id"] = object{"$ref": "#/$defs/RequestID"}
+	errorProps := b.defs["Error"].(object)["properties"].(object)
+	errorProps["jsonrpc"] = object{"const": wire.JSONRPC}
+	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
+
 	incoming := []any{}
 	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "refresh/request": "RefreshRequestParams"}
 	for _, method := range sortedKeys(requestMethods) {
@@ -126,6 +131,9 @@ func Generate(root string) ([]byte, error) {
 		b.defs[name+"Envelope"] = env
 		envelopes = append(envelopes, object{"$ref": "#/$defs/" + name + "Envelope"})
 	}
+	refresh := b.schema(reflect.TypeFor[wire.Envelope[[]wire.RefreshScheduled]](), false)
+	b.defs["RefreshResultEnvelope"] = refresh
+	envelopes = append(envelopes, object{"$ref": "#/$defs/RefreshResultEnvelope"})
 	empty := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false)
 	envelopes = append(envelopes, empty)
 	b.defs["Response"] = object{"anyOf": []any{object{"$ref": "#/$defs/Error"}, object{"type": "object", "properties": object{"jsonrpc": object{"const": wire.JSONRPC}, "id": object{"$ref": "#/$defs/RequestID"}, "result": object{"anyOf": envelopes}}, "required": []string{"jsonrpc", "id", "result"}, "additionalProperties": false}}}

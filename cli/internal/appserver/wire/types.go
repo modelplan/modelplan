@@ -92,8 +92,20 @@ type CancelParams struct {
 }
 
 type RowsSnapshot struct {
-	Sequence   uint64          `json:"sequence"`
-	Projection rows.Projection `json:"projection"`
+	Sequence   uint64         `json:"sequence"`
+	Projection RowsProjection `json:"projection"`
+}
+
+// RowsProjection excludes consent context, which belongs only in Envelope.
+// The standalone desktop projection retains its independent legacy contract.
+type RowsProjection struct {
+	RowsVersion int              `json:"rowsVersion"`
+	Rows        []rows.Row       `json:"rows"`
+	RowsSummary rows.RowsSummary `json:"rowsSummary"`
+}
+
+func Project(value rows.Projection) RowsProjection {
+	return RowsProjection{RowsVersion: value.RowsVersion, Rows: value.Rows, RowsSummary: value.RowsSummary}
 }
 
 type ConsentScope struct {
