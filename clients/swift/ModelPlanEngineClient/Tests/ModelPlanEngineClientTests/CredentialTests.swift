@@ -38,6 +38,9 @@ extension RealBinaryTests {
     func assertNoCanary(_ home: URL, probe: EventProbe) async throws {
         let eventStrings = await probe.events.map { String(describing: $0) }
         XCTAssertFalse(eventStrings.contains { $0.contains(tokenCanary) }, "token reached UI event path")
+        try assertNoCanaryFiles(home)
+    }
+    func assertNoCanaryFiles(_ home: URL) throws {
         let enumeration = FileManager.default.enumerator(at: home, includingPropertiesForKeys: nil)!
         for case let file as URL in enumeration {
             if let data = try? Data(contentsOf: file) {

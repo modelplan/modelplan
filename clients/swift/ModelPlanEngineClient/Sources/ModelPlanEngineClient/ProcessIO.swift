@@ -37,6 +37,13 @@ final class EngineProcess: @unchecked Sendable {
                        errors.fileHandleForReading, errors.fileHandleForWriting] {
             _ = fcntl(handle.fileDescriptor, F_SETFD, FD_CLOEXEC)
         }
+        #if canImport(Darwin)
+        // Darwin pipe signals need descriptor-local suppression. Blocking on
+        // the writer thread alone does not protect other host-app threads.
+        guard fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) == 0 else {
+            throw EngineClientError.invalidConfiguration
+        }
+        #endif
         process.terminationHandler = { _ in
             // Let stdout drain before classifying exit, especially a final
             // protocol_mismatch error. A leaked child pipe cannot wait forever.
@@ -110,24 +117,26 @@ final class EngineProcess: @unchecked Sendable {
 
     private func writeFrame(_ bytes: Data, timeout: Double?) throws {
         guard canWrite() else { throw EngineClientError.interrupted(.connectionLost) }
-        // SIGPIPE is blocked only on this worker during this write. Never change
-        // the host app's process-wide signal disposition.
+        // Linux SIGPIPE is thread-directed. Darwin uses F_SETNOSIGPIPE above.
+        // Neither path changes the host app's process-wide signal disposition.
+        #if !canImport(Darwin)
         var pipeSignal = sigset_t()
         var oldMask = sigset_t()
         sigemptyset(&pipeSignal); sigaddset(&pipeSignal, SIGPIPE)
-        let masked = pthread_sigmask(SIG_BLOCK, &pipeSignal, &oldMask) == 0
+        guard pthread_sigmask(SIG_BLOCK, &pipeSignal, &oldMask) == 0 else {
+            throw EngineClientError.interrupted(.connectionLost)
+        }
         var before = sigset_t(); sigpending(&before)
         let wasPending = sigismember(&before, SIGPIPE) == 1
         defer {
-            if masked {
-                var pending = sigset_t(); sigpending(&pending)
-                if !wasPending && sigismember(&pending, SIGPIPE) == 1 {
-                    var received: Int32 = 0
-                    _ = sigwait(&pipeSignal, &received)
-                }
-                _ = pthread_sigmask(SIG_SETMASK, &oldMask, nil)
+            var pending = sigset_t(); sigpending(&pending)
+            if !wasPending && sigismember(&pending, SIGPIPE) == 1 {
+                var received: Int32 = 0
+                _ = sigwait(&pipeSignal, &received)
             }
+            _ = pthread_sigmask(SIG_SETMASK, &oldMask, nil)
         }
+        #endif
         let deadline = ProcessInfo.processInfo.systemUptime + min(writeTimeout, timeout ?? writeTimeout)
         try bytes.withUnsafeBytes { raw in
             var offset = 0

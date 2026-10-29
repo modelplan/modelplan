@@ -48,7 +48,12 @@ jobs:
           set -euo pipefail
           mkdir -p .tmp
           printf '*\n' > .tmp/.gitignore
-          git rev-parse HEAD > .tmp/source.txt
+          {
+            git rev-parse HEAD
+            uname -srm
+            go version
+            swift --version
+          } > .tmp/source.txt
           (cd cli && go build -trimpath -o ../.tmp/modelplan ./cmd/modelplan)
           go build -trimpath -o .tmp/frame-proxy clients/swift/ModelPlanEngineClient/Tools/FrameProxy/main.go
           shasum -a 256 .tmp/modelplan .tmp/frame-proxy > .tmp/binaries.sha256
