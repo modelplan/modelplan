@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Interface only: data construction and protocol requirements; no transport implementation.
 import Foundation
 import ModelPlanWire
 
@@ -102,7 +101,7 @@ public struct EngineCredentialOperation: Sendable {
     }
 }
 
-/// Launch inputs only. Stage 2 validates the environment allow-list and executable.
+/// Explicit launch inputs. The client validates the environment allow-list and executable.
 /// Environment values must never be logged or contain handed-off credential tokens.
 public struct EngineClientConfiguration: Sendable {
     public let executableURL: URL

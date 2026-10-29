@@ -1,0 +1,80 @@
+name: U4b engine client
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - cli/cmd/modelplan/**
+      - cli/internal/appserver/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
+      - .github/workflows/u4b-engine-client.yml
+  push:
+    branches: [main]
+    paths:
+      - clients/swift/ModelPlanEngineClient/**
+      - clients/swift/ModelPlanWire/**
+      - cli/cmd/modelplan/**
+      - cli/internal/appserver/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
+      - .github/workflows/u4b-engine-client.yml
+permissions:
+  contents: read
+concurrency:
+  group: u4b-engine-client-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  transport:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build ordinary engine and labeled test-only pipe proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .tmp
+          printf '*\n' > .tmp/.gitignore
+          git rev-parse HEAD > .tmp/source.txt
+          (cd cli && go build -trimpath -o ../.tmp/modelplan ./cmd/modelplan)
+          go build -trimpath -o .tmp/frame-proxy clients/swift/ModelPlanEngineClient/Tools/FrameProxy/main.go
+          shasum -a 256 .tmp/modelplan .tmp/frame-proxy > .tmp/binaries.sha256
+          swift --version
+      - name: Client tests against the real binary
+        shell: bash
+        env:
+          MODELPLAN_ENGINE_TEST_BINARY: ${{ github.workspace }}/.tmp/modelplan
+          MODELPLAN_ENGINE_TEST_PROXY: ${{ github.workspace }}/.tmp/frame-proxy
+          TMPDIR: ${{ github.workspace }}/.tmp
+        run: |
+          set -euo pipefail
+          swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --jobs 2 2>&1 | tee .tmp/tests.log
+      - name: Public source policy
+        run: node scripts/check-source-policy.mjs
+      - name: Preserve bounded synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u4b-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            .tmp/source.txt
+            .tmp/binaries.sha256
+            .tmp/tests.log
+          retention-days: 14
+      - name: Remove this job's completed scratch
+        if: always()
+        shell: bash
+        run: rm -rf -- .tmp

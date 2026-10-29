@@ -1,66 +1,135 @@
 <!-- SPDX-License-Identifier: MIT -->
-# ModelPlanEngineClient — interface only
+# ModelPlanEngineClient
 
-This standalone Swift package proposes the app-side engine transport contract on
-U4's local `ModelPlanWire` product. It contains value types, data constructors and
-protocol requirements only. It does not spawn a process, parse frames, schedule
-requests, enforce a floor, implement a credential agent or provide a working
-client. No throwing/fatalError fake implementation is supplied.
+Standalone Swift transport for the local `modelplan app-server`, using the
+producer-generated `ModelPlanWire` package. `ProcessEngineClient.start()` launches
+the ordinary executable and performs the real handshake. UI state belongs to the
+consumer; this package owns sessions, ordering, consent gating and supervision.
+`CredentialAgent` is a protocol only. The native app supplies its OS adapter.
 
-M0 consumes the contract through EngineStore in U6. EngineStore owns UI state;
-this package will own sessions, ordering, consent gating and supervision. M0
-supplies Security.framework in U7 behind `CredentialAgent`.
+## Use
 
-## Proposed use
+Add `.package(path: "path/to/clients/swift/ModelPlanEngineClient")` and import
+`ModelPlanEngineClient` and `ModelPlanWire`.
 
 ```swift
-.package(path: "path/to/clients/swift/ModelPlanEngineClient")
+let client = ProcessEngineClient(
+    configuration: EngineClientConfiguration(
+        executableURL: engineURL,
+        applicationVersion: appVersion,
+        allowedEnvironment: ["HOME": home, "TMPDIR": temporary, "PATH": path]),
+    initialFloor: lastCommittedFloor,
+    credentialAgent: credentialAgent,
+    consumer: consumer)
+let context = try await client.start()
+// Responses arrive through consumer.consume; this only acknowledges delivery.
+_ = try await client.consent()
+await client.stop()
 ```
 
-Import `ModelPlanEngineClient` and `ModelPlanWire`. The public requirements are in
-`Sources/ModelPlanEngineClient/Interface.swift`; metadata and configuration are
-in `Values.swift`. A future `ProcessEngineClient: EngineClient` actor will accept
-configuration, an initial committed floor, an optional credential agent and the
-consumer. That actor and its constructor are deliberately absent at this stage.
+The executable receives `app-server`, optionally `--offline` and `--read-only`.
+The environment is explicit, with required HOME/TMPDIR and an allow-list in
+`validateConfiguration`; no host environment is inherited. Do not put credential
+agent tokens there. Sources/ModelPlanEngineClient/Interface.swift lists the public
+protocols/events/errors; Values.swift contains immutable metadata/configuration.
 
-The `EngineClientEventConsumer` is the single ordered data-delivery path. M0's
-consumer clears private rows/history/derived caches/cockpit state on
-`clearPrivateViews` before acknowledging it. Only afterward may the client emit
-new context/data. RPC methods return `EngineRequestCompletion` after the consumer
-acknowledges their typed `EngineResponse`, so an independently resumed Task cannot
-publish an older private result after a clear. The consumer must apply events in
-that delivery turn and must not build another asynchronous publication path.
+## Delivery contract
 
-Epochs use equality, never string ordering; generations order only within an
-identical epoch. `EngineConsentFloor` has no Comparable conformance. Sequence is
-session-local. Restarts preserve the floor but cancel old requests/cursors and
-retire credential operations. A lost sent grant reports mutationOutcomeUnknown;
-a lost plugin install reports interrupted(outcomeUnknown). No uncertain mutation
-or cancellation is success, and there is no implicit mutation replay.
+`EngineClientEventConsumer.consume` is the sole serial private-value path.
+Returning acknowledges application during that delivery turn. On
+`clearPrivateViews`, clear private rows, history, derived caches and cockpit state
+before returning. The client waits for this acknowledgement before admitting a
+new context/value and rechecks queued delivery revisions immediately before
+calling the consumer. RPCs return `EngineRequestCompletion` only after their
+response event is acknowledged. That completion is neither a grant receipt nor
+current authorization; never use a separately resumed Task to publish values.
 
-After signature confirmation, implementation will add UTF-8 JSON-RPC LF framing
-with the 8 MiB cap (including LF), exact ids, bounded deadlines and $/cancel;
-concurrent pipe drainage; fresh handshake sessions; 1/2/4/.../30-second restart
-backoff; a five-crashes-in-ten-minutes stop; and bounded stop/close/reap behavior.
-Credential tokens will travel only in credentials/result, outside events/logs.
-Plugin/publication result bindings temporarily use generated WireJSONValue rather
-than a second hand-written DTO schema. Capabilities gate unsupported methods.
+The consumer **must not await another client RPC inside consume**. Its response
+would need the same consumer. Start follow-up requests outside that turn. Pipe
+drainage and internal controls continue while consume is suspended. A callback
+stalled for 30 seconds closes the child, retires requests and schedules a sticky
+clear. No concurrent callback starts if non-cooperative consumer work remains.
+Retry is refused until that work returns and the clear is acknowledged.
 
-## Stages and verification
+Epochs use equality only. Generations order within an identical epoch. Session
+IDs fence every frame; one sequence high-water mark fences snapshots/updates.
+An unfamiliar epoch clears immediately, then a fresh correlated internal
+`consent/get` confirms the active epoch while delivery is gated. Replay receipts
+cannot confirm it. Failed confirmation leaves views cleared; sentinel/unavailable
+contexts cannot replace a committed floor. Retired epoch bookkeeping is bounded
+and triggers a controlled reconnect when full.
 
-1. Interface review: M0 confirms these signatures before any runtime work.
-2. Wired implementation: test the package against the actual modelplan app-server
-   on Linux and macOS, including framing boundaries, crash/backoff/EOF, wrong
-   sessions, sequence races, external revoke/reset, clear acknowledgment ordering,
-   mutation uncertainty and every pending request's cancellation on restart.
+A historical same-epoch receipt is transaction metadata with its actual
+`committedGeneration` and original epoch. It never lowers the floor, restores
+facts or authorizes prompting. `supersededByLaterConsent` is recalculated before
+dispatch. Different-epoch receipts require reconciliation. On restart/cancel,
+each pending request gets one terminal disposition: sent grants without a
+validated receipt report `mutationOutcomeUnknown`; validated commits interrupted
+before acknowledgement report `receiptDeliveryInterrupted` with the known stamp.
+Neither is successful delivery. Full receipts require event consumption or an
+explicit idempotent replay. No mutation or old cursor is automatically replayed.
 
-Fault injection uses labeled pipe/process/clock seams plus separate direct real-
-binary cases. No production fixture switches, native app changes, live credentials
-or broad inherited environment are introduced. Native signing/prompts/UI/final-
-package L2/L3 remain distinct from these transport tests.
+## Transport and credentials
 
-The interface currently consumes the reviewed U3b/U4 producer edge. When merging
-later producer updates, regenerate owned Swift/captures from Go at their source;
-do not hand-merge generated files. This package does not edit ModelPlanWire.
+UTF-8 JSON-RPC frames use LF with an 8,388,608-byte cap including LF. Partial EOF,
+invalid UTF-8, invalid envelopes and framing overflow terminate that session.
+Integer/string IDs retain exact identity. Default deadlines are 30 seconds;
+cancellation sends bounded `$/cancel` notifications. Ordinary requests, query
+reservations, data/control queues, writes and consumer callbacks are bounded.
+Rows may coalesce after header observation; required control overflow closes the
+session. A malformed feature result fails that feature without clearing healthy
+rows. Raw frames/stderr/tokens are never included in events, errors or logs.
 
-No runtime or real-binary test passes are claimed by this interface-only stage.
+Each launch has a new handshake session ID. Restarts preserve the consent floor,
+retire credentials and use 1/2/4/8-second delays; the fifth crash within ten minutes
+stops until explicit retry. Protocol-major mismatch stops without retrying the
+same incompatible configuration. Stop closes stdin, then bounds termination and
+reaping; failed cleanup blocks another spawn. Broken writes do not change the
+host process's SIGPIPE handler. The ordinary engine also exits on stdin EOF.
+
+Interactive credential work requires a one-use `EngineUserAction` bound to the
+exact grant payload/request ID, scope, session and expected epoch, then its actual
+validated committed receipt generation. No generation is guessed. A request
+arriving before the receipt waits without prompting. Ambiguous concurrent
+actions fail closed. Background operations have no user action and must never
+prompt. Revoke/reset/disconnect/expiry logically cancel work; the bounded provider
+worker remains occupied until a non-cancelable OS call returns. Late, mismatched,
+expired or oversized token results are discarded or converted to typed failure.
+Tokens travel only through the private `credentials/result` writer.
+
+Plugin/publication result roots are not yet generated by the producer. Their
+capability-gated public methods return a feature failure without executing an
+installation or publishing unchecked JSON. `WireJSONValue` remains a provisional
+interface binding; producer-owned generated roots are required before claiming
+these native feature integrations complete. No parallel handwritten DTO exists.
+
+## Verification
+
+Build the ordinary engine and the separately labeled test-only pipe proxy:
+
+```sh
+mkdir -p .tmp
+(cd cli && go build -o ../.tmp/modelplan ./cmd/modelplan)
+go build -o .tmp/frame-proxy clients/swift/ModelPlanEngineClient/Tools/FrameProxy/main.go
+MODELPLAN_ENGINE_TEST_BINARY="$PWD/.tmp/modelplan" \
+MODELPLAN_ENGINE_TEST_PROXY="$PWD/.tmp/frame-proxy" TMPDIR="$PWD/.tmp" \
+swift test --package-path clients/swift/ModelPlanEngineClient \
+  --scratch-path .tmp/swift-build --jobs 2
+node scripts/check-source-policy.mjs
+```
+
+The hosted workflow runs this package against the real CLI on Linux and macOS
+(only Linux for drafts). Tests use isolated synthetic homes and no real OS
+credentials. Direct cases cover handshake/EOF, external revoke/reset, actual
+SIGKILL/backoff/crash stop, clear acknowledgement, restart dispositions and stop
+during backoff. Framing tests cover the exact LF-inclusive limit. Labeled pipe
+faults around the ordinary binary cover wrong sessions/sequences, overflow,
+malformed feature bodies, higher-context errors, late canceled replies, failed
+epoch confirmation, historical receipts and both credential/receipt orderings.
+The proxy records method names and a token-presence boolean only; it replaces
+synthetic success tokens with `not_found` before forwarding to Go, so these tests
+do not exercise a live provider. Native signing/prompts/UI/package L2/L3 and
+positive provider quota checks remain separate evidence.
+
+This package does not edit ModelPlanWire or generated captures. After producer
+changes, regenerate those outputs from Go; never hand-merge generated files.
