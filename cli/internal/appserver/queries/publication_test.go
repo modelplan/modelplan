@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
@@ -99,5 +100,45 @@ func TestVerifiedPublicationMissingCacheDoesNotCreateState(t *testing.T) {
 	_, err = source.Publication(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
+	}
+}
+
+func TestPublicationWireRootPreservesPublishedValues(t *testing.T) {
+	for _, extra := range []string{`"multipliers":null,"multiplierHorizon":null,"planMetering":null`, `"multipliers":[{"futureRate":null}],"multiplierHorizon":{"futureHorizon":true},"planMetering":{"schemaVersion":1,"plans":[]}`} {
+		var published digest.Publication
+		fixture := []byte(`{"contractVersion":1,"schemaVersion":1,"publicationId":"synthetic-u4b","publishedAt":null,"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"capabilities":{"effortLadders":{"status":"supported"}},"selectionRevision":"synthetic-revision","models":[{"id":"synthetic","ability":null,"futureExtension":9007199254740993}],"lineups":[],"speedTiers":[],"resets":[],"windows":[],` + extra + `}`)
+		if err := json.Unmarshal(fixture, &published); err != nil {
+			t.Fatal(err)
+		}
+		handler, err := PublicationHandler(&publicationFixture{result: published})
+		if err != nil {
+			t.Fatal(err)
+		}
+		reply, err := handler.Handle(context.Background(), nil, appserver.Stamp{Epoch: "synthetic", Generation: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := reply.Data.(wire.PublicationResult); !ok {
+			t.Fatal("production handler did not use the generated wire root")
+		}
+		want, _ := json.Marshal(published)
+		got, err := json.Marshal(reply.Data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// UseNumber detects loss of published integers above 2^53 as well as
+		// null/extension/container changes across the production DTO boundary.
+		decode := func(b []byte) any {
+			d := json.NewDecoder(bytes.NewReader(b))
+			d.UseNumber()
+			var value any
+			if err := d.Decode(&value); err != nil {
+				t.Fatal(err)
+			}
+			return value
+		}
+		if !reflect.DeepEqual(decode(want), decode(got)) {
+			t.Fatal("typed root changed published values")
+		}
 	}
 }

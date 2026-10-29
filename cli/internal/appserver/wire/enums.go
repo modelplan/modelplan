@@ -133,3 +133,13 @@ const (
 	PluginClaudeCode PluginTool = "claude-code"
 	PluginCodex      PluginTool = "codex"
 )
+
+// PluginInstallStatus is shared by the CLI installer and the engine receipt.
+type PluginInstallStatus string
+
+const (
+	PluginInstalled    PluginInstallStatus = "installed"
+	PluginInstructions PluginInstallStatus = "instructions"
+	PluginPlanned      PluginInstallStatus = "planned"
+	PluginFailed       PluginInstallStatus = "failed"
+)

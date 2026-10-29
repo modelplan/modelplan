@@ -295,6 +295,9 @@ extension ProcessEngineClient {
         case "rows/subscribe": feature = .rows
         case "consent/get", "consent/grant": feature = .consent
         case "history/query": feature = .history
+        case "cockpit/query": feature = .cockpit
+        case "publication/get": feature = .publication
+        case "plugin/install": feature = .pluginInstall
         case "refresh/request": feature = .rows
         default: feature = .diagnostics
         }
@@ -327,11 +330,18 @@ extension ProcessEngineClient {
                 result = .grant(EngineGrantResult(receipt: decoded.data, committedAt: committed, delivery: context, supersededByLaterConsent: historic))
             case "refresh/request": result = .refresh(EngineReply(envelope: try decodeEnvelope(envelope, as: [WireRefreshScheduled].self).value, delivery: context))
             case "history/query": result = .history(EngineReply(envelope: try decodeEnvelope(envelope, as: WireHistoryPage.self).value, delivery: context))
+            case "cockpit/query": result = .cockpit(EngineReply(envelope: try decodeEnvelope(envelope, as: WireCockpitData.self).value, delivery: context))
+            case "publication/get": result = .publication(EngineReply(envelope: try decodeEnvelope(envelope, as: WirePublicationResult.self).value, delivery: context))
+            case "plugin/install":
+                let decoded = try decodeEnvelope(envelope, as: WirePluginInstallResult.self).value
+                guard decoded.data.tool == entry.pluginTool else { throw EngineClientError.protocolViolation }
+                pending[key]?.receiptKnown = true
+                result = .pluginInstall(EngineReply(envelope: decoded, delivery: context))
             case "diagnostics/get": result = .diagnostics(EngineReply(envelope: try decodeEnvelope(envelope, as: WireDiagnostics.self).value, delivery: context))
             default: throw EngineClientError.protocolViolation
             }
             emit(.response(requestID: entry.id, result), bytes: bytes, revision: revision, request: key,
-                 data: entry.method == "rows/subscribe" || entry.method == "history/query", receipt: metadata, epoch: envelope.storeEpoch)
+                 data: ["rows/subscribe", "history/query", "cockpit/query", "publication/get", "plugin/install"].contains(entry.method), receipt: metadata, epoch: envelope.storeEpoch)
         } catch {
             if let grant = entry.grant, !entry.receiptKnown {
                 finishRequest(key, error: .mutationOutcomeUnknown(requestID: grant.requestId, expected: EngineConsentFloor(storeEpoch: grant.expectStoreEpoch, generation: grant.expectGeneration)))

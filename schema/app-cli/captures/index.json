@@ -295,6 +295,33 @@
       ]
     },
     {
+      "file": "WireCockpitAccount.json",
+      "type": "WireCockpitAccount",
+      "optional": [],
+      "required": [
+        "tool",
+        "account"
+      ]
+    },
+    {
+      "file": "WireCockpitData.json",
+      "type": "WireCockpitData",
+      "optional": [],
+      "required": [
+        "projection",
+        "subscriptions"
+      ]
+    },
+    {
+      "file": "WireCockpitSubscription.json",
+      "type": "WireCockpitSubscription",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "accounts"
+      ]
+    },
+    {
       "file": "WireConsentFacts.json",
       "type": "WireConsentFacts",
       "optional": [],
@@ -636,6 +663,98 @@
       ],
       "required": [
         "tool"
+      ]
+    },
+    {
+      "file": "WirePluginInstallResult.json",
+      "type": "WirePluginInstallResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "tool",
+        "status",
+        "commands",
+        "completed",
+        "docs"
+      ]
+    },
+    {
+      "file": "WirePublicationCapability.json",
+      "type": "WirePublicationCapability",
+      "optional": [
+        {
+          "field": "reason",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "status"
+      ]
+    },
+    {
+      "file": "WirePublicationResult.json",
+      "type": "WirePublicationResult",
+      "optional": [
+        {
+          "field": "publishedAt",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "selectionRevision",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "multipliers",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "multiplierHorizon",
+          "omission": false,
+          "null": true,
+          "wrongType": true,
+          "strict": true
+        },
+        {
+          "field": "planMetering",
+          "omission": false,
+          "null": true,
+          "wrongType": true,
+          "strict": true
+        }
+      ],
+      "required": [
+        "contractVersion",
+        "capabilities",
+        "schemaVersion",
+        "publicationId",
+        "units",
+        "models",
+        "lineups",
+        "speedTiers",
+        "resets",
+        "windows"
+      ]
+    },
+    {
+      "file": "WirePublicationUnits.json",
+      "type": "WirePublicationUnits",
+      "optional": [],
+      "required": [
+        "ability",
+        "cost",
+        "time"
       ]
     },
     {
