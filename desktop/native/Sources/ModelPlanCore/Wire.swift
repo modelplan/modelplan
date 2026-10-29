@@ -69,6 +69,18 @@ public enum FeedDecoder {
         else { throw FeedError.invalidIdentity }
         return value
     }
+    public static func pluginInstall(_ data: Data) throws -> PluginInstallReceipt {
+        guard data.count <= 65536 else { throw FeedError.tooLarge }
+        let value = try decode(PluginInstallReceipt.self, data)
+        guard value.schemaVersion == 1, value.commands == value.tool.commands,
+              value.docs == value.tool.documentationURL.absoluteString, (0...2).contains(value.completed) else { throw FeedError.invalidIdentity }
+        switch value.status {
+        case .installed: guard value.completed == 2 else { throw FeedError.invalidIdentity }
+        case .instructions, .planned: guard value.completed == 0 else { throw FeedError.invalidIdentity }
+        case .failed: guard value.completed < 2 else { throw FeedError.invalidIdentity }
+        }
+        return value
+    }
     public static let maximumBytes = 8 * 1024 * 1024
     private static func decode<T: Decodable>(_ type: T.Type, _ data: Data) throws -> T {
         guard data.count <= maximumBytes else { throw FeedError.tooLarge }

@@ -206,6 +206,12 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
+	return refreshManagedAttempt(ctx, p, provider, now, false)
+}
+
+// foreground skips the schedule/budget gates for one explicit, user-attended
+// attempt (a Keychain grant in Settings). Timers and ordinary reads never set it.
+func refreshManagedAttempt(ctx context.Context, p Paths, provider string, now time.Time, foreground bool) error {
 	if ctx.Err() != nil {
 		return errors.New("reader canceled")
 	}
@@ -222,11 +228,11 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if err != nil {
 		return err
 	}
-	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
+	if !foreground && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
 		return nil
 	}
 	n := nativeReaders[provider]
-	if !n.budgetDue(p.Cache, now) || !xSubscriptionDue(p.Cache, provider, now) {
+	if !foreground && (!n.budgetDue(p.Cache, now) || !xSubscriptionDue(p.Cache, provider, now)) {
 		return nil
 	}
 	profiles := g.Profiles

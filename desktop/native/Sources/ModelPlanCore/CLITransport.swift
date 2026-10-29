@@ -41,13 +41,13 @@ public protocol CLITransport: Sendable {
 }
 
 /// One slot belongs to the transport until the owned child has exited, including cancellation.
-/// The executable is an explicit bundle path. No shell, PATH lookup or management command.
+/// The executable is an explicit bundle path. Only fixed typed ports may invoke it; no shell or executable PATH fallback.
 public protocol ConsentJSONTransport: Sendable {
     func readConsentJSON() async throws -> CommandResult
     func grantConsentJSON(_ payload: Data) async throws -> CommandResult
 }
 
-public actor ProcessCLITransport: CLITransport, ConsentJSONTransport {
+public actor ProcessCLITransport: CLITransport, ConsentJSONTransport, PluginInstallJSONTransport {
     private let executable: URL
     private let environment: [String: String]?
     private let timeoutOverride: TimeInterval?
@@ -66,6 +66,9 @@ public actor ProcessCLITransport: CLITransport, ConsentJSONTransport {
     public func grantConsentJSON(_ payload: Data) async throws -> CommandResult {
         guard !payload.isEmpty, payload.count <= 65536 else { throw TransportError.outputLimit }
         return try await run(arguments: ["consent", "grant", "--json"], timeout: 20, input: payload)
+    }
+    public func installPluginJSON(_ tool: PluginInstallTool) async throws -> CommandResult {
+        try await run(arguments: tool.arguments, timeout: 120)
     }
     private func run(arguments: [String], timeout: TimeInterval, input: Data? = nil) async throws -> CommandResult {
         guard !active else { throw TransportError.busy }

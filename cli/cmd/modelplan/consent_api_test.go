@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -398,5 +400,30 @@ func TestConsentAPIFailedForgetKeepsDurableRevocationAndReceipt(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "helper-was-started")); !os.IsNotExist(err) {
 		t.Fatal("JSON API started cookie cleanup that might prompt Keychain")
+	}
+}
+
+func TestConsentKeychainGrantRunsOneForegroundClaudeRead(t *testing.T) {
+	consentAPIHome(t)
+	calls := []string{}
+	old := keychainGrantReadFn
+	keychainGrantReadFn = func(ctx context.Context, _ quota.Paths, provider string, _ time.Time) error {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("foreground read has no deadline")
+		}
+		calls = append(calls, provider)
+		return nil
+	}
+	t.Cleanup(func() { keychainGrantReadFn = old })
+	input := apiRequest(t, 1, 0, []string{"claude", "codex"}, nil, map[string]string{"claude": "allow"})
+	grantConsentAPI(t, input)
+	if len(calls) != 1 || calls[0] != "claude" {
+		t.Fatal("a Keychain grant must run exactly one foreground Claude read", calls)
+	}
+	grantConsentAPI(t, input) // replayed receipt
+	grantConsentAPI(t, apiRequest(t, 2, 1, []string{"codex"}, nil, nil))
+	grantConsentAPI(t, apiRequest(t, 3, 2, []string{"claude"}, nil, map[string]string{"claude": "deny"}))
+	if len(calls) != 1 {
+		t.Fatal("replays, grants without Keychain and Keychain denials must not read", calls)
 	}
 }

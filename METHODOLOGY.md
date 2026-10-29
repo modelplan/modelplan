@@ -29,6 +29,13 @@ S   = 50 + 10 · Σ w_s r_s z_s / Σ w_s r_s
 
 Sources without an admitted observation are left out of both sums, so missing evidence is never scored as zero. Scores can fall below 0 or above 100; they are not percentages or capability multiples. The initial weights are declared engineering choices, not proven task-optimal.
 
+### Method version v0.4 (since 2026-10-29)
+
+v0.4 moves AA Intelligence to its v5.0 protocol. AA Coding Agent stays on v1.5 for now; v2.0 follows as v0.4.1 once its reference covers at least two developers and three versions. Source budgets are unchanged.
+
+- **Same scale.** v5.0 scores are lower and more spread out than v4.3. The AA mean and spread are re-frozen by linear equating on the anchor configurations AA scored in both versions, so 50 still means the September 2026 frontier average and 10 points about one standard deviation. The AA cost reference follows the same rule on v5.0 costs.
+- **Configurations without a v5.0 score.** If the model has a successor, its v4.3 AA value is retired. Otherwise the v4.3 value is carried over at its own z-score minus 0.5, labelled as bridged, and expires 60 days after activation. Cost and time carry over without the penalty.
+
 ## Reference expense
 
 Source-normalised costs form a unitless index `E`. Multiplying by one frozen API task-cost reference gives equivalent dollars:
@@ -58,14 +65,15 @@ The pick uses the numbers the site shows: ability `A`, USD per reference task `C
 
 ```
 U       = A − a·C − b·log2(C / C_ref) − t·log2(T)     C_ref = $1 per task
-Q_guard = max(0.8·Q_max, Q_min + 0.1·(Q_max − Q_min))  on the native AA score Q
+Q_guard = max(f·Q_max, Q_min + 0.1·(Q_max − Q_min))  on the native AA score Q
 ```
 
 - Efforts below `Q_guard` are not picked. The guard reads the native AA Intelligence score, which is bounded, so a fraction of the best is meaningful; the ability index is an interval scale, where it is not.
+- `f` is calibrated per AA protocol: 0.7 on v5.0 (0.8 on v4.3). v5.0 scores are lower with wider effort spreads, and 0.7 reproduces the v4.3 admission sets on the models scored in both.
 - Time enters only as a ratio between one model's own efforts. An unknown time spans the model's observed range, and an estimate is its p10–p90 interval. Both are read at the slow end for the effort being judged.
 - The choices: three on GPT-5.6 Sol (High over Max, Medium over High, Medium over Low; price only, made without time on screen), plus Luna XHigh over Max and Haiku 5.5 XHigh over High (with time). They are recorded in the producer's `balanced-coding-v5` calibration; see ADR 0045.
 
-- **Single configuration.** When only one effort was measured, that effort is the pick, with no trade-off claimed.
+- **Single configuration.** When only one effort was measured, that effort is the pick, with no trade-off claimed. The same holds when the current AA protocol has scored only one of a model's efforts; the reason names the efforts still awaiting a score, and the comparison resumes once AA scores a second one.
 - **Assumed top.** When a benchmark publishes one configuration without an effort label, it is assumed to be the top setting and shown as `★ Max (est.)`, or `On` for thinking toggles. A reviewed mapping replaces the assumption as soon as one exists.
 - Vendor defaults are references only and are shown beside ★. Picks do not imply equal ability across models.
 

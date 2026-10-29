@@ -5,16 +5,16 @@ These Draft 2020-12 schemas describe the public helper boundary. `commands.json`
 is the full argv inventory from `desktop/native/Sources/ModelPlanCore/CLITransport.swift`
 and the CommunityApp helper diagnostic. Connections and reader diagnostics are
 included for the Settings/support boundary; the current app transport does not
-invoke them. Plugin installation is reserved for the Settings integration being
-added by the app owner; its existing production CLI command is covered here
-before that integration lands. `common.json` contains shared definitions.
+invoke them. Settings invokes the two online plugin-install commands only after
+explicit confirmation, through its separate typed command port. Offline plugin
+planning remains CLI-only. `common.json` contains shared definitions.
 
 | Command | Schema | Collection / side effects |
 | --- | --- | --- |
 | `desktop --json` | [desktop.json](desktop.json) | Returns cached/local observations; online polls can schedule due readers and update derived history. |
 | `desktop --json --read-only` | [desktop.json](desktop.json) | Cache/presence only; starts no refresh and writes nothing. `--offline` also starts no refresh. |
 | `consent --json` | [consent.json](consent.json) | Cache/presence only; neither grants nor refreshes. |
-| `consent grant --json` | [stdin](consent-grant-request.json), [stdout](consent-grant-response.json) | Atomic generation/text-version checks and replay receipts; denial revokes before scoped cleanup. No provider contact. |
+| `consent grant --json` | [stdin](consent-grant-request.json), [stdout](consent-grant-response.json) | Atomic generation/text-version checks and replay receipts; denial revokes before scoped cleanup. No provider contact, except one foreground Claude read (≤12 s, may show the Keychain prompt) after a committed claude+Keychain allow; never on replay or deny. |
 | `detect --json` | [detect.json](detect.json) | Presence only, without credential values, reader execution or writes. |
 | `publication --json` | [publication.json](publication.json) | Synchronously checks public data (30-second bound), then returns verified cache. |
 | `publication --json --offline` | [publication.json](publication.json) | Verified cache only, no sync. |
@@ -82,9 +82,11 @@ For each of `claude-code` and `codex`, these actual-binary captures are committe
 `plugin_install_test.go` compares the schema's serialized fields/types/required
 set against the real Go `plugininstall.Result` and its status enum against every
 production status assignment. It also requires a capture for every tool/status.
-No parallel handwritten positive result set is introduced. M4's new typed
-Settings service/decoder tests should load these files via the existing
-`GeneratedAppCLIFixtures` loader and use the corresponding manifest exit code.
+No parallel handwritten positive result set is introduced. The native
+`PluginInstallFlowTests` consume these files through `GeneratedAppCLIFixtures`
+and use the corresponding manifest exit codes. The Settings service validates
+fixed commands/docs, tool, progress and exit status before mapping a safe receipt;
+it never renders host stderr or arbitrary producer URLs/commands.
 
 插件安装契约覆盖两个宿主的真实 CLI 输出；缺少宿主返回 `instructions`，
 宿主命令失败返回 `failed`，`--offline` 返回 `planned` 且不执行宿主。
@@ -102,7 +104,7 @@ not fabricated values. The separate scheduled Codex account path waits five
 minutes after success and thirty after failure. The explicit app account-refresh
 command bypasses that due check; the app spaces calls by 300 seconds and the CLI
 locks overlapping refreshes. Background Keychain reads are non-interactive and bounded
-to about two seconds. Read-only/offline paths start nothing.
+to about two seconds; the only foreground one is the read right after a committed Claude Keychain grant. Read-only/offline paths start nothing.
 
 `allowed` in a consent readback is saved standard permission, not proof of a login
 or current admission. Catalogue/privacy restrictions still apply. The grant
