@@ -81,10 +81,14 @@ import ModelPlanAppIntegration
         let detected = controller.snapshot?.tools.contains { $0.tool == .codex && $0.presence == .detected } == true
         let listed = surface?.controller.window?.contentView.map { labels($0).contains { $0.contains("Codex") } } == true
         record(1, ["detected": detected, "listedInFirstRun": listed, "backendBound": controller.isBound(to: backend),
+                   "snapshotPresent": controller.snapshot != nil, "canonicalGenerationPresent": controller.snapshot?.consentGeneration != nil,
+                   "toolCount": controller.snapshot?.tools.count ?? 0, "controllerPhase": String(describing: controller.phase),
+                   "fixtureExecutablePresent": ProcessInfo.processInfo.environment["MODELPLAN_CODEX"].map { FileManager.default.isExecutableFile(atPath: $0) } ?? false,
                    "providerReadsBeforeGrant": calls(failed: false).count + calls(failed: true).count])
 
         let granted = await allow(controller)
         record(2, ["granted": granted, "apiAvailable": backend.settingsConnectionAvailability.canGrant,
+                   "controllerPhase": String(describing: controller.phase),
                    "releaseIdentityVerified": CommunityConsentBundleIdentity.matches(bundle: Bundle.main.bundleURL),
                    "debugAdmission": CommunityJourneyCI.enabled])
 
@@ -104,7 +108,9 @@ import ModelPlanAppIntegration
 
         let revokeAt = Date().timeIntervalSince1970
         if let confirmation = controller.requestForget(.codex) { await controller.confirm(confirmation.id) }
-        let revoked = controller.snapshot?.tools.contains { $0.tool == .codex && $0.authorization == .denied } == true
+        let revoked = controller.snapshot?.tools.contains {
+            $0.tool == .codex && ($0.authorization == .denied || $0.authorization == .noConsent)
+        } == true
         _ = await wait(revoked ? 90 : 1) { freshFeed(dock, after: revokeAt) && values(dock).isEmpty }
         record(5, ["revoked": revoked, "valueSeenBefore": sawValue, "values": values(dock),
                    "postRevokeSnapshot": freshFeed(dock, after: revokeAt), "rows": dock.journeySnapshot?.inputs.count ?? 0])
