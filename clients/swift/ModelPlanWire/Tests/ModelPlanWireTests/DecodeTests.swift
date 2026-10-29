@@ -198,6 +198,23 @@ final class DecodeTests: XCTestCase {
         XCTAssertThrowsError(try WireDecoder.decode(WireSuccess<WireRowsSnapshot>.self, from: encoded(rows)))
     }
 
+    func testCredentialRequestWrapperAndAmbiguousResponsesFailClosed() throws {
+        var request = try object("WireRequest.json")
+        request["method"] = "credentials/result"
+        request["params"] = try object("WireCredentialResult.json")
+        let valid = try WireDecoder.decode(WireRequest.self, from: encoded(request))
+        XCTAssertFalse(String(reflecting: valid).contains("TOKEN-CANARY-U4"))
+        var params = try object("WireCredentialResult.json")
+        params["outcome"] = "denied"
+        request["params"] = params
+        XCTAssertThrowsError(try WireDecoder.decode(WireRequest.self, from: encoded(request)))
+        var success = try object("WireSuccess.json")
+        success["error"] = ["code": -32099]
+        XCTAssertThrowsError(try WireDecoder.decode(WireSuccess<WireRowsSnapshot>.self, from: encoded(success)))
+        let maximum = try WireDecoder.decode(WireRequestID.self, from: Data("18446744073709551615".utf8))
+        XCTAssertEqual(maximum, .unsigned(UInt64.max))
+    }
+
     func testDuplicateRowsAndOversizedFramesAreRejected() throws {
         var projection = try object("RowsProjection.json")
         let row = try XCTUnwrap(projection["rows"] as? [[String: Any]])[0]

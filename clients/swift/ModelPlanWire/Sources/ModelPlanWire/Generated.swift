@@ -23,7 +23,7 @@ private struct WireCodingKey: CodingKey {
 
 private enum WireValidation {
     static func identity(_ value: String) throws {
-        guard !value.isEmpty, value.utf8.count <= 256,
+        guard !value.isEmpty,
               !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
         else { throw WireDecodeError.invalidIdentity }
     }
@@ -1689,6 +1689,7 @@ public struct WireEnvelope<T: Codable & Sendable>: Codable, Sendable {
     private func validate() throws {
         try WireValidation.identity(`sessionId`)
         try WireValidation.identity(`storeEpoch`)
+        for scope in (scopes ?? []) { try WireValidation.identity(scope) }
         if let snapshot = data as? WireRowsSnapshot, snapshot.projection.consentGeneration != consentGeneration { throw WireDecodeError.invalidAuthorization }
     }
 }
@@ -1745,6 +1746,8 @@ public struct WireFailure: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let extra = try decoder.container(keyedBy: WireCodingKey.self)
+        if extra.allKeys.contains(where: { $0.stringValue == "result" }) { throw WireDecodeError.invalidFrame }
         self.`jsonrpc` = try c.decode(String.self, forKey: .`jsonrpc`)
         self.`id` = try c.decode(WireRequestID.self, forKey: .`id`)
         self.`error` = try c.decode(WireRPCError.self, forKey: .`error`)
@@ -2174,6 +2177,7 @@ public struct WireRefreshRequestParams: Codable, Sendable {
         try c.encodeIfPresent(`scopes`, forKey: .`scopes`)
     }
     private func validate() throws {
+        for scope in (scopes ?? []) { try WireValidation.identity(scope) }
     }
 }
 
@@ -2211,7 +2215,7 @@ public struct WireRefreshScheduled: Codable, Sendable {
     }
 }
 
-public struct WireRequest: Codable, Sendable {
+public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public let `jsonrpc`: String
     public let `id`: WireRequestID?
     public let `method`: String
@@ -2247,7 +2251,14 @@ public struct WireRequest: Codable, Sendable {
     }
     private func validate() throws {
         guard jsonrpc == WireProtocol.jsonrpc else { throw WireDecodeError.invalidVersion }
+        try WireValidation.identity(method)
+        if method == "credentials/result" {
+            guard let params = params else { throw WireDecodeError.invalidAuthorization }
+            _ = try WireDecoder.decode(WireCredentialResult.self, from: JSONEncoder().encode(params))
+        }
     }
+    public var description: String { "WireRequest([redacted params])" }
+    public var debugDescription: String { description }
 }
 
 public struct WireRowsSnapshot: Codable, Sendable {
@@ -2340,6 +2351,8 @@ public struct WireSuccess<T: Codable & Sendable>: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let extra = try decoder.container(keyedBy: WireCodingKey.self)
+        if extra.allKeys.contains(where: { $0.stringValue == "error" }) { throw WireDecodeError.invalidFrame }
         self.`jsonrpc` = try c.decode(String.self, forKey: .`jsonrpc`)
         self.`id` = try c.decode(WireRequestID.self, forKey: .`id`)
         self.`result` = try c.decode(WireEnvelope<T>.self, forKey: .`result`)
@@ -2356,4 +2369,3 @@ public struct WireSuccess<T: Codable & Sendable>: Codable, Sendable {
         guard jsonrpc == WireProtocol.jsonrpc else { throw WireDecodeError.invalidVersion }
     }
 }
-

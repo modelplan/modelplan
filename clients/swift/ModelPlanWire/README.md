@@ -73,7 +73,7 @@ changes must regenerate the package; this client does not invent those vocabular
 Encoding preserves JSON-tag behavior: nil pointer fields without `omitempty`
 encode explicit null; omitted fields encode only when present. Nullable history
 `model` therefore survives missing/null/wrong-display-type inputs without losing
-rows. Session/epoch/operation/scope identities must be nonempty and bounded;
+rows. Session/epoch/operation/scope identities must be nonempty and control-free;
 account/subscription references follow the producer's 16-hex representation.
 Duplicate row ids, unknown consent/Keychain/credential outcomes, incompatible
 protocol major versions, invalid rows versions and mixed envelope/projection

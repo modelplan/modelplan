@@ -12,7 +12,7 @@ private struct WireCodingKey: CodingKey {
 
 private enum WireValidation {
     static func identity(_ value: String) throws {
-        guard !value.isEmpty, value.utf8.count <= 256,
+        guard !value.isEmpty,
               !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
         else { throw WireDecodeError.invalidIdentity }
     }

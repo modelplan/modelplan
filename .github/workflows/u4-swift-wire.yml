@@ -42,6 +42,16 @@ jobs:
         run: |
           go run ./internal/appserver/wire/cmd/schema --check
           go run ./internal/swiftwire/cmd --check
+      - name: Portable Swift preflight when provided by the hosted image
+        env:
+          MODELPLAN_CAPTURE_DIR: ${{ github.workspace }}/schema/app-cli/captures
+        run: |
+          if command -v swift >/dev/null 2>&1; then
+            swift --version
+            swift test --package-path clients/swift/ModelPlanWire
+          else
+            echo 'Linux Swift preflight: unsupported (no toolchain); macOS decoder job remains required.'
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24'

@@ -327,7 +327,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		generic = "<T: Codable & Sendable>"
 	}
 	conform := "Codable, Sendable"
-	if d.Swift == "WireCredentialResult" {
+	if d.Swift == "WireCredentialResult" || d.Swift == "WireRequest" {
 		conform += ", CustomStringConvertible, CustomDebugStringConvertible"
 	}
 	fmt.Fprintf(b, "public struct %s%s: %s {\n", d.Swift, generic, conform)
@@ -367,6 +367,13 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        let c = try decoder.container(keyedBy: CodingKeys.self)")
 	} else {
 		fmt.Fprintln(b, "        _ = try decoder.container(keyedBy: WireCodingKey.self)")
+	}
+	if d.Swift == "WireSuccess" || d.Swift == "WireFailure" {
+		forbidden := "error"
+		if d.Swift == "WireFailure" {
+			forbidden = "result"
+		}
+		fmt.Fprintf(b, "        let extra = try decoder.container(keyedBy: WireCodingKey.self)\n        if extra.allKeys.contains(where: { $0.stringValue == %s }) { throw WireDecodeError.invalidFrame }\n", quoted(forbidden))
 	}
 	if d.Swift == "WireCredentialResult" {
 		fmt.Fprintln(b, "        // Non-success credentials may not carry a token or expiry, even explicit null.\n        let outcome = try c.decode(WireCredentialOutcome.self, forKey: .outcome)\n        if outcome.rawValue != \"ok\" && (c.contains(.accessToken) || c.contains(.expiresAt)) { throw WireDecodeError.invalidAuthorization }")
@@ -410,6 +417,13 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		case "subscriptionRef", "accountLocator":
 			fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
 		}
+		if f.JSON == "scopes" && f.Swift == "[String]" {
+			values := "scopes"
+			if f.Optional {
+				values = "(scopes ?? [])"
+			}
+			fmt.Fprintf(b, "        for scope in %s { try WireValidation.identity(scope) }\n", values)
+		}
 		// Bounds originate in the producer schema rather than a second hand-written limit.
 		if low, ok := f.Rule["minimum"].(float64); ok && !f.Optional {
 			fmt.Fprintf(b, "        guard %s >= %v else { throw WireDecodeError.invalidBound }\n", value, low)
@@ -429,6 +443,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	switch d.Swift {
 	case "WireRequest", "WireSuccess", "WireNotification", "WireFailure":
 		fmt.Fprintln(b, "        guard jsonrpc == WireProtocol.jsonrpc else { throw WireDecodeError.invalidVersion }")
+		if d.Swift == "WireRequest" {
+			fmt.Fprintln(b, "        try WireValidation.identity(method)\n        if method == \"credentials/result\" {\n            guard let params = params else { throw WireDecodeError.invalidAuthorization }\n            _ = try WireDecoder.decode(WireCredentialResult.self, from: JSONEncoder().encode(params))\n        }")
+		}
 	case "WireInitializeParams", "WireInitializeResult":
 		fmt.Fprintln(b, "        try WireValidation.protocolVersion(protocolVersion)")
 	case "RowsProjection":
@@ -447,6 +464,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	fmt.Fprintln(b, "    }")
 	if d.Swift == "WireCredentialResult" {
 		fmt.Fprintln(b, "    public var description: String { \"WireCredentialResult([redacted])\" }\n    public var debugDescription: String { description }")
+	}
+	if d.Swift == "WireRequest" {
+		fmt.Fprintln(b, "    public var description: String { \"WireRequest([redacted params])\" }\n    public var debugDescription: String { description }")
 	}
 	fmt.Fprint(b, "}\n\n")
 }
@@ -480,5 +500,5 @@ func Generate(root string) ([]byte, error) {
 			emitStruct(&b, d)
 		}
 	}
-	return b.Bytes(), nil
+	return append(bytes.TrimRight(b.Bytes(), "\n"), '\n'), nil
 }
