@@ -1,6 +1,6 @@
 # Mac App foundation v2
 
-Status: revision 3 for review. Codex (xhigh) reviewed revisions 1 and 2. This revision closes the revision 2 re-review. It fixes:
+Status: **frozen on 2026-10-29** at revision 3. Codex reviewed every revision, and its closure checks passed on the final head. Delivery follows the units below, tracked as GitHub issues. This revision closes the revision 2 re-review. It fixes:
 - the delivery graph;
 - the consent store boundary for old writers;
 - the fence on history and cockpit queries;

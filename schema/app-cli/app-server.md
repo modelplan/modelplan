@@ -1,6 +1,6 @@
 # `modelplan app-server` protocol (v1 sketch, revision 3)
 
-Status: interface sketch for review. Bodies are not implemented. After review, dedicated Go wire DTOs are the source of truth:
+Status: interface frozen on 2026-10-29 with foundation v2. Bodies are not implemented. After review, dedicated Go wire DTOs are the source of truth:
 
 - field names;
 - presence: `omitempty` means the field may be absent;

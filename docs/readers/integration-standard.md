@@ -1,6 +1,6 @@
 # Reader integration standard
 
-Status: revision 3. The owner accepted the direction, the K default and the POST gate on 2026-10-29. Part of foundation v2. Use this standard before you add a reader or repair one.
+Status: revision 3, frozen on 2026-10-29. The owner accepted the direction, the K default and the POST gate on 2026-10-29. Part of foundation v2. Use this standard before you add a reader or repair one.
 
 **Transition.** Cards are written reader by reader, but admission gates apply now and override the transition: the POST gate, known red-line violations, readers off and every revoke. Only a reader that already meets the red lines keeps running until its card is written. Foundation v2 unit U2a delivers the gates for the first batch.
 It covers four things: how we classify a reader path, the lines we never cross, how we learn from other quota monitors, and what each integration must produce.
