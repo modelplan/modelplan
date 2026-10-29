@@ -21,3 +21,7 @@ Settings and first-run connection surfaces share the same controller, but each t
 Subscription catalogue ownership is separate from canonical consent. `CommunityPlacementBinding` forwards the actual Dock catalogue, including an authoritative empty catalogue, into the shared editor. A canonical controller observation cannot replace that catalogue: consent readback does not report complete membership. Explicit full-runtime `CommunityConnectionFacts` applied through `flow.apply(...)` retain their existing validated projection path. This avoids startup/readback ordering erasing visible rows without inventing subscription references.
 
 订阅目录与共享授权是不同事实。`CommunityPlacementBinding` 将实际 Dock 目录（包括明确的空目录）送到同一个 editor。授权回读只更新连接控制器，不能据此覆盖订阅成员；显式的完整运行时事实仍通过 `flow.apply(...)` 走原有校验投影。这样启动和回读的先后顺序不会擦掉设置行，也不会虚构订阅引用。
+
+The normal consent factory owns a dedicated `BundledCLI` process lease. SnapshotStore and the consent controller may start together, so sharing the runtime's read-only transport made the latter fail with `busy` before canonical decoding. The existing per-transport concurrency/cancellation contract is unchanged; no retry or direct refresh hides the failure. The real-binary startup stage in the hosted journey is the recurrence guard and remaining end-to-end proof.
+
+正常授权工厂拥有独立的 `BundledCLI` 进程通道。SnapshotStore 与授权控制器可能同时启动；复用运行时只读通道会让授权在解码前收到 `busy`。每个通道原有的并发拒绝和取消规则不变，也不靠重试或直接刷新遮盖失败。hosted journey 的真实 binary 启动阶段负责防复发及剩余端到端证明。

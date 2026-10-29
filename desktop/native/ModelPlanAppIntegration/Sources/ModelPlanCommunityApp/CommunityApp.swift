@@ -13,7 +13,7 @@ import ModelPlanCore
         let readOnly = BundledCLI(bundle: Bundle.main.bundleURL)
         let normal = BundledCLI(bundle: Bundle.main.bundleURL, desktopReadMode: .normal)
         let transport = ConsentGatedDesktopTransport(readOnly: readOnly, normal: normal)
-        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL, transport: readOnly)
+        let consent = CommunityApplicationFactory.makeConsentPort(bundle: Bundle.main.bundleURL)
         let backend = CommunityConnectionBackend(port: consent, desktop: transport)
         let surfaces = CommunityInstrumentSurfaceProvider(openWebsite: { link in
             guard let url=URL(string:link.url),url.scheme=="https",url.host=="modelplan.ai",

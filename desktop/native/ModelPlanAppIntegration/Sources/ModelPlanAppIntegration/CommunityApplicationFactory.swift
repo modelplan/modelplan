@@ -7,6 +7,11 @@ import ModelPlanSettings
 
 /// Consent/Settings composition shared by the normal executable and construction checks.
 @MainActor public enum CommunityApplicationFactory {
+    /// Canonical consent and SnapshotStore are independently scheduled owners.
+    /// The normal factory gives consent its own process lease; injected transports remain explicit.
+    public static func makeConsentPort(bundle: URL) -> CommunityCLIConsentPort {
+        makeConsentPort(bundle: bundle, transport: BundledCLI(bundle: bundle))
+    }
     public static func makeConsentPort(bundle: URL, transport: any ConsentJSONTransport) -> CommunityCLIConsentPort {
         CommunityCLIConsentPort(transport: transport, apiAvailable: CommunityConsentBundleIdentity.matches(bundle: bundle))
     }
