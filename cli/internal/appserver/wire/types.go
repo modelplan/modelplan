@@ -10,6 +10,7 @@ import (
 
 const ProtocolVersion = "1.0"
 const JSONRPC = "2.0"
+const PluginInstallTimeout = 2 * time.Minute
 
 // Limits bound admission and memory independently of provider implementations.
 const (
@@ -214,4 +215,11 @@ type ScopeDiag struct {
 type Health struct {
 	State HealthState `json:"state"`
 	Code  string      `json:"code"`
+}
+
+// PluginInstallParams selects one fixed host integration. Offline plans the
+// same commands without process lookup or execution.
+type PluginInstallParams struct {
+	Tool    PluginTool `json:"tool"`
+	Offline bool       `json:"offline,omitempty"`
 }

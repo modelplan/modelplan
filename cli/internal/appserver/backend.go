@@ -70,7 +70,7 @@ func errorCode(err error) int {
 	var protocol ProtocolError
 	if errors.As(err, &protocol) {
 		switch protocol.Code {
-		case wire.CodeConsentStale, wire.CodeConsentRejected, wire.CodeRequestMismatch, wire.CodeConsentChanged, wire.CodeCredentialRejected, wire.CodeHistoryUnavailable, wire.CodeCursorStale, wire.CodeBusy:
+		case wire.CodeInvalidParams, wire.CodeConsentStale, wire.CodeConsentRejected, wire.CodeRequestMismatch, wire.CodeConsentChanged, wire.CodeCredentialRejected, wire.CodeHistoryUnavailable, wire.CodeCursorStale, wire.CodeBusy:
 			return protocol.Code
 		}
 	}

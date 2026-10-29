@@ -647,3 +647,28 @@ func TestReceiptReplayKeepsCommittedEnvelopeStamp(t *testing.T) {
 		t.Fatal("receipt was mislabeled with a later context")
 	}
 }
+
+func TestPublicMutationResultSurvivesConsentChange(t *testing.T) {
+	backend := newMemoryBackend()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	c := startClient(t, Config{Backend: backend, Handlers: map[string]Handler{"test/mutation": {Handle: func(ctx context.Context, _ json.RawMessage, stamp Stamp) (Reply, error) {
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return Reply{}, ctx.Err()
+		}
+		return Reply{Stamp: stamp, Data: "completed"}, nil
+	}}}})
+	c.initialize(t)
+	c.send(t, 2, "test/mutation", wire.Empty{})
+	<-started
+	c.send(t, 3, "consent/grant", deny("revoke-during-public-mutation", 1))
+	c.response(t, 3)
+	close(release)
+	response := c.response(t, 2)
+	if response["error"] != nil {
+		t.Fatalf("public mutation receipt was discarded: %s", response["error"])
+	}
+}

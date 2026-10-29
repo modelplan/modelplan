@@ -21,6 +21,7 @@ import (
 // The core reserves query result space before calling a handler. Private output
 // must carry the admission stamp/scopes; a stale result becomes consent_changed.
 type Handler struct {
+	Timeout    time.Duration
 	Capability string
 	Query      bool
 	Private    bool
@@ -28,6 +29,8 @@ type Handler struct {
 }
 
 type Reply struct {
+	// Receipt preserves a completed mutation result even after cancellation.
+	Receipt   bool
 	subscribe bool
 	Stamp     Stamp
 	Scopes    []string
@@ -363,7 +366,7 @@ func (s *Server) dispatch(r wire.Request) {
 		s.sendError(r.ID, wire.CodeMethodNotFound)
 		return
 	}
-	s.start(r, handler.Query, false, true, func(ctx context.Context) (Reply, error) {
+	s.startPolicy(r, handler.Query, false, true, handler.Private, handler.Timeout, func(ctx context.Context) (Reply, error) {
 		stamp := s.currentStamp()
 		reply, err := handler.Handle(ctx, r.Params, stamp)
 		if err != nil {
@@ -371,6 +374,11 @@ func (s *Server) dispatch(r wire.Request) {
 		}
 		if handler.Private && (!s.isCurrent(stamp) || reply.Stamp != stamp || len(reply.Scopes) == 0) {
 			return Reply{}, ProtocolError{wire.CodeConsentChanged}
+		}
+
+		if !handler.Private {
+			reply.Stamp = s.currentStamp()
+			reply.Scopes = nil
 		}
 		return reply, nil
 	})
@@ -389,6 +397,16 @@ func validGrant(p wire.ConsentGrantParams) bool {
 }
 
 func (s *Server) start(r wire.Request, query, control, data bool, run func(context.Context) (Reply, error)) {
+	s.startPolicy(r, query, control, data, data, 0, run)
+}
+func (s *Server) startPolicy(r wire.Request, query, control, data, private bool, timeout time.Duration, run func(context.Context) (Reply, error)) {
+	if timeout <= 0 {
+		timeout = s.config.RequestTimeout
+	}
+	if timeout > wire.PluginInstallTimeout {
+		timeout = wire.PluginInstallTimeout
+	}
+
 	key := requestKey(r.ID)
 	s.mu.Lock()
 	if _, exists := s.active[key]; exists {
@@ -412,7 +430,7 @@ func (s *Server) start(r wire.Request, query, control, data bool, run func(conte
 		s.sendError(r.ID, wire.CodeBusy)
 		return
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
 		s.controls++
@@ -446,7 +464,7 @@ func (s *Server) start(r wire.Request, query, control, data bool, run func(conte
 		}
 		// A committed receipt wins over cancellation after the transaction.
 		_, receipt := reply.Data.(wire.ConsentReceipt)
-		if err == nil && ctx.Err() != nil && !receipt {
+		if err == nil && ctx.Err() != nil && !receipt && !reply.Receipt {
 			err = ctx.Err()
 		}
 		if err != nil {
@@ -454,6 +472,11 @@ func (s *Server) start(r wire.Request, query, control, data bool, run func(conte
 				s.out.release()
 			}
 			s.sendError(r.ID, errorCode(err))
+			return
+		}
+
+		if data && !private {
+			s.out.dataMessage(success(session, r.ID, reply.Stamp, nil, reply.Data), reply.Stamp, false, nil)
 			return
 		}
 		if data {

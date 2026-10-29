@@ -1312,6 +1312,94 @@
       ],
       "type": "object"
     },
+    "PluginInstallParams": {
+      "additionalProperties": false,
+      "properties": {
+        "offline": {
+          "type": "boolean"
+        },
+        "tool": {
+          "enum": [
+            "claude-code",
+            "codex"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "type": "object"
+    },
+    "PluginInstallResult": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "completed": {
+          "type": "integer"
+        },
+        "docs": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "tool",
+        "status",
+        "commands",
+        "completed",
+        "docs"
+      ],
+      "type": "object"
+    },
+    "PluginInstallResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/PluginInstallResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
     "RPCError": {
       "additionalProperties": false,
       "properties": {
@@ -1657,6 +1745,30 @@
               "const": "2.0"
             },
             "method": {
+              "const": "plugin/install"
+            },
+            "params": {
+              "$ref": "#/$defs/PluginInstallParams"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "refresh/request"
             },
             "params": {
@@ -1767,6 +1879,9 @@
                 },
                 {
                   "$ref": "#/$defs/HistoryPageEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/PluginInstallResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"
