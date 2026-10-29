@@ -637,3 +637,117 @@ func TestManagedRowsUnboundCacheCannotExportOldAccount(t *testing.T) {
 		t.Fatal("unbound-cache read migrated state")
 	}
 }
+
+func TestGeminiCollectedSubscriptionSurvivesReadOnlyRowsProjection(t *testing.T) {
+	p := geminiTestPaths(t)
+	mode, calls := "ok", []string{}
+	geminiServer(t, &mode, &calls)
+	if err := RefreshNative(context.Background(), p, geminiNow); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadReaderState(p.Cache, "gemini")
+	if err != nil || len(state.Entries) != 1 || state.Entries[0].Status != "ok" || state.Entries[0].Account == nil {
+		t.Fatal("Gemini collection did not produce a successful account", err)
+	}
+	binding := state.Entries[0].Account.Subscription
+	allocated := lookupSubscription(p.Cache, "gemini-cli-account-project", "synthetic-google-subject\x00synthetic-project-001")
+	if allocated == "" || binding == nil || binding.Ref != allocated || binding.Status != "verified" || binding.Basis != "gemini-cli-local-account-project" {
+		t.Fatal("Gemini fixture did not exercise its actual allocation/binding pair")
+	}
+	before := readerTreeSnapshot(t, p.Cache)
+	root := p.ReaderAccess.Grants["gemini"].Profiles[0].Root
+	sourceBefore := readerTreeSnapshot(t, root)
+	legacyBefore := Report{}
+	applyManaged(&legacyBefore, p, "gemini", geminiNow)
+	legacyJSON, _ := json.Marshal(legacyBefore)
+
+	in := rows.Input{Now: geminiNow, ReadOnly: true}
+	AppendManagedRows(&in, p)
+	if len(in.Accounts) != 1 || in.Accounts[0].SubscriptionRef == nil || *in.Accounts[0].SubscriptionRef != allocated {
+		t.Fatal("rows projection lost Gemini's existing verified subscription reference")
+	}
+	if len(calls) != 2 {
+		t.Fatal("cache-only projection contacted the Gemini source")
+	}
+	for _, mode := range []string{"input", "environment"} {
+		t.Run(mode, func(t *testing.T) {
+			if mode == "environment" {
+				t.Setenv("MODELPLAN_IDENTITY", "off")
+			}
+			hidden := rows.Input{Now: geminiNow, ReadOnly: true, IdentityOff: mode == "input"}
+			AppendManagedRows(&hidden, p)
+			if len(hidden.Accounts) != 1 || hidden.Accounts[0].SubscriptionRef != nil || len(hidden.Profiles) != 1 || hidden.Profiles[0].AccountLocator != nil {
+				t.Fatal("identity-off projection exposed a Gemini identity reference")
+			}
+		})
+	}
+	if !reflect.DeepEqual(before, readerTreeSnapshot(t, p.Cache)) || !reflect.DeepEqual(sourceBefore, readerTreeSnapshot(t, root)) {
+		t.Fatal("read-only projection wrote the cache or synthetic Gemini source")
+	}
+	legacyAfter := Report{}
+	applyManaged(&legacyAfter, p, "gemini", geminiNow)
+	afterJSON, _ := json.Marshal(legacyAfter)
+	if string(legacyJSON) != string(afterJSON) {
+		t.Fatal("rows projection changed Gemini's legacy quota JSON")
+	}
+}
+
+func TestManagedReaderSubscriptionBasisPairs(t *testing.T) {
+	pairs := []struct{ provider, stored, binding string }{
+		{"claude", "claude-oauth", "claude-oauth"},
+		{"cursor", "cursor-auth", "cursor-auth"},
+		{"gemini", "gemini-cli-account-project", "gemini-cli-local-account-project"},
+		{"grok", "grok-auth-principal", "grok-auth-principal"},
+		{"kimi", "kimi-code-login:china", "kimi-code-login:china"},
+	}
+	covered := map[string]bool{}
+	for _, pair := range pairs {
+		covered[pair.provider] = true
+		t.Run(pair.provider, func(t *testing.T) {
+			t.Setenv("MODELPLAN_IDENTITY", "")
+			cache := t.TempDir()
+			ref := assignSubscription(cache, pair.stored, "synthetic-subject", claudeTestNow)
+			binding := &Binding{Ref: ref, Basis: pair.binding, Status: "verified"}
+			if ref == "" || existingReaderSubscription(cache, pair.provider, binding) != ref {
+				t.Fatal("actual reader allocation/binding pair lost its reference")
+			}
+			wrongBinding := *binding
+			wrongBinding.Basis = "unrelated-binding"
+			if existingReaderSubscription(cache, pair.provider, &wrongBinding) != "" {
+				t.Fatal("accepted an unrelated binding vocabulary")
+			}
+			// Membership alone is insufficient: a real ref from the profile
+			// namespace is not a verified subscription for this reader.
+			wrongStoreRef := assignSubscription(cache, readerProfileBasis(pair.provider), "synthetic-subject", claudeTestNow)
+			wrongStore := *binding
+			wrongStore.Ref = wrongStoreRef
+			if wrongStoreRef == "" || existingReaderSubscription(cache, pair.provider, &wrongStore) != "" {
+				t.Fatal("accepted an existing reference from the wrong store basis")
+			}
+			if pair.binding != pair.stored {
+				// The published Gemini label is not an alternate storage basis.
+				wrongStore.Ref = assignSubscription(cache, pair.binding, "synthetic-subject", claudeTestNow)
+				if wrongStore.Ref == "" || existingReaderSubscription(cache, pair.provider, &wrongStore) != "" {
+					t.Fatal("conflated Gemini's published and stored basis vocabularies")
+				}
+				wrongBinding.Basis = pair.stored
+				if existingReaderSubscription(cache, pair.provider, &wrongBinding) != "" {
+					t.Fatal("accepted Gemini's store basis as a published binding")
+				}
+			}
+			before := readerTreeSnapshot(t, cache)
+			t.Setenv("MODELPLAN_IDENTITY", "off")
+			if existingReaderSubscription(cache, pair.provider, binding) != "" {
+				t.Fatal("identity off exposed a managed reader subscription")
+			}
+			if !reflect.DeepEqual(before, readerTreeSnapshot(t, cache)) {
+				t.Fatal("identity lookup wrote the reference store")
+			}
+		})
+	}
+	for provider, reader := range nativeReaders {
+		if reader.Managed != nil && !covered[provider] {
+			t.Errorf("managed reader %s has no allocation/binding pair regression", provider)
+		}
+	}
+}

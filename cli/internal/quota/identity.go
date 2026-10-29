@@ -306,8 +306,17 @@ func existingReaderSubscription(cache, provider string, binding *Binding) string
 	if IdentityOff() || binding == nil || binding.Status != "verified" {
 		return ""
 	}
-	basis := map[string]string{"claude": "claude-oauth", "cursor": "cursor-auth", "gemini": "gemini-cli-local-account-project", "grok": "grok-auth-principal", "kimi": "kimi-code-login:china"}[provider]
-	if basis == "" || binding.Basis != basis {
+	// Gemini's verified Binding and identity store intentionally use different
+	// existing vocabularies. Validate both independently; changing either one
+	// would alter legacy quota output or lose the already allocated reference.
+	bases := map[string]struct{ binding, stored string }{
+		"claude": {"claude-oauth", "claude-oauth"},
+		"cursor": {"cursor-auth", "cursor-auth"},
+		"gemini": {"gemini-cli-local-account-project", "gemini-cli-account-project"},
+		"grok":   {"grok-auth-principal", "grok-auth-principal"},
+		"kimi":   {"kimi-code-login:china", "kimi-code-login:china"},
+	}[provider]
+	if bases.binding == "" || binding.Basis != bases.binding {
 		return ""
 	}
 	b, status := readBounded(subscriptionsPath(cache), 256<<10)
@@ -324,7 +333,7 @@ func existingReaderSubscription(cache, provider string, binding *Binding) string
 		return ""
 	}
 	for _, item := range m.Refs {
-		if item.Ref == binding.Ref && item.Basis == basis {
+		if item.Ref == binding.Ref && item.Basis == bases.stored {
 			return binding.Ref
 		}
 	}
