@@ -35,7 +35,7 @@ final class CommunityReaderFactsBindingTests: XCTestCase {
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics)
         let model = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts)
-        XCTAssertEqual(model.inputs.count, 1, "An account status is present without inventing a subscription")
+        XCTAssertEqual(model.inputs.count, 2, "An empty account must not suppress its authorized connection status")
         XCTAssertTrue(model.subscriptions.isEmpty)
         XCTAssertTrue(model.inputs[0].windows.isEmpty)
         XCTAssertEqual(model.readerDiagnostics.first?.category, .consentOrPrivacy)

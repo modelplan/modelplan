@@ -32,13 +32,21 @@ enum CommunityUnboundDockRows {
         for (index, account) in (snapshot.personal.accounts ?? []).enumerated() {
             let windows = account.windows ?? []
             defer { offset += windows.count }
-            if account.subscription?.subscriptionRef.isEmpty == false { represented.insert(account.source); continue }
-            let provider = account.source
+            let provider = canonical(account.source)
+            if account.subscription?.subscriptionRef.isEmpty == false {
+                let usable = windows.enumerated().contains { wi, window in
+                    let position = offset + wi
+                    let quota = snapshot.presentation.quotas.indices.contains(position) ? snapshot.presentation.quotas[position] : nil
+                    return CommunityReaderReason.currentReading(account: account, window: window, quota: quota, readable: readable, now: now) && quota?.remaining != nil
+                }
+                if usable { represented.insert(provider) }
+                continue
+            }
             var current = false
             let values = windows.enumerated().map { wi, window -> DockQuotaWindowInput in
                 let position = offset + wi
                 let quota = snapshot.presentation.quotas.indices.contains(position) ? snapshot.presentation.quotas[position] : nil
-                let valid = readable && account.stale != true && quota?.source == provider &&
+                let valid = readable && account.stale != true && quota?.source == account.source &&
                     quota?.kind == window.kind && quota?.reason == nil &&
                     quota?.observedAt.map { $0 <= now } == true &&
                     window.reason == nil && window.unknownReason == nil
@@ -55,28 +63,38 @@ enum CommunityUnboundDockRows {
                 reason: current ? "Local account reading / 本地账户读数" : "Account reading unavailable / 账户读数不可用",
                 nextStep: "Check connected tools in Settings / 在设置检查已连接工具",
                 originalObservedAt: account.observedAt?.date))
-            represented.insert(provider)
+            if current { represented.insert(provider) }
         }
         for (index, connection) in (snapshot.personal.connections ?? []).enumerated() {
-            guard connection.authorization?.status == "yes", !represented.contains(connection.id) else { continue }
+            let provider = canonical(connection.id)
+            guard connection.authorization?.status == "yes", !represented.contains(provider) else { continue }
             let reason: String
             switch connection.quota?.reason ?? connection.quotaAccess?.blocked {
-            case "consent_required": reason = connection.id == "claude" || connection.id == "claude-code" ?
+            case "consent_required": reason = provider == "claude" ?
                 "Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串" :
                 "Review reader consent in Settings / 在设置检查读取授权"
             case "not_detected", "missing": reason = "Reader not detected / 未检测到读取组件"
             case "reader_error": reason = "Reader could not obtain a reading / 读取组件未能取得读数"
             default: reason = "No current reading / 暂无当前读数"
             }
-            var input = DockInstrumentInput(id: locator("presentation.connection.\(index)"), name: title(connection.id), windows: [])
+            var input = DockInstrumentInput(id: locator("presentation.connection.\(index)"), name: title(provider), windows: [])
             input.dataState = .unavailable
             input.alias = "Check Settings / 检查设置"
             result.append(.init(input: input, reason: reason,
                 nextStep: "Open Settings to check this tool / 打开设置检查此工具",
                 originalObservedAt: connection.quota?.at?.date))
-            represented.insert(connection.id)
+            represented.insert(provider)
         }
         return result
+    }
+    private static func canonical(_ value: String) -> String {
+        var id = value.lowercased()
+        for prefix in ["native:", "codexbar:"] where id.hasPrefix(prefix) { id = String(id.dropFirst(prefix.count)) }
+        switch id {
+        case "claude-code": return "claude"
+        case "openai": return "codex"
+        default: return id
+        }
     }
     private static func title(_ id: String) -> String {
         switch id {
@@ -94,4 +112,3 @@ enum CommunityUnboundDockRows {
         }
     }
 }
-

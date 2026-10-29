@@ -491,6 +491,41 @@ import ModelPlanSettings
         }
     }
 
+    func testNativeReaderNamesAndUnavailableAccountKeepSpecificConnectionRemedy() async throws {
+        _ = NSApplication.shared
+        for membership in [false, true] {
+            var stale = account(membership ? "real" : nil, source: "codexbar:claude", windows: [window()])
+            stale["stale"] = true
+            let joined = try snapshot(accounts: [stale, account(nil, source: "native:cursor", windows: [window()])],
+                extras: ["connections": [["id": "native:claude", "authorization": ["status": "yes"],
+                    "quota": ["status": "no", "reason": "consent_required"]]]])
+            let model = adapt(joined)
+            let status = model.presentationRows.values.first { $0.reason.contains("Keychain") }
+            XCTAssertNotNil(status, "an unavailable account must retain its connection's specific remedy")
+            guard let status else { continue }
+            XCTAssertEqual(status.input.name, "Claude Code")
+            XCTAssertTrue(model.inputs.contains { $0.name == "Cursor" && $0.windows.first?.remainingPercent == 75 })
+            XCTAssertEqual(model.subscriptions.map(\.id), membership ? ["real"] : [])
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("native-status-host-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let host = StaticDockPreviewHost(appearance: { view, rows, _ in
+                try view.applyCommunity(rows); return StaticDockGeometry(hoverRects: [view.bounds])
+            }, currentDate: { self.now }, createsNativePanels: false)
+            defer { host.close() }
+            let app = SettingsApplicationCoordinator(store: try SettingsStore(url: folder.appendingPathComponent("settings.json"))) { host.apply($0) }
+            await app.reload()
+            var ready = StoreDiagnostics(); ready.personal = nil
+            host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
+            let titles = host.menu().items.map(\.title).joined(separator: " ")
+            XCTAssertTrue(titles.contains("Claude Code")); XCTAssertTrue(titles.contains("Keychain"))
+            XCTAssertFalse(titles.contains("native:")); XCTAssertFalse(titles.contains("consent_required"))
+            host.dockView.onAction?(.subscription(status.input.id))
+            func labels(_ v: NSView) -> [NSTextField] { (v as? NSTextField).map { [$0] } ?? v.subviews.flatMap(labels) }
+            XCTAssertTrue(labels(host.card).contains { $0.stringValue.contains("Keychain") })
+            XCTAssertNil(host.nativePanel)
+        }
+    }
+
     private func retainedConsoleButton(in view: NSView) throws -> NSButton {
         if let button = view as? NSButton, button.title == "Console / 控制台" { return button }
         for child in view.subviews { if let value = try? retainedConsoleButton(in: child) { return value } }
