@@ -11,9 +11,13 @@ Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052
 
 These are not yet wired to the production controller. Copying them does not prove real-event delivery or L2. The integrated controller must own hover/reveal/collapse/drag and produce event-arrival evidence through the versioned runner.
 
+## Placement adaptation
+
+PanelPlacement is now adapted from the same pinned source, with a prominent modification notice. It retains the rail-based geometry, edge/axis model, ratios and default-right behavior. Persistence is an injected value callback to the one ModelPlan store; it no longer reads/writes UserDefaults. Card gap is caller-owned and unused liquid visual state is removed. Seven pure tests cover default right, explicit left, a negative-origin display, preview versus commit persistence, preserved missing-display UUID, ratio round-trip and injected card gap. These tests use the production source bytes but are not window/input or integrated-store proof.
+
 ## Remaining reviewed intake
 
-PanelPlacement and FloatingPanelController contain AppSettings, PanelIntent, fixed layout and DropletTether coupling. Port only placement/state and event/ordering mechanisms behind ModelPlan-owned sizes/preferences; do not import the visual tether or providers. DockPresence needs its AppSettings dependency removed. LoginItem's upstream automatic registration, LaunchAgent migration and path-repair routines are not adopted; the ModelPlan preference default remains ON under product policy, without executing an OS effect in migration. The private appearance selector, provider code, BotMark, DropletTether and update stack are excluded.
+FloatingPanelController still contains AppSettings, PanelIntent, fixed layout and DropletTether coupling. Port only placement/state and event/ordering mechanisms behind ModelPlan-owned sizes/preferences; do not import the visual tether or providers. DockPresence needs its AppSettings dependency removed. LoginItem's upstream automatic registration, LaunchAgent migration and path-repair routines are not adopted; the ModelPlan preference default remains ON under product policy, without executing an OS effect in migration. The private appearance selector, provider code, BotMark, DropletTether and update stack are excluded.
 
 ## Completion boundary
 
