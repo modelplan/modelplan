@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"os"
 	"os/exec"
@@ -54,8 +55,8 @@ var ampBin = func() string {
 	if p := os.Getenv("MODELPLAN_AMP"); filepath.IsAbs(p) {
 		return p
 	}
-	p, _ := exec.LookPath("amp")
-	return p
+	home, _ := os.UserHomeDir()
+	return toolcli.Find(home, "amp")
 }
 var ampCommand = runAmpUsage
 var ampArtifact = ampVerifiedArtifact
@@ -71,6 +72,14 @@ func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
 	}
 	cmd := exec.CommandContext(ctx, ampExecPath(), "usage", "--no-color")
 	cmd.Args[0] = bin
+	var err error
+	// Read the verified descriptor, never a replacement at the installed path.
+	if toolcli.EnvNode(io.NewSectionReader(artifact, 0, 4096)) {
+		cmd, err = toolcli.NodeCommandContext(ctx, ampExecPath(), bin, "usage", "--no-color")
+	}
+	if err != nil {
+		return nil, err
+	}
 	cmd.ExtraFiles = []*os.File{artifact}
 	cmd.Stdin = nil
 	cmd.Stderr = io.Discard
@@ -78,7 +87,7 @@ func runAmpUsage(ctx context.Context, bin string) ([]byte, error) {
 	cmd.Env = append(os.Environ(), "AMP_SKIP_UPDATE_CHECK=1", "NO_COLOR=1", "TERM=dumb", "LANG=C", "LC_ALL=C")
 	var out bytes.Buffer
 	cmd.Stdout = &limited{w: &out, n: 64 << 10}
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return out.Bytes(), err
 	}
@@ -133,6 +142,8 @@ func ampNext(state string) string {
 	switch state {
 	case "ok":
 		return "Refresh when needed and allowed"
+	case toolcli.RuntimeMissing:
+		return toolcli.RuntimeNextStep
 	case "not_detected":
 		return "Open Amp"
 	case "denied":
@@ -289,6 +300,8 @@ func RefreshAmp(ctx context.Context, cache string, now time.Time) AmpResult {
 			text := strings.ToLower(string(raw))
 			if strings.Contains(text, "not logged in") || strings.Contains(text, "please log in") || strings.Contains(text, "unauthorized") {
 				s.Availability = "expired_login"
+			} else if errors.Is(err, toolcli.ErrRuntimeMissing) {
+				s.Availability = toolcli.RuntimeMissing
 			} else if err == nil {
 				if pools, valid := parseAmpUsage(raw); valid {
 					s.Pools = pools
@@ -346,7 +359,7 @@ func ampVerifiedArtifact(path, want string) (*os.File, error) {
 		return nil, errors.New("Amp artifact does not match audit")
 	}
 	var magic [4]byte
-	if _, err := artifact.ReadAt(magic[:], 0); err != nil || magic != [4]byte{0x7f, 'E', 'L', 'F'} {
+	if _, err := artifact.ReadAt(magic[:], 0); err != nil || (magic != [4]byte{0x7f, 'E', 'L', 'F'} && !toolcli.EnvNode(io.NewSectionReader(artifact, 0, 4096))) {
 		return fail()
 	}
 	h := sha256.New()

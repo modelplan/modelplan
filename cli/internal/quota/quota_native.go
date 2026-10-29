@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net/http"
 	"os"
@@ -439,6 +440,9 @@ func applyNative(r *Report, p Paths, now time.Time) {
 			st.Status, st.Reason = "stale", "Kimi reading older than 60 minutes"
 		case now.Sub(e.ObservedAt) > nativeKeep || e.ObservedAt.After(now.Add(5*time.Minute)):
 			st.Status, st.Reason = "stale", "last reading older than 6 hours"
+		case e.Status == toolcli.RuntimeMissing || strings.HasPrefix(e.Error, toolcli.RuntimeMissing+":"):
+			st.Status, st.Reason = toolcli.RuntimeMissing, toolcli.RuntimeNextStep
+			st.ErrorCode = "runtime_missing"
 		case e.Status != "ok":
 			st.ErrorCode = ReaderErrorCode(e.ErrorCode)
 			st.Status, st.Reason = "unavailable", st.ErrorCode

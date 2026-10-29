@@ -105,7 +105,10 @@ public struct PersonalProjection: Sendable {
             let key = ["quota", account.source, account.subscription?.subscriptionRef ?? "", window.kind, window.limit ?? "", observed?.raw ?? "", window.resetsAt?.raw ?? ""].joined(separator: "|")
             let resetPassed = ledger.expired(key, deadline: window.resetsAt?.date, now: now)
             if let reset = window.resetsAt?.date, reset > now { deadlines.append(reset) }
-            let status = snapshot.sources?.first(where: { $0.source == account.source })
+            // Native Claude and the legacy status-line share an account source name.
+            // Only the native reader's status can invalidate a native account reading.
+            let statusSource = account.via == "native" && account.source == "claude-code" ? "native:claude" : account.source
+            let status = snapshot.sources?.first(where: { $0.source == statusSource })
             let stale = account.stale == true || (status != nil && status?.status != "ok") || status?.reason == "out-of-use"
             let reason: String? = expired ? "snapshot-expired" : resetPassed || window.pace == "reset_passed" ? "reset_passed" : stale ? "stale" : observed == nil ? "unknown-observation-time" : nil
             return QuotaReading(source: account.source, subscription: account.subscription?.subscriptionRef, kind: window.kind,

@@ -4,6 +4,7 @@ package quota
 import (
 	"context"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"sort"
 	"time"
@@ -54,6 +55,8 @@ func diagnosticAge(at, now time.Time) string {
 }
 func diagnosticState(status string) string {
 	switch status {
+	case toolcli.RuntimeMissing:
+		return "unavailable:" + toolcli.RuntimeMissing
 	case "ok":
 		return "ok"
 	case "stale":

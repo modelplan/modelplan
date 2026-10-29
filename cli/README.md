@@ -35,6 +35,10 @@ or tool launches. Detected does not mean signed in. [Detection contract](../docs
 `modelplan detect [--json]` 使用已核验的本地目录（尚未发布时使用内置回退）检测工具是否存在；
 不读取凭据、不联网、不启动工具。检测到不代表已登录。[检测约定](../docs/cli-detection.md)。
 
+Tool CLIs also work under a Finder/GUI PATH: discovery includes `~/.npm-global/bin`, `~/.volta/bin`, `~/.bun/bin` and nvm installations. A CLI with an `env node` shebang runs through a resolved Node runtime (Bun as a fallback). If the script exists but no runtime is found, the reason is `binary_found_but_runtime_missing`, with a next step to install Node.js or make it available beside the CLI. `desktop --json` reports native Claude consent and admission after a grant; on macOS an unset Keychain choice points to “Allow Keychain for Claude Code in Settings”.
+
+Finder/GUI 最小 PATH 下也会查找 npm-global、Volta、Bun 和 nvm 安装；`env node` 脚本通过定位的 Node/Bun 运行。工具已找到但缺少运行时单独报告，并提示安装 Node.js 或在工具旁提供运行时。`desktop --json` 显示 Claude 原生授权及准入；macOS 钥匙串未选择时给出明确设置入口。
+
 This is a read-only, anonymous, single static binary with no GUI. It reads the verified public publication, keeps the shared local cache (see [`../README.md`](../README.md)) and prints the hangar views in a terminal. The Claude Code and Codex plugins call it (their hooks run `advise --hook`), and the desktop menu-bar app will be built on it later. Install: `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` (latest release, checksum-checked, into `~/.local/bin`).
 
 ```sh
