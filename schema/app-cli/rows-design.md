@@ -197,7 +197,7 @@ A single Go table maps every status, reason, errorCode and blocked value to `(st
 ## Privacy
 
 - No row field carries hosts, file paths, emails, account or login names, key names, credential, profile or account hashes, or free text read from a tool's files.
-- Every exported id is either an allow-listed key or a CLI-persisted random local locator: row ids, `accountLocator`, window ids, `limitKey`, `poolKey`. A charset check alone is not a privacy rule, so unknown provider limit or pool text never appears, not even in ids.
+- Every exported id is one of four kinds: an allow-listed key, the literal `other`, the user's own declared `planId`, or an existing identity reference. That covers row ids, `accountLocator`, window ids, `limitKey` and `poolKey`. A charset check alone is not a privacy rule, so unknown provider limit or pool text never appears, not even in ids. Read-only commands write nothing.
 - `subscriptionRef` is the existing random local reference. `MODELPLAN_IDENTITY=off` gives `null`.
 - Plan names come from an allow-list. Declared plans are the user's own text from their own local.json, flagged `userAuthored`.
 - Tests use a field-specific validator per field (ids, timestamps, refs, `limitId` charset, message-table texts), plus canaries: raw emails, paths, hashes, provider error text and secret-like limit or pool ids (for example `account_token_123`) are seeded into the fixtures and must never appear in any row field, ids included.
@@ -310,7 +310,7 @@ No compatibility is kept with released app builds before the official release (o
 5. **Keychain unset but a credentials file works?** The row stays `fresh`. `needs_keychain` appears only when the read is actually blocked (#5).
 6. **Unsupported tool?** `unsupported` (#3), before the pending check (#8), so it is never pending forever.
 7. **Empty reading, or a null or future time?** An empty reading is `empty` (#7). A value whose time is null or in the future is `retained` with `observation_time_unknown`, so the row is `stale` (#9) and the age shows as unknown.
-8. **Unknown Codex limit or plan?** It gets a generic label and plan `unknown`, and its ids are local locators. The raw text is never exported, not even inside ids.
+8. **Unknown Codex limit or plan?** It gets a generic label, plan `unknown`, and `limitKey` / `poolKey` = `other`. The raw text is never exported, not even inside ids.
 9. **Settings needs Keychain, Forget and generation facts?** Those stay on the consent API, joined by id. Rows never encode permissions.
 10. **Preferences keyed by subscription?** They stay keyed by `subscriptionRef`. Only row-level choices move to the row id, with a migration.
 11. **Does a newer CLI break an older app?** No. Unknown enum values render neutrally, and the fields are additive under desktop-v1.
