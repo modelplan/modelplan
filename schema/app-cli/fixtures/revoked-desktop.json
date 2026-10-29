@@ -101,8 +101,7 @@
       },
       "id": "opencode",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "agent",
       "quota": {
@@ -121,8 +120,7 @@
       },
       "id": "zcode",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "agent",
       "quota": {
@@ -162,8 +160,7 @@
       },
       "id": "codexbar:cursor",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "quota",
       "quota": {
@@ -183,8 +180,7 @@
       },
       "id": "codexbar:kiro",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "quota",
       "quota": {
@@ -204,8 +200,7 @@
       },
       "id": "codexbar:opencodego",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "quota",
       "quota": {
@@ -311,8 +306,7 @@
       },
       "id": "gemini",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "agent",
       "localUsage": {
@@ -357,8 +351,7 @@
       },
       "id": "qwen",
       "installed": {
-        "reason": "not-found",
-        "status": "no"
+        "status": "yes"
       },
       "kind": "agent",
       "localUsage": {
@@ -405,7 +398,7 @@
     "from": null,
     "recording": false
   },
-  "dataRevision": "ec85cf69cdbf5dd81f185b590a863bcc099e396d79cf16e2944a5384b5c532e9",
+  "dataRevision": "643d40fc413fe859e4b25491941840a939647265b8eed0127b3d538428093343",
   "events": [],
   "generatedAt": "2030-01-02T03:04:05Z",
   "hourly": [],

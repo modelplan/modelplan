@@ -205,10 +205,18 @@ func (s *suite) setup() error {
 	if err := os.MkdirAll(bin, 0700); err != nil {
 		return err
 	}
+	// Connections probes known absolute install locations as well as PATH.
+	// Supply inert presence markers for every probed CLI so developer/runner
+	// installations cannot affect synthetic output. They never run a provider.
+	for _, name := range []string{"codex", "claude", "opencode", "zcode", "kiro-cli", "cursor", "gemini", "qwen"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
+			return err
+		}
+	}
 	if err := os.Symlink(s.helper, filepath.Join(bin, "copilot")); err != nil {
 		return err
 	}
-	s.env = []string{"HOME=" + s.home, "PATH=" + bin, "TZ=UTC", "LANG=C", "MODELPLAN_LANG=en", "NO_COLOR=1", "MODELPLAN_CACHE=" + filepath.Join(s.home, "cache"), "CODEX_HOME=" + filepath.Join(s.home, ".codex"), "MODELPLAN_COPILOT=" + filepath.Join(bin, "copilot"), "MODELPLAN_HISTORY=off", "MODELPLAN_CODEXBAR=off", "MODELPLAN_CODEX_ACCOUNT=off", "MODELPLAN_TASK_BRIEF=off", "MODELPLAN_BASE=http://127.0.0.1:1", "MODELPLAN_CONTRACT_CALLS=" + filepath.Join(s.home, "calls")}
+	s.env = []string{"HOME=" + s.home, "PATH=" + bin, "TZ=UTC", "LANG=C", "MODELPLAN_LANG=en", "NO_COLOR=1", "MODELPLAN_CACHE=" + filepath.Join(s.home, "cache"), "CODEX_HOME=" + filepath.Join(s.home, ".codex"), "MODELPLAN_COPILOT=" + filepath.Join(bin, "copilot"), "MODELPLAN_CODEX=" + filepath.Join(bin, "codex"), "MODELPLAN_HISTORY=off", "MODELPLAN_CODEXBAR=off", "MODELPLAN_CODEX_ACCOUNT=off", "MODELPLAN_TASK_BRIEF=off", "MODELPLAN_BASE=http://127.0.0.1:1", "MODELPLAN_CONTRACT_CALLS=" + filepath.Join(s.home, "calls")}
 	// Retain runtime proxy/trust selectors without inheriting credential/key
 	// variables into synthetic CLI homes. No environment values are printed.
 	for _, k := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR"} {
@@ -481,7 +489,15 @@ func Check(root string, files map[string][]byte, write bool) error {
 		}
 		old, err := os.ReadFile(path)
 		if err != nil || !bytes.Equal(old, files[n]) {
-			return fmt.Errorf("app–CLI fixture drift: %s; review schema/consumer changes and run make app-cli-fixtures", n)
+			detail := ""
+			before, after := strings.Split(string(old), "\n"), strings.Split(string(files[n]), "\n")
+			for i := 0; i < len(before) && i < len(after); i++ {
+				if before[i] != after[i] {
+					detail = fmt.Sprintf("; first difference line %d: committed %q, generated %q", i+1, before[i], after[i])
+					break
+				}
+			}
+			return fmt.Errorf("app–CLI fixture drift: %s%s; review schema/consumer changes and run make app-cli-fixtures", n, detail)
 		}
 	}
 	entries, _ := os.ReadDir(dir)

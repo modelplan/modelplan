@@ -70,7 +70,9 @@ cd cli && go vet ./... && go test ./...
 `cli/internal/appcontract` builds the actual CLI from this checkout and executes
 all inventory commands in separate synthetic homes. It validates raw stdout
 before normalization and compares every generated file byte-for-byte. It never
-uses the caller's homes, credentials or provider runtimes. A synthetic cached,
+uses the caller's homes, credentials or provider runtimes. Inert CLI presence
+markers cover the connection reporter's PATH and absolute-install probes, so
+developer and hosted-runner tool installations cannot affect captures. A synthetic cached,
 content-addressed public graph avoids public-network dependencies. The generator
 itself serves only synthetic Copilot metadata JSON-RPC; it has no inference or
 sign-in methods. No test flags are added to the shipped CLI.
