@@ -1,0 +1,166 @@
+// This support code is emitted with the DTOs; it never stores engine state.
+public enum WireDecodeError: Error, Sendable {
+    case invalidIdentity, invalidAuthorization, invalidVersion, invalidBound, invalidFrame, tokenPlacement, invalidRowEncoding
+}
+
+private struct WireCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init(_ value: String) { self.stringValue = value }
+    init?(intValue: Int) { return nil }
+}
+
+private enum WireValidation {
+    static func identity(_ value: String) throws {
+        guard !value.isEmpty,
+              !value.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+        else { throw WireDecodeError.invalidIdentity }
+    }
+    static func reference(_ value: String) throws {
+        guard value.count == 16, value.allSatisfy({ "0123456789abcdef".contains($0) })
+        else { throw WireDecodeError.invalidIdentity }
+    }
+    static func toolID(_ value: String) throws {
+        guard value.range(of: "^[a-z][a-z0-9-]{0,47}$", options: .regularExpression) != nil
+        else { throw WireDecodeError.invalidIdentity }
+    }
+    static func protocolVersion(_ value: String) throws {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[0] == WireProtocol.version.split(separator: ".")[0],
+              !parts[1].isEmpty, parts[1].allSatisfy({ $0.isASCII && $0.isNumber })
+        else { throw WireDecodeError.invalidVersion }
+    }
+}
+
+public struct WireTimestamp: Codable, Sendable, Equatable {
+    public let rawValue: String
+    public init(_ rawValue: String) throws {
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard plain.date(from: rawValue) != nil || fractional.date(from: rawValue) != nil
+        else { throw WireDecodeError.invalidBound }
+        self.rawValue = rawValue
+    }
+    public init(from decoder: Decoder) throws { try self.init(decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+
+public enum WireRequestID: Codable, Sendable, Equatable {
+    case string(String), signed(Int64), unsigned(UInt64)
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let value = try? c.decode(String.self) { try WireValidation.identity(value); self = .string(value) }
+        else if let value = try? c.decode(Int64.self) { self = .signed(value) }
+        else if let value = try? c.decode(UInt64.self) { self = .unsigned(value) }
+        else { throw WireDecodeError.invalidIdentity }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try WireValidation.identity(value); try c.encode(value)
+        case .signed(let value): try c.encode(value)
+        case .unsigned(let value): try c.encode(value)
+        }
+    }
+}
+
+public indirect enum WireJSONValue: Codable, Sendable, Equatable {
+    case object([String: WireJSONValue]), array([WireJSONValue]), string(String)
+    case signed(Int64), unsigned(UInt64), number(Double), bool(Bool), null
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let value = try? c.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? c.decode(String.self) { self = .string(value) }
+        else if let value = try? c.decode(Int64.self) { self = .signed(value) }
+        else if let value = try? c.decode(UInt64.self) { self = .unsigned(value) }
+        else if let value = try? c.decode(Double.self) { self = .number(value) }
+        else if let value = try? c.decode([WireJSONValue].self) { self = .array(value) }
+        else { self = .object(try c.decode([String: WireJSONValue].self)) }
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .object(let v): try c.encode(v)
+        case .array(let v): try c.encode(v)
+        case .string(let v): try c.encode(v)
+        case .signed(let v): try c.encode(v)
+        case .unsigned(let v): try c.encode(v)
+        case .number(let v): try c.encode(v)
+        case .bool(let v): try c.encode(v)
+        case .null: try c.encodeNil()
+        }
+    }
+}
+
+public struct WireDecoded<Value> {
+    public let value: Value
+    public let invalidRowCount: Int
+}
+extension WireDecoded: Sendable where Value: Sendable {}
+
+private final class WireDecodeCounter {
+    var invalidRows = 0
+}
+private let wireDecodeCounterKey = CodingUserInfoKey(rawValue: "modelplan.invalidRows")!
+
+private enum WireRowDecoding {
+    static func decode(from decoder: Decoder) throws -> RowsRow {
+        do { return try RowsRow(from: decoder) }
+        catch let error as WireDecodeError {
+            // Only semantic row validation is isolated. An undecodable identity
+            // binding or structurally malformed payload is still a malformed frame.
+            switch error {
+            case .invalidIdentity, .invalidAuthorization, .invalidVersion, .invalidBound:
+                let fields = try decoder.container(keyedBy: WireCodingKey.self)
+                let id = try fields.decode(String.self, forKey: WireCodingKey("id"))
+                guard !id.isEmpty else { throw WireDecodeError.invalidFrame }
+                let order = try fields.decode(Int.self, forKey: WireCodingKey("order"))
+                let surfaces = try fields.decode([RowsSurface].self, forKey: WireCodingKey("surfaces"))
+                let placeholder = try RowsRow(invalidID: id, invalidOrder: order, invalidSurfaces: surfaces)
+                (decoder.userInfo[wireDecodeCounterKey] as? WireDecodeCounter)?.invalidRows += 1
+                return placeholder
+            default: throw error
+            }
+        }
+    }
+}
+
+public enum WireDecoder {
+    // M0 owns feature isolation and the state/floor; this function never updates a store.
+    public static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+        try decodeWithDiagnostics(type, from: data).value
+    }
+    public static func decodeWithDiagnostics<T: Decodable>(_ type: T.Type, from data: Data) throws -> WireDecoded<T> {
+        guard data.count <= WireProtocol.maxFrameBytes else { throw WireDecodeError.invalidFrame }
+        let tree = try JSONDecoder().decode(WireJSONValue.self, from: data)
+        let credential = type == WireCredentialResult.self
+        let credentialRequest: Bool
+        if type == WireRequest.self, case .object(let fields) = tree,
+           fields["method"] == .string("credentials/result") { credentialRequest = true }
+        else { credentialRequest = false }
+        try checkTokens(tree, path: [], directCredential: credential, credentialRequest: credentialRequest)
+        let counter = WireDecodeCounter()
+        let decoder = JSONDecoder()
+        decoder.userInfo[wireDecodeCounterKey] = counter
+        let value = try decoder.decode(type, from: data)
+        return WireDecoded(value: value, invalidRowCount: counter.invalidRows)
+    }
+    private static func checkTokens(_ value: WireJSONValue, path: [String], directCredential: Bool, credentialRequest: Bool) throws {
+        switch value {
+        case .object(let fields):
+            for (key, child) in fields {
+                if key == "accessToken" && !((directCredential && path.isEmpty) || (credentialRequest && path == ["params"])) {
+                    throw WireDecodeError.tokenPlacement
+                }
+                try checkTokens(child, path: path + [key], directCredential: directCredential, credentialRequest: credentialRequest)
+            }
+        case .array(let items):
+            for child in items { try checkTokens(child, path: path + ["[]"], directCredential: directCredential, credentialRequest: credentialRequest) }
+        default: break
+        }
+    }
+}
