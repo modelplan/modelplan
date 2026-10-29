@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -31,11 +32,17 @@ func doctorReaders(stdout, stderr io.Writer, c common, refresh bool) int {
 	if c.lang == "zh" {
 		message += "\n请将完整输出粘贴给协调者；其中不含个人数据。"
 	}
+	storeCode := ""
+	if _, err := consent.Load(consent.Path()); err != nil {
+		storeCode = "consent_store_unreadable"
+		message += "\nConsent store unreadable. Reset in Settings after confirmation. / 授权存储无法读取，请在设置中确认后重置。"
+	}
 	if c.json {
 		return printJSON(stdout, struct {
-			Readers []quota.ReaderDiagnostic `json:"readers"`
-			Message string                   `json:"message"`
-		}{rows, message})
+			Readers      []quota.ReaderDiagnostic `json:"readers"`
+			Message      string                   `json:"message"`
+			ConsentStore string                   `json:"consentStore,omitempty"`
+		}{rows, message, storeCode})
 	}
 	for _, r := range rows {
 		fmt.Fprintf(stdout, "%s  detected=%s  consent=%s  admitted=%s  state=%s  windows=%d  last=%s  beta=%t\n", r.Provider, r.Detected, r.Consent, r.Admitted, r.State, r.Windows, r.Last, r.Beta)

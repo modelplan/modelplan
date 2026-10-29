@@ -20,6 +20,7 @@ Owner decisions, 2026-10-27. This is the reference for how the Mac App, the plug
 A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the App's bundled copy, and a standalone copy. They share one data directory (cache, consent, readings, history).
 
 - Every shared file carries a schema version. Changes are additive, and readers ignore unknown fields, so an older copy never breaks on a newer copy's files and the other way round.
+- Exception, planned in [foundation v2](architecture/foundation-v2.md): a change in what a store *means* (per-scope consent) cannot be additive. Consent moves to schema 2, which shipped copies reject: they read readers off and never write it.
 - One refresh lock per provider. Whichever process holds it calls the provider; the others read the cache. At most one read per provider every 5 minutes (section 4), with backoff on errors.
 - A copy managed by a plugin or by the App never updates itself; its owner updates it (section 6).
 

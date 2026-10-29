@@ -63,13 +63,19 @@ func productionHistoryRoot(home, tool string) string {
 // ProductionHistoryAccess resolves consent and a compiled local root. It reads
 // no source content. Read-only callers never create an installation key.
 func ProductionHistoryAccess(home, tool string, createKey bool) (string, HistoryAccess) {
-	state, mode := consent.Current()
+	return ProductionHistoryAccessWithAdmission(home, tool, createKey, consent.Capture())
+}
+
+// ProductionHistoryAccessWithAdmission captures no second permission state.
+// StillValid and Publish are live revocation fences, including for read-only caches.
+func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, admission consent.Admission) (string, HistoryAccess) {
+	state, mode := admission.State(), admission.Mode()
 	record, decided := state.Tools[tool]
 	setting, err := loadSetting(SettingsPath(home))
 	legacy := err == nil && ((tool == "gemini" && setting.Enabled) || (tool == "qwen" && setting.Qwen))
-	allowed := legacy
-	if decided {
-		allowed = record.Allowed && record.ConsentTextVersion == consent.TextVersion && state.Allows(tool, consent.Local, mode)
+	allowed := legacy && !state.RequireConsent
+	if decided || state.ScopeDecided(tool, consent.Local) {
+		allowed = state.Allows(tool, consent.Local, mode)
 	}
 	// The original per-source local opt-out remains a veto even when the shared
 	// record still permits this tool's independent account reader.
@@ -97,7 +103,7 @@ func ProductionHistoryAccess(home, tool string, createKey bool) (string, History
 	if len(a.Key) == 32 {
 		a.ProfileRef = historyHash(a.Key, "production/profile", tool+"\x00"+root)
 	}
-	generation := state.Generation
+	fence := state.Fence()
 	a.StillValid = func() bool {
 		current, effective := consent.Current()
 		if tool == "gemini" || tool == "qwen" {
@@ -106,9 +112,9 @@ func ProductionHistoryAccess(home, tool string, createKey bool) (string, History
 				return false
 			}
 		}
-		return current.Generation == generation && effective != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off"
+		return current.Fence() == fence && effective != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off"
 	}
-	a.Publish = func(write func() error) error { return consent.Publish(generation, write) }
+	a.Publish = func(write func() error) error { return consent.Publish(fence, write) }
 	return root, a
 }
 
@@ -133,7 +139,11 @@ func RefreshProductionHistory(ctx context.Context, home, cache, tool string, now
 }
 
 func ProductionHistories(home, cache string, readOnly bool, now time.Time) []HistoryResult {
-	state, _ := consent.Current()
+	return ProductionHistoriesWithAdmission(home, cache, readOnly, now, consent.Capture())
+}
+
+func ProductionHistoriesWithAdmission(home, cache string, readOnly bool, now time.Time, admission consent.Admission) []HistoryResult {
+	state := admission.State()
 	out := []HistoryResult{}
 	for _, tool := range HistoryProviders() {
 		// Gemini/Qwen retain their existing explicitly opted-in feed; do not add a
@@ -141,9 +151,13 @@ func ProductionHistories(home, cache string, readOnly bool, now time.Time) []His
 		if readOnly && (tool == "gemini" || tool == "qwen") {
 			continue
 		}
-		_, access := ProductionHistoryAccess(home, tool, false)
+		_, access := ProductionHistoryAccessWithAdmission(home, tool, false, admission)
 		if _, decided := state.Tools[tool]; decided || access.Allowed {
-			out = append(out, ProductionHistory(home, cache, tool, readOnly, now))
+			if readOnly {
+				out = append(out, ReadHistoryCache(cache, tool, access, now))
+			} else {
+				out = append(out, RefreshProductionHistory(context.Background(), home, cache, tool, now))
+			}
 		}
 	}
 	return out

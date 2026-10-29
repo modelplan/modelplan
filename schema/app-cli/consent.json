@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/app-cli/consent.json",
-  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
   "x-behavior": {
     "backgroundRefresh": "never",
     "credentials": "none; presence/cache metadata only",
     "network": "none",
-    "writes": "none",
+    "writes": "schema-1 migration only; fresh schema-2 readback does not initialize the store",
     "exitCodes": {
       "0": "successful JSON object",
       "1": "unavailable; JSON error for consent, stderr/empty output for other commands",
@@ -59,6 +59,16 @@
             "$ref": "common.json#/$defs/tool"
           },
           "maxItems": 512
+        },
+        "storeEpoch": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{32})?$"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/consentScope"
+          }
         }
       },
       "required": [
@@ -66,7 +76,9 @@
         "consentTextVersion",
         "mode",
         "consentText",
-        "tools"
+        "tools",
+        "storeEpoch",
+        "scopes"
       ],
       "additionalProperties": true
     },

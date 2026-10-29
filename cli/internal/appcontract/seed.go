@@ -16,10 +16,17 @@ import (
 
 // A handwritten synthetic public graph. No producer/private data or signing
 // secret is used: the consumer verifies this same content-addressed graph.
-func seedPublication(home string) error {
+func seedPublication(home string, retired ...string) error {
+	removed := map[string]bool{}
+	for _, id := range retired {
+		removed[id] = true
+	}
 	hash := func(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
 	detectors := []any{}
 	for _, e := range []struct{ id, name, path string }{{"claude", "Claude Code", ".claude"}, {"codex", "Codex", ".codex"}, {"copilot", "GitHub Copilot", ".copilot"}} {
+		if removed[e.id] {
+			continue
+		}
 		detectors = append(detectors, map[string]any{"providerId": e.id, "displayName": e.name, "readerId": "native:" + e.id, "preferred": "native", "codexbar": map[string]any{"audited": false}, "minCli": "0.0.0", "beta": true, "detectionStatus": "signals", "signals": []any{map[string]any{"type": "path", "value": e.path}}})
 	}
 	dependencies := map[string]string{}

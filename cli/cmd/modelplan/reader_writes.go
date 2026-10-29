@@ -14,7 +14,7 @@ func reportWrite(report quota.Report, write func() error) {
 		return
 	}
 	defer unlock()
-	_ = consent.Publish(report.ConsentGeneration, write)
+	_ = consent.Publish(consent.Fence{StoreEpoch: report.ConsentStoreEpoch, Generation: report.ConsentGeneration}, write)
 }
 func observeQuotaHistory(st *store.Store, report quota.Report, now time.Time) {
 	reportWrite(report, func() error { return history.Observe(st.Dir, report, now) })

@@ -12,6 +12,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,14 +61,18 @@ func consentHostDetails(labels []string) []consentHostDetail {
 }
 
 type consentView struct {
-	Generation         uint64            `json:"generation"`
-	ConsentTextVersion int               `json:"consentTextVersion"`
-	Mode               string            `json:"mode"`
-	ConsentText        map[string]string `json:"consentText"`
-	Tools              []consentTool     `json:"tools"`
+	StoreEpoch         string              `json:"storeEpoch"`
+	Scopes             []consent.ScopeFact `json:"scopes"`
+	Generation         uint64              `json:"generation"`
+	ConsentTextVersion int                 `json:"consentTextVersion"`
+	Mode               string              `json:"mode"`
+	ConsentText        map[string]string   `json:"consentText"`
+	Tools              []consentTool       `json:"tools"`
 }
 
 type consentRequest struct {
+	ExpectStoreEpoch   string            `json:"expectStoreEpoch"`
+	Forget             []string          `json:"forget,omitempty"`
 	RequestID          string            `json:"requestId"`
 	ExpectGeneration   *uint64           `json:"expectGeneration"`
 	ConsentTextVersion *int              `json:"consentTextVersion"`
@@ -77,6 +82,7 @@ type consentRequest struct {
 }
 
 type consentResult struct {
+	StoreEpoch    string        `json:"storeEpoch"`
 	OK            bool          `json:"ok"`
 	Error         string        `json:"error,omitempty"`
 	RequestID     string        `json:"requestId"`
@@ -114,27 +120,73 @@ func consentAccess(t detect.Tool) string {
 	return "not-read"
 }
 
+// persistedConsentTool is display/revocation metadata, never evidence for a grant.
+// Only the detected-tool map below can authorize a new standard-route grant.
+func persistedConsentTool(id string, r consent.Record) detect.Tool {
+	backend := r.Backend
+	switch backend {
+	case "codexbar-compat":
+		backend = "codexbar"
+	case "native", "codexbar", "off":
+	default:
+		backend = "off"
+	}
+	reader := r.ReaderID
+	kind, key, ok := strings.Cut(reader, ":")
+	if !ok || (kind != "native" && kind != "codexbar") || !consent.ValidTool(key) {
+		// A legacy or revoked record can lack route metadata. Keep the required
+		// logical display id valid without persisting it or claiming a reader
+		// exists. This helper never supplies the detected map used for grants.
+		reader = "native:" + id
+	}
+	name := id
+	for _, entry := range detect.Fallback().Detectors {
+		if entry.ProviderID == id {
+			name = entry.DisplayName
+			break
+		}
+	}
+	return detect.Tool{Entry: detect.Entry{ProviderID: id, DisplayName: name, Preferred: backend, ReaderID: reader}}
+}
+
 func consentTools(s consent.State, report detect.Report) []consentTool {
 	rows := []consentTool{}
-	for _, t := range report.Tools {
-		if !t.Detected {
-			continue
-		}
+	known := map[string]bool{}
+	appendRow := func(t detect.Tool, retired bool) {
 		r := s.Tools[t.ProviderID]
 		hosts := consentHosts(t.ProviderID, r.Region)
 		if hosts == nil {
 			hosts = []string{}
 		}
-		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName,
-			AccessClass: consentAccess(t), Detected: true,
-			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion,
-			Backend: t.Preferred, ReaderID: t.ReaderID, Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts,
-			HostDetails: consentHostDetails(hosts)}
+		access := consentAccess(t)
+		if retired {
+			access = "not-read"
+		}
+		row := consentTool{ID: t.ProviderID, DisplayName: t.DisplayName, AccessClass: access, Detected: t.Detected,
+			Allowed: r.Allowed && r.ConsentTextVersion == consent.TextVersion, Backend: t.Preferred, ReaderID: t.ReaderID,
+			Keychain: s.KeychainStatus(t.ProviderID, consentMode(s)), Hosts: hosts, HostDetails: consentHostDetails(hosts)}
 		if runtime.GOOS == "darwin" && row.Allowed && row.Keychain == "unset" && consentMode(s) == consent.Automatic &&
 			consent.KeychainSupported(t.ProviderID, t.Preferred, t.ReaderID) && r.KeyEnv == "" && !r.BrowserSession {
 			row.Notice, row.NextStep = consent.ClaudeKeychainUnsetNotice, consent.ClaudeKeychainNextStep
 		}
 		rows = append(rows, row)
+	}
+	for _, t := range report.Tools {
+		known[t.ProviderID] = true
+		if _, persisted := s.Tools[t.ProviderID]; !t.Detected && !persisted {
+			continue
+		}
+		appendRow(t, false)
+	}
+	retired := []string{}
+	for id := range s.Tools {
+		if !known[id] {
+			retired = append(retired, id)
+		}
+	}
+	sort.Strings(retired)
+	for _, id := range retired {
+		appendRow(persistedConsentTool(id, s.Tools[id]), true)
 	}
 	return rows
 }
@@ -147,15 +199,42 @@ func consentFailure(stdout io.Writer, code string) int {
 }
 
 func consentCmd(args []string, stdin io.Reader, stdout io.Writer, st *store.Store, c common) int {
+	if c.json && len(args) == 1 && args[0] == "cleanup" {
+		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool) error { return cleanupScope(st, scope, forget) }); err != nil {
+			return consentFailure(stdout, "consent_unavailable")
+		}
+		return printJSON(stdout, map[string]bool{"ok": true})
+	}
+	if c.json && len(args) == 1 && args[0] == "init" {
+		s, err := consent.EnsureStore(consent.Path())
+		if err != nil {
+			return consentFailure(stdout, "consent_unavailable")
+		}
+		if err := consent.RetryCleanup(consent.Path(), func(scope string, forget bool) error { return cleanupScope(st, scope, forget) }); err != nil {
+			return consentFailure(stdout, "consent_unavailable")
+		}
+		return printJSON(stdout, map[string]any{"storeEpoch": s.StoreEpoch, "generation": s.Generation})
+	}
+	if c.json && len(args) == 2 && args[0] == "reset" && args[1] == "confirmed" {
+		s, err := consent.Reset(consent.Path())
+		if err != nil {
+			return consentFailure(stdout, "consent_unavailable")
+		}
+		return printJSON(stdout, map[string]any{"storeEpoch": s.StoreEpoch, "generation": s.Generation})
+	}
 	if !c.json || len(args) > 1 || (len(args) == 1 && args[0] != "grant") {
 		return consentFailure(stdout, "invalid_request")
 	}
 	if len(args) == 0 {
 		s, err := consent.Load(consent.Path())
 		if err != nil {
-			return consentFailure(stdout, "consent_unavailable")
+			return printJSONErrorConsentStore(stdout)
 		}
-		return printJSON(stdout, consentView{Generation: s.Generation, ConsentTextVersion: consent.TextVersion,
+		detected := map[string]bool{}
+		for _, t := range detection(st).Tools {
+			detected[t.ProviderID] = t.Detected
+		}
+		return printJSON(stdout, consentView{StoreEpoch: s.StoreEpoch, Scopes: consent.NewAdmission(s, consentMode(s)).ScopeFacts(detected), Generation: s.Generation, ConsentTextVersion: consent.TextVersion,
 			Mode: consentMode(s), ConsentText: map[string]string{"en": consent.Text, "zh": consent.TextZH}, Tools: consentTools(s, detection(st))})
 	}
 	request, err := decodeConsentRequest(stdin)
@@ -176,12 +255,12 @@ func decodeConsentRequest(stdin io.Reader) (consentRequest, error) {
 	}
 	d := json.NewDecoder(strings.NewReader(string(b)))
 	d.DisallowUnknownFields()
-	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || !consentRequestID.MatchString(r.RequestID) || r.ExpectGeneration == nil || r.ConsentTextVersion == nil {
+	if d.Decode(&r) != nil || d.Decode(new(any)) != io.EOF || !consentRequestID.MatchString(r.RequestID) || r.ExpectGeneration == nil || r.ConsentTextVersion == nil || len(r.ExpectStoreEpoch) != 32 {
 		return r, errors.New("invalid_request")
 	}
 	r.RequestID = strings.ToLower(r.RequestID)
 	seen := map[string]bool{}
-	for _, ids := range [][]string{r.Allow, r.Deny} {
+	for _, ids := range [][]string{r.Allow, r.Deny, r.Forget} {
 		for _, id := range ids {
 			if seen[id] {
 				return r, errors.New("invalid_request")
@@ -198,7 +277,24 @@ func decodeConsentRequest(stdin io.Reader) (consentRequest, error) {
 }
 
 func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int {
-	b, _ := json.Marshal(request)
+	scoped := len(request.Forget) > 0
+	for _, ids := range [][]string{request.Allow, request.Deny} {
+		for _, id := range ids {
+			scoped = scoped || strings.Contains(id, ".")
+		}
+	}
+	if scoped {
+		return grantScopes(request, stdout, st)
+	}
+	legacyPayload := struct {
+		RequestID          string            `json:"requestId"`
+		ExpectGeneration   *uint64           `json:"expectGeneration"`
+		ConsentTextVersion *int              `json:"consentTextVersion"`
+		Allow              []string          `json:"allow"`
+		Deny               []string          `json:"deny"`
+		Keychain           map[string]string `json:"keychain"`
+	}{request.RequestID, request.ExpectGeneration, request.ConsentTextVersion, request.Allow, request.Deny, request.Keychain}
+	b, _ := json.Marshal(legacyPayload)
 	hash := sha256.Sum256(b)
 	requestHash := hex.EncodeToString(hash[:])
 	var result json.RawMessage
@@ -209,7 +305,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 	// receipt already in place. A crash/failure cannot lose the Forget obligation.
 	if len(request.Deny) != 0 {
 		finalize = func(s *consent.State) error {
-			receipt := s.Requests[request.RequestID]
+			receipt := s.Requests[consent.ReceiptKey(s.StoreEpoch, request.RequestID)]
 			pending := []string{}
 			for _, id := range request.Deny {
 				r := s.Tools[id]
@@ -223,23 +319,26 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				s.Tools[id] = r
 			}
 			receipt.PendingForget = pending
-			response := consentResult{OK: len(pending) == 0, RequestID: request.RequestID, Generation: s.Generation,
+			response := consentResult{StoreEpoch: s.StoreEpoch, OK: len(pending) == 0, RequestID: request.RequestID, Generation: s.Generation,
 				Tools: consentTools(*s, report), PendingForget: pending}
 			if len(pending) != 0 {
 				response.Error = "cleanup_pending"
 			}
 			receipt.Result, _ = json.Marshal(response)
-			s.Requests[request.RequestID] = receipt
+			s.Requests[consent.ReceiptKey(s.StoreEpoch, request.RequestID)] = receipt
 			result = receipt.Result
 			return nil
 		}
 	}
 	err := consent.Transaction(consent.Path(), func(s *consent.State) error {
+		if request.ExpectStoreEpoch != s.StoreEpoch {
+			return errors.New("consent_stale")
+		}
 		mode := consentMode(*s)
-		if mode == consent.Off {
+		if mode == consent.Off && len(request.Allow) > 0 {
 			return errors.New("readers_off")
 		}
-		if receipt, exists := s.Requests[request.RequestID]; exists {
+		if receipt, exists := s.Requests[consent.ReceiptKey(s.StoreEpoch, request.RequestID)]; exists {
 			if receipt.RequestHash != requestHash {
 				return errors.New("request_id_conflict")
 			}
@@ -249,7 +348,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 		if s.Generation != *request.ExpectGeneration {
 			return errors.New("stale_generation")
 		}
-		if *request.ConsentTextVersion != consent.TextVersion {
+		if len(request.Allow) > 0 && *request.ConsentTextVersion != consent.TextVersion {
 			return errors.New("stale_consent_text")
 		}
 		report = detection(st)
@@ -259,15 +358,30 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				tools[t.ProviderID] = t
 			}
 		}
-		for _, ids := range [][]string{request.Allow, request.Deny} {
-			for _, id := range ids {
-				if _, exists := tools[id]; !exists {
-					return errors.New("unknown_tool")
-				}
+		for _, id := range request.Allow {
+			if _, exists := tools[id]; !exists {
+				return errors.New("unknown_tool")
 			}
+		}
+		// A prior decision remains revocable after detection or catalogue retirement.
+		// Keep this map separate so persisted metadata can never authorize a grant.
+		deniable := map[string]detect.Tool{}
+		for _, id := range request.Deny {
+			if t, exists := tools[id]; exists {
+				deniable[id] = t
+				continue
+			}
+			r, persisted := s.Tools[id]
+			if !persisted {
+				return errors.New("unknown_tool")
+			}
+			deniable[id] = persistedConsentTool(id, r)
 		}
 		for id := range request.Keychain {
 			t, exists := tools[id]
+			if !exists {
+				t, exists = deniable[id]
+			}
 			if !exists {
 				return errors.New("unknown_tool")
 			}
@@ -303,6 +417,9 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				for _, a := range request.Allow {
 					allowed = allowed || a == id
 				}
+				if !allowed {
+					t = deniable[id]
+				}
 				r := s.Tools[id]
 				if consent.KeychainSupported(id, t.Preferred, t.ReaderID) &&
 					(request.Keychain[id] != "" || s.KeychainStatus(id, consent.Automatic) != "allowed") {
@@ -318,7 +435,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 				}
 			}
 		}
-		response := consentResult{OK: true, RequestID: request.RequestID, Generation: s.Generation + 1, Tools: consentTools(*s, report)}
+		response := consentResult{StoreEpoch: s.StoreEpoch, OK: true, RequestID: request.RequestID, Generation: s.Generation + 1, Tools: consentTools(*s, report)}
 		if len(request.Deny) != 0 {
 			response.OK, response.Error, response.PendingForget = false, "cleanup_pending", request.Deny
 		}
@@ -326,14 +443,14 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 		if s.Requests == nil {
 			s.Requests = map[string]consent.Receipt{}
 		}
-		s.Requests[request.RequestID] = consent.Receipt{RequestHash: requestHash, Result: result, PendingForget: request.Deny}
+		s.Requests[consent.ReceiptKey(s.StoreEpoch, request.RequestID)] = consent.Receipt{RequestHash: requestHash, Result: result, PendingForget: request.Deny}
 		committed = true
 		return nil
 	}, finalize)
 	if err != nil {
 		code := err.Error()
 		switch code {
-		case "invalid_request", "readers_off", "stale_generation", "stale_consent_text", "unknown_tool", "keychain_not_supported", "access_class_forbidden", "reader_unavailable", "request_id_conflict":
+		case "consent_stale", "invalid_request", "readers_off", "stale_generation", "stale_consent_text", "unknown_tool", "keychain_not_supported", "access_class_forbidden", "reader_unavailable", "request_id_conflict":
 		default:
 			code = "consent_unavailable"
 		}
@@ -377,4 +494,9 @@ func keychainGrantRead(request consentRequest, st *store.Store) {
 	ctx, cancel := context.WithTimeout(context.Background(), keychainGrantBudget)
 	defer cancel()
 	_ = keychainGrantReadFn(ctx, quotaPaths(st), "claude", time.Now())
+}
+
+func printJSONErrorConsentStore(stdout io.Writer) int {
+	_ = printJSON(stdout, map[string]any{"ok": false, "error": "consent_unavailable", "state": "consent_store_unreadable", "recoveryAction": "reset", "nextStep": "Consent store unreadable. Reset in Settings after confirmation. / 授权存储无法读取，请在设置中确认后重置。"})
+	return exitErr
 }

@@ -229,7 +229,7 @@ func TestReadersOffAndPassiveAdmission(t *testing.T) {
 	if r := quota.ReadPermitted(quota.Paths{Cache: t.TempDir()}, time.Now()); len(r.Accounts) != 0 {
 		t.Fatal(r)
 	}
-	if !consent.CurrentGeneration(0) {
+	if !consent.CurrentFence(consent.Fence{}) {
 		t.Fatal("missing state generation")
 	}
 }
@@ -280,7 +280,11 @@ func TestPublishedAuditGateAndPassivePolicy(t *testing.T) {
 				err = quota.SetConnection(p.ConnectionsFile, quota.QuotaSource{Provider: "cursor", Backend: quota.BackendCodexBar, Enabled: true})
 			} else {
 				err = consent.Change(consent.Path(), func(s *consent.State) error {
-					return consent.Set(s, "cursor", true, "native:cursor", backend, time.Now())
+					reader := "native:cursor"
+					if backend == "codexbar" {
+						reader = "codexbar:cursor"
+					}
+					return consent.Set(s, "cursor", true, reader, backend, time.Now())
 				})
 			}
 			if err != nil {
