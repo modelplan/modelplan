@@ -14,7 +14,18 @@ import statistics
 
 ROLES = ('App', 'WebContent', 'GPU')
 PHASES = ('before-open', 'open', 'idle', 'after-close', 'repeated-open-close')
-TOOLS = ('powermetrics', 'top', 'instruments')
+NATIVE_SOURCE = 'native-self-counters'
+TOOLS = ('powermetrics', 'top', 'instruments', NATIVE_SOURCE)
+NATIVE_CONTRACT = {
+    'version': 1,
+    'scope': 'owned App process only; no WebContent or GPU attribution',
+    'cpuCounter': 'getrusage(RUSAGE_SELF): cumulative user + system CPU seconds',
+    'cpuExport': '100 * delta CPU seconds / delta monotonic elapsed seconds; 100% is one core',
+    'firstCpuInterval': 'absent per process capture; no prior interval',
+    'rssCounter': 'task_info resident_size, in bytes',
+    'energyImpact': 'unsupported',
+    'timestamps': 'recorded wall-clock start + monotonic elapsed; interval-end phase',
+}
 METRICS = ('cpu_percent', 'rss_bytes', 'energy_impact')
 REQUIRED = {'run_id', 'scenario', 'timestamp', 'role', 'phase', 'pid'}
 FIELDS = REQUIRED | set(METRICS) | {'cycle'}
@@ -64,7 +75,7 @@ def utc(seconds):
 
 def read_samples(tool, path):
     if tool not in TOOLS:
-        raise ValueError('tool must be powermetrics, top or instruments')
+        raise ValueError('tool must be one of: ' + ', '.join(TOOLS))
     path = Path(path)
     raw = path.read_bytes()
     text = raw.decode('utf-8-sig')
@@ -100,11 +111,19 @@ def read_samples(tool, path):
             if sample['cycle'] is not None and row['phase'] != 'repeated-open-close':
                 raise ValueError('cycle tags belong to repeated-open-close samples')
             sample.update({metric: numeric(row.get(metric), metric == 'rss_bytes') for metric in METRICS})
+            if tool == NATIVE_SOURCE:
+                if sample['role'] != 'App':
+                    raise ValueError('native-self-counters supports only the owned App role')
+                if sample['energy_impact'] is not None:
+                    raise ValueError('native-self-counters does not measure energy impact')
             normalized.append(sample)
         except (ValueError, TypeError, OverflowError) as exc:
             raise ValueError(f'{path.name}: sample {index}: {exc}') from exc
-    return normalized, {'name': path.name, 'tool': tool, 'sha256': hashlib.sha256(raw).hexdigest(),
-                        'samples': len(normalized)}
+    source = {'name': path.name, 'tool': tool, 'sha256': hashlib.sha256(raw).hexdigest(),
+              'samples': len(normalized)}
+    if tool == NATIVE_SOURCE:
+        source['sourceContract'] = dict(NATIVE_CONTRACT)
+    return normalized, source
 
 
 def stats(values):
@@ -174,6 +193,8 @@ def aggregate(inputs, cpu_basis='one-core'):
         raise ValueError('unknown CPU basis')
     sources, grouped, seen = [], {}, set()
     for tool, path in inputs:
+        if tool == NATIVE_SOURCE and cpu_basis != 'one-core':
+            raise ValueError('native-self-counters requires the one-core CPU basis')
         samples, source = read_samples(tool, path)
         sources.append(source)
         for row in samples:
@@ -187,6 +208,12 @@ def aggregate(inputs, cpu_basis='one-core'):
         raise ValueError('at least one input is required')
     groups = []
     for (run_id, scenario, tool), rows in sorted(grouped.items()):
+        if tool == NATIVE_SOURCE:
+            first_by_pid = {}
+            for row in sorted(rows, key=lambda row: row['timestamp']):
+                first_by_pid.setdefault(row['pid'], row)
+            if any(row['cpu_percent'] is not None for row in first_by_pid.values()):
+                raise ValueError('native-self-counters requires an absent first CPU interval per process capture')
         roles = {}
         for role in ROLES:
             phases, batches = {}, {}
@@ -231,6 +258,11 @@ def markdown(report):
              '| Input | Tool | SHA-256 | Process samples |', '|---|---|---|---:|']
     for source in report['inputs']:
         lines.append(f"| {escape(source['name'])} | {source['tool']} | {source['sha256']} | {source['samples']} |")
+    if any(source['tool'] == NATIVE_SOURCE for source in report['inputs']):
+        lines += ['', 'Native self-counter export contract v1:']
+        lines += [f'- {key}: {escape(value)}' for key, value in NATIVE_CONTRACT.items() if key != 'version']
+        lines += ['CPU percentages are supplied interval deltas, not recomputed from wall timestamps. '
+                  'Raw cumulative counters are not supplied or independently verified by this reducer.', '']
     for group in report['groups']:
         lines += ['', f"## {escape(group['runId'])} / {escape(group['scenario'])} / {group['tool']}", '',
                   '| Role | Phase | Metric | Status | Count | Missing | Average | p50 | p90 | Peak |',

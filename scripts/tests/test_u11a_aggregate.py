@@ -114,6 +114,73 @@ class AggregatorTests(unittest.TestCase):
         rows = [self.sample(), {**self.sample(), 'run_id': 'separate-run'}]
         self.assertEqual(len(self.report(self.rows(rows))['groups']), 2)
 
+    def test_native_source_preserves_intervals_and_missing_roles(self):
+        path = FIXTURES / 'synthetic-native.csv'
+        report = self.report([('native-self-counters', path)])
+        source = report['inputs'][0]
+        self.assertEqual(source['sha256'], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(source['sourceContract']['version'], 1)
+        self.assertIn('getrusage', source['sourceContract']['cpuCounter'])
+        self.assertIn('task_info', source['sourceContract']['rssCounter'])
+        roles = report['groups'][0]['roles']
+        baseline = roles['App']['phases']['before-open']['metrics']['cpu_percent']
+        self.assertEqual((baseline['status'], baseline['count'], baseline['missing'], baseline['average']),
+                         ('partial', 1, 1, 2))
+        opened = roles['App']['phases']['open']['metrics']
+        self.assertEqual(opened['cpu_percent']['average'], 6)  # First open interval is retained.
+        self.assertEqual(opened['rss_bytes']['average'], 1300000)  # Bytes, no unit conversion.
+        self.assertIsNone(opened['energy_impact']['average'])
+        for role in ('WebContent', 'GPU'):
+            for phase in roles[role]['phases'].values():
+                self.assertEqual(phase['processSamples'], 0)
+                for metric in phase['metrics'].values():
+                    self.assertEqual(metric['status'], 'unsupported')
+                    for key in ('average', 'p50', 'p90', 'peak'):
+                        self.assertIsNone(metric[key])
+        self.assertIsNone(roles['App']['afterCloseDelta']['bytes'])
+        self.assertIsNone(roles['App']['repeatedCycleGrowth']['bytes'])
+        text = aggregate.markdown(report)
+        self.assertIn('Native self-counter export contract v1', text)
+        self.assertIn('not recomputed from wall timestamps', text)
+
+    def test_native_source_rejects_false_attribution_energy_and_cpu_basis(self):
+        first = {**self.sample(), 'cpu_percent': None}
+        for change in ({'role': 'WebContent'}, {'role': 'GPU'}, {'energy_impact': 0}, {'cpu_percent': 0}):
+            path = self.rows([{**first, **change}])[0][1]
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                aggregate.aggregate([('native-self-counters', path)])
+        with self.assertRaisesRegex(ValueError, 'one-core'):
+            aggregate.aggregate([('native-self-counters', FIXTURES / 'synthetic-native.csv')], 'machine')
+
+    def test_native_first_interval_per_capture_across_files_phases_and_pids(self):
+        first = {**self.sample(), 'cpu_percent': None}
+        path = self.rows([{**first, 'phase': 'before-open'}])[0][1]
+        other = self.root / 'later.jsonl'
+        later = [{**self.sample(), 'timestamp': 1, 'cpu_percent': 0},
+                 {**first, 'timestamp': 2, 'pid': 2},
+                 {**self.sample(), 'timestamp': 3, 'pid': 2, 'cpu_percent': 200}]
+        other.write_text(''.join(json.dumps(row) + '\n' for row in reversed(later)))
+        report = self.report([('native-self-counters', other), ('native-self-counters', path)])
+        cpu = report['groups'][0]['roles']['App']['phases']['open']['metrics']['cpu_percent']
+        self.assertEqual((cpu['count'], cpu['missing'], cpu['average'], cpu['peak']), (2, 1, 100, 200))
+        # A new process must supply its initial unavailable interval too.
+        other.write_text(json.dumps(later[-1]) + '\n')
+        with self.assertRaisesRegex(ValueError, 'absent first CPU interval'):
+            self.report([('native-self-counters', path), ('native-self-counters', other)])
+
+    def test_native_cli_outputs_contract_without_modifying_input(self):
+        source = FIXTURES / 'synthetic-native.csv'
+        original = source.read_bytes()
+        output = self.root / 'native-report'
+        result = subprocess.run([sys.executable, str(TOOL), '--input', 'native-self-counters=' + str(source),
+                                 '--output-dir', str(output)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads((output / 'report.json').read_text())
+        self.assertEqual(report['inputs'][0]['tool'], 'native-self-counters')
+        self.assertEqual(report['inputs'][0]['sourceContract']['energyImpact'], 'unsupported')
+        self.assertIn(report['inputs'][0]['sha256'], (output / 'report.md').read_text())
+        self.assertEqual(original, source.read_bytes())
+
     def test_bad_csv_json_and_empty_inputs_fail_without_reports(self):
         for text in ('', '{"role":"App","role":"GPU"}\n', '[1,2]\n', '{broken\n'):
             path = self.root / 'bad.jsonl'
