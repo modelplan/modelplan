@@ -56,12 +56,12 @@ public enum CommunityReaderStatusPresentation {
     public static func menuLines(_ model: CommunityDockSnapshot, english: Bool) -> [String] {
         Array(model.readerDiagnostics.prefix(16)).map { diagnostic in
             let name = toolName(diagnostic.providerID, english: english)
-            return name + ": " + (english ? diagnostic.english : diagnostic.chinese)
+            return name + ": " + (english ? diagnostic.english + " Open Settings to check this tool." : diagnostic.chinese + " 打开设置检查此工具。")
         }
     }
     public static func emptyText(_ model: CommunityDockSnapshot, english: Bool) -> String {
-        if let diagnostic = model.emptyDiagnostic { return english ? diagnostic.english : diagnostic.chinese }
-        return english ? "No subscriptions are shown." : "当前未显示订阅。"
+        let reason = model.emptyDiagnostic.map { english ? $0.english : $0.chinese } ?? (english ? "No subscriptions are shown." : "当前未显示订阅。")
+        return reason + (english ? " Open Settings to check connected tools." : " 打开设置检查已连接工具。")
     }
     private static func toolName(_ id: String?, english: Bool) -> String {
         switch id {

@@ -14,7 +14,7 @@ public struct CommunityDockSnapshot: Sendable {
     let presentationRows: [String: CommunityUnboundDockRow]
 
     public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date,
-                readerFacts: [CommunityReaderFacts]? = nil) {
+                readerFacts: [CommunityReaderFacts]? = nil, canonicalConsent: ConsentPreview? = nil) {
         let reasons = CommunityReaderReason.project(snapshot: snapshot, diagnostics: diagnostics, now: now, facts: readerFacts ?? [])
         readerDiagnostics = reasons.readers; emptyDiagnostic = reasons.empty
         guard let snapshot else {
@@ -80,9 +80,17 @@ public struct CommunityDockSnapshot: Sendable {
                 vendor: sources.joined(separator: " / "), toolNames: sources,
                 source: input.dataState == .fresh ? .fresh : input.dataState == .stale ? .stale : .unavailable))
         }
-        let extra = CommunityUnboundDockRows.make(snapshot, diagnostics: diagnostics, now: now)
-        presentationRows = Dictionary(uniqueKeysWithValues: extra.map { ($0.input.id, $0) })
-        inputs = adapted + extra.map(\.input); subscriptions = catalogue
+        let extra = CommunityUnboundDockRows.make(snapshot, diagnostics: diagnostics, now: now, canonicalConsent: canonicalConsent)
+        let membershipIDs = Set(adapted.map(\.id))
+        let freshMemberships = Set(adapted.filter { $0.dataState == .fresh }.map(\.id))
+        let statuses = Dictionary(uniqueKeysWithValues: extra.filter { !freshMemberships.contains($0.input.id) }.map { ($0.input.id, $0) })
+        presentationRows = statuses
+        inputs = adapted.map { value in
+            guard let status = statuses[value.id] else { return value }
+            var next = value; next.name = status.input.name; next.alias = status.input.alias
+            return next
+        } + extra.filter { !membershipIDs.contains($0.input.id) }.map(\.input)
+        subscriptions = catalogue
     }
 
     private static func period(_ kind: String) -> DockQuotaPeriod {
