@@ -56,8 +56,10 @@ import ModelPlanSettings
         }]
     }
     private func joined(_ accounts: [[String: Any]], expiry: String = "2026-10-29T00:10:00Z") throws -> JoinedSnapshot {
-        let object: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot", "generatedAt": "2026-10-29T00:00:00Z",
-            "validUntil": expiry, "accounts": accounts]
+        // Deliberate behavior mutations of the shared real-CLI capture, not a second positive wire fixture set.
+        var object = try GeneratedAppCLIFixtures.object("fresh-desktop.json")
+        object["generatedAt"] = "2026-10-29T00:00:00Z"; object["validUntil"] = expiry
+        object["accounts"] = accounts; object["sources"] = []
         let personal = try FeedDecoder.personal(JSONSerialization.data(withJSONObject: object))
         var ledger = ExpiryLedger()
         return .make(personal: personal, presentation: .evaluate(personal, now: now, ledger: &ledger), publication: nil)
@@ -124,6 +126,18 @@ import ModelPlanSettings
         let tied = presenter.make(snapshot: try joined([account("codex", [23]), account("native:gemini", [23])]), diagnostics: ready, now: now)
         XCTAssertEqual(tied.title, "23%")
         XCTAssertTrue(tied.detail.contains("Codex"))
+    }
+
+    func testGeneratedCurrentFreshCaptureRemainsIconOnlyWithoutInventingValues() throws {
+        let personal = try FeedDecoder.personal(GeneratedAppCLIFixtures.data("fresh-desktop.json"))
+        let at = personal.generatedAt.date.addingTimeInterval(1)
+        var ledger = ExpiryLedger()
+        let snapshot = JoinedSnapshot.make(personal: personal, presentation: .evaluate(personal, now: at, ledger: &ledger), publication: nil)
+        let host = delegate(), button = NSButton()
+        host.updateMenuBar(snapshot: snapshot, diagnostics: ready, now: at, button: button)
+        XCTAssertEqual(button.title, ""); XCTAssertEqual(button.imagePosition, .imageOnly)
+        XCTAssertTrue(try XCTUnwrap(button.image).isTemplate)
+        XCTAssertTrue(host.menuBarReadingItem.title.contains("Settings"))
     }
 
 }
