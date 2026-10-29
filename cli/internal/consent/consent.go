@@ -47,14 +47,17 @@ type Record struct {
 	DeniedSources map[string]bool `json:"deniedSources,omitempty"`
 }
 type State struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	Generation    uint64            `json:"generation"`
-	Privacy       string            `json:"privacy"`
-	Tools         map[string]Record `json:"tools"`
-	Hinted        map[string]bool   `json:"hinted,omitempty"`
-	// Requests is decoded from a reserved Hinted namespace. Schema-v1 writers
-	// preserve that map but discard unknown top-level fields.
-	Requests map[string]Receipt `json:"-"`
+	SchemaVersion  int               `json:"schemaVersion"`
+	StoreEpoch     string            `json:"storeEpoch"`
+	Scopes         map[string]Record `json:"scopes"`
+	RequireConsent bool              `json:"requireConsent,omitempty"`
+	Generation     uint64            `json:"generation"`
+	Privacy        string            `json:"privacy"`
+	Tools          map[string]Record `json:"tools"`
+	Hinted         map[string]bool   `json:"hinted,omitempty"`
+	// Requests is keyed by (storeEpoch, requestId). Schema-1 receipts migrate
+	// from their reserved Hinted namespace without changing their hashes/results.
+	Requests map[string]Receipt `json:"requests,omitempty"`
 }
 
 // Receipt is committed with permissions. Results contain only public consent
@@ -63,6 +66,7 @@ type Receipt struct {
 	RequestHash   string          `json:"requestHash"`
 	Result        json.RawMessage `json:"result"`
 	PendingForget []string        `json:"pendingForget,omitempty"`
+	ForgetScopes  map[string]bool `json:"forgetScopes,omitempty"`
 }
 
 var toolID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
@@ -73,41 +77,49 @@ func Path() string {
 	return filepath.Join(home, ".config", "modelplan", "consent.json")
 }
 func Empty() State {
-	return State{SchemaVersion: 1, Privacy: Automatic, Tools: map[string]Record{}, Hinted: map[string]bool{}}
+	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Hinted: map[string]bool{}}
 }
-func Load(file string) (State, error) {
+func loadRaw(file string) (State, []byte, error) {
 	s := Empty()
 	f, err := os.Open(file)
 	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
+		return s, nil, nil
 	}
 	if err != nil {
-		return s, errors.New("consent unavailable")
+		return s, nil, errors.New("consent unavailable")
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, (256<<10)+1))
 	if err != nil || len(b) > 256<<10 {
-		return s, errors.New("consent too large or unreadable")
+		return s, nil, errors.New("consent too large or unreadable")
 	}
-	if json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 || (s.Privacy != Automatic && s.Privacy != Passive) || s.Tools == nil {
-		return Empty(), errors.New("invalid consent state")
+	if json.Unmarshal(b, &s) != nil || (s.SchemaVersion != 1 && s.SchemaVersion != 2) || (s.Privacy != Automatic && s.Privacy != Passive) || s.Tools == nil {
+		return Empty(), nil, errors.New("invalid consent state")
+	}
+	if s.SchemaVersion == 2 && (!validEpoch(s.StoreEpoch) || s.Scopes == nil) {
+		return Empty(), nil, errors.New("invalid consent epoch or scopes")
+	}
+	for id, r := range s.Scopes {
+		if !ValidScope(id) || r.ConsentTextVersion < 1 {
+			return Empty(), nil, errors.New("invalid consent scope")
+		}
 	}
 	for id, r := range s.Tools {
 		if !ValidTool(id) || r.ConsentTextVersion < 1 || (r.Keychain != "" && r.Keychain != "allowed" && r.Keychain != "denied" && r.Keychain != "unset") {
-			return Empty(), errors.New("invalid consent record")
+			return Empty(), nil, errors.New("invalid consent record")
 		}
 	}
 	if s.Hinted == nil {
 		s.Hinted = map[string]bool{}
 	}
 	if err := loadReceipts(&s, b); err != nil {
-		return Empty(), err
+		return Empty(), nil, err
 	}
 	for id, r := range s.Tools {
 		r.restoreKeychain()
 		s.Tools[id] = r
 	}
-	return s, nil
+	return s, b, nil
 }
 
 // Effective lets environment settings only restrict a persisted privacy choice.
@@ -136,6 +148,21 @@ func Current() (State, string) {
 // persisted refusal/revocation always wins. Passive permits only credential-free
 // local/runtime reads and explicitly configured environment keys.
 func (s State) Allows(tool, class, mode string) bool {
+	if s.SchemaVersion == 2 {
+		id := s.scopeFor(tool, class)
+		if class == "keychain" {
+			return s.AllowsScope(id, mode) && s.keychainStatus(tool) == "allowed"
+		}
+		if id != "" {
+			return s.AllowsScope(id, mode)
+		}
+	}
+	return s.legacyAllows(tool, class, mode)
+}
+
+// legacyAllows preserves direct in-memory v1 adapters; persisted v2 scopes
+// always take precedence for every compiled read path.
+func (s State) legacyAllows(tool, class, mode string) bool {
 	if mode == Off {
 		return false
 	}
@@ -147,8 +174,6 @@ func (s State) Allows(tool, class, mode string) bool {
 			return false
 		}
 	} else if class == Credential || class == Bridge || class == "keychain" {
-		// A newly shipped import reader cannot treat an absent record as a
-		// grant. Existing explicit legacy settings are handled by their owner.
 		return false
 	}
 	if mode == Passive {
@@ -190,7 +215,7 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 		return errors.New("consent busy; retry")
 	}
 	defer unlock()
-	s, err := Load(file)
+	s, err := loadLocked(file)
 	if err != nil {
 		return err
 	}
@@ -199,6 +224,12 @@ func transaction(file string, change, finalize func(*State) error, wait bool) er
 			return nil
 		}
 		return err
+	}
+	if s.StoreEpoch == "" {
+		s.StoreEpoch = newEpoch()
+	}
+	if s.Generation == ^uint64(0) {
+		return errors.New("consent generation exhausted")
 	}
 	s.Generation++
 	if err = save(file, s); err != nil {
@@ -260,6 +291,7 @@ func Set(s *State, id string, allowed bool, reader, backend string, now time.Tim
 	// Reconnecting does not clear a Keychain Deny. Only explicit Settings Retry
 	// may clear that source after informing the user; no retry is offered here.
 	s.Tools[id] = r
+	setToolScopes(s, id, r)
 	return nil
 }
 func Deny(file, tool, source string) error {
@@ -277,10 +309,32 @@ func Deny(file, tool, source string) error {
 			r.Keychain = "denied"
 		}
 		s.Tools[tool] = r
+		for id, record := range s.Scopes {
+			d, ok := Definition(id)
+			if ok && d.Tool == tool && (d.Class == source || source == "keychain" && d.Keychain) {
+				record.DeniedSources = cloneRecord(record).DeniedSources
+				if record.DeniedSources == nil {
+					record.DeniedSources = map[string]bool{}
+				}
+				record.DeniedSources[source] = true
+				if source == "keychain" {
+					record.Keychain = "denied"
+				}
+				s.Scopes[id] = record
+			}
+		}
 		return nil
 	})
 }
-func CurrentGeneration(g uint64) bool { s, err := Load(Path()); return err == nil && s.Generation == g }
+
+// Fence identifies one admission across resets as well as ordinary mutations.
+type Fence struct {
+	StoreEpoch string
+	Generation uint64
+}
+
+func (s State) Fence() Fence    { return Fence{s.StoreEpoch, s.Generation} }
+func CurrentFence(f Fence) bool { s, err := Load(Path()); return err == nil && s.Fence() == f }
 
 // ReaderLock coordinates refresh/snapshot writers with Forget readings. A
 // revoked provider is reselected only after this lock, never from a stale list.
@@ -323,12 +377,12 @@ func LocalWrite(tool string, write func() error) error {
 	if !s.Allows(tool, Local, mode) {
 		return errors.New("local reader not permitted")
 	}
-	return Publish(s.Generation, write)
+	return Publish(s.Fence(), write)
 }
 
 // Publish serializes generation validation and the short cache commit with
 // consent changes. No credential or provider I/O belongs inside this callback.
-func Publish(g uint64, write func() error) error {
+func Publish(f Fence, write func() error) error {
 	file := Path() + ".lock"
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
@@ -339,7 +393,7 @@ func Publish(g uint64, write func() error) error {
 	}
 	defer unlock()
 	s, err := Load(Path())
-	if err != nil || s.Generation != g {
+	if err != nil || s.Fence() != f {
 		return errors.New("consent changed; reading not published")
 	}
 	return write()

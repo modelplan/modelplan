@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/app-cli/consent-grant-response.json",
-  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
   "x-behavior": {
     "backgroundRefresh": "never",
     "credentials": "none, except the one foreground Claude read below",
@@ -14,7 +14,7 @@
     },
     "idempotency": "same request ID/body replays original response without another write or cleanup; older receipts may omit additive hostDetails",
     "permission": "receipt is not current permission; reread consent after mutation",
-    "keychain": "no prompt/helper, except: after a fresh, committed, successful grant that allows both claude and its Keychain, exactly one foreground Claude read (under 12 s, inside the app's 20 s timeout) may show the macOS Keychain prompt via /usr/bin/security; never on replay, deny or a grant without Keychain; receipt and exit code are final before it runs and never change; pending browser cookie cleanup remains explicit"
+    "keychain": "A fresh Keychain grant starts one interactive credential operation; remote requests always obey the shared five-minute budget. No repeated operation on receipt replay."
   },
   "oneOf": [
     {
@@ -46,6 +46,45 @@
         "tools"
       ],
       "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "committed": {
+          "const": true
+        },
+        "committedGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "code": {
+          "enum": [
+            "ok",
+            "cleanup_pending"
+          ]
+        },
+        "cleanupPending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "requestId",
+        "storeEpoch",
+        "committed",
+        "committedGeneration",
+        "code"
+      ],
+      "additionalProperties": false
     },
     {
       "$ref": "common.json#/$defs/consentError"

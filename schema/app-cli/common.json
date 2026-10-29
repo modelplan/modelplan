@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/app-cli/common.json",
-  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
   "$defs": {
     "receiptTool": {
       "type": "object",
@@ -138,7 +138,11 @@
             "access_class_forbidden",
             "reader_unavailable",
             "request_id_conflict",
-            "cleanup_pending"
+            "cleanup_pending",
+            "consent_stale",
+            "request_mismatch",
+            "unknown_scope",
+            "policy_pending"
           ]
         },
         "requestId": {
@@ -189,6 +193,61 @@
         "unsupported_login",
         "other"
       ]
+    },
+    "consentScope": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}(\\.[a-z][a-z0-9_]{0,47}){1,3}$"
+        },
+        "tool": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "route": {
+          "type": "string"
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "retired": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": [
+            "allowed",
+            "denied",
+            "unset"
+          ]
+        },
+        "defaultCheck": {
+          "type": "boolean"
+        },
+        "keychain": {
+          "enum": [
+            null,
+            "allowed",
+            "denied",
+            "unset"
+          ]
+        },
+        "cleanupPending": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scope",
+        "tool",
+        "route",
+        "detected",
+        "retired",
+        "state",
+        "defaultCheck",
+        "keychain",
+        "cleanupPending"
+      ],
+      "additionalProperties": true
     }
   }
 }

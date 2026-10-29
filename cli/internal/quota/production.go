@@ -60,10 +60,10 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		if !known || (route.Preferred == "native" && strings.HasPrefix(route.ReaderID, "native:") && detect.Compatible(version, route.MinCLI)) {
 			root, access := localusage.ProductionHistoryAccessWithAdmission(home, "claude", false, admission)
 			if access.Allowed && !access.Denied && access.Privacy != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off" && detect.LocalRoot(root) {
-				generation, priorValid := state.Generation, access.StillValid
+				fence, priorValid := state.Fence(), access.StillValid
 				access.StillValid = func() bool {
 					current, effective := consent.Current()
-					return current.Generation == generation && effective != consent.Off && !nativeOff() && os.Getenv("MODELPLAN_HISTORY") != "off" && (priorValid == nil || priorValid())
+					return current.Fence() == fence && effective != consent.Off && !nativeOff() && os.Getenv("MODELPLAN_HISTORY") != "off" && (priorValid == nil || priorValid())
 				}
 				p.ClaudeSessionRoot, p.ClaudeSessionAccess = root, &access
 			}
@@ -82,11 +82,12 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 			continue
 		}
 		generation := state.Generation
-		g := ReaderGrant{Generation: strconv.FormatUint(generation, 10), Region: record.Region,
-			Publish: func(write func() error) error { return consent.Publish(generation, write) },
+		fence := state.Fence()
+		g := ReaderGrant{Generation: fence.StoreEpoch + ":" + strconv.FormatUint(generation, 10), Region: record.Region,
+			Publish: func(write func() error) error { return consent.Publish(fence, write) },
 			StillValid: func() bool {
 				current, effective := consent.Current()
-				return effective == consent.Automatic && !nativeOff() && current.Generation == generation
+				return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
 			}}
 		if g.Region != "" && !contains(n.Regions, g.Region) {
 			continue

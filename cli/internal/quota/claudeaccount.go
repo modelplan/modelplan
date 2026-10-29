@@ -128,13 +128,20 @@ func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) 
 			}
 			return out
 		}
-		k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
-			Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
-		})
-		if k.State != "ok" {
-			return readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep, CredentialReadState: k.State}}
+		if r.Grant.Credential != nil {
+			b, status = r.Grant.Credential(ctx)
+			if status != "" {
+				return readerOutcome{Entry: readerEntry{Status: status, CredentialReadState: status}}
+			}
+		} else {
+			k := (keychain.Reader{Cache: r.Paths.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{
+				Allowed: true, PriorGrant: r.Grant.KeychainPriorGrant, Interactive: r.Grant.Interactive, ProfileRef: r.ProfileKey,
+			})
+			if k.State != "ok" {
+				return readerOutcome{Entry: readerEntry{Status: k.State, NextStep: k.NextStep, CredentialReadState: k.State}}
+			}
+			b, status = k.Value, ""
 		}
-		b, status = k.Value, ""
 	}
 	if status != "" {
 		return fail("unavailable", "Claude Code saved login is unreadable", fileErrorCode(status))

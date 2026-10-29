@@ -28,7 +28,8 @@ type ReaderGrant struct {
 	KeychainConsent    string // preserves unset versus denied for an actionable reader notice
 	KeychainPriorGrant bool
 	Interactive        bool
-	Region             string // locally selected region; an empty value uses the reader's safe default
+	Credential         func(context.Context) ([]byte, string) // in-memory only; never persisted
+	Region             string                                 // locally selected region; an empty value uses the reader's safe default
 	Profiles           []ReaderProfile
 	ConfigSource       *ZaiConfigSource
 	Publish            func(func() error) error
@@ -206,12 +207,6 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
-	return refreshManagedAttempt(ctx, p, provider, now, false)
-}
-
-// foreground skips the schedule/budget gates for one explicit, user-attended
-// attempt (a Keychain grant in Settings). Timers and ordinary reads never set it.
-func refreshManagedAttempt(ctx context.Context, p Paths, provider string, now time.Time, foreground bool) error {
 	if ctx.Err() != nil {
 		return errors.New("reader canceled")
 	}
@@ -228,11 +223,11 @@ func refreshManagedAttempt(ctx context.Context, p Paths, provider string, now ti
 	if err != nil {
 		return err
 	}
-	if !foreground && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
+	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
 		return nil
 	}
 	n := nativeReaders[provider]
-	if !foreground && (!n.budgetDue(p.Cache, now) || !xSubscriptionDue(p.Cache, provider, now)) {
+	if !n.budgetDue(p.Cache, now) || !xSubscriptionDue(p.Cache, provider, now) {
 		return nil
 	}
 	profiles := g.Profiles

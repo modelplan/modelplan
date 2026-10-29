@@ -6,6 +6,8 @@
   "consentTextVersion": 2,
   "generation": 2,
   "mode": "automatic",
+  "scopes": [],
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": [
     {
       "accessClass": "not-read",

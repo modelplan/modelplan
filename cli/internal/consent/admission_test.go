@@ -11,6 +11,7 @@ func TestAdmissionIsImmutable(t *testing.T) {
 	state := Empty()
 	state.Generation = 7
 	state.Tools["claude"] = Record{Allowed: true, ConsentTextVersion: TextVersion, Profiles: []string{"default"}, DeniedSources: map[string]bool{"keychain": true}}
+	state.Scopes[ScopeClaudeLocalHistory] = Record{Allowed: true, ConsentTextVersion: TextVersion}
 	state.Requests = map[string]Receipt{"request": {PendingForget: []string{"claude"}}}
 	admission := NewAdmission(state, Automatic)
 	state.Requests["request"].PendingForget[0] = "codex"

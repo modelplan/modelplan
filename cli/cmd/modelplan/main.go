@@ -60,7 +60,11 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
   modelplan detect [--json]            presence-only tool detection; no credentials or network
   modelplan consent --json             read shared consent and bilingual consent text
-  modelplan consent grant --json       atomically apply one JSON request from stdin
+  modelplan consent grant --json       atomically apply a per-scope JSON request from stdin
+  modelplan consent init --json        establish the store epoch before mutation
+  modelplan consent cleanup --json     retry interrupted scoped erasure
+  modelplan consent reset confirmed --json
+                                       confirmed recovery with a new epoch; grants must be given again
   modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
   modelplan connect --detected [--privacy automatic|passive] [--json]
                                        preview or confirm the pre-checked detected-tool list once
@@ -632,7 +636,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		return 0
 	}
 	code := 0
-	if err := consent.Publish(state.Generation, func() error {
+	if err := consent.Publish(state.Fence(), func() error {
 		code = statuslineInput(in, stdout, style, st, c, harness, modelID, effort, false)
 		return nil
 	}); err != nil {
@@ -1072,6 +1076,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		home, _ := os.UserHomeDir()
 		report := quota.ReadDeclared(quota.Paths{LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}, now)
 		report.ConsentGeneration = admission.Generation()
+		report.ConsentStoreEpoch = admission.Fence().StoreEpoch
 		report.Sources = append(report.Sources, quota.SourceStatus{Source: "readers", Status: "off", Reason: "consent-changed"})
 		return snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, CLIVersion: version, Now: now})
 	})

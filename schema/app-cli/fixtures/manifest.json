@@ -9,7 +9,8 @@
     "revoked",
     "cleanup-pending",
     "retired",
-    "retired-legacy"
+    "retired-legacy",
+    "scoped"
   ],
   "entries": [
     {
@@ -1166,6 +1167,111 @@
     {
       "file": "retired-legacy-readback.json",
       "state": "retired-legacy",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "scoped-grant.request.json",
+      "state": "scoped",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "scoped-grant.json",
+      "state": "scoped",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "scoped-grant.request.json"
+    },
+    {
+      "file": "scoped-consent.json",
+      "state": "scoped",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "scoped-revoke.request.json",
+      "state": "scoped",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "scoped-revoke.json",
+      "state": "scoped",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "scoped-revoke.request.json"
+    },
+    {
+      "file": "scoped-forget.request.json",
+      "state": "scoped",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "scoped-forget.json",
+      "state": "scoped",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "scoped-forget.request.json"
+    },
+    {
+      "file": "scoped-readback.json",
+      "state": "scoped",
       "schema": "consent",
       "arguments": [
         "consent",

@@ -255,7 +255,7 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 			class = consent.ExplicitKey
 		}
 		allowed := policy.Allows(x.Provider, class, mode)
-		if _, decided := policy.Tools[x.Provider]; !decided && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
+		if _, decided := policy.Tools[x.Provider]; !decided && !policy.ScopeDecided(x.Provider, class) && !policy.RequireConsent && mode == consent.Automatic && (x.Origin == "connections.json" || x.Origin == "codexbar.json") {
 			allowed = true
 		}
 		if !allowed {
@@ -309,7 +309,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	admission := admissionFor(p)
 	p.Admission = &admission
 	s, mode := admission.State(), admission.Mode()
-	r := Report{ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
+	r := Report{ConsentStoreEpoch: s.StoreEpoch, ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
 	if mode == consent.Off {
 		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
 		return r
@@ -333,7 +333,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	for i := range r.Accounts {
 		Evaluate(&r.Accounts[i], now)
 	}
-	if !consent.CurrentGeneration(s.Generation) {
+	if !consent.CurrentFence(s.Fence()) {
 		return Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Accounts: []Account{}, Sources: []SourceStatus{{Source: "readers", Status: "off", Reason: "consent-changed"}}}
 	}
 	return r
@@ -354,7 +354,9 @@ func ReadDeclared(p Paths, now time.Time) Report {
 // ForgetTool deletes only ModelPlan-owned readings while holding the same cache
 // locks as the current readers. Attempt gates/identities are retained so revoke,
 // reconnect and catalogue rollback cannot reset a provider's request budget.
-func ForgetTool(p Paths, tool string) error {
+func ForgetTool(p Paths, tool string) error { return forgetTool(p, tool, true, false, "") }
+
+func forgetTool(p Paths, tool string, history, identity bool, scopeClass string) error {
 	admission, err := consent.ReaderLock()
 	if err != nil {
 		return err
@@ -386,7 +388,12 @@ func ForgetTool(p Paths, tool string) error {
 		f.Close()
 		releases = append(releases, func() { os.Remove(path) })
 	}
-	if n := nativeReaders[tool]; n != nil && n.Managed != nil {
+	if identity {
+		if err := forgetScopeIdentity(p.Cache, tool, scopeClass); err != nil {
+			return err
+		}
+	}
+	if n := nativeReaders[tool]; n != nil && n.Managed != nil && scopeClass != consent.ExplicitKey && scopeClass != consent.Bridge {
 		if _, err := os.Stat(readerPath(p.Cache, tool)); err == nil {
 			if err := ForgetReader(p.Cache, tool); err != nil {
 				return err
@@ -395,14 +402,16 @@ func ForgetTool(p Paths, tool string) error {
 			return err
 		}
 	}
-	if err := forgetProductionReaderState(p.Cache, tool); err != nil {
-		return err
+	if scopeClass != consent.Bridge && (tool != "claude" || history) {
+		if err := forgetProductionReaderState(p.Cache, tool); err != nil {
+			return err
+		}
 	}
 	files := []string{}
-	if tool == "claude" {
+	if tool == "claude" && history {
 		files = append(files, "claude-code.json")
 	}
-	if tool == "codex" {
+	if tool == "codex" && scopeClass != consent.Bridge {
 		files = append(files, "codex-account.json")
 	}
 	for _, name := range files {
@@ -410,7 +419,14 @@ func ForgetTool(p Paths, tool string) error {
 			return err
 		}
 	}
-	for _, name := range []string{"native.json", "codexbar.json", "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json"} {
+	names := []string{"native.json", "codexbar.json"}
+	if history || identity {
+		names = append(names, "cycles.json", "pace.json", "speed.json", "perf.json", "daily-long.json")
+	}
+	for _, name := range names {
+		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
+			continue
+		}
 		path := filepath.Join(observed, name)
 		f, err := os.Open(path)
 		if errors.Is(err, os.ErrNotExist) {
@@ -453,6 +469,10 @@ func ForgetTool(p Paths, tool string) error {
 					json.Unmarshal(row["provider"], &id)
 				} else {
 					json.Unmarshal(row["source"], &id)
+					if !history && !strings.HasPrefix(id, "native:") && !strings.HasPrefix(id, "codexbar:") {
+						kept = append(kept, row)
+						continue
+					}
 					id = strings.TrimPrefix(strings.TrimPrefix(id, "native:"), "codexbar:")
 					switch id {
 					case "claude-code":

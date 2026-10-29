@@ -215,6 +215,7 @@ type SourceStatus struct {
 }
 
 type Report struct {
+	ConsentStoreEpoch string         `json:"-"`
 	ConsentGeneration uint64         `json:"-"` // framework fence for downstream cache writers
 	SchemaVersion     int            `json:"schemaVersion"`
 	EvaluatedAt       time.Time      `json:"evaluatedAt"`

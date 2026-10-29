@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/keychain"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net/http"
@@ -258,7 +259,7 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	}
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
 	for _, x := range on {
-		if !consent.CurrentGeneration(state.Generation) {
+		if !consent.CurrentFence(state.Fence()) {
 			return errors.New("consent changed; refresh stopped")
 		}
 		var e codexbarEntry
@@ -334,7 +335,7 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	if err := consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+	if err := consent.Publish(state.Fence(), func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
 		return err
 	}
 	return refreshErr
@@ -536,5 +537,40 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 		return err
 	}
 	defer admission()
-	return refreshManagedAttempt(ctx, InteractiveReaders(p), provider, now, true)
+	if provider != "claude" {
+		return errors.New("no interactive credential adapter")
+	}
+	g, allowed := readerAllowed(p, provider)
+	if !allowed || !g.Keychain {
+		return errors.New("keychain consent required")
+	}
+	profiles := g.Profiles
+	if len(profiles) == 0 {
+		profiles = nativeReaders[provider].Profiles()
+	}
+	if len(profiles) != 1 {
+		return errors.New("unsupported profile selection")
+	}
+	profileKey := readerHash(p.Cache, provider+":profile", profiles[0].Root+"\x00"+profiles[0].AccountFile)
+	if profileKey == "" {
+		return errors.New("identity key unavailable")
+	}
+	// This operation is interactive even when the remote budget is closed. Keep
+	// its credential only in this stack frame and reuse it if a remote read is due.
+	k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
+	if k.State != "ok" {
+		return errors.New("credential operation: " + k.State)
+	}
+	defer func() {
+		for i := range k.Value {
+			k.Value[i] = 0
+		}
+	}()
+	if g.StillValid != nil && !g.StillValid() {
+		return errors.New("reader consent changed")
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return k.Value, "" }
+	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
+	p.ReaderAccess = access
+	return refreshManaged(ctx, p, provider, now)
 }

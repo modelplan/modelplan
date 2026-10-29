@@ -218,3 +218,20 @@ checks; they are not the source of current output expectations.
 Every contract change updates its schema, generated fixtures, CLI conformance
 and Swift decoder tests in the same PR. Additive compatibility stays allowed;
 fixture drift still requires an explicit reviewed update.
+
+## Consent store 2 and scope mutations
+
+Readback includes `storeEpoch` and `scopes`. Call `consent init --json` before
+mutating an uninitialized store; fresh read-only views return an empty epoch.
+Every mutation supplies `expectStoreEpoch`. Scope requests use the stable IDs
+in `cli/internal/consent/scopes.go`, with disjoint `allow`, `deny`, and `forget`.
+Scope receipts carry `committed`, `committedGeneration`, `storeEpoch` and a
+bounded `code`; legacy tool requests retain their existing receipt shape.
+`scoped-*` captures exercise the same-checkout binary with allow, readers-off
+revoke, and a retired-scope Forget. All new scope facts and receipts are validated
+before capture normalization. Epoch normalization applies only to fixtures.
+
+Schema 1 is migrated under lock and retained as `consent.v1.bak`. Schema-1
+binaries refuse schema 2. Reset is an explicit confirmed command, creates a
+new epoch at generation 1, and never restores defaults or receipts from the old
+epoch. A Keychain grant's credential interaction cannot bypass remote budgets.

@@ -2,6 +2,7 @@
   "generation": 2,
   "ok": true,
   "requestId": "00000000-0000-4000-8000-000000000091",
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": [
     {
       "accessClass": "not-read",

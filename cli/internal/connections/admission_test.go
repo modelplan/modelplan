@@ -3,6 +3,7 @@ package connections
 
 import (
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -15,7 +16,10 @@ func TestDiagnoseUsesCapturedAdmissionForEveryConnection(t *testing.T) {
 	t.Setenv("MODELPLAN_NATIVE", "")
 	if err := consent.Change(consent.Path(), func(s *consent.State) error {
 		for _, tool := range []string{"claude", "kiro"} {
-			s.Tools[tool] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, ReaderID: "native:" + tool, Backend: "native", Keychain: "allowed"}
+			s.Tools[tool] = consent.Record{Keychain: "allowed"}
+			if err := consent.Set(s, tool, true, "native:"+tool, "native", time.Now()); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {
@@ -23,9 +27,10 @@ func TestDiagnoseUsesCapturedAdmissionForEveryConnection(t *testing.T) {
 	}
 	admission := consent.Capture()
 	if err := consent.Change(consent.Path(), func(s *consent.State) error {
-		for tool, r := range s.Tools {
-			r.Allowed = false
-			s.Tools[tool] = r
+		for tool := range s.Tools {
+			if err := consent.Set(s, tool, false, "", "", time.Now()); err != nil {
+				return err
+			}
 		}
 		return nil
 	}); err != nil {

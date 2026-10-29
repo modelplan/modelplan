@@ -73,9 +73,9 @@ func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, adm
 	record, decided := state.Tools[tool]
 	setting, err := loadSetting(SettingsPath(home))
 	legacy := err == nil && ((tool == "gemini" && setting.Enabled) || (tool == "qwen" && setting.Qwen))
-	allowed := legacy
-	if decided {
-		allowed = record.Allowed && record.ConsentTextVersion == consent.TextVersion && state.Allows(tool, consent.Local, mode)
+	allowed := legacy && !state.RequireConsent
+	if decided || state.ScopeDecided(tool, consent.Local) {
+		allowed = state.Allows(tool, consent.Local, mode)
 	}
 	// The original per-source local opt-out remains a veto even when the shared
 	// record still permits this tool's independent account reader.
@@ -103,7 +103,7 @@ func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, adm
 	if len(a.Key) == 32 {
 		a.ProfileRef = historyHash(a.Key, "production/profile", tool+"\x00"+root)
 	}
-	generation := state.Generation
+	fence := state.Fence()
 	a.StillValid = func() bool {
 		current, effective := consent.Current()
 		if tool == "gemini" || tool == "qwen" {
@@ -112,9 +112,9 @@ func ProductionHistoryAccessWithAdmission(home, tool string, createKey bool, adm
 				return false
 			}
 		}
-		return current.Generation == generation && effective != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off"
+		return current.Fence() == fence && effective != consent.Off && os.Getenv("MODELPLAN_HISTORY") != "off"
 	}
-	a.Publish = func(write func() error) error { return consent.Publish(generation, write) }
+	a.Publish = func(write func() error) error { return consent.Publish(fence, write) }
 	return root, a
 }
 
