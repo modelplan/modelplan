@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -202,6 +204,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 	var result json.RawMessage
 	var report detect.Report
 	var finalize func(*consent.State) error
+	committed := false // false for a replayed receipt, which must not read anything
 	// Cleanup is deliberately after durable revocation, with a durable failure
 	// receipt already in place. A crash/failure cannot lose the Forget obligation.
 	if len(request.Deny) != 0 {
@@ -324,6 +327,7 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 			s.Requests = map[string]consent.Receipt{}
 		}
 		s.Requests[request.RequestID] = consent.Receipt{RequestHash: requestHash, Result: result, PendingForget: request.Deny}
+		committed = true
 		return nil
 	}, finalize)
 	if err != nil {
@@ -342,5 +346,35 @@ func grantConsent(request consentRequest, stdout io.Writer, st *store.Store) int
 	if printJSON(stdout, json.RawMessage(result)) != 0 || !response.OK {
 		return exitErr
 	}
+	if committed {
+		keychainGrantRead(request, st)
+	}
 	return 0
+}
+
+// keychainGrantBudget keeps the whole grant inside the app's 20-second consent
+// timeout while giving the user time to answer the macOS Keychain prompt.
+var keychainGrantBudget = 12 * time.Second
+
+var keychainGrantReadFn = quota.KeychainGrantRead
+
+// keychainGrantRead runs the one foreground Claude read right after a fresh
+// Keychain grant. A background read only waits two seconds, so the OS prompt
+// would time out unanswered and latch the Keychain state; the grant is the
+// user-attended moment. The result lands in the reader cache like any read;
+// the receipt above is already final and is never changed by this.
+func keychainGrantRead(request consentRequest, st *store.Store) {
+	if request.Keychain["claude"] != "allow" {
+		return
+	}
+	allowed := false
+	for _, id := range request.Allow {
+		allowed = allowed || id == "claude"
+	}
+	if !allowed {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), keychainGrantBudget)
+	defer cancel()
+	_ = keychainGrantReadFn(ctx, quotaPaths(st), "claude", time.Now())
 }
