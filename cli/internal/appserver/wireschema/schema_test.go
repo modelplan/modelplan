@@ -65,7 +65,7 @@ func TestProductionEncodingsAndContractMutations(t *testing.T) {
 	// Go encodes the real DTO, then the schema validates it and a concrete wire
 	// decoder consumes it. This is an interface fixture, not claimed CLI stdout.
 	p := rows.Build(rows.Input{Now: time.Now(), ConsentGeneration: 7, DeclaredPlanIDs: []string{"team"}})
-	message := wire.Success[wire.RowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`), Result: wire.Envelope[wire.RowsSnapshot]{SessionID: "s-test", StoreEpoch: "e-test", ConsentGeneration: 7, Scopes: []string{"codex.runtime_usage"}, Data: wire.RowsSnapshot{Sequence: 1, Projection: p}}}
+	message := wire.Success[wire.RowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`), Result: wire.Envelope[wire.RowsSnapshot]{SessionID: "s-test", StoreEpoch: "e-test", ConsentGeneration: 7, Scopes: []string{"codex.runtime_usage"}, Data: wire.RowsSnapshot{Sequence: 1, Projection: wire.Project(p)}}}
 	s := schema(t, "Response")
 	if err := validate(t, s, message); err != nil {
 		t.Fatal(err)
@@ -83,6 +83,9 @@ func TestProductionEncodingsAndContractMutations(t *testing.T) {
 		edit func(map[string]any)
 	}{
 		{"missing session", func(m map[string]any) { delete(m["result"].(map[string]any), "sessionId") }},
+		{"duplicate consent context", func(m map[string]any) {
+			m["result"].(map[string]any)["data"].(map[string]any)["projection"].(map[string]any)["consentGeneration"] = 7
+		}},
 		{"generation type", func(m map[string]any) { m["result"].(map[string]any)["consentGeneration"] = "7" }},
 		{"result and error", func(m map[string]any) { m["error"] = map[string]any{"code": -32099} }},
 		{"private token on result", func(m map[string]any) { m["result"].(map[string]any)["accessToken"] = "token-canary" }},
@@ -149,5 +152,21 @@ func TestConsentReceiptAndScopeNullability(t *testing.T) {
 	request := wire.ConsentGrantParams{RequestID: "r", ExpectStoreEpoch: "e", Allow: []string{}, Deny: []string{}, Keychain: map[string]wire.KeychainChoice{"claude.account_usage.saved_login": wire.KeychainUnset}}
 	if err := validate(t, schema(t, "ConsentGrantParams"), request); err == nil {
 		t.Fatal("unset is a fact, not a grant choice")
+	}
+}
+
+func TestErrorIDAndRefreshResultShape(t *testing.T) {
+	s := schema(t, "Response")
+	failure := wire.Failure{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`null`), Error: wire.RPCError{Code: wire.CodeParseError, Message: "parse_error", Data: wire.ErrorContext{}}}
+	if err := validate(t, s, failure); err != nil {
+		t.Fatal(err)
+	}
+	failure.ID = json.RawMessage(`{"invalid":"id"}`)
+	if err := validate(t, s, failure); err == nil {
+		t.Fatal("object accepted as response id")
+	}
+	result := wire.Success[[]wire.RefreshScheduled]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`), Result: wire.Envelope[[]wire.RefreshScheduled]{SessionID: "s", StoreEpoch: "e", Data: []wire.RefreshScheduled{{Scope: "codex.runtime_usage", At: time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)}}}}
+	if err := validate(t, s, result); err != nil {
+		t.Fatal(err)
 	}
 }
