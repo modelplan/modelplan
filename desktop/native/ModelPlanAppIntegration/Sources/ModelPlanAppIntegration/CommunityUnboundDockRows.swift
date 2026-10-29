@@ -2,6 +2,7 @@
 import Foundation
 import ModelPlanCore
 import ModelPlanDock
+import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
 struct CommunityUnboundDockRow: Sendable {
@@ -24,24 +25,41 @@ enum CommunityUnboundDockRows {
         let connections = snapshot.personal.connections ?? []
         let sources = snapshot.personal.sources ?? []
         func guidance(_ provider: String, current: Bool) -> (String, String) {
-            if current { return ("Local account reading / 本地账户读数", "Check connected tools in Settings / 在设置检查已连接工具") }
             let source = sources.first { $0.source == "native:" + provider }
             let connection = connections.first { canonical($0.id) == provider }
-            let code: String?
-            if let source, ["consent_required", "unavailable", "error", "stale"].contains(source.status) {
-                code = source.status == "consent_required" ? source.status : source.reason ?? source.status
-            } else { code = source?.reason ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? source?.status }
-            if provider == "claude", code == "consent_required" {
-                return ("Keychain permission required / 需要钥匙串许可", "Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串")
+            let pendingCodes: Set<String> = ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"]
+            let machineCodes = pendingCodes.union(["consent_required", "keychain_choice_needed", "keychain_denied", "not_detected", "expired", "stale", "unsupported_schema", "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable"])
+            let reasonCode = (source?.reason).flatMap { machineCodes.contains($0) ? $0 : nil }
+            func next(_ fallback: String) -> String {
+                let nativeRemedy = source.flatMap { value -> String? in
+                    guard ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(value.status),
+                          let reason = value.reason, !machineCodes.contains(reason) else { return nil }
+                    return reason
+                }
+                guard let text = nativeRemedy ?? connection?.quota?.nextStep,
+                      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 512,
+                      !text.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return fallback }
+                return text
             }
-            if allowed.contains(provider), code == "missing" || code == nil {
-                return ("Waiting for first reading / 等待首次读取", "Check this tool in Settings / 在设置检查此工具")
+            if current { return ("Local account reading / 本地账户读数", next("Check connected tools in Settings / 在设置检查已连接工具")) }
+            let status = source?.status ?? connection?.quota?.status
+            let nativeFailure = source.map { ["consent_required", "unavailable", "error", "stale", "expired", "unsupported_schema", "keychain_choice_needed", "keychain_denied"].contains($0.status) || reasonCode.map { !pendingCodes.contains($0) } == true } ?? false
+            let code = nativeFailure ? reasonCode ?? source?.status : reasonCode ?? connection?.quota?.reason ?? connection?.quotaAccess?.blocked ?? status
+            if provider == "claude", ["consent_required", "keychain_choice_needed", "keychain_denied"].contains(code ?? "") {
+                return (code == "keychain_denied" ? "Keychain permission denied / 钥匙串许可被拒绝" : "Keychain permission required / 需要钥匙串许可",
+                        next("Allow Keychain for Claude Code in Settings / 在设置允许Claude Code使用钥匙串"))
+            }
+            if !nativeFailure, allowed.contains(provider),
+               ["missing", "no-reading", "not-enabled", "not read yet", "not-read-yet", "not_read_yet", "pending"].contains(status ?? "") || ["missing", "not read yet", "not-read-yet", "not_read_yet", "pending"].contains(code ?? "") || code == nil {
+                return ("Waiting for first reading / 等待首次读取", next("Check this tool in Settings / 在设置检查此工具"))
             }
             switch code {
-            case "consent_required": return ("Reader permission required / 需要读取许可", "Review consent in Settings / 在设置检查授权")
-            case "not_detected": return ("Reader not detected / 未检测到读取组件", "Sign in to the tool, then check Settings / 登录工具后在设置检查")
-            case "reader_error", "parse_error", "timeout", "runtime_missing": return ("Reading unavailable / 读取暂不可用", "Check reader status in Settings / 在设置检查读取状态")
-            default: return ("No current reading / 暂无当前读数", "Check connected tools in Settings / 在设置检查已连接工具")
+            case "consent_required": return ("Reader permission required / 需要读取许可", next("Review consent in Settings / 在设置检查授权"))
+            case "not_detected": return ("Reader not detected / 未检测到读取组件", next("Sign in to the tool, then check Settings / 登录工具后在设置检查"))
+            case "expired", "stale": return ("Reading expired / 读数已过期", next("Check this tool in Settings / 在设置检查此工具"))
+            case "unsupported_schema": return ("Reader update required / 需要更新读取组件", next("Check component updates in Settings / 在设置检查组件更新"))
+            case "reader_error", "parse_error", "timeout", "runtime_missing", "error", "unavailable": return ("Reading unavailable / 读取暂不可用", next("Check reader status in Settings / 在设置检查读取状态"))
+            default: return ("No current reading / 暂无当前读数", next("Check connected tools in Settings / 在设置检查已连接工具"))
             }
         }
         var result: [CommunityUnboundDockRow] = [], represented = Set<String>(), emitted = Set<String>()
@@ -73,10 +91,15 @@ enum CommunityUnboundDockRows {
             result.append(.init(input: input, reason: reason, nextStep: next, originalObservedAt: account.observedAt?.date))
         }
         var providers: [String] = []
-        for connection in connections where allowed.contains(canonical(connection.id)) { let key = canonical(connection.id); if !providers.contains(key) { providers.append(key) } }
-        // CLI 0.5.45's Claude connection is status-line shaped. Its explicit native
-        // source still provides truthful permission guidance, never a grant or value.
-        if sources.contains(where: { $0.source == "native:claude" && $0.status == "consent_required" }), !providers.contains("claude") { providers.append("claude") }
+        for tool in canonicalConsent?.tools ?? [] where allowed.contains(canonical(tool.id)) {
+            let key = canonical(tool.id); if !providers.contains(key) { providers.append(key) }
+        }
+        for source in sources where source.source.hasPrefix("native:") {
+            let key = canonical(source.source); if !providers.contains(key) { providers.append(key) }
+        }
+        for connection in connections where allowed.contains(canonical(connection.id)) {
+            let key = canonical(connection.id); if !providers.contains(key) { providers.append(key) }
+        }
         for (index, provider) in providers.enumerated() where !represented.contains(provider) {
             let (reason, next) = guidance(provider, current: false)
             var input = DockInstrumentInput(id: locator("presentation.connection.\(index)"), name: title(provider), windows: [])
@@ -91,18 +114,6 @@ enum CommunityUnboundDockRows {
         return id == "claude-code" ? "claude" : id == "openai" ? "codex" : id
     }
     private static func title(_ id: String) -> String {
-        switch id {
-        case "codex": return "Codex"
-        case "claude": return "Claude Code"
-        case "copilot": return "Copilot"
-        case "cursor": return "Cursor"
-        case "gemini": return "Gemini"
-        case "grok": return "Grok"
-        case "kimi": return "Kimi"
-        case "kiro": return "Kiro"
-        case "opencodego": return "OpenCode"
-        case "zai": return "Z.ai"
-        default: return "Reader / 用量读取"
-        }
+        SettingsConnectionTool(rawValue: id)?.title ?? (id == "amp" ? "Amp" : "Reader / 用量读取")
     }
 }

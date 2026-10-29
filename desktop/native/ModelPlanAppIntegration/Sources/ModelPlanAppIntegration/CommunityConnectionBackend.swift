@@ -25,6 +25,7 @@ public extension CommunityConsentCommandPort {
     private var pendingCleanup = Set<SettingsConnectionTool>()
     /// Composition routes this into the existing runtime store, never a second producer or timer.
     public var onCanonicalReadback: (@MainActor (ConsentPreview) -> Void)?
+    /// Presentation withdrawal is only for an acknowledged revocation; failed inspection retains its last facts.
     public var onCanonicalInvalidated: (@MainActor () -> Void)?
     public init(port: any CommunityConsentCommandPort, desktop: ConsentGatedDesktopTransport) {
         self.port = port; self.desktop = desktop
@@ -44,8 +45,6 @@ public extension CommunityConsentCommandPort {
         guard port.availability.canInspect else { throw SettingsConnectionFailure.unavailable }
         revision &+= 1; let token = revision
         let gate = await invalidateConsent()
-        try check(token)
-        onCanonicalInvalidated?()
         try check(token)
         let value = try await port.readCanonicalConsent()
         try check(token)
@@ -70,8 +69,6 @@ public extension CommunityConsentCommandPort {
         revision &+= 1; let token = revision
         let gate = await invalidateConsent()
         try check(token)
-        onCanonicalInvalidated?()
-        try check(token)
         let before = try await port.readCanonicalConsent()
         try check(token)
         guard before.generation >= generationFloor else { throw SettingsConnectionFailure.stale }
@@ -91,6 +88,10 @@ public extension CommunityConsentCommandPort {
             cleanup = issue; pendingCleanup.formUnion(known); generationFloor = max(generationFloor, issue.generation)
         }
         try check(token)
+        if !deny.isEmpty {
+            onCanonicalInvalidated?()
+            try check(token)
+        }
         // A receipt is not current permission, including committed revocation with pending cleanup.
         let after: ConsentPreview
         do { after = try await port.readCanonicalConsent() }
