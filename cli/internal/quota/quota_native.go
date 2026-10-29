@@ -519,3 +519,22 @@ func projectLegacyNativeCache(ctx context.Context, p Paths, provider string, old
 	e.Provider, e.Source = old.Provider, old.Source
 	return e
 }
+
+// KeychainGrantRead runs one foreground read for a saved-login reader right
+// after the user grants its Keychain access in Settings, so the macOS prompt
+// appears while the user is present and a timed-out background attempt cannot
+// latch the Keychain state. It is the only caller of the foreground path.
+func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.Time) error {
+	if !nativePrivacyAllows() || ctx.Err() != nil {
+		return errors.New("personal readers are suspended")
+	}
+	if n, ok := nativeReaders[provider]; !ok || n.Managed == nil {
+		return errors.New("no saved-login reader")
+	}
+	admission, err := consent.ReaderLockContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer admission()
+	return refreshManagedAttempt(ctx, InteractiveReaders(p), provider, now, true)
+}
