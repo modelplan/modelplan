@@ -159,3 +159,28 @@ const (
 	AttemptResultSucceeded AttemptResult = "succeeded"
 	AttemptResultFailed    AttemptResult = "failed"
 )
+
+// Route identifies the read path without exporting raw source strings.
+type Route string
+
+const (
+	RouteSavedLoginAPI  Route = "saved_login_api"
+	RouteRuntimeRPC     Route = "runtime_rpc"
+	RouteLocalLog       Route = "local_log"
+	RouteAPIKeyAPI      Route = "api_key_api"
+	RouteLocalSQLite    Route = "local_sqlite"
+	RouteStatusLine     Route = "status_line"
+	RouteBrowserSession Route = "browser_session"
+	RouteManual         Route = "manual"
+	RouteUnknown        Route = "unknown"
+)
+
+func safeRoute(route Route) Route {
+	switch route {
+	case RouteSavedLoginAPI, RouteRuntimeRPC, RouteLocalLog, RouteAPIKeyAPI,
+		RouteLocalSQLite, RouteStatusLine, RouteBrowserSession, RouteManual:
+		return route
+	default:
+		return RouteUnknown
+	}
+}
