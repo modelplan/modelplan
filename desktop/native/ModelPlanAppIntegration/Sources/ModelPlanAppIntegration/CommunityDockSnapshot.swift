@@ -56,7 +56,7 @@ public struct CommunityDockSnapshot: Sendable {
                                                                        readable: readable, now: now)
                     if current { hasCurrentReading = true }
                     // These IDs locate a reported row only; they are not invented CLI window IDs.
-                    let locator = "account.\(accountIndex).window.\(windowIndex)"
+                    let locator = CommunityDockWindowIdentity.make(account: accountIndex, window: windowIndex)
                     let duration = window.windowMinutes.flatMap { minutes -> Double? in
                         let seconds = minutes * 60
                         return seconds.isFinite && seconds > 0 ? seconds : nil

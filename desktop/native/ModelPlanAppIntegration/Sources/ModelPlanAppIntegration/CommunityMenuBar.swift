@@ -2,20 +2,36 @@
 import AppKit
 import ModelPlanCore
 import ModelPlanDock
+import ModelPlanSettings
 import ModelPlanCommunityHost
 
+@MainActor public protocol CommunityMenuBarPreferencesProviding: AnyObject {
+    var currentMenuBarPreferences: SettingsPreferences? { get }
+    var menuBarPreferencesChanged: (() -> Void)? { get set }
+}
+extension StaticDockPreviewHost: CommunityMenuBarPreferencesProviding {}
+
 struct CommunityMenuBarProjector: CommunityMenuBarProviding {
+    let preferences: @MainActor () -> SettingsPreferences?
     func make(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date) -> CommunityMenuBarPresentation {
+        guard let preferences = preferences() else { return .empty }
         let inputs = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now).inputs
-        var lowest: (reading: DockInstrumentReading, remaining: Double)?
-        for input in inputs {
+        let ids = inputs.map(\.id)
+        guard Set(ids).count == ids.count, let order = try? preferences.presentedSubscriptionIDs(ids) else { return .empty }
+        let byID = Dictionary(uniqueKeysWithValues: inputs.map { ($0.id, $0) })
+        var lowest: (reading: DockInstrumentReading, remaining: Double, used: Bool)?
+        for id in order {
+            guard let raw = byID[id] else { continue }
+            let input = preferences.applying(to: raw)
             // The same adapter and evaluator used by the Dock own all freshness/reset/unknown rules.
             guard let reading = try? DockInstrumentProjection.evaluate(input, now: now),
                   let remaining = reading.remainingPercent else { continue }
-            if lowest.map({ remaining < $0.remaining }) ?? true { lowest = (reading, remaining) }
+            if lowest.map({ remaining < $0.remaining }) ?? true { lowest = (reading, remaining, input.showUsedPercent) }
         }
         guard let lowest else { return .empty }
-        return .init(title: "\(Int(lowest.remaining.rounded()))%", detail: (lowest.reading.alias ?? lowest.reading.name) + " · " + lowest.reading.readout)
+        let shown = lowest.used ? 100 - lowest.remaining : lowest.remaining
+        let basis = lowest.used ? "Used / 已用" : "Remaining / 剩余"
+        return .init(title: "\(Int(shown.rounded()))%", detail: (lowest.reading.alias ?? lowest.reading.name) + " · " + basis + " " + lowest.reading.readout)
     }
 }
 @MainActor enum CommunityMenuBarResources {

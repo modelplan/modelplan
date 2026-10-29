@@ -73,8 +73,10 @@ import ModelPlanSettings
         let joined = try snapshot(accounts: [account(nil, source: "codex", windows: [window()])])
         let row = try XCTUnwrap(adapt(joined).presentationRows.values.first)
         XCTAssertEqual(row.originalObservedAt, now.addingTimeInterval(-5))
-        XCTAssertTrue(row.sourceAndAge(at: now).contains("5s"))
-        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(10)).contains("15s"))
+        XCTAssertTrue(row.sourceAndAge(at: now).contains("<1m"))
+        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(10)).contains("<1m"))
+        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(60)).contains("1m"))
+        XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(3600)).contains("1h"))
         XCTAssertTrue(row.sourceAndAge(at: now.addingTimeInterval(-10)).contains("unknown"))
     }
     func testReaderDiagnosticsUseDecodedCurrentZeroWithoutAddingMembership() throws {
@@ -482,7 +484,7 @@ import ModelPlanSettings
                 host.dockView.onAction?(.subscription(id))
                 let labels = descendants(host.card).compactMap { $0 as? NSTextField }
                 let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
-                XCTAssertTrue(source.stringValue.contains(accountRow ? "5s" : "unknown"))
+                XCTAssertTrue(source.stringValue.contains(accountRow ? "<1m" : "unknown"))
                 XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
                 if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
                 let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })

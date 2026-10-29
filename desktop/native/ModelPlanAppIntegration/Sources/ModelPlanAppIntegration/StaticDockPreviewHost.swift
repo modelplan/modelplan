@@ -97,6 +97,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var nativeMovePreviewPanel: NSPanel? { outlinePanel }
     func refreshPresence() { edge.refresh() }
     private var application: SettingsApplication?
+    public var currentMenuBarPreferences: SettingsPreferences? { retired ? nil : application?.snapshot.preferences }
+    public var menuBarPreferencesChanged: (() -> Void)?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
@@ -276,6 +278,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             connectEdge()
         }
         rebuild()
+        menuBarPreferencesChanged?()
     }
     private var dockConsent: ConsentPreview?
     public func updateDockConsent(_ preview: ConsentPreview?) {
@@ -656,15 +659,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() { guard permitted, !retired else { return }; inputGeneration &+= 1; rebuild(); edge.refresh() }
     private func showCard(_ id: String) {
+        let now = currentDate()
         guard permitted, !retired, preferences.showDock,
               (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
               let input = model?.inputs.first(where: { $0.id == id }),
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
-                sourceAndAge: model?.presentationRows[id]?.sourceAndAge(at: currentDate()) ?? "",
+                sourceAndAge: CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now),
                 stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期"),
                 additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
-                enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: currentDate()) else { dismissCard(); return }
+                enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: now) else { dismissCard(); return }
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; card.isHidden = false
@@ -705,6 +709,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func close() {
         guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
+        menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil
         dismissCard()
         NotificationCenter.default.removeObserver(self)
         edge.stop(); publishPlacementObservation(nil)
