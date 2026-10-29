@@ -8,5 +8,8 @@ public enum CommunityJourneyCI {
         let env = ProcessInfo.processInfo.environment
         return env["MODELPLAN_APP_SMOKE"] == "1" && env["MODELPLAN_E2E_JOURNEY"] == "1"
     }
+    public static var nativePanels: Bool {
+        enabled && ProcessInfo.processInfo.environment["MODELPLAN_E2E_NATIVE_PANELS"] == "1"
+    }
 }
 #endif
