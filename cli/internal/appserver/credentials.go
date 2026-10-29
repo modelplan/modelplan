@@ -10,7 +10,14 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
 
+type credentialReply struct {
+	result wire.CredentialResult
+	err    error
+}
+
 type credentialOperation struct {
+	session string
+	reply   chan credentialReply
 	stamp   Stamp
 	need    CredentialNeed
 	expires time.Time
@@ -40,6 +47,38 @@ func (s *Server) RequestCredential(need CredentialNeed) (string, error) {
 	return s.requestCredential(need, false)
 }
 func (s *Server) requestCredential(need CredentialNeed, explicit bool) (string, error) {
+	return s.openCredential(need, explicit, nil)
+}
+
+// ReadCredential is the waitable background capability used by a budgeted
+// reader. Interactive operations originate only in the committed grant flow.
+func (s *Server) ReadCredential(ctx context.Context, need CredentialNeed) (wire.CredentialResult, error) {
+	if need.Interactive {
+		return wire.CredentialResult{}, ProtocolError{wire.CodeCredentialRejected}
+	}
+	reply := make(chan credentialReply, 1)
+	id, err := s.openCredential(need, false, reply)
+	if err != nil {
+		return wire.CredentialResult{}, err
+	}
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if op, ok := s.credentials[id]; ok {
+			op.timer.Stop()
+			delete(s.credentials, id)
+		}
+	}()
+	select {
+	case out := <-reply:
+		return out.result, out.err
+	case <-ctx.Done():
+		return wire.CredentialResult{}, ctx.Err()
+	case <-s.ctx.Done():
+		return wire.CredentialResult{}, context.Canceled
+	}
+}
+func (s *Server) openCredential(need CredentialNeed, explicit bool, reply chan credentialReply) (string, error) {
 	if need.Provider != "claude" || need.Interactive && !explicit {
 		return "", ProtocolError{wire.CodeCredentialRejected}
 	}
@@ -87,8 +126,13 @@ func (s *Server) requestCredential(need CredentialNeed, explicit bool) (string, 
 	}
 	id := "op-" + hex.EncodeToString(random[:])
 	stamp, session := s.view.Stamp, s.session
-	op := &credentialOperation{stamp: stamp, need: need, expires: time.Now().Add(s.config.RequestTimeout)}
-	op.timer = time.AfterFunc(s.config.RequestTimeout, func() { s.mu.Lock(); delete(s.credentials, id); s.mu.Unlock() })
+	op := &credentialOperation{session: session, reply: reply, stamp: stamp, need: need, expires: time.Now().Add(s.config.RequestTimeout)}
+	op.timer = time.AfterFunc(s.config.RequestTimeout, func() {
+		s.mu.Lock()
+		delete(s.credentials, id)
+		s.mu.Unlock()
+		op.reject()
+	})
 	s.credentials[id] = op
 	s.mu.Unlock()
 	if !s.out.controlMessage(notification(session, "credentials/request", stamp, nil, wire.CredentialRequest{OperationID: id, Provider: need.Provider, Scope: need.Scope, Interactive: need.Interactive})) {
@@ -113,14 +157,32 @@ func (s *Server) acceptCredential(ctx context.Context, p wire.CredentialResult) 
 		delete(s.credentials, p.OperationID)
 		op.timer.Stop()
 	}
-	valid := ok && op.stamp == s.view.Stamp && time.Now().Before(op.expires)
+	valid := ok && op.session == s.session && op.stamp == s.view.Stamp && time.Now().Before(op.expires)
 	s.mu.Unlock()
 	if !valid {
 		return ProtocolError{wire.CodeCredentialRejected}
+	}
+	if op.reply != nil {
+		select {
+		case op.reply <- credentialReply{result: p}:
+			return nil
+		default:
+			return ProtocolError{wire.CodeCredentialRejected}
+		}
 	}
 	receiver, ok := s.backend.(CredentialReceiver)
 	if !ok {
 		return ProtocolError{wire.CodeCredentialRejected}
 	}
 	return receiver.AcceptCredential(ctx, op.stamp, op.need, p)
+}
+
+// reject wakes a background reader without retaining a credential or error text.
+func (op *credentialOperation) reject() {
+	if op.reply != nil {
+		select {
+		case op.reply <- credentialReply{err: ProtocolError{wire.CodeCredentialRejected}}:
+		default:
+		}
+	}
 }
