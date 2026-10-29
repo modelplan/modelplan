@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,8 +26,8 @@ var copilotBin = func() string {
 	if p := os.Getenv("MODELPLAN_COPILOT"); p != "" && filepath.IsAbs(p) {
 		return p
 	}
-	p, _ := exec.LookPath("copilot")
-	return p
+	home, _ := os.UserHomeDir()
+	return toolcli.Find(home, "copilot")
 }
 
 type copilotRPCError struct{ state string }
@@ -43,7 +43,12 @@ func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Tim
 	}
 	raw, err := askCopilot(ctx, bin)
 	if err != nil {
-		e.Error = err.Error()
+		if errors.Is(err, toolcli.ErrRuntimeMissing) {
+			e.Status = toolcli.RuntimeMissing
+			e.Error = toolcli.RuntimeNextStep
+		} else {
+			e.Error = err.Error()
+		}
 		return e
 	}
 	return parseCopilot(raw, now)
@@ -52,7 +57,10 @@ func fetchCopilot(ctx context.Context, _ *http.Client, _, _ string, now time.Tim
 func askCopilot(ctx context.Context, bin string) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "--headless", "--no-auto-update", "--stdio")
+	cmd, err := toolcli.CommandContext(ctx, bin, "--headless", "--no-auto-update", "--stdio")
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stderr = io.Discard
 	cmd.Env = copilotEnvironment(os.Environ())
 	cmd.WaitDelay = time.Second

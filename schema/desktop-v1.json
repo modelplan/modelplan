@@ -204,6 +204,16 @@
     "connections-Connection": {
       "additionalProperties": true,
       "properties": {
+        "admitted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/connections-Level"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "authorization": {
           "$ref": "#/$defs/connections-Level"
         },
@@ -224,6 +234,9 @@
         },
         "installed": {
           "$ref": "#/$defs/connections-Level"
+        },
+        "keychain": {
+          "type": "string"
         },
         "kind": {
           "type": "string"
@@ -302,6 +315,9 @@
           ]
         },
         "binding": {
+          "type": "string"
+        },
+        "nextStep": {
           "type": "string"
         },
         "reason": {

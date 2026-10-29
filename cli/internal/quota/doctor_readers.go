@@ -4,8 +4,10 @@ package quota
 import (
 	"context"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
@@ -54,6 +56,8 @@ func diagnosticAge(at, now time.Time) string {
 }
 func diagnosticState(status string) string {
 	switch status {
+	case toolcli.RuntimeMissing:
+		return "unavailable:" + toolcli.RuntimeMissing
 	case "ok":
 		return "ok"
 	case "stale":
@@ -196,6 +200,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			row.State = "unavailable:not_read"
 			if exists {
 				row.State = diagnosticState(e.Status)
+				if strings.HasPrefix(e.Error, toolcli.RuntimeMissing+":") {
+					row.State = diagnosticState(toolcli.RuntimeMissing)
+				}
 				row.Last = diagnosticAge(e.ObservedAt, now)
 				row.Windows = diagnosticWindows(e.Windows, now)
 				if row.State == "ok" && (e.ObservedAt.IsZero() || now.Sub(e.ObservedAt) > nativeKeep || e.ObservedAt.After(now)) {

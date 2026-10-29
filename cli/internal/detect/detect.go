@@ -2,6 +2,7 @@ package detect
 
 import (
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -140,7 +141,7 @@ func (e Env) presence(s Signal) string {
 		}
 		return confinedPresence(e.Home, p)
 	case "command":
-		dirs := append(filepath.SplitList(e.Path), filepath.Join(e.Home, ".local/bin"), filepath.Join(e.Home, "bin"), "/opt/homebrew/bin", "/usr/local/bin")
+		dirs := append(filepath.SplitList(e.Path), toolcli.SearchDirs(e.Home)...)
 		for _, dir := range dirs {
 			if !filepath.IsAbs(dir) {
 				continue

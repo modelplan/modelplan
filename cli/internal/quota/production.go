@@ -239,3 +239,6 @@ func refreshProductionClaudeSessions(ctx context.Context, p Paths, now time.Time
 	RefreshClaudeSessions(ctx, root, p.Cache, access, now)
 	return ctx.Err() == nil
 }
+
+// ReaderAdmitted reports the same cached grant gate used by production readers.
+func ReaderAdmitted(p Paths, provider string) bool { _, ok := readerAllowed(p, provider); return ok }

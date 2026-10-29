@@ -112,11 +112,17 @@ Before the file's first write, or when it cannot be read, `dailyLong[]` is what 
 CLI 0.5.27+. One entry per known source, in a fixed order: `codex`, `claude-code`, `opencode`, `zcode` (CLI 0.5.31+), then one entry per optional quota provider: `codexbar:<provider>`, or `native:<provider>` (CLI 0.5.30+) when connections.json gives it to a native reader. A native entry's authorization is `yes` with `via: "env:<NAME>"` when the key variable is set where the CLI runs, else `no` with `reason: "key-env-unset"`; a provider turned off in connections.json is `off`. The CLI only checks whether known paths exist and reuses what its readers already report: it runs no client, reads no credential or secret value, and changes nothing.
 
 - `id`, `kind` (`agent` | `quota`) and `support`: `full` (sessions and quota), `quota-only` (CodexBar providers such as Kiro: quota, no session reader) or `detected-only` (OpenCode: found, nothing read yet).
-- Four levels, each `{status, reason, via, at, binding}` with `status` `yes`, `no`, `off` (turned off by the user's switch), `unknown` or `not-applicable`, and `reason` a stable code:
+- Four levels, each `{status, reason, via, at, binding, nextStep?}` with `status` `yes`, `no`, `off` (turned off by the user's switch), `unknown` or `not-applicable`, and `reason` a stable code:
   - `installed`: the client or its CLI is at a known path (on `PATH` or the usual install places, a macOS app, or its data folder). A desktop app started from Finder has a short `PATH`, so the usual places are checked too;
   - `history`: its local logs were read (`at`: the newest reading). OpenCode: `no-session-reader`;
-  - `authorization`: a reader that needs the user's opt-in is enabled: Codex's own account reader (`via: "agent-owned-reader"`, `off` with `MODELPLAN_CODEX_ACCOUNT=off`), a CodexBar provider the user enabled (`via: "codexbar"`, `off` with `MODELPLAN_CODEXBAR=off`, else `not-enabled`). Claude Code needs none (`via: "status-line"`);
+  - `authorization`: a reader that needs the user's opt-in is enabled: Codex's own account reader (`via: "agent-owned-reader"`, `off` with `MODELPLAN_CODEX_ACCOUNT=off`), a CodexBar provider the user enabled (`via: "codexbar"`, `off` with `MODELPLAN_CODEXBAR=off`, else `not-enabled`). Claude Code without a native-reader decision retains `via: "status-line"`; after a native decision it reports shared consent with `via: "native:claude"`;
   - `quota`: windows were read (`at`: when). `binding` is `unknown`: a reading proves a meter, not whose subscription it is.
+
+A Claude native-reader decision adds optional `keychain` (`unset` | `allowed` | `denied`) and `admitted` (a level) to its connection. Admission uses the same production reader gate; it does not assert that a read succeeded. `quota` reflects native readings or their cached failure, while status-line history stays separate. On macOS an unset choice carries `reason: "keychain_choice_needed"` and `nextStep: "Allow Keychain for Claude Code in Settings"`. Revocation, Passive/Off privacy and native-reader disables remain effective. These additive fields do not change the snapshot version or create a quota account/subscription.
+
+Tool CLIs installed through npm-global, Volta or Bun are detected under a minimal GUI PATH. Direct `env node` scripts run via a resolved Node (or Bun) executable, without invoking a shell or modifying global PATH. A found script with no runtime yields `binary_found_but_runtime_missing` and a human `nextStep`, rather than a missing-tool or missing-login diagnosis. Arguments, consent, request budgets and Amp's verified-artifact/platform gate remain in force.
+
+Claude 原生读取器授权后，连接行显示共享授权、钥匙串选择、实际读取准入及缓存的读数/失败状态；状态栏历史单独保留。macOS 未选择钥匙串权限时返回 `keychain_choice_needed` 和明确的设置下一步。GUI 最小 PATH 下通过定位 Node/Bun 运行脚本；找到工具但缺少运行时单独返回 `binary_found_but_runtime_missing`，不伪造额度或订阅。
 
 ### Agents read from their databases
 

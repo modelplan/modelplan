@@ -6,9 +6,11 @@ package connections
 
 import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/localusage"
@@ -20,10 +22,11 @@ import (
 // Level is one step of a connection. Status: yes | no | off (turned off by the user) | unknown
 // (cannot be told without running or reading more) | not-applicable.
 type Level struct {
-	Status string     `json:"status"`
-	Reason string     `json:"reason,omitempty"` // a stable code
-	Via    string     `json:"via,omitempty"`    // authorization: how
-	At     *time.Time `json:"at,omitempty"`     // history, quota: the last successful reading
+	Status   string     `json:"status"`
+	NextStep string     `json:"nextStep,omitempty"`
+	Reason   string     `json:"reason,omitempty"` // a stable code
+	Via      string     `json:"via,omitempty"`    // authorization: how
+	At       *time.Time `json:"at,omitempty"`     // history, quota: the last successful reading
 	// Binding: quota only; how the windows are tied to a subscription: verified when the reader
 	// saw the account (accounts[].subscription), else unknown: a meter alone is not an account.
 	Binding string `json:"binding,omitempty"`
@@ -32,6 +35,8 @@ type Level struct {
 // Connection is one agent or quota source. Support: full (sessions and quota) | sessions-only
 // (an agent whose quota is another plan's) | quota-only | detected-only (installed, nothing read).
 type Connection struct {
+	Keychain      string           `json:"keychain,omitempty"`
+	Admitted      *Level           `json:"admitted,omitempty"`
 	QuotaAccess   *quota.Selection `json:"quotaAccess,omitempty"`
 	Read          string           `json:"read,omitempty"`
 	Hosts         []string         `json:"hosts,omitempty"`
@@ -52,6 +57,8 @@ type Connection struct {
 
 // Env is where to look; tests replace Exists.
 type Env struct {
+	Paths                                          *quota.Paths
+	GOOS                                           string // tests can exercise the macOS Keychain policy without a real Keychain
 	Gemini                                         *localusage.Report
 	Qwen                                           *localusage.Report
 	Home, CodexHome, CodexBarFile, ConnectionsFile string
@@ -61,7 +68,7 @@ type Env struct {
 // Local: the machine's own paths.
 func Local(p quota.Paths) Env {
 	home, _ := os.UserHomeDir()
-	return Env{Home: home, CodexHome: p.CodexHome, CodexBarFile: p.CodexBarFile, ConnectionsFile: p.ConnectionsFile, Exists: func(path string) bool { _, err := os.Stat(path); return err == nil }}
+	return Env{Paths: &p, Home: home, CodexHome: p.CodexHome, CodexBarFile: p.CodexBarFile, ConnectionsFile: p.ConnectionsFile, Exists: func(path string) bool { _, err := os.Stat(path); return err == nil }}
 }
 
 // onPath: a command named name on PATH or in the usual install places, found by its path only.
@@ -69,7 +76,7 @@ func (e Env) onPath(name string) bool {
 	if e.Exists == nil {
 		return false
 	}
-	for _, d := range append(filepath.SplitList(os.Getenv("PATH")), filepath.Join(e.Home, ".local", "bin"), filepath.Join(e.Home, "bin"), "/opt/homebrew/bin", "/usr/local/bin") {
+	for _, d := range append(filepath.SplitList(os.Getenv("PATH")), toolcli.SearchDirs(e.Home)...) {
 		if d != "" && e.Exists(filepath.Join(d, name)) {
 			return true
 		}
@@ -105,7 +112,11 @@ func Diagnose(e Env, r quota.Report) []Connection {
 			if s, ok := status[src]; ok && s.Status != "ok" {
 				reason = s.Status
 			}
-			return Level{Status: "no", Reason: reason, Binding: "unknown"}
+			level := Level{Status: "no", Reason: reason, Binding: "unknown"}
+			if reason == toolcli.RuntimeMissing {
+				level.NextStep = toolcli.RuntimeNextStep
+			}
+			return level
 		}
 		t := a.ObservedAt.UTC()
 		l := Level{Status: "yes", At: &t, Binding: "unknown"}
@@ -136,9 +147,12 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		cx.Authorization = Level{Status: "off", Reason: "MODELPLAN_CODEX_ACCOUNT"}
 	}
 	cx.Quota = quotaLevel("codex")
+	if failure, ok := status["codex-account"]; ok && failure.Status == toolcli.RuntimeMissing && cx.Quota.Status != "yes" {
+		cx.Quota = Level{Status: "no", Reason: toolcli.RuntimeMissing, NextStep: toolcli.RuntimeNextStep, Binding: "unknown"}
+	}
 	out = append(out, cx)
 
-	// Claude Code: what its status line hands over; nothing to authorize.
+	// Claude Code: status-line history, plus native-reader consent after a decision.
 	cc := Connection{ID: "claude-code", Kind: "agent", Support: "full",
 		Installed:     yesNo(e.onPath("claude") || (e.Exists != nil && e.Exists(filepath.Join(e.Home, ".claude"))), "not-found"),
 		Authorization: Level{Status: "not-applicable", Via: "status-line"}}
@@ -155,6 +169,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		cc.History = Level{Status: "no", Reason: s.Status}
 	}
 	cc.Quota = quotaLevel("claude-code")
+	nativeClaudeConnection(&cc, e, account["claude-code"], status["native:claude"])
 	out = append(out, cc)
 
 	// OpenCode V2 and ZCode: sessions from their own databases (speed's sqlite.go); their quota is
@@ -310,4 +325,70 @@ func Qwen() Connection {
 		}
 	}
 	return c
+}
+
+// nativeClaudeConnection reports the current shared grant and production admission;
+// status-line history remains a separate source and never proves a native quota read.
+func nativeClaudeConnection(c *Connection, e Env, account *quota.Account, source quota.SourceStatus) {
+	state, mode := consent.Current()
+	record, decided := state.Tools["claude"]
+	if !decided {
+		return
+	} // Retain credential-free status-line diagnostics for legacy users.
+	c.Read = "native:claude"
+	c.Keychain = state.KeychainStatus("claude", mode)
+	c.Authorization = Level{Status: "off", Via: "native:claude", Reason: "consent_required"}
+	admitted := Level{Status: "no", Reason: "not_admitted"}
+	c.Admitted = &admitted
+	c.Quota = Level{Status: "no", Reason: "not_read", Binding: "unknown"}
+	valid := record.Allowed && record.ConsentTextVersion == consent.TextVersion && record.Backend == quota.BackendNative && !record.BrowserSession && (record.ReaderID == "native:claude" || record.ReaderID == "native:claude-code")
+	if !valid {
+		if !record.Allowed {
+			c.Authorization.Reason = "consent_denied"
+		}
+		c.Quota.Reason = c.Authorization.Reason
+		return
+	}
+	if !state.Allows("claude", consent.Credential, mode) || strings.EqualFold(os.Getenv("MODELPLAN_NATIVE"), "off") || os.Getenv("MODELPLAN_NATIVE") == "0" || strings.EqualFold(os.Getenv("MODELPLAN_NATIVE"), "false") {
+		c.Authorization.Reason = "privacy_blocked"
+		c.Quota.Reason = "privacy_blocked"
+		admitted.Reason = "privacy_blocked"
+		return
+	}
+	c.Authorization = Level{Status: "yes", Via: "native:claude"}
+	if e.Paths != nil && quota.ReaderAdmitted(*e.Paths, "claude") {
+		admitted = Level{Status: "yes"}
+		c.Admitted = &admitted
+	}
+	if source.Status != "" {
+		c.Quota.Reason = source.Status
+		if source.Status == "ok" {
+			c.Quota.Reason = "no_usage_windows"
+		}
+	}
+	if account != nil && account.Via == "native" && len(account.Windows) > 0 && (source.Status == "" || source.Status == "ok") {
+		at := account.ObservedAt.UTC()
+		c.Quota = Level{Status: "yes", At: &at, Binding: "unknown"}
+		if account.Subscription != nil {
+			c.Quota.Binding = account.Subscription.Status
+		}
+	}
+	platform := e.GOOS
+	if platform == "" {
+		platform = runtime.GOOS
+	}
+	if platform == "darwin" && c.Keychain == "unset" {
+		c.Authorization.Reason = "keychain_choice_needed"
+		c.Authorization.NextStep = consent.ClaudeKeychainNextStep
+		if c.Quota.Status != "yes" {
+			c.Quota.Reason = "keychain_choice_needed"
+			c.Quota.NextStep = consent.ClaudeKeychainNextStep
+		}
+	} else if platform == "darwin" && c.Keychain == "denied" && c.Quota.Status != "yes" {
+		c.Quota.Reason = "keychain_denied"
+		c.Quota.NextStep = "Review Keychain access for Claude Code in Settings"
+	}
+	if source.Status == "confirmation-needed" || source.Status == "keychain-confirmation-needed" {
+		c.Quota.NextStep = "Review Keychain access for Claude Code in Settings"
+	}
 }

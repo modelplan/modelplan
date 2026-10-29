@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -101,20 +101,11 @@ func CodexBin(home string) string {
 	if p := os.Getenv("MODELPLAN_CODEX"); p != "" {
 		return p
 	}
-	if p, err := exec.LookPath("codex"); err == nil {
-		return p
-	}
 	exe := "codex"
 	if runtime.GOOS == "windows" {
 		exe = "codex.exe"
 	}
-	for _, d := range []string{filepath.Join(home, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/Applications/Codex.app/Contents/Resources"} {
-		p := filepath.Join(d, exe)
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
-			return p
-		}
-	}
-	return ""
+	return toolcli.Find(home, exe, "/Applications/Codex.app/Contents/Resources/"+exe)
 }
 
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
@@ -150,7 +141,11 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil {
-		return errors.Join(err, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: short(err.Error())}))
+		status, reason := "error", short(err.Error())
+		if errors.Is(err, toolcli.ErrRuntimeMissing) {
+			status, reason = toolcli.RuntimeMissing, toolcli.RuntimeNextStep
+		}
+		return errors.Join(err, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
 	}
 	s := snapFrom(resp, now)
 	if resp.identity != "" {
@@ -225,7 +220,10 @@ type rlResponse struct {
 }
 
 func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
-	cmd := exec.CommandContext(ctx, codex, "app-server")
+	cmd, err := toolcli.CommandContext(ctx, codex, "app-server")
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stderr = io.Discard
 	in, err := cmd.StdinPipe()
 	if err != nil {
@@ -377,6 +375,9 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 // observation per window, the account's plan and its reset credits. Without logs it stands alone.
 func applyAccount(r *Report, cache string, now time.Time) {
 	s := loadAccount(cache)
+	if s != nil && s.Status == toolcli.RuntimeMissing && now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now) {
+		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: toolcli.RuntimeMissing, Reason: toolcli.RuntimeNextStep})
+	}
 	if s == nil || s.Status != "ok" || now.Sub(s.ObservedAt) > accountKeep || s.ObservedAt.After(now.Add(5*time.Minute)) {
 		return
 	}
