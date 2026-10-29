@@ -17,7 +17,7 @@ import time
 def human(value):
     return (isinstance(value, str) and bool(value.strip()) and value.strip() not in ('?', '？')
             and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', value.strip()) is None
-            and re.search(r'\bcomponent_?(?:missing|updating|unverified)\b', value, re.I | re.A) is None)
+            and re.search(r'\b[a-z][a-z0-9]*(?:_[A-Za-z0-9]+|[A-Z][A-Za-z0-9]*)+\b', value, re.A) is None)
 
 
 def passes(step, facts):

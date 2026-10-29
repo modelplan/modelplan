@@ -50,9 +50,12 @@ class JourneyOracleTests(unittest.TestCase):
     def test_unreadable_row_needs_human_reason_and_next_step(self):
         for reason, next_step in [('?', 'Open Settings'), ('？', 'Open Settings'), ('reader_error', 'Open Settings'),
                                   ('此构建componentUnverified尚未核验', 'Open Settings'), ('Reading unavailable', ''),
+                                  ('读取失败reader_error请检查设置', 'Open Settings'),
+                                  ('读取失败readerError请检查设置', 'Open Settings'),
                                   ('Reading unavailable', 'not_connected_yet')]:
             facts = copy.deepcopy(self.facts[6]); facts['reasonRows'] = [dict(reason=reason, nextStep=next_step)]
             self.assertFalse(journey.passes(6, facts))
+        self.assertTrue(journey.human('Open ModelPlan Settings / 打开 ModelPlan 设置'))
 
 
 class FakeProviderTests(unittest.TestCase):
