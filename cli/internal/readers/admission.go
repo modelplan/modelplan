@@ -17,13 +17,17 @@ var (
 
 // CheckAdmission applies the first-batch policy before credential or source I/O.
 // A saved-login grant cannot approve a vendor's POST request. Approval requires a
-// reviewed code change pinning its request set and body schema. Local history is
+// reviewed policy change; the exact request set and body schema are compiled here. Local history is
 // an independent scope and remains eligible under its own consent.
 func CheckAdmission(scope string) error {
 	switch scope {
 	case consent.ScopeGeminiAccountUsageSavedLogin, consent.ScopeCursorAccountUsageSavedLogin:
 		return ErrPolicyPending
-	case consent.ScopeGeminiLocalHistory, consent.ScopeCursorLocalHistory, consent.ScopeMiniMaxAccountUsageAPIKey:
+	case consent.ScopeGeminiLocalHistory, consent.ScopeCursorLocalHistory,
+		consent.ScopeMiniMaxAccountUsageAPIKey, consent.ScopeClaudeAccountUsageSavedLogin,
+		consent.ScopeKimiAccountUsageAPIKey, consent.ScopeKimiAccountUsageSavedLogin,
+		consent.ScopeZaiAccountUsageAPIKey, consent.ScopeOpenCodeGoAccountUsageAPIKey,
+		consent.ScopeGrokAccountUsageSavedLogin:
 		return nil
 	default:
 		return ErrUnsupportedScope

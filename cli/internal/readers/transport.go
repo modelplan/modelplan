@@ -3,10 +3,9 @@ package readers
 
 import (
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"net/http"
 	"sync"
-
-	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 var (
@@ -21,7 +20,7 @@ var (
 // A local-history scope can pass admission but can never send an HTTP request.
 // Concurrent calls are serialized so none can slip past a 401 or 403 response.
 // Credentialed redirects are stopped even when the caller uses a default Client.
-// The only remote scope admitted here is MiniMax; POST approval is not configurable.
+// POST request pins are compiled here, but admission keeps them policy_pending.
 //
 // Create a fresh transport for the card's bounded request set, never per request.
 type ReadTransport struct {
@@ -30,6 +29,7 @@ type ReadTransport struct {
 	next     http.RoundTripper
 	host     string
 	attempts int
+	stage    int
 	stopped  error
 }
 
@@ -37,7 +37,7 @@ func NewReadTransport(scope string, next http.RoundTripper) *ReadTransport {
 	if next == nil {
 		next = http.DefaultTransport
 	}
-	return &ReadTransport{scope: scope, next: next}
+	return &ReadTransport{scope: scope, next: next, stage: -1}
 }
 
 func (t *ReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -55,28 +55,23 @@ func (t *ReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.stopped != nil {
 		return nil, t.stopped
 	}
-	if t.scope != consent.ScopeMiniMaxAccountUsageAPIKey || req.URL.Scheme != "https" ||
-		req.URL.User != nil || req.Method != http.MethodGet || req.URL.RawQuery != "" ||
-		req.URL.ForceQuery || req.URL.Fragment != "" || req.URL.Opaque != "" ||
-		(req.Host != "" && req.Host != req.URL.Host) ||
-		(req.URL.Host != "api.minimax.io" && req.URL.Host != "api.minimaxi.com") ||
-		(req.URL.EscapedPath() != "/v1/token_plan/remains" && req.URL.EscapedPath() != "/v1/api/openplatform/coding_plan/remains") ||
-		(req.Body != nil && req.Body != http.NoBody) {
+	pin, allowed := requestSet(t.scope, req)
+	if !allowed || req.URL.Scheme != "https" || req.URL.User != nil || req.URL.ForceQuery ||
+		req.URL.Fragment != "" || req.URL.RawFragment != "" || req.URL.Opaque != "" ||
+		(req.Host != "" && req.Host != req.URL.Host) || len(req.Trailer) != 0 ||
+		!pin.validHeaders(req) || !pin.validBody(req) {
 		return nil, ErrRequestNotAllowed
 	}
-	if t.host != "" && t.host != req.URL.Host {
+	if !pin.crossHost && t.host != "" && t.host != req.URL.Host {
 		return nil, ErrRequestNotAllowed
 	}
-	if t.attempts >= 2 {
+	if t.attempts >= pin.limit {
 		return nil, ErrReadExhausted
 	}
-	expected := "/v1/token_plan/remains"
-	if t.attempts == 1 {
-		expected = "/v1/api/openplatform/coding_plan/remains"
-	}
-	if req.URL.EscapedPath() != expected {
+	if pin.stage <= t.stage || (t.attempts == 0 && pin.stage == 1 && t.scope == consent.ScopeMiniMaxAccountUsageAPIKey) {
 		return nil, ErrRequestNotAllowed
 	}
+	t.stage = pin.stage
 	t.host = req.URL.Host
 	t.attempts++
 	forwarded = true

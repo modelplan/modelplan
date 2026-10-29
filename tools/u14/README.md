@@ -19,10 +19,10 @@ python3 -m unittest discover -s tools/u14/tests -v
 The dedicated hosted workflow runs `verify.py` on standard Ubuntu runners. It
 runs this suite, the source-policy gate, and both CLIs across all ten preference
 cases, then uploads the synthetic evidence (also on failure). To run the same
-profile locally, choose a new temporary destination outside the source checkout:
+profile locally, choose a new destination under the git-ignored worktree `.tmp/` directory (create that parent first):
 
 ```sh
-python3 tools/u14/verify.py --output /tmp/u14-evidence-unique-run
+python3 tools/u14/verify.py --output .tmp/u14-evidence-unique-run
 ```
 
 The bundle records these L1 checks separately from real product scenarios. Native UI, real input, OS permissions and official
@@ -198,7 +198,7 @@ and candidate tools still require only Python and Git. A new run must start from
 a clean committed checkout and write outside it:
 
 ```sh
-python3 tools/u14/run.py --output /tmp/u14-engine-unique-run
+python3 tools/u14/run.py --output .tmp/u14-engine-unique-run
 python3 tools/u14/run.py --output /tmp/u14-pressure-unique-run \
   --scenarios U3-backpressure U14-zero-rows-omitted
 ```
@@ -209,23 +209,38 @@ The default engine IDs are `U14-protocol-smoke`, `U3-backpressure`,
 scenarios remain `not-run`, and UI/device capabilities remain `unsupported`.
 The ordinary fail-closed binary is always exercised as a separate check.
 
-The runner builds two exact CLI binaries. The ordinary build has no fixture
-imports. The Go overlay changes the command's constructor call to a provider
-constructor which invokes the same production constructor with a typed history
-source and detection fault adapter. It also replaces only the native HTTP client
-constructor with a recording transport in a virtual quota file. No real socket
-is opened by a recording provider, and ordinary builds expose no fixture flag,
-environment switch or endpoint override. Every replacement, original constructor,
-source SHA and binary hash is recorded in the bundle. The builder rejects changes
-to the expected constructor seams.
+The runner builds three exact CLI binaries: ordinary, provider-only, and history/fault. The ordinary build has no fixture
+imports or overlay. Admission uses the provider-only binary: the command and
+app-server constructor bytes are identical to the ordinary source, and only the
+native HTTP-client constructor is replaced with a recording transport via a
+virtual quota file. Production `accountReadClient` and `readers.NewReadTransport`
+remain in that call chain; their source hashes are recorded. There is no
+history-source or detection override in this binary.
 
-Both binaries use `SharedBackend`, the same U2 store, durable grant receipts,
+The history/fault binary replaces the command's constructor call with the typed
+provider constructor used by the model/cursor/backpressure scenarios. It retains
+the production shared backend. Only the pending empty-state case enables its
+real repeated-revoke fault; readers-off/no-consent/empty use the ordinary binary.
+Recording transports never open a socket. Ordinary builds expose no fixture
+flag, environment switch or endpoint override. Every role records its exact
+binary, adapter, constructor-call and overlay hashes; each scenario binds the
+roles it actually used. Builders reject changes to the expected constructor seams.
+
+All three binaries use `SharedBackend`, the same U2 store, durable grant receipts,
 original capture provenance, budgets, `RowsInput`, `ChangedRowsInput` and
 `AppendManagedRows`. No test implementation of consent persistence or `Backend`
 remains. The recording history source implements only U3c's `HistorySource`; its
 admission and every output are fenced by the real backend. Unknown provider model
 fields are omitted/null/present/corrupt synthetic variants. A corrupt history
 reply fails that query while preserving the same stable rows.
+
+`U3-null-selectors` sends `ref:null`, `cursor:null` and both null through the
+registered handler. A positive query establishes observable admission/provider
+counts; all invalid calls return `invalid_params` before either count increases.
+A regression-only fault overlay that removes the producer guard must fail this
+probe. The driver also remembers retired epochs: an old-7 → new-1 → old-7 private
+result is rejected, and a late old receipt cannot restore the prior context.
+Generation floors remain monotonic within each active epoch.
 
 The ordinary smoke checks production capability registration, exact row membership
 from detection plus persisted consent, duplicate ids, diagnostics, wrong-method
@@ -256,13 +271,47 @@ consent context. A second process stops reading until the production 10-second
 write timeout, then restarts and replays the real U2 receipt. The receipt is never
 stored by fixture code, and revoked values stay absent after restart.
 
-`U2a-admission` checks real schema-1 migration with existing account grants,
-Gemini/Cursor `policy_pending` and zero account requests, Gemini's independent local
-history, and MiniMax 401/403 stopping after the first request even when a successful
-legacy response is available. The app-server and independent CLI use the same
-persisted budget. Cursor has no typed local-history producer in the current
-reader inventory, so that sub-proof is explicitly `unsupported` and the aggregate
-scenario cannot claim a full pass. Intact seed bytes never count as readability.
+`U2a-admission` runs the provider-only binary with the unchanged production
+constructor and one shared synthetic home per case. Gemini OAuth and Cursor
+SQLite login inputs are valid synthetic data; missing credentials cannot explain
+zero POST calls. Real schema-1 migration supplies retained grants. A new account
+grant is refused with `policy_pending`, explicit remote refresh is deferred, and
+an independent CLI refresh still reaches no unapproved provider.
+
+A separate MiniMax compatibility control first returns 404 then a successful
+legacy 200 and verifies a positive reading. The 401 and 403 cases must stop after
+one authenticated GET, despite that available legacy reply. Another app request
+and an independent CLI cannot reset the persisted budget. The raw recorder keeps
+only compiled route labels, method/status and a credential-match boolean; header
+values, credentials and bodies are never logged. Gemini history is checked before
+and after account reads using typed-value hashes, not only row counts. Original
+tool-owned login inputs must remain byte-identical.
+
+Selecting any admission ID runs the shared group and records these outcomes
+individually:
+
+| Scenario | Required outcome |
+|---|---|
+| `U2a-post-veto` | pass: both unapproved scopes make zero underlying calls |
+| `U2a-minimax-auth-stop` | pass: 401/403 stop before the legacy route |
+| `U2a-minimax-legacy-control` | pass: the available legacy reply produces a reading |
+| `U2a-local-history-gemini` | pass: typed values remain identical |
+| `U2a-local-history-cursor` | unsupported: no typed production producer |
+
+The aggregate `U2a-admission` conservatively remains unsupported while Cursor
+readability is unsupported. The executed subchecks remain independently visible
+in the manifest. Intact Cursor seed bytes never count as history readability.
+Linux engine results are L1; dedicated test-Mac/package L2 is recorded as not-run.
+
+```sh
+mkdir -p .tmp
+TMPDIR="$PWD/.tmp" python3 tools/u14/run.py --output .tmp/admission-run --scenarios U2a-admission
+```
+
+In-checkout output is accepted only under the git-ignored `.tmp/` directory;
+other tracked paths and symlink parents remain rejected. Remove completed local
+runs after retaining their bundle where needed. Hosted CI uploads only bundles
+and summaries, then removes its scratch directory.
 
 The proof scope is production U2 state/admission and U3 transport with recording
 providers and a publication-churn fault. It does not earn native UI, final-package,

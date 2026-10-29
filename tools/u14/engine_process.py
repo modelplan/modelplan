@@ -64,6 +64,7 @@ class EngineProcess:
         self.changed_sequence = 0
         self.floor = 0
         self.epoch = None
+        self.retired_epochs = set()
         self.stderr_bytes = 0
         self.stderr_digest = hashlib.sha256()
         self.process = None
@@ -190,12 +191,23 @@ class EngineProcess:
             envelope = message.get('result', message.get('params', {}))
         if envelope.get('sessionId') != self.session:
             raise EngineFailure('wrong-session')
+        data = envelope.get('data')
+        private = bool(envelope.get('scopes')) or (isinstance(data, dict) and
+                  any(key in data for key in ('projection', 'items', 'scopes')))
         if 'storeEpoch' in envelope:
             gen = envelope.get('consentGeneration')
             if type(gen) is not int or gen < 0 or not envelope['storeEpoch']:
                 raise EngineFailure('invalid-consent-context')
-            if self.epoch != envelope['storeEpoch']:
-                self.epoch, self.floor = envelope['storeEpoch'], gen
+            epoch = envelope['storeEpoch']
+            if epoch in self.retired_epochs:
+                # A late receipt may describe an older committed transaction;
+                # it cannot restore that epoch or relabel any private value.
+                if private:
+                    raise EngineFailure('private-result-from-retired-epoch')
+            elif self.epoch != epoch:
+                if self.epoch is not None:
+                    self.retired_epochs.add(self.epoch)
+                self.epoch, self.floor = epoch, gen
             else:
                 self.floor = max(self.floor, gen)
         if 'result' in message or 'params' in message:
@@ -203,7 +215,7 @@ class EngineProcess:
                 raise EngineFailure('missing-data')
         _no_tokens(message)
         data = envelope.get('data')
-        if isinstance(data, dict) and ('projection' in data or 'items' in data):
+        if private:
             if envelope['consentGeneration'] < self.floor:
                 raise EngineFailure('private-value-below-floor')
         if isinstance(data, dict) and 'projection' in data:

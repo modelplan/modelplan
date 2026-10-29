@@ -97,7 +97,7 @@ func TestGeminiProjectSwitchNeverSplicesOldScope(t *testing.T) {
 						}
 					}))
 					oldHost, oldClient := geminiHost, nativeClient
-					geminiHost, nativeClient = srv.URL, srv.Client()
+					nativeClient = readerFixtureClient(t, srv, "cloudcode-pa.googleapis.com")
 					defer func() { srv.Close(); geminiHost, nativeClient = oldHost, oldClient }()
 					if err := RefreshNative(context.Background(), p, geminiNow); err != nil {
 						t.Fatal(err)

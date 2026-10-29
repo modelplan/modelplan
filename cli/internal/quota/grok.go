@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"math"
 	"net/http"
@@ -230,6 +231,7 @@ func grokExpiry(auth grokAuth, now time.Time) bool {
 }
 
 func collectGrok(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	c = accountReadClient(consent.ScopeGrokAccountUsageSavedLogin, c)
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != "" || meta.AccountKey != ""
 	fail := func(state, notice string, codes ...string) readerOutcome {
