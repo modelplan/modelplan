@@ -21,6 +21,8 @@ func TestMissingRetiredNoReaderFixtures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			in := sampleInput()
 			in.Accounts = nil
+			in.Catalogue[0].ToolID = "amp"
+			in.Consents[0].ToolID = "amp"
 			in.Profiles = nil
 			in.Catalogue[0].ReaderExists = false
 			expected := CodeToolNotFound

@@ -5,14 +5,14 @@
     "consentGeneration": 7,
     "rows": [
       {
-        "id": "codex",
+        "id": "amp",
         "kind": "tool",
-        "order": 1,
+        "order": 11,
         "name": {
-          "en": "Codex",
-          "zh": "Codex"
+          "en": "Amp",
+          "zh": "Amp"
         },
-        "vendorKey": "openai",
+        "vendorKey": null,
         "surfaces": [
           "dock",
           "menu",
