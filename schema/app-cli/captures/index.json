@@ -1,0 +1,761 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "file": "RowsAccount.json",
+      "type": "RowsAccount",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "accountLocator",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "credits",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "observedAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "freshUntil",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "lastFailure",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "route",
+        "plan",
+        "beta",
+        "valueState",
+        "windows"
+      ]
+    },
+    {
+      "file": "RowsCredits.json",
+      "type": "RowsCredits",
+      "optional": [
+        {
+          "field": "balance",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "unit"
+      ]
+    },
+    {
+      "file": "RowsExpiryState.json",
+      "type": "RowsExpiryState",
+      "optional": [
+        {
+          "field": "nextStep",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "state",
+        "reason"
+      ]
+    },
+    {
+      "file": "RowsFailure.json",
+      "type": "RowsFailure",
+      "optional": [],
+      "required": [
+        "code",
+        "at"
+      ]
+    },
+    {
+      "file": "RowsName.json",
+      "type": "RowsName",
+      "optional": [
+        {
+          "field": "userAuthored",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "en",
+        "zh"
+      ]
+    },
+    {
+      "file": "RowsNextStep.json",
+      "type": "RowsNextStep",
+      "optional": [
+        {
+          "field": "availableAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "disabledReason",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "action",
+        "text"
+      ]
+    },
+    {
+      "file": "RowsPlan.json",
+      "type": "RowsPlan",
+      "optional": [
+        {
+          "field": "name",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "file": "RowsReason.json",
+      "type": "RowsReason",
+      "optional": [],
+      "required": [
+        "code",
+        "text"
+      ]
+    },
+    {
+      "file": "RowsRow.json",
+      "type": "RowsRow",
+      "optional": [
+        {
+          "field": "vendorKey",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "nextStep",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "expiresAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "stateAfterExpiry",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "id",
+        "kind",
+        "order",
+        "name",
+        "surfaces",
+        "consent",
+        "state",
+        "reason",
+        "accounts"
+      ]
+    },
+    {
+      "file": "RowsRowsSummary.json",
+      "type": "RowsRowsSummary",
+      "optional": [
+        {
+          "field": "nextStep",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "state",
+        "reason",
+        "text"
+      ]
+    },
+    {
+      "file": "RowsText.json",
+      "type": "RowsText",
+      "optional": [],
+      "required": [
+        "en",
+        "zh"
+      ]
+    },
+    {
+      "file": "RowsWindow.json",
+      "type": "RowsWindow",
+      "optional": [
+        {
+          "field": "durationSeconds",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "remainingPercent",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "resetsAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "observedAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "validUntil",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "id",
+        "role",
+        "label",
+        "limitKey",
+        "poolKey",
+        "resetMode",
+        "current"
+      ]
+    },
+    {
+      "file": "WireCancelParams.json",
+      "type": "WireCancelParams",
+      "optional": [],
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "file": "WireConsentFacts.json",
+      "type": "WireConsentFacts",
+      "optional": [],
+      "required": [
+        "scopes"
+      ]
+    },
+    {
+      "file": "WireConsentGrantParams.json",
+      "type": "WireConsentGrantParams",
+      "optional": [
+        {
+          "field": "forget",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "keychain",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "requestId",
+        "expectStoreEpoch",
+        "expectGeneration",
+        "consentTextVersion",
+        "allow",
+        "deny"
+      ]
+    },
+    {
+      "file": "WireConsentReceipt.json",
+      "type": "WireConsentReceipt",
+      "optional": [
+        {
+          "field": "committedGeneration",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "cleanupPending",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "requestId",
+        "committed",
+        "code"
+      ]
+    },
+    {
+      "file": "WireConsentScope.json",
+      "type": "WireConsentScope",
+      "optional": [
+        {
+          "field": "keychain",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "disabledReason",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "scope",
+        "tool",
+        "route",
+        "detected",
+        "retired",
+        "state",
+        "defaultCheck",
+        "cleanupPending"
+      ]
+    },
+    {
+      "file": "WireCredentialRequest.json",
+      "type": "WireCredentialRequest",
+      "optional": [],
+      "required": [
+        "operationId",
+        "provider",
+        "scope",
+        "interactive"
+      ]
+    },
+    {
+      "file": "WireCredentialResult.json",
+      "type": "WireCredentialResult",
+      "optional": [
+        {
+          "field": "accessToken",
+          "omission": false,
+          "null": false,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "expiresAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "operationId",
+        "outcome"
+      ]
+    },
+    {
+      "file": "WireDiagnostics.json",
+      "type": "WireDiagnostics",
+      "optional": [
+        {
+          "field": "lastErrorClass",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "protocolVersion",
+        "serverVersion",
+        "uptimeSeconds",
+        "scopes"
+      ]
+    },
+    {
+      "file": "WireEmpty.json",
+      "type": "WireEmpty",
+      "optional": [],
+      "required": []
+    },
+    {
+      "file": "WireEnvelope.json",
+      "type": "WireEnvelope\u003cWireRowsSnapshot\u003e",
+      "optional": [
+        {
+          "field": "scopes",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ]
+    },
+    {
+      "file": "WireErrorContext.json",
+      "type": "WireErrorContext",
+      "optional": [
+        {
+          "field": "storeEpoch",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "consentGeneration",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "sessionId"
+      ]
+    },
+    {
+      "file": "WireFailure.json",
+      "type": "WireFailure",
+      "optional": [
+        {
+          "field": "id",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "jsonrpc",
+        "error"
+      ]
+    },
+    {
+      "file": "WireHealth.json",
+      "type": "WireHealth",
+      "optional": [],
+      "required": [
+        "state",
+        "code"
+      ]
+    },
+    {
+      "file": "WireHistoryItem.json",
+      "type": "WireHistoryItem",
+      "optional": [
+        {
+          "field": "model",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "tokens",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "window",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "value",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "at"
+      ]
+    },
+    {
+      "file": "WireHistoryPage.json",
+      "type": "WireHistoryPage",
+      "optional": [
+        {
+          "field": "nextCursor",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "items"
+      ]
+    },
+    {
+      "file": "WireHistoryQueryParams.json",
+      "type": "WireHistoryQueryParams",
+      "optional": [
+        {
+          "field": "ref",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "cursor",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": [
+        "kind",
+        "tool",
+        "limit"
+      ]
+    },
+    {
+      "file": "WireInitializeParams.json",
+      "type": "WireInitializeParams",
+      "optional": [],
+      "required": [
+        "sessionId",
+        "protocolVersion",
+        "appVersion",
+        "capabilities"
+      ]
+    },
+    {
+      "file": "WireInitializeResult.json",
+      "type": "WireInitializeResult",
+      "optional": [],
+      "required": [
+        "protocolVersion",
+        "serverVersion",
+        "capabilities"
+      ]
+    },
+    {
+      "file": "WireNotification.json",
+      "type": "WireNotification\u003cWireRowsSnapshot\u003e",
+      "optional": [],
+      "required": [
+        "jsonrpc",
+        "method",
+        "params"
+      ]
+    },
+    {
+      "file": "WirePluginInstallParams.json",
+      "type": "WirePluginInstallParams",
+      "optional": [
+        {
+          "field": "offline",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "tool"
+      ]
+    },
+    {
+      "file": "WireRPCError.json",
+      "type": "WireRPCError",
+      "optional": [],
+      "required": [
+        "code",
+        "message",
+        "data"
+      ]
+    },
+    {
+      "file": "WireRefreshRequestParams.json",
+      "type": "WireRefreshRequestParams",
+      "optional": [
+        {
+          "field": "scopes",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        }
+      ],
+      "required": []
+    },
+    {
+      "file": "WireRefreshScheduled.json",
+      "type": "WireRefreshScheduled",
+      "optional": [
+        {
+          "field": "disabledReason",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "scope",
+        "at"
+      ]
+    },
+    {
+      "file": "WireRequest.json",
+      "type": "WireRequest",
+      "optional": [
+        {
+          "field": "id",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true
+        },
+        {
+          "field": "params",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "jsonrpc",
+        "method"
+      ]
+    },
+    {
+      "file": "WireRowsProjection.json",
+      "type": "WireRowsProjection",
+      "optional": [],
+      "required": [
+        "rowsVersion",
+        "rows",
+        "rowsSummary"
+      ]
+    },
+    {
+      "file": "WireRowsSnapshot.json",
+      "type": "WireRowsSnapshot",
+      "optional": [],
+      "required": [
+        "sequence",
+        "projection"
+      ]
+    },
+    {
+      "file": "WireScopeDiag.json",
+      "type": "WireScopeDiag",
+      "optional": [
+        {
+          "field": "lastRead",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        },
+        {
+          "field": "nextDueAt",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "scope",
+        "state",
+        "code"
+      ]
+    },
+    {
+      "file": "WireSuccess.json",
+      "type": "WireSuccess\u003cWireRowsSnapshot\u003e",
+      "optional": [],
+      "required": [
+        "jsonrpc",
+        "id",
+        "result"
+      ]
+    }
+  ]
+}
