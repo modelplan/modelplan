@@ -153,3 +153,29 @@ This is the code's state on main `f830589`. Each card must verify it before the 
 | Qwen Code | L: a user-selected export | Keep |
 
 **First batch:** Claude, Gemini, Grok, Kimi, Kiro and Cursor. All of them failed on the owner's Mac. Copilot follows.
+
+## 7. Keep the research; update it, don't repeat it
+
+Research happens once per tool and is then kept. Two artifacts carry it:
+
+- **Reference index**, `docs/readers/reference-index.md`.
+  - A script lists, for each reference project at a pinned commit, the tools it supports, the files that hold each tool's reader, and each path's classification.
+  - It starts from the 10-23 coverage research.
+  - For a new tool, look the tool up in the index, then read only the two or three projects that cover it, and only their files for that tool.
+- **Integration card**, `docs/readers/<tool>.md`. A card is permanent. It records the references compared and their pinned commits, the chosen path, the rejected paths and why, the pitfalls and their fixtures.
+
+Update a card only when one of these happens:
+
+1. Our reader breaks, or fails on a real Mac.
+2. The vendor changes the endpoint or the authentication.
+3. A reference project changes that tool's files since the card's pinned commit.
+4. A new incident about that tool appears in a reference project's issue tracker.
+
+**Watch.** A lower-cost model runs the watch weekly and before each release. It works through these steps:
+
+1. For each reference project, diff that tool's files from the pinned commit to the current head.
+2. Scan new issues that mention the tool.
+3. Write a short change report.
+4. If a card is affected, propose the card update, with what changed and why.
+
+The coordinator reviews each card update. A reader lane changes the code. Because cards and the index persist, a new tool costs one card, and a changed reference costs one card update.
