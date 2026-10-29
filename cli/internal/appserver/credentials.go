@@ -47,17 +47,20 @@ func (s *Server) RequestCredential(need CredentialNeed) (string, error) {
 	return s.requestCredential(need, false)
 }
 func (s *Server) requestCredential(need CredentialNeed, explicit bool) (string, error) {
-	return s.openCredential(need, explicit, nil)
+	return s.openCredential(s.ctx, need, explicit, nil)
 }
 
 // ReadCredential is the waitable background capability used by a budgeted
 // reader. Interactive operations originate only in the committed grant flow.
 func (s *Server) ReadCredential(ctx context.Context, need CredentialNeed) (wire.CredentialResult, error) {
+	if err := ctx.Err(); err != nil {
+		return wire.CredentialResult{}, err
+	}
 	if need.Interactive {
 		return wire.CredentialResult{}, ProtocolError{wire.CodeCredentialRejected}
 	}
 	reply := make(chan credentialReply, 1)
-	id, err := s.openCredential(need, false, reply)
+	id, err := s.openCredential(ctx, need, false, reply)
 	if err != nil {
 		return wire.CredentialResult{}, err
 	}
@@ -78,7 +81,7 @@ func (s *Server) ReadCredential(ctx context.Context, need CredentialNeed) (wire.
 		return wire.CredentialResult{}, context.Canceled
 	}
 }
-func (s *Server) openCredential(need CredentialNeed, explicit bool, reply chan credentialReply) (string, error) {
+func (s *Server) openCredential(parent context.Context, need CredentialNeed, explicit bool, reply chan credentialReply) (string, error) {
 	if need.Provider != "claude" || need.Interactive && !explicit {
 		return "", ProtocolError{wire.CodeCredentialRejected}
 	}
@@ -88,7 +91,7 @@ func (s *Server) openCredential(need CredentialNeed, explicit bool, reply chan c
 	if s.ctx == nil {
 		return "", ProtocolError{wire.CodeNotInitialized}
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	ctx, cancel := context.WithTimeout(parent, s.config.RequestTimeout)
 	defer cancel()
 	if err := s.refresh(ctx); err != nil {
 		return "", err

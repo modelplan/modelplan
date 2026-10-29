@@ -141,3 +141,44 @@ func TestClaudeAppCredentialOutcomeAndRelease(t *testing.T) {
 		})
 	}
 }
+
+func TestInteractiveCredentialOutcomePreservesClosedRemoteBudget(t *testing.T) {
+	p := claudeTestPaths(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	root := filepath.Join(os.Getenv("HOME"), ".claude")
+	os.MkdirAll(root, 0700)
+	g := p.ReaderAccess.Grants["claude"]
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain = true
+	p.ReaderAccess.Grants["claude"] = g
+	deadline := claudeTestNow.Add(time.Hour)
+	if err := reserveReaderAttempt(p.Cache, "claude", deadline); err != nil {
+		t.Fatal(err)
+	}
+	floor, err := os.ReadFile(readerAttemptPath(p.Cache, "claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, outcome := range []string{"denied", "canceled", "timeout", "interaction_required", "not_found", "error", "ok"} {
+		paths, release := WithClaudeCredential(p, outcome, "U7-unused-closed-budget-canary", nil)
+		if err := KeychainGrantRead(context.Background(), paths, "claude", claudeTestNow); err != nil {
+			release()
+			t.Fatal(err)
+		}
+		release()
+		state, err := loadReaderState(p.Cache, "claude")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if outcome != "ok" && (len(state.Entries) != 1 || state.Entries[0].CredentialReadState == "") {
+			t.Fatal("credential outcome lost behind remote budget", outcome)
+		}
+		if outcome == "ok" && state.Entries[0].CredentialReadState != "" {
+			t.Fatal("credential outcome became a permanent latch")
+		}
+		after, _ := os.ReadFile(readerAttemptPath(p.Cache, "claude"))
+		if string(after) != string(floor) {
+			t.Fatal("credential outcome changed budget", outcome)
+		}
+	}
+}
