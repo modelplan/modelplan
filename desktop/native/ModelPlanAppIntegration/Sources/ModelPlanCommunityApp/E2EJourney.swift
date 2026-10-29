@@ -24,13 +24,13 @@ import ModelPlanAppIntegration
     static func makeFirstRun(_ editor: SettingsEditor) -> any SettingsWindowSurface {
         let value = JourneyFirstRunSurface(editor); surface = value; return value
     }
-    private static func wait(_ seconds: Double, _ predicate: @MainActor () -> Bool) async -> Bool {
+    private static func wait(_ seconds: Double, _ predicate: @MainActor () async -> Bool) async -> Bool {
         let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
         while ContinuousClock.now < deadline {
-            if predicate() { return true }
+            if await predicate() { return true }
             try? await Task.sleep(nanoseconds: 200_000_000)
         }
-        return predicate()
+        return await predicate()
     }
     private static func record(_ step: Int, _ facts: [String: Any]) {
         var value = facts; value["step"] = step
@@ -43,10 +43,33 @@ import ModelPlanAppIntegration
         })
         let invariant: [String: Any] = ["canonicalKnown": allowed != nil, "allowedTools": allowed ?? [], "rowCounts": counts]
         value["rowInvariant"] = invariant
+        let nonFresh = rows.filter { row in
+            row["dataState"] as? String != "fresh" && (row["providers"] as? [String] ?? []).contains { (allowed ?? []).contains($0) }
+        }
+        value["variant"] = CommunityJourneyCI.nativePanels ? "native" : "headless"
+        value["nativePanelsEnabled"] = observedDock?.journeyNativePanelsEnabled ?? false
+        value["nativePanelsVisible"] = observedDock?.isVisible ?? false
+        value["nonFreshRowCount"] = nonFresh.count
+        value["guidanceRows"] = observedDock.map { cardRows($0, rows: nonFresh) } ?? []
         records.append(value)
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_E2E_REPORT"],
               let data = try? JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "steps": records], options: [.sortedKeys]) else { return }
         try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+    private static func cardRows(_ dock: StaticDockPreviewHost, rows: [[String: Any]]) -> [[String: Any]] {
+        rows.map { row in
+            var value = row
+            let opened = (row["rowIndex"] as? Int).map { dock.journeyOpenCard(at: $0) } ?? false
+            value["cardOpened"] = opened
+            let guidance = dock.journeyCardGuidance
+            value["reason"] = guidance?["reason"] ?? ""
+            value["nextStep"] = guidance?["nextStep"] ?? ""
+            dock.journeyDismissCard()
+            return value
+        }
+    }
+    private static func rows(_ dock: StaticDockPreviewHost, for tool: String) -> [[String: Any]] {
+        dock.journeyRows.filter { ($0["providers"] as? [String])?.contains(tool) == true }
     }
     private static var profile: URL {
         URL(fileURLWithPath: ProcessInfo.processInfo.environment["CODEX_HOME"] ?? "/invalid-e2e-profile")
@@ -89,11 +112,11 @@ import ModelPlanAppIntegration
         return tools.allSatisfy { tool in controller.snapshot?.tools.contains { $0.tool == tool && $0.authorization == .allowed } == true }
     }
     static func run(delegate: CommunityDelegate, dock: StaticDockPreviewHost, backend: CommunityConnectionBackend,
-                    consent: CommunityCLIConsentPort) async {
+                    consent: CommunityCLIConsentPort, transport: ConsentGatedDesktopTransport) async {
         observedDock = dock; observedConsent = consent
         _ = await wait(30) { delegate.settingsIntegration != nil }
         guard let integration = delegate.settingsIntegration as? CommunityConnectionIntegration else {
-            for step in 1...8 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
+            for step in 1...11 { record(step, ["blocked": "retained-settings-missing"]) }; exit(0)
         }
         await integration.restorePreferences()
         let controller = integration.flow.application.editor.connections
@@ -109,24 +132,37 @@ import ModelPlanAppIntegration
                    "providerReadsBeforeGrant": calls(failed: false).count + calls(failed: true).count])
 
         let granted = await allow(controller)
+        var pendingFacts = dock.journeyToolState("codex")
+        pendingFacts["renderedRows"] = cardRows(dock, rows: rows(dock, for: "codex"))
+        pendingFacts["granted"] = granted
         record(2, ["granted": granted, "apiAvailable": backend.settingsConnectionAvailability.canGrant,
                    "controllerPhase": String(describing: controller.phase),
                    "releaseIdentityVerified": CommunityConsentBundleIdentity.matches(bundle: Bundle.main.bundleURL),
                    "debugAdmission": CommunityJourneyCI.enabled])
 
-        _ = await wait(granted ? 100 : 1) {
+        record(3, pendingFacts)
+        _ = await wait(granted ? (CommunityJourneyCI.nativePanels ? 430 : 100) : 1) {
             guard let last = calls(failed: false).last else { return false }
-            return freshFeed(dock, after: last)
+            guard freshFeed(dock, after: last) else { return false }
+            if CommunityJourneyCI.nativePanels {
+                guard let refresh = await transport.journeyAccountRefresh, refresh.successes > 0,
+                      let completed = refresh.lastSuccessAt else { return false }
+                return freshFeed(dock, after: completed.timeIntervalSince1970)
+            }
+            return true
         }
         let success = calls(failed: false)
-        record(3, ["providerReads": success.count, "postProviderSnapshot": success.last.map { freshFeed(dock, after: $0) } ?? false,
+        let refresh = await transport.journeyAccountRefresh
+        record(4, ["visibleRefreshAttempts": refresh?.attempts ?? -1, "visibleRefreshSuccesses": refresh?.successes ?? -1,
+                   "postVisibleRefreshSnapshot": refresh?.lastSuccessAt.map { freshFeed(dock, after: $0.timeIntervalSince1970) } ?? false,
+                   "providerReads": success.count, "postProviderSnapshot": success.last.map { freshFeed(dock, after: $0) } ?? false,
                    "nativePanelsVisible": dock.isVisible])
 
         _ = await wait(success.isEmpty ? 1 : 75) {
             fixtureValueIsRendered(dock)
         }
         let sawValue = fixtureValueIsRendered(dock)
-        record(4, ["renderedRows": dock.journeyRows])
+        record(5, ["renderedRows": dock.journeyRows])
 
         // Inspect the card made from the same fresh, bound row; never reconstruct age from a timestamp.
         let boundRow = dock.journeyRows.first {
@@ -134,7 +170,7 @@ import ModelPlanAppIntegration
                 $0["dataState"] as? String == "fresh" && $0["readout"] as? String == "37%"
         }
         let openedAgeCard = (boundRow?["rowIndex"] as? Int).map { dock.journeyOpenCard(at: $0) } ?? false
-        record(5, ["freshBoundRow": boundRow != nil, "cardOpened": openedAgeCard, "ageText": dock.journeyCardAge ?? ""])
+        record(6, ["freshBoundRow": boundRow != nil, "cardOpened": openedAgeCard, "ageText": dock.journeyCardAge ?? ""])
         dock.journeyDismissCard()
 
         let revokeAt = Date().timeIntervalSince1970
@@ -143,7 +179,7 @@ import ModelPlanAppIntegration
             $0.tool == .codex && ($0.authorization == .denied || $0.authorization == .noConsent)
         } == true
         _ = await wait(revoked ? 90 : 1) { freshFeed(dock, after: revokeAt) && values(dock).isEmpty }
-        record(6, ["revoked": revoked, "valueSeenBefore": sawValue, "values": values(dock),
+        record(7, ["revoked": revoked, "valueSeenBefore": sawValue, "values": values(dock),
                    "postRevokeSnapshot": freshFeed(dock, after: revokeAt), "rows": dock.journeySnapshot?.inputs.count ?? 0])
 
         // Change only the synthetic provider's own control file, never a ModelPlan cache or identity.
@@ -172,7 +208,7 @@ import ModelPlanAppIntegration
                   let view = surface.controller.window?.contentView else { return false }
             return labels(view).contains { $0.contains("Codex") } && controller.isBound(to: backend)
         }
-        record(7, ["regranted": regranted, "unreadableObserved": failures.count > failuresBefore,
+        record(8, ["regranted": regranted, "unreadableObserved": failures.count > failuresBefore,
                    "postErrorSnapshot": failures.last.map { freshFeed(dock, after: $0) } ?? false,
                    "rows": dock.journeyRows.count, "reasonRows": unreadableRows,
                    "values": values(dock), "rowActionDispatched": rowActionDispatched,
@@ -189,7 +225,31 @@ import ModelPlanAppIntegration
         grokFacts["granted"] = grokGranted
         grokFacts["postGrantSnapshot"] = freshFeed(dock, after: grokGrantAt)
         grokFacts["renderedRows"] = grokRows
-        record(8, grokFacts)
+        record(9, grokFacts)
+        let claudeGrantAt = Date().timeIntervalSince1970
+        let claudeGranted = await allow(controller, tools: [.codex, .grok, .claude])
+        _ = await wait(claudeGranted ? 130 : 1) {
+            dock.journeyToolState("claude")["nativeConsentRequired"] as? Bool == true && freshFeed(dock, after: claudeGrantAt)
+        }
+        var claudeFacts = dock.journeyToolState("claude")
+        claudeFacts["granted"] = claudeGranted
+        claudeFacts["keychainUnset"] = controller.snapshot?.tools.first { $0.tool == .claude }?.keychain == .unset
+        claudeFacts["credentialsFileAbsent"] = !FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.claude/.credentials.json")
+        claudeFacts["postGrantSnapshot"] = freshFeed(dock, after: claudeGrantAt)
+        claudeFacts["renderedRows"] = cardRows(dock, rows: rows(dock, for: "claude"))
+        record(10, claudeFacts)
+
+        let keyGrantAt = Date().timeIntervalSince1970
+        let keyGranted = await allow(controller, tools: [.codex, .grok, .claude, .zai])
+        _ = await wait(keyGranted ? 90 : 1) {
+            dock.journeyToolState("zai")["missingKeyObserved"] as? Bool == true && freshFeed(dock, after: keyGrantAt)
+        }
+        var keyFacts = dock.journeyToolState("zai")
+        keyFacts["granted"] = keyGranted
+        keyFacts["keyEnvUnset"] = ProcessInfo.processInfo.environment["Z_AI_API_KEY"] == nil
+        keyFacts["postGrantSnapshot"] = freshFeed(dock, after: keyGrantAt)
+        keyFacts["renderedRows"] = cardRows(dock, rows: rows(dock, for: "zai"))
+        record(11, keyFacts)
         exit(0)
     }
 }
