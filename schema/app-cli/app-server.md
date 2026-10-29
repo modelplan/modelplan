@@ -38,25 +38,25 @@ Initialize:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"sessionId":"s-7f3a","protocolVersion":"1.0","appVersion":"0.6.0","capabilities":["rows","consent","credentials"]}}
-{"jsonrpc":"2.0","id":1,"result":{"sessionId":"s-7f3a","consentGeneration":41,"data":{"protocolVersion":"1.0","serverVersion":"0.6.0","capabilities":["rows","consent","credentials","refresh","plugin_install"]}}}
+{"jsonrpc":"2.0","id":1,"result":{"sessionId":"s-7f3a","storeEpoch":"e-91c2","consentGeneration":41,"data":{"protocolVersion":"1.0","serverVersion":"0.6.0","capabilities":["rows","consent","credentials","refresh","plugin_install"]}}}
 ```
 
 Success with private values:
 
 ```json
-{"jsonrpc":"2.0","id":7,"result":{"sessionId":"s-7f3a","consentGeneration":41,"scopes":["claude.local_history"],"data":{"items":[{"at":"2026-10-29T13:00:00Z","model":null,"tokens":1200,"window":null,"value":null}],"nextCursor":"c1.opaque"}}}
+{"jsonrpc":"2.0","id":7,"result":{"sessionId":"s-7f3a","storeEpoch":"e-91c2","consentGeneration":41,"scopes":["claude.local_history"],"data":{"items":[{"at":"2026-10-29T13:00:00Z","model":null,"tokens":1200,"window":null,"value":null}],"nextCursor":"c1.opaque"}}}
 ```
 
 Error:
 
 ```json
-{"jsonrpc":"2.0","id":8,"error":{"code":-32023,"message":"consent_changed","data":{"sessionId":"s-7f3a","consentGeneration":42}}}
+{"jsonrpc":"2.0","id":8,"error":{"code":-32023,"message":"consent_changed","data":{"sessionId":"s-7f3a","storeEpoch":"e-91c2","consentGeneration":42}}}
 ```
 
 Notification:
 
 ```json
-{"jsonrpc":"2.0","method":"rows/changed","params":{"sessionId":"s-7f3a","consentGeneration":42,"scopes":["claude.local_history","codex.runtime_usage"],"data":{"sequence":18,"projection":{}}}}
+{"jsonrpc":"2.0","method":"rows/changed","params":{"sessionId":"s-7f3a","storeEpoch":"e-91c2","consentGeneration":42,"scopes":["claude.local_history","codex.runtime_usage"],"data":{"sequence":18,"projection":{}}}}
 ```
 
 ## Sessions and ordering
@@ -128,9 +128,9 @@ Notification:
 `history/query` and `cockpit/query` return private values, so:
 
 - **Admission.** The engine admits the query under the current consent of every scope it touches.
-- **Re-check.** After reading, it checks the generation again. If the generation moved, the answer is `consent_changed` with no items.
-- **Envelope.** The result lists the scopes it covers and the generation it was admitted under.
-- **Cursors.** A cursor is opaque. It is bound to the session, the scopes, the account reference and the generation, and a cursor from an older generation returns `cursor_stale`.
+- **Re-check.** After reading, it checks `(storeEpoch, generation)` again. If either moved, the answer is `consent_changed` with no items.
+- **Envelope.** The result lists the scopes it covers and the epoch and generation it was admitted under.
+- **Cursors.** A cursor is opaque. It is bound to the session, the scopes, the account reference, the store epoch and the generation, and a cursor from another epoch or an older generation returns `cursor_stale`.
 - **App.** The `scopes` on a result tell what the content covers. They do not tell which scopes a consent change touched.
   - When any message arrives with a higher generation or a new store epoch, the app first clears **all** private views, derived caches and cockpit page values, and sends `CockpitBridge` a `clear`. Only then does it advance the floor. This applies to errors too.
   - The app then rebuilds the views only from results admitted under the new generation.
@@ -185,7 +185,8 @@ type ConsentFacts struct {
 }
 
 type ConsentGrantParams struct {
-	RequestID        string            `json:"requestId"`
+	RequestID        string            `json:"requestId"`       // replay is keyed by (storeEpoch, requestId)
+	ExpectStoreEpoch string            `json:"expectStoreEpoch"` // a different epoch is rejected with consent_stale before any commit
 	ExpectGeneration uint64            `json:"expectGeneration"`
 	TextVersion      int               `json:"consentTextVersion"`
 	Allow            []string          `json:"allow"`              // scope ids; subject to admission

@@ -177,7 +177,16 @@ Each seam has tests that reach the owner-visible result. A fix keeps its regress
       1. It clears every private view, derived cache and cockpit value.
       2. It replaces the old floor with the new epoch's floor.
       3. It drops every result and receipt from the old epoch, including retries of old requests.
-    - Acceptance: an existing floor, then a damaged store, then a reset, then a restart, then a retried old request. No old value is shown, and no new-epoch result is dropped.
+    - **Server fence.** Every mutation carries `expectStoreEpoch`, and replay is keyed by `(storeEpoch, requestId)`. The server rejects an old-epoch request with `consent_stale` before committing anything.
+    - **Acceptance.** Run these steps in order:
+      1. an existing floor;
+      2. a damaged store;
+      3. a reset;
+      4. a restart;
+      5. a retried old-epoch allow with the same numeric generation;
+      6. an old in-flight read that completes at the same numeric generation.
+
+      The allow is rejected and the read is discarded. No old value is shown, and no new-epoch result is dropped.
   - **Consequence.**
     - Every CLI copy on the machine that reads quota must be v2-capable. The app's bundled engine, the plugin pins and the Skill's install pin move in the same release.
     - Until a plugin updates, its old copy shows readers off. It never reads under stale grants.
@@ -219,9 +228,9 @@ Each seam has tests that reach the owner-visible result. A fix keeps its regress
   - The app-server removes duplicate scheduling and detached refresh workers from the app path. It keeps using the shared mechanisms every CLI copy relies on:
     - provider locks and budgets;
     - `consent.ReaderLock` / `ReaderLockContext` admission;
-    - the atomic `consent.Publish`, which serializes the generation check with the cache commit;
+    - the atomic `consent.Publish`, which compares the full `(storeEpoch, generation)` under the store lock and serializes that check with the cache commit;
     - Forget synchronization.
-  - A read result is committed only through `Publish` under the generation it was admitted with. A result that loses that race is discarded and never cached.
+  - A read result is committed only through `Publish` under the epoch and generation it was admitted with. A result that loses that race is discarded and never cached. This holds even when the numbers match across a reset, because the epochs differ.
   - The app-server watches the consent store. When an independent CLI process changes consent, the app-server re-reads and notifies the app with the new generation.
 - **[agreed] Consent transactions.**
   - `consent/grant` returns a receipt that says whether the change committed, and at which generation. That holds even on `cleanup_pending`: the revoke has committed but cleanup is incomplete.
@@ -252,7 +261,7 @@ Each seam has tests that reach the owner-visible result. A fix keeps its regress
   - **Context.** Every result carries its context in the response envelope: the `sessionId`, the scopes covered and the `consentGeneration` it was admitted under. Items do not repeat these fields.
   - **Cursors.** A cursor is opaque. It is bound to the session, the scopes, the account reference and the generation. After a revoke or re-grant it returns `cursor_stale`, so an old cursor never recovers data.
   - **App.** When the app sees a higher generation in any message, it:
-    - clears every history and cockpit view and derived cache for the affected scopes;
+    - first clears **every** private view, derived cache and cockpit page value, whatever scopes the message covers;
     - drops any result admitted under a lower generation;
     - sends `CockpitBridge` a `clear` with the new generation, and the page discards anything older.
   - **Acceptance.**
