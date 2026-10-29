@@ -623,6 +623,22 @@
       ]
     },
     {
+      "file": "WirePluginInstallParams.json",
+      "type": "WirePluginInstallParams",
+      "optional": [
+        {
+          "field": "offline",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false
+        }
+      ],
+      "required": [
+        "tool"
+      ]
+    },
+    {
       "file": "WireRPCError.json",
       "type": "WireRPCError",
       "optional": [],

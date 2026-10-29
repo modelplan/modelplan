@@ -36,6 +36,7 @@ func decodeCapture(_ type: String, _ data: Data) throws {
     case "WireInitializeParams": _ = try WireDecoder.decode(WireInitializeParams.self, from: data)
     case "WireInitializeResult": _ = try WireDecoder.decode(WireInitializeResult.self, from: data)
     case "WireNotification<WireRowsSnapshot>": _ = try WireDecoder.decode(WireNotification<WireRowsSnapshot>.self, from: data)
+    case "WirePluginInstallParams": _ = try WireDecoder.decode(WirePluginInstallParams.self, from: data)
     case "WireRPCError": _ = try WireDecoder.decode(WireRPCError.self, from: data)
     case "WireRefreshRequestParams": _ = try WireDecoder.decode(WireRefreshRequestParams.self, from: data)
     case "WireRefreshScheduled": _ = try WireDecoder.decode(WireRefreshScheduled.self, from: data)

@@ -119,7 +119,6 @@ func TestWaitableCredentialRejectsWrongOperationAndOldEpoch(t *testing.T) {
 	if errorOf(t, c.response(t, 3)).Code != wire.CodeCredentialRejected {
 		t.Fatal("old epoch accepted at same generation")
 	}
-	cancel()
 	select {
 	case r := <-done:
 		if r.err == nil || r.result.AccessToken != nil {
