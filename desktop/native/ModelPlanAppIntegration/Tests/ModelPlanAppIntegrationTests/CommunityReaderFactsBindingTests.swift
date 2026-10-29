@@ -48,6 +48,7 @@ final class CommunityReaderFactsBindingTests: XCTestCase {
         XCTAssertTrue(model.inputs.isEmpty)
         XCTAssertEqual(model.emptyDiagnostic?.category, .notConnectedYet)
         XCTAssertEqual(CommunityReaderStatusPresentation.emptyText(model, english: false), "读取器连接尚未完成。 打开设置检查已连接工具。")
+        XCTAssertEqual(CommunityReaderStatusPresentation.emptyText(model, english: true), "Reader connection is not complete yet. Open Settings to check connected tools.")
         XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english: true), ["Claude: Reader connection is not complete yet. Open Settings to check this tool."])
         let raw = "/synthetic/private/alice@example.invalid/auth.json"
         let unknown = CommunityDockSnapshot(snapshot: nil, diagnostics: StoreDiagnostics(), now: now, readerFacts: [.init(providerID: raw, reasonCode: raw)])
