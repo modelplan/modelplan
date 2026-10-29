@@ -244,3 +244,27 @@ func TestHistoryCanceledDuringAdmissionNeverReads(t *testing.T) {
 		t.Fatalf("cancellation after admission reached storage: reads=%d, error=%v", source.read, err)
 	}
 }
+
+func TestHistoryRejectsNullOptionalSelectors(t *testing.T) {
+	for _, selector := range []string{`"ref":null`, `"cursor":null`, `"ref": null,"cursor":null`} {
+		t.Run(selector, func(t *testing.T) {
+			h, state, source, ctx, _ := setupHistory(t)
+			source.afterAdmit = func() { t.Error("null selector reached admission") }
+			reply, err := h.Handle(ctx, json.RawMessage(`{"tool":"claude","kind":"tokens","limit":1,`+selector+`}`), state.stamp)
+			expectCode(t, reply, err, wire.CodeInvalidParams)
+			if source.read != 0 {
+				t.Fatal("null selector reached history storage")
+			}
+		})
+	}
+}
+
+func TestHistoryAllowsOmittedOptionalSelectors(t *testing.T) {
+	for _, selectors := range []string{"", `,"ref":"","cursor":""`} {
+		h, state, source, ctx, _ := setupHistory(t)
+		reply, err := h.Handle(ctx, json.RawMessage(`{"tool":"claude","kind":"tokens","limit":1`+selectors+`}`), state.stamp)
+		if err != nil || reply.Data == nil || source.read != 1 {
+			t.Fatalf("valid optional selectors rejected: %v", err)
+		}
+	}
+}
