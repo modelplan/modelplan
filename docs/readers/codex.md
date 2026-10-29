@@ -69,7 +69,7 @@ Subject: [current main adapter](https://github.com/modelplan/modelplan/blob/61ef
 | Observable evidence | Synthetic RPC fixture records the outer list; no installed-runtime vendor-network/filesystem/Keychain recording exists in this review |
 | Required test seam | Bind an exact executable/version/hash; record startup and each RPC, expired auth and failures against vendor-traffic and credential/config-write/prompt fakes. Scan every output writer with hostile error canaries |
 
-**P1 gap:** the four inner guarantees above are not established by the outer method list. `short(err.Error())` also remains a possible arbitrary runtime-error persistence path. The compiled R definition has `defaultCheck: true`, while the standard permits pre-selection only after the missing side-effect qualification. This docs PR changes no admission/default and certifies no runtime.
+**P1 gap:** the four inner guarantees above are not established by the outer method list. At the reviewed pin, `short(err.Error())` also permits arbitrary runtime-error persistence. The current adapter discards RPC error text and maps returned/cached process failures to fixed reasons; [collector/cache canaries](../../cli/internal/quota/runtime_error_output_test.go) and [real CLI stderr/log/JSON canaries](../../cli/cmd/modelplan/runtime_error_output_test.go) cover ModelPlan-owned writers. These synthetic tests do not audit runtime-owned logs or side effects. The compiled R definition has `defaultCheck: true`, while the standard permits pre-selection only after the missing side-effect qualification. Admission defaults are unchanged; no runtime is certified.
 
 ### Budget and stop rules
 

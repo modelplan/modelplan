@@ -126,7 +126,7 @@ func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 	return wait(2)
 }
 
-// kiroReason: a sign-in or version problem in plain words, else the message as given.
+// kiroReason keeps recognized fixed remedies and discards all vendor free text.
 func kiroReason(msg string) string {
 	m := strings.ToLower(msg)
 	switch {
@@ -135,7 +135,7 @@ func kiroReason(msg string) string {
 	case strings.Contains(m, "method not found") || strings.Contains(m, "unsupported") || strings.Contains(m, "agent-engine"):
 		return "Kiro CLI is too old for its usage call; update it"
 	}
-	return msg
+	return "other"
 }
 
 type kiroResult struct {
