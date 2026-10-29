@@ -166,10 +166,18 @@ Each seam has tests that reach the owner-visible result. A fix keeps its regress
     An old copy therefore reads nothing and writes nothing.
   - **[impl] Migration.**
     1. The first v2-capable engine takes the store lock and reads schema 1.
-    2. It maps each tool grant to the scopes that grant provably covered, and keeps denials and pending Forget entries.
+    2. It maps each tool grant to the scopes that grant provably covered. It keeps denials, pending Forget entries, the consent generation, the privacy mode and the stored request hashes and receipts, so retried requests still replay.
     3. It writes schema 2 atomically.
     4. It keeps the schema-1 file as `consent.v1.bak`, never reads it again for decisions, and deletes it after the official release.
-  - **[impl] Recovery.** A schema-2 file that fails to load is never overwritten. Readers stay off, and `doctor` and Settings show "consent store unreadable" with a reset action. After confirmation, the reset writes an empty schema-2 store.
+  - **[impl] Store epoch.** A schema-2 store carries a random `storeEpoch`, and the generation is ordered within it. The app keys its floor by `(storeEpoch, generation)`.
+  - **[impl] Recovery.**
+    - A schema-2 file that fails to load is never overwritten. Readers stay off, and `doctor` and Settings show "consent store unreadable" with a reset action.
+    - After confirmation, the reset writes an empty schema-2 store with a new `storeEpoch` and generation 1. Every grant must then be given again.
+    - An app that sees a new epoch treats it like a higher generation:
+      1. It clears every private view, derived cache and cockpit value.
+      2. It replaces the old floor with the new epoch's floor.
+      3. It drops every result and receipt from the old epoch, including retries of old requests.
+    - Acceptance: an existing floor, then a damaged store, then a reset, then a restart, then a retried old request. No old value is shown, and no new-epoch result is dropped.
   - **Consequence.**
     - Every CLI copy on the machine that reads quota must be v2-capable. The app's bundled engine, the plugin pins and the Skill's install pin move in the same release.
     - Until a plugin updates, its old copy shows readers off. It never reads under stale grants.
@@ -449,7 +457,7 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
 |---|---|---|---|---|---|
 | U1 Rows core | Classifier, mapping, membership, rows 3↔4 swap, oracle tests (#299) | — | — | CLIJIT | Oracle and table tests, L1 |
 | U2 Consent and reader state | Per-scope consent, consent schema 2 and its migration, the fence and Publish rules, revoke and Forget semantics, #295, #294, removing the #298 bypass, multi-writer and old-writer regressions | — | U1 | FEEDFIX | Race and old-writer tests, L2 |
-| U2a Reader admission, first batch | Admission gates on the first batch. Unapproved POST account-usage scopes (Gemini Code Assist, Cursor) make zero remote calls. MiniMax sends no request after a 401 or 403, or stays disabled until it doesn't. Local-history scopes are unaffected | U2 scope ids | U2 | READERS | Recording-transport tests, L1 |
+| U2a Reader admission, first batch | Admission gates on the first batch. Unapproved POST account-usage scopes (Gemini Code Assist, Cursor) make zero remote calls. MiniMax sends no request after a 401 or 403, or stays disabled until it doesn't. Local-history scopes are unaffected | U2 scope ids | U2, and the U14 L2 scenario | READERS | Interface stage: recording-transport tests, L1. Completion: an L2 scenario in U14 that runs the real app-server against a synthetic shared home and fake providers. It shows zero calls for unapproved POST scopes, no request from MiniMax after a 401 or 403, and local history kept. U10 cites this scenario |
 | U3 app-server core | Handshake, sessions, envelope, flow control, supervision contract, `rows/*`, `consent/*`, `diagnostics/get`, `credentials/request/result`, `engine/health` | U1 types | U1, U2 | CLIJIT | Protocol tests against the real binary, L2 |
 | U3b First-candidate handlers | `refresh/request` (shared budget), `plugin/install` (same contract as `plugin install --json`) | U3 | U3 | READERS | Real-binary handler tests |
 | U3c Cockpit handlers | `history/query` (`HistoryItem`, cursors), `cockpit/query`, `publication/get`, with the sensitive-query fence | U3 | U2, U3 | READERS | Real-binary handler tests, including late results after a revoke |

@@ -27,11 +27,11 @@ The session and the consent context travel in one place: a wrapper around every 
 
 | Message | Envelope |
 |---|---|
-| Results and notifications | `{ sessionId, consentGeneration, scopes?, data }` |
-| Errors | `sessionId`, and `consentGeneration` when known, in `error.data` |
+| Results and notifications | `{ sessionId, storeEpoch, consentGeneration, scopes?, data }` |
+| Errors | `sessionId`, and `storeEpoch` and `consentGeneration` when known, in `error.data` |
 | App requests | No `sessionId`, except `initialize`: the pipe is the session |
 
-- `consentGeneration` is the generation the content was produced or admitted under.
+- `consentGeneration` is the generation the content was produced or admitted under, within `storeEpoch`, the consent store's random epoch (it changes only when a damaged store is reset). The app orders consent by `(storeEpoch, consentGeneration)`.
 - `scopes` lists the consent scopes the content covers. It is set on results that carry private values: rows, history and cockpit.
 
 Initialize:
@@ -83,7 +83,13 @@ Notification:
   | Open credential operations per provider | 1 |
   | Queued data messages | 64 |
 
-  When the data queue is full, new query requests get `busy` and `rows/changed` keeps only its latest snapshot. Control messages are not affected.
+  | Queued control messages | 256, or 4 MiB |
+  | Write timeout for one frame | 10 s |
+
+  - **Data queue full.** New query requests get `busy`, and `rows/changed` keeps only its latest snapshot. A query is admitted only while a result slot is reserved for it, so a query that has started always has room for its result.
+  - **Control queue full, or write timeout.** The writer is stuck: the receiver has stopped reading. The server ends the session rather than drop a control message, and the app recovers by receipt replay and `consent/get` after the restart.
+  - **Scheduling in the server.** Revoke, Forget, `$/cancel` and `credentials/result` are admitted ahead of queued queries and never get `busy`, up to the control limit.
+  - **Acceptance.** The app stops reading. Two queries complete, a revoke arrives and health changes. The session ends within the write timeout, and after the restart the revoke receipt replays.
 - **Disconnect.**
   - A receipt may be lost when the connection drops. After a restart, the app retries the same `requestId` and the stored receipt is replayed, or it calls `consent/get`.
   - A committed transaction is never undone by EOF or cancel.
@@ -125,7 +131,10 @@ Notification:
 - **Re-check.** After reading, it checks the generation again. If the generation moved, the answer is `consent_changed` with no items.
 - **Envelope.** The result lists the scopes it covers and the generation it was admitted under.
 - **Cursors.** A cursor is opaque. It is bound to the session, the scopes, the account reference and the generation, and a cursor from an older generation returns `cursor_stale`.
-- **App.** On any higher generation, the app clears the history and cockpit views and caches for those scopes, drops older results, and sends `CockpitBridge` a `clear`.
+- **App.** The `scopes` on a result tell what the content covers. They do not tell which scopes a consent change touched.
+  - When any message arrives with a higher generation or a new store epoch, the app first clears **all** private views, derived caches and cockpit page values, and sends `CockpitBridge` a `clear`. Only then does it advance the floor. This applies to errors too.
+  - The app then rebuilds the views only from results admitted under the new generation.
+  - Acceptance: a Claude history page is open at g=41, and the CLI revokes Claude (g=42). A Codex result at g=42 arrives before `consent/changed`. The Claude page must be cleared when that result arrives.
 
 ## Type sketch (Go wire DTOs)
 
@@ -134,6 +143,7 @@ Notification:
 
 type Envelope[T any] struct { // every result and server notification params
 	SessionID         string   `json:"sessionId"`
+	StoreEpoch        string   `json:"storeEpoch"`
 	ConsentGeneration uint64   `json:"consentGeneration"`
 	Scopes            []string `json:"scopes,omitempty"` // set on results with private values
 	Data              T        `json:"data"`
@@ -196,7 +206,6 @@ type CredentialRequest struct { // server -> app
 	OperationID       string `json:"operationId"`
 	Provider          string `json:"provider"` // "claude" in v1
 	Scope             string `json:"scope"`
-	ConsentGeneration uint64 `json:"consentGeneration"`
 	Interactive       bool   `json:"interactive"` // true only after an explicit Settings action
 }
 
