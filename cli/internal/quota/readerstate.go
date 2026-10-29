@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"strings"
 	"time"
@@ -722,8 +723,8 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 // ForgetReader is called only by explicit disconnect/Forget orchestration. The
 // consent layer cancels in-flight work first. Tool credentials are never touched.
 func ForgetReader(cache, provider string) error {
-	if n := nativeReaders[provider]; n == nil || n.Managed == nil {
-		return errors.New("unknown managed reader")
+	if !consent.ValidTool(provider) {
+		return errors.New("invalid reader ID")
 	}
 	unlock, ok := lockFile(readerPath(cache, provider)+".lock", time.Now(), time.Minute)
 	if !ok {
