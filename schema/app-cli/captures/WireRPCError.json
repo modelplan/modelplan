@@ -1,0 +1,9 @@
+{
+  "code": 1,
+  "message": "synthetic",
+  "data": {
+    "sessionId": "s-synthetic",
+    "storeEpoch": "e-synthetic",
+    "consentGeneration": 7
+  }
+}

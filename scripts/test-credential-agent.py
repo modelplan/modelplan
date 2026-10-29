@@ -151,17 +151,17 @@ class Agent:
         return self.identifier
 
     def request(self, method, params):
-        # A fail-closed read may report consent_changed while another bounded
-        # publisher holds the shared lock. Re-read only this idempotent snapshot;
-        # credential results and grants are never retried here.
-        for attempt in range(4):
+        end = time.monotonic() + 3
+        while True:
             identifier = self.send(method, params)
             result = self.wait(lambda message: message.get('id') == identifier)
-            if method == 'rows/subscribe' and result.get('error', {}).get('code') == -32023 and attempt < 3:
-                self.read_retries += 1
-                time.sleep(.02)
+            # A concurrent fenced reader commit may refuse a read publication.
+            # Retry only this recoverable read error, within one bounded window.
+            code = result.get('error', {}).get('code')
+            if method in ('rows/subscribe', 'diagnostics/get') and code == -32023 and time.monotonic() < end:
+                time.sleep(.01)
                 continue
-            assert 'error' not in result, 'unexpected RPC error: ' + method + ' code=' + str(result.get('error', {}).get('code'))
+            assert 'error' not in result, 'unexpected RPC error: ' + method + ' code=' + str(code)
             return result['result']
 
     def grant(self, keychain=True):
@@ -354,6 +354,8 @@ def main():
                 next_agent.result(old_operation, rejected=True)
                 next_agent.request('refresh/request', dict(scopes=[SCOPE]))
                 next_agent.result(next_agent.credential(False))
+                # The matching background RPC wakes an already-budgeted reader;
+                # its acknowledgment precedes that reader's asynchronous I/O.
                 end = time.monotonic() + 8
                 while len(server.reads)-start < 2 and time.monotonic() < end:
                     time.sleep(.01)
