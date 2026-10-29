@@ -26,7 +26,8 @@ These are tagged numeric sample exports, **not** parsers for arbitrary terminal
 `top` output, native `powermetrics` text/plists or Instruments trace bundles.
 Export the actual observed values to these columns without aggregating them
 first. Select the original measuring tool with each `--input TOOL=FILE`:
-`top`, `powermetrics`, or `instruments` (Instruments export). Do not relabel one
+`top`, `powermetrics`, `instruments` (Instruments export), or
+`native-self-counters` (the explicit export contract below). Do not relabel one
 tool's readings as another's. A source without attributable GPU or energy data
 leaves those metrics unavailable; the aggregator cannot manufacture attribution.
 
@@ -58,6 +59,53 @@ machine. This setting labels values; it does not convert them. Use separate
 invocations for different CPU conventions. RSS is always bytes; energy scales
 stay tool-specific. Results are separated by `(run_id, scenario, tool)`, so A/B,
 different runs and different measurement tools are never pooled.
+
+## Native self-counter export contract v1
+
+Use `--input native-self-counters=FILE` for an owned App's native self-counter
+export in the same CSV or JSONL format. This source is **not** `top`,
+`powermetrics`, or an Instruments export. The measuring/exporting code supplies:
+
+- CPU counters from `getrusage(RUSAGE_SELF)`: cumulative user CPU seconds plus
+  system CPU seconds for the same process. For consecutive readings, export
+  `cpu_percent = 100 * delta_cpu_seconds / delta_monotonic_elapsed_seconds`.
+  Elapsed time must increase; CPU counters must not decrease. Never difference
+  counters across processes, restarts or counter resets. Values above 100 are
+  valid; 100% is one core. `--cpu-basis machine` is rejected for this source.
+- An absent `cpu_percent` (empty CSV cell or JSON `null`) on the first sample of
+  each process capture: no prior interval exists. Include that initial sample;
+  the reducer validates its absence across all files in the run/scenario/source
+  group, sorted chronologically by PID. Use a separate run ID for a restarted
+  capture or reused PID. Later unavailable intervals stay absent, never zero.
+  Changing phase does not restart a process's CPU interval history.
+- RSS from `task_info`'s `resident_size`, in bytes, without substituting physical
+  footprint or converting a byte value as if it were KiB.
+- Wall timestamps from the recorded wall-clock run start plus measured
+  monotonic elapsed time. Label CPU intervals by their end timestamp/phase; an
+  interval can span a phase transition. An `open` tag describes the requested
+  phase and does not establish visible, active, key-window or animation state.
+- Only the owned `App` role. This contract does not attribute WebContent or GPU
+  processes and provides no energy-impact measurement. Non-App rows and any
+  supplied energy value, including zero, are rejected. Do not insert synthetic
+  rows or numeric zeros for missing roles/metrics.
+
+The CSV/JSONL contains exported interval percentages, not raw cumulative CPU or
+monotonic counters. The reducer preserves supplied values; it cannot verify
+the exporter's deltas, clock provenance or subject attribution, and does not
+recompute CPU from wall timestamps. Each native input's JSON `sourceContract`
+records the API, CPU, memory, timestamp and missing-data semantics; Markdown
+prints the same versioned contract alongside the input hash/source label.
+
+```sh
+python3 scripts/u11a-aggregate.py \
+  --input native-self-counters=scripts/testdata/u11a/synthetic-native.csv \
+  --output-dir .tmp/u11a-native-example
+```
+
+App-only data cannot establish a combined App/WebContent/GPU budget. Without
+after-close or repeated-cycle measurements those memory results remain
+unsupported too; an interrupted run is not evidence of a complete measurement.
+The tool produces statistics, not a pass/fail budget decision.
 
 ## Calculations and missing data
 
@@ -106,4 +154,6 @@ TMPDIR="$PWD/.tmp" python3 -m unittest discover \
 Checks cover role totals, percentiles, measured zeros versus missing energy,
 separate variants/tools/runs, provenance hashes, partial process snapshots,
 memory deltas/cycles, invalid input, Markdown escaping and the real CLI's JSON
-and Markdown output without input modification or report overwrite.
+and Markdown output without input modification or report overwrite. Native
+checks also cover source provenance, byte units, the initial absent CPU interval
+across files/phases/PIDs, and rejection of unsupported roles, energy and CPU basis.
