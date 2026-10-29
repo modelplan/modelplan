@@ -1,6 +1,6 @@
 # Reader integration standard
 
-Status: accepted by the owner on 2026-10-29, as part of foundation v2. Use this standard before you add a reader or repair one.
+Status: revision 2. The owner accepted the direction on 2026-10-29; rows marked [pending] wait for the owner. Part of foundation v2. Use this standard before you add a reader or repair one.
 It covers four things: how we classify a reader path, the lines we never cross, how we learn from other quota monitors, and what each integration must produce.
 Related documents:
 
@@ -10,58 +10,69 @@ Related documents:
 
 ## 1. Classify the read path, not the tool
 
-One tool can have several read paths. Claude, for example, has local session logs and an account quota read through its saved OAuth login. Classify each path on three axes.
+One tool can have several read paths, and each path is a separate consent **scope**. Claude, for example, has `claude.local_history` and `claude.account_usage.saved_login`. Before you compare paths, decide which **data capability** you need: token history, account quota, or credits/balance. A token history never stands in for an account quota.
+
+Classify each path on four axes:
 
 **Carrier**: where the data comes from.
 
 | Code | Carrier | Example |
 |---|---|---|
-| L | Local JSON, JSONL, log or cache file | Codex session logs, Claude session JSONL |
-| S | Local SQLite | Cursor local state |
-| J | Status line or hook output | Claude status line (not installed by default) |
-| R | Structured RPC of the owning tool | `codex app-server` account read |
-| D | Output of the tool's own CLI | Kiro CLI text |
+| L | Local JSON, JSONL, log or cache file | Codex session logs, Claude session JSONL, `.grok/sessions` |
+| S | Local SQLite | Cursor app sign-in store, OpenCode history |
+| J | Status line or hook output | Claude status line (optional, never installed by default) |
+| R | Structured RPC of the owning tool's runtime | `codex app-server` (`account/rateLimits/read`), `kiro-cli acp` (`_kiro/account/getUsage`), Copilot runtime, Antigravity loopback `GetUserStatus` |
+| H | Remote HTTPS/JSON endpoint called by ModelPlan | Claude and Gemini usage APIs, Z.ai quota |
 
-**Authentication**: what proves the user to the vendor. A local read with no network use has none.
+**Authentication**: what proves the user to the vendor. Classify by where the credential comes from, not by whether the request carries a Cookie header.
 
 | Code | Authentication | Example |
 |---|---|---|
-| O | The tool's own saved OAuth login, sent to the vendor's usage endpoint | Claude Code OAuth, Gemini CLI login, Grok Build session |
-| K | An API key the user has already set | Z.ai, OpenCode Go, MiniMax, Kimi key route |
-| C | A browser cookie or session | Web-only services, CodexBar browser-session class |
+| none | No credential leaves ModelPlan | L, S and J reads |
+| runtime | The owning tool's runtime authenticates; ModelPlan never extracts a credential | Codex, Kiro, Copilot, Antigravity R paths |
+| O | The tool's own saved login (OAuth file, Keychain item or app sign-in store), sent by ModelPlan over H | Claude, Gemini, Grok, Kimi login route, Cursor |
+| K | An API key | Z.ai, OpenCode Go, MiniMax, Kimi key route |
+| C | A browser cookie or session | Web-only services; CodexBar browser-session class |
 
-**Endpoint status**: A means a documented vendor API. Otherwise the endpoint is undocumented, and the integration card records the endpoint and its stability.
+**Method**: GET, or POST. A POST is allowed only through the gate below.
 
-**Never used**: W, scraping web pages.
+**Endpoint status**: documented (A), or undocumented, in which case the card records the endpoint and its stability.
 
-**Tier**: comes from the classification.
+**Web scraping (W) is never used.**
 
-| Tier | Paths | First-run consent |
-|---|---|---|
-| standard, pre-selected | L, S, R, D with no credential sent | Checked |
-| standard, not pre-selected | O, and K when the key is already set | Unchecked, with a "select all" control |
-| advanced, off by default | C | Not on the first-run screen. Settings only, per subscription |
-| not-read | Any path that breaks a red line and has no compliant alternative | Shown with the reason |
+**Tiers and first-run defaults:**
 
-O may become pre-selected only by owner decision, after two beta cycles with no credential incident and a re-review.
+| Tier | Paths | First run | Status |
+|---|---|---|---|
+| standard, pre-selected | auth `none` (L, S, J), and auth `runtime` (R, after the side-effect review) | Checked | [owner] |
+| standard, not pre-selected | auth O | Unchecked, with "select all" | [owner] |
+| standard, key | auth K | See below | [pending] |
+| advanced, off by default | auth C | Not on first run; Settings per subscription | Unchanged |
+| not-read | Any path that breaks a red line with no compliant alternative | Shown with the reason | Unchanged |
+
+- **Runtime reads are not automatically safe.** An R path is not "local" or "zero network": the owning runtime calls its vendor. Each R path needs a side-effect review of the runtime version: no refresh it would not do on its own, no paid call, no state change. The UI says "Read by <tool>'s own runtime", not "local reading".
+- **K default [pending].** Recommended: a key the user explicitly configured for ModelPlan (through `modelplan connect` or Settings) keeps its current enabled behaviour. A key merely present in the environment is offered unchecked and is used only after consent.
+- **Promotion.** O becomes pre-selected only by owner decision, after two beta cycles with no credential incident and a re-review, per vendor and per path version. Promotion changes the initial choice for undecided users only. It never overrides a denial, a revoke or Passive mode.
+- **POST gate [pending, owner].** Recommended: a POST read is allowed only for a vendor the owner approves, with method, host, path and request-body schema pinned in code and covered by the recording-transport test. Until the owner decides, every POST account-usage scope is disabled, which today means Gemini Code Assist and Cursor plan and period usage. Their local-history scopes are unaffected. Do not convert a POST to a GET and do not self-exempt a "read-only" POST.
 
 ## 2. Red lines
 
-Each red line is enforced by a test, a type or a lint. Writing it in text is not enough.
+Each red line is defined by an **observable forbidden event**, a **place where it is enforced**, a **test seam** and a **failing example**. A type constraint or a green unit test alone does not prove a red line.
 
-| Red line | Enforced by |
-|---|---|
-| Never refresh, rewrite or revoke another tool's tokens or config | The reader interface has no refresh function. A test asserts that the files under the tool's directory are byte-identical after a read |
-| Never persist or copy credentials | Tokens exist only in memory. A test plants canary tokens and scans the cache, logs and diagnostics for them |
-| No inference or paid calls | Endpoints come from an allow-list fixed in code. A test fails on any other host |
-| At most one remote read per vendor every 5 minutes, with backoff, shared by the CLI, plugins and app | One shared budget file per vendor. A test runs concurrent CLI and app-server reads |
-| Detection reads presence only and never scans browser data | The detector types accept paths, bundle ids and Keychain item names only |
-| Store keyed hashes only | The identity package is the only writer of identity fields |
-| Show the source and time on every value | The row schema requires both fields |
-| Fixed destinations; no cross-domain redirect that carries a credential | The HTTP client disables redirects for credentialed requests |
-| Stop on 401 or 403 and never retry with other parameters | A classifier table test |
-| Per-vendor circuit breaker and remote switch-off | A catalogue flag, with a test |
-| Keychain is read only through the app's signing identity, with consent | See ADR 0003. `/usr/bin/security` is never called |
+| Red line | Forbidden event | Enforced at | Test seam and failing example |
+|---|---|---|---|
+| Never refresh, rewrite or revoke another tool's tokens or config | Any write to the tool's credential stores, config or Keychain item; any refresh-grant request; a runtime launched with flags that refresh | Reader capability set (no refresh function); filesystem, keychain and process fakes | Fake FS, keychain and process: a reader that writes `.credentials.json` or calls the token endpoint fails. Runtime R paths: recorded runtime calls checked against the reviewed method list for that runtime version |
+| Never persist or copy credentials | A token byte sequence outside `credentials/result` or in-memory request use | Store writers and log and diagnostics serializers | Canary tokens planted in fixtures. A scan of every cache file, log line, diagnostics output, error and cockpit message fails on a hit |
+| No inference or paid calls | A request whose method, host, path or parameters are not on the reader's allow-list, or more calls than the reader's per-read limit | HTTP client with a per-reader allow-list of (method, host, path, parameter schema) | Recording transport: a call to an official host's inference path fails, as does a second call within one read |
+| Budget: at most one remote read per vendor every 5 minutes, with backoff, shared by the CLI, plugins and app | Two remote reads for one vendor inside the window, from any process | Shared budget file and provider lock | Concurrent CLI, plugin and app-server runs on one home: the recording transport counts the calls |
+| Stop on 401 or 403 | Any further request after a 401 or 403 for that scope, with or without changed parameters | Reader classifier plus the HTTP client | Recording transport: MiniMax's legacy-endpoint retry after 401 or 403 fails this test and must be removed |
+| Detection reads presence only | Opening a file's contents, reading a Keychain value, or launching a process during detection | Detector given fake FS, keychain and process with presence-only methods | A detector that calls `read` or `exec` fails |
+| No browser data scanned for detection | Any access under browser profile directories during detection | Same fakes | Fails on any access |
+| Store keyed hashes only | An identity field written by anything other than the identity package | Store writers | Write-path test |
+| Source and time on every value | A displayed value without a `route` code, or a time invented when the source has none | Row schema (`route` required; time nullable) and the renderer | A fixture with a null time must show "time unknown" |
+| Fixed destinations; no credential-carrying redirect | Following a redirect on a credentialed request | HTTP client with redirects disabled on credentialed requests | A fake server that redirects: the request must stop |
+| Per-vendor circuit breaker and remote switch-off | A read after the vendor is switched off | Catalogue flag checked at admission | Test with the flag set |
+| Keychain only through the app's identity and consent | Any call to `/usr/bin/security`, or a Keychain read without an interactive operation the user started | ADR 0003 credential operation | A process fake fails on `security`. A non-interactive operation must not prompt |
 
 ## 3. Reference projects
 
@@ -88,11 +99,11 @@ To add or repair a reader:
 1. **Write the integration card** `docs/readers/<tool>.md` from the template in section 5. Fill every field from the vendor source and the reference projects at pinned commits.
 2. **List the candidate paths** with their classification (section 1).
 3. **Drop every path that breaks a red line** (section 2).
-4. **Choose among the remaining paths**, in this order:
-   1. the path that sends no credential;
+4. **Choose among the remaining paths that deliver the needed capability**, in this order:
+   1. the path that sends no credential, or lets the owning runtime authenticate;
    2. a documented endpoint over an undocumented one;
-   3. the path with the fewest reported incidents in the reference projects' issue trackers;
-   4. the path that reports quota windows the vendor defines.
+   3. the path with the fewest incidents in the reference projects' issue trackers, judged by version and exposure, not by raw count;
+   4. the path that reports the windows the vendor defines.
 5. **If no path survives**, take only the ideas: field meanings, parsing quirks and incident lessons. Then decide one of two outcomes:
    - implement a compliant path the references did not use;
    - mark the tool `not-read`, show the reason, and record it in the card.
@@ -133,26 +144,27 @@ Research and card drafting use public material only. That work goes to a lower-c
 
 ## 6. Current paths and first batch
 
-This is the code's state on main `f830589`. Each card must verify it before the reader is changed.
+This is the state of the code on main `f830589`, checked in the Codex review of revision 1. Each card verifies it again before the reader is changed. "Failed on the owner's Mac" is a symptom, not proof of a reader bug: `runtime_missing` is an environment gap, and it needs a recovery step before any rewrite.
 
-| Tool | Current path | Target after the card |
+| Tool | Current paths | Target after the card |
 |---|---|---|
-| Claude Code | O: saved OAuth from `.credentials.json`, else Keychain via `/usr/bin/security`. L: session JSONL | O: Keychain through the app's identity (ADR 0003). L unchanged. Not pre-selected |
-| Codex | L: session logs. R: `codex app-server` account read | Unchanged. Pre-selected |
-| Cursor | Saved local sign-in (S/O) | Card decides. Failed on the owner's Mac |
-| Gemini CLI | O: saved login. L: local usage | Card decides. Failed on the owner's Mac |
-| Grok Build | O: saved session | Card decides. Failed on the owner's Mac |
-| Kimi Code | O: login route. K: key route | Card decides. Failed on the owner's Mac |
-| Kiro | D: `kiro-cli` text (risk of a paid prompt) | Card decides. `runtime_missing` on the owner's Mac |
-| GitHub Copilot | Native, needs the Copilot runtime; CodexBar optional | Card decides. `runtime_missing` on the owner's Mac |
-| Z.ai / ZCode | K: ZCode's stored key or an env key | Keep. Card confirms the endpoint |
-| OpenCode Go | K: env key | Keep |
-| MiniMax | K: env key | Keep |
-| Antigravity | Native state reader | Card decides |
-| Amp, Droid | No quota reader (`no_reader`) | Card decides whether a compliant path exists |
-| Qwen Code | L: a user-selected export | Keep |
+| Claude Code | O+H: saved OAuth from `.credentials.json` or a custom profile, else, for the default profile only, the Keychain via `/usr/bin/security` (`quota/claudeaccount.go:104–132`). L: session JSONL. J: optional status line (never installed by default) | O: file or custom-profile path kept. The Keychain moves to the app's identity (ADR 0003). L unchanged. O not pre-selected |
+| Codex | L: session logs. R: `codex app-server` `account/rateLimits/read`, plus `account/read {refreshToken:false}` for identity (`codexaccount.go:265–289`) | Unchanged. R labelled "read by Codex's runtime" |
+| Cursor | O+H: the app sign-in from its SQLite store and a derived session, then a remote **POST** to an undocumented plan and period usage endpoint (`cursor.go:89–154, 454–491`). Not class C | Behind the POST gate; disabled until the owner decides. The card decides the long-term path |
+| Gemini CLI | O+H: saved login file, then a Code Assist **POST** (`gemini.go:424–443`). L: local usage and history adapter | Remote scope behind the POST gate. L kept. Two separate scopes |
+| Grok Build | O+H: saved session, fixed **GET** billing endpoint. L: `.grok/sessions` history (`localusage/history_adapters.go`) | Card decides. Two scopes |
+| Kimi Code | O+H: login route. K: key route. L: `.kimi/sessions/*/*/wire.jsonl` token history | Card decides. Three scopes |
+| Kiro | R: `kiro-cli acp`, `initialize`, then only `_kiro/account/getUsage`; no prompt is sent (`quota/kiro.go:18–23, 63, 116–126`) | Runtime side-effect review; show the `runtime_missing` recovery step |
+| GitHub Copilot | R: the Copilot runtime RPC (`copilot.go`). L: `.copilot/session-state/*/events.jsonl`. CodexBar bridge only by explicit choice, never as an automatic fallback | Runtime review; `runtime_missing` recovery step |
+| Z.ai | K: `Z_AI_API_KEY`, or the explicitly selected Claude Code settings source (`production.go:103–116`). An OpenCode provider/auth source exists in `zaiconfig.go:101–168` but is not admitted (`connect_provider.go:169`). ZCode's local usage (S) is a separate scope | Keep. The card confirms the endpoint and the OpenCode source decision |
+| OpenCode Go | K: `OPENCODE_API_KEY`, then a fixed usage GET. OpenCode's local S history is a separate scope | Keep |
+| MiniMax | K: `MINIMAX_CODING_API_KEY`. Retries a legacy endpoint after 401 or 403 (`minimax.go:44–57`) | Remove the retry (red line). Disabled until fixed |
+| Antigravity | R: verifies the running loopback server, then `GetUserStatus` with transient CSRF metadata (`antigravity.go:108–151`) | Runtime review |
+| Amp | L: history. `RefreshAmp` money read exists, but it is not admitted, because no reviewed binary digest exists yet (`docs/production-reader-admission.md:47–50`) | Card decides on admission |
+| Droid | L: history. No quota reader | Card decides whether a compliant quota path exists |
+| Qwen Code | L: native records with incremental history (`localusage/qwen.go`). Optional aggregate export; the two are de-duplicated (`production.go:135–146`) | Keep both, with the de-duplication rule |
 
-**First batch:** Claude, Gemini, Grok, Kimi, Kiro and Cursor. All of them failed on the owner's Mac. Copilot follows.
+**First batch** (each failed on the owner's Mac): Claude, Gemini, Grok, Kimi, Kiro and Cursor. Copilot and MiniMax follow.
 
 ## 7. Keep the research; update it, don't repeat it
 

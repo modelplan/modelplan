@@ -10,11 +10,15 @@ The cockpit was being redrawn in AppKit and Core Animation from a web prototype,
 
 - **Cockpit.**
   - A native window hosts one WKWebView that runs the cockpit bundle built from the prototype code: instruments, art, HUD and porthole.
-  - Data comes over one message channel carrying the app-server payloads.
-  - The page pauses when hidden or occluded and is released when the window closes. A prewarmed hidden page keeps open time at 0.3 s or less.
+  - Data comes over a narrow, typed `CockpitBridge`.
+    - Allowed: display DTOs (rows, Go-computed cockpit and history data, publication summary) and a fixed set of user actions.
+    - Refused: credentials, consent mutation, plugin install, arbitrary commands, files or URLs, and non-main frames.
+    - Messages carry a generation, a request id and a size limit, under navigation limits and a CSP.
+  - The page pauses when hidden or occluded and is released when the window closes. There is no hidden prewarmed page by default; open times and memory after close are measured first.
 - **Porthole v1.**
   - No runtime 3D.
-  - Stills and the ignition and entrance videos come from a reproducible offline render pipeline in the repo.
+  - Stills and the ignition and entrance videos come from a reproducible offline render pipeline. The pipeline and the scene sources stay in the private repo (ADR 0049).
+  - The pipeline publishes a public runtime asset pack with a manifest of input ids, versions and hashes, which public CI verifies.
   - A CI check ensures the default setup always has a confirmed still.
 - **Live 3D after v1.**
   - Allowed only behind a budget measured on the lowest supported Mac, which counts app, Go, WebContent and GPU increments, CPU and energy.

@@ -18,7 +18,9 @@ CodexBar links one Swift core library into both its app and its CLI. That design
 
 ## Consequences
 
-- Per-command timeouts, admission locks and detached refresh workers disappear from the app path. One scheduler applies the shared budget.
+- Per-command timeouts and detached refresh workers disappear from the app path, and one scheduler applies the shared budget.
+- Cross-process safety stays, because independent CLI copies still run: provider locks, `consent.ReaderLock` admission, the atomic `consent.Publish`, and Forget synchronization.
+- Each child gets an app-generated `sessionId`. Message ordering is compared only within a session, and the consent-generation floor survives restarts.
 - The app gains a process to supervise: handshake, restart with backoff, and an "engine restarting" summary state.
 - Hand-written engine decoders and the Swift merge code are deleted in the same wave.
 - A future Windows or Linux UI can use the same process and protocol.
