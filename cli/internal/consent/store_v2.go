@@ -82,6 +82,9 @@ func loadLocked(file string) (State, error) {
 	for tool, record := range s.Tools {
 		setToolScopes(&s, tool, record)
 	}
+	for scope := range s.Revoked {
+		s.Revoked[scope] = s.Generation
+	}
 	if err := save(file, s); err != nil {
 		return Empty(), err
 	}

@@ -75,6 +75,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "cleanupError": {
+          "enum": [
+            "cleanup_incomplete"
+          ]
         }
       },
       "required": [

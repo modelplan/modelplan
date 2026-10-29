@@ -1,4 +1,8 @@
 {
+  "cleanupError": "cleanup_incomplete",
+  "code": "cleanup_pending",
+  "committed": true,
+  "committedGeneration": 2,
   "error": "cleanup_pending",
   "generation": 2,
   "ok": false,

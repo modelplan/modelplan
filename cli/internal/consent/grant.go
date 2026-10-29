@@ -34,6 +34,7 @@ type GrantReceipt struct {
 	CommittedGeneration *uint64  `json:"committedGeneration"`
 	CleanupPending      []string `json:"cleanupPending,omitempty"`
 	Code                string   `json:"code"`
+	CleanupError        string   `json:"cleanupError,omitempty"`
 }
 
 // GrantHooks belongs to the engine. Admit must return route metadata for an
@@ -162,6 +163,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			s.Tools[d.Tool] = tool
 		}
 		for _, id := range cleanup {
+			s.RevokeScope(id)
 			r := s.Scopes[id]
 			r.Allowed, r.ConsentTextVersion, r.At = false, TextVersion, time.Now().UTC()
 			if grant.Keychain[id] == "deny" {
@@ -181,6 +183,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		result = GrantReceipt{RequestID: grant.RequestID, StoreEpoch: s.StoreEpoch, Committed: true, CommittedGeneration: &generation, Code: "ok"}
 		if len(cleanup) > 0 {
 			result.Code = "cleanup_pending"
+			result.CleanupError = "cleanup_incomplete"
 			result.CleanupPending = cleanup
 		}
 		encoded, _ := json.Marshal(result)
@@ -195,7 +198,7 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		return nil
 	}, func(s *State) error {
 		if len(cleanup) == 0 {
-			return nil
+			return ErrUnchanged
 		}
 		pending := []string{}
 		for _, id := range cleanup {
@@ -209,7 +212,9 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		}
 		result.CleanupPending = pending
 		result.Code = "ok"
+		result.CleanupError = ""
 		if len(pending) > 0 {
+			result.CleanupError = "cleanup_incomplete"
 			result.Code = "cleanup_pending"
 		}
 		encoded, _ := json.Marshal(result)
@@ -218,7 +223,16 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 		s.Requests[key] = receipt
 		return nil
 	})
-	return result, err
+	if err != nil {
+		var committed *FinalizationError
+		if errors.As(err, &committed) {
+			if receipt, ok := committed.Receipt(key); ok && json.Unmarshal(receipt.Result, &result) == nil {
+				return result, nil
+			}
+		}
+		return GrantReceipt{}, err
+	}
+	return result, nil
 }
 
 // ScopeFacts includes persisted retired scopes so tightening remains reachable.

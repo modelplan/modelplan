@@ -303,6 +303,9 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 			e.ErrorCode = ReaderErrorCode(e.ErrorCode)
 			e.Error = e.ErrorCode
 		}
+		if e.Status == "ok" && e.Admission == nil {
+			e.Admission = state.CaptureStamp(captureScope(p, x.Provider, false))
+		}
 		e.Provider, e.Source = x.Provider, "api"
 		if x.Provider == "kimi" || x.Provider == "minimax" {
 			e.Region, e.KeyEnv = x.Region, x.KeyEnv
@@ -436,6 +439,9 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		}
 		st := SourceStatus{Source: "native:" + x.Provider}
 		e, ok := by[x.Provider]
+		if ok && e.Status == "ok" && !captureAllowed(p, x.Provider, e.Admission, false) {
+			ok = false
+		}
 		switch {
 		case x.Blocked == "no-native-reader":
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"

@@ -125,6 +125,29 @@ metadata so an engine never repeats a credential operation after receipt replay.
 An explicit Keychain grant starts one interactive credential operation; any
 remote quota request still passes the normal shared five-minute budget.
 
+Retained private captures carry an `admission` stamp: store epoch, generation,
+and scope. The store keeps `revokeWatermarks`, keyed by exact scope; each number
+is ordered within that store's epoch. Deny and Forget advance that scope's
+watermark in the same permission commit. Readback accepts a retained value only
+from the current epoch and newer than its scope's watermark. Regrant never
+renews an old value's stamp. Missing stamps are rejected once a consent store
+exists; migration therefore requires a fresh read of previously unbound caches.
+Aggregate, typed last-good, managed, status-line and local-history captures keep
+this provenance, independently of attempt metadata and request deadlines.
+
+Codex session-log projection uses `codex.local_history`; its account/runtime
+cache uses `codex.runtime_usage`. Denying either scope does not deny the other.
+
+The first consent save is the durable commit point. If cleanup or persistence
+of its final status fails, the API returns that committed recovery receipt,
+including its epoch and generation, `code: cleanup_pending`, and a separate
+bounded `cleanupError`. It never replaces the receipt with a permission error
+and never returns an unpersisted optimistic result. The CLI's legacy tool
+receipt adds the same commit metadata. Pre-commit failures remain errors.
+History deletion parses the exact tool component before the 64-hex profile
+suffix, so a hyphenated neighboring tool is preserved.
+
+
 `State.KeychainStatus` is shared by API readback and production admission.
 Existing native Claude `connect` grants implicitly permit Keychain and read back
 as `allowed`; the same saved permission is `denied` under Passive/Off. Only
@@ -201,3 +224,9 @@ Schema 2 按读取范围保存授权，并在同一个锁内比较 `storeEpoch` 
 即使读取器关闭或工具已退役也可执行。损坏文件不自动覆盖；明确确认后的
 `consent reset confirmed --json` 创建新 epoch，所有授权均需重新确认。
 钥匙串确认只触发一次交互式凭据操作，远程请求仍遵守共享的五分钟预算。
+
+保留的读数携带 epoch、generation 和 scope；授权存储为每个范围保存撤销水位。
+撤销或 Forget 后，旧水位及旧 epoch 的读数即使重新授权也不会再次显示；必须重新读取，
+且原调用预算仍保留。Codex 本机日志与运行时账户按两个独立范围投影。
+首次保存完成即表示变更已提交；后续清理状态保存失败仍返回带 epoch/generation 的已提交回执，
+并以独立的 `cleanupError` 说明清理未完成。历史清理精确匹配工具名，不删除相邻工具的缓存。

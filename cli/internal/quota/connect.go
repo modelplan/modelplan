@@ -323,9 +323,9 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	}
 	if s.Allows("codex", consent.Local, mode) {
 		add(readCodex(p.CodexHome, p.CodexThread))
-		if p.CodexHome != "" {
-			applyAccount(&r, p.Cache, now)
-		}
+	}
+	if s.Allows("codex", consent.Runtime, mode) && p.CodexHome != "" {
+		applyAccount(&r, p.Cache, now, admission)
 	}
 	add(readLocal(p.LocalFile, now))
 	applyCodexBar(&r, p, now)

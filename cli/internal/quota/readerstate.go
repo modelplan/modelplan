@@ -23,6 +23,8 @@ import (
 // This is a Go interface, not another command, consent file or publication feed.
 type ReaderAccess struct{ Grants map[string]ReaderGrant }
 type ReaderGrant struct {
+	Admission          *consent.CaptureStamp
+	CaptureAllowed     func(*consent.CaptureStamp) bool
 	Generation         string
 	SavedLogin         bool
 	Keychain           bool
@@ -73,10 +75,11 @@ type readerProfileAttempt struct {
 }
 
 type readerEntry struct {
-	AttemptedAt       time.Time      `json:"attemptedAt,omitempty"`
-	LastFailure       *readerFailure `json:"lastFailure,omitempty"`
-	LoginChanged      bool           `json:"loginChanged,omitempty"`
-	GenerationChanged bool           `json:"generationChanged,omitempty"`
+	Admission         *consent.CaptureStamp `json:"admission,omitempty"`
+	AttemptedAt       time.Time             `json:"attemptedAt,omitempty"`
+	LastFailure       *readerFailure        `json:"lastFailure,omitempty"`
+	LoginChanged      bool                  `json:"loginChanged,omitempty"`
+	GenerationChanged bool                  `json:"generationChanged,omitempty"`
 	// CredentialReadState is set only on the missing-file Keychain path, never
 	// from the saved Keychain permission alone. busy is an in-flight read.
 	CredentialReadState string         `json:"credentialReadState,omitempty"`
@@ -218,6 +221,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return errors.New("reader canceled")
 	}
 	g, allowed := readerAllowed(p, provider)
+	admitted := captureFor(p, provider, false)
 	if !allowed {
 		return errors.New("saved-login consent required")
 	}
@@ -312,6 +316,9 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return errors.New("reader consent changed")
 	}
 	e := out.Entry
+	if e.Status == "ok" && e.Account != nil {
+		e.Admission = admitted
+	}
 	if e.Status == "ok" {
 		e.ErrorCode = ""
 	} else if e.ErrorCode != "" {
@@ -336,7 +343,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	s.clearPending(profileKey)
 	if e.Status != "ok" {
 		if !out.Invalidate {
-			e.Account, e.Metadata = previous.Account, previous.Metadata
+			e.Account, e.Metadata, e.Admission = previous.Account, previous.Metadata, previous.Admission
 		}
 		s.Failures++
 		wait := 10 * time.Minute
@@ -502,7 +509,7 @@ func AppendManagedRows(in *rows.Input, p Paths) {
 					}
 				}
 				in.Sources = append(in.Sources, rows.SourceState{ToolID: provider, Source: "native:" + provider, Status: e.Status, ErrorCode: e.ErrorCode})
-				if a := e.Account; a != nil && !f.LoginChanged && !f.GenerationChanged {
+				if a := e.Account; a != nil && !f.LoginChanged && !f.GenerationChanged && captureAllowed(p, provider, e.Admission, false) {
 					f.ObservedAt = readerTime(a.ObservedAt)
 					if !a.ObservedAt.IsZero() && !a.ObservedAt.After(in.Now) {
 						f.FreshUntil = readerTime(a.ObservedAt.Add(staleAfter))
@@ -670,7 +677,7 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 	}
 	newest := map[string]time.Time{}
 	for _, e := range s.Entries {
-		if e.Account == nil {
+		if e.Account == nil || !captureAllowed(p, provider, e.Admission, false) {
 			continue
 		}
 		key := e.ProfileKey
@@ -693,7 +700,7 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 		if st.ErrorCode != "" {
 			st.Reason = st.ErrorCode
 		}
-		if e.Account != nil {
+		if e.Account != nil && captureAllowed(p, provider, e.Admission, false) {
 			a := *e.Account
 			a.Beta = true
 			a.Windows = append([]Window(nil), a.Windows...)
