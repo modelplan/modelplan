@@ -2116,6 +2116,56 @@ public struct WireNotification<T: Codable & Sendable>: Codable, Sendable {
     }
 }
 
+public struct WirePluginInstallParams: Codable, Sendable {
+    public let `tool`: WirePluginTool
+    public let `offline`: Bool?
+    private enum CodingKeys: String, CodingKey {
+        case `tool`
+        case `offline`
+    }
+    public init(`tool`: WirePluginTool, `offline`: Bool? = nil) throws {
+        self.`tool` = `tool`
+        self.`offline` = `offline`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`tool` = try c.decode(WirePluginTool.self, forKey: .`tool`)
+        self.`offline` = try? c.decodeIfPresent(Bool.self, forKey: .`offline`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`tool`, forKey: .`tool`)
+        try c.encodeIfPresent(`offline`, forKey: .`offline`)
+    }
+    private func validate() throws {
+    }
+}
+
+public enum WirePluginTool: Codable, Sendable, Equatable {
+    case `claudeCode`
+    case `codex`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "claude-code": self = .`claudeCode`
+        case "codex": self = .`codex`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`claudeCode`: return "claude-code"
+        case .`codex`: return "codex"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireRPCError: Codable, Sendable {
     public let `code`: Int
     public let `message`: String

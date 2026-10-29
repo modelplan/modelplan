@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"reflect"
@@ -21,6 +22,7 @@ import (
 // The core reserves query result space before calling a handler. Private output
 // must carry the admission stamp/scopes; a stale result becomes consent_changed.
 type Handler struct {
+	Timeout    time.Duration
 	Capability string
 	Query      bool
 	Private    bool
@@ -28,6 +30,8 @@ type Handler struct {
 }
 
 type Reply struct {
+	// Receipt preserves a completed mutation result even after cancellation.
+	Receipt   bool
 	subscribe bool
 	Stamp     Stamp
 	Scopes    []string
@@ -184,6 +188,7 @@ func (s *Server) cancelAll() {
 	}
 	for key, op := range s.credentials {
 		op.timer.Stop()
+		op.reject()
 		delete(s.credentials, key)
 	}
 }
@@ -288,7 +293,13 @@ func (s *Server) dispatch(r wire.Request) {
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
 			result, err := s.backend.Grant(ctx, p)
 			if err != nil && !result.Receipt.Committed {
-				return Reply{}, err
+				stamp := result.Stamp
+				if stamp.Epoch == "" {
+					if view, getErr := s.backend.Get(ctx); getErr == nil {
+						stamp = view.Stamp
+					}
+				}
+				return Reply{}, responseContextError{err: err, stamp: stamp}
 			}
 			// Even a canceled request returns a committed receipt, including cleanup.
 			reply := Reply{Stamp: result.Stamp, Data: result.Receipt}
@@ -363,7 +374,7 @@ func (s *Server) dispatch(r wire.Request) {
 		s.sendError(r.ID, wire.CodeMethodNotFound)
 		return
 	}
-	s.start(r, handler.Query, false, true, func(ctx context.Context) (Reply, error) {
+	s.startPolicy(r, handler.Query, false, true, handler.Private, handler.Timeout, func(ctx context.Context) (Reply, error) {
 		stamp := s.currentStamp()
 		reply, err := handler.Handle(ctx, r.Params, stamp)
 		if err != nil {
@@ -371,6 +382,11 @@ func (s *Server) dispatch(r wire.Request) {
 		}
 		if handler.Private && (!s.isCurrent(stamp) || reply.Stamp != stamp || len(reply.Scopes) == 0) {
 			return Reply{}, ProtocolError{wire.CodeConsentChanged}
+		}
+
+		if !handler.Private {
+			reply.Stamp = s.currentStamp()
+			reply.Scopes = nil
 		}
 		return reply, nil
 	})
@@ -389,6 +405,16 @@ func validGrant(p wire.ConsentGrantParams) bool {
 }
 
 func (s *Server) start(r wire.Request, query, control, data bool, run func(context.Context) (Reply, error)) {
+	s.startPolicy(r, query, control, data, data, 0, run)
+}
+func (s *Server) startPolicy(r wire.Request, query, control, data, private bool, timeout time.Duration, run func(context.Context) (Reply, error)) {
+	if timeout <= 0 {
+		timeout = s.config.RequestTimeout
+	}
+	if timeout > wire.PluginInstallTimeout {
+		timeout = wire.PluginInstallTimeout
+	}
+
 	key := requestKey(r.ID)
 	s.mu.Lock()
 	if _, exists := s.active[key]; exists {
@@ -412,7 +438,7 @@ func (s *Server) start(r wire.Request, query, control, data bool, run func(conte
 		s.sendError(r.ID, wire.CodeBusy)
 		return
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, s.config.RequestTimeout)
+	ctx, cancel := context.WithTimeout(context.WithValue(s.ctx, sessionContextKey{}, s.session), timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
 		s.controls++
@@ -446,14 +472,28 @@ func (s *Server) start(r wire.Request, query, control, data bool, run func(conte
 		}
 		// A committed receipt wins over cancellation after the transaction.
 		_, receipt := reply.Data.(wire.ConsentReceipt)
-		if err == nil && ctx.Err() != nil && !receipt {
+		if err == nil && ctx.Err() != nil && !receipt && !reply.Receipt {
 			err = ctx.Err()
 		}
 		if err != nil {
 			if data {
 				s.out.release()
 			}
-			s.sendError(r.ID, errorCode(err))
+			message := s.errorMessage(r.ID, errorCode(err))
+			var authoritative responseContextError
+			if errors.As(err, &authoritative) {
+				message.Error.Data.StoreEpoch, message.Error.Data.ConsentGeneration = nil, nil
+				if authoritative.stamp.Epoch != "" {
+					message.Error.Data.StoreEpoch = &authoritative.stamp.Epoch
+					message.Error.Data.ConsentGeneration = &authoritative.stamp.Generation
+				}
+			}
+			s.out.controlMessage(message)
+			return
+		}
+
+		if data && !private {
+			s.out.dataMessage(success(session, r.ID, reply.Stamp, nil, reply.Data), reply.Stamp, false, nil)
 			return
 		}
 		if data {
@@ -624,6 +664,7 @@ func (s *Server) readView(ctx context.Context) error {
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
+			op.reject()
 			delete(s.credentials, key)
 		}
 	}

@@ -3,11 +3,29 @@ on:
   pull_request:
     paths:
       - tools/u14/**
+      - cli/internal/u14fixture/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
+      - cli/internal/appserver/**
+      - cli/internal/rows/**
+      - cli/cmd/modelplan/**
+      - cli/go.mod
+      - cli/go.sum
+      - schema/app-cli/app-server.json
       - .github/workflows/u14-harness.yml
   push:
     branches: [main]
     paths:
       - tools/u14/**
+      - cli/internal/u14fixture/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
+      - cli/internal/appserver/**
+      - cli/internal/rows/**
+      - cli/cmd/modelplan/**
+      - cli/go.mod
+      - cli/go.sum
+      - schema/app-cli/app-server.json
       - .github/workflows/u14-harness.yml
 permissions:
   contents: read
@@ -15,23 +33,37 @@ concurrency:
   group: u14-harness-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
-  contracts:
+  engine:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Fixture tooling tests and vet
+        working-directory: cli
+        run: go vet ./internal/appserver/... ./internal/u14fixture/... && go test ./internal/appserver/... ./internal/u14fixture/... ./cmd/modelplan
+      - name: Real-binary driver regressions
+        run: python3 -m unittest discover -s tools/u14/tests -p test_runner.py -v
       - name: U14 L1 profile with synthetic evidence
-        run: python3 tools/u14/verify.py --output "$RUNNER_TEMP/u14-evidence"
+        run: python3 tools/u14/verify.py --output "$RUNNER_TEMP/u14-l1"
+      - name: Real-binary engine scenarios and part-B bundle
+        run: python3 tools/u14/run.py --output "$RUNNER_TEMP/u14-engine"
       - name: Preserve evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: u14-evidence-${{ github.sha }}
-          path: ${{ runner.temp }}/u14-evidence
+          path: |
+            ${{ runner.temp }}/u14-engine/bundle/
+            ${{ runner.temp }}/u14-engine/summary.json
+            ${{ runner.temp }}/u14-l1/bundle/
           if-no-files-found: error
           retention-days: 14

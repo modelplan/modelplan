@@ -1,12 +1,15 @@
 # U14 synthetic home and candidate evidence
 
-Stage: **interface only**. These tools build test inputs and bind reported results
-to source and artifact identities. They do not run the app, migrate preferences,
-collect credentials, publish a release, or earn a proof level. The app-server
-runner follows when its interface is pinned. U6, U8 and U10 consume that runner;
-feature failures remain with their feature owner.
+The baseline/evidence tools and the real-binary engine runner share one scenario
+registry. The runner drives `modelplan app-server` through anonymous pipes on
+synthetic homes, with constructor overlays for recording providers and fault
+injection. The backend and persistence scenarios use production U2; provider
+data and publication-churn faults are synthetic. U6, U8
+and U10 consume the later native integration; feature failures stay with their
+feature owner.
 
-Python 3.12+, Git, and the standard library are sufficient. No private checkout,
+For the standalone baseline/evidence tools, Python 3.12+, Git and the standard
+library are sufficient. No private checkout,
 network access, product login, Keychain access or dependency install is required.
 
 ```sh
@@ -78,7 +81,7 @@ Both Settings inputs carry old `readerConsent` UI choices; they never grant
 engine consent. Consent is generated independently at
 `.config/modelplan/consent.json` with synthetic schema-1 allow/deny/unset records
 and unset Keychain permission, or as a missing/corrupt store. Schema-2 consent
-remains a known gap until U2 supplies its persisted store contract.
+is migrated by the production U2 constructor; the original shape and that mutation are recorded separately.
 
 `--case` selects an input and expected source-group oracle:
 
@@ -180,10 +183,89 @@ unapproved POST calls, terminal MiniMax 401/403 and retained local history.
 `U3-backpressure` adds stopped-output flow control and revoke-receipt replay.
 The registry records feature units, required capabilities and baseline structures.
 
-This list is a plan, not execution evidence. U3 must provide the real app-server
-interface before the runner can implement it. Headless engine replay, Community
+The registry is a plan, not execution evidence; run bundles record what actually
+executed. The current engine runner consumes the pinned U3 runtime. Headless engine replay, Community
 native UI, official package, real input and owner L3 have different capabilities;
 record each profile's actual outcomes separately. U14 remains open until U6, U8
 and U10 consume the runner. A14's real-account check spans two reviewed candidates;
 A19 belongs to U13. Destructive first-run/revoke cases run only on synthetic
 profiles, never by resetting owner state.
+
+## Real-binary engine runner
+
+The engine stage requires Go 1.24+, Python 3.12+ and Git. The standalone baseline
+and candidate tools still require only Python and Git. A new run must start from
+a clean committed checkout and write outside it:
+
+```sh
+python3 tools/u14/run.py --output /tmp/u14-engine-unique-run
+python3 tools/u14/run.py --output /tmp/u14-pressure-unique-run \
+  --scenarios U3-backpressure U14-zero-rows-omitted
+```
+
+The default engine IDs are `U14-protocol-smoke`, `U3-backpressure`,
+`U14-zero-rows-{omitted,null,reported,corrupt}`, `U14-empty-states` and
+`U2a-admission`. `--scenarios` selects registry IDs; unselected available engine
+scenarios remain `not-run`, and UI/device capabilities remain `unsupported`.
+The ordinary fail-closed binary is always exercised as a separate check.
+
+The runner builds two exact CLI binaries. The ordinary build has no fixture
+imports. The Go overlay changes the command's constructor call to a provider
+constructor which invokes the same production constructor with a typed history
+source and detection fault adapter. It also replaces only the native HTTP client
+constructor with a recording transport in a virtual quota file. No real socket
+is opened by a recording provider, and ordinary builds expose no fixture flag,
+environment switch or endpoint override. Every replacement, original constructor,
+source SHA and binary hash is recorded in the bundle. The builder rejects changes
+to the expected constructor seams.
+
+Both binaries use `SharedBackend`, the same U2 store, durable grant receipts,
+original capture provenance, budgets, `RowsInput`, `ChangedRowsInput` and
+`AppendManagedRows`. No test implementation of consent persistence or `Backend`
+remains. The recording history source implements only U3c's `HistorySource`; its
+admission and every output are fenced by the real backend. Unknown provider model
+fields are omitted/null/present/corrupt synthetic variants. A corrupt history
+reply fails that query while preserving the same stable rows.
+
+The ordinary smoke checks production capability registration, exact row membership
+from detection plus persisted consent, duplicate ids, diagnostics, wrong-method
+and unmatched-operation token rejection, and shutdown. Baseline input hashes are
+checked before launch; after launch only the known production consent file may
+change among those inputs. Credentials, tool configs and app preference inputs
+remain hash checked. System executables found by compiled detection may add rows;
+no real home or inherited credential environment is passed to a child.
+
+`U3-shared-state` uses one synthetic home for the app-server and independent CLI.
+It checks external revoke notifications and the floor, authoritative stale-error
+context, reset epochs, cursor invalidation across scope/epoch/session, failed query
+isolation, two-query caps and terminal cancellation, and Deny/Forget for a retired
+scope with readers off. Production history queries use sanitized local caches
+only; kinds and providers without an existing typed source return
+`history_unavailable`. No query scans source logs or refreshes a provider.
+
+Four real backend empty states are exercised: readers off, no consent, admitted
+without readings, and pending. Pending uses a test detection callback that commits
+two real revokes during each stable-build retry and leaves the fallback fence
+stable. This is a labeled fault scenario, with no production switch.
+
+Backpressure stops draining the actual stdout pipe after two recording history
+queries complete and a large data write starts. A real reader lock forces pending
+cleanup; a revoke must commit while stdout remains blocked. A short-pause probe
+then observes `engine/health` through the transport control queue, in the new
+consent context. A second process stops reading until the production 10-second
+write timeout, then restarts and replays the real U2 receipt. The receipt is never
+stored by fixture code, and revoked values stay absent after restart.
+
+`U2a-admission` checks real schema-1 migration with existing account grants,
+Gemini/Cursor `policy_pending` and zero account requests, Gemini's independent local
+history, and MiniMax 401/403 stopping after the first request even when a successful
+legacy response is available. The app-server and independent CLI use the same
+persisted budget. Cursor has no typed local-history producer in the current
+reader inventory, so that sub-proof is explicitly `unsupported` and the aggregate
+scenario cannot claim a full pass. Intact seed bytes never count as readability.
+
+The proof scope is production U2 state/admission and U3 transport with recording
+providers and a publication-churn fault. It does not earn native UI, final-package,
+owner-device or L3 acceptance. UI scenarios remain unsupported on this Linux lane.
+One standard hosted Linux job runs Go/driver regressions, the baseline profile,
+and executable scenarios; it uploads only the evidence bundles and summaries.
