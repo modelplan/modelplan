@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/doctor-readers.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none; presence/cache metadata only",
+    "network": "none",
+    "writes": "none",
+    "exitCodes": {
+      "0": "successful JSON object",
+      "1": "unavailable; JSON error for consent, stderr/empty output for other commands",
+      "2": "usage on stderr"
+    },
+    "displayText": "notice, nextStep, names, messages, and legacy hosts are display only",
+    "refresh": "--refresh is an explicit foreground action; may read admitted providers and use interactive Keychain policy, sharing existing floors and budgets"
+  },
+  "type": "object",
+  "properties": {
+    "readers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "description": "Machine value; not display text."
+          },
+          "detected": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "consent": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "enum": [
+              "none",
+              "granted",
+              "denied"
+            ]
+          },
+          "admitted": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "description": "Machine value; not display text."
+          },
+          "windows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "last": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "pattern": "^(unknown|[0-9]+s)$"
+          },
+          "beta": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "detected",
+          "consent",
+          "admitted",
+          "state",
+          "windows",
+          "last",
+          "beta"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "message": {
+      "type": "string",
+      "description": "Display text only; never parse as an endpoint or permission."
+    }
+  },
+  "required": [
+    "readers",
+    "message"
+  ],
+  "additionalProperties": true
+}

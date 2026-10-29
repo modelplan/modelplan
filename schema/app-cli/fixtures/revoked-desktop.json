@@ -1,0 +1,551 @@
+{
+  "accounts": [],
+  "capabilities": {
+    "alerts": {
+      "status": "supported"
+    },
+    "creditsBalance": {
+      "status": "source-dependent"
+    },
+    "creditsHistory": {
+      "reason": "no-supported-local-source",
+      "status": "unavailable"
+    },
+    "dailyLong": {
+      "reason": "371-day-retention; coverage-is-observed-not-imputed",
+      "status": "source-dependent"
+    },
+    "extraQuotaScopes": {
+      "reason": "reported-limit-only; model/feature identity is not inferred",
+      "status": "source-dependent"
+    },
+    "historyAttribution": {
+      "reason": "source-wide-unless-observed-session-subscriptionRef-proves-ownership",
+      "status": "supported"
+    },
+    "observedUsage": {
+      "status": "source-dependent"
+    },
+    "projects": {
+      "reason": "opaque-local-refs; labels-respect-projectLabels",
+      "status": "source-dependent"
+    },
+    "quotaCycles": {
+      "reason": "source-plan-window-attribution; not-historical-account-ownership",
+      "status": "source-dependent"
+    },
+    "quotaWindows": {
+      "status": "supported"
+    },
+    "resetCards": {
+      "status": "source-dependent"
+    },
+    "resetDropProvenance": {
+      "reason": "meter-drops-do-not-identify-redemption-or-correction",
+      "status": "unavailable"
+    },
+    "sessionRates60s": {
+      "status": "source-dependent"
+    }
+  },
+  "cliVersion": "1.0.0",
+  "connections": [
+    {
+      "authorization": {
+        "reason": "MODELPLAN_CODEX_ACCOUNT",
+        "status": "off"
+      },
+      "history": {
+        "status": "unknown"
+      },
+      "id": "codex",
+      "installed": {
+        "status": "yes"
+      },
+      "kind": "agent",
+      "quota": {
+        "binding": "unknown",
+        "reason": "no-reading",
+        "status": "no"
+      },
+      "support": "full"
+    },
+    {
+      "authorization": {
+        "status": "not-applicable",
+        "via": "status-line"
+      },
+      "history": {
+        "reason": "missing",
+        "status": "no"
+      },
+      "id": "claude-code",
+      "installed": {
+        "status": "yes"
+      },
+      "kind": "agent",
+      "quota": {
+        "binding": "unknown",
+        "reason": "missing",
+        "status": "no"
+      },
+      "support": "full"
+    },
+    {
+      "authorization": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "reason": "no-database",
+        "status": "no"
+      },
+      "id": "opencode",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "agent",
+      "quota": {
+        "reason": "see-opencodego",
+        "status": "not-applicable"
+      },
+      "support": "sessions-only"
+    },
+    {
+      "authorization": {
+        "status": "not-applicable"
+      },
+      "history": {
+        "reason": "no-database",
+        "status": "no"
+      },
+      "id": "zcode",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "agent",
+      "quota": {
+        "reason": "see-zai",
+        "status": "not-applicable"
+      },
+      "support": "sessions-only"
+    },
+    {
+      "authorization": {
+        "reason": "connections.json",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "codexbar:copilot",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "MODELPLAN_CODEXBAR",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "codexbar:cursor",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "MODELPLAN_CODEXBAR",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "codexbar:kiro",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "MODELPLAN_CODEXBAR",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "codexbar:opencodego",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "MODELPLAN_CODEXBAR",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "codexbar:zai",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "not-enabled",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "native:kimi",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "quotaAccess": {
+        "backend": "off",
+        "endpointNotice": "Undocumented compatibility endpoint: GET /coding/v1/usages. Only the selected environment key is read; its value is never printed or stored. No Kimi credentials are refreshed or rewritten.",
+        "host": "https://api.kimi.com",
+        "keyEnv": "KIMI_CODE_API_KEY",
+        "keySet": false,
+        "name": "Kimi Code",
+        "origin": "",
+        "provider": "kimi",
+        "region": "china"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "not-enabled",
+        "status": "off"
+      },
+      "history": {
+        "reason": "quota-only",
+        "status": "not-applicable"
+      },
+      "id": "native:minimax",
+      "installed": {
+        "status": "not-applicable"
+      },
+      "kind": "quota",
+      "quota": {
+        "binding": "unknown",
+        "status": "off"
+      },
+      "quotaAccess": {
+        "backend": "off",
+        "endpointNotice": "GET /v1/token_plan/remains is documented on www.minimax.io; API subdomains and response schema are compatibility interfaces. Same-host legacy GET /v1/api/openplatform/coding_plan/remains is undocumented. No cross-region retry.",
+        "host": "https://api.minimax.io",
+        "hosts": [
+          "https://api.minimax.io"
+        ],
+        "keyEnv": "MINIMAX_CODING_API_KEY",
+        "keySet": false,
+        "name": "MiniMax",
+        "origin": "",
+        "provider": "minimax",
+        "read": "env:MINIMAX_CODING_API_KEY",
+        "region": "international"
+      },
+      "support": "quota-only"
+    },
+    {
+      "authorization": {
+        "reason": "not-enabled",
+        "status": "off",
+        "via": "local-usage.json"
+      },
+      "history": {
+        "status": "off"
+      },
+      "id": "gemini",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "agent",
+      "localUsage": {
+        "coverage": {
+          "filesRead": 0,
+          "filesSeen": 0,
+          "filesSkipped": 0,
+          "messagesWithoutTokens": 0,
+          "truncated": false
+        },
+        "enabled": false,
+        "evaluatedAt": "2030-01-02T03:04:05Z",
+        "historyDays": 35,
+        "hosts": [],
+        "lastObservedAt": null,
+        "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+        "readPaths": [
+          "$HOME/.gemini/tmp/*/chats/session-*.{json,jsonl}",
+          "$HOME/.gemini/*/chats/session-*.{json,jsonl}"
+        ],
+        "reason": "not-enabled",
+        "rows": [],
+        "scope": "available-local-history; input includes cached tokens; output excludes thoughts; no account quota",
+        "sessions": [],
+        "source": "gemini",
+        "status": "off"
+      },
+      "quota": {
+        "reason": "local-only-no-remote-quota",
+        "status": "not-applicable"
+      },
+      "support": "sessions-only"
+    },
+    {
+      "authorization": {
+        "reason": "not-enabled",
+        "status": "off",
+        "via": "local-usage.json"
+      },
+      "history": {
+        "status": "off"
+      },
+      "id": "qwen",
+      "installed": {
+        "reason": "not-found",
+        "status": "no"
+      },
+      "kind": "agent",
+      "localUsage": {
+        "coverage": {
+          "filesRead": 0,
+          "filesSeen": 0,
+          "filesSkipped": 0,
+          "messagesWithoutTokens": 0,
+          "truncated": false
+        },
+        "enabled": false,
+        "evaluatedAt": "2030-01-02T03:04:05Z",
+        "historyDays": 35,
+        "hosts": [],
+        "lastObservedAt": null,
+        "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+        "readPaths": [
+          "$HOME/.qwen/projects/*/chats/{*.jsonl,session-*.json}",
+          "$HOME/.qwen/tmp/*/chats/{*.jsonl,session-*.json}",
+          "$HOME/.qwen/*/chats/{*.jsonl,session-*.json}"
+        ],
+        "reason": "not-enabled",
+        "rows": [],
+        "scope": "available-local-history; native prompt/cached and candidate/thought counters may overlap; no account quota",
+        "sessions": [],
+        "source": "qwen",
+        "status": "off"
+      },
+      "quota": {
+        "reason": "local-only-no-remote-quota",
+        "status": "not-applicable"
+      },
+      "support": "sessions-only"
+    }
+  ],
+  "contractVersion": 1,
+  "daily": [],
+  "dailyCoverage": {
+    "from": null,
+    "recording": false
+  },
+  "dailyLong": [],
+  "dailyLongCoverage": {
+    "from": null,
+    "recording": false
+  },
+  "dataRevision": "ec85cf69cdbf5dd81f185b590a863bcc099e396d79cf16e2944a5384b5c532e9",
+  "events": [],
+  "generatedAt": "2030-01-02T03:04:05Z",
+  "hourly": [],
+  "kind": "modelplan.personal-snapshot",
+  "liveSessions": [],
+  "localHistory": [
+    {
+      "availability": "off",
+      "beta": true,
+      "bytesRead": 0,
+      "confidence": "exact",
+      "freshness": "unknown",
+      "measurement": "local-usage",
+      "nextAttemptAt": "0001-01-01T00:00:00Z",
+      "nextStep": "Review copilot consent and privacy settings",
+      "observedAt": "0001-01-01T00:00:00Z",
+      "rows": [],
+      "timezone": "UTC",
+      "tool": "copilot",
+      "unallocated": [],
+      "validationBytes": 0
+    }
+  ],
+  "localUsage": [
+    {
+      "coverage": {
+        "filesRead": 0,
+        "filesSeen": 0,
+        "filesSkipped": 0,
+        "messagesWithoutTokens": 0,
+        "truncated": false
+      },
+      "enabled": false,
+      "evaluatedAt": "2030-01-02T03:04:05Z",
+      "historyDays": 35,
+      "hosts": [],
+      "lastObservedAt": null,
+      "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+      "readPaths": [
+        "$HOME/.gemini/tmp/*/chats/session-*.{json,jsonl}",
+        "$HOME/.gemini/*/chats/session-*.{json,jsonl}"
+      ],
+      "reason": "not-enabled",
+      "rows": [],
+      "scope": "available-local-history; input includes cached tokens; output excludes thoughts; no account quota",
+      "sessions": [],
+      "source": "gemini",
+      "status": "off"
+    },
+    {
+      "coverage": {
+        "filesRead": 0,
+        "filesSeen": 0,
+        "filesSkipped": 0,
+        "messagesWithoutTokens": 0,
+        "truncated": false
+      },
+      "enabled": false,
+      "evaluatedAt": "2030-01-02T03:04:05Z",
+      "historyDays": 35,
+      "hosts": [],
+      "lastObservedAt": null,
+      "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+      "readPaths": [
+        "$HOME/.qwen/projects/*/chats/{*.jsonl,session-*.json}",
+        "$HOME/.qwen/tmp/*/chats/{*.jsonl,session-*.json}",
+        "$HOME/.qwen/*/chats/{*.jsonl,session-*.json}"
+      ],
+      "reason": "not-enabled",
+      "rows": [],
+      "scope": "available-local-history; native prompt/cached and candidate/thought counters may overlap; no account quota",
+      "sessions": [],
+      "source": "qwen",
+      "status": "off"
+    }
+  ],
+  "measured": [],
+  "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
+  "paceHistory": {
+    "gapLimitMinutes": {
+      "five_hour": 60,
+      "monthly": 1440,
+      "weekly": 360
+    },
+    "groups": [],
+    "since": null,
+    "status": "off"
+  },
+  "perfStats": [],
+  "projectLabels": true,
+  "projectRanking": {
+    "measure": "observed-output-tokens",
+    "recent30d": {
+      "projects": 0,
+      "top": [],
+      "totalObservedOutputTokens": 0,
+      "unattributedOutputTokens": 0
+    },
+    "recent7d": {
+      "projects": 0,
+      "top": [],
+      "totalObservedOutputTokens": 0,
+      "unattributedOutputTokens": 0
+    }
+  },
+  "publication": {
+    "checkedAt": "2030-01-02T03:04:05Z",
+    "publicationId": "1eaf98c9777c308b6b04c250",
+    "publishedAt": "2020-01-01T00:00:00Z",
+    "stale": false,
+    "verifiedAt": "2030-01-02T03:04:05Z"
+  },
+  "recording": false,
+  "schemaVersion": 1,
+  "sessionRanking": {
+    "measure": "observed-output-tokens",
+    "recent30d": {
+      "sessions": 0,
+      "top": [],
+      "totalObservedOutputTokens": 0
+    },
+    "recent7d": {
+      "sessions": 0,
+      "top": [],
+      "totalObservedOutputTokens": 0
+    }
+  },
+  "sessions": [],
+  "sources": [
+    {
+      "reason": "no status-line snapshot yet; install the ModelPlan status line in Claude Code",
+      "source": "claude-code",
+      "status": "missing"
+    },
+    {
+      "source": "user",
+      "status": "missing"
+    }
+  ],
+  "subscriptions": [],
+  "todayTotals": [],
+  "validUntil": "2030-01-04T03:04:05Z"
+}

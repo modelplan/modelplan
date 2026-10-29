@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/consent-grant-request.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "stdin": "one JSON object <=65536 bytes; disjoint allow/deny; IDs must be detected at commit time",
+    "atomic": "compare generation and current text version under the shared lock; stale changes nothing",
+    "scope": "standard routes only; native Claude is the only keychain choice; recording never prompts"
+  },
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "description": "Machine value; not display text.",
+      "format": "uuid"
+    },
+    "expectGeneration": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consentTextVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "allow": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Machine value; not display text.",
+        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+      },
+      "uniqueItems": true
+    },
+    "deny": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Machine value; not display text.",
+        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+      },
+      "uniqueItems": true
+    },
+    "keychain": {
+      "type": "object",
+      "properties": {
+        "claude": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "requestId",
+    "expectGeneration",
+    "consentTextVersion"
+  ],
+  "additionalProperties": false
+}

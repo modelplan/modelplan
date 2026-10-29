@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/desktop.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "normal online mode may launch one locked native worker, Codex account and audited helper refresh; --read-only/--offline never launch",
+    "credentials": "foreground is cache/local records; detached admitted readers use provider-owned sign-ins",
+    "network": "background only when online and not read-only",
+    "writes": "normal records local derived history; read-only writes nothing",
+    "floor": "provider attempt floor >=5 minutes; provider-specific budgets/backoff can be longer; first no-attempt read is immediately due",
+    "keychain": "background native reader policy is non-interactive and bounded to about 2 seconds",
+    "exitCodes": {
+      "0": "JSON snapshot, including empty/unreadable/revoked state",
+      "1": "cache location unavailable"
+    },
+    "displayText": "notes/reasons are display; source IDs, states, booleans and numeric observations are machine values"
+  },
+  "$ref": "../desktop-v1.json",
+  "description": "Desktop snapshot. Normal polls may schedule admitted readers; read-only does not collect."
+}

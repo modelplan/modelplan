@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add machine-checkable app–CLI command schemas and synthetic fixtures generated from the current CLI binary. CI rejects fixture drift, and native app decoders and Settings consent adapters consume the same captures.
+  新增可机器校验的 App–CLI 命令契约与当前 CLI 实际生成的合成样例；CI 检查样例漂移，原生 App 解码器及设置授权适配器共同读取同一组样例。
+
 ## CLI v0.5.45, Codex plugin 0.15.37 and Claude Code plugin 0.7.36 (2026-10-28)
 
 - Desktop, quota, advice and online hooks explicitly schedule due native readers in one locked detached worker. The first read after a JSON consent grant is immediately due; quiet scheduled refreshes preserve provider budgets, background Keychain policy and generation fences. Offline/read-only paths start nothing.

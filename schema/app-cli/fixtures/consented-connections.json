@@ -1,0 +1,90 @@
+{
+  "connections": [
+    {
+      "backend": "native",
+      "blocked": "no-native-reader",
+      "keySet": false,
+      "name": "",
+      "origin": "consent.json",
+      "provider": "codex",
+      "reading": {
+        "reason": "no native reader for codex; set its backend to codexbar-compat",
+        "source": "native:codex",
+        "status": "unsupported_schema"
+      }
+    },
+    {
+      "backend": "native",
+      "hosts": [
+        "none from modelplan; Copilot runtime: api.github.com (enterprise host follows runtime configuration)"
+      ],
+      "keySet": false,
+      "name": "GitHub Copilot",
+      "origin": "consent.json",
+      "provider": "copilot",
+      "read": "copilot --headless --no-auto-update --stdio: account.getQuota; Copilot-managed sign-in, no credential file opened by modelplan (MODELPLAN_COPILOT selects executable)",
+      "reading": {
+        "reason": "not read yet",
+        "source": "native:copilot",
+        "status": "missing"
+      },
+      "region": "local",
+      "secretPolicy": "Credentials are never printed or stored by modelplan; only sanitized quota is cached. No identity is collected."
+    }
+  ],
+  "file": "$HOME/.config/modelplan/connections.json",
+  "localSources": [],
+  "localUsage": [
+    {
+      "coverage": {
+        "filesRead": 0,
+        "filesSeen": 0,
+        "filesSkipped": 0,
+        "messagesWithoutTokens": 0,
+        "truncated": false
+      },
+      "enabled": false,
+      "evaluatedAt": "2030-01-02T03:04:05Z",
+      "historyDays": 35,
+      "hosts": [],
+      "lastObservedAt": null,
+      "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+      "readPaths": [
+        "$HOME/.gemini/tmp/*/chats/session-*.{json,jsonl}",
+        "$HOME/.gemini/*/chats/session-*.{json,jsonl}"
+      ],
+      "reason": "not-enabled",
+      "rows": [],
+      "scope": "available-local-history; input includes cached tokens; output excludes thoughts; no account quota",
+      "sessions": [],
+      "source": "gemini",
+      "status": "off"
+    },
+    {
+      "coverage": {
+        "filesRead": 0,
+        "filesSeen": 0,
+        "filesSkipped": 0,
+        "messagesWithoutTokens": 0,
+        "truncated": false
+      },
+      "enabled": false,
+      "evaluatedAt": "2030-01-02T03:04:05Z",
+      "historyDays": 35,
+      "hosts": [],
+      "lastObservedAt": null,
+      "privacy": "Local token/model/timestamp metadata only; credentials are never read, printed or stored; prompts, replies and raw identifiers are never printed or stored. No network calls.",
+      "readPaths": [
+        "$HOME/.qwen/projects/*/chats/{*.jsonl,session-*.json}",
+        "$HOME/.qwen/tmp/*/chats/{*.jsonl,session-*.json}",
+        "$HOME/.qwen/*/chats/{*.jsonl,session-*.json}"
+      ],
+      "reason": "not-enabled",
+      "rows": [],
+      "scope": "available-local-history; native prompt/cached and candidate/thought counters may overlap; no account quota",
+      "sessions": [],
+      "source": "qwen",
+      "status": "off"
+    }
+  ]
+}

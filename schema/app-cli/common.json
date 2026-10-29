@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/common.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "$defs": {
+    "receiptTool": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "accessClass": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "standard",
+            "browser-session",
+            "not-read"
+          ]
+        },
+        "detected": {
+          "type": "boolean"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "backend": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "native",
+            "codexbar",
+            "off"
+          ]
+        },
+        "readerId": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "pattern": "^(native|codexbar):[a-z][a-z0-9-]*$"
+        },
+        "keychain": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "allowed",
+            "denied",
+            "unset"
+          ]
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display text only; never parse as an endpoint or permission."
+          }
+        },
+        "hostDetails": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string",
+                "description": "Machine value; not display text.",
+                "pattern": "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$",
+                "maxLength": 253
+              },
+              "note": {
+                "type": "string",
+                "description": "Display text only; never parse as an endpoint or permission."
+              }
+            },
+            "required": [
+              "host",
+              "note"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "notice": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "nextStep": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "accessClass",
+        "detected",
+        "allowed",
+        "backend",
+        "readerId",
+        "keychain",
+        "hosts"
+      ],
+      "additionalProperties": true
+    },
+    "tool": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/receiptTool"
+        },
+        {
+          "required": [
+            "hostDetails"
+          ]
+        }
+      ]
+    },
+    "consentError": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "const": false
+        },
+        "error": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "invalid_request",
+            "consent_unavailable",
+            "readers_off",
+            "stale_generation",
+            "stale_consent_text",
+            "unknown_tool",
+            "keychain_not_supported",
+            "access_class_forbidden",
+            "reader_unavailable",
+            "request_id_conflict",
+            "cleanup_pending"
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "format": "uuid"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/receiptTool"
+          }
+        },
+        "pendingForget": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Machine value; not display text.",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          }
+        }
+      },
+      "required": [
+        "ok",
+        "error"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

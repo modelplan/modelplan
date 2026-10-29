@@ -30,6 +30,26 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 3. A tool detected later is offered on its own: an App badge or a one-line CLI hint. Earlier choices are never re-asked.
 4. `modelplan disconnect <tool|--all>` and the App's "Forget readings" revoke consent and delete that tool's cached readings.
 
+### App–CLI contract
+
+The [command inventory, behavior contract and generation instructions](../schema/app-cli/README.md)
+cover every app helper invocation, plus `connections` and `doctor readers` diagnostics.
+The [JSON Schemas](../schema/app-cli/) distinguish machine values from display text,
+exit behavior, background work and reader floors. Desktop and publication schemas
+reference the frozen v1 contracts rather than introducing a parallel wire format.
+
+Any app–CLI contract change must update its schema, regenerate the
+[real-binary synthetic fixtures](../schema/app-cli/fixtures/manifest.json), and
+update both the CLI conformance tests and the Swift consumer tests **in the same PR**.
+Run `make app-cli-fixtures` to regenerate and `make app-cli-contract-check` to
+verify; `go test ./...` also regenerates and rejects drift in CI. Swift tests read
+these files directly from the checkout. Current decoder examples must come from
+this capture set; deliberate negative mutations and pinned historical compatibility
+fixtures remain separate test cases.
+
+App–CLI 契约变更须在同一 PR 更新 schema、重新生成真实 CLI 的合成样例，并同步更新
+CLI 与 Swift 两侧测试。字段展示文本不能充当主机名、授权状态或刷新指令。
+
 ### App consent API
 
 `modelplan consent --json` is a cache-only, presence-only read. It returns

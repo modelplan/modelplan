@@ -1,0 +1,64 @@
+{
+  "generation": 2,
+  "ok": true,
+  "requestId": "00000000-0000-4000-8000-000000000054",
+  "tools": [
+    {
+      "accessClass": "standard",
+      "allowed": false,
+      "backend": "native",
+      "detected": true,
+      "displayName": "Claude Code",
+      "hostDetails": [
+        {
+          "host": "api.anthropic.com",
+          "note": ""
+        }
+      ],
+      "hosts": [
+        "https://api.anthropic.com"
+      ],
+      "id": "claude",
+      "keychain": "unset",
+      "readerId": "native:claude"
+    },
+    {
+      "accessClass": "standard",
+      "allowed": false,
+      "backend": "native",
+      "detected": true,
+      "displayName": "Codex",
+      "hostDetails": [
+        {
+          "host": "chatgpt.com",
+          "note": "Codex runtime"
+        }
+      ],
+      "hosts": [
+        "https://chatgpt.com (Codex runtime)"
+      ],
+      "id": "codex",
+      "keychain": "unset",
+      "readerId": "native:codex"
+    },
+    {
+      "accessClass": "standard",
+      "allowed": false,
+      "backend": "native",
+      "detected": true,
+      "displayName": "GitHub Copilot",
+      "hostDetails": [
+        {
+          "host": "api.github.com",
+          "note": "Copilot runtime; enterprise host follows runtime configuration"
+        }
+      ],
+      "hosts": [
+        "https://api.github.com (Copilot runtime; enterprise host follows runtime configuration)"
+      ],
+      "id": "copilot",
+      "keychain": "unset",
+      "readerId": "native:copilot"
+    }
+  ]
+}

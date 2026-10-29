@@ -10,10 +10,11 @@ final class ConsentGatedDesktopTransportTests: XCTestCase {
         func execute(_ command: CLICommand) async throws -> CommandResult { .init(exitCode: code, stdout: Data()) }
     }
     private func preview(mode: String = "automatic", allowed: Bool = true, access: String = "standard") throws -> ConsentPreview {
-        let data: [String: Any] = ["generation": 1, "consentTextVersion": 2, "mode": mode,
-            "consentText": ["en": "Allow", "zh": "允许"], "tools": [["id": "codex", "displayName": "Codex",
-            "accessClass": access, "detected": true, "allowed": allowed, "backend": "native",
-            "readerId": "native:codex", "keychain": "unset", "hosts": ["example.test"]]]]
+        var data = try GeneratedAppCLIFixtures.object("consented-consent.json")
+        let tools = try XCTUnwrap(data["tools"] as? [[String: Any]])
+        var codex = try XCTUnwrap(tools.first { $0["id"] as? String == "codex" })
+        codex["allowed"] = allowed; codex["accessClass"] = access
+        data["mode"] = mode; data["tools"] = [codex]
         return try FeedDecoder.consentPreview(JSONSerialization.data(withJSONObject: data))
     }
     func testNormalRequiresCanonicalAdmissionAndInvalidationClosesIt() async throws {
