@@ -126,3 +126,10 @@ const (
 	RefreshOffline       RefreshDisabledReason = "offline"
 	RefreshPolicyPending RefreshDisabledReason = "policy_pending"
 )
+
+type PluginTool string
+
+const (
+	PluginClaudeCode PluginTool = "claude-code"
+	PluginCodex      PluginTool = "codex"
+)

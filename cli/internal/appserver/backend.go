@@ -70,7 +70,7 @@ func errorCode(err error) int {
 	var protocol ProtocolError
 	if errors.As(err, &protocol) {
 		switch protocol.Code {
-		case wire.CodeConsentStale, wire.CodeConsentRejected, wire.CodeRequestMismatch, wire.CodeConsentChanged, wire.CodeCredentialRejected, wire.CodeHistoryUnavailable, wire.CodeCursorStale, wire.CodeBusy:
+		case wire.CodeInvalidParams, wire.CodeConsentStale, wire.CodeConsentRejected, wire.CodeRequestMismatch, wire.CodeConsentChanged, wire.CodeCredentialRejected, wire.CodeHistoryUnavailable, wire.CodeCursorStale, wire.CodeBusy:
 			return protocol.Code
 		}
 	}
@@ -80,8 +80,8 @@ func errorCode(err error) int {
 	return wire.CodeInternal
 }
 
-// UnavailableBackend is deliberately inert until the shared schema-2 backend is
-// linked. It reads/writes no home, reports degraded health, advertises no consent
+// UnavailableBackend is the inert fallback when the shared store cannot be
+// opened. It reads/writes no home, reports degraded health, advertises no consent
 // or credential capability, and never substitutes a second consent store.
 type UnavailableBackend struct{}
 
@@ -102,4 +102,23 @@ func (UnavailableBackend) Publish(ctx context.Context, stamp Stamp, write func()
 		return ProtocolError{wire.CodeConsentChanged}
 	}
 	return write()
+}
+
+// responseContextError preserves the authoritative context of a rejected
+// mutation independently of the asynchronous rows/consent watcher.
+type responseContextError struct {
+	err   error
+	stamp Stamp
+}
+
+func (e responseContextError) Error() string { return e.err.Error() }
+func (e responseContextError) Unwrap() error { return e.err }
+
+type sessionContextKey struct{}
+
+// SessionID returns the initialized pipe session bound by the core to a handler.
+// Query cursors use it without exposing mutable Server state.
+func SessionID(ctx context.Context) string {
+	session, _ := ctx.Value(sessionContextKey{}).(string)
+	return session
 }
