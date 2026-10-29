@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/consent.json",
+  "$comment": "SPDX-License-Identifier: MIT. App–CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none; presence/cache metadata only",
+    "network": "none",
+    "writes": "none",
+    "exitCodes": {
+      "0": "successful JSON object",
+      "1": "unavailable; JSON error for consent, stderr/empty output for other commands",
+      "2": "usage on stderr"
+    },
+    "displayText": "notice, nextStep, names, messages, and legacy hosts are display only"
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "consentTextVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "automatic",
+            "passive",
+            "off"
+          ]
+        },
+        "consentText": {
+          "type": "object",
+          "properties": {
+            "en": {
+              "type": "string",
+              "description": "Display text only; never parse as an endpoint or permission."
+            },
+            "zh": {
+              "type": "string",
+              "description": "Display text only; never parse as an endpoint or permission."
+            }
+          },
+          "required": [
+            "en",
+            "zh"
+          ],
+          "additionalProperties": true
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "common.json#/$defs/tool"
+          },
+          "maxItems": 512
+        }
+      },
+      "required": [
+        "generation",
+        "consentTextVersion",
+        "mode",
+        "consentText",
+        "tools"
+      ],
+      "additionalProperties": true
+    },
+    {
+      "$ref": "common.json#/$defs/consentError"
+    }
+  ]
+}

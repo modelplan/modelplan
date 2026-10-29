@@ -1,0 +1,1007 @@
+{
+  "version": 1,
+  "generator": "same-checkout CLI; make app-cli-fixtures",
+  "states": [
+    "fresh",
+    "consented",
+    "refreshed",
+    "unreadable",
+    "revoked",
+    "cleanup-pending"
+  ],
+  "entries": [
+    {
+      "file": "fresh-consent.json",
+      "state": "fresh",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-desktop-read-only.json",
+      "state": "fresh",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-detect.json",
+      "state": "fresh",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-connections.json",
+      "state": "fresh",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-connections-text.json",
+      "state": "fresh",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-doctor-readers.json",
+      "state": "fresh",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-publication-offline.json",
+      "state": "fresh",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-publication.json",
+      "state": "fresh",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-refresh-account.json",
+      "state": "fresh",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-desktop.json",
+      "state": "fresh",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-help.json",
+      "state": "fresh",
+      "schema": "help",
+      "arguments": [
+        "--help"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-grant.request.json",
+      "state": "consented",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-grant.json",
+      "state": "consented",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "consented-grant.request.json"
+    },
+    {
+      "file": "consented-consent.json",
+      "state": "consented",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-desktop-read-only.json",
+      "state": "consented",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-detect.json",
+      "state": "consented",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-connections.json",
+      "state": "consented",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-connections-text.json",
+      "state": "consented",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-doctor-readers.json",
+      "state": "consented",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-publication-offline.json",
+      "state": "consented",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-publication.json",
+      "state": "consented",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-refresh-account.json",
+      "state": "consented",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-stale-generation.request.json",
+      "state": "consented",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-stale-generation.json",
+      "state": "consented",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "",
+      "request": "consented-stale-generation.request.json"
+    },
+    {
+      "file": "consented-unknown-tool.request.json",
+      "state": "consented",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "consented-unknown-tool.json",
+      "state": "consented",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "",
+      "request": "consented-unknown-tool.request.json"
+    },
+    {
+      "file": "refreshed-grant.request.json",
+      "state": "refreshed",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-grant.json",
+      "state": "refreshed",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "refreshed-grant.request.json"
+    },
+    {
+      "file": "refreshed-consent.json",
+      "state": "refreshed",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-desktop-read-only.json",
+      "state": "refreshed",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-detect.json",
+      "state": "refreshed",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-connections.json",
+      "state": "refreshed",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-connections-text.json",
+      "state": "refreshed",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-doctor-readers.json",
+      "state": "refreshed",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-publication-offline.json",
+      "state": "refreshed",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-publication.json",
+      "state": "refreshed",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-refresh-account.json",
+      "state": "refreshed",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "refreshed-desktop.json",
+      "state": "refreshed",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-grant.request.json",
+      "state": "unreadable",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-grant.json",
+      "state": "unreadable",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "unreadable-grant.request.json"
+    },
+    {
+      "file": "unreadable-consent.json",
+      "state": "unreadable",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-desktop-read-only.json",
+      "state": "unreadable",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-detect.json",
+      "state": "unreadable",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-connections.json",
+      "state": "unreadable",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-connections-text.json",
+      "state": "unreadable",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-doctor-readers.json",
+      "state": "unreadable",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-publication-offline.json",
+      "state": "unreadable",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-publication.json",
+      "state": "unreadable",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-refresh-account.json",
+      "state": "unreadable",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "unreadable-desktop.json",
+      "state": "unreadable",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-grant.request.json",
+      "state": "revoked",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-grant.json",
+      "state": "revoked",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "revoked-grant.request.json"
+    },
+    {
+      "file": "revoked-revoke.request.json",
+      "state": "revoked",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-revoke.json",
+      "state": "revoked",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "revoked-revoke.request.json"
+    },
+    {
+      "file": "revoked-consent.json",
+      "state": "revoked",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-desktop-read-only.json",
+      "state": "revoked",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-detect.json",
+      "state": "revoked",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-connections.json",
+      "state": "revoked",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-connections-text.json",
+      "state": "revoked",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-doctor-readers.json",
+      "state": "revoked",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-publication-offline.json",
+      "state": "revoked",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-publication.json",
+      "state": "revoked",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-refresh-account.json",
+      "state": "revoked",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "revoked-desktop.json",
+      "state": "revoked",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-grant.request.json",
+      "state": "cleanup-pending",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-grant.json",
+      "state": "cleanup-pending",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "cleanup-pending-grant.request.json"
+    },
+    {
+      "file": "cleanup-pending-revoke.request.json",
+      "state": "cleanup-pending",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-revoke.json",
+      "state": "cleanup-pending",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "",
+      "request": "cleanup-pending-revoke.request.json"
+    },
+    {
+      "file": "cleanup-pending-consent.json",
+      "state": "cleanup-pending",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-desktop-read-only.json",
+      "state": "cleanup-pending",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json",
+        "--read-only"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-detect.json",
+      "state": "cleanup-pending",
+      "schema": "detect",
+      "arguments": [
+        "detect",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-connections.json",
+      "state": "cleanup-pending",
+      "schema": "connections",
+      "arguments": [
+        "connections",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-connections-text.json",
+      "state": "cleanup-pending",
+      "schema": "connections-text",
+      "arguments": [
+        "connections"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-doctor-readers.json",
+      "state": "cleanup-pending",
+      "schema": "doctor-readers",
+      "arguments": [
+        "doctor",
+        "readers",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-publication-offline.json",
+      "state": "cleanup-pending",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-publication.json",
+      "state": "cleanup-pending",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-refresh-account.json",
+      "state": "cleanup-pending",
+      "schema": "refresh-account",
+      "arguments": [
+        "quota",
+        "--refresh-account",
+        "--quiet"
+      ],
+      "encoding": "text",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "cleanup-pending-desktop.json",
+      "state": "cleanup-pending",
+      "schema": "desktop",
+      "arguments": [
+        "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "fresh-publication-unavailable.json",
+      "state": "fresh",
+      "schema": "publication",
+      "arguments": [
+        "publication",
+        "--json",
+        "--offline"
+      ],
+      "encoding": "text",
+      "exitCode": 3,
+      "stderr": "no verified publication in the local cache; run `modelplan sync`\n"
+    }
+  ]
+}

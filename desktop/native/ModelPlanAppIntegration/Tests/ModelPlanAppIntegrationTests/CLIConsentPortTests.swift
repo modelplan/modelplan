@@ -36,15 +36,17 @@ import ModelPlanAppIntegration
         XCTAssertTrue(copy.chinese.contains("关于")); XCTAssertFalse(copy.english.contains("Request unavailable:"))
     }
     func testGrantReceiptMustMatchRequestAndContainCanonicalGeneration() async throws {
-        let id = UUID(), other = UUID()
-        let payload = try JSONSerialization.data(withJSONObject: ["requestId": id.uuidString])
-        for reply in [["ok": true, "requestId": other.uuidString, "generation": 1] as [String: Any],
-                      ["ok": true, "requestId": id.uuidString],
-                      ["ok": false, "requestId": id.uuidString, "generation": 1]] {
+        let payload = try GeneratedAppCLIFixtures.data("consented-grant.request.json")
+        let success = try GeneratedAppCLIFixtures.object("consented-grant.json")
+        for mutation in ["mismatchedID", "missingGeneration", "failed"] {
+            var reply = success
+            if mutation == "mismatchedID" { reply["requestId"] = UUID().uuidString }
+            if mutation == "missingGeneration" { reply.removeValue(forKey: "generation") }
+            if mutation == "failed" { reply["ok"] = false }
             let port = CommunityCLIConsentPort(transport: Port(try JSONSerialization.data(withJSONObject: reply)), apiAvailable: true)
             do { try await port.applyConsentJSON(payload); XCTFail("Malformed/mismatched receipt must refuse") } catch { }
         }
-        let port = CommunityCLIConsentPort(transport: Port(try JSONSerialization.data(withJSONObject: ["ok": true, "requestId": id.uuidString, "generation": 1])), apiAvailable: true)
+        let port = CommunityCLIConsentPort(transport: Port(try GeneratedAppCLIFixtures.data("consented-grant.json")), apiAvailable: true)
         try await port.applyConsentJSON(payload)
     }
 }
