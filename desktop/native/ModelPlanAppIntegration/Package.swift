@@ -23,7 +23,7 @@ let package = Package(
             .product(name: "ModelPlanCockpitShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
-        ]),
+        ], resources: [.copy("Resources")]),
         .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
             "ModelPlanAppIntegration",
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
