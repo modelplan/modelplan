@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"math"
 	"net/http"
 	"sort"
@@ -49,6 +50,7 @@ type zaiResponse struct {
 }
 
 func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	c = accountReadClient(consent.ScopeZaiAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	host := zaiHosts[region]
 	if host == "" {

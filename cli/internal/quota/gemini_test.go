@@ -108,7 +108,7 @@ func geminiServer(t *testing.T, mode *string, paths *[]string) {
 		_, _ = w.Write(b)
 	}))
 	oldHost, oldClient := geminiHost, nativeClient
-	geminiHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cloudcode-pa.googleapis.com")
 	t.Cleanup(func() { srv.Close(); geminiHost, nativeClient = oldHost, oldClient })
 }
 
@@ -291,7 +291,7 @@ func TestGeminiDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
 	defer srv.Close()
 	oldHost, oldClient := geminiHost, nativeClient
-	geminiHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cloudcode-pa.googleapis.com")
 	defer func() { geminiHost, nativeClient = oldHost, oldClient }()
 	if err := RefreshNative(context.Background(), p, geminiNow); err != nil {
 		t.Fatal(err)

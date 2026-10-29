@@ -78,10 +78,9 @@ func TestMiniMaxConsentRegionsBindingAndPrivacy(t *testing.T) {
 		w.Write([]byte(minimaxModern))
 	}))
 	defer srv.Close()
-	oldHosts, oldClient := minimaxHosts, nativeClient
-	minimaxHosts = map[string]string{"international": srv.URL, "china": srv.URL}
-	nativeClient = srv.Client()
-	defer func() { minimaxHosts, nativeClient = oldHosts, oldClient }()
+	oldClient := nativeClient
+	nativeClient = readerFixtureClient(t, srv, "api.minimax.io", "api.minimaxi.com")
+	defer func() { nativeClient = oldClient }()
 	if NativeDue(p, minimaxNow) {
 		t.Fatal("key alone enabled adapter")
 	}
@@ -193,10 +192,7 @@ func TestMiniMaxFallbackBoundaries(t *testing.T) {
 				w.Write([]byte(minimaxModern))
 			}))
 			defer srv.Close()
-			old := minimaxHosts
-			minimaxHosts = map[string]string{"international": srv.URL, "china": other.URL}
-			defer func() { minimaxHosts = old }()
-			e := fetchMiniMax(context.Background(), srv.Client(), "international", "synthetic-key-secret", minimaxNow)
+			e := fetchMiniMax(context.Background(), readerFixtureClient(t, srv, "api.minimax.io"), "international", "synthetic-key-secret", minimaxNow)
 			want := 1
 			if tc.fallback {
 				want = 2

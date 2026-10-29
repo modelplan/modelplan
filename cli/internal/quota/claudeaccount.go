@@ -99,6 +99,7 @@ func claudeLoginUnsupported(root string) string {
 }
 
 func collectClaudeAccount(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	c = accountReadClient(consent.ScopeClaudeAccountUsageSavedLogin, c)
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != ""
 	fail := func(state, notice string, codes ...string) readerOutcome {

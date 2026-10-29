@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"io"
 	"math"
 	"net/http"
@@ -35,6 +36,7 @@ func KimiHost(region string) string {
 }
 
 func fetchKimi(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	c = accountReadClient(consent.ScopeKimiAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC(), Plan: "Kimi Code"}
 	host := kimiHosts[region]
 	if host == "" {
@@ -240,6 +242,7 @@ func kimiFinish(cache string, next time.Time) error {
 func kimiReserve(cache string, now time.Time) error { return kimiFinish(cache, now.Add(5*time.Minute)) }
 
 func collectKimiLogin(ctx context.Context, c *http.Client, r readerContext) readerOutcome {
+	c = accountReadClient(consent.ScopeKimiAccountUsageSavedLogin, c)
 	meta := r.Previous.Metadata
 	changed := meta.CredentialKey != ""
 	fail := func(state, notice string, codes ...string) readerOutcome {

@@ -1,72 +1,82 @@
-# Reader admission gates
+<!-- SPDX-License-Identifier: MIT -->
+# Reader admission and fixed request sets
 
-U2a publishes the first-batch admission policy and recording regressions.
-`quota.PolicyPending(provider) (scope string, pending bool)` is the exported
-entry point for production admission, scheduling, cache projection and diagnostics.
-Those hooks are integrated by U2; this branch alone does not enable the POST veto.
-The MiniMax production stop-on-401/403 fix is included here. The U2 scope identifiers come from
-[4814e20](https://github.com/modelplan/modelplan/commit/4814e20d36f50dfd0a88cdb87a5f448ef39c22ed).
-Consent, revocation, persistence and the shared cross-process vendor budget
-remain the caller's responsibility. The existing reader implementations stay
-available for isolated protocol fixtures; no protocol/card approval is implied.
+Production account-usage readers create one `NewReadClient` per logical read.
+It preserves the injected transport/proxy and timeout, removes ambient cookies,
+and stops redirect following. Its `NewReadTransport` pins the request set,
+serializes attempts and latches HTTP 401/403 or a redirect for the lifetime of
+that read. Helpers share that transport; constructing another client to retry a
+rejection would reset its budget and is forbidden.
 
-`CheckAdmission` rejects the Gemini Code Assist and Cursor account-usage scopes
-with `policy_pending`, independently of a user's saved-login grant. Their local
-history scopes remain eligible under their own consent. Unknown scopes fail
-closed. POST approval requires a reviewed code change with the pinned request
-set and body schema; no runtime flag can approve it.
+| Scope prefix / route | HTTPS authority | Fixed requests, in order | Maximum |
+| --- | --- | --- | --- |
+| `minimax.account_usage.api_key` | `api.minimax.io` or `api.minimaxi.com` | GET `/v1/token_plan/remains`, optional GET `/v1/api/openplatform/coding_plan/remains` | 2, same selected region |
+| `claude.account_usage.saved_login` | `api.anthropic.com` | optional GET `/api/oauth/profile`, GET `/api/oauth/usage` | 2 |
+| `kimi.account_usage.api_key` | `api.kimi.com` or `api.kimi.ai` | GET `/coding/v1/usages` | 1 |
+| `kimi.account_usage.saved_login` | `api.kimi.com` | GET `/coding/v1/usages` | 1 |
+| `zai.account_usage.api_key` | `api.z.ai` or `open.bigmodel.cn` | GET `/api/monitor/usage/quota/limit` | 1 |
+| `opencodego.account_usage.api_key` | `opencode.ai` | GET `/zen/go/v1/usage` | 1 |
+| `grok.account_usage.saved_login` | `cli-chat-proxy.grok.com` | GET `/v1/billing?format=credits` | 1 |
+| `gemini.account_usage.saved_login` (**policy_pending**) | `cloudcode-pa.googleapis.com` | optional POST `/v1internal:loadCodeAssist`, POST `/v1internal:retrieveUserQuota` | 2 |
+| `cursor.account_usage.saved_login` (**policy_pending**) | `cursor.com`, then `api2.cursor.sh` | optional POST `/api/dashboard/get-plan-info`, POST `/aiserver.v1.DashboardService/GetCurrentPeriodUsage` | 2 |
 
-`NewReadTransport` is created once per admitted, budget-reserved read. The only
-remote scope it currently allows is MiniMax: a GET to the current quota path,
-then optionally a GET to the legacy path on the same compiled regional host.
-It permits at most two requests, no request parameters or bodies, no redirects,
-and no subsequent request after HTTP 401/403. Its authorization stop lasts for
-the transport's lifetime; persistent scope state and re-admission belong to U2.
-Do not create another transport to retry an authorization failure.
+The POST pins are dormant. `CheckAdmission` rejects both scopes independently of
+saved-login consent, before transport I/O; no runtime flag approves them.
+Gemini load bodies contain only the fixed health-check mode, fixed IDE/plugin
+metadata and an optional validated project selector. Quota bodies contain only
+a required validated project. Cursor bodies are exactly `{}`. Unknown/duplicate
+fields, null project/metadata, extra headers and unreviewed bodies are rejected.
+Cursor's first authority allows its app-derived cookie and Origin; its second
+allows bearer authorization and Connect version. Those credential headers cannot
+be forwarded between its authorities. An owner policy decision is still required.
+The independent local-history scopes remain eligible under their own consent.
+
+All other paths, parameters, body-bearing GETs, authority overrides, extra header
+names, repeated stages and excess requests fail closed. Regional requests never
+switch hosts within a logical read. The MiniMax collector additionally restricts
+legacy fallback to compatibility failures, never HTTP 401/403.
+
+`quota.PolicyPending` is the veto consumed by production admission, scheduling,
+cache projection and diagnostics. Consent, revocation, persistence and the shared
+cross-process vendor budget remain the dispatcher's responsibility. The transport
+stop lasts for one logical read; it does not prove a durable authorization latch
+across later scheduled reads.
+
+Codex and Copilot use installed-runtime RPC, with no ModelPlan vendor HTTP
+client or credential. Their subprocess request sets are a separate boundary:
+Codex initializes, reads rate limits and optionally reads account identity with
+`refreshToken=false`; Copilot connects (or legacy ping), checks auth status, then
+reads quota. HTTP transport tests do not certify the runtime's own network.
 
 `readertest.Transport` records method, host and escaped path for every attempted
-outbound request, including calls beyond its scripted responses. It opens no
-socket and keeps no credentials, headers or request bodies. Tests place it
-**inside** the admission transport so records represent calls past the gate.
-The production tests supply the recorder directly to the real dispatcher and
-quota decoder, without an admission wrapper. The POST production regressions
-require the U2 hooks and intentionally fail on the standalone interface branch.
-They must pass unchanged on the integrated U2 commit. They exercise valid synthetic
-logins, retained consent, diagnostics refresh, and old cached remote captures.
-The production MiniMax reader itself stops after HTTP 401/403. The additional
-`ReadTransport` tests exercise the stricter transport boundary independently.
+outbound request, including unexpected attempts. It opens no socket and keeps no
+credentials, headers or bodies. Production-boundary tests inject it beneath the
+client constructed by the actual reader. Other fixtures route the final socket
+to localhost while retaining compiled production authorities above the guard.
+Historical Gemini/Cursor parser/identity fixtures explicitly bypass both policy
+and transport admission in test code only. Strict production POST regressions
+retain the unchanged policy and use valid synthetic logins and `ProductionPaths`.
+Dormant POST schema tests validate the pins without approving either scope.
 
 Run from `cli/`:
 
 ```sh
-go test ./internal/readers/... -count=1
-go test -race ./internal/readers/... -count=1
+go test ./internal/readers/... ./internal/quota -count=1
+go test -race ./internal/readers/... ./internal/quota -count=1
 ```
 
-| Scenario | L1 pass condition |
+| Scenario | L1 evidence |
 | --- | --- |
-| U2a-POST | Real production refresh and diagnostics with saved-login grants make zero recorded calls, do not schedule a remote read, suppress retained remote captures and report `policy_pending`. Transport tests cover both Gemini endpoints and Cursor plan/period plus attempted GET bypasses. Unguarded negative controls fail the zero-call oracle. |
-| U2a-AUTH | MiniMax 401 and 403, in both regions, leave exactly the current-path GET in the recording through the production dispatcher. The old legacy retry failed that oracle. A valid quota response still decodes. |
-| U2a-LOCAL | Both local-history scope IDs remain eligible while their remote scope is blocked; Gemini's production local-history reader retains seeded token counts on the same home and consent. A vendor-wide deny loses those records. |
-| U2a-DESTINATIONS | Inference paths, changed parameters, cross-region fallback, redirects and excess requests never reach the recording transport. Concurrent callers cannot bypass an authorization stop. |
+| U2a-POST | Production refresh/diagnostics emit zero calls, never schedule remote reads, suppress retained captures and report policy_pending. Valid synthetic logins prevent a missing-credential false pass. |
+| U2a-AUTH | MiniMax production dispatch stops on 401/403 in both regions; every active HTTP reader's actual constructed client rejects subsequent requests. |
+| U2a-LOCAL | Independent local-history admission remains eligible; the Gemini production history fixture retains seeded counts. |
+| U2a-DESTINATIONS | Production off-host regressions failed before wiring. Actual clients reject excess calls, redirects and requests after auth failure. Fixtures verify expected positive requests and decoding. |
+| U2a-POST-PINS | Closed body schemas, exact destinations and method, header whitelist, and Cursor credential separation are checked while admission stays pending. |
 
-## U14 scenario intent
-
-The completion scenario must use the real app-server and an independent CLI on
-one synthetic shared home with fake providers and an approved shape baseline:
-
-1. Grant the Gemini/Cursor account scopes and independent local-history scopes.
-   Request refreshes from both entry points, including a retained legacy grant.
-   Require `policy_pending` and zero provider calls for the unapproved scopes.
-2. Return MiniMax 401 and 403 in separate cases, with a valid legacy-endpoint
-   response available. Require exactly one current-path GET and no quota value.
-3. Retain local token history and query it through the real handler after the
-   remote scopes are blocked. Gemini has a count adapter on this base. Cursor
-   has a scope identifier but no count adapter: this interface proves only its
-   admission. A missing Cursor history capability must be recorded as unsupported,
-   never a passing history query.
-4. Bind outcomes to source SHAs, the synthetic profile, scenario IDs and the
-   packaged subject when applicable. U10 cites this U14 evidence.
-
-This L2 scenario is not run by these local tests and remains required for
-completion. Real accounts, native UI and L3 are outside this L1 evidence.
+U14 completion still requires the real app-server constructor and an independent
+CLI on one synthetic shared home: grant POST account scopes and local history,
+require policy_pending/zero vendor calls, return MiniMax 401 and 403 separately,
+and query retained local history. Cursor has a scope but no local count adapter
+on this base, so that history capability is unsupported. Bind outcomes to the
+source and packaged subject SHAs. These local tests do not claim that L2 result,
+live vendor acceptance, native UI or L3 evidence.
