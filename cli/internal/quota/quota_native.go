@@ -188,7 +188,19 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	return refreshNative(ctx, p, now, false)
 }
 
+// RefreshNativeProviders narrows the existing dispatcher to compiled provider
+// IDs. It shares all normal locks, reservations, collectors and publication.
+func RefreshNativeProviders(ctx context.Context, p Paths, now time.Time, providers []string) error {
+	selected := map[string]bool{}
+	for _, provider := range providers {
+		selected[provider] = true
+	}
+	return refreshNativeSelected(ctx, p, now, false, selected)
+}
 func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool) error {
+	return refreshNativeSelected(ctx, p, now, diagnostic, nil)
+}
+func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnostic bool, selected map[string]bool) error {
 	if !nativePrivacyAllows() || ctx.Err() != nil {
 		return errors.New("personal readers are suspended")
 	}
@@ -201,10 +213,13 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	if err != nil {
 		return err
 	}
+	if p.Admission != nil && p.Admission.Fence() != state.Fence() {
+		return errors.New("consent changed; refresh stopped")
+	}
 	sessionRead := false
-	if !diagnostic {
+	if selected == nil && !diagnostic {
 		sessionRead = refreshProductionClaudeSessions(ctx, p, now)
-	} else if claudeSessionsDue(p, now) && diagnosticSessionDue(p, now) {
+	} else if selected == nil && claudeSessionsDue(p, now) && diagnosticSessionDue(p, now) {
 		if err := reserveReaderAttempt(p.Cache, "claude-session", now.Add(5*time.Minute)); err != nil {
 			return err
 		}
@@ -213,14 +228,14 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
-		if legacyNativeReader(p, x.Provider) {
+		if (selected == nil || selected[x.Provider]) && legacyNativeReader(p, x.Provider) {
 			legacy = append(legacy, x)
 		}
 	}
 	on = legacy
 	managed := []string{}
 	for provider, n := range nativeReaders {
-		if n.Managed != nil {
+		if (selected == nil || selected[provider]) && n.Managed != nil {
 			if _, allowed := readerAllowed(p, provider); allowed {
 				managed = append(managed, provider)
 			}
@@ -258,6 +273,18 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 		}
 	}
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
+	if selected != nil {
+		ids := []string{}
+		for provider := range previous {
+			if !selected[provider] {
+				ids = append(ids, provider)
+			}
+		}
+		sort.Strings(ids)
+		for _, provider := range ids {
+			s.Providers = append(s.Providers, previous[provider])
+		}
+	}
 	for _, x := range on {
 		if !consent.CurrentFence(state.Fence()) {
 			return errors.New("consent changed; refresh stopped")
@@ -579,19 +606,31 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	}
 	// This operation is interactive even when the remote budget is closed. Keep
 	// its credential only in this stack frame and reuse it if a remote read is due.
-	k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
-	if k.State != "ok" {
-		return errors.New("credential operation: " + k.State)
-	}
-	defer func() {
-		for i := range k.Value {
-			k.Value[i] = 0
+	credential := g.Credential
+	if credential == nil {
+		if claudeSecurity == nil {
+			return errors.New(claudeAppRequired)
 		}
-	}()
+		credential = func(ctx context.Context) ([]byte, string) {
+			k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
+			if k.State != "ok" {
+				return nil, k.State
+			}
+			return k.Value, ""
+		}
+	}
+	value, status := credential(ctx)
+	defer clear(value)
+	if status != "" {
+		return recordClaudeCredentialOutcome(p, g, profileKey, status, now)
+	}
 	if g.StillValid != nil && !g.StillValid() {
 		return errors.New("reader consent changed")
 	}
-	g.Credential = func(context.Context) ([]byte, string) { return k.Value, "" }
+	if err := recordClaudeCredentialOutcome(p, g, profileKey, "ok", now); err != nil {
+		return err
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
 	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
 	p.ReaderAccess = access
 	return refreshManaged(ctx, p, provider, now)

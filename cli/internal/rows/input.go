@@ -81,7 +81,8 @@ type ProfileState struct {
 	AccountLocator    *string
 	Busy              bool
 	CoolingDown       bool
-	NextAttemptAt     *time.Time
+	// NextAttemptAt is a known lower bound, not permission to bypass CoolingDown/Busy.
+	NextAttemptAt *time.Time
 }
 
 type FailureInput struct {
@@ -94,6 +95,8 @@ type FailureInput struct {
 // attempts, freshness, discards and locators. SubscriptionRef is an already
 // allocated, verified random local reference; no hash or positional substitute.
 type AccountInput struct {
+	// Route is the reviewed read path; never infer it from provider text.
+	Route           Route
 	ToolID          string
 	DeclaredPlanID  string
 	ProfileKey      string

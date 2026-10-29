@@ -76,15 +76,8 @@ func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
 		return false
 	}
-	s := loadAccount(cache)
-	if s == nil {
-		return true
-	}
-	wait := AccountEvery
-	if s.Status != "ok" {
-		wait = accountRetryAfter
-	}
-	return now.Sub(s.ObservedAt) >= wait
+	next, err := codexRefreshNext(cache)
+	return err == nil && !now.Before(next)
 }
 
 // CodexAccountOff: MODELPLAN_CODEX_ACCOUNT=off keeps the CLI to the session logs.
@@ -112,6 +105,9 @@ func CodexBin(home string) string {
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
 // (or the failure, so a missing login is not retried for half an hour). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
+	if cache == "" {
+		return errors.New("reader budget unavailable")
+	}
 	admission, err := consent.ReaderLockContext(ctx)
 	if err != nil {
 		return err
@@ -123,19 +119,37 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	}
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
+		wait := AccountEvery
+		if s.Status != "ok" {
+			wait = accountRetryAfter
+		}
+		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
+			return err
+		}
 		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")
 	}
-	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
-	}
+
 	unlock, ok := lock(cache, now)
 	if !ok {
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
+	next, err := codexRefreshNext(cache)
+	if err != nil {
+		return err
+	}
+	if now.Before(next) {
+		return nil
+	}
+	if err := reserveReaderAttempt(cache, "codex", now.Add(AccountEvery)); err != nil {
+		return err
+	}
+	if codex == "" {
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
+	}
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
 	}
@@ -474,4 +488,28 @@ func creditCards(count int, expiries []*time.Time) []Card {
 		cards = append(cards, Card{Kind: "full", Count: &rest})
 	}
 	return cards
+}
+
+// The independent attempt file survives Forget and is checked inside the
+// existing provider lock by explicit CLI and app-server refreshes alike.
+func codexRefreshNext(cache string) (time.Time, error) {
+	next, err := loadReaderAttempt(cache, "codex")
+	if err != nil {
+		return next, err
+	}
+	if snapshot := loadAccount(cache); snapshot != nil {
+		wait := AccountEvery
+		if snapshot.Status != "ok" {
+			wait = accountRetryAfter
+		}
+		until := snapshot.ObservedAt.Add(wait)
+		if until.After(next) {
+			next = until
+		}
+	} else {
+		if _, status := readBounded(accountPath(cache), 256<<10); status != "missing" {
+			return next, errors.New("reader budget unavailable")
+		}
+	}
+	return next, nil
 }
