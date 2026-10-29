@@ -410,6 +410,14 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
   - growth over repeated cycles;
   - energy.
 - The limits become checks in CI or on the test Mac. The 0.3-second open target is reviewed against the measured baseline before it is made a limit.
+- **[owner, 2026-10-29] Cockpit animation budget first (U11a).** A web dock earlier cost about 23 % CPU, which is why the Dock is native. The cockpit is web, so its cost is measured before any cockpit code is written:
+  - **What runs.** The existing prototype runs in a WKWebView on the test Mac with every animation active: indicator blinks, session prompt activity and the porthole video.
+  - **What is measured.** App, WebContent and GPU CPU, memory and energy, open and idle, then memory after close.
+  - **The budget.** The owner sets it from that data. The proposed starting point is an average of at most 10 % of one core while open, and memory back to the pre-open level after close.
+  - **Over budget, in order:**
+    1. Animate only CSS `transform` and `opacity`, with no per-frame JavaScript. Lower the frame rate, and pause what is not visible.
+    2. If that is not enough, move only the offending elements to native layers above the page. The cockpit is not rewritten.
+  - **Check.** The budget becomes a test-Mac check that U11 and U13 must pass.
 
 ## Testing decisions
 
@@ -469,7 +477,8 @@ See [`integration-standard.md`](../readers/integration-standard.md). The read pa
 | U9 Official visuals public | Asset pack and manifest, public official build, baselines | Owner-confirmed item list | — | M0, with M2 and M3 for the assets | Manifest and visual checks |
 | U14 e2e harness, shape baseline, candidate manifest | The e2e runner on the app-server (the scenario intents of #300), the versioned shape-baseline builder, the candidate manifest and evidence-bundle generator | U3 | U3 | RELPIPE | Consumed by U6, U8 and U10. Feature scenarios stay with each feature's DRI, and a failure goes back to that DRI |
 | U10 First candidate | Package with product identity; L1, L2, 5-minute smoke, integrated review, then L3 | — | U2, U2a, U6, U7, U8, U9, U14 (release gate) | M0, with M1 for L3 | The Appendix A items marked U10. The real two-build Keychain check (A14) stays pending until the next reviewed candidate |
-| U11 Cockpit web | Bundle, `CockpitBridge` (with `clear`), lifecycle, visual tests | U3c | U3c, U9 | Cockpit lane | Bridge-rejection and clear tests, WKWebView baselines |
+| U11a Cockpit animation budget | The prototype in WKWebView on the test Mac with all animations: CPU, memory, energy, memory after close; the owner sets the budget | — | — | Cockpit lane | Measurement report and the budget check on the test Mac |
+| U11 Cockpit web | Bundle, `CockpitBridge` (with `clear`), lifecycle, visual tests | U3c, U11a | U3c, U9, U11a | Cockpit lane | Bridge-rejection and clear tests, WKWebView baselines |
 | U12 Prerendered porthole | Private pipeline, public asset pack and manifest, default-still check | U9 | U9 | Cockpit lane, with M3 for the art | Manifest and default-still CI |
 | U13 v1 candidate | U10 plus U11 and U12; upgrade, wake and rollback checks; L3 | — | U10, U11, U12 | M0, with M1 for L3 | The Appendix A items marked U13, with A14 completed |
 
