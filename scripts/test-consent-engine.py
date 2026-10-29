@@ -169,6 +169,8 @@ def main():
                 (h.root / 'block').touch()
                 reading = pool.submit(h.refresh)
                 await_file(h.root / 'reading')
+                original = h.run(['consent', 'grant', '--json'], old_allow, check=True)
+                assert json.loads(original.stdout)['committed']
                 h.store.write_text('damaged synthetic store')
                 r = h.run(['consent', 'reset', 'confirmed', '--json'], check=True)
                 reset = json.loads(r.stdout)
