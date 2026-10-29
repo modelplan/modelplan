@@ -5,7 +5,9 @@ These Draft 2020-12 schemas describe the public helper boundary. `commands.json`
 is the full argv inventory from `desktop/native/Sources/ModelPlanCore/CLITransport.swift`
 and the CommunityApp helper diagnostic. Connections and reader diagnostics are
 included for the Settings/support boundary; the current app transport does not
-invoke them. `common.json` contains shared consent definitions.
+invoke them. Plugin installation is reserved for the Settings integration being
+added by the app owner; its existing production CLI command is covered here
+before that integration lands. `common.json` contains shared definitions.
 
 | Command | Schema | Collection / side effects |
 | --- | --- | --- |
@@ -17,6 +19,8 @@ invoke them. `common.json` contains shared consent definitions.
 | `publication --json` | [publication.json](publication.json) | Synchronously checks public data (30-second bound), then returns verified cache. |
 | `publication --json --offline` | [publication.json](publication.json) | Verified cache only, no sync. |
 | `quota --refresh-account --quiet` | [refresh-account.json](refresh-account.json) | Explicit synchronous Codex runtime refresh, consent gated. The app ignores stdout. |
+| `plugin install claude-code --json` / `plugin install codex --json` | [plugin-install.json](plugin-install.json) | Explicit foreground host marketplace commands; host output goes to stderr. |
+| Same plugin commands with `--offline` | [plugin-install.json](plugin-install.json) | Plan only; no host lookup, execution or network. |
 | `--help` | [help.json](help.json) | Human text, no collection. |
 | `connections --json` | [connections.json](connections.json) | Cached status/presence only. |
 | `connections` | [connections-text.json](connections-text.json) | Human presentation of the same status, not JSON. |
@@ -30,6 +34,61 @@ schemas for text-only commands describe a JSON string containing their stdout;
 the manifest records the actual transport encoding and exit code separately.
 An empty stdout on failure is likewise represented as a JSON string, not an
 invented JSON error object.
+
+## Plugin installation
+
+The actual command path is `cmd/modelplan.run` → `pluginCmd` in
+`cli/cmd/modelplan/plugin_install.go` → `plugininstall.Install` in
+`cli/internal/plugininstall/install.go`. The result always has
+`schemaVersion`, `tool`, `status`, `commands`, `completed` and `docs`; the
+[schema](plugin-install.json) defines every field, fixed argv/docs and progress
+constraints, without changing command behavior.
+
+| `status` | Exit | `completed` | Existing meaning |
+| --- | --- | --- | --- |
+| `installed` | 0 | 2 | Both host commands returned success; no independent verification. |
+| `instructions` | 0 | 0 | Host executable missing; return the same commands and docs for manual use. |
+| `planned` | 0 | 0 | `--offline`; no host lookup or execution, even when a host is present. |
+| `failed` | 1 | 0 or 1 | First or second host command failed; no later step and no rollback. |
+
+A host-present manual-step error is **failed**, not instructions. There is no
+separate manual-required status. A host that exits successfully despite printing
+manual guidance still yields installed. M4 should decode the result and inspect
+the exit status; host text on stderr is not a structured app status. Usage errors
+exit 2, with no JSON stdout. Real online installs may use host-managed network,
+credentials and configuration; only an explicit install invocation runs them.
+
+The existing generator builds the real CLI from this checkout and invokes both
+supported commands in ten separate synthetic homes, using the same manifest
+provenance, raw schema validation and uncached drift gate as other app commands.
+Only the fake host tools run; they record fixed argv, emit synthetic progress and
+return success/failure, with no network or real plugin/config installation.
+The tests assert exact command prefixes, stdout/stderr separation, completed
+counts, stopping on failure, no host invocation for planning/missing-host cases,
+and no ModelPlan cache or configuration writes. Plugin outcomes use `state: fresh`
+because each starts in a fresh home; filenames distinguish installer outcomes
+from the separate consent/quota lifecycle.
+
+For each of `claude-code` and `codex`, these actual-binary captures are committed:
+
+| Filename suffix after `fresh-plugin-install-<tool>-` | Synthetic condition |
+| --- | --- |
+| `installed.json` | Both fake host commands succeed. |
+| `instructions.json` | Requested host absent from the isolated PATH. |
+| `planned.json` | Fake host present; `--offline` must not invoke it. |
+| `failed-first.json` | First fake host command errors; second is not invoked. |
+| `failed-manual-step.json` | First succeeds, second requests a manual step and errors. |
+
+`plugin_install_test.go` compares the schema's serialized fields/types/required
+set against the real Go `plugininstall.Result` and its status enum against every
+production status assignment. It also requires a capture for every tool/status.
+No parallel handwritten positive result set is introduced. M4's new typed
+Settings service/decoder tests should load these files via the existing
+`GeneratedAppCLIFixtures` loader and use the corresponding manifest exit code.
+
+插件安装契约覆盖两个宿主的真实 CLI 输出；缺少宿主返回 `instructions`，
+宿主命令失败返回 `failed`，`--offline` 返回 `planned` 且不执行宿主。
+样例仅在合成 HOME 中运行假宿主，不安装真实插件、不访问网络。
 
 ## Scheduling and consent
 
@@ -80,8 +139,8 @@ uses the caller's homes, credentials or provider runtimes. Inert CLI presence
 markers cover the connection reporter's PATH and absolute-install probes, so
 developer and hosted-runner tool installations cannot affect captures. A synthetic cached,
 content-addressed public graph avoids public-network dependencies. The generator
-itself serves only synthetic Copilot metadata JSON-RPC; it has no inference or
-sign-in methods. No test flags are added to the shipped CLI.
+itself serves synthetic Copilot metadata JSON-RPC and fixed installer replies;
+it has no inference, real installation or sign-in methods. No test flags are added to the shipped CLI.
 
 States: **fresh**, **consented**, **refreshed**, **unreadable**, **revoked**, and
 **cleanup-pending**. Refreshed data is produced by the real desktop's detached
