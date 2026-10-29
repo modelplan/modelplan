@@ -15,8 +15,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   e2e-journey:
+    name: e2e-journey (${{ matrix.variant }})
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [headless, native]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -47,11 +52,11 @@ jobs:
       - name: Build same-commit CLI and debug-only neutral app
         run: python3 desktop/native/tools/e2e-journey/build.py "$RUNNER_TEMP/e2e-build"
       - name: Run real app journey without network or accounts
-        run: python3 desktop/native/tools/e2e-journey/run.py "$RUNNER_TEMP/e2e-build" "$RUNNER_TEMP/e2e-report"
+        run: python3 desktop/native/tools/e2e-journey/run.py "$RUNNER_TEMP/e2e-build" "$RUNNER_TEMP/e2e-report" --variant "${{ matrix.variant }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-journey-report
+          name: e2e-journey-report-${{ matrix.variant }}
           path: ${{ runner.temp }}/e2e-report/
           if-no-files-found: warn
           retention-days: 3

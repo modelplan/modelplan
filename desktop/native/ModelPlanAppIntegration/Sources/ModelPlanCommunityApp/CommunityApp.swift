@@ -10,8 +10,13 @@ import ModelPlanCore
 @main struct CommunityApp {
     @MainActor static func main() {
         #if DEBUG && MODELPLAN_E2E_JOURNEY
-        // Headless native panels keep the real store on desktop polling, not visible-account refresh.
-        let dock = ProductionDockFactory.community(createsNativePanels: !CommunityJourneyCI.enabled)
+        let dock: StaticDockPreviewHost
+        if CommunityJourneyCI.enabled && !CommunityJourneyCI.nativePanels {
+            dock = ProductionDockFactory.community(createsNativePanels: false)
+        } else {
+            // The native journey uses exactly the normal production panel factory.
+            dock = ProductionDockFactory.community()
+        }
         #else
         let dock = ProductionDockFactory.community()
         #endif
@@ -70,7 +75,7 @@ import ModelPlanCore
         #if DEBUG && MODELPLAN_E2E_JOURNEY
         if CommunityJourneyCI.enabled {
             NSApplication.shared.delegate = delegate
-            Task { @MainActor in await E2EJourney.run(delegate: delegate, dock: dock, backend: backend, consent: consent) }
+            Task { @MainActor in await E2EJourney.run(delegate: delegate, dock: dock, backend: backend, consent: consent, transport: transport) }
             withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
             return
         }

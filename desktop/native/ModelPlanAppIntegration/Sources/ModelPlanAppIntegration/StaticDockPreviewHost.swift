@@ -102,6 +102,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
+    public var journeyNativePanelsEnabled: Bool? { CommunityJourneyCI.enabled ? createsNativePanels : nil }
     /// Read the very model fed to the retained Dock; no additional producer or projection.
     public var journeySnapshot: CommunityDockSnapshot? { CommunityJourneyCI.enabled ? model : nil }
     public var journeyFeedGeneratedAt: Date? { CommunityJourneyCI.enabled ? snapshot?.personal.generatedAt.date : nil }
@@ -112,7 +113,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func journeyProvider(_ source: String) -> String {
         var value = source.lowercased()
         for prefix in ["native:", "codexbar:"] where value.hasPrefix(prefix) { value = String(value.dropFirst(prefix.count)) }
-        switch value { case "openai": return "codex"; case "claude-code": return "claude"; default: return value }
+        switch value {
+        case "openai": return "codex"
+        case "claude-code": return "claude"
+        case "zcode": return "zai"
+        case "opencode": return "opencodego"
+        default: return value
+        }
     }
     /// Join each actual rendered AX row to its own reported account window locators.
     /// The report carries no account/subscription identifiers and never infers membership.
@@ -161,6 +168,29 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return view.subviews.lazy.compactMap(find).first
         }
         return find(card)?.stringValue ?? ""
+    }
+    public var journeyCardGuidance: [String: String]? {
+        guard CommunityJourneyCI.enabled, !card.isHidden else { return nil }
+        func fields(_ view: NSView) -> [NSTextField] {
+            (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+        }
+        let labels = fields(card)
+        return ["reason": labels.first { $0.accessibilityIdentifier() == "dock.card.text.state" }?.stringValue ?? "",
+                "nextStep": labels.first { $0.accessibilityIdentifier() == "dock.card.text.row.reader-status.value" }?.stringValue ?? ""]
+    }
+    /// Bounded observations of existing CLI fields for the synthetic H38 cases.
+    public func journeyToolState(_ tool: String) -> [String: Any] {
+        guard CommunityJourneyCI.enabled, ["codex", "claude", "zai"].contains(tool), let personal = snapshot?.personal else { return [:] }
+        let source = personal.sources?.first { $0.source == "native:" + tool }
+        let connection = personal.connections?.first { journeyProvider($0.id) == tool }
+        let missingKey = "Z_AI_API_KEY is not set where modelplan runs"
+        return ["accountCount": (personal.accounts ?? []).filter { journeyProvider($0.source) == tool }.count,
+                "connectionPresent": connection != nil,
+                "connectionNoReading": connection?.quota?.reason == "no-reading",
+                "keychainChoiceNeeded": connection?.quota?.reason == "keychain_choice_needed",
+                "nativeConsentRequired": source?.status == "consent_required",
+                "missingKeyObserved": source?.status == "missing" && source?.reason == missingKey,
+                "cliReason": source?.reason == missingKey ? missingKey : ""]
     }
     public func journeyDismissCard() {
         guard CommunityJourneyCI.enabled else { return }

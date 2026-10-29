@@ -31,10 +31,18 @@ import ModelPlanSettings
         func readConsentJSON() async throws -> CommandResult { .init(exitCode: 0, stdout: data) }
         func grantConsentJSON(_ payload: Data) async throws -> CommandResult { throw TransportError.launchFailed }
     }
+    private actor RefreshTransport: CLITransport {
+        private var count = 0
+        func execute(_ command: CLICommand) async throws -> CommandResult {
+            count += 1
+            return .init(exitCode: count == 1 ? 1 : 0, stdout: Data())
+        }
+    }
     private func flags() -> () -> Void {
-        let keys = ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY"]
+        let keys = ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY", "MODELPLAN_E2E_NATIVE_PANELS"]
         let old = keys.map { ProcessInfo.processInfo.environment[$0] }
         keys.forEach { setenv($0, "1", 1) }
+        setenv("MODELPLAN_E2E_NATIVE_PANELS", "0", 1)
         return { for (key, value) in zip(keys, old) {
             if let value { setenv(key, value, 1) } else { unsetenv(key) }
         } }
@@ -44,7 +52,7 @@ import ModelPlanSettings
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return try SettingsStore(url: root.appendingPathComponent("settings.json"))
     }
-    private func snapshot(source: String = "codex", remaining: Double? = 37) throws -> JoinedSnapshot {
+    private func snapshot(source: String = "codex", remaining: Double? = 37, extras: [String: Any] = [:]) throws -> JoinedSnapshot {
         let iso = ISO8601DateFormatter()
         var account: [String: Any] = ["source": source, "observedAt": iso.string(from: now.addingTimeInterval(-5))]
         if let remaining {
@@ -54,10 +62,11 @@ import ModelPlanSettings
         } else { account["windows"] = []; account["stale"] = true }
         var sourceStatus: [String: Any] = ["source": "native:codex", "status": remaining == nil ? "unavailable" : "ok"]
         if remaining == nil { sourceStatus["reason"] = "parse_error" }
-        let object: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot",
+        var object: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot",
             "generatedAt": iso.string(from: now.addingTimeInterval(-10)),
             "validUntil": iso.string(from: now.addingTimeInterval(300)), "accounts": [account],
             "sources": [sourceStatus]]
+        for (key, value) in extras { object[key] = value }
         let personal = try FeedDecoder.personal(JSONSerialization.data(withJSONObject: object))
         var ledger = ExpiryLedger()
         return .make(personal: personal, presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil)
@@ -81,12 +90,18 @@ import ModelPlanSettings
         XCTAssertNotNil(port.journeyReadStatus)
         XCTAssertNotNil(port.journeyAllowedTools)
         XCTAssertTrue(host.journeyOpenCard(at: 0)); XCTAssertNotNil(host.journeyCardAge)
+        XCTAssertNotNil(host.journeyCardGuidance)
+        setenv("MODELPLAN_E2E_NATIVE_PANELS", "1", 1)
+        XCTAssertTrue(CommunityJourneyCI.nativePanels)
         for missing in ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY"] {
             unsetenv(missing)
             XCTAssertFalse(CommunityJourneyCI.enabled)
+            XCTAssertFalse(CommunityJourneyCI.nativePanels)
             XCTAssertNil(host.journeySnapshot); XCTAssertNil(host.journeyFeedGeneratedAt)
             XCTAssertTrue(host.journeyRows.isEmpty); XCTAssertTrue(host.journeyReasonRows.isEmpty)
             XCTAssertTrue(host.journeyGrokFirstFailure.isEmpty); XCTAssertNil(host.journeyCardAge)
+            XCTAssertNil(host.journeyNativePanelsEnabled); XCTAssertNil(host.journeyCardGuidance)
+            XCTAssertTrue(host.journeyToolState("claude").isEmpty)
             XCTAssertNil(port.journeyReadStatus); XCTAssertNil(port.journeyAllowedTools)
             XCTAssertFalse(host.journeyOpenCard(at: 0)); XCTAssertFalse(host.journeyPressCardEnter())
             host.journeyDismissCard()
@@ -94,6 +109,51 @@ import ModelPlanSettings
             XCTAssertNotNil(host.journeyCardAge, "A disabled driver must not dismiss the retained card")
         }
         XCTAssertEqual(host.journeyRows.count, 1, "Flags gate observations without changing the retained model")
+    }
+    func testNativeFactoryAndRefreshObservationRequireRealRuntimeFlags() async throws {
+        let restore = flags(); defer { restore() }
+        XCTAssertFalse(CommunityJourneyCI.nativePanels)
+        setenv("MODELPLAN_E2E_NATIVE_PANELS", "1", 1)
+        XCTAssertTrue(CommunityJourneyCI.nativePanels)
+        let host = ProductionDockFactory.community()
+        defer { host.close() }
+        XCTAssertEqual(host.journeyNativePanelsEnabled, true)
+        XCTAssertNil(host.nativePanel, "Construction alone does not order a native panel")
+        let fake = RefreshTransport(), gate = ConsentGatedDesktopTransport(readOnly: fake, normal: fake)
+        _ = try await gate.execute(.refreshAccount)
+        _ = try await gate.execute(.refreshAccount)
+        let observation = await gate.journeyAccountRefresh
+        XCTAssertEqual(observation?.attempts, 2); XCTAssertEqual(observation?.successes, 1)
+        XCTAssertNotNil(observation?.lastSuccessAt)
+        for missing in ["MODELPLAN_APP_SMOKE", "MODELPLAN_E2E_JOURNEY"] {
+            unsetenv(missing)
+            let disabled = await gate.journeyAccountRefresh
+            XCTAssertNil(disabled); XCTAssertFalse(CommunityJourneyCI.nativePanels)
+            setenv(missing, "1", 1)
+        }
+    }
+    func testH38ObserversKeepActualPendingKeychainAndMissingKeyShapes() async throws {
+        _ = NSApplication.shared
+        let restore = flags(); defer { restore() }
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
+        defer { host.close() }
+        let app = SettingsApplicationCoordinator(store: try store()) { host.apply($0) }
+        await app.reload()
+        render(host, try snapshot(extras: ["accounts": [], "sources": [],
+            "connections": [["id": "codex", "quota": ["status": "no", "reason": "no-reading"]]]]))
+        XCTAssertEqual(host.journeyToolState("codex")["connectionNoReading"] as? Bool, true)
+        render(host, try snapshot(extras: ["accounts": [],
+            "sources": [["source": "native:claude", "status": "consent_required"]],
+            "connections": [["id": "claude-code", "quota": ["status": "no", "reason": "keychain_choice_needed"]]]]))
+        XCTAssertEqual(host.journeyToolState("claude")["nativeConsentRequired"] as? Bool, true)
+        XCTAssertEqual(host.journeyToolState("claude")["keychainChoiceNeeded"] as? Bool, true)
+        let reason = "Z_AI_API_KEY is not set where modelplan runs"
+        render(host, try snapshot(extras: ["accounts": [], "connections": [],
+            "sources": [["source": "native:zai", "status": "missing", "reason": reason]]]))
+        XCTAssertEqual(host.journeyToolState("zai")["cliReason"] as? String, reason)
+        render(host, try snapshot(extras: ["sources": [["source": "native:zai", "status": "missing", "reason": "unexported-fixture-text"]]]))
+        XCTAssertEqual(host.journeyToolState("zai")["cliReason"] as? String, "")
+        XCTAssertTrue(host.journeyToolState("unknown").isEmpty)
     }
     func testRenderedValueKeepsActualAccountAssociationWithoutInventingMembership() async throws {
         _ = NSApplication.shared
