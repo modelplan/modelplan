@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Desktop connections now reflect native Claude consent, Keychain choice, production admission and read status, with an actionable Settings next step. Tool CLI discovery includes npm-global, Volta and Bun; env-node scripts launch through a resolved Node/Bun runtime under a minimal GUI PATH, with a distinct missing-runtime reason.
+  桌面连接状态现反映 Claude 原生授权、钥匙串选择、生产读取准入及读数状态，并提供可操作的设置入口。工具发现支持 npm-global、Volta 和 Bun；GUI 最小 PATH 下的 env-node 脚本通过已定位的 Node/Bun 运行，缺少运行时单独说明。
+
 - Add machine-checkable app–CLI command schemas and synthetic fixtures generated from the current CLI binary. CI rejects fixture drift, and native app decoders and Settings consent adapters consume the same captures.
   新增可机器校验的 App–CLI 命令契约与当前 CLI 实际生成的合成样例；CI 检查样例漂移，原生 App 解码器及设置授权适配器共同读取同一组样例。
 

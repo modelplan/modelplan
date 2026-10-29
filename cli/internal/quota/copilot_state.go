@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -79,6 +80,8 @@ func copilotNext(state string) string {
 	switch state {
 	case "ok":
 		return "Refresh when needed and allowed"
+	case toolcli.RuntimeMissing:
+		return toolcli.RuntimeNextStep
 	case "not_detected":
 		return "Open Copilot; IDE-only quota reading is not supported yet"
 	case "denied":
@@ -184,7 +187,11 @@ func copilotCachedEntry(s copilotState, now time.Time, generation string) codexb
 		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: copilotNext(availability)}
 	}
 	if s.Good == nil {
-		return codexbarEntry{Status: "error", ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: copilotNext(s.Availability)}
+		status := "error"
+		if availability == toolcli.RuntimeMissing {
+			status = toolcli.RuntimeMissing
+		}
+		return codexbarEntry{Status: status, ErrorCode: s.ErrorCode, ObservedAt: now.UTC(), Error: copilotNext(availability)}
 	}
 	e := *s.Good
 	// The native dispatcher must receive the latest attempt's availability,
@@ -192,6 +199,9 @@ func copilotCachedEntry(s copilotState, now time.Time, generation string) codexb
 	// in native.json, so RefreshNative -> Read cannot call a failed source ok.
 	if availability != "ok" {
 		e.Status = "error"
+		if availability == toolcli.RuntimeMissing {
+			e.Status = toolcli.RuntimeMissing
+		}
 		e.ErrorCode = s.ErrorCode
 		e.Error = copilotNext(availability)
 	}
@@ -262,7 +272,7 @@ func collectCopilot(ctx context.Context, _ *http.Client, cache string, now time.
 		}
 		s.NextAt = now.Add(wait).UTC()
 		s.Availability = "upstream_changed"
-		for _, state := range []string{"not_detected", "expired_login", "not_supported_yet"} {
+		for _, state := range []string{toolcli.RuntimeMissing, "not_detected", "expired_login", "not_supported_yet"} {
 			if e.Error == copilotNext(state) {
 				s.Availability = state
 			}

@@ -240,6 +240,9 @@ func refreshProductionClaudeSessions(ctx context.Context, p Paths, now time.Time
 	return ctx.Err() == nil
 }
 
+// ReaderAdmitted reports the same cached grant gate used by production readers.
+func ReaderAdmitted(p Paths, provider string) bool { _, ok := readerAllowed(p, provider); return ok }
+
 // A presence-only grant may precede creation of Cursor's standard store. Admit
 // that compiled missing location so refresh can report file_missing. Existing
 // files, symlinks and permission failures remain inadmissible.

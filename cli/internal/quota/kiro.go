@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"math"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -30,17 +31,8 @@ var kiroBin = func() string {
 	if p := os.Getenv("MODELPLAN_KIRO"); p != "" && filepath.IsAbs(p) {
 		return p
 	}
-	if p, err := exec.LookPath("kiro-cli"); err == nil {
-		return p
-	}
 	home, _ := os.UserHomeDir()
-	for _, p := range []string{"/opt/homebrew/bin/kiro-cli", "/usr/local/bin/kiro-cli", filepath.Join(home, "bin", "kiro-cli"), filepath.Join(home, ".local", "bin", "kiro-cli"),
-		"/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli", "/Applications/Kiro.app/Contents/Resources/app/bin/kiro-cli"} {
-		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() && fi.Mode()&0o111 != 0 {
-			return p
-		}
-	}
-	return ""
+	return toolcli.Find(home, "kiro-cli", "/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli", "/Applications/Kiro.app/Contents/Resources/app/bin/kiro-cli")
 }
 
 func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) codexbarEntry {
@@ -55,6 +47,10 @@ func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) 
 	if err != nil {
 		e.Error = err.Error()
 		e.ErrorCode = errorCode(err)
+		if errors.Is(err, toolcli.ErrRuntimeMissing) {
+			e.Status = toolcli.RuntimeMissing
+			e.Error = toolcli.RuntimeNextStep
+		}
 		return e
 	}
 	return parseKiro(raw, now)
@@ -64,7 +60,10 @@ func fetchKiro(ctx context.Context, _ *http.Client, _, _ string, now time.Time) 
 func askKiro(ctx context.Context, bin string) (json.RawMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*kiroTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "acp", "--agent-engine", "v3", "--auth-method", "cli")
+	cmd, err := toolcli.CommandContext(ctx, bin, "acp", "--agent-engine", "v3", "--auth-method", "cli")
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stderr = io.Discard
 	in, err := cmd.StdinPipe()
 	if err != nil {

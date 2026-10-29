@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"net"
 )
 
@@ -56,6 +57,9 @@ type nativeReadError struct{ code, message string }
 func (e nativeReadError) Error() string    { return e.message }
 func codeError(code, message string) error { return nativeReadError{ReaderErrorCode(code), message} }
 func errorCode(err error) string {
+	if errors.Is(err, toolcli.ErrRuntimeMissing) {
+		return "runtime_missing"
+	}
 	var coded nativeReadError
 	if errors.As(err, &coded) {
 		return ReaderErrorCode(coded.code)
@@ -63,6 +67,9 @@ func errorCode(err error) string {
 	return "other"
 }
 func nativeDiagnosticState(status, code string) string {
+	if status == toolcli.RuntimeMissing {
+		return diagnosticState(status)
+	}
 	if code != "" && status != "ok" {
 		return "unavailable:reader_error:" + ReaderErrorCode(code)
 	}
@@ -83,7 +90,7 @@ func statusErrorCode(status string) string {
 		return "http_429"
 	case "network_error":
 		return "network"
-	case "not_detected":
+	case "not_detected", toolcli.RuntimeMissing:
 		return "runtime_missing"
 	default:
 		return "other"
