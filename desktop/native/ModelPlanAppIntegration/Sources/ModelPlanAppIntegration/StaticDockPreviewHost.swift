@@ -201,7 +201,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard CommunityJourneyCI.enabled, let model, model.inputs.indices.contains(index),
               journeyRows.contains(where: { $0["rowIndex"] as? Int == index }) else { return false }
         dockView.onAction?(.subscription(model.inputs[index].id))
-        return !card.isHidden && cardID == model.inputs[index].id
+        return !card.isHidden && cardID == model.inputs[index].id && (!createsNativePanels || cardPanel?.isVisible == true)
     }
     public func journeyPressCardEnter() -> Bool {
         guard CommunityJourneyCI.enabled, !card.isHidden else { return false }
