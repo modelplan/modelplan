@@ -51,15 +51,17 @@ def _no_tokens(value):
 
 
 class EngineProcess:
-    def __init__(self, binary, home, session):
+    def __init__(self, binary, home, session, arguments=()):
         self.binary = Path(binary).absolute()
         self.home = Path(home).absolute()
         self.session = session
+        self.arguments = tuple(arguments)
         self.buffer = bytearray()
         self.pending = []
         self.messages = []
         self.counter = 1
         self.sequence = 0
+        self.changed_sequence = 0
         self.floor = 0
         self.epoch = None
         self.stderr_bytes = 0
@@ -70,7 +72,7 @@ class EngineProcess:
         (self.home / '.u14-tmp').mkdir(mode=0o700, exist_ok=True)
 
     def __enter__(self):
-        self.process = subprocess.Popen([str(self.binary), 'app-server'], env=self.environment,
+        self.process = subprocess.Popen([str(self.binary), 'app-server', *self.arguments], env=self.environment,
                                         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.PIPE, bufsize=0, close_fds=True)
         os.set_blocking(self.process.stdin.fileno(), False)
@@ -104,7 +106,10 @@ class EngineProcess:
             raise EngineFailure('stderr-cleanup-unconfirmed')
 
     def send(self, id, method, params):
-        frame = json.dumps({'jsonrpc': '2.0', 'id': id, 'method': method, 'params': params},
+        request = {'jsonrpc': '2.0', 'method': method, 'params': params}
+        if id is not None:
+            request['id'] = id
+        frame = json.dumps(request,
                            separators=(',', ':'), allow_nan=False).encode() + b'\n'
         if len(frame) > MAX_FRAME:
             raise EngineFailure('outbound-frame-too-large')
@@ -198,6 +203,9 @@ class EngineProcess:
                 raise EngineFailure('missing-data')
         _no_tokens(message)
         data = envelope.get('data')
+        if isinstance(data, dict) and ('projection' in data or 'items' in data):
+            if envelope['consentGeneration'] < self.floor:
+                raise EngineFailure('private-value-below-floor')
         if isinstance(data, dict) and 'projection' in data:
             projection = data['projection']
             ids = [r['id'] for r in projection.get('rows', [])]
@@ -206,6 +214,10 @@ class EngineProcess:
             sequence = data.get('sequence')
             if type(sequence) is not int or sequence < self.sequence:
                 raise EngineFailure('sequence-regressed')
+            if message.get('method') == 'rows/changed':
+                if sequence <= self.changed_sequence:
+                    raise EngineFailure('notification-sequence-not-increasing')
+                self.changed_sequence = sequence
             self.sequence = sequence
             if envelope['consentGeneration'] < self.floor:
                 raise EngineFailure('private-value-below-floor')
@@ -228,7 +240,7 @@ class EngineProcess:
     def initialize(self):
         self.send(1, 'initialize', {'sessionId': self.session, 'protocolVersion': '1.0',
                                    'appVersion': 'u14-synthetic',
-                                   'capabilities': ['rows', 'consent', 'diagnostics', 'history']})
+                                   'capabilities': ['rows', 'consent', 'diagnostics', 'history', 'refresh', 'publication', 'credentials', 'plugin_install']})
         result = self.response(1)
         if 'error' in result:
             raise EngineFailure('handshake-rejected')

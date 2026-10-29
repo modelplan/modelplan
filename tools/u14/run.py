@@ -8,11 +8,11 @@ from candidate import generate_bundle, git, regular_bytes
 from contracts import ROOT, digest, encoded, load_json, new_directory, write_private
 from engine_build import build_tools
 from engine_process import EngineFailure, EngineTimeout
-from engine_runner import admission, backpressure, empty_states, plain_smoke, zero_rows, verify_baseline
+from engine_runner import admission, backpressure, empty_states, plain_smoke, zero_rows, verify_baseline, shared_state
 from shape_home import build_home
 
 REPO = ROOT.parent.parent
-ENGINE_IDS = ('U14-protocol-smoke', 'U3-backpressure', 'U2a-admission',
+ENGINE_IDS = ('U3-shared-state', 'U14-protocol-smoke', 'U3-backpressure', 'U2a-admission',
               'U14-zero-rows-omitted', 'U14-zero-rows-null', 'U14-zero-rows-reported',
               'U14-zero-rows-corrupt', 'U14-empty-states')
 
@@ -55,6 +55,7 @@ def run(destination, selected=None):
         record('runner-build', {'outcome': 'pass', **tools['metadata']}, check=True)
         verify_baseline(output / 'home', baseline)
         plain = plain_smoke(tools['plain'], output / 'home')
+        verify_baseline(output / 'home', baseline, mutable=('.config/modelplan/consent.json',))
         schema_check(tools['validator'], plain.pop('wireMessages'))
         record('unmodified-binary', plain, check=True)
     except (EngineFailure, OSError, subprocess.SubprocessError, ValueError) as exc:
@@ -72,16 +73,18 @@ def run(destination, selected=None):
                     home = output / ('home-' + id)
                     scenario_baseline = build_home(load_json(ROOT / 'examples/synthetic-shape.json'), home)
                     verify_baseline(home, scenario_baseline)
-                    if id == 'U3-backpressure':
+                    if id == 'U3-shared-state':
+                        result = shared_state(tools['fixture'], home)
+                    elif id == 'U3-backpressure':
                         result = backpressure(tools['fixture'], home)
                     elif id == 'U2a-admission':
-                        result = admission(tools['plain'], home, load_json(ROOT / 'examples/admission-plan.json'))
+                        result = admission(tools['fixture'], home, load_json(ROOT / 'examples/admission-plan.json'))
                     elif id == 'U14-empty-states':
                         result = empty_states(tools['fixture'], home)
                     else:
                         result = zero_rows(tools['fixture'], home, id.removeprefix('U14-zero-rows-'))
                     schema_check(tools['validator'], result.pop('wireMessages'))
-                    verify_baseline(home, scenario_baseline)
+                    verify_baseline(home, scenario_baseline, mutable=('.config/modelplan/consent.json',))
             except (EngineFailure, OSError, subprocess.SubprocessError, ValueError, KeyError) as exc:
                 result = {'outcome': 'timeout' if isinstance(exc, (EngineTimeout, subprocess.TimeoutExpired)) else 'fail',
                           'errorCode': str(exc) if isinstance(exc, EngineFailure) else type(exc).__name__}
@@ -92,7 +95,7 @@ def run(destination, selected=None):
                      'sensitive-queries', 'pipe-backpressure']
     helper = str(tools['fixture']) if tools and plain else None
     spec = {'schemaVersion': 1, 'candidateId': 'u14-engine-' + git(REPO, 'rev-parse', 'HEAD')[:12],
-            'profile': 'transport-engine-fixture', 'intendedLevel': 'L1',
+            'profile': 'production-engine-recording-providers', 'intendedLevel': 'L1',
             'build': {'type': 'community', 'configuration': 'debug'},
             'sources': [{'repository': 'modelplan/modelplan', 'path': str(REPO)}],
             'artifacts': {'app': None, 'helper': helper, 'helperVersion': plain['serverVersion'] if helper else None,
@@ -101,7 +104,7 @@ def run(destination, selected=None):
             'availableCapabilities': available, 'results': results, 'checks': checks}
     manifest = generate_bundle(spec, baseline, output / 'bundle')
     summary = {'sourceSha': manifest['sources'][0]['sha'],
-               'proofScope': 'transport/engine fixture proof',
+               'proofScope': 'production U2 state and transport; recording providers and admission-churn fault',
                'manifestSha256': digest(regular_bytes(output / 'bundle/manifest.json')),
                'scenarios': {item['id']: item['outcome'] for item in manifest['scenarios']},
                'checks': {item['id']: item['outcome'] for item in manifest['checks']}}

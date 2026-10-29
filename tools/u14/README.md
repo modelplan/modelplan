@@ -2,8 +2,9 @@
 
 The baseline/evidence tools and the real-binary engine runner share one scenario
 registry. The runner drives `modelplan app-server` through anonymous pipes on
-synthetic homes, with a constructor-only overlay for recording providers and
-fault injection. Results are scoped to transport/engine fixture proof. U6, U8
+synthetic homes, with constructor overlays for recording providers and fault
+injection. The backend and persistence scenarios use production U2; provider
+data and publication-churn faults are synthetic. U6, U8
 and U10 consume the later native integration; feature failures stay with their
 feature owner.
 
@@ -80,7 +81,7 @@ Both Settings inputs carry old `readerConsent` UI choices; they never grant
 engine consent. Consent is generated independently at
 `.config/modelplan/consent.json` with synthetic schema-1 allow/deny/unset records
 and unset Keychain permission, or as a missing/corrupt store. Schema-2 consent
-remains a known gap until U2 supplies its persisted store contract.
+is migrated by the production U2 constructor; the original shape and that mutation are recorded separately.
 
 `--case` selects an input and expected source-group oracle:
 
@@ -209,61 +210,62 @@ scenarios remain `not-run`, and UI/device capabilities remain `unsupported`.
 The ordinary fail-closed binary is always exercised as a separate check.
 
 The runner builds two exact CLI binaries. The ordinary build has no fixture
-imports. A Go build overlay replaces exactly the `appserver.New` constructor
-argument and supplies a virtual factory file. It links only synthetic backend,
-recording-provider and fault-injection tooling. Production `main.run`,
-`appServerCmd`, `Server.Serve`, framing, queues and timeout constants are unchanged.
-No runtime environment switch, test flag or endpoint override is added to an
-ordinary build. The builder rejects a changed constructor rather than silently
-substituting a fixture for a new production backend.
+imports. The Go overlay changes the command's constructor call to a provider
+constructor which invokes the same production constructor with a typed history
+source and detection fault adapter. It also replaces only the native HTTP client
+constructor with a recording transport in a virtual quota file. No real socket
+is opened by a recording provider, and ordinary builds expose no fixture flag,
+environment switch or endpoint override. Every replacement, original constructor,
+source SHA and binary hash is recorded in the bundle. The builder rejects changes
+to the expected constructor seams.
 
-The child environment has only synthetic HOME/PATH/TMPDIR and locale; no API keys,
-real HOME, product login or Keychain is inherited. Stdout uses bounded frame and
-request waits; stderr is drained concurrently and only its byte count/digest is
-retained by the driver. Cleanup closes and reaps only the run's own child. Shape
-file hashes are checked before and after scenarios.
+Both binaries use `SharedBackend`, the same U2 store, durable grant receipts,
+original capture provenance, budgets, `RowsInput`, `ChangedRowsInput` and
+`AppendManagedRows`. No test implementation of consent persistence or `Backend`
+remains. The recording history source implements only U3c's `HistorySource`; its
+admission and every output are fenced by the real backend. Unknown provider model
+fields are omitted/null/present/corrupt synthetic variants. A corrupt history
+reply fails that query while preserving the same stable rows.
 
-The recording transport never resolves a host or opens a socket. It admits only
-one fixed synthetic history GET and refuses all other methods, hosts, paths and
-parameters. Provider history with an absent/null/reported model is decoded into
-the actual Go wire DTO; a malformed model produces `history_unavailable`.
-Each case observes the same real app-server row projection before and after.
-These are newly constructed synthetic derivatives of the historical optional-model
-failure; no handoff file, owner value, legacy compatibility decoder or private
-path is included. Separate inputs exercise engine `readers_off`, `pending`,
-`no_consent` and `empty`. The app's all-hidden state waits for UI integration.
+The ordinary smoke checks production capability registration, exact row membership
+from detection plus persisted consent, duplicate ids, diagnostics, wrong-method
+and unmatched-operation token rejection, and shutdown. Baseline input hashes are
+checked before launch; after launch only the known production consent file may
+change among those inputs. Credentials, tool configs and app preference inputs
+remain hash checked. System executables found by compiled detection may add rows;
+no real home or inherited credential environment is passed to a child.
 
-Backpressure stops draining the actual stdout pipe after a large frame starts.
-Two recording-provider queries complete; a revoke commits and the backend health
-change is read while data remains blocked. The process exits at the production
-10-second write timeout. A fresh process/session on the same synthetic home
-replays the fixture's stored receipt, preserving its committed epoch/generation,
-and exposes no restored values. The test receipt file is a fixture-only store,
-not U2 persistence, locking, migration, budget or admission proof.
+`U3-shared-state` uses one synthetic home for the app-server and independent CLI.
+It checks external revoke notifications and the floor, authoritative stale-error
+context, reset epochs, cursor invalidation across scope/epoch/session, failed query
+isolation, two-query caps and terminal cancellation, and Deny/Forget for a retired
+scope with readers off. Production history queries use sanitized local caches
+only; kinds and providers without an existing typed source return
+`history_unavailable`. No query scans source logs or refreshes a provider.
 
-Every accepted run writes `bundle/manifest.json`, its digest, hash-addressed
-scenario/check evidence and `summary.json`, including on scenario failure or
-timeout. Invalid inputs/dirty sources are rejected before a run starts. The
-manifest identifies the source, exact fixture helper hash/version and shape
-baseline. The `runner-build` check binds both exact binary hashes, schema-checker
-hash, original/fixture constructor hashes and overlay hashes. `overlaySha256`
-binds a normalized relative-path plan; `goOverlaySha256` additionally identifies
-the actual temporary Go overlay mapping without exporting local paths.
-Temporary build files and homes are excluded from CI uploads. Every observed
-complete wire frame is checked with the existing Go app-contract schema validator.
+Four real backend empty states are exercised: readers off, no consent, admitted
+without readings, and pending. Pending uses a test detection callback that commits
+two real revokes during each stable-build retry and leaves the fallback fence
+stable. This is a labeled fault scenario, with no production switch.
 
-The proof scope is **transport/engine fixture proof**. It does not earn final
-package, native UI, U2 persistence or admission acceptance. The pending admission
-entrypoint probes the ordinary constructor and records `not-run` until the real
-U2 backend and recording-provider binding exist. Its executable acceptance
-assertions require zero unapproved Gemini/Cursor POSTs with `policy_pending`,
-retained seeded local histories on a shared home, and exactly one MiniMax request
-after each 401/403 even with a successful legacy response available. Negative
-controls reject each forbidden event. No fixture receipt can satisfy this scenario.
-When U2 is linked into U3, rebind it to the production constructor on the synthetic
-home; keep the overlay only for provider/fault injection.
+Backpressure stops draining the actual stdout pipe after two recording history
+queries complete and a large data write starts. A real reader lock forces pending
+cleanup; a revoke must commit while stdout remains blocked. A short-pause probe
+then observes `engine/health` through the transport control queue, in the new
+consent context. A second process stops reading until the production 10-second
+write timeout, then restarts and replays the real U2 receipt. The receipt is never
+stored by fixture code, and revoked values stay absent after restart.
 
-One standard hosted Linux job runs fixture checks, pipe regressions, the baseline
-L1 profile and real engine scenarios. It uploads only the two evidence bundles
-and engine summary, including on failure. MACREV reviews the runner; U6, U8 and
-U10 remain its qualified consumers before U14 closes.
+`U2a-admission` checks real schema-1 migration with existing account grants,
+Gemini/Cursor `policy_pending` and zero account requests, Gemini's independent local
+history, and MiniMax 401/403 stopping after the first request even when a successful
+legacy response is available. The app-server and independent CLI use the same
+persisted budget. Cursor has no typed local-history producer in the current
+reader inventory, so that sub-proof is explicitly `unsupported` and the aggregate
+scenario cannot claim a full pass. Intact seed bytes never count as readability.
+
+The proof scope is production U2 state/admission and U3 transport with recording
+providers and a publication-churn fault. It does not earn native UI, final-package,
+owner-device or L3 acceptance. UI scenarios remain unsupported on this Linux lane.
+One standard hosted Linux job runs Go/driver regressions, the baseline profile,
+and executable scenarios; it uploads only the evidence bundles and summaries.

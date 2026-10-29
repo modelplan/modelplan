@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent.parent
 sys.path.insert(0, str(ROOT))
 from engine_process import EngineProcess, EngineFailure
-from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission
+from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state
 from engine_build import build_tools
 from shape_home import build_home
 from contracts import load_json
@@ -31,20 +31,20 @@ class RealBinaryTests(unittest.TestCase):
         self.home = Path(self.work.name) / 'home'
         self.baseline = build_home(load_json(ROOT / 'examples/synthetic-shape.json'), self.home)
 
-    def test_plain_app_server_smoke_reaches_real_cli_and_stays_inert(self):
+    def test_plain_app_server_smoke_uses_production_shared_constructor(self):
         report = plain_smoke(self.binary, self.home)
         self.assertEqual(report['outcome'], 'pass')
-        self.assertEqual(report['emptyState'], 'readers_off')
-        self.assertEqual(report['rowIds'], [])
-        self.assertEqual(report['capabilities'], ['diagnostics', 'rows'])
-        verify_baseline(self.home, self.baseline)
+        self.assertEqual(report['emptyState'], 'empty')
+        self.assertTrue({'claude', 'codex', 'gemini'} <= set(report['rowIds']))
+        self.assertTrue({'consent', 'history', 'refresh', 'publication'} <= set(report['capabilities']))
+        verify_baseline(self.home, self.baseline, mutable=('.config/modelplan/consent.json',))
 
     def test_unknown_history_model_variants_keep_real_binary_rows(self):
         for mode in ('omitted', 'null', 'reported', 'corrupt'):
             with self.subTest(mode=mode):
                 result = zero_rows(self.tools['fixture'], self.home, mode)
                 self.assertEqual(result['outcome'], 'pass')
-                self.assertEqual(set(result['rowIds']), {'codex', 'declared:synthetic-team'})
+                self.assertTrue({'claude', 'codex', 'gemini'} <= set(result['rowIds']))
                 self.assertGreater(result['recordedProviderCalls'], 0)
                 self.assertEqual(result['historyUnavailable'], mode == 'corrupt')
 
@@ -63,11 +63,19 @@ class RealBinaryTests(unittest.TestCase):
         self.assertGreaterEqual(result['elapsedSeconds'], 9)
         self.assertLess(result['elapsedSeconds'], 13)
 
-    def test_admission_waits_for_production_u2_and_never_uses_fixture_receipts(self):
+    def test_admission_runs_production_gates_and_reports_missing_cursor_source(self):
         plan = load_json(ROOT / 'examples/admission-plan.json')
-        result = admission(self.binary, self.home, plan)
-        self.assertEqual(result['outcome'], 'not-run')
-        self.assertFalse(result['productionU2Executed'])
+        result = admission(self.tools['fixture'], self.home, plan)
+        self.assertEqual(result['outcome'], 'unsupported')
+        self.assertTrue(result['productionU2Executed'])
+        self.assertIn('Cursor', result['unsupported'][0])
+
+    def test_external_revoke_reset_cursor_and_off_tightening(self):
+        result = shared_state(self.tools['fixture'], self.home)
+        self.assertEqual(result['outcome'], 'pass')
+        self.assertTrue(result['externalCLIRevoke'])
+        self.assertTrue(result['resetAcrossEpochs'])
+        self.assertTrue(result['queryCapAndCancellation'])
 
     def test_admission_acceptance_rejects_each_forbidden_event(self):
         observation = {

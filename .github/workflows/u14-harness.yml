@@ -4,6 +4,8 @@ on:
     paths:
       - tools/u14/**
       - cli/internal/u14fixture/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
       - cli/internal/appserver/**
       - cli/internal/rows/**
       - cli/cmd/modelplan/**
@@ -16,6 +18,8 @@ on:
     paths:
       - tools/u14/**
       - cli/internal/u14fixture/**
+      - cli/internal/consent/**
+      - cli/internal/quota/**
       - cli/internal/appserver/**
       - cli/internal/rows/**
       - cli/cmd/modelplan/**
@@ -45,7 +49,7 @@ jobs:
           node-version: '24'
       - name: Fixture tooling tests and vet
         working-directory: cli
-        run: go vet ./internal/u14fixture/... && go test ./internal/u14fixture/...
+        run: go vet ./internal/appserver/... ./internal/u14fixture/... && go test ./internal/appserver/... ./internal/u14fixture/... ./cmd/modelplan
       - name: Real-binary driver regressions
         run: python3 -m unittest discover -s tools/u14/tests -p test_runner.py -v
       - name: U14 L1 profile with synthetic evidence

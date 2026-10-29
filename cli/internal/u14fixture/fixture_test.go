@@ -11,25 +11,25 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver"
 )
 
-func TestFixtureRequiresSyntheticBaselineAndLeavesProductionTimeouts(t *testing.T) {
+func TestHistoryProviderRequiresSyntheticBaselineAndCannotReplaceBackend(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	config := Config("synthetic")
-	if _, ok := config.Backend.(appserver.UnavailableBackend); !ok {
-		t.Fatal("fixture without baseline did not fail closed")
+	source := NewHistorySource(appserver.UnavailableBackend{}, nil).(*fixture)
+	if source.valid {
+		t.Fatal("provider without baseline admitted")
 	}
 	if err := os.WriteFile(filepath.Join(home, ".u14-baseline.json"), []byte(`{"shapeSha256":"synthetic"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ConfigFile), []byte(`{"modelMode":"omitted","emptyState":""}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ConfigFile), []byte(`{"modelMode":"omitted"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	config = Config("synthetic")
-	if _, ok := config.Backend.(*fixture); !ok {
-		t.Fatal("synthetic fixture unavailable")
+	source = NewHistorySource(appserver.UnavailableBackend{}, nil).(*fixture)
+	if !source.valid {
+		t.Fatal("synthetic provider unavailable")
 	}
-	if config.WriteTimeout != 0 || config.RequestTimeout != 0 {
-		t.Fatal("fixture replaced production timeout defaults")
+	if _, ok := any(source).(appserver.Backend); ok {
+		t.Fatal("history provider must not implement consent Backend")
 	}
 }
 func TestRecordingTransportRefusesAnyUnlistedDestinationOrMethod(t *testing.T) {

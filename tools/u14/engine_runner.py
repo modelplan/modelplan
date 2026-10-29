@@ -13,10 +13,12 @@ def require(condition, code):
         raise EngineFailure(code)
 
 
-def verify_baseline(home, baseline):
+def verify_baseline(home, baseline, mutable=()):
     home = Path(home).absolute()
     for item in baseline['files']:
         safe_relative(item['path'])
+        if item['path'] in mutable:
+            continue
         try:
             data = regular_bytes(home / item['path'])
         except (ValueError, OSError) as exc:
@@ -24,43 +26,74 @@ def verify_baseline(home, baseline):
         require(digest(data) == item['sha256'], 'baseline-file-changed')
 
 
+def cli(binary, home, args, payload=None, environment=None):
+    import json, subprocess
+    env = {'HOME': str(home), 'PATH': str(Path(home) / 'bin'), 'LANG': 'C.UTF-8'}
+    env.update(environment or {})
+    result = subprocess.run([str(binary), *args], input=None if payload is None else json.dumps(payload),
+                            text=True, capture_output=True, env=env, timeout=15)
+    require(result.returncode == 0, 'independent-cli-failed')
+    return json.loads(result.stdout) if result.stdout.strip() else {}
+
+
+def state(home):
+    from contracts import load_json
+    return load_json(Path(home) / '.config/modelplan/consent.json')
+
+
+def decision(home, **actions):
+    import uuid
+    current = state(home)
+    return {'requestId': str(uuid.uuid4()), 'expectStoreEpoch': current['storeEpoch'],
+            'expectGeneration': current['generation'], 'consentTextVersion': 2, 'allow': [], 'deny': [], **actions}
+
+
+def tighten(binary, home, **actions):
+    result = cli(binary, home, ['consent', 'grant', '--json'], decision(home, **actions))
+    require(result.get('committed'), 'external-tightening-not-committed')
+    return result
+
+
 def plain_smoke(binary, home):
     with EngineProcess(binary, home, 'u14-plain') as engine:
         hello = engine.initialize()
-        require(hello['data']['capabilities'] == ['diagnostics', 'rows'], 'unexpected-plain-capabilities')
-        response = engine.request('rows/subscribe')
-        require('error' not in response, 'plain-rows-error')
-        projection = response['result']['data']['projection']
-        require(projection['rows'] == [], 'plain-private-rows')
+        require({'consent', 'rows', 'diagnostics', 'history', 'refresh', 'publication', 'plugin_install'} <=
+                set(hello['data']['capabilities']), 'production-handlers-not-linked')
+        require(hello['storeEpoch'] not in ('unavailable', ''), 'production-epoch-missing')
+        projection = row_projection(engine.request('rows/subscribe'))
+        report = cli(binary, home, ['detect', '--json'])
+        expected = {tool['providerId'] for tool in report['tools'] if tool['detected']} | set(state(home)['tools'])
+        require({row['id'] for row in projection['rows']} == expected, 'production-row-membership')
+        require(all(not row['accounts'] for row in projection['rows']), 'unexpected-initial-private-values')
         summary = projection['rowsSummary']
-        require(summary['state'] == 'readers_off', 'plain-empty-state')
         require(bool(summary['text']['en']) and bool(summary['text']['zh']), 'empty-state-without-guidance')
-        diagnostics = engine.request('diagnostics/get')
-        require('error' not in diagnostics, 'plain-diagnostics-error')
+        require('error' not in engine.request('diagnostics/get'), 'plain-diagnostics-error')
         rejected = engine.request('diagnostics/get', {'accessToken': 'U14-SYNTHETIC-CANARY'})
         require(rejected.get('error', {}).get('code') == -32602, 'plain-token-params-not-rejected')
+        rejected = engine.request('credentials/result', {'operationId': 'unknown', 'outcome': 'ok', 'accessToken': 'U14-SYNTHETIC-CANARY'})
+        require(rejected.get('error', {}).get('code') == -32030, 'unknown-credential-operation-used')
+        require('U14-SYNTHETIC-CANARY' not in str(engine.messages), 'token-reflected')
         engine.shutdown()
-        return {'outcome': 'pass', 'emptyState': summary['state'], 'rowIds': [],
+        return {'outcome': 'pass', 'emptyState': summary['state'], 'rowIds': sorted(expected),
                 'capabilities': hello['data']['capabilities'], 'serverVersion': hello['data']['serverVersion'], 'wireMessages': engine.messages,
-                'stderrBytes': engine.stderr_bytes, 'cleanup': 'exited'}
+                'proofScope': 'ordinary production constructor', 'stderrBytes': engine.stderr_bytes, 'cleanup': 'exited'}
 
 # These are fixture-owned files, never a consent/budget/credential store.
 CONFIG = '.u14-engine-fixture.json'
-STATE = '.u14-engine-state.json'
 EVENTS = '.u14-engine-events.jsonl'
 
 
-def fixture_input(home, mode='omitted', empty=''):
+def fixture_input(home, mode='omitted', empty='', pressure=False, **extra):
     from contracts import encoded, load_json, write_private
     home = Path(home).absolute()
     require(home.resolve() == home, 'fixture-home-symlink')
-    verify_baseline(home, load_json(home / '.u14-baseline.json'))
-    for name in (CONFIG, STATE, EVENTS):
+    verify_baseline(home, load_json(home / '.u14-baseline.json'), mutable=('.config/modelplan/consent.json',))
+    for name in (CONFIG, EVENTS):
         path = home / name
         require(not path.is_symlink(), 'fixture-file-symlink')
         if path.exists():
             path.unlink()
-    write_private(home / CONFIG, encoded({'modelMode': mode, 'emptyState': empty}))
+    write_private(home / CONFIG, encoded({'modelMode': mode, 'emptyState': empty, 'pressure': pressure, **extra}))
 
 
 def events(home):
@@ -76,7 +109,7 @@ def events(home):
 
 def fixture_hello(engine):
     hello = engine.initialize()
-    require('u14_fixture' in hello['data']['capabilities'], 'fixture-constructor-not-linked')
+    require('consent' in hello['data']['capabilities'] and hello['storeEpoch'] != 'unavailable', 'production-consent-not-linked')
     return hello
 
 
@@ -85,13 +118,24 @@ def row_projection(message):
     return message['result']['data']['projection']
 
 
+def fresh_rows(engine):
+    import time
+    deadline = time.monotonic() + 3
+    while True:
+        result = engine.request('rows/subscribe')
+        if result.get('error', {}).get('code') != -32023:
+            return row_projection(result)
+        require(time.monotonic() < deadline, 'rows-publication-did-not-stabilize')
+        time.sleep(.01)
+
+
 def zero_rows(binary, home, mode):
     fixture_input(home, mode)
     with EngineProcess(binary, home, 'u14-model-' + mode) as engine:
         fixture_hello(engine)
         before = row_projection(engine.request('rows/subscribe'))
         ids = [r['id'] for r in before['rows']]
-        require(set(ids) == {'codex', 'declared:synthetic-team'} and len(ids) == 2, 'missing-fixture-rows')
+        require('codex' in ids and 'claude' in ids and len(ids) == len(set(ids)), 'missing-production-rows')
         history = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
         unavailable = mode == 'corrupt'
         if unavailable:
@@ -108,84 +152,102 @@ def zero_rows(binary, home, mode):
         require(calls == 1, 'unexpected-provider-request-count')
         return {'outcome': 'pass', 'modelMode': mode, 'rowIds': ids,
                 'historyUnavailable': unavailable, 'recordedProviderCalls': calls,
-                'proofScope': 'transport/engine fixture proof',
+                'proofScope': 'production U2 with recording history provider',
                 'wireMessages': engine.messages, 'cleanup': 'exited'}
 
 
 def empty_states(binary, home):
+    from shape_home import build_home
+    from contracts import ROOT, load_json
     observations, messages = [], []
     for empty in ('readers_off', 'pending', 'no_consent', 'empty'):
-        fixture_input(home, 'omitted', empty)
-        with EngineProcess(binary, home, 'u14-empty-' + empty) as engine:
+        case = Path(home) / empty
+        build_home(load_json(ROOT / 'examples/synthetic-shape.json'), case)
+        fixture_input(case, 'omitted', empty)
+        if empty == 'no_consent':
+            cli(binary, case, ['consent', 'init', '--json'])
+            tighten(binary, case, deny=['codex.local_history', 'codex.runtime_usage', 'claude.local_history'])
+        engine = EngineProcess(binary, case, 'u14-empty-' + empty)
+        if empty == 'readers_off':
+            engine.environment['MODELPLAN_READERS'] = 'off'
+        with engine:
             fixture_hello(engine)
             projection = row_projection(engine.request('rows/subscribe'))
-            require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary')
-            require(bool(projection['rowsSummary']['text']['en']) and
-                    bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
+            require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
+            require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
-                require(projection['rows'] == [], 'private-rows-in-off-state')
-            if empty == 'no_consent':
-                require(all('dock' not in r['surfaces'] and r['accounts'] == []
-                            for r in projection['rows']), 'no-consent-dock-values')
+                require(all(not row['accounts'] for row in projection['rows']), 'private-values-in-off-or-pending-state')
             observations.append(empty)
             engine.shutdown()
             messages.extend(engine.messages)
     return {'outcome': 'pass', 'states': observations, 'wireMessages': messages,
-            'proofScope': 'transport/engine fixture proof', 'cleanup': 'exited'}
+            'proofScope': 'production U2; repeated-revoke fault only for pending', 'cleanup': 'exited'}
+
+
+def _await_completed(home):
+    import time
+    from engine_process import EngineTimeout
+    deadline = time.monotonic() + 3
+    while events(home).count('query-completed') < 2:
+        if time.monotonic() >= deadline:
+            raise EngineTimeout('two-queries-did-not-complete')
+        time.sleep(.01)
 
 
 def backpressure(binary, home):
-    import time
-    from engine_process import EngineTimeout
-    fixture_input(home)
-    revoke = {'requestId': 'u14-lost-receipt', 'expectStoreEpoch': 'u14-fixture-epoch',
-              'expectGeneration': 1, 'consentTextVersion': 2, 'allow': [],
-              'deny': ['codex.runtime_usage']}
-    with EngineProcess(binary, home, 'u14-pressure-first') as engine:
-        fixture_hello(engine)
-        started = time.monotonic()
-        for id, ref in ((10, 'pressure-first'), (11, 'pressure-second')):
-            engine.send(id, 'history/query', {'kind': 'tokens', 'tool': 'codex', 'ref': ref, 'limit': 1})
-        deadline = time.monotonic() + 3
-        while events(home).count('query-completed') < 2:
-            if time.monotonic() >= deadline:
-                raise EngineTimeout('two-queries-did-not-complete')
-            time.sleep(0.01)
-        engine.first_data_byte()  # A real data write has begun; stop stdout reads now.
-        engine.send(12, 'consent/grant', revoke)
-        deadline = time.monotonic() + 3
-        while not {'revoke-committed', 'health-observed'}.issubset(events(home)):
-            if time.monotonic() >= deadline:
-                raise EngineTimeout('control-stalled-behind-data')
-            time.sleep(0.01)
-        require(engine.wait(13) == 0, 'pressure-process-failed')
-        elapsed = time.monotonic() - started
-        require(9 <= elapsed < 13, 'production-write-timeout-not-observed')
-        messages = list(engine.messages)
-    observed = events(home)
-    require(observed.count('query-completed') == 2, 'query-completion-count')
-    with EngineProcess(binary, home, 'u14-pressure-restart') as restart:
-        hello = fixture_hello(restart)
-        require(hello['consentGeneration'] == 2, 'revoke-undone-on-restart')
-        receipt = restart.request('consent/grant', revoke)
-        require('error' not in receipt, 'lost-receipt-not-replayed')
-        env = receipt['result']
-        require(env['storeEpoch'] == 'u14-fixture-epoch' and env['consentGeneration'] == 2,
-                'receipt-context-not-preserved')
-        require(env['data']['committed'] and env['data']['committedGeneration'] == 2,
-                'receipt-commit-not-preserved')
-        facts = restart.request('consent/get')['result']['data']['scopes']
-        require(facts and all(s['state'] == 'denied' for s in facts), 'grant-restored-on-replay')
-        projection = row_projection(restart.request('rows/subscribe'))
-        require(all(r['accounts'] == [] for r in projection['rows']), 'values-restored-after-revoke')
-        restart.shutdown()
-        messages.extend(restart.messages)
-    require('receipt-replayed' in events(home), 'receipt-replay-not-observed')
-    return {'outcome': 'pass', 'completedQueries': 2, 'revokeCommitted': True,
-            'healthChanged': True, 'receiptReplayed': True, 'stdoutPaused': True,
-            'elapsedSeconds': round(elapsed, 3), 'productionWriteTimeoutSeconds': 10,
-            'proofScope': 'transport/engine fixture proof', 'u2PersistenceProof': False,
-            'wireMessages': messages, 'cleanup': 'exited'}
+    import fcntl, os, time
+    from shape_home import build_home
+    from contracts import ROOT, load_json
+    messages, elapsed = [], 0
+    # Draining after a short pause proves health traversed the transport's
+    # priority control queue. A separate run stops reading until the real timeout.
+    for probe in (True, False):
+        case = Path(home) / ('health-priority' if probe else 'timeout')
+        build_home(load_json(ROOT / 'examples/synthetic-shape.json'), case)
+        fixture_input(case, pressure=True)
+        with EngineProcess(binary, case, 'u14-pressure-' + str(probe)) as engine:
+            hello = fixture_hello(engine)
+            revoke = decision(case, deny=['codex.local_history'])
+            started = time.monotonic()
+            for id in (10, 11):
+                engine.send(id, 'history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+            _await_completed(case)
+            engine._bytes_ready(3)
+            engine.buffer.extend(os.read(engine.process.stdout.fileno(), 1))
+            with (case / '.config/modelplan/consent.json.readers.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                engine.send(12, 'consent/grant', revoke)
+                deadline = time.monotonic() + 3
+                while state(case)['generation'] == hello['consentGeneration']:
+                    require(time.monotonic() < deadline, 'revoke-stalled-behind-data')
+                    time.sleep(.01)
+                # Wait while stdout remains stopped: both completions and the
+                # durable transaction precede the health/control observation.
+                time.sleep(.4)
+                if probe:
+                    health = engine._find(lambda m: m.get('method') == 'engine/health' and m['params']['data']['code'] == 'cleanup_pending', 3)
+                    require(health['params']['consentGeneration'] > hello['consentGeneration'], 'stale-health-context')
+                    receipt = engine.response(12)
+                    require(receipt['result']['data']['committed'], 'pressure-revoke-not-committed')
+                    engine.shutdown()
+                else:
+                    require(engine.wait(13) == 0, 'pressure-process-failed')
+                    elapsed = time.monotonic() - started
+                    require(9 <= elapsed < 13, 'production-write-timeout-not-observed')
+            messages.extend(engine.messages)
+        require(events(case).count('query-completed') == 2, 'query-completion-count')
+        with EngineProcess(binary, case, 'u14-pressure-restart-' + str(probe)) as restart:
+            hello = fixture_hello(restart)
+            receipt = restart.request('consent/grant', revoke)
+            require('error' not in receipt and receipt['result']['data']['committed'], 'lost-receipt-not-replayed')
+            require(receipt['result']['consentGeneration'] == hello['consentGeneration'], 'replayed-receipt-floor')
+            projection = fresh_rows(restart)
+            require(all(not row['accounts'] for row in projection['rows'] if row['id'] == 'codex'), 'revoked-values-after-restart')
+            restart.shutdown(); messages.extend(restart.messages)
+    return {'outcome': 'pass', 'completedQueries': 2, 'revokeCommitted': True, 'healthChanged': True,
+            'healthControlObserved': True, 'receiptReplayed': True, 'stdoutPaused': True,
+            'elapsedSeconds': round(elapsed, 3), 'u2PersistenceProof': True,
+            'proofScope': 'production U2 receipts and transport; recording history provider', 'wireMessages': messages, 'cleanup': 'exited'}
 
 
 def evaluate_admission(observation):
@@ -204,15 +266,181 @@ def evaluate_admission(observation):
 
 
 def admission(binary, home, plan):
-    # Probe the *ordinary* constructor, not the fixture's synthetic receipt store.
-    # A new producer constructor requires a deliberate rebind before this can pass.
-    with EngineProcess(binary, home, 'u14-admission-probe') as engine:
-        hello = engine.initialize()
-        capabilities = hello['data']['capabilities']
-        require('u14_fixture' not in capabilities, 'admission-used-fake-consent-backend')
-        if 'consent' in capabilities:
-            raise EngineFailure('u2-constructor-arrived-admission-adapter-must-be-bound')
-        engine.shutdown()
-        return {'outcome': 'not-run', 'dependency': 'production U2 constructor and recording-provider binding',
-                'requiredAssertions': plan['assertions'], 'observedCapabilities': capabilities,
-                'productionU2Executed': False, 'wireMessages': engine.messages, 'cleanup': 'exited'}
+    import json, time
+    from datetime import datetime, timezone
+    from shape_home import build_home
+    from contracts import ROOT, load_json, encoded, write_private
+    observations = {'sharedSyntheticHome': True, 'postScopes': {}, 'localHistory': {}, 'minimax': {}}
+    messages = []
+    unsupported = []
+    for status in (401, 403):
+        case = Path(home) / str(status)
+        shape = load_json(ROOT / 'examples/synthetic-shape.json')
+        shape['files'] = [entry for entry in shape['files'] if entry['path'] != '.config/modelplan/connections.json']
+        build_home(shape, case)
+        fixture_input(case, minimaxStatus=status)
+        # Synthetic migration input establishes existing grants. Policy gates
+        # must remain effective even when an older writer saved an account grant.
+        current = state(case)
+        for tool in ('gemini', 'cursor', 'minimax'):
+            current['tools'][tool] = {'allowed': True, 'readerId': 'native:' + tool, 'backend': 'native',
+                                      'consentTextVersion': 2, 'at': '2000-01-01T00:00:00Z'}
+        current['tools']['minimax'].update(region='international', keyEnv='MINIMAX_CODING_API_KEY')
+        (case / '.config/modelplan/consent.json').unlink()
+        write_private(case / '.config/modelplan/consent.json', encoded(current))
+        (case / '.cursor').mkdir(mode=0o700)
+        stamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        for i in range(2):
+            path = case / f'.gemini/tmp/project/chats/session-synthetic-{i}.json'
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            write_private(path, encoded({'sessionId': f'synthetic-{i}', 'messages': [
+                {'id': f'synthetic-{i}', 'type': 'gemini', 'timestamp': stamp,
+                 'model': f'synthetic-model-{i}', 'tokens': {'input': 10, 'output': 2, 'total': 12}}]}))
+        cli(binary, case, ['usage', 'gemini', 'enable', '--json'])
+        cli(binary, case, ['consent', 'init', '--json'])
+        cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=['cursor.local_history']))
+        engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
+        engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
+        with engine:
+            hello = engine.initialize()
+            require(hello['storeEpoch'] not in ('unavailable', 'u14-fixture-epoch'), 'admission-used-fake-consent-backend')
+            facts = engine.request('consent/get')['result']['data']['scopes']
+            for tool in ('gemini', 'cursor'):
+                fact = next(x for x in facts if x['scope'] == tool + '.account_usage.saved_login')
+                require(fact['state'] == 'allowed' and fact.get('disabledReason') == 'policy_pending', 'policy-pending-not-authoritative')
+                observations['postScopes'][tool] = {'calls': 0, 'disabledReason': fact['disabledReason']}
+            remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
+            require('error' not in remote and all(x.get('disabledReason') for x in remote['result']['data']), 'policy-pending-refresh-accepted')
+            local = engine.request('refresh/request', {'scopes': ['gemini.local_history']})
+            require('error' not in local and all(x.get('disabledReason') != 'read_only' for x in local['result']['data']), 'production-local-dispatcher-not-linked')
+            deadline = time.monotonic() + 5
+            while True:
+                history = engine.request('history/query', {'kind': 'tokens', 'tool': 'gemini', 'limit': 10})
+                if 'result' in history:
+                    break
+                require(time.monotonic() < deadline, 'gemini-local-history-not-readable')
+                time.sleep(.02)
+            require(len(history['result']['data']['items']) == 2, 'gemini-local-history-lost')
+            observations['localHistory']['gemini'] = {'before': 2, 'after': 2}
+            cursor_history = engine.request('history/query', {'kind': 'tokens', 'tool': 'cursor', 'limit': 10})
+            if 'error' in cursor_history and cursor_history['error']['code'] == -32050:
+                unsupported = ['Cursor typed local-history source is unavailable in the production reader inventory']
+            else:
+                require('result' in cursor_history, 'cursor-local-history-failed')
+                observations['localHistory']['cursor'] = {'before': 2, 'after': len(cursor_history['result']['data']['items'])}
+            scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            require('error' not in scheduled and all('disabledReason' not in x for x in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
+            events_file = case / '.u14-http-events.jsonl'
+            deadline = time.monotonic() + 5
+            while not events_file.exists():
+                require(time.monotonic() < deadline, 'minimax-first-request-missing')
+                time.sleep(.02)
+            # A second request and an independent CLI share the persisted gate.
+            engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            cli(binary, case, ['connections', 'refresh', '--quiet'], environment=engine.environment)
+            calls = [json.loads(line)['event'] for line in regular_bytes(events_file).splitlines()]
+            require(calls == ['minimax-current'], 'auth-failure-retried-or-unapproved-provider-called')
+            observations['minimax'][str(status)] = {'calls': 1, 'legacyReplyAvailable': True, 'legacyCalls': 0}
+            after = engine.request('history/query', {'kind': 'tokens', 'tool': 'gemini', 'limit': 10})
+            require(len(after['result']['data']['items']) == 2, 'account-policy-veto-erased-local-history')
+            engine.shutdown(); messages.extend(engine.messages)
+    if unsupported:
+        return {'outcome': 'unsupported', 'productionU2Executed': True, 'unsupported': unsupported,
+                'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}
+    return {**evaluate_admission(observations), 'productionU2Executed': True,
+            'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}
+
+
+def shared_state(binary, home):
+    fixture_input(home)
+    with EngineProcess(binary, home, 'u14-shared-state') as engine:
+        hello = fixture_hello(engine)
+        from contracts import encoded, write_private
+        from datetime import datetime, timezone
+        allowed_runtime = engine.request('consent/grant', decision(home, allow=['codex.runtime_usage']))
+        require(allowed_runtime.get('result', {}).get('data', {}).get('committed'), 'runtime-grant-failed')
+        captured = state(home)
+        observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
+        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
+                                     'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
+                                     'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
+        before = row_projection(engine.request('rows/subscribe'))
+        page = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+        require('error' not in page, 'initial-history-unavailable')
+        cursor = page['result']['data']['nextCursor']
+        failure = engine.request('history/query', {'kind': 'sessions', 'tool': 'codex', 'limit': 1})
+        require(failure.get('error', {}).get('code') == -32050, 'query-error-not-isolated')
+        require(row_projection(engine.request('rows/subscribe')) == before, 'failed-query-changed-rows')
+        require(any(row['id'] == 'codex' and any(account['route'] == 'runtime_rpc' and account['windows'] for account in row['accounts']) for row in before['rows']), 'positive-runtime-reading-not-projected')
+        stale = decision(home, deny=['codex.local_history', 'codex.runtime_usage'])
+        receipt = tighten(binary, home, deny=['codex.local_history', 'codex.runtime_usage'])
+        changed = engine._find(lambda m: m.get('method') == 'consent/changed' and
+                               m['params']['consentGeneration'] == receipt['committedGeneration'])
+        require(changed['params']['storeEpoch'] == hello['storeEpoch'], 'external-revoke-epoch')
+        stale_error = engine.request('consent/grant', stale)
+        context = stale_error['error']['data']
+        require(stale_error['error']['code'] == -32020 and context['consentGeneration'] == receipt['committedGeneration'], 'rejection-context-not-authoritative')
+        denied = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'cursor': cursor, 'limit': 1})
+        require('error' in denied, 'cursor-survived-revoke')
+        after = row_projection(engine.request('rows/subscribe'))
+        require(all(not r['accounts'] for r in after['rows'] if r['id'] == 'codex'), 'stale-values-after-revoke')
+        reset = cli(binary, home, ['consent', 'reset', 'confirmed', '--json'])
+        require(reset['storeEpoch'] != hello['storeEpoch'], 'reset-reused-epoch')
+        engine._find(lambda m: m.get('method') == 'consent/changed' and m['params']['storeEpoch'] == reset['storeEpoch'])
+        allowed = cli(binary, home, ['consent', 'grant', '--json'], decision(home, allow=['codex.local_history']))
+        require(allowed['committed'], 'regrant-after-reset-failed')
+        engine._find(lambda m: m.get('method') == 'consent/changed' and m['params']['consentGeneration'] == allowed['committedGeneration'] and m['params']['storeEpoch'] == reset['storeEpoch'])
+        old_cursor = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'cursor': cursor, 'limit': 1})
+        require(old_cursor.get('error', {}).get('code') == -32051, 'cursor-not-bound-to-epoch')
+        page = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+        require('error' not in page and page['result']['storeEpoch'] == reset['storeEpoch'], 'new-epoch-history-failed')
+        cursor = page['result']['data']['nextCursor']
+        engine.shutdown(); messages = list(engine.messages)
+    with EngineProcess(binary, home, 'u14-other-session') as engine:
+        engine.initialize()
+        old_cursor = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'cursor': cursor, 'limit': 1})
+        require(old_cursor.get('error', {}).get('code') == -32051, 'cursor-not-bound-to-session')
+        engine.shutdown(); messages.extend(engine.messages)
+    # Two held query slots reject the third promptly, while cancellation stays
+    # on the control lane and yields a terminal response for each canceled ID.
+    from contracts import encoded, write_private
+    fixture_input(home, block=True)
+    with EngineProcess(binary, home, 'u14-query-cap') as engine:
+        import time
+        engine.initialize()
+        for id in (30, 31):
+            engine.send(id, 'history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+        deadline = time.monotonic() + 3
+        while events(home).count('query-started') < 2:
+            require(time.monotonic() < deadline, 'query-slots-not-held'); time.sleep(.01)
+        third = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+        require(third.get('error', {}).get('code') == -32013, 'query-cap-not-busy')
+        for id in (30, 31):
+            engine.send(None, '$/cancel', {'id': id})
+            require(engine.response(id).get('error', {}).get('code') == -32800, 'query-cancel-not-terminal')
+        engine.send(32, 'history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
+        deadline = time.monotonic() + 3
+        while events(home).count('query-started') < 3:
+            require(time.monotonic() < deadline, 'late-query-not-started'); time.sleep(.01)
+        receipt = tighten(binary, home, deny=['codex.local_history'])
+        engine._find(lambda m: m.get('method') == 'consent/changed' and m['params']['consentGeneration'] == receipt['committedGeneration'])
+        write_private(Path(home) / '.u14-release', b'')
+        rejected = engine.response(32)
+        require(rejected.get('error', {}).get('code') == -32023, 'late-query-escaped-real-publication-fence')
+        engine.shutdown(); messages.extend(engine.messages)
+    off = EngineProcess(binary, home, 'u14-tighten-off')
+    off.environment['MODELPLAN_READERS'] = 'off'
+    with off:
+        off.initialize()
+        for action, scope in [('deny', 'retired.runtime_usage'), ('forget', 'retired.runtime_usage')]:
+            receipt = off.request('consent/grant', decision(home, **{action: [scope]}))
+            require(receipt.get('result', {}).get('data', {}).get('committed'), 'tightening-refused-with-readers-off')
+        projection = row_projection(off.request('rows/subscribe'))
+        require(projection['rowsSummary']['state'] == 'readers_off', 'readers-off-not-retained')
+        off.shutdown(); messages.extend(off.messages)
+    return {'outcome': 'pass', 'externalCLIRevoke': True, 'authoritativeRejectionContext': True,
+            'resetAcrossEpochs': True, 'positiveRuntimeReadingRevoked': True, 'queryCapAndCancellation': True, 'cursorBindings': ['epoch', 'session', 'scope'],
+            'tighteningWithReadersOff': ['deny', 'forget'], 'wireMessages': messages,
+            'proofScope': 'production shared store and transport; recording history provider', 'cleanup': 'exited'}

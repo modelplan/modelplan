@@ -22,7 +22,7 @@ func routeForSource(source string) rows.Route {
 	if strings.HasPrefix(source, "native:") {
 		tool := rows.CanonicalTool(source)
 		switch tool {
-		case "claude", "grok", "gemini", "cursor":
+		case "claude", "grok", "gemini", "cursor", "kimi":
 			return rows.RouteSavedLoginAPI
 		case "copilot", "kiro", "antigravity":
 			return rows.RouteRuntimeRPC

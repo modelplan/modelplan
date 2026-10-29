@@ -329,7 +329,7 @@
         "synthetic-home"
       ],
       "structures": [],
-      "priorJourney": "Real app-server and independent CLI on one synthetic home; granted account scopes, zero calls and policy_pending; MiniMax 401/403 with successful legacy replies available; seeded Gemini/Cursor local history retained. Execution waits for the production U2 constructor."
+      "priorJourney": "Production shared backend and independent CLI: account scopes remain policy_pending with zero POST calls; MiniMax 401/403 stop before the available successful legacy response; Gemini local history stays readable. Cursor typed local-history readback is unsupported pending a producer."
     },
     {
       "id": "U3-backpressure",
@@ -349,7 +349,7 @@
     },
     {
       "id": "U14-protocol-smoke",
-      "intent": "Unmodified real CLI: handshake, fail-closed readers-off rows, diagnostics, token-param rejection and shutdown.",
+      "intent": "Ordinary production constructor: handshake, stable rows, diagnostics, token and credential rejection, shutdown.",
       "units": [
         "U14"
       ],
@@ -360,7 +360,7 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
     },
     {
       "id": "U14-zero-rows-omitted",
@@ -377,7 +377,7 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
     },
     {
       "id": "U14-zero-rows-null",
@@ -394,7 +394,7 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
     },
     {
       "id": "U14-zero-rows-reported",
@@ -411,7 +411,7 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
     },
     {
       "id": "U14-zero-rows-corrupt",
@@ -428,7 +428,7 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
     },
     {
       "id": "U14-empty-states",
@@ -445,7 +445,23 @@
       "structures": [
         "tool-presence"
       ],
-      "priorJourney": "Synthetic transport/engine regression. No native UI, U2 persistence/admission or final-package proof."
+      "priorJourney": "Production shared backend and transport. Recording history provider and consent-churn fault where required; no native UI or final-package proof."
+    },
+    {
+      "id": "U3-shared-state",
+      "intent": "Independent CLI revoke, authoritative errors, epoch reset, cursor invalidation and tightening with readers off through the production backend.",
+      "units": [
+        "U3",
+        "U14"
+      ],
+      "capabilities": [
+        "app-server",
+        "sensitive-queries",
+        "pipe-backpressure",
+        "synthetic-home"
+      ],
+      "structures": [],
+      "priorJourney": "Production U2 store, receipts and fences. Recording history provider only; no native UI or final-package proof."
     }
   ]
 }

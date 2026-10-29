@@ -30,9 +30,9 @@ type SharedBackend struct {
 	config  SharedConfig
 	changes chan struct{}
 	once    sync.Once
-	// Set by the command after Server construction; only background requests use
-	// this seam. Interactive operations are returned by Grant's committed result.
-	CredentialRequest func(CredentialNeed) (string, error)
+	// Bound by the constructor before Serve. Credentials remain in the
+	// scheduler's one-use memory callback and are never persisted here.
+	CredentialSink CredentialReceiver
 }
 
 func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
@@ -144,8 +144,18 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	// the route. Raw Source strings never become display route codes.
 	for i := range in.Accounts {
 		a := &in.Accounts[i]
-		if a.DeclaredPlanID == "" {
+		if a.DeclaredPlanID == "" && (a.Route == "" || a.Route == rows.RouteUnknown) {
 			a.Route = routeForSource(a.Source)
+		}
+		if a.DeclaredPlanID == "" && a.ToolID == "kimi" && admission.State().Tools["kimi"].KeyEnv != "" {
+			a.Route = rows.RouteAPIKeyAPI
+		}
+	}
+	if !changed {
+		if selections, err := quota.SelectionsWithAdmission(p, admission); err == nil {
+			for _, selected := range selections {
+				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
+			}
 		}
 	}
 	projection := rows.Build(in)
@@ -154,10 +164,20 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	diagnostics := []wire.ScopeDiag{}
 	state := admission.State()
 	for _, fact := range admission.ScopeFacts(detected) {
+		if id, pending := quota.PolicyPending(fact.Tool); pending && id == fact.Scope {
+			reason := "policy_pending"
+			fact.Disabled = &reason
+		}
 		route := wireRoute(fact.Route)
 		scope := wire.ConsentScope{Scope: fact.Scope, Tool: fact.Tool, Route: route, Detected: fact.Detected, Retired: fact.Retired, State: wire.ConsentState(fact.State), DefaultCheck: fact.DefaultCheck, CleanupPending: fact.CleanupPending}
 		if fact.Keychain != nil {
-			choice := wire.KeychainChoice(*fact.Keychain)
+			choice := wire.KeychainUnset
+			switch *fact.Keychain {
+			case "allowed":
+				choice = wire.KeychainAllow
+			case "denied":
+				choice = wire.KeychainDeny
+			}
 			scope.Keychain = &choice
 		}
 		if fact.Disabled != nil {
@@ -193,6 +213,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		diagnostics = append(diagnostics, diag)
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
+	for _, fact := range facts.Scopes {
+		if fact.CleanupPending {
+			health = wire.Health{State: wire.HealthDegraded, Code: "cleanup_pending"}
+			break
+		}
+	}
 	if admission.Mode() == consent.Off {
 		health.Code = "readers_off"
 	}
@@ -204,12 +230,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
 	p := b.config.Paths(admission)
-	// An app-server never invokes the legacy credential helper. A real operation
-	// supplies its one-use memory callback in AcceptCredential instead.
+	// The constructor binds the broker callback before Serve. Retain that
+	// capability; an absent callback stays closed instead of opening a helper.
 	if p.ReaderAccess != nil {
 		grants := map[string]quota.ReaderGrant{}
 		for provider, grant := range p.ReaderAccess.Grants {
-			if provider == "claude" {
+			if provider == "claude" && grant.Credential == nil {
 				grant.Credential = func(context.Context) ([]byte, string) { return nil, "confirmation-needed" }
 			}
 			grants[provider] = grant
@@ -264,7 +290,7 @@ func (b *SharedBackend) Grant(ctx context.Context, p wire.ConsentGrantParams) (G
 	if receipt.CommittedGeneration != nil {
 		result.Stamp.Generation = *receipt.CommittedGeneration
 	}
-	if receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
+	if !b.config.Offline && receipt.Committed && !receipt.Replayed && keychain[consent.ScopeClaudeAccountUsageSavedLogin] == "allow" {
 		result.Credentials = []CredentialNeed{{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin, Interactive: true}}
 	}
 	b.notify()
@@ -321,4 +347,13 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 		}()
 	})
 	return b.changes
+}
+
+// Notify coalesces a completed shared reader operation into a fresh snapshot.
+func (b *SharedBackend) Notify() { b.notify() }
+func (b *SharedBackend) AcceptCredential(ctx context.Context, stamp Stamp, need CredentialNeed, result wire.CredentialResult) error {
+	if b.CredentialSink == nil {
+		return ProtocolError{wire.CodeCredentialRejected}
+	}
+	return b.CredentialSink.AcceptCredential(ctx, stamp, need, result)
 }
