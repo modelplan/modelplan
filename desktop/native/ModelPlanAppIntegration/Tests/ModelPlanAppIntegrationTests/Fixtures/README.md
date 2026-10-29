@@ -5,4 +5,4 @@
 
 Multi-tool, free-label and structured host cases are separate synthetic tests; they are not represented as additional captured output.
 
-v0.5.45 is the current native pin; its complete synthetic capture is additive. v0.5.43 remains a historical compatibility input. Both deny owner-home/network access and disable all readers.
+v0.5.46 is the current native pin; its complete synthetic capture is additive. v0.5.43 and v0.5.45 remain historical compatibility inputs. Both deny owner-home/network access and disable all readers.
