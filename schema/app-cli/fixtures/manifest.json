@@ -7,7 +7,9 @@
     "refreshed",
     "unreadable",
     "revoked",
-    "cleanup-pending"
+    "cleanup-pending",
+    "retired",
+    "retired-legacy"
   ],
   "entries": [
     {
@@ -984,6 +986,189 @@
       "schema": "desktop",
       "arguments": [
         "desktop",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-grant.request.json",
+      "state": "retired",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-grant.json",
+      "state": "retired",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "retired-grant.request.json"
+    },
+    {
+      "file": "retired-consent.json",
+      "state": "retired",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-unknown-tool.request.json",
+      "state": "retired",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-unknown-tool.json",
+      "state": "retired",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "",
+      "request": "retired-unknown-tool.request.json"
+    },
+    {
+      "file": "retired-revoke.request.json",
+      "state": "retired",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-revoke.json",
+      "state": "retired",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "retired-revoke.request.json"
+    },
+    {
+      "file": "retired-readback.json",
+      "state": "retired",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-legacy-consent.json",
+      "state": "retired-legacy",
+      "schema": "consent",
+      "arguments": [
+        "consent",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-legacy-unknown-tool.request.json",
+      "state": "retired-legacy",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-legacy-unknown-tool.json",
+      "state": "retired-legacy",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 1,
+      "stderr": "",
+      "request": "retired-legacy-unknown-tool.request.json"
+    },
+    {
+      "file": "retired-legacy-revoke.request.json",
+      "state": "retired-legacy",
+      "schema": "consent-grant-request",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "stdin-json",
+      "exitCode": 0,
+      "stderr": ""
+    },
+    {
+      "file": "retired-legacy-revoke.json",
+      "state": "retired-legacy",
+      "schema": "consent-grant-response",
+      "arguments": [
+        "consent",
+        "grant",
+        "--json"
+      ],
+      "encoding": "json",
+      "exitCode": 0,
+      "stderr": "",
+      "request": "retired-legacy-revoke.request.json"
+    },
+    {
+      "file": "retired-legacy-readback.json",
+      "state": "retired-legacy",
+      "schema": "consent",
+      "arguments": [
+        "consent",
         "--json"
       ],
       "encoding": "json",

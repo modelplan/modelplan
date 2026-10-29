@@ -133,6 +133,19 @@ var loadReaderCatalogue = func(cache string) *detect.Catalogue {
 }
 
 func Selections(p Paths) ([]Selection, error) {
+	return SelectionsWithAdmission(p, admissionFor(p))
+}
+
+func admissionFor(p Paths) consent.Admission {
+	if p.Admission != nil {
+		return *p.Admission
+	}
+	return consent.Capture()
+}
+
+// SelectionsWithAdmission uses the command's captured permissions. It performs
+// no second consent read; live reader/publication fences remain independent.
+func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection, error) {
 	entries, err := LoadConnections(p.ConnectionsFile)
 	if err != nil {
 		return nil, err
@@ -148,7 +161,7 @@ func Selections(p Paths) ([]Selection, error) {
 		}
 		by[s.Provider] = x
 	}
-	policy, mode := consent.Current()
+	policy, mode := admission.State(), admission.Mode()
 	publishedRoutes := map[string]detect.Entry{}
 	if cat := loadReaderCatalogue(p.Cache); cat != nil {
 		for _, e := range cat.Detectors {
@@ -293,7 +306,9 @@ func Selections(p Paths) ([]Selection, error) {
 // implementations and will consume the same consent/generation contract in its
 // router. No credential-reading implementation lives here.
 func ReadPermitted(p Paths, now time.Time) Report {
-	s, mode := consent.Current()
+	admission := admissionFor(p)
+	p.Admission = &admission
+	s, mode := admission.State(), admission.Mode()
 	r := Report{ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
 	if mode == consent.Off {
 		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
@@ -320,6 +335,18 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	}
 	if !consent.CurrentGeneration(s.Generation) {
 		return Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Accounts: []Account{}, Sources: []SourceStatus{{Source: "readers", Status: "off", Reason: "consent-changed"}}}
+	}
+	return r
+}
+
+// ReadDeclared reads only the user's bounded local.json. It is independent of
+// reader admission, so desktop fail-closed/readers-off publications retain the
+// user's declarations without opening a tool's state or changing quota output.
+func ReadDeclared(p Paths, now time.Time) Report {
+	accounts, source := readLocal(p.LocalFile, now)
+	r := Report{SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: accounts, Sources: []SourceStatus{source}}
+	for i := range r.Accounts {
+		Evaluate(&r.Accounts[i], now)
 	}
 	return r
 }
