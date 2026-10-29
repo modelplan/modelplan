@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/refresh-account.json",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "permitted explicit command refreshes Codex synchronously; denied Runtime scope falls through to cached quota and may schedule other admitted due readers",
+    "network": "Codex runtime may authenticate only to its provider",
+    "credentials": "owned by Codex; no credential import",
+    "floor": "scheduled Codex account reads: 5 minutes after success, 30 minutes after failure; explicit --refresh-account bypasses AccountDue, while the app throttles to 300 seconds and a lock prevents overlap",
+    "exitCodes": {
+      "0": "quiet best-effort refresh or cached quota",
+      "1": "cache failure"
+    },
+    "stdout": "text, not a JSON feed; never decode into account values",
+    "writes": "permitted refresh updates the local account cache; denied scope uses ordinary quota behavior"
+  },
+  "type": "string",
+  "description": "Stdout is ignored by the app. Quiet permitted refresh normally emits nothing; denied scope can retain legacy human-readable quota output."
+}

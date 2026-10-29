@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/connections.json",
+  "$comment": "SPDX-License-Identifier: MIT. App\u2013CLI contract; generated fixtures come from the real binary.",
+  "x-behavior": {
+    "backgroundRefresh": "never",
+    "credentials": "none; presence/cache metadata only",
+    "network": "none",
+    "writes": "none",
+    "exitCodes": {
+      "0": "JSON object with --json; default is human-readable text",
+      "1": "configuration unavailable on stderr; stdout empty"
+    },
+    "displayText": "notice, nextStep, names, messages, and legacy hosts are display only",
+    "refresh": "connections refresh --quiet --scheduled is an internal worker; due/admission/budget are rechecked; foreground non-JSON nonquiet refresh may use interactive policy"
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Display-only local settings path; not an identifier."
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection"
+          }
+        },
+        "localUsage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localUsage"
+          }
+        },
+        "localSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/localSource"
+          }
+        }
+      },
+      "required": [
+        "file",
+        "connections",
+        "localUsage",
+        "localSources"
+      ],
+      "additionalProperties": true
+    },
+    {
+      "type": "string",
+      "const": "",
+      "description": "Nonzero exit: error on stderr; no JSON body."
+    }
+  ],
+  "$defs": {
+    "selection": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "backend": {
+          "type": "string",
+          "description": "Machine value; not display text.",
+          "enum": [
+            "native",
+            "codexbar-compat",
+            "off"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "description": ""
+        },
+        "keySet": {
+          "type": "boolean"
+        },
+        "region": {
+          "type": "string",
+          "description": "Machine value; not display text."
+        },
+        "keyEnv": {
+          "type": "string",
+          "description": "Environment variable NAME, never a value."
+        },
+        "host": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display text only; never parse as an endpoint or permission."
+          }
+        },
+        "read": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "secretPolicy": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "endpointNotice": {
+          "type": "string",
+          "description": "Display text only; never parse as an endpoint or permission."
+        },
+        "blocked": {
+          "type": "string",
+          "description": "Machine value; not display text."
+        },
+        "accessClass": {
+          "type": "string",
+          "description": "Machine value; not display text."
+        },
+        "reading": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string",
+              "description": "Machine value; not display text."
+            },
+            "status": {
+              "type": "string",
+              "description": "Machine value; not display text."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Display reason for legacy/local sources; native reader failures use a sanitised machine error code."
+            },
+            "errorCode": {
+              "$ref": "common.json#/$defs/readerErrorCode"
+            }
+          },
+          "required": [
+            "source",
+            "status"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "provider",
+        "name",
+        "backend",
+        "origin",
+        "keySet"
+      ],
+      "additionalProperties": true
+    },
+    "localUsage": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Machine value."
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "status": {
+          "type": "string",
+          "description": "Machine value."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Display reason."
+        },
+        "evaluatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastObservedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "readPaths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display-only local path pattern."
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display-only destinations."
+          }
+        },
+        "privacy": {
+          "type": "string",
+          "description": "Display privacy notice."
+        },
+        "scope": {
+          "type": "string",
+          "description": "Display observation scope."
+        },
+        "historyDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "filesSeen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "filesRead": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "filesSkipped": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "messagesWithoutTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filesSeen",
+            "filesRead",
+            "filesSkipped",
+            "messagesWithoutTokens",
+            "truncated"
+          ],
+          "additionalProperties": true
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "day": {
+                "type": "string",
+                "format": "date"
+              },
+              "model": {
+                "type": "string",
+                "description": "Observed model ID."
+              },
+              "observedMessages": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "inputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "cachedTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "thoughtTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "toolTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "totalTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "required": [
+              "day",
+              "model",
+              "observedMessages",
+              "inputTokens",
+              "outputTokens",
+              "cachedTokens",
+              "thoughtTokens",
+              "toolTokens",
+              "totalTokens"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "string",
+                "description": "Opaque local session reference."
+              },
+              "firstAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "lastAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "observedMessages": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "inputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "outputTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "cachedTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "thoughtTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "toolTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "totalTokens": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "required": [
+              "ref",
+              "firstAt",
+              "lastAt",
+              "observedMessages",
+              "inputTokens",
+              "outputTokens",
+              "cachedTokens",
+              "thoughtTokens",
+              "toolTokens",
+              "totalTokens"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "source",
+        "enabled",
+        "status",
+        "evaluatedAt",
+        "lastObservedAt",
+        "readPaths",
+        "hosts",
+        "privacy",
+        "scope",
+        "historyDays",
+        "coverage",
+        "rows",
+        "sessions"
+      ],
+      "additionalProperties": true
+    },
+    "level": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "yes",
+            "no",
+            "off",
+            "unknown",
+            "not-applicable"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Machine status code."
+        },
+        "via": {
+          "type": "string",
+          "description": "Machine value."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "binding": {
+          "type": "string",
+          "description": "Machine value."
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "localSource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Machine value."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "quota"
+          ]
+        },
+        "installed": {
+          "$ref": "#/$defs/level"
+        },
+        "history": {
+          "$ref": "#/$defs/level"
+        },
+        "authorization": {
+          "$ref": "#/$defs/level"
+        },
+        "quota": {
+          "$ref": "#/$defs/level"
+        },
+        "support": {
+          "type": "string",
+          "description": "Machine value."
+        },
+        "quotaAccess": {
+          "$ref": "#/$defs/selection"
+        },
+        "read": {
+          "type": "string",
+          "description": "Display read description."
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display-only destinations."
+          }
+        },
+        "secretPolicy": {
+          "type": "string",
+          "description": "Display privacy notice."
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "Display local path patterns."
+          }
+        },
+        "network": {
+          "type": "string",
+          "description": "Display network notice."
+        },
+        "privacy": {
+          "type": "string",
+          "description": "Display privacy notice."
+        },
+        "localUsage": {
+          "$ref": "#/$defs/localUsage"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "installed",
+        "history",
+        "authorization",
+        "quota",
+        "support"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
