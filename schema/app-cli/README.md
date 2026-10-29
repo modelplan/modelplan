@@ -14,7 +14,7 @@ before that integration lands. `common.json` contains shared definitions.
 | `desktop --json` | [desktop.json](desktop.json) | Returns cached/local observations; online polls can schedule due readers and update derived history. |
 | `desktop --json --read-only` | [desktop.json](desktop.json) | Cache/presence only; starts no refresh and writes nothing. `--offline` also starts no refresh. |
 | `consent --json` | [consent.json](consent.json) | Cache/presence only; neither grants nor refreshes. |
-| `consent grant --json` | [stdin](consent-grant-request.json), [stdout](consent-grant-response.json) | Atomic generation/text-version checks and replay receipts; denial revokes before scoped cleanup. No provider contact. |
+| `consent grant --json` | [stdin](consent-grant-request.json), [stdout](consent-grant-response.json) | Atomic generation/text-version checks and replay receipts; denial revokes before scoped cleanup. No provider contact, except one foreground Claude read (≤12 s, may show the Keychain prompt) after a committed claude+Keychain allow; never on replay or deny. |
 | `detect --json` | [detect.json](detect.json) | Presence only, without credential values, reader execution or writes. |
 | `publication --json` | [publication.json](publication.json) | Synchronously checks public data (30-second bound), then returns verified cache. |
 | `publication --json --offline` | [publication.json](publication.json) | Verified cache only, no sync. |
@@ -102,7 +102,7 @@ not fabricated values. The separate scheduled Codex account path waits five
 minutes after success and thirty after failure. The explicit app account-refresh
 command bypasses that due check; the app spaces calls by 300 seconds and the CLI
 locks overlapping refreshes. Background Keychain reads are non-interactive and bounded
-to about two seconds. Read-only/offline paths start nothing.
+to about two seconds; the only foreground one is the read right after a committed Claude Keychain grant. Read-only/offline paths start nothing.
 
 `allowed` in a consent readback is saved standard permission, not proof of a login
 or current admission. Catalogue/privacy restrictions still apply. The grant
