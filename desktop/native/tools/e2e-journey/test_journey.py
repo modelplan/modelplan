@@ -17,34 +17,44 @@ journey = importlib.util.module_from_spec(spec); spec.loader.exec_module(journey
 class JourneyOracleTests(unittest.TestCase):
     def setUp(self):
         self.facts = {
-            1: dict(detected=True, listedInFirstRun=True, backendBound=True, providerReadsBeforeGrant=0),
+            1: dict(detected=True, grokDetected=True, listedInFirstRun=True, backendBound=True, providerReadsBeforeGrant=0),
             2: dict(granted=True, apiAvailable=True, releaseIdentityVerified=False, debugAdmission=True),
             3: dict(providerReads=1, postProviderSnapshot=True, nativePanelsVisible=False),
             4: dict(renderedRows=[dict(provider='codex', accountAssociated=True, hasSubscription=False,
                                       readout='37%', remainingPercent=37)]),
-            5: dict(revoked=True, valueSeenBefore=True, postRevokeSnapshot=True, values=[]),
-            6: dict(regranted=True, unreadableObserved=True, postErrorSnapshot=True, rows=1, values=[],
+            5: dict(freshBoundRow=True, cardOpened=True, ageText='Observed 1 min ago / 1分钟前观测'),
+            6: dict(revoked=True, valueSeenBefore=True, postRevokeSnapshot=True, values=[]),
+            7: dict(regranted=True, unreadableObserved=True, postErrorSnapshot=True, rows=1, values=[],
                     rowActionDispatched=True, settingsDestinationReached=True,
                     reasonRows=[dict(reason='Reader could not obtain a reading / 读取组件未能取得读数',
                         nextStep='Open Settings to check this tool / 打开设置检查此工具')]),
+            8: dict(granted=True, nativeErrorObserved=True, postGrantSnapshot=True, accountCount=0, connectionCount=0,
+                    renderedRows=[dict(providers=['grok'], readout='--', remainingPercent=None,
+                        reason='Reading unavailable / 读取暂不可用', nextStep='Check reader status in Settings / 在设置检查读取状态')]),
         }
+        for step, facts in self.facts.items():
+            allowed = [] if step in (1, 6) else ['codex', 'grok'] if step == 8 else ['codex']
+            facts['rowInvariant'] = dict(canonicalKnown=True, allowedTools=allowed, rowCounts={tool: 1 for tool in allowed})
 
     def test_complete_observed_journey_passes(self):
         self.assertTrue(all(journey.passes(n, facts) for n, facts in self.facts.items()))
 
     def test_missing_or_empty_steps_never_pass(self):
-        for step in range(1, 7):
+        for step in journey.STEPS:
             self.assertFalse(journey.passes(step, {}))
             self.assertFalse(journey.passes(step, None))
 
     def test_each_step_requires_its_actual_production_evidence(self):
-        for step, key, value in [(1, 'backendBound', False), (1, 'listedInFirstRun', False),
+        for step, key, value in [(1, 'backendBound', False), (1, 'grokDetected', False), (1, 'listedInFirstRun', False),
                 (1, 'providerReadsBeforeGrant', 1), (2, 'granted', False), (2, 'releaseIdentityVerified', True),
                 (2, 'debugAdmission', False), (3, 'providerReads', 0), (3, 'postProviderSnapshot', False),
                 (3, 'nativePanelsVisible', True), (4, 'renderedRows', []),
-                (5, 'valueSeenBefore', False), (5, 'postRevokeSnapshot', False), (5, 'values', [37]),
-                (6, 'unreadableObserved', False), (6, 'postErrorSnapshot', False), (6, 'rows', 0),
-                (6, 'values', [37]), (6, 'rowActionDispatched', False), (6, 'settingsDestinationReached', False)]:
+                (5, 'freshBoundRow', False), (5, 'cardOpened', False), (5, 'ageText', ''),
+                (8, 'nativeErrorObserved', False), (8, 'accountCount', 1), (8, 'connectionCount', 1),
+                (8, 'renderedRows', []), (8, 'postGrantSnapshot', False),
+                (6, 'valueSeenBefore', False), (6, 'postRevokeSnapshot', False), (6, 'values', [37]),
+                (7, 'unreadableObserved', False), (7, 'postErrorSnapshot', False), (7, 'rows', 0),
+                (7, 'values', [37]), (7, 'rowActionDispatched', False), (7, 'settingsDestinationReached', False)]:
             with self.subTest(step=step, key=key):
                 facts = copy.deepcopy(self.facts[step]); facts[key] = value
                 self.assertFalse(journey.passes(step, facts))
@@ -55,11 +65,11 @@ class JourneyOracleTests(unittest.TestCase):
         for field, value in [('provider', 'other'), ('accountAssociated', False), ('readout', '--'),
                              ('remainingPercent', 0), ('remainingPercent', True)]:
             wrong = {**valid, field: value}
-            self.assertFalse(journey.passes(4, dict(renderedRows=[wrong])))
+            self.assertFalse(journey.passes(4, {**self.facts[4], 'renderedRows': [wrong]}))
         # An unrelated verified subscription and an unbound 37% value cannot be combined.
         rows = [{**valid, 'hasSubscription': True, 'readout': '--', 'remainingPercent': None},
                 {**valid, 'provider': 'other', 'hasSubscription': False}]
-        self.assertFalse(journey.passes(4, dict(subscriptionRows=1, values=[37], renderedRows=rows)))
+        self.assertFalse(journey.passes(4, {**self.facts[4], 'subscriptionRows': 1, 'values': [37], 'renderedRows': rows}))
 
     def test_unreadable_row_needs_human_reason_and_next_step(self):
         for reason, next_step in [('?', 'Open Settings'), ('？', 'Open Settings'), ('reader_error', 'Open Settings'),
@@ -67,9 +77,39 @@ class JourneyOracleTests(unittest.TestCase):
                                   ('读取失败reader_error请检查设置', 'Open Settings'),
                                   ('读取失败readerError请检查设置', 'Open Settings'),
                                   ('Reading unavailable', 'not_connected_yet')]:
-            facts = copy.deepcopy(self.facts[6]); facts['reasonRows'] = [dict(reason=reason, nextStep=next_step)]
-            self.assertFalse(journey.passes(6, facts))
+            facts = copy.deepcopy(self.facts[7]); facts['reasonRows'] = [dict(reason=reason, nextStep=next_step)]
+            self.assertFalse(journey.passes(7, facts))
         self.assertTrue(journey.human('Open ModelPlan Settings / 打开 ModelPlan 设置'))
+
+
+    def test_every_checkpoint_requires_exactly_one_row_per_canonically_allowed_tool(self):
+        for step in journey.STEPS:
+            for bad in [None, {}, dict(canonicalKnown=False, allowedTools=[], rowCounts={}),
+                        dict(canonicalKnown=True, allowedTools=['grok'], rowCounts={'grok': 0}),
+                        dict(canonicalKnown=True, allowedTools=['grok'], rowCounts={'grok': 2}),
+                        dict(canonicalKnown=True, allowedTools=['grok'], rowCounts={'grok': True}),
+                        dict(canonicalKnown=True, allowedTools=['grok'], rowCounts={}),
+                        dict(canonicalKnown=True, allowedTools=['grok', 'grok'], rowCounts={'grok': 1})]:
+                facts = copy.deepcopy(self.facts[step]); facts['rowInvariant'] = bad
+                self.assertFalse(journey.passes(step, facts), (step, bad))
+        self.assertTrue(journey.row_invariant(dict(rowInvariant=dict(canonicalKnown=True, allowedTools=[], rowCounts={}))))
+        self.assertTrue(journey.row_invariant(dict(rowInvariant=dict(canonicalKnown=True, allowedTools=['qwen'], rowCounts={'qwen': 1}))))
+
+    def test_age_requires_actual_fresh_bound_card_and_minute_or_hour_units(self):
+        for age in ['Observed 0 min ago', 'Observed 2 hours ago / 2小时前观测', '1h 5m', '不到1分钟前']:
+            self.assertTrue(journey.passes(5, {**self.facts[5], 'ageText': age}), age)
+        for age in ['', '?', 'Observation time unknown', 'Observed 7200s ago / 7200秒前观测',
+                    'Observed 60 seconds ago', '2 min 3 sec', '2026-10-29T06:00:00Z', '1 month ago']:
+            self.assertFalse(journey.passes(5, {**self.facts[5], 'ageText': age}), age)
+
+    def test_first_failure_requires_one_grok_row_and_no_account_or_connection(self):
+        valid = self.facts[8]
+        for changes in [dict(accountCount=1), dict(connectionCount=1), dict(nativeErrorObserved=False),
+                        dict(renderedRows=[]), dict(renderedRows=valid['renderedRows'] * 2),
+                        dict(renderedRows=[{**valid['renderedRows'][0], 'providers': ['codex']}]),
+                        dict(renderedRows=[{**valid['renderedRows'][0], 'reason': 'reader_error'}]),
+                        dict(renderedRows=[{**valid['renderedRows'][0], 'nextStep': ''}])]:
+            self.assertFalse(journey.passes(8, {**valid, **changes}), changes)
 
 
 class FakeProviderTests(unittest.TestCase):
