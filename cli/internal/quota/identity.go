@@ -299,3 +299,34 @@ func readerProfileLocator(cache, provider, profileKey string) string {
 	}
 	return ref
 }
+
+// existingReaderSubscription verifies provenance in the local reference table;
+// accepting an arbitrary hex string from a reading is not a privacy boundary.
+func existingReaderSubscription(cache, provider string, binding *Binding) string {
+	if IdentityOff() || binding == nil || binding.Status != "verified" {
+		return ""
+	}
+	basis := map[string]string{"claude": "claude-oauth", "cursor": "cursor-auth", "gemini": "gemini-cli-local-account-project", "grok": "grok-auth-principal", "kimi": "kimi-code-login:china"}[provider]
+	if basis == "" || binding.Basis != basis {
+		return ""
+	}
+	b, status := readBounded(subscriptionsPath(cache), 256<<10)
+	var m subscriptionMap
+	if status != "" || json.Unmarshal(b, &m) != nil || m.SchemaVersion != 1 {
+		return ""
+	}
+	key, err := hex.DecodeString(m.Key)
+	if err != nil || len(key) != 32 {
+		return ""
+	}
+	raw, err := hex.DecodeString(binding.Ref)
+	if err != nil || len(raw) != 8 || hex.EncodeToString(raw) != binding.Ref {
+		return ""
+	}
+	for _, item := range m.Refs {
+		if item.Ref == binding.Ref && item.Basis == basis {
+			return binding.Ref
+		}
+	}
+	return ""
+}

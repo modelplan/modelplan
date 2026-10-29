@@ -9,6 +9,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
+
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"strings"
 	"time"
 )
@@ -61,15 +65,16 @@ type readerFailure struct {
 }
 
 type readerProfileAttempt struct {
-	ProfileKey string    `json:"profileKey"`
-	At         time.Time `json:"at"`
-	Discarded  bool      `json:"discarded,omitempty"`
+	ProfileKey        string    `json:"profileKey"`
+	At                time.Time `json:"at"`
+	GenerationChanged bool      `json:"generationChanged,omitempty"`
 }
 
 type readerEntry struct {
-	AttemptedAt time.Time      `json:"attemptedAt,omitempty"`
-	LastFailure *readerFailure `json:"lastFailure,omitempty"`
-	Discarded   bool           `json:"discarded,omitempty"`
+	AttemptedAt       time.Time      `json:"attemptedAt,omitempty"`
+	LastFailure       *readerFailure `json:"lastFailure,omitempty"`
+	LoginChanged      bool           `json:"loginChanged,omitempty"`
+	GenerationChanged bool           `json:"generationChanged,omitempty"`
 	// CredentialReadState is set only on the missing-file Keychain path, never
 	// from the saved Keychain permission alone. busy is an in-flight read.
 	CredentialReadState string         `json:"credentialReadState,omitempty"`
@@ -84,16 +89,17 @@ type readerEntry struct {
 type readerState struct {
 	// Kept separately so reserving an attempt does not change legacy Sources
 	// or introduce a legacy account for an unread profile.
-	PendingAttempt  *readerProfileAttempt `json:"pendingAttempt,omitempty"`
-	SchemaVersion   int                   `json:"schemaVersion"`
-	Provider        string                `json:"provider"`
-	GrantKey        string                `json:"grantKey"`
-	AttemptedAt     time.Time             `json:"attemptedAt"`
-	NextAttemptAt   time.Time             `json:"nextAttemptAt"`
-	IntervalMinutes int                   `json:"intervalMinutes"`
-	Failures        int                   `json:"failures"`
-	NextProfile     int                   `json:"nextProfile"`
-	Entries         []readerEntry         `json:"entries"`
+	GenerationDiscards []string               `json:"generationDiscards,omitempty"`
+	PendingAttempts    []readerProfileAttempt `json:"pendingAttempts,omitempty"`
+	SchemaVersion      int                    `json:"schemaVersion"`
+	Provider           string                 `json:"provider"`
+	GrantKey           string                 `json:"grantKey"`
+	AttemptedAt        time.Time              `json:"attemptedAt"`
+	NextAttemptAt      time.Time              `json:"nextAttemptAt"`
+	IntervalMinutes    int                    `json:"intervalMinutes"`
+	Failures           int                    `json:"failures"`
+	NextProfile        int                    `json:"nextProfile"`
+	Entries            []readerEntry          `json:"entries"`
 }
 type readerContext struct {
 	Paths      Paths
@@ -168,7 +174,7 @@ func loadReaderState(cache, provider string) (*readerState, error) {
 		return &readerState{SchemaVersion: 1, Provider: provider, Entries: []readerEntry{}}, nil
 	}
 	var s readerState
-	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 || s.Provider != provider || len(s.Entries) > 16 || s.NextProfile < 0 || s.Failures < 0 {
+	if status != "" || json.Unmarshal(b, &s) != nil || s.SchemaVersion != 1 || s.Provider != provider || len(s.Entries) > 16 || len(s.GenerationDiscards) > 16 || len(s.PendingAttempts) > 16 || s.NextProfile < 0 || s.Failures < 0 {
 		return nil, errors.New("reader cache unavailable")
 	}
 	return &s, nil
@@ -236,7 +242,15 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	}
 	generationChanged := s.GrantKey != "" && s.GrantKey != grantKey
 	if s.GrantKey != grantKey {
+		if generationChanged {
+			for _, e := range s.Entries {
+				if !contains(s.GenerationDiscards, e.ProfileKey) && len(s.GenerationDiscards) < 16 {
+					s.GenerationDiscards = append(s.GenerationDiscards, e.ProfileKey)
+				}
+			}
+		}
 		s.Entries = []readerEntry{}
+		s.PendingAttempts = nil
 		s.GrantKey = grantKey
 	}
 	index := s.NextProfile % len(profiles)
@@ -268,7 +282,11 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		return err
 	}
 	s.NextProfile = (index + 1) % len(profiles)
-	s.PendingAttempt = &readerProfileAttempt{ProfileKey: profileKey, At: now.UTC(), Discarded: generationChanged}
+	s.clearPending(profileKey)
+	if len(s.PendingAttempts) == 16 {
+		s.PendingAttempts = s.PendingAttempts[1:]
+	}
+	s.PendingAttempts = append(s.PendingAttempts, readerProfileAttempt{ProfileKey: profileKey, At: now.UTC(), GenerationChanged: generationChanged})
 	if !IdentityOff() {
 		// Allocation belongs to an authorized collection, never a cache read.
 		assignSubscription(p.Cache, readerProfileBasis(provider), profileKey, now)
@@ -293,14 +311,21 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	}
 	e.ProfileKey = profileKey
 	e.AttemptedAt = now.UTC()
-	e.Discarded = out.Invalidate || generationChanged
+	e.LoginChanged, e.GenerationChanged = out.Invalidate, generationChanged || contains(s.GenerationDiscards, profileKey)
 	if e.Status != "ok" {
 		e.LastFailure = &readerFailure{Code: readerAttemptCode(e), At: now.UTC()}
 	} else {
 		e.LastFailure = nil
-		e.Discarded = false
+		e.LoginChanged, e.GenerationChanged = false, false
+		kept := s.GenerationDiscards[:0]
+		for _, key := range s.GenerationDiscards {
+			if key != profileKey {
+				kept = append(kept, key)
+			}
+		}
+		s.GenerationDiscards = kept
 	}
-	s.PendingAttempt = nil
+	s.clearPending(profileKey)
 	if e.Status != "ok" {
 		if !out.Invalidate {
 			e.Account, e.Metadata = previous.Account, previous.Metadata
@@ -358,9 +383,23 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 // expired); never persist a notice, provider message or unknown status as a code.
 func readerAttemptCode(e readerEntry) string {
 	if e.CredentialReadState != "" {
+		// Namespace credential-store failures so a retained account's failure
+		// cannot be confused with reader consent or generic unavailability.
 		switch e.CredentialReadState {
-		case "unset", "denied", "canceled", "not-found", "unavailable", "keychain-confirmation-needed", "consent-required", "busy":
-			return e.CredentialReadState
+		case "unset", "consent-required":
+			return "keychain_unset"
+		case "denied":
+			return "keychain_denied"
+		case "canceled":
+			return "keychain_canceled"
+		case "not-found":
+			return "keychain_not_found"
+		case "unavailable":
+			return "keychain_unavailable"
+		case "keychain-confirmation-needed":
+			return "keychain_confirmation_needed"
+		case "busy":
+			return "reader_busy"
 		}
 	}
 	switch e.Status {
@@ -374,6 +413,186 @@ func readerAttemptCode(e readerEntry) string {
 }
 
 func readerProfileBasis(provider string) string { return "reader-profile:" + provider }
+
+// AppendManagedRows appends cache-only managed-reader facts to the rows input.
+// ReaderAccess must be the captured admission passed to ReadPermitted by the
+// caller. This function never rereads consent, stats credentials, collects,
+// allocates identity references or migrates a pre-rows cache.
+func AppendManagedRows(in *rows.Input, p Paths) {
+	if in == nil || p.Cache == "" || p.ReaderAccess == nil {
+		return
+	}
+	providers := make([]string, 0, len(p.ReaderAccess.Grants))
+	for provider, g := range p.ReaderAccess.Grants {
+		if n := nativeReaders[provider]; n != nil && n.Managed != nil && g.SavedLogin && g.Generation != "" {
+			providers = append(providers, provider)
+		}
+	}
+	sort.Strings(providers)
+	for _, provider := range providers {
+		g := p.ReaderAccess.Grants[provider]
+		s, err := loadReaderState(p.Cache, provider)
+		if err != nil {
+			in.Sources = append(in.Sources, rows.SourceState{ToolID: provider, Source: "native:" + provider, Status: "unavailable", ErrorCode: "other"})
+			s = &readerState{}
+		}
+		nextAttempt, budgetKnown := managedReaderNext(p.Cache, provider, s.NextAttemptAt)
+		grantKey := lookupReaderHash(p.Cache, provider+":grant", g.Generation)
+		generationChanged := s.GrantKey != "" && (grantKey == "" || s.GrantKey != grantKey)
+		for index, profile := range g.Profiles {
+			if index >= 16 {
+				break
+			}
+			key := lookupReaderHash(p.Cache, provider+":profile", profile.Root+"\x00"+profile.AccountFile)
+			// This key is correlation only. It is never an exported identity or a
+			// substitute locator; before the first collection there is no key.
+			joinKey := key
+			if joinKey == "" {
+				joinKey = "unread:" + strconv.Itoa(index)
+			}
+			f := rows.ProfileState{ToolID: provider, ProfileKey: joinKey, LatestAttempt: rows.AttemptResultNever, GenerationChanged: generationChanged || contains(s.GenerationDiscards, key),
+				NextAttemptAt: readerTime(nextAttempt), CoolingDown: !budgetKnown || in.Now.Before(nextAttempt)}
+			if !in.IdentityOff {
+				f.AccountLocator = readerString(readerProfileLocator(p.Cache, provider, key))
+			}
+			var entry *readerEntry
+			if key != "" && !generationChanged {
+				for i := range s.Entries {
+					if s.Entries[i].ProfileKey == key {
+						entry = &s.Entries[i]
+						break
+					}
+				}
+			}
+			if entry != nil {
+				e := *entry
+				f.AttemptedAt = readerTime(e.AttemptedAt)
+				f.LoginChanged = e.LoginChanged
+				f.GenerationChanged = f.GenerationChanged || e.GenerationChanged
+				if e.Status == "ok" {
+					f.LatestAttempt = rows.AttemptResultSucceeded
+				} else if e.Status == "busy" {
+					f.Busy = true
+				} else if e.Status != "" {
+					f.LatestAttempt = rows.AttemptResultFailed
+					// An older cache knows this profile failed, but not when.
+					// Never borrow the provider-wide timestamp for that profile.
+					f.LastFailure = &rows.FailureInput{Code: readerAttemptCode(e)}
+					if e.LastFailure != nil {
+						f.LastFailure.At = readerTime(e.LastFailure.At)
+					}
+				}
+				if provider == "claude" && e.CredentialReadState != "" {
+					state := readerCredentialReadState(e.CredentialReadState)
+					if state != "" {
+						in.KeychainBlocks = append(in.KeychainBlocks, rows.KeychainBlock{ToolID: provider, Status: state, Blocked: state != "busy"})
+						f.Busy = state == "busy"
+					}
+				}
+				in.Sources = append(in.Sources, rows.SourceState{ToolID: provider, Source: "native:" + provider, Status: e.Status, ErrorCode: e.ErrorCode})
+				if a := e.Account; a != nil && !f.LoginChanged && !f.GenerationChanged {
+					f.ObservedAt = readerTime(a.ObservedAt)
+					if !a.ObservedAt.IsZero() && !a.ObservedAt.After(in.Now) {
+						f.FreshUntil = readerTime(a.ObservedAt.Add(staleAfter))
+						f.WithinFreshness = in.Now.Before(*f.FreshUntil)
+					}
+					in.Accounts = append(in.Accounts, managedRowsAccount(provider, joinKey, a, p.Cache, in.Now, in.IdentityOff))
+				}
+			}
+			for _, pending := range s.PendingAttempts {
+				if key != "" && pending.ProfileKey == key && !generationChanged {
+					f.AttemptedAt = readerTime(pending.At)
+					f.LatestAttempt = rows.AttemptResultNever
+					f.Busy = in.Now.Before(pending.At.Add(nativeTimeout))
+					f.GenerationChanged = f.GenerationChanged || pending.GenerationChanged
+				}
+			}
+			in.Profiles = append(in.Profiles, f)
+		}
+	}
+}
+
+// Include reservations that survive Forget, key/login route changes and shared
+// Cursor/Grok reads. This observes exactly the persisted gates without changing
+// them; an unreadable gate cannot advertise an available refresh time.
+func managedReaderNext(cache, provider string, next time.Time) (time.Time, bool) {
+	paths := []string{readerAttemptPath(cache, provider)}
+	switch provider {
+	case "kimi":
+		paths = append(paths, kimiBudgetPath(cache))
+	case "cursor", "grok":
+		paths = append(paths, xSubscriptionPath(cache))
+	}
+	for _, path := range paths {
+		b, status := readBounded(path, 4096)
+		if status == "missing" {
+			continue
+		}
+		var gate readerAttempt
+		if status != "" || json.Unmarshal(b, &gate) != nil || gate.SchemaVersion != 1 {
+			return time.Time{}, false
+		}
+		if gate.NextAttemptAt.After(next) {
+			next = gate.NextAttemptAt
+		}
+	}
+	return next, true
+}
+
+func (s *readerState) clearPending(profileKey string) {
+	kept := s.PendingAttempts[:0]
+	for _, attempt := range s.PendingAttempts {
+		if attempt.ProfileKey != profileKey {
+			kept = append(kept, attempt)
+		}
+	}
+	s.PendingAttempts = kept
+}
+
+func readerCredentialReadState(state string) string {
+	switch state {
+	case "unset", "denied", "canceled", "not-found", "unavailable", "keychain-confirmation-needed", "consent-required", "busy":
+		return state
+	}
+	return ""
+}
+
+func readerTime(at time.Time) *time.Time {
+	if at.IsZero() {
+		return nil
+	}
+	at = at.UTC()
+	return &at
+}
+
+func readerString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func managedRowsAccount(provider, key string, a *Account, cache string, now time.Time, identityOff bool) rows.AccountInput {
+	// Evaluate only the freshly decoded cache copy, never the legacy Report or
+	// a persisted file. This reuses the quota window arithmetic/reset handling.
+	Evaluate(a, now)
+	out := rows.AccountInput{ToolID: provider, ProfileKey: key, Source: a.Source, PlanID: a.Plan, Beta: true}
+	if !identityOff {
+		out.SubscriptionRef = readerString(existingReaderSubscription(cache, provider, a.Subscription))
+	}
+	if c := a.Credits; c != nil {
+		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit}
+	}
+	for _, w := range a.Windows {
+		v := rows.WindowInput{Kind: w.Kind, Limit: w.Limit, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
+		if w.WindowMinutes > 0 {
+			seconds := int64(w.WindowMinutes) * 60
+			v.DurationSeconds = &seconds
+		}
+		out.Windows = append(out.Windows, v)
+	}
+	return out
+}
 
 func sameReaderValues(a, b *Account) bool {
 	if a == nil || b == nil {
