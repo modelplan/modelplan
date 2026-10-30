@@ -32,5 +32,7 @@ class ObservationTests(unittest.TestCase):
         self.assertFalse(verify(rows)['observationReady'])
         rows=fixture();rows[1]['status']='unsupported'
         self.assertFalse(verify(rows)['observationReady'])
+        rows=fixture();rows.append(rows[1]|dict(status='unsupported'))
+        self.assertFalse(verify(rows)['observationReady'])
 
 if __name__=='__main__':unittest.main()

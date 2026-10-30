@@ -28,6 +28,7 @@ def verify_context(rows):
             'animationGroups':groups,'WebContent':'attributed' if attributed else 'unsupported',
             'budgetVerdict':'unproven; use the canonical reducer and complete role/phase coverage',
             'observationReady':activation and all(v=='pass' for v in groups.values()) and bool(attributed)
+                and pids[-1] in attributed
                 and len({(x['pid'],x['startSeconds'],x['startMicroseconds']) for x in attributed})==1}
 
 def verify(rows):
