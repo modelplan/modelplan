@@ -9,6 +9,7 @@ import ModelPlanSettings
     public let composition: EngineDockMenuComposition
     private let settings: SettingsApplicationCoordinator
     private var status: NSStatusItem?
+    private(set) var liveStatusMenu: NSMenu?
     private var terminating = false
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
@@ -43,7 +44,9 @@ import ModelPlanSettings
         Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
     }
     private func renderMenu() {
-        let menu = NSMenu()
+        let menu = liveStatusMenu ?? NSMenu()
+        if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
+        menu.removeAllItems()
         let reading = NSMenuItem(title: composition.menuPresentation.detail, action: nil, keyEquivalent: "")
         reading.isEnabled = false; menu.addItem(reading)
         let refresh = menu.addItem(withTitle: "Refresh / 刷新", action: #selector(refreshRows), keyEquivalent: "")
@@ -53,7 +56,7 @@ import ModelPlanSettings
         let consoleItem = menu.addItem(withTitle: "Dock readings… / Dock 读数…", action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
         menu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.delegate = self; status?.menu = menu
+        menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
         let image = CommunityMenuBarResources.templateImage()
         image?.isTemplate = true
         status?.button?.image = image; status?.button?.contentTintColor = nil

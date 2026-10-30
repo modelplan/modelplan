@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "unit": "U6",
-  "id": "U6-DockMenu-empty-synthetic",
+  "id": "U6-DockMenu-synthetic",
   "profile": "synthetic",
   "maximumSeconds": 1200,
   "entryProduct": "ModelPlanCommunityApp",
@@ -20,6 +20,7 @@
     "open the ModelPlan status menu",
     "deliver the Refresh action once",
     "observe the same source state or explicit failure",
+    "while retaining/tracking menus with a prior synthetic private title, trigger an approved generation/epoch clear and verify those same instances are dismissed/scrubbed",
     "quit through the owned application and verify cleanup"
   ],
   "forbidden": [
@@ -29,5 +30,5 @@
     "legacy quota transport",
     "GUI run before matching release/lease and start announcement"
   ],
-  "proofLimit": "Physical Dock/menu delivery only. No owner freshness, official appearance, performance budget or L2/L3 claim from this scenario alone."
+  "proofLimit": "Physical Dock/menu delivery only. No owner freshness, official appearance, performance budget or L2/L3 claim from this scenario alone. A clear proof requires a visible synthetic private title before invalidation; an initially empty menu cannot establish it."
 }

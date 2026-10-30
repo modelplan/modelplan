@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-# ModelPlanEngineStore (U6 interface only)
+# ModelPlanEngineStore (U6 wired source)
 
 A native UI-state consumer of the merged ModelPlanEngineClient package. The store
 delegates accepted-value storage to ModelPlanEngineStoreCore, applies its clear
@@ -8,10 +8,11 @@ snapshots. It does not implement transport, process supervision, session/epoch/
 generation/sequence acceptance, row classification, or credential access.
 
 EngineStoreConnection constructs the actual ProcessEngineClient with this store
-as its consumer. Construction has no process effects. The existing app entry is
-not switched in this stage: completion of U6 requires the normal app entry to
-retain/start/stop this pair and use it for the Dock/menu/Settings surfaces after
-U5 and the rest of the feature chain are ready. The old path is not deleted here.
+as its consumer. Construction has no process effects. The normal community entry
+now retains the pair through EngineRowsEntry and EngineDockMenuComposition,
+starts/subscribes the client and drives Dock/status-menu content from accepted
+rows. Explicit legacy probe/smoke routes remain separate. This is wired source,
+not final-package, physical-input or owner acceptance.
 
 ## Consumer contract
 
@@ -32,8 +33,12 @@ U5 and the rest of the feature chain are ready. The old path is not deleted here
 - Configuration is explicit and passed directly to the real client. There is
   no new environment whitelist: its generated Go-owned WireChildEnvironment
   contract remains authoritative.
-- UI filtering/order/clock rendering and actual surfaces are later wiring;
-  they may not reconstruct engine membership or introduce a second reducer.
+- The native host adapter owns presentation only; menu preference parity and
+  broader Settings/cockpit integration remain follow-up work. It must never
+  reconstruct engine membership or add another protocol reducer.
+- Tracked menu objects and their retained item titles/attributed titles/tooltips
+  are scrubbed synchronously before clear acknowledgement. Merely replacing a
+  menu for the next opening is insufficient.
 
 Tests consume the repository's real Go-generated captures through WireDecoder.
 They cover row identity fanout, acknowledgement ordering/private clear, feature
@@ -42,6 +47,11 @@ do not start a process or GUI and cannot earn normal-entry, package L2 or L3.
 
 Run: `swift test --package-path desktop/native/ModelPlanEngineStore`.
 
-Next: wire the normal app entry and U5 surfaces, exercise the reviewed real
-app-server binary and versioned synthetic homes, then obtain the package-level
-and real-input evidence. Interface acceptance never closes the owner issues.
+The integration tests additionally use the normal entry factory and actual
+no-window Dock/status menu objects. Tracking is simulated through AppKit menu
+notifications; retained old menus/items are checked inside the clear callback,
+while an unrelated menu remains unchanged. Physical tracking still needs Drive.
+
+Next: exercise a matched real app-server candidate with the versioned synthetic
+profile, including clear while menus are tracked, then obtain package-level and
+real-input evidence. Source checks never close owner issues.

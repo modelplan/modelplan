@@ -27,8 +27,10 @@ import ModelPlanCommunityHost
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels)
+        adapter.bindDockMenuTracking(dock)
         dock.setDockContentProvider(adapter)
         provider.dockContentDidChange = { [weak self] in
+            self?.adapter.scrubInvalidatedMenus()
             self?.dock.refreshDockContent(); self?.menuDidChange?()
         }
     }

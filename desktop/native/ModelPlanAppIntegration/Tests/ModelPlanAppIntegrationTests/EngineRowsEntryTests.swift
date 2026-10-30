@@ -81,12 +81,35 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Engine-only reason"))
         XCTAssertNil(app.composition.dock.nativePanel)
+        // Simulate tracking while retaining the actual instances that were already displayed.
+        let trackedStatus = try XCTUnwrap(app.liveStatusMenu)
+        let trackedDock = app.composition.dock.menu()
+        app.menuWillOpen(trackedStatus); app.composition.dock.menuWillOpen(trackedDock)
+        NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: trackedDock)
+        let retainedButUntrackedDock = app.composition.dock.menu()
+        let unrelated = NSMenu()
+        unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
+        let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items
+        let retainedReading = try XCTUnwrap(retainedItems.first { $0.title.contains("Engine-only reason") })
+        retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")
+        retainedReading.toolTip = "Engine-only reason"
+        retainedReading.representedObject = "Engine-only reason"
+        XCTAssertTrue(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
+        XCTAssertTrue(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
         var clearObservedBeforeReturn = false
         let originalMenuChange = app.composition.menuDidChange
         app.composition.menuDidChange = {
             originalMenuChange?()
             if app.composition.provider.dockContent.status == .cleared {
                 clearObservedBeforeReturn = true
+                XCTAssertFalse(trackedStatus.items.contains { $0.title.contains("Engine-only reason") }, "The tracked status menu must be scrubbed before acknowledgement")
+                XCTAssertFalse(trackedDock.items.contains { $0.title.contains("Engine-only reason") }, "The tracked Dock menu must be scrubbed before acknowledgement")
+                XCTAssertFalse(retainedButUntrackedDock.items.contains { $0.title.contains("Engine-only reason") })
+                XCTAssertEqual(unrelated.items.first?.title, "Unrelated synthetic title", "Only this app composition's owned menus may be scrubbed")
+                XCTAssertFalse(retainedItems.contains { $0.title.contains("Engine-only reason") }, "Retained item instances must also lose private titles")
+                XCTAssertNil(retainedReading.attributedTitle)
+                XCTAssertNil(retainedReading.toolTip)
+                XCTAssertNil(retainedReading.representedObject)
                 XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
                 XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
             }
@@ -95,6 +118,7 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
         XCTAssertEqual(consoleSurface?.lastRows, [])
+        app.composition.dock.menuDidClose(trackedDock)
         XCTAssertTrue(clearObservedBeforeReturn)
         XCTAssertTrue(app.composition.provider.dockContent.dockRows.isEmpty)
         await app.composition.stop()

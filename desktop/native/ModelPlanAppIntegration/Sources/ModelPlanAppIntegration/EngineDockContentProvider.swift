@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import AppKit
 import ModelPlanEngineStore
 import ModelPlanDock
 import ModelPlanWire
 
 /// Shared host seam backed only by admitted app-server rows. Legacy context data is unused.
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
+    private let liveMenus = LivePrivateMenus()
+    func bindDockMenuTracking(_ host: StaticDockPreviewHost) { liveMenus.watch(host) }
+    func scrubInvalidatedMenus() { if source.dockContent.status == .cleared { liveMenus.scrubAll() } }
     public let source: EngineDockMenuProvider
     public init(source: EngineDockMenuProvider) { self.source = source }
     public func makeContent(_ context: DockContentContext) -> DockContent {

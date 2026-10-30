@@ -2,7 +2,7 @@
 """U6-only receipt qualification; shared Evidence remains the manifest/hash owner."""
 import argparse, importlib.util, json
 from pathlib import Path
-REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menuInputDelivered', 'menuStateVisible', 'quitDelivered', 'ownedCleanupVerified')
+REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menuInputDelivered', 'menuStateVisible', 'quitDelivered', 'ownedCleanupVerified', 'privateTitleObservedBeforeClear', 'trackedMenuClearObserved')
 def qualify(receipt):
     if receipt.get('profile') != 'synthetic': raise ValueError('synthetic profile required')
     if receipt.get('timedOut') is True: return 'timeout'
@@ -24,9 +24,9 @@ def main():
     outcome = qualify(receipt)
     spec = importlib.util.spec_from_file_location('shared_evidence',Path(__file__).with_name('evidence.py'))
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
-    config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-empty-synthetic',outcome=outcome)],files=receipt.get('actionEvidenceFiles',[]))
+    config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-synthetic',outcome=outcome)],files=receipt.get('actionEvidenceFiles',[]))
     result = shared.manifest(config,args.batch)
     result['subject'] = {key:receipt.get(key) for key in ('headSHA','binarySHA256','packageSHA256','profileSHA256')}
     with (args.batch/'manifest.json').open('x') as stream: json.dump(result,stream,indent=2)
-    print(json.dumps(dict(scenario='U6-DockMenu-empty-synthetic',outcome=outcome)))
+    print(json.dumps(dict(scenario='U6-DockMenu-synthetic',outcome=outcome)))
 if __name__ == '__main__': main()
