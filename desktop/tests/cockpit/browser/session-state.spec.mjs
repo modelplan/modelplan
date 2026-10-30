@@ -17,6 +17,12 @@ async function mount(page) {
     window.__sessionModel=new SessionStateTracker();
     window.__sessionIndicator=mountSessionState(root,window.__sessionModel,'synthetic-session','idle',()=>window.__sessionTime);
     window.__changeSession=(state,time)=>{window.__sessionTime=time;return window.__sessionIndicator.update(state);};
+    // Keep one observer and wait for its delivered changes. A fresh matches
+    // read sees emulated preferences before WebKit reports changes to existing
+    // listeners; two flips in that gap may coalesce into no notification.
+    window.__sessionMotion=matchMedia('(prefers-reduced-motion: reduce)');
+    window.__sessionMotionDelivered=window.__sessionMotion.matches;
+    window.__sessionMotion.addEventListener('change',event=>{window.__sessionMotionDelivered=event.matches;});
   });
 }
 test('two opacity steps, coalesced state transitions and a per-session cooldown without timers',async({page})=>{
@@ -49,21 +55,40 @@ test('hidden and reduced-motion states cancel; becoming visible never replays',a
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect.poll(()=>page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>window.__sessionMotionDelivered)).toBe(true);
   await expect(page.locator('#session-probe')).not.toHaveClass(/is-flashing/);
   expect(await page.evaluate(()=>window.__changeSession('error',60_100).flash)).toBe(false);
+  await expect(page.locator('#session-probe')).toHaveAttribute('data-state','error');
+  expect(await page.locator('#session-probe').evaluate(root=>({opacity:getComputedStyle(root).opacity,animation:getComputedStyle(root).animationName}))).toEqual({opacity:'1',animation:'none'});
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   await page.emulateMedia({reducedMotion:'no-preference'});
   await expect.poll(()=>page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>window.__sessionMotionDelivered)).toBe(false);
   expect(await page.evaluate(()=>window.__changeSession('error',90_100).flash)).toBe(false);
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   expect(await page.evaluate(()=>window.__changeSession('working',120_100).flash)).toBe(true);
+  await page.evaluate(()=>{
+    // Hold the finite effect so this proves cancellation of an actual flash,
+    // rather than passing because it finished naturally between tool calls.
+    const animation=document.getElementById('session-probe').getAnimations()[0];
+    if(!animation)throw Error('Expected a live transition flash before cancellation');
+    animation.pause();
+  });
+  await expect(page.locator('#session-probe')).toHaveClass(/is-flashing/);
   await page.emulateMedia({reducedMotion:'reduce'});
   await expect.poll(()=>page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>window.__sessionMotionDelivered)).toBe(true);
   await expect(page.locator('#session-probe')).not.toHaveClass(/is-flashing/);
+  expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
+  expect(await page.locator('#session-probe').evaluate(root=>getComputedStyle(root).opacity)).toBe('1');
+  expect(await page.evaluate(()=>window.__changeSession('done',150_100).flash)).toBe(false);
+  await expect(page.locator('#session-probe')).toHaveAttribute('data-state','done');
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   await page.emulateMedia({reducedMotion:'no-preference'});
   await expect.poll(()=>page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>window.__sessionMotionDelivered)).toBe(false);
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
+  expect(await page.evaluate(()=>window.__sessionCounts)).toEqual({raf:0,timers:0});
   await page.evaluate(()=>{window.__sessionIndicator.dispose();window.__sessionModel.clear();});
   await expect(page.locator('#session-probe')).not.toHaveAttribute('data-state');
 });
