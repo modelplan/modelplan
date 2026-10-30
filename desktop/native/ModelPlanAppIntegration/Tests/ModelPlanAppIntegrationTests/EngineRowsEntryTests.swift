@@ -48,6 +48,32 @@ private actor RowsEntryClient: EngineClient {
     func hide() {}
 }
 @MainActor final class EngineRowsEntryTests: XCTestCase {
+    func testNormalEntryStoreReadsMigratedSettingsAndCoreAfterRestart() async throws {
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("u6-migration-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let native = support.appendingPathComponent("ModelPlan/Native")
+        try FileManager.default.createDirectory(at: native, withIntermediateDirectories: true)
+        let settings = native.appendingPathComponent("settings-v1.json")
+        let core = native.appendingPathComponent("community-v1.json")
+        let oldSettings = Data(#"{\"schemaVersion\":1,\"preferences\":{\"theme\":\"day\",\"dockEdge\":\"bottom\"}}"#.replacingOccurrences(of: "\\\"", with: "\"").utf8)
+        let oldCore = Data(#"{\"schemaVersion\":1,\"localeIdentifier\":\"en\",\"favouriteModelIDs\":[\"legacy-model\"]}"#.replacingOccurrences(of: "\\\"", with: "\"").utf8)
+        try oldSettings.write(to: settings); try oldCore.write(to: core)
+        let first = try EngineRowsEntry.makeSettingsStore(applicationSupport: support)
+        let initial = await first.snapshot(); let initialCore = await first.coreSnapshot()
+        XCTAssertEqual(initial.preferences.dockEdge, .bottom)
+        XCTAssertEqual(initialCore?.favouriteModelIDs, ["legacy-model"])
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: first, createsNativePanels: false)
+        let appCore = await app.coreSnapshot()
+        XCTAssertEqual(appCore?.favouriteModelIDs, ["legacy-model"])
+        _ = try await app.updateCore(.init(localeIdentifier: "en", favouriteModelIDs: ["updated-model"]))
+        let restarted = try EngineRowsEntry.makeSettingsStore(applicationSupport: support)
+        let after = await restarted.snapshot(); let afterCore = await restarted.coreSnapshot()
+        XCTAssertEqual(after.preferences.dockEdge, .bottom)
+        XCTAssertEqual(afterCore?.favouriteModelIDs, ["updated-model"])
+        XCTAssertEqual(try Data(contentsOf: settings), oldSettings)
+        XCTAssertEqual(try Data(contentsOf: core), oldCore)
+    }
     func testNormalEntryFactoryFeedsActualDockAndMenuThenWithdrawsBeforeClearAck() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u6-entry-" + UUID().uuidString)

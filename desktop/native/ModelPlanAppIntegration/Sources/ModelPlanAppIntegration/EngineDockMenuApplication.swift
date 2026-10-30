@@ -8,6 +8,7 @@ import ModelPlanSettings
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
     private let settings: SettingsApplicationCoordinator
+    public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
@@ -29,6 +30,7 @@ import ModelPlanSettings
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, makeClient: makeClient)
         self.composition = composition
+        self.foundationStore = settingsStore
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
@@ -49,6 +51,11 @@ import ModelPlanSettings
         guard ready != lastAboutConnectionReady else { return }
         lastAboutConnectionReady = ready
         settings.update(context: contextSource.make(engineReady: ready))
+    }
+    /// Core preferences share the exact foundation store used by Settings.
+    public func coreSnapshot() async -> FoundationCorePreferences? { await foundationStore.coreSnapshot() }
+    @discardableResult public func updateCore(_ value: FoundationCorePreferences, expectedRevision: UInt64? = nil) async throws -> SettingsSnapshot {
+        try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }

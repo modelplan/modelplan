@@ -135,7 +135,7 @@ import ModelPlanWire
     @MainActor private static func runEngineRows() {
         do {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            let preferences = try SettingsStore(url: support.appendingPathComponent("ModelPlan/Native/settings-v1.json"))
+            let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: support)
             let app = EngineRowsEntry.make(configuration: .init(
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
