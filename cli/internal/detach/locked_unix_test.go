@@ -69,41 +69,21 @@ func TestStartLockedDoesNotStackChildrenAndKilledWorkerReleasesLock(t *testing.T
 			_, _ = grandchild.Wait()
 		}
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(marker); err == nil {
-			pid, err := strconv.Atoi(string(b))
-			if err != nil {
-				t.Fatal(err)
-			}
-			child, err = os.FindProcess(pid)
-			if err != nil {
-				t.Fatal(err)
-			}
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	pid, err := waitPIDFile(marker, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if child == nil {
-		t.Fatal("detached worker did not start")
+	child, err = os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
 	}
-	deadline = time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(grandchildMarker); err == nil {
-			pid, err := strconv.Atoi(string(b))
-			if err != nil {
-				t.Fatal(err)
-			}
-			grandchild, err = os.FindProcess(pid)
-			if err != nil {
-				t.Fatal(err)
-			}
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
+	pid, err = waitPIDFile(grandchildMarker, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if grandchild == nil {
-		t.Fatal("synthetic provider child did not start")
+	grandchild, err = os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
 	}
 	for i := 0; i < 8; i++ {
 		if err := StartLocked(path, "-test.run=^TestLockedWorkerHelper$"); err == nil {
@@ -127,4 +107,50 @@ func TestStartLockedDoesNotStackChildrenAndKilledWorkerReleasesLock(t *testing.T
 		t.Fatal(fmt.Errorf("killed child left scheduling locked: %w", err))
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+}
+
+// waitPIDFile is test-only: production retains a flock inode, not a PID file.
+func waitPIDFile(path string, timeout time.Duration) (int, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(path); err == nil {
+			return strconv.Atoi(string(b))
+		} else if !os.IsNotExist(err) {
+			return 0, err
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return 0, fmt.Errorf("timed out waiting for PID publication")
+}
+
+func TestWaitPIDFileDoesNotConsumeEmptyPublication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pid")
+	// os.WriteFile creates/truncates the path before writing the bytes. Hold
+	// exactly that publication window open while the reader starts.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	type result struct {
+		pid int
+		err error
+	}
+	read := make(chan result, 1)
+	go func() {
+		pid, err := waitPIDFile(path, time.Second)
+		read <- result{pid, err}
+	}()
+	select {
+	case r := <-read:
+		t.Fatalf("reader consumed an empty publication: pid=%d err=%v", r.pid, r.err)
+	case <-time.After(10 * time.Millisecond):
+	}
+	if _, err := f.WriteString(strconv.Itoa(os.Getpid())); err != nil {
+		t.Fatal(err)
+	}
+	r := <-read
+	if r.err != nil || r.pid != os.Getpid() {
+		t.Fatalf("completed PID publication: pid=%d err=%v", r.pid, r.err)
+	}
 }
