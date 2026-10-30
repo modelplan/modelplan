@@ -3,14 +3,17 @@
 import argparse,hashlib,json,math,os,subprocess,time
 from pathlib import Path
 from book import admit
+def validate_release(lease,release):
+    if not isinstance(release,dict):raise ValueError('release missing')
+    for k in ('runID','epoch','notBefore','expiresAt'):
+        if not lease.get(k) or lease[k]!=release.get(k):raise ValueError('lease/release identity mismatch')
+    if (release.get('m1Released') is not True and release.get('guardianGO') is not True) or release.get('m0DirectedAnnouncementConfirmed') is not True:raise ValueError('release missing')
 def validate(config,now):
     if config.get('profile')!='synthetic':raise ValueError('synthetic profile required')
     pin=config.get('binarySHA256','')
     if not isinstance(pin,str) or len(pin)!=64 or any(c not in '0123456789abcdef' for c in pin):raise ValueError('explicit binary SHA256 required')
     lease=config['lease'];release=config['release']
-    for k in ('runID','epoch','notBefore','expiresAt'):
-        if not lease.get(k) or lease[k]!=release.get(k):raise ValueError('lease/release identity mismatch')
-    if (release.get('m1Released') is not True and release.get('guardianGO') is not True) or release.get('m0DirectedAnnouncementConfirmed') is not True:raise ValueError('release missing')
+    validate_release(lease,release)
     values=[now,lease['notBefore'],lease['expiresAt'],lease.get('guardianHeartbeatAt'),config.get('requiredSeconds')]
     if any(type(x) not in (int,float) or not math.isfinite(x) for x in values):raise ValueError('invalid timing')
     if not 0<lease['expiresAt']-lease['notBefore']<=1200:raise ValueError('absolute window invalid')

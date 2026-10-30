@@ -2,21 +2,27 @@
 # Single-Mac GUI booking queue
 
 M2 owns the verification skill and reviews its admission integration. `book.py`
-provides cooperative FIFO scheduling on DevShared. It does **not** grant a GUI
+provides cooperative FIFO scheduling on the approved shared filesystem. It does **not** grant a GUI
 lease, coordinator GO, foreground permission or permission to use owner data.
 Launch's existing release, guardian, deadline and synthetic-profile checks still
 apply. Non-GUI builds/tests and Launch's contract-only validation need no booking.
 
-The shared ledger is
-`/mnt/shared/modelplan/handoffs/gui-bookings/ledger.jsonl`. All lanes using the
-same test Mac must use that ledger. `--ledger` and the config's `booking.ledger`
-override are for isolated qualification fixtures, not independent real-run queues.
+Use the shared ledger path configured by the coordinator. All lanes using the
+same test Mac must use that ledger. There is no built-in path: pass `--ledger`
+before the subcommand or set `MODELPLAN_BOOKING_LEDGER`. Launch/Drive use the
+run config's `booking.ledger` or that same environment variable. An explicit
+CLI/config path takes precedence over the environment. Missing or blank
+configuration refuses with a clear error before opening a ledger. Isolated
+qualification fixtures use their own temporary ledger, never an independent
+real-run queue.
 The ledger is a coordination record, not a security boundary; its writers are
 trusted lanes on the approved share.
 
 ## One session, one unit, several scenarios
 
-From the checkout root (invoke all commands with `python3`):
+From the checkout root (invoke all commands with `python3`), set
+`MODELPLAN_BOOKING_LEDGER` to the shared ledger path configured by the coordinator
+before using these commands:
 
 ```sh
 python3 desktop/native/verification/bin/book.py request \
@@ -28,11 +34,32 @@ python3 desktop/native/verification/bin/book.py start \
 
 `request` prints the booking ID and serialized sequence. Arrival means append
 order under the lock, not the timestamp at which a process was spawned. The
-head is the oldest request not finished or expired. `start` succeeds exactly
+head is the oldest request not finished, expired or withdrawn. `start` succeeds exactly
 once, only for that head and lane. Non-head callers stop and await the
 coordinator's handoff; do not poll/start in a busy-retry loop. A queued request
 does not hold the Mac. Make requests for ready work; an abandoned, unstarted
-head requires coordinator resolution and is never silently skipped by expiry.
+head requires explicit `withdraw` and is never silently skipped by expiry.
+
+## Withdraw queued work
+
+The requesting lane may withdraw its queued booking, including a non-head
+booking. The coordinator resolution path for an abandoned queued head is:
+
+```sh
+python3 desktop/native/verification/bin/book.py withdraw \
+  --id BOOKING_ID --coordinator --reason "requesting lane unavailable"
+```
+
+For an owner-initiated withdrawal, use `--lane M2` instead of `--coordinator`.
+Both forms require a nonempty printable reason (at most 128 characters). The
+event records the actor and reason, retains the booking in history as
+`withdrawn`, and advances the head when necessary. It does not attest cleanup
+or authorize a GUI session. A started or terminal booking cannot be withdrawn;
+started work still uses finish or expiry and the existing closure checks.
+The explicit coordinator flag is an attestation by trusted share writers,
+not an authentication mechanism. Never impersonate another requesting lane.
+
+## Run the booked session
 
 `--minutes` is an integer from 1 through 20, default 20. The absolute booking
 deadline is start time plus this duration. Every scenario in the group must be
@@ -67,6 +94,14 @@ setup and before each preflight/measurement launch. Missing, non-head, unstarted
 expired or mismatched bookings refuse execution. Drive's heavy-resource admission
 is one attempt: if another reservation exists or races it, stop, release only
 this attempt's resources and report to the coordinator. No GUI busy-retry loop.
+
+Both tools require `releasePath` in the run config, pointing to the existing
+coordinator-directed release file. Drive reads and checks this external release
+before starting any child (including its guardian), then rereads it before each
+subject launch. It never manufactures release approval from a lease. The file
+must match the run/epoch and absolute lease start/expiry, confirm the directed
+announcement, and attest `m1Released` or `guardianGO`. Missing, false, revoked or
+mismatched release records refuse execution.
 
 After all grouped scenarios and the shared Cleanup procedure, confirm closure
 and finish explicitly:

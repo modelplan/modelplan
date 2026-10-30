@@ -75,6 +75,12 @@ for (const [p, sha] of Object.entries(listed)) {
 }
 for (const p of tracked) {
   const bytes = await read(p);
+  if (p.startsWith("desktop/native/verification/") || p.startsWith("tools/")) {
+    assert.ok(
+      !/\/(?:mnt|home)\//.test(bytes.toString()),
+      `verification/tools must use configured paths, not owner mount/home literals: ${p}`,
+    );
+  }
   if (!inReserved(p)) {
     assert.ok(
       !spdxReserved.test(bytes.toString()),

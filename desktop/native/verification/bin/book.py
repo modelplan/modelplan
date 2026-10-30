@@ -14,7 +14,6 @@ import sys
 import time
 import uuid
 
-DEFAULT_LEDGER = Path('/mnt/shared/modelplan/handoffs/gui-bookings/ledger.jsonl')
 MAX_SECONDS = 20 * 60
 GRACE_SECONDS = 120
 PROCESS_TOKEN = uuid.uuid4().hex
@@ -32,7 +31,11 @@ def finite(value):
 
 
 class Ledger:
-    def __init__(self, path=DEFAULT_LEDGER, *, clock=time.time, lock_timeout=5):
+    def __init__(self, path=None, *, clock=time.time, lock_timeout=5):
+        if path is None:
+            path = os.environ.get('MODELPLAN_BOOKING_LEDGER')
+        if path is None or not str(path).strip():
+            raise ValueError('shared ledger required: pass --ledger (booking.ledger in run config) or set MODELPLAN_BOOKING_LEDGER')
         self.path = Path(path)
         self.clock = clock
         self.lock_timeout = lock_timeout
@@ -107,6 +110,11 @@ class Ledger:
                 bookings[ident] = dict(event, state='queued')
                 continue
             booking = bookings[ident]
+            if kind == 'withdraw':
+                Ledger.check_withdraw(booking, event['lane'], event['coordinator'], event['reason'])
+                booking.update(state='withdrawn', endedAt=event['at'], reason=event['reason'],
+                               withdrawnBy='coordinator' if event['coordinator'] else event['lane'])
+                continue
             head = next((b for b in bookings.values() if b['state'] in ('queued', 'started')), None)
             if booking is not head:
                 raise ValueError('transition outside queue head')
@@ -147,6 +155,15 @@ class Ledger:
         return next((b for b in bookings.values() if b['state'] in ('queued', 'started')), None)
 
     @staticmethod
+    def check_withdraw(booking, lane, coordinator, reason):
+        label(reason, 'reason')
+        if (booking is None or booking['state'] != 'queued'
+                or type(coordinator) is not bool
+                or (coordinator and lane is not None)
+                or (not coordinator and lane != booking['lane'])):
+            raise ValueError('only the requesting lane or coordinator may withdraw a queued booking')
+
+    @staticmethod
     def owner(booking, ident, lane, run_id, epoch):
         if (booking is None or booking['id'] != ident or booking['lane'] != lane
                 or booking['state'] != 'started' or booking['runID'] != run_id or booking['epoch'] != epoch):
@@ -163,7 +180,7 @@ class Ledger:
             head = self.head(bookings)
             return dict(at=now, events=len(events), head=head,
                         queue=[b for b in bookings.values() if b['state'] in ('queued', 'started')],
-                        history=[b for b in bookings.values() if b['state'] in ('finished', 'expired')],
+                        history=[b for b in bookings.values() if b['state'] in ('finished', 'expired', 'withdrawn')],
                         expiryEligible=bool(head and head['state'] == 'started' and now >= head['deadline'] + GRACE_SECONDS))
 
     def start(self, ident, lane, run_id, epoch):
@@ -189,6 +206,12 @@ class Ledger:
             return self.append(file, events, now, 'expire', head['id'], cleaned=None,
                                reason='max duration plus grace elapsed; cleanup unconfirmed')
 
+    def withdraw(self, ident, lane=None, *, coordinator=False, reason):
+        with self.locked(lane=lane) as (file, events, bookings, now):
+            self.check_withdraw(bookings.get(ident), lane, coordinator, reason)
+            return self.append(file, events, now, 'withdraw', ident,
+                               lane=lane, coordinator=coordinator, reason=reason)
+
     def admit(self, booking, lease, required_seconds):
         with self.locked(lane=booking.get('lane'), unit=booking.get('unit')) as (_, events, bookings, now):
             head = self.head(bookings)
@@ -210,14 +233,14 @@ def admit(config):
     if not isinstance(booking, dict):
         raise ValueError('GUI execution requires a started head booking')
     try:
-        return Ledger(booking.get('ledger', DEFAULT_LEDGER)).admit(booking, config['lease'], config['requiredSeconds'])
+        return Ledger(booking.get('ledger')).admit(booking, config['lease'], config['requiredSeconds'])
     except (KeyError, TypeError) as error:
         raise ValueError('incomplete GUI booking identity') from error
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--ledger', type=Path, default=DEFAULT_LEDGER)
+    parser.add_argument('--ledger', help='shared ledger configured by the coordinator; otherwise MODELPLAN_BOOKING_LEDGER')
     commands = parser.add_subparsers(dest='command', required=True)
     request = commands.add_parser('request')
     request.add_argument('--lane', required=True); request.add_argument('--unit', required=True)
@@ -229,12 +252,19 @@ def main(argv=None):
             action.add_argument('--' + flag, required=True)
         if command == 'finish':
             action.add_argument('--cleaned', action='store_true', required=True)
+    withdraw = commands.add_parser('withdraw')
+    withdraw.add_argument('--id', required=True)
+    actor = withdraw.add_mutually_exclusive_group(required=True)
+    actor.add_argument('--lane'); actor.add_argument('--coordinator', action='store_true')
+    withdraw.add_argument('--reason', required=True)
     commands.add_parser('status'); commands.add_parser('expire')
     args = parser.parse_args(argv)
-    ledger = Ledger(args.ledger)
     try:
+        ledger = Ledger(args.ledger)
         if args.command == 'request':
             result = ledger.request(args.lane, args.unit, args.scenarios, args.minutes * 60)
+        elif args.command == 'withdraw':
+            result = ledger.withdraw(args.id, args.lane, coordinator=args.coordinator, reason=args.reason)
         elif args.command in ('start', 'finish'):
             fields = dict(cleaned=args.cleaned) if args.command == 'finish' else {}
             result = getattr(ledger, args.command)(args.id, args.lane, args.run_id, args.epoch, **fields)
