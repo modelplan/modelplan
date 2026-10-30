@@ -161,8 +161,9 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
             finally:
                 try:
                     terminate(process)
-                except Exception:
+                except Exception as exc:
                     cleanup_errors.append('owned-process-cleanup-unconfirmed')
+                    cleanup_errors.append(type(exc).__name__ + '-errno-' + str(getattr(exc, 'errno', 'none')))
     return cleanup_errors
 
 

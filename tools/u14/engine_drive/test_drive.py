@@ -47,7 +47,7 @@ class DriveTests(unittest.TestCase):
         self.assertIn('released-subject-required', result['qualification'])
         self.assertIn('coordinator-shape-approval-required', result['qualification'])
         self.assertTrue(all(s['outcome'] == 'unsupported' for s in result['scenarios']))
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
         self.assertFalse((self.args.output / '.work').exists())
 
     def test_hosted_mac_is_l1_even_with_approved_inputs(self):
@@ -67,7 +67,7 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop' for s in result['scenarios']))
         self.assertEqual(result['subject']['binarySHA256'], release.sha(self.binary.read_bytes()))
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_timeout_reaps_owned_worker_and_keeps_outcome(self):
         # A real stalled subject exercises supervisor/worker process-group cleanup.
@@ -76,7 +76,7 @@ class DriveTests(unittest.TestCase):
             status, result = self.execute()
         self.assertEqual(status, 1)
         self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
         self.assertFalse((self.args.output / '.work').exists())
 
     def test_absolute_deadline_marks_active_case_timeout_and_rest_not_run(self):
@@ -87,7 +87,7 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
         self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_stop_during_case_ends_owned_process_and_keeps_remaining_not_run(self):
         self.args.stop_file = self.root / 'stop-during'
@@ -99,7 +99,7 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
                             for s in result['scenarios']))
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_cleanup_failure_keeps_original_results_and_durable_evidence(self):
         def finish(args, output, scratch, manifest, *rest):
@@ -126,7 +126,7 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertEqual(result['outcome'], 'not-run')
         self.assertTrue(all(s['reason'] == 'preflight-or-harness-failed' for s in result['scenarios']))
-        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
     def test_annotated_release_tag_resolves_to_commit_not_tag_object(self):
         tag = io.BytesIO(json.dumps(dict(object=dict(type='tag', sha='a' * 40))).encode())
