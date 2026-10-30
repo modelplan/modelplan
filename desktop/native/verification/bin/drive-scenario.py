@@ -2,7 +2,7 @@
 """One announced U11a attempt. No account access, input synthesis or PID discovery."""
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
-from launch import validate
+from launch import validate,admit
 from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
@@ -75,10 +75,11 @@ class Attempt:
         home=self.scratch/'home'/mode;tmp=self.scratch/'tmp'/mode;home.mkdir(parents=True);tmp.mkdir(parents=True)
         cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'])
         file=self.scratch/(mode+'-config.json');write(file,cfg)
-        console=(self.scratch/(mode+'-console.log')).open('x')
-        lease=read(self.lease);validate(dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists()),time.time())
-        self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
-        console.close();ident=cleanup.identity(self.app.pid)
+        lease=read(self.lease);contract=dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists(),booking=self.c.get('booking'))
+        validate(contract,time.time());admit(contract)
+        with (self.scratch/(mode+'-console.log')).open('x') as console:
+            self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
+        ident=cleanup.identity(self.app.pid)
         if not ident:raise RuntimeError('subject-identity-unavailable')
         self.children.append((self.app,ident|dict(role=mode)))
     def ready(self):
@@ -119,22 +120,19 @@ class Attempt:
     def run(self):
         c=self.c
         if not valid(c,time.time()):raise ValueError('announcement/GO/window/remaining-time invalid')
+        admit(dict(booking=c.get('booking'),lease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),requiredSeconds=690))
         if hashlib.sha256(Path(c['binary']).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary changed')
         if check(Path(c['inputRoot']),c['entry']):raise ValueError('relative-module-dependencies-missing')
         self.out.mkdir(exist_ok=False);self.scratch.mkdir(exist_ok=False)
         write(self.out/'README.json',dict(purpose='U11a synthetic observation; actual outcomes follow',runID=c['runID'],epoch=c['epoch'],head=c['head'],source='native-self-counters',noRealAccounts=True))
         locks=Path(c['locks']);self.lock=locks/'M1-candidate-gui';self.lock.mkdir();write(self.lock/'owner.json',dict(runID=c['runID'],epoch=c['epoch'],pid=os.getpid()))
-        self.slot=None;reported=False
-        while self.slot is None:
-            if c['expiresAt']-time.time()<690:raise RuntimeError('resource-wait-left-insufficient-run-time')
-            if list(locks.glob('slot*')):
-                if not reported:print('Waiting for existing project heavy reservation',flush=True);reported=True
-                time.sleep(.25);continue
-            for n in (1,2):
-                try:p=locks/f'slot{n}';p.mkdir();self.slot=p;write(p/'owner.json',dict(runID=c['runID'],pid=os.getpid()));break
-                except FileExistsError:pass
-            if self.slot is not None and len(list(locks.glob('slot*')))>1:
-                (self.slot/'owner.json').unlink();self.slot.rmdir();self.slot=None
+        self.slot=None
+        if list(locks.glob('slot*')):raise RuntimeError('resource-busy; stop and report, do not busy-retry')
+        p=locks/'slot1'
+        try:p.mkdir()
+        except FileExistsError:raise RuntimeError('resource-busy; stop and report, do not busy-retry')
+        self.slot=p;write(p/'owner.json',dict(runID=c['runID'],pid=os.getpid()))
+        if len(list(locks.glob('slot*')))>1:raise RuntimeError('resource-raced; stop and report, do not busy-retry')
         build=sum(int(subprocess.check_output(['/usr/bin/du','-sk',p]).split()[0])*1024 for p in c['buildRoots'])
         if build>=3*1024**3:raise RuntimeError('build-quota')
         if __import__('shutil').disk_usage(c['resourceRoot']).free-2*(3*1024**3+200*1024**2)<8*1024**3:raise RuntimeError('resource-disk-floor')
