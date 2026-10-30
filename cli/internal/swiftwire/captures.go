@@ -145,11 +145,12 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 }
 
 type mutation struct {
-	Field     string `json:"field"`
-	Omission  bool   `json:"omission"`
-	Null      bool   `json:"null"`
-	WrongType bool   `json:"wrongType"`
-	Strict    bool   `json:"strict"`
+	Field      string          `json:"field"`
+	Omission   bool            `json:"omission"`
+	Null       bool            `json:"null"`
+	WrongType  bool            `json:"wrongType"`
+	Strict     bool            `json:"strict"`
+	NullPolicy wire.NullPolicy `json:"nullPolicy"`
 }
 type captureCase struct {
 	File     string     `json:"file"`
@@ -176,7 +177,8 @@ func Captures(root string) (map[string][]byte, error) {
 	roots := captureRoots()
 	sort.Slice(roots, func(i, j int) bool { return roots[i].Name < roots[j].Name })
 	covered := map[string]bool{}
-	var dispatcher strings.Builder
+	var dispatcher, roundTrips strings.Builder
+	roundTrips.WriteString("func roundTripCapture(_ type: String, _ data: Data) throws -> Data {\n    switch type {\n")
 	dispatcher.WriteString("// SPDX-License-Identifier: MIT\n// Code generated from Go capture roots. DO NOT EDIT.\nimport Foundation\nimport ModelPlanWire\n\nfunc decodeCapture(_ type: String, _ data: Data) throws {\n    switch type {\n")
 	for _, r := range roots {
 		covered[r.Name] = true
@@ -202,14 +204,15 @@ func Captures(root string) (map[string][]byte, error) {
 		}
 		for _, f := range d.Fields {
 			if f.Optional {
-				safeNull := !(r.Name == "WireCredentialResult" && f.JSON == "accessToken")
-				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: safeNull && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict})
+				safeNull := f.NullPolicy != wire.NullForbidden
+				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: !(r.Name == "WireCredentialResult" && f.JSON == "accessToken") && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict, NullPolicy: f.NullPolicy})
 			} else {
 				c.Required = append(c.Required, f.JSON)
 			}
 		}
 		index.Cases = append(index.Cases, c)
 		fmt.Fprintf(&dispatcher, "    case %s: _ = try WireDecoder.decode(%s.self, from: data)\n", quoted(r.Swift), r.Swift)
+		fmt.Fprintf(&roundTrips, "    case %s: return try JSONEncoder().encode(WireDecoder.decode(%s.self, from: data))\n", quoted(r.Swift), r.Swift)
 	}
 	for key := range m.Used {
 		d := m.Types[key]
@@ -218,7 +221,8 @@ func Captures(root string) (map[string][]byte, error) {
 		}
 	}
 	dispatcher.WriteString("    default: throw WireDecodeError.invalidIdentity\n    }\n}\n")
-	files["CaptureTypes.swift"] = []byte(dispatcher.String())
+	roundTrips.WriteString("    default: throw WireDecodeError.invalidIdentity\n    }\n}\n")
+	files["CaptureTypes.swift"] = []byte(dispatcher.String() + "\n" + roundTrips.String())
 	b, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
 		return nil, err

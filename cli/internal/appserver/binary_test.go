@@ -73,6 +73,9 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		c.initialize(t)
 		c.send(t, 2, "rows/subscribe", wire.Empty{})
 		m := c.response(t, 2)
+		if len(m["result"]) == 0 {
+			t.Fatalf("rows/subscribe returned no result: error=%s", m["error"])
+		}
 		var snapshot wire.Envelope[wire.RowsSnapshot]
 		if err := json.Unmarshal(m["result"], &snapshot); err != nil {
 			t.Fatal(err)

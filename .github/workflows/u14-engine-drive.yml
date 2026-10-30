@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: MIT
+name: U14 engine Drive L1
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - tools/u14/**
+      - scripts/test-consent-engine.py
+      - cli/**
+      - .github/workflows/u14-engine-drive.yml
+  push:
+    branches: [main]
+    paths:
+      - tools/u14/**
+      - scripts/test-consent-engine.py
+      - cli/**
+      - .github/workflows/u14-engine-drive.yml
+permissions:
+  contents: read
+concurrency:
+  group: engine-drive-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  engine-drive:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare owned scratch
+        run: mkdir -p .tmp/engine-drive
+      - name: Driver contract regressions
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
+        run: python3 -m unittest discover -s tools/u14/engine_drive -p 'test_*.py' -v
+      - name: Fetch ordinary old released writers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/u14/engine_drive/release.py --tag v0.5.46 --commit 3602d410b17f9376278413633abeec6e3572ee56 --output .tmp/engine-drive/old46
+          python3 tools/u14/engine_drive/release.py --tag v0.5.47 --commit f830589cc613daf16267c692b735c3a240ec4d2e --output .tmp/engine-drive/old47
+      - name: Build ordinary CLI without overlays
+        working-directory: cli
+        run: go build -trimpath -o ../.tmp/engine-drive/modelplan ./cmd/modelplan
+      - name: Execute engine Drive as L1
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
+        run: |
+          exec python3 tools/u14/engine_drive/run.py --binary .tmp/engine-drive/modelplan --source-sha "$GITHUB_SHA" --old-release .tmp/engine-drive/old46/release.json --old-release .tmp/engine-drive/old47/release.json --level L1 --output .tmp/engine-drive/evidence
+      - name: Retain outcomes before cleanup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-drive-L1-${{ matrix.os }}-${{ github.sha }}
+          path: .tmp/engine-drive/evidence/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove owned completed scratch
+        if: always()
+        run: rm -rf .tmp/engine-drive
