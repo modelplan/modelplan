@@ -43,7 +43,7 @@ M1 owns `bin/cleanup-*` and `tests/test_cleanup_*.py`. It quits owned processes,
 
 ## 6. Helpers
 
-M2 owns Launch, Doctor, Evidence and shared helpers; M1 owns Drive/Cleanup paths above. M0 owns scope, feature map and integration. Stable commands live in `bin/`; do not rewrite them in each lane.
+M2 owns the whole verification skill, Launch, Doctor, Evidence, shared helpers, feature map and integration; M1 retains the Drive/Cleanup paths above. M0 reviews and merges. Stable commands live in `bin/`; do not rewrite them in each lane.
 
 Non-GUI qualification:
 
