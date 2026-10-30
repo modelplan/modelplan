@@ -2,6 +2,7 @@
 import AppKit
 import CoreGraphics
 import ModelPlanCore
+import ModelPlanShell
 import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanCommunityHost
@@ -95,12 +96,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
     var nativeMovePreviewPanel: NSPanel? { outlinePanel }
-    func refreshPresence() { edge.refresh() }
+    func refreshPresence() { displayFollower.sample(); edge.refresh() }
+    var isFollowingDisplay: Bool { displayFollower.isRunning }
+    private var followedDisplayID: String?
+    private lazy var displayFollower = makeDisplayFollower()
     private var application: SettingsApplication?
     public var currentMenuBarPreferences: SettingsPreferences? { retired ? nil : application?.snapshot.preferences }
     public var menuBarPreferencesChanged: (() -> Void)?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
+    private var contentProvider: any DockContentProvider
+    private var contentMenuStatusLines: [String]?
+    private var contentEmptyText: String?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
     /// Read the very model fed to the retained Dock; no additional producer or projection.
     public var journeySnapshot: CommunityDockSnapshot? { CommunityJourneyCI.enabled ? model : nil }
@@ -208,21 +215,25 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let consoleButton = NSButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
-    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() }) {
-        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities)
+    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
+                            contentProvider: (any DockContentProvider)? = nil) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, contentProvider: contentProvider)
     }
     public convenience init(purpose: DockHostPurpose, appearance: Appearance? = nil,
                             sliverParameters: DockSliverParameters = .current,
                             readerCapabilities: CommunityReaderCapabilities = .init(),
-                            currentDate: @escaping @MainActor () -> Date = { Date() }) {
+                            currentDate: @escaping @MainActor () -> Date = { Date() },
+                            contentProvider: (any DockContentProvider)? = nil) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true,
-                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose)
+                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose, contentProvider: contentProvider)
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
-         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest) {
+         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
+         contentProvider: (any DockContentProvider)? = nil) {
+        self.contentProvider = contentProvider ?? LegacyDockContentProvider()
         self.purpose = purpose
         self.readerCapabilities = readerCapabilities
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
@@ -278,6 +289,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             connectEdge()
         }
         rebuild()
+        syncDisplayFollower()
         menuBarPreferencesChanged?()
     }
     private var dockConsent: ConsentPreview?
@@ -285,6 +297,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !retired else { return }
         inputGeneration &+= 1
         dockConsent = preview
+        rebuild()
+    }
+    /// Installs the content consumer without replacing window/input ownership.
+    public func setDockContentProvider(_ provider: any DockContentProvider) {
+        guard !retired else { return }
+        contentProvider = provider
+        refreshDockContent()
+    }
+    /// Called by the accepted engine-state consumer; adds no reader or timer.
+    public func refreshDockContent() {
+        guard !retired else { return }
+        inputGeneration &+= 1
         rebuild()
     }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
@@ -298,7 +322,33 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        syncDisplayFollower()
+    }
+    private func makeDisplayFollower() -> ActiveDisplayFollower {
+        let follower = ActiveDisplayFollower(currentDisplayIdentifier: { [weak self] in
+            guard let self, self.permitted, !self.retired, self.preferences.showDock,
+                  self.preferences.followActiveDisplay else { return nil }
+            let env = self.environment()
+            guard let pointer = env.pointer else { return nil }
+            return env.displays.first(where: { $0.frame.contains(pointer) })?.id
+        })
+        follower.onEnter = { [weak self] identifier in
+            guard let self, self.permitted, !self.retired, !self.rendering,
+                  !self.edge.isBackgroundPressed else { return false }
+            guard self.followedDisplayID != identifier else { return true }
+            self.followedDisplayID = identifier
+            self.inputGeneration &+= 1
+            self.rebuild()
+            return true
+        }
+        return follower
+    }
+    private func syncDisplayFollower() {
+        guard permitted, !retired, preferences.showDock, preferences.followActiveDisplay else {
+            displayFollower.stop(); followedDisplayID = nil; return
+        }
+        displayFollower.start(); displayFollower.sample()
     }
     private func rebuild() {
         guard !retired, application != nil else { return }
@@ -325,7 +375,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let passPreferences = preferences
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
-        let next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts, canonicalConsent: dockConsent)
+        let content = contentProvider.makeContent(.init(snapshot: snapshot, diagnostics: diagnostics,
+            now: now, readerFacts: facts, canonicalConsent: dockConsent))
+        let next = content.snapshot
+        contentMenuStatusLines = content.menuStatusLines
+        contentEmptyText = content.emptyText
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
@@ -367,7 +421,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if rows.isEmpty && appearance == nil {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            empty.stringValue = contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
@@ -425,9 +479,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
             _ = try? prepareSliver(size: size)
         }
-        let primary = environment().primaryDisplayID ?? "primary-unavailable"
+        let env = environment()
+        let primary = env.primaryDisplayID ?? "primary-unavailable"
         let selectedID = passPreferences.dockDisplayID ?? primary
-        let preference = DockEdgePreference(displayID: passPreferences.followActiveDisplay ? nil : selectedID,
+        let followed = followedDisplayID ?? env.pointer.flatMap { point in env.displays.first { $0.frame.contains(point) }?.id } ?? primary
+        let preference = DockEdgePreference(displayID: passPreferences.followActiveDisplay ? followed : selectedID,
             edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
@@ -442,9 +498,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
         if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read)
+            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read)
+        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
     }
     private func environment() -> DockEdgeEnvironment {
         let native: DockEdgeEnvironment
@@ -480,7 +536,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func destinationBackingScale() -> Int {
         let screens = NSScreen.screens, env = environment()
         let primary = screens.first.map { displayID($0, index: 0) }
-        let preference = DockEdgePreference(displayID: preferences.followActiveDisplay ? nil : preferences.dockDisplayID ?? primary,
+        let preference = DockEdgePreference(displayID: preferences.followActiveDisplay ? followedDisplayID : preferences.dockDisplayID ?? primary,
             edge: nativeEdge(preferences.dockEdge), alongFraction: preferences.dockAlongFraction)
         let placement = try? DockEdgeGeometry.resolve(preference: preference, displays: env.displays, layouts: env.layouts,
             pointer: env.pointer, primaryID: primary, wakeDepth: visibilityPolicy.wakeDepth)
@@ -518,8 +574,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
     }
-    private func makePanel() -> NSPanel {
-        let value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    private func makePanel(forDock: Bool = false) -> NSPanel {
+        let value: NSPanel
+        if forDock {
+            let dock = PulseDockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            dock.mouseHandler = self
+            value = dock
+        } else {
+            value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        }
         value.isFloatingPanel = true; value.level = .floating; value.isOpaque = false
         value.backgroundColor = .clear; value.hasShadow = false; value.hidesOnDeactivate = false
         value.isReleasedWhenClosed = false
@@ -534,7 +597,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         } else { placement = nil }
         let intent = edge.preference
         let recovering = placement.map { actual in
-            // nil display is follow mode; switching followed displays is not recovery.
+            // Follow mode supplies its observed display; automatic following is not persisted.
             (intent.displayID.map { $0 != actual.displayID } ?? false)
                 || intent.edge != actual.edge
                 || abs(intent.alongFraction - actual.alongFraction) > 1e-9
@@ -564,7 +627,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard permitted, !retired, let frame = value.paintedFrame else {
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
-        if panel == nil { panel = makePanel() }
+        if panel == nil { panel = makePanel(forDock: true) }
         guard let panel else { publishPlacementObservation(nil); return }
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
@@ -622,7 +685,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
-        if let model {
+        if let lines = contentMenuStatusLines {
+            for (index, text) in lines.enumerated() {
+                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                status.setAccessibilityIdentifier("dock.provider-status.\(index)")
+                menu.addItem(status)
+            }
+            if !lines.isEmpty { menu.addItem(.separator()) }
+        } else if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
             if let emptyStatus {
                 let status = NSMenuItem(title: emptyStatus, action: nil, keyEquivalent: "")
@@ -657,7 +728,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
-    @objc private func displaysChanged() { guard permitted, !retired else { return }; inputGeneration &+= 1; rebuild(); edge.refresh() }
+    @objc private func displaysChanged() {
+        guard permitted, !retired else { return }
+        inputGeneration &+= 1; displayFollower.forgetLastDisplay()
+        rebuild(); syncDisplayFollower(); edge.refresh()
+    }
     private func showCard(_ id: String) {
         let now = currentDate()
         guard permitted, !retired, preferences.showDock,
@@ -712,6 +787,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil
         dismissCard()
         NotificationCenter.default.removeObserver(self)
+        displayFollower.stop(); followedDisplayID = nil
         edge.stop(); publishPlacementObservation(nil)
         edge.onPresent = nil; edge.onCommittedPlacement = nil
         onPlacementObserved = nil
@@ -725,3 +801,25 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 }
 
 extension StaticDockPreviewHost: CommunityDockConsentReceiving {}
+
+// Window-level native event capture is borrowed from Pulse; the existing
+// background-region/consent/lifecycle gates remain authoritative for this slice.
+extension StaticDockPreviewHost: PulsePanelMouseHandling {
+    public func beginPanelMove(windowPoint: CGPoint, globalPoint: CGPoint) -> Bool {
+        guard permitted, !retired, !rendering, let panel,
+              edge.presentation?.state == .expanded else { return false }
+        let orientation = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let view = edgeViews[orientation] ?? dockView
+        guard view.window === panel else { return false }
+        return edge.beginBackgroundMove(local: view.convert(windowPoint, from: nil), global: globalPoint)
+    }
+    public func continuePanelMove(globalPoint: CGPoint) {
+        guard permitted, !retired else { edge.cancelBackgroundMove(); return }
+        edge.updateBackgroundMove(global: globalPoint)
+    }
+    public func finishPanelMove(globalPoint: CGPoint) {
+        guard permitted, !retired else { edge.cancelBackgroundMove(); return }
+        edge.endBackgroundMove(global: globalPoint)
+    }
+    public func cancelPanelMove() { edge.cancelBackgroundMove() }
+}

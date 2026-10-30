@@ -116,6 +116,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
   modelplan doctor                     show base URL, cache and publication state
   modelplan doctor readers [--refresh] sanitised native-reader verification; cache only by default
   modelplan doctor --share             sanitised cache source/status report; no readers or network
+  modelplan diagnostics --share        copy-safe versions, enabled scopes and recent error codes
   modelplan update                     explicitly update a standalone/Skill copy from the verified publication pin
   modelplan plugin install claude-code|codex
                                        install through the host CLI; otherwise print its commands
@@ -144,6 +145,44 @@ func flags(name string, c *common) *flag.FlagSet {
 	return fs
 }
 
+// printStaticFlagUsage prints flag names and compiled descriptions only. Values,
+// including environment-derived defaults and rejected arguments, never appear.
+func printStaticFlagUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintln(w, "Options:")
+	fs.VisitAll(func(f *flag.Flag) {
+		_, description := flag.UnquoteUsage(f)
+		fmt.Fprintf(w, "  --%s: %s\n", f.Name, description)
+	})
+}
+
+const diagnosticsUsage = "usage: modelplan diagnostics --share [--app-version VERSION]\n"
+
+func diagnosticsCmd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("diagnostics", flag.ContinueOnError)
+	fs.SetOutput(io.Discard) // flag errors can contain untrusted argument values
+	share := fs.Bool("share", false, "")
+	appVersion := fs.String("app-version", "", "")
+	fs.Bool("json", false, "") // output is always JSON
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprint(stdout, diagnosticsUsage)
+			return 0
+		}
+		fmt.Fprint(stderr, diagnosticsUsage)
+		return exitUsage
+	}
+	if !*share || fs.NArg() != 0 {
+		fmt.Fprint(stderr, diagnosticsUsage)
+		return exitUsage
+	}
+	st, err := store.Locate()
+	if err != nil {
+		fmt.Fprintln(stderr, "diagnostics: cache_unavailable")
+		return exitErr
+	}
+	return printJSON(stdout, diagnostics.CollectFeedback(st.Dir, version, *appVersion, time.Now()))
+}
+
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -165,9 +204,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 	cmd, rest := args[0], args[1:]
+	if cmd == "diagnostics" {
+		return diagnosticsCmd(rest, stdout, stderr)
+	}
 	var c common
 	fs := flags(cmd, &c)
-	fs.SetOutput(stderr)
+	fs.SetOutput(io.Discard)
 	provider := fs.String("provider", "", "windows: published provider id")
 	planFlag := fs.String("plan", "", "windows: published plan id")
 	dev := fs.String("dev", "", "developer id, e.g. anthropic, openai, zhipuai")
@@ -198,8 +240,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
-	share := fs.Bool("share", false, "doctor: print only sanitised cache source/status information")
+	share := fs.Bool("share", false, "doctor: print a sanitised share report")
 	if err := fs.Parse(reorder(rest)); err != nil {
+		if !errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintln(stderr, "invalid command flags")
+		}
+		printStaticFlagUsage(stderr, fs)
 		return exitUsage
 	}
 	if cmd == "lineup" || cmd == "plan" {
@@ -459,7 +505,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "doctor":
 		s, _ := st.State()
 		d, _, lerr := publication.Load(st)
-		out := map[string]any{"version": version, "base": c.base, "cache": st.Dir, "state": s}
+		s.Base = publication.DisplayBase(s.Base)
+		if s.LastError != "" {
+			s.LastError = "previous sync failed"
+		}
+		out := map[string]any{"version": version, "base": publication.DisplayBase(c.base), "cache": st.Dir, "state": s}
 		if d != nil {
 			out["source"], out["release"], out["models"], out["units"] = d.Source, d.Release, len(d.Models), d.Units
 		}

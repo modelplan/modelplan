@@ -57,7 +57,7 @@ import ModelPlanCore
         try bytes.write(to: root.appendingPathComponent("Contents/Helpers/modelplan"))
         try Data((hash + "\n").utf8).write(to: root.appendingPathComponent("Contents/Resources/modelplan.sha256"))
         let info = ["CFBundleShortVersionString": "1.2.3", "ModelPlanPublicSource": String(repeating: "a", count: 40),
-            "ModelPlanHelperVersion": "0.5.46", "ModelPlanSourceHelperSHA256": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture["arm64"]!,
+            "ModelPlanHelperVersion": "0.5.48", "ModelPlanSourceHelperSHA256": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture["arm64"]!,
             "ModelPlanBundledHelperSHA256": hash]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: root.appendingPathComponent("Contents/Info.plist"))
         return root
@@ -68,7 +68,7 @@ import ModelPlanCore
         let about = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: port.availability,
             operatingSystem: .init(majorVersion: 15, minorVersion: 4, patchVersion: 3)).about
         XCTAssertEqual(about.cliState, .ready)
-        XCTAssertEqual(about.cliVersion, "0.5.46")
+        XCTAssertEqual(about.cliVersion, "0.5.48")
         XCTAssertEqual(about.version, "1.2.3")
         XCTAssertEqual(about.macOSVersion, "15.4.3")
     }
