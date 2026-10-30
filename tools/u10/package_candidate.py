@@ -148,6 +148,15 @@ def configure_product(app, source, build_number, root=ROOT):
         'keychainTwoBuildAcceptance': 'not-run'}))
 
 
+def verify_credential_helper(app, command=run):
+    artifact = os.environ.get('MODELPLAN_CREDENTIAL_AGENT_ARTIFACT')
+    expected = os.environ.get('MODELPLAN_CREDENTIAL_AGENT_SHA256')
+    if not artifact or not expected:
+        raise ValueError('Approved credential helper artifact and independent SHA256 are required')
+    command(sys.executable, '-B', ROOT / 'desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py',
+            '--pin', Path(artifact) / 'credential-agent.json', '--expected-sha256', expected, '--single', app)
+
+
 def packaging_baseline():
     # No synthetic HOME or owner shape was exercised during packaging.
     return {'schemaVersion': 1, 'baselineVersion': 'u10-packaging-no-home-v1',
@@ -234,6 +243,8 @@ def build(output, candidate_id, build_number):
     if manifest['artifacts']['app'] != artifact(app, allow_tree=True):
         raise ValueError('Sealed app changed after manifest generation')
     verify_identity(app, source, raw_identity(raw_inputs))
+    # U10 re-seals the App after the neutral scaffold; verify the pin after this final seal too.
+    verify_credential_helper(app)
     (output / 'SHA256SUMS').write_text(''.join(
         f'{release.sha256(p)}  {p.relative_to(output).as_posix()}\n'
         for p in (archive, output / 'packaging-receipt.json', output / 'evidence/manifest.json')))

@@ -88,3 +88,30 @@ These tests use synthetic strings and generated ZIPs, not credentials. They prov
 References: [Sparkle publishing](https://sparkle-project.org/documentation/publishing/) (archive preservation, signed enclosure and version fields), [Sparkle security](https://sparkle-project.org/documentation/security-and-reliability/) (stdin key handling), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
 The native consent archive pin is independent of plugin CLI pins. It must match both the runtime consent identity and its metadata producer; plugin updates do not implicitly upgrade the App helper. The focused `test_consent_input.py` follows the real workflow input and checks that three-part contract without executing a helper, package or signing command. Bumping the native pin requires a reviewed identity update in the same change.
+
+## Prebuilt credential-helper input
+
+`package-neutral.sh` requires `MODELPLAN_CREDENTIAL_AGENT_ARTIFACT` and
+`MODELPLAN_CREDENTIAL_AGENT_SHA256` for every mode, including synthetic smoke.
+The directory is the independently approved universal artifact from the U7
+builder: `modelplan-credential-agent`, `credential-agent.json`, and `proof.json`.
+The external SHA must be approved independently, not derived from an untrusted
+artifact directory as an automatic approval. Different compiler/SDK inputs need
+their own reviewed artifact; no cross-environment digest equivalence is assumed.
+
+Missing/linked inputs or a binary digest mismatch fail before App compilation.
+The canonical U7 embed tool then enforces its pin, universal architecture and
+existing signature checks before the outer App seal; the canonical final checker
+validates the embedded pin after sealing. Packaging never calls the credential
+helper builder, executes the helper, or re-signs it. Existing CLI signing is
+separate. `--single` proves one final App's pin, not two-App, Keychain or A14 proof.
+The helper remains R2 default-deny.
+
+The canonical U7 tools are supplied by public #369. Packaging callers must provide
+their reviewed artifact inputs before enabling this hook; there is no silent
+fallback. The shell fixture tests use inert build/signing/verifier boundaries and
+prove orchestration and failure propagation only.
+
+U10 modifies and re-seals its outer App after the neutral scaffold; it therefore
+runs the same `--single` checker again after its final seal/archive identity
+checks, before writing delivery checksums. It consumes the same approved inputs.
