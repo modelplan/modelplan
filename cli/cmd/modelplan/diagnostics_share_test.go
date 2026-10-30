@@ -49,7 +49,7 @@ func TestDiagnosticsShareWholeOutputIsCopySafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := tree(t, home)
-	code, out, stderr := consentRun([]string{"diagnostics", "--share", "--app-version", poison, "--base", poison}, "")
+	code, out, stderr := consentRun([]string{"diagnostics", "--share", "--app-version", poison}, "")
 	if code != 0 || stderr != "" || !json.Valid([]byte(out)) {
 		t.Fatalf("diagnostics failed: exit=%d stderr=%q", code, stderr)
 	}
