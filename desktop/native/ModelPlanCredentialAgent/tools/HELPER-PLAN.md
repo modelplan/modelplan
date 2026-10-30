@@ -1,60 +1,46 @@
-# U7 stable helper — wired-stage plan
+# U7 quota-only fixed helper — contract input hold
 
-Status: plan and packaging checker only. The executable helper, process transport,
-reproducible artifact build and production constructor are not yet implemented.
-A14 remains deferred until Developer ID; no self-signed replacement is planned.
+The helper must never return tokens. Its fixed tool/query-kind enum selects compiled
+hosts/endpoints/request shapes, and its fixed decoder emits only normalized quota
+fields. Callers supply no URL, host, path, header or raw payload; raw response bodies
+and headers are never echoed. No signed-manifest caller anchor is being built now.
+Authenticated XPC with Apple team + identifier requirements is deferred to Developer ID.
 
-## Product boundary
+Harden the executable: hardened runtime and library validation, no get-task-allow,
+DYLD/JIT exceptions, and reject a debugged peer where detectable. Keep the accepted
+EngineClient.isCurrent veto at each operation boundary. Token-returning paths remain
+permanently default-deny. No Keychain/identity/trust or GUI action is authorized here.
 
-Move Security.framework/LocalAuthentication and the fixed-item enumeration/read
-implementation to a separate executable, modelplan-credential-agent. The App-facing
-library must not link or call that Keychain backend; it implements CredentialAgent
-as a supervised private-pipe client. No credential tool fallback or remote network
-path belongs in the helper. Retain the tested before-each-query operation checkpoint.
+## Blocking canonical contract changes
 
-Reuse generated WireCredentialRequest/Result values. Define and review the narrow
-versioned App/helper framing: operation id, accepted delivery context and bounded
-monotonic remaining deadline; cancel/invalidation retires only its matching operation.
-Parent pipe loss/EOF, restart, epoch/generation/revision changes and late output must
-fail closed. One bounded OS worker stays occupied until its uninterruptible call
-returns. Tokens exist only in the credential result's accessToken field over the
-private pipe; never argv, environment, stderr, UI, files or diagnostics. The transport
-must propagate cancellation before any next OS query, not only discard its token.
+ADR0003 and foundation Credentials still require an access token on credentials/result
+success. EngineClient.CredentialAgent returns generated WireCredentialResult, whose
+validator rejects ok without accessToken; it has no quota payload. The Go broker
+consumes that token and performs the quota read. ADR0001 keeps one Go data/reader engine,
+and app-server invariant7 requires the shared per-vendor remote budget.
 
-Consume EngineClient.isCurrent when its accepted API lands. Do not create a parallel
-protocol reducer or substitute an always-true fence. App entry/Store edits stay within
-M0's granted constructor/dependency lease; additional shared edits need their owner.
+Do not work around this by stuffing quota into accessToken, editing generated Swift,
+copying a second Swift HTTP reader/decoder, or bypassing Go's budget. The canonical
+owners must publish the amended ADR/protocol, closed enum, bounded quota result/decoder,
+operation cancellation/budget dispatch APIs and regenerated Swift consumer contract.
+Reusing the Go fixed-reader core inside the helper is a design candidate, not an
+implemented or accepted source move. Quota protocol/HTTP/wiring work is stopped until
+these inputs are fixed. The real legacy OS token backend is permanently denied.
 
-## Artifact and reproducible build
+## Reproducible artifact / packaging work retained
 
-Build the helper independently of App sources. Freeze its complete source/dependency
-closure, compiler/SDK and architecture, release flags, identifier and artifact version.
-Use fixed optimization flags, no debug/timestamp/path payloads, compiler prefix maps,
-and a deterministic link/signing policy (including Mach-O UUID/ad-hoc signature bytes).
-These are proposed build controls; reproducibility is not proven until two clean
-build roots produce the same final executable bytes. Dependency/toolchain changes
-that affect helper bytes are helper upgrades and require a new artifact/pin.
+Build the helper independently from App sources with one frozen source/dependency,
+compiler/SDK/architecture and flags closure; remove timestamp/debug/path/UUID variability
+and prove identical final bytes across two clean build roots in hosted macOS CI.
+Cache that artifact across App-only builds. Rebuild and re-pin only as a reviewed helper
+upgrade, including endpoint changes; that upgrade prompts once. App packaging copies
+without silently rebuilding/re-signing it, and verifies the pin after final packaging.
 
-Cache the verified helper artifact by that input closure, never by the App build id.
-App packaging copies the accepted artifact; it does not rebuild or silently re-sign
-it. Keep its identifier ai.modelplan.credential-agent fixed. Run the identity check
-AFTER final App packaging/signing, so a nested re-sign cannot silently change the pin.
-
-Each bundle has Contents/Helpers/modelplan-credential-agent plus
-Contents/Resources/credential-agent.json. The manifest holds schemaVersion=1, sha256,
-bytes, inputSHA256 and bundleIdentifier. A trusted artifact pin is supplied separately
-from either bundle; neither App can approve its own replacement helper.
-
-Run tools/check_embedded_agent.py --pin <trusted-artifact-pin> <build1.app> <build2.app>.
-It rejects differing bytes, descriptor/input changes, missing/symlink members and
-untrusted self-consistent replacements. Its hand-made fixtures test packaging logic
-only. Real two-App embedding, helper reproducibility, process supervision and native
-Keychain permission checks remain not-run.
-
-## User-facing permission contract
-
-App-only updates preserve the exact helper bytes and therefore its partition identity.
-Only a helper upgrade changes that identity and can require one re-approval. Do not
-promise persistence across helper upgrades or claim A14 without Developer ID. Synthetic
-helper permission tests and the owner's eventual real login/ACL confirmation remain
-separate evidence levels.
+Use Contents/Helpers/modelplan-credential-agent and
+Contents/Resources/credential-agent.json. The descriptor contains schemaVersion=1,
+sha256, bytes, inputSHA256 and bundleIdentifier=ai.modelplan.credential-agent. The trusted
+artifact pin is an independent build input, not self-approved by either App.
+Run tools/check_embedded_agent.py against two final Apps and the trusted pin. Its eight
+hand-made-fixture tests qualify packaging logic only. Real helper implementation,
+clean-root reproducibility, real two-App embedding and OS permission checks are not-run.
+A14 remains deferred until Developer ID. No wired completion is claimed under this hold.

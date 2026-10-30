@@ -1,4 +1,11 @@
-# U7 native credential adapter — interface only
+# U7 credential helper transition — security hold
+
+The real token-returning system backend is permanently disabled. SystemItemMatcher
+returns an unsupported error without calling any Keychain API. There is no runtime
+flag to enable it. The legacy generated credential-operation logic remains only for
+contract/fake regression coverage and is not wired into the App. Production quota
+helper wiring is blocked on the canonical quota-only contract described in
+`tools/HELPER-PLAN.md`; do not use the old token DTO to transport quota fields.
 
 Implements the generated Wire credential operation through `EngineClient.CredentialAgent`.
 No app entry, EngineStore, Shell, Go, generated DTO, packaging or signing file is changed.

@@ -1,5 +1,5 @@
 {
-  "stage": "U7 interface only",
+  "stage": "U7 quota-helper transition: permanent token security hold; quota contract blocked",
   "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
   "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
   "profile": "fake readers and injected low-level Security API only; no SecItemCopyMatching or identity/signing operations",
@@ -11,11 +11,11 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "d61637309532975e3f3586253d8ec77c25c39988aed10b52907d802d281e4f81"
+      "sha256": "21bf33eec23a9bb42bccc6451edf3950118f59ef7941a1a48be72b0a596653af"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
-      "sha256": "a9df1303c64ef11c88b0b35b96009fe0c9cd2d985b2ed715f5f62023eb67e20a"
+      "sha256": "6274f7bc862eb13bc5e42cb8cf4a74a538c437ec2d7b831bb43ae20c8df67043"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
@@ -23,11 +23,31 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
-      "sha256": "0c0eebe27bc3d873c4334ee6d762a808159be765f432bfa8b7e2e65581889383"
+      "sha256": "f9aaf45c19f552153444e8d80e7aadcd9e3fe887dc661eaaadcb3102a7b6fb9b"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
       "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/HELPER-PLAN.md",
+      "sha256": "f018b97a9ee4c10bb7294a7bb8f8b9999a64fd68c04aaf0834279eecaca34c6e"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/SIGNING-PLAN.md",
+      "sha256": "9523851e4d262454099420c2aa219484987575ff575f6308dd2ae248aef1644c"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py",
+      "sha256": "57997242c53f8a10848584c79fb2d6c07b2ad8e85a7fba2d743e69dedc16854a"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_embedded_agent.py",
+      "sha256": "3b5183781b0c70f16dfc3cd31dfeb2da2cfa6220b8a13128542078b00c12ae5b"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_helper_boundary.py",
+      "sha256": "e076755bba76c2997fbdf10f293bf2a21a43d6b400b271db09fed246c0c9cd27"
     }
   ],
   "scenarios": [
@@ -88,6 +108,10 @@
       "outcome": "pass"
     },
     {
+      "id": "testSystemTokenBackendIsPermanentlyDeniedWithoutAnOSLookup",
+      "outcome": "pass"
+    },
+    {
       "id": "testTerminalCheckpointBeforeEnumerationMakesNoOSCall",
       "outcome": "pass"
     },
@@ -112,23 +136,28 @@
       "outcome": "pass"
     },
     {
-      "id": "app-entry-wiring",
+      "id": "packaging-and-app-source-boundary",
+      "outcome": "pass",
+      "cases": 9
+    },
+    {
+      "id": "quota-helper-executable",
       "outcome": "not-run"
     },
     {
-      "id": "synthetic-keychain-interaction",
+      "id": "quota-only-generated-contract",
       "outcome": "not-run"
     },
     {
-      "id": "background-os-prompt-behavior",
+      "id": "helper-reproducible-build",
       "outcome": "not-run"
     },
     {
-      "id": "two-signed-builds-same-identity",
+      "id": "real-two-app-embedding",
       "outcome": "not-run"
     },
     {
-      "id": "real-owner-ACL",
+      "id": "native-quota-helper-wiring",
       "outcome": "not-run"
     }
   ],
@@ -136,7 +165,7 @@
     "source-policy": "pass",
     "whitespace": "pass"
   },
-  "level": "L1 fake contract only; not L2/L3",
+  "level": "L1 fake/static/packaging only; no real quota/helper/reproducibility/OS/L2/L3 completion",
   "regression": {
     "id": "actual-enumeration-query-shape",
     "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
@@ -146,9 +175,9 @@
   },
   "hostedFakeSuite": {
     "path": ".github/workflows/u7-credential-agent.yml",
-    "sha256": "2fa64e8d139ff64b080a52ddbd429857231e7b96d3e2e8ea56ca74e2ee84df54",
+    "sha256": "b99c42baafd817c1541813b8e4108765c5b0df82ebdd0036557f7c9307b93fdf",
     "outcome": "not-run",
-    "note": "New head requires its own hosted execution after push"
+    "note": "This wired head requires its own hosted run"
   },
   "betweenQueryRegression": {
     "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
@@ -162,5 +191,12 @@
     "fixedOutcome": "pass",
     "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
     "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
+  },
+  "securityHold": {
+    "systemCredentialMatcher": "permanently default-deny; no OS matching call",
+    "tokenHandoff": "legacy/fake contract coverage only; not installed",
+    "quotaWire": "blocked on canonical replacement for the token-required contract",
+    "sourceGuardBaseline": "fail: real matching call found in App-facing FixedItem.swift",
+    "sourceGuardFixed": "pass"
   }
 }
