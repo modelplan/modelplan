@@ -3,10 +3,10 @@
 // SPDX-License-Identifier: MIT
 package diagnostics
 
-import "golang.org/x/sys/unix"
+import "syscall"
 
 func hostOSVersion() (string, string) {
-	value, err := unix.Sysctl("kern.osproductversion")
+	value, err := syscall.Sysctl("kern.osproductversion")
 	if err != nil {
 		return "", "unknown"
 	}

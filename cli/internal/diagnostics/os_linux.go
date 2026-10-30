@@ -4,10 +4,10 @@
 package diagnostics
 
 import (
-	"golang.org/x/sys/unix"
 	"io"
 	"os"
 	"strings"
+	"syscall"
 )
 
 func hostOSVersion() (string, string) {
@@ -23,8 +23,8 @@ func hostOSVersion() (string, string) {
 			}
 		}
 	}
-	var u unix.Utsname
-	if unix.Uname(&u) != nil {
+	var u syscall.Utsname
+	if syscall.Uname(&u) != nil {
 		return "", "unknown"
 	}
 	var b []byte
