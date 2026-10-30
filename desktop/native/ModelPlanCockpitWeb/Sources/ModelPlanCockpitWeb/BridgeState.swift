@@ -134,7 +134,7 @@ public final class CockpitBridgeState {
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
-    historyTools = Set<String>(), actionRequests = Set<UUID>()
+    historyTools = Set<String>()
   private struct Pending {
     let kind: String
     let tools: Set<String>
@@ -223,7 +223,6 @@ public final class CockpitBridgeState {
     ready = false
     historyTools.removeAll()
     pending.removeAll()
-    actionRequests.removeAll()
     retiredEpochs.removeAll()
     retiredSessions.removeAll()
   }
@@ -251,10 +250,12 @@ public final class CockpitBridgeState {
       sequence > pageSequence, let type = m["type"] as? String
     else { throw CockpitBridgeError.invalidMessage }
     if type == "action" {
+      // The page-wide sequence above rejects every accepted-message replay.
+      // Keep no lifetime UUID set: a long-lived page must not exhaust actions.
       let action = m["action"] as? String
       let history = action == "openHistory"
       guard Set(m.keys) == base.union(history ? ["action", "tool"] : ["action"]), ready, !blocked,
-        visibility.active, actionRequests.count < 1024, !actionRequests.contains(id)
+        visibility.active
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -267,7 +268,6 @@ public final class CockpitBridgeState {
         intent = .openHistory(tool)
       default: throw CockpitBridgeError.invalidMessage
       }
-      actionRequests.insert(id)
       pageSequence = sequence
       return .action(intent)
     }

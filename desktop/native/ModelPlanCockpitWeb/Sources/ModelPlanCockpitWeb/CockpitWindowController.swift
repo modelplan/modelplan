@@ -18,6 +18,10 @@ enum CockpitSchemeResponse {
   }
 }
 
+public enum CockpitBridgeDiagnostic: String {
+  case rejectedMessage = "cockpit.bridge.message-rejected"
+}
+
 private final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   let observed: ((String) -> Void)?
@@ -73,6 +77,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onRendered: (() -> Void)?
   public var onClosed: (() -> Void)?
   public var onFailure: ((CockpitWindowFailure) -> Void)?
+  public var onBridgeDiagnostic: ((CockpitBridgeDiagnostic) -> Void)?
+  public private(set) var rejectedBridgeMessageCount: UInt64 = 0
   #if MODELPLAN_TEST_ONLY_SPI
     public var verificationWebView: WKWebView? { web }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
@@ -204,29 +210,44 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       message.frameInfo.securityOrigin.host == "bundle", message.frameInfo.securityOrigin.port == 0,
       message.frameInfo.request.url == pageURL, web?.url == pageURL,
       let raw = message.body as? String
-    else { return }
-    do {
-      let receipt = try bridge.accept(
+    else {
+      recordRejectedBridgeMessage()
+      return
+    }
+    guard
+      let receipt = acceptBridgeReply(
         raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
-      switch receipt {
-      case .ready:
+    else { return }
+    switch receipt {
+    case .ready:
+      visibilityChanged()
+      onReady?()
+    case .cleared:
+      deadline?.cancel()
+      deadline = nil
+      let waiter = clearWaiter
+      clearWaiter = nil
+      if bridge.queryTicket != nil {
+        web?.isHidden = false
+        lastVisibility = nil
         visibilityChanged()
-        onReady?()
-      case .cleared:
-        deadline?.cancel()
-        deadline = nil
-        let waiter = clearWaiter
-        clearWaiter = nil
-        if bridge.queryTicket != nil {
-          web?.isHidden = false
-          lastVisibility = nil
-          visibilityChanged()
-        }
-        waiter?.resume()
-      case .action(let intent): onIntent?(intent)
-      case .rendered: onRendered?()
       }
-    } catch { /* Reject without logging private message bodies. */  }
+      waiter?.resume()
+    case .action(let intent): onIntent?(intent)
+    case .rendered: onRendered?()
+    }
+  }
+  private func recordRejectedBridgeMessage() {
+    if rejectedBridgeMessageCount < UInt64.max { rejectedBridgeMessageCount += 1 }
+    onBridgeDiagnostic?(.rejectedMessage)
+  }
+  // This is the same validation boundary used by the authenticated WK entry.
+  // Diagnostics contain only a fixed code/counter, never a raw body or error.
+  func acceptBridgeReply(_ raw: String, source: CockpitMessageSource) -> CockpitReceipt? {
+    do { return try bridge.accept(raw, source: source) } catch {
+      recordRejectedBridgeMessage()
+      return nil
+    }
   }
   private func visibilityChanged() {
     guard let window, bridge.queryTicket != nil else { return }
