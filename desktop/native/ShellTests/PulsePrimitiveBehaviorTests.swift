@@ -77,4 +77,50 @@ import XCTest
         XCTAssertEqual(entries, 1)
     }
 
+    func testComposedPointerEntryReprobesAbsentSampleAndNeverCapturesClicks() throws {
+        let surface = PulsePanelPointerSurface(pointSource: { nil })
+        var reports = 0; surface.onChange = { _ in reports += 1 }
+        surface.setActive(true); defer { surface.stop() }
+        surface.sampleNow(); surface.sampleNow()
+        XCTAssertEqual(reports, 1)
+        XCTAssertNil(surface.hitTest(.zero), "observation must not consume instrument/menu/drag input")
+        let entry = try XCTUnwrap(surface.subviews.first { !$0.trackingAreas.isEmpty })
+        let event = try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 1, trackingNumber: 0, userData: nil))
+        entry.mouseEntered(with: event)
+        XCTAssertEqual(reports, 2, "late entry must force an already absent sample through again")
+        surface.stop(); entry.mouseEntered(with: event); surface.sampleNow()
+        XCTAssertEqual(reports, 2, "disabled entry and queued sample cannot report")
+    }
+    func testComposedPointerSurfaceStopsReadsAndResizesBothObservers() {
+        var reads = 0
+        let surface = PulsePanelPointerSurface(pointSource: { reads += 1; return CGPoint(x: 2, y: 3) })
+        surface.frame = CGRect(x: 0, y: 0, width: 80, height: 180)
+        surface.setActive(true); surface.sampleNow(); surface.stop(); surface.sampleNow()
+        XCTAssertEqual(reads, 1)
+        XCTAssertTrue(surface.isFlipped)
+        XCTAssertTrue(surface.subviews.allSatisfy { $0.frame == surface.bounds })
+        surface.setActive(true); surface.sampleNow(); surface.stop()
+        XCTAssertEqual(reads, 2, "restart must not retain a stopped sample")
+    }
+
+    func testEntryQueriesFreshProbeBetweenSamplerTicks() throws {
+        var point: CGPoint? = CGPoint(x: 2, y: 3)
+        let surface = PulsePanelPointerSurface(pointSource: { point })
+        var reports: [CGPoint?] = []; surface.onChange = { reports.append($0) }
+        surface.setActive(true); defer { surface.stop() }
+        surface.sampleNow()
+        point = CGPoint(x: 29, y: 31)
+        let entry = try XCTUnwrap(surface.subviews.first { !$0.trackingAreas.isEmpty })
+        let event = try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 1, trackingNumber: 0, userData: nil))
+        entry.mouseEntered(with: event)
+        XCTAssertEqual(reports.count, 2)
+        XCTAssertEqual(reports.last!, point, "entry must read the linked live probe, not the previous sample")
+        surface.reportAgain(); surface.sampleNow()
+        XCTAssertEqual(reports.count, 3, "production reparent/reprobe must also use the linked probe")
+    }
+
 }
