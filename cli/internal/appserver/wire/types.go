@@ -161,7 +161,7 @@ type CredentialRequest struct {
 type CredentialResult struct {
 	OperationID string            `json:"operationId"`
 	Outcome     CredentialOutcome `json:"outcome"`
-	AccessToken *string           `json:"accessToken,omitempty" null:"coalesced"`
+	AccessToken *string           `json:"accessToken,omitempty" null:"forbidden"`
 	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" null:"coalesced"`
 }
 
@@ -178,8 +178,8 @@ type RefreshScheduled struct {
 type HistoryQueryParams struct {
 	Kind   HistoryKind `json:"kind"`
 	Tool   string      `json:"tool"`
-	Ref    string      `json:"ref,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
-	Cursor string      `json:"cursor,omitempty" null:"coalesced"`
+	Ref    string      `json:"ref,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
+	Cursor string      `json:"cursor,omitempty" null:"forbidden"`
 	Limit  int         `json:"limit" schema:"minimum=1,maximum=500"`
 }
 

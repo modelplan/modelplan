@@ -1685,6 +1685,7 @@ public struct WireCredentialResult: Codable, Sendable, CustomStringConvertible, 
         if outcome.rawValue != "ok" && (c.contains(.accessToken) || c.contains(.expiresAt)) { throw WireDecodeError.invalidAuthorization }
         self.`operationId` = try c.decode(String.self, forKey: .`operationId`)
         self.`outcome` = try c.decode(WireCredentialOutcome.self, forKey: .`outcome`)
+        if c.contains(.`accessToken`), try c.decodeNil(forKey: .`accessToken`) { throw WireDecodeError.invalidIdentity }
         self.`accessToken` = try c.decodeIfPresent(String.self, forKey: .`accessToken`)
         self.`expiresAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`expiresAt`)
         try validate()
@@ -2059,7 +2060,9 @@ public struct WireHistoryQueryParams: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`kind` = try c.decode(WireHistoryKind.self, forKey: .`kind`)
         self.`tool` = try c.decode(String.self, forKey: .`tool`)
+        if c.contains(.`ref`), try c.decodeNil(forKey: .`ref`) { throw WireDecodeError.invalidIdentity }
         self.`ref` = try c.decodeIfPresent(String.self, forKey: .`ref`)
+        if c.contains(.`cursor`), try c.decodeNil(forKey: .`cursor`) { throw WireDecodeError.invalidIdentity }
         self.`cursor` = try c.decodeIfPresent(String.self, forKey: .`cursor`)
         self.`limit` = try c.decode(Int.self, forKey: .`limit`)
         try validate()

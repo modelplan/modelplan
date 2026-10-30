@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -36,6 +37,28 @@ func validCredential(p wire.CredentialResult) bool {
 	default:
 		return false
 	}
+}
+
+// credentialParams enforces presence as well as decoded values. A non-success
+// result cannot carry token/expiry keys, including explicit null, matching the
+// wire schema and generated Swift decoder. Never format the raw payload.
+func credentialParams(raw json.RawMessage) (wire.CredentialResult, error) {
+	p, err := params[wire.CredentialResult](raw)
+	if err != nil || !validCredential(p) {
+		return wire.CredentialResult{}, ProtocolError{wire.CodeCredentialRejected}
+	}
+	if p.Outcome != wire.OutcomeOK {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return wire.CredentialResult{}, ProtocolError{wire.CodeCredentialRejected}
+		}
+		_, token := fields["accessToken"]
+		_, expiry := fields["expiresAt"]
+		if token || expiry {
+			return wire.CredentialResult{}, ProtocolError{wire.CodeCredentialRejected}
+		}
+	}
+	return p, nil
 }
 
 // RequestCredential starts a background operation only. Interactive operations

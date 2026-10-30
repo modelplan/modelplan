@@ -461,7 +461,7 @@
           "null": false,
           "wrongType": false,
           "strict": true,
-          "nullPolicy": "coalesced"
+          "nullPolicy": "forbidden"
         },
         {
           "field": "expiresAt",
@@ -640,18 +640,18 @@
         {
           "field": "ref",
           "omission": true,
-          "null": true,
+          "null": false,
           "wrongType": false,
           "strict": true,
-          "nullPolicy": "coalesced"
+          "nullPolicy": "forbidden"
         },
         {
           "field": "cursor",
           "omission": true,
-          "null": true,
+          "null": false,
           "wrongType": false,
           "strict": true,
-          "nullPolicy": "coalesced"
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [

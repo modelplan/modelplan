@@ -204,7 +204,7 @@ func Captures(root string) (map[string][]byte, error) {
 		}
 		for _, f := range d.Fields {
 			if f.Optional {
-				safeNull := f.NullPolicy != wire.NullForbidden && !(r.Name == "WireCredentialResult" && f.JSON == "accessToken")
+				safeNull := f.NullPolicy != wire.NullForbidden
 				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: !(r.Name == "WireCredentialResult" && f.JSON == "accessToken") && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict, NullPolicy: f.NullPolicy})
 			} else {
 				c.Required = append(c.Required, f.JSON)

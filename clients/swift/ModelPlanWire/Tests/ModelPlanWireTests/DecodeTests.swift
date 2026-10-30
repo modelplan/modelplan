@@ -374,3 +374,47 @@ extension DecodeTests {
         XCTAssertGreaterThan(distinct, 0)
     }
 }
+
+
+extension DecodeTests {
+    func testHistorySelectorsMatchHandlerOmissionAndNullRules() throws {
+        var omitted = try object("WireHistoryQueryParams.json")
+        omitted.removeValue(forKey: "ref")
+        omitted.removeValue(forKey: "cursor")
+        let valid = try WireDecoder.decode(WireHistoryQueryParams.self, from: encoded(omitted))
+        XCTAssertNil(valid.ref)
+        XCTAssertNil(valid.cursor)
+        for selector in ["ref", "cursor"] {
+            var null = omitted
+            null[selector] = NSNull()
+            XCTAssertThrowsError(try WireDecoder.decode(WireHistoryQueryParams.self, from: encoded(null)), selector + " must be rejected before re-encoding")
+        }
+    }
+}
+
+
+extension DecodeTests {
+    func testCredentialOptionalNullsRespectOutcomePresence() throws {
+        for outcome in ["canceled", "denied", "not_found", "interaction_required", "timeout", "error"] {
+            var omitted = try object("WireCredentialResult.json")
+            omitted["outcome"] = outcome
+            omitted.removeValue(forKey: "accessToken")
+            omitted.removeValue(forKey: "expiresAt")
+            XCTAssertNoThrow(try WireDecoder.decode(WireCredentialResult.self, from: encoded(omitted)))
+            for field in ["accessToken", "expiresAt"] {
+                var null = omitted; null[field] = NSNull()
+                XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(null)), outcome + "." + field)
+            }
+        }
+        for expiry in [false, true] {
+            var ok = try object("WireCredentialResult.json")
+            ok.removeValue(forKey: "expiresAt")
+            if expiry { ok["expiresAt"] = NSNull() }
+            XCTAssertNoThrow(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+            ok.removeValue(forKey: "accessToken")
+            XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+            ok["accessToken"] = NSNull()
+            XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+        }
+    }
+}

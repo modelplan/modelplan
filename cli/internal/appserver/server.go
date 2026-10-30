@@ -315,8 +315,8 @@ func (s *Server) dispatch(r wire.Request) {
 		return
 	}
 	if r.Method == "credentials/result" {
-		p, err := params[wire.CredentialResult](r.Params)
-		if err != nil || !validCredential(p) {
+		p, err := credentialParams(r.Params)
+		if err != nil {
 			s.sendError(r.ID, wire.CodeCredentialRejected)
 			return
 		}
