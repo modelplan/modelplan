@@ -9,7 +9,7 @@ EngineClient retains explicit-action/receipt matching, replay protection and fin
 `credentials/result` delivery. A non-nil user action is not new consent authorization.
 
 Only Claude's saved-login scope and the fixed generic-password service are accepted.
-Requests cannot select services, accounts, files or executables. Ambiguous items fail.
+Requests cannot select services, accounts, files or executables. Enumeration returns only attributes and persistent references; after uniqueness/service checks, a second single-match query reads data by that exact persistent reference. Ambiguous items fail.
 Background queries prohibit authentication UI. One worker performs the blocking read;
 logical timeout/cancel does not cancel the OS call, and its slot stays occupied until it
 returns. Late values cannot complete twice. The final writer must still reject stale
@@ -23,8 +23,7 @@ Security statuses map to `ok`, `canceled`, `denied`, `not_found`,
 `interaction_required` or `error`; logical expiry maps to `timeout`. Invalid/ambiguous data
 maps to `error`. Failures carry no token or expiry and are not stored as latches.
 
-Run `swift test --package-path desktop/native/ModelPlanCredentialAgent`. All tests inject
-fake readers; none invokes `SecurityItemReader.read`. They cover query flags, error mapping,
+Run `swift test --package-path desktop/native/ModelPlanCredentialAgent`. Tests inject fake readers or low-level matchers; none calls `SecItemCopyMatching`. They cover query flags, error mapping,
 token-only output, malformed/oversized data, action admission, stale contexts, cancellation,
 timeout, blocked-worker bounds and late completion.
 

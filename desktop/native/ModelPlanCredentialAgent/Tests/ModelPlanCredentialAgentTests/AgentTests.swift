@@ -6,6 +6,24 @@ import ModelPlanWire
 import ModelPlanEngineClient
 @testable import ModelPlanCredentialAgent
 
+private func queryStatus(_ attributes: [String: Any]) -> Int32 {
+    if attributes[kSecClass as String] as? String == kSecClassGenericPassword as String,
+       attributes[kSecReturnData as String] as? Bool == true,
+       attributes[kSecMatchLimit as String] as? String == kSecMatchLimitAll as String { return errSecParam }
+    return errSecSuccess
+}
+private final class FakeMatcher: ItemMatching, @unchecked Sendable {
+    var queries: [[String: Any]] = []
+    var replies: [ItemMatch]
+    init(_ replies: [ItemMatch]) { self.replies = replies }
+    func copyMatching(_ attributes: [String: Any]) -> ItemMatch {
+        queries.append(attributes)
+        let status = queryStatus(attributes)
+        guard status == errSecSuccess else { return .init(status: status) }
+        guard !replies.isEmpty else { return .init(status: errSecParam) }
+        return replies.removeFirst()
+    }
+}
 private final class FakeReader: FixedItemReading, @unchecked Sendable {
     let started = DispatchSemaphore(value: 0), unblock = DispatchSemaphore(value: 0)
     private let lock = NSLock()
@@ -38,13 +56,55 @@ final class AgentTests: XCTestCase {
               deadline: .now.advanced(by: .seconds(seconds)), userAction: action ? .init(id: UUID()) : nil)
     }
     private let tokenData = Data(#"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","refreshToken":"NEVER_FORWARD"}}"#.utf8)
+    func testActualEnumerationDictionaryIsSupportedByTheFakeOS() {
+        XCTAssertEqual(queryStatus(FixedItemQuery(interactive: false).attributes), errSecSuccess)
+    }
     func testFixedQueryBackgroundCannotPrompt() {
         let q = FixedItemQuery(interactive: false).attributes
         XCTAssertEqual(q[kSecAttrService as String] as? String, "Claude Code-credentials")
         XCTAssertEqual((q[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed, true)
         XCTAssertEqual(q[kSecMatchLimit as String] as? String, kSecMatchLimitAll as String)
         XCTAssertNil(q[kSecAttrAccount as String])
+        XCTAssertNil(q[kSecReturnData as String])
+        XCTAssertEqual(q[kSecReturnAttributes as String] as? Bool, true)
+        XCTAssertEqual(q[kSecReturnPersistentRef as String] as? Bool, true)
         XCTAssertEqual((FixedItemQuery(interactive: true).attributes[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed, false)
+    }
+    private var item: [String: Any] { [kSecAttrService as String: "Claude Code-credentials", kSecValuePersistentRef as String: Data([1, 2, 3])] }
+    func testRealReaderEnumeratesThenReadsExactlyOnePersistentReference() {
+        let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item]), .init(status: errSecSuccess, value: tokenData as CFData)])
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+        XCTAssertEqual(read.status, errSecSuccess); XCTAssertEqual(read.data, tokenData)
+        XCTAssertEqual(matcher.queries.count, 2)
+        let second = matcher.queries[1]
+        XCTAssertEqual(second[kSecValuePersistentRef as String] as? Data, Data([1, 2, 3]))
+        XCTAssertEqual(second[kSecMatchLimit as String] as? String, kSecMatchLimitOne as String)
+        XCTAssertEqual(second[kSecReturnData as String] as? Bool, true)
+        XCTAssertNil(second[kSecReturnAttributes as String])
+        for q in matcher.queries { XCTAssertEqual((q[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed, true) }
+    }
+    func testRealReaderNotFoundAndEmptyEnumerationNeverReadData() {
+        for first in [ItemMatch(status: errSecItemNotFound), .init(status: errSecSuccess, value: [[String: Any]]())] {
+            let matcher = FakeMatcher([first]), read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+            XCTAssertEqual(read.status, errSecItemNotFound); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
+        }
+    }
+    func testRealReaderRejectsAmbiguityWithoutReadingAnyPassword() {
+        let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item, item])])
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+        XCTAssertEqual(read.status, errSecDuplicateItem); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
+    }
+    func testRealReaderRejectsMalformedOrWrongServiceReference() {
+        for value in [[kSecAttrService as String: "other"], [kSecAttrService as String: "Claude Code-credentials"], [kSecAttrService as String: "Claude Code-credentials", kSecValuePersistentRef as String: Data()]] {
+            let matcher = FakeMatcher([.init(status: errSecSuccess, value: [value])])
+            let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+            XCTAssertEqual(read.status, errSecDecode); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
+        }
+    }
+    func testRealReaderItemCanDisappearBetweenEnumerationAndRead() {
+        let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item]), .init(status: errSecItemNotFound)])
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: true))
+        XCTAssertEqual(read.status, errSecItemNotFound); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 2)
     }
     func testEverySecurityFailureHasNoToken() async throws {
         for (status, expected) in [(errSecUserCanceled, WireCredentialOutcome.canceled), (errSecAuthFailed, .denied), (errSecItemNotFound, .notFound), (errSecInteractionNotAllowed, .interactionRequired), (errSecDecode, .error)] {

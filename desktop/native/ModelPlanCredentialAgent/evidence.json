@@ -2,7 +2,7 @@
   "stage": "U7 interface only",
   "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
   "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
-  "profile": "injected fake readers only; no SecurityItemCopyMatching or identity/signing operations",
+  "profile": "fake readers and injected low-level Security API only; no SecItemCopyMatching or identity/signing operations",
   "command": "swift test --package-path desktop/native/ModelPlanCredentialAgent",
   "sources": [
     {
@@ -11,11 +11,11 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "1ae1fe73e400628de3a2ec37927f4f703ee01087dfc0cfb4b5c17d2157eeb887"
+      "sha256": "d890f7509ead6f51f2b90ec3f30e1e25c8499f7f2a051cf0cfadb8debc896c7d"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
-      "sha256": "5ca610bf7fe7524a005892a955760f765dd04b6286e20cd4d144afe1e7700647"
+      "sha256": "ad87ae142a0db9daa35db2c1f56035cbb98c74fe90ab56c2a339b0441137d086"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
@@ -23,10 +23,14 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
-      "sha256": "9d74c69ad43ec3250795bb621804ae6b78067fac9b1e87c3c8e2faba549ae97e"
+      "sha256": "7901f7dbc39b67d1b7514135c401f1f4a764574e6cc4fcf0b01a823346aed969"
     }
   ],
   "scenarios": [
+    {
+      "id": "testActualEnumerationDictionaryIsSupportedByTheFakeOS",
+      "outcome": "pass"
+    },
     {
       "id": "testCancellationReturnsBeforeBlockedReadAndRejectsLateToken",
       "outcome": "pass"
@@ -49,6 +53,26 @@
     },
     {
       "id": "testMalformedOrOversizedSuccessIsError",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderEnumeratesThenReadsExactlyOnePersistentReference",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderItemCanDisappearBetweenEnumerationAndRead",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderNotFoundAndEmptyEnumerationNeverReadData",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderRejectsAmbiguityWithoutReadingAnyPassword",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderRejectsMalformedOrWrongServiceReference",
       "outcome": "pass"
     },
     {
@@ -88,5 +112,18 @@
     "source-policy": "pass",
     "whitespace": "pass"
   },
-  "level": "L1 fake contract only; not L2/L3"
+  "level": "L1 fake contract only; not L2/L3",
+  "regression": {
+    "id": "actual-enumeration-query-shape",
+    "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
+    "baselineOutcome": "fail",
+    "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
+    "fixedOutcome": "pass"
+  },
+  "hostedFakeSuite": {
+    "path": ".github/workflows/u7-credential-agent.yml",
+    "sha256": "2fa64e8d139ff64b080a52ddbd429857231e7b96d3e2e8ea56ca74e2ee84df54",
+    "outcome": "not-run",
+    "note": "New standalone package job; hosted execution follows push"
+  }
 }
