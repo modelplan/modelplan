@@ -18,7 +18,7 @@ public enum EngineInvalidationReason: Sendable, Equatable {
 }
 
 public enum EngineFeature: Sendable, Equatable {
-    case rows, consent, history, publication, pluginInstall, diagnostics
+    case rows, consent, history, cockpit, publication, pluginInstall, diagnostics
 }
 
 public enum EngineRequestDisposition: Sendable, Equatable {
@@ -46,8 +46,9 @@ public enum EngineResponse: Sendable {
     case grant(EngineGrantResult)
     case refresh(EngineReply<[WireRefreshScheduled]>)
     case history(EngineReply<WireHistoryPage>)
-    case pluginInstall(EngineReply<WireJSONValue>)
-    case publication(EngineReply<WireJSONValue>)
+    case cockpit(EngineReply<WireCockpitData>)
+    case pluginInstall(EngineReply<WirePluginInstallResult>)
+    case publication(EngineReply<WirePublicationResult>)
     case diagnostics(EngineReply<WireDiagnostics>)
 }
 
@@ -104,6 +105,7 @@ public protocol EngineClient: Actor {
                  timeout: Duration?) async throws -> EngineRequestCompletion
     func history(_ query: WireHistoryQueryParams,
                  timeout: Duration?) async throws -> EngineRequestCompletion
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion
     func pluginInstall(_ request: WirePluginInstallParams,
                        timeout: Duration?) async throws -> EngineRequestCompletion
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion

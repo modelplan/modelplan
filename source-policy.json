@@ -44,7 +44,42 @@
     "license": "LicenseRef-ModelPlan-Visuals-1.0",
     "licenseFile": "desktop/official-visuals/LICENSE.md",
     "licenseText": "LICENSES/LicenseRef-ModelPlan-Visuals-1.0.txt",
-    "binaries": {},
+    "binaries": {
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-day-idle-44x44@2x.png": "faa98e208e71531146af26c3043090f82d703eecf05d62c09e4e2e0ec7720d5f",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-day-idle-44x44@3x.png": "212e79cbe4663d61d0a2ec7a30e451aacebd64b41f66591f206118dc5e72d583",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-day-pressed-44x44@2x.png": "324b9084afc3e22f155c96fac3785edafe94f1054b9a398c19faf77bddda4f2d",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-day-pressed-44x44@3x.png": "ec574bee347df6940348e358a0901878240df29d3029478af5d0cb974b06768d",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-night-idle-44x44@2x.png": "7da9e76f5429ff04ab01c6404d2fe7f85dbc82a815ff2cc9979d86d1802ced57",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-night-idle-44x44@3x.png": "d62839aa24cf7d136204e6472185ff2cc9c4ef193642aec036fff338b30151ae",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-night-pressed-44x44@2x.png": "47f5d7c0d6d0062098127308ffa540ac0d3e8b5ceddecc89cc688ea11328dc85",
+      "desktop/official-visuals/runtime/ignition-a5/a5-cap-night-pressed-44x44@3x.png": "51e76c95cf6f752ced63aabb8d88f42cdc8206a409b15bcb5e903fb39309c165",
+      "desktop/official-visuals/runtime/ignition-a5/a5-inner-contact-shadow-52x52@2x.png": "cd577110844e59242efe46debf39663deb8d4bcd69ee4a3366709667e314ffb0",
+      "desktop/official-visuals/runtime/ignition-a5/a5-inner-contact-shadow-52x52@3x.png": "703ac253c6e4d1e1e7d6c0e3c2ff2f068935e1b130b62c63acd9a6b57d7185f2",
+      "desktop/official-visuals/runtime/ignition-a5/a5-outer-contact-shadow-56x56@2x.png": "be26433a127fec4be755e1ce49508d887a9c9f948fdc727c7c8a100845a4fe24",
+      "desktop/official-visuals/runtime/ignition-a5/a5-outer-contact-shadow-56x56@3x.png": "356b5f05ec46adc88f6fe931a9333e5abe4eb6d83e5a86856a7df19aa250f360",
+      "desktop/official-visuals/runtime/ignition-a5/a5-recessed-guard-52x52@2x.png": "367f5eac4a19d142a5782624e2d41c8423277ea514ca906344dcb3bbb0cdf582",
+      "desktop/official-visuals/runtime/ignition-a5/a5-recessed-guard-52x52@3x.png": "5279668bd9273747afe2bccdea6420caf6c03dc5b7c1c55309f7a0e9db6ed8c2",
+      "desktop/official-visuals/runtime/canopy-c01/canopy-640-1x.png": "6a68aa3c5ac30b961dba185e95c88705d931d486609de25c64fe3acd540624df",
+      "desktop/official-visuals/runtime/canopy-c01/pane-640-1x.png": "76649bc1ea20a9aa8619138b97435d6635f9af901425e454044014eef72d312b",
+      "desktop/official-visuals/runtime/canopy-c01/window-640-1x.png": "6a7f330cbf423eb733536e6a43303ff761d77ad078e12eb2e545857f53a7bce4",
+      "desktop/official-visuals/runtime/canopy-c01/aperture-640-1x.png": "c7264aeb23c90a45f21f7fee583182dd8a1f470f98214506f411d3dc4db664fa",
+      "desktop/official-visuals/runtime/canopy-c01/solid-outline-640-1x.png": "ad917b7c7898fb33488da9892c84646c45c005618fff9574d97827c163aa9878",
+      "desktop/official-visuals/runtime/canopy-c01/canopy-640-2x.png": "1aab224994fe1b2ccd9127928206dace495e972fac5ee1fe672dc2eea19afd09",
+      "desktop/official-visuals/runtime/canopy-c01/pane-640-2x.png": "454b4f45cdf27a240d0534aa1fea0693078a23cde03494e0d0b29f176fcd86da",
+      "desktop/official-visuals/runtime/canopy-c01/window-640-2x.png": "3960df614b36070b3183e2d5f7f85470b42d234d30f2da9e54570caa3a1620b4",
+      "desktop/official-visuals/runtime/canopy-c01/aperture-640-2x.png": "af242184d8025d6365265a6d5b363cb2068327bfadbe4545f7c4139617bf746b",
+      "desktop/official-visuals/runtime/canopy-c01/solid-outline-640-2x.png": "7b1b6380af939de926628a03d3f001574ab66a2d12482eaaf3b4ea81ef98f24f",
+      "desktop/official-visuals/runtime/canopy-c01/canopy-890-1x.png": "4d4f867da65ccf90403993934abab77ee67956af3bef079f2f4e436f3ebbbd25",
+      "desktop/official-visuals/runtime/canopy-c01/pane-890-1x.png": "b5603e844822c8ee431ae5fcff82d6f79de5a7978a54187384936864155e13d3",
+      "desktop/official-visuals/runtime/canopy-c01/window-890-1x.png": "30f7ebf3062c905d202aa2cab9e40f7768a36e2012365d7e17f70871a0ad1460",
+      "desktop/official-visuals/runtime/canopy-c01/aperture-890-1x.png": "5567dc667b46a4a7b4f860029942f9cdda97619c8bcb557d7b4e0f464c7c0da4",
+      "desktop/official-visuals/runtime/canopy-c01/solid-outline-890-1x.png": "9a71ebc24489be5d0ec00785e34e419246c340686f8629fa2119833c30e96402",
+      "desktop/official-visuals/runtime/canopy-c01/canopy-890-2x.png": "89a57dc272bd1166080b61744bfac5dfab52575b7480327203fda8fee8999391",
+      "desktop/official-visuals/runtime/canopy-c01/pane-890-2x.png": "19b37a5f559ae400541007721e05a9016e4ffa3b102a53f993ad636a63d7a199",
+      "desktop/official-visuals/runtime/canopy-c01/window-890-2x.png": "2ec9bd34fcac613b385db0f8ab9b6ce88d76905feb557a7a2ba66d48d2005264",
+      "desktop/official-visuals/runtime/canopy-c01/aperture-890-2x.png": "d9778c2a895c96f768333a0189b684a098d60b29187a9d21c3aefe03af18ffa8",
+      "desktop/official-visuals/runtime/canopy-c01/solid-outline-890-2x.png": "3da44669818854b371d709975b2fc529a1376c40d0abcd403a9baf90bfa610bb"
+    },
     "historicalMit": {
       "desktop/official-visuals/HISTORICAL-MIT.txt": "6d98a3aa9160bbfd0ee9420a2cec649267ea4c3513436c32306b922666555abe",
       "desktop/official-visuals/icons/128x128.png": "f12ce2d3b16a6d4d768faea8f089af7481db4af25038e13b07d5818517b78317",
@@ -60,5 +95,11 @@
     },
     "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256."
   },
-  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix."
+  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix.",
+  "thirdPartyFonts": {
+    "prefix": "desktop/third-party/fonts/",
+    "license": "OFL-1.1",
+    "manifest": "desktop/third-party/fonts/manifest.json",
+    "manifestSha256": "538b8193913d2d9ab3fc4e4c4f07082bebe1cd388a99e2875047cb7b8c583574"
+  }
 }

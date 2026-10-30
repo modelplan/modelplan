@@ -12,6 +12,6 @@ let package = Package(
             name: "ModelPlanEngineClient",
             dependencies: [.product(name: "ModelPlanWire", package: "ModelPlanWire")]
         ),
-        .testTarget(name: "ModelPlanEngineClientTests", dependencies: ["ModelPlanEngineClient", .product(name: "ModelPlanWire", package: "ModelPlanWire")])
+        .testTarget(name: "ModelPlanEngineClientTests", dependencies: ["ModelPlanEngineClient", .product(name: "ModelPlanWire", package: "ModelPlanWire")], resources: [.copy("FuzzSeeds")])
     ]
 )

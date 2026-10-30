@@ -1,0 +1,43 @@
+name: Official visual pack
+on:
+  pull_request:
+    paths:
+      - desktop/official-visuals/**
+      - desktop/third-party/fonts/**
+      - source-policy.json
+      - scripts/check-visual-pack.mjs
+      - scripts/check-font-pack.mjs
+      - scripts/check-source-policy.mjs
+      - scripts/tests/visual-pack.test.mjs
+      - scripts/tests/font-pack.test.mjs
+      - .github/workflows/official-visuals.yml
+  push:
+    branches: [main]
+    paths:
+      - desktop/official-visuals/**
+      - desktop/third-party/fonts/**
+      - source-policy.json
+      - scripts/check-visual-pack.mjs
+      - scripts/check-font-pack.mjs
+      - scripts/check-source-policy.mjs
+      - scripts/tests/visual-pack.test.mjs
+      - scripts/tests/font-pack.test.mjs
+      - .github/workflows/official-visuals.yml
+permissions:
+  contents: read
+concurrency:
+  group: official-visuals-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test scripts/tests/visual-pack.test.mjs
+      - run: node scripts/check-visual-pack.mjs
+      - run: node --test scripts/tests/font-pack.test.mjs
+      - run: node scripts/check-font-pack.mjs
+      - run: node scripts/check-source-policy.mjs

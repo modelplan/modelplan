@@ -18,6 +18,7 @@ struct ClientPending {
     let grant: WireConsentGrantParams?
     var continuation: CheckedContinuation<EngineRequestCompletion, Error>?
     var timeout: Task<Void, Never>?
+    var pluginTool: WirePluginTool? = nil
     var sent = false
     var receiptKnown = false
     var committedAt: EngineConsentFloor? = nil
@@ -193,7 +194,7 @@ public actor ProcessEngineClient: EngineClient {
             child = process
             let params = try WireInitializeParams(sessionId: sessionID, protocolVersion: WireProtocol.version,
                 appVersion: configuration.applicationVersion,
-                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "publication", "plugin_install"] + (credentialAgent == nil ? [] : ["credentials"]))
+                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "publication", "plugin_install"] + (credentialAgent == nil ? [] : ["credentials"]))
             _ = try enqueue("initialize", params: wireJSON(params), purpose: .initialize, timeout: runtime.requestTimeout)
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)
@@ -266,7 +267,7 @@ public actor ProcessEngineClient: EngineClient {
     }
     @discardableResult
     func enqueue(_ method: String, params: WireJSONValue, purpose: ClientPending.Purpose,
-                 grant: WireConsentGrantParams? = nil, timeout: Duration,
+                 grant: WireConsentGrantParams? = nil, pluginTool: WirePluginTool? = nil, timeout: Duration,
                  continuation: CheckedContinuation<EngineRequestCompletion, Error>? = nil) throws -> String {
         guard child != nil else { throw EngineClientError.notReady }
         let control = isControl(method)
@@ -274,9 +275,9 @@ public actor ProcessEngineClient: EngineClient {
         let queries = pending.values.filter { ["history/query", "cockpit/query"].contains($0.method) }.count
         let privileged = control && method != "consent/get" || purpose == .epochProbe || purpose == .credentialProbe
         guard privileged ? pending.count < 256 : normal < 16,
-              method != "history/query" || queries < 2 else { throw EngineClientError.localBusy }
-        if ["rows/subscribe", "history/query"].contains(method) {
-            let reserved = pending.values.filter { ["rows/subscribe", "history/query"].contains($0.method) }.count * WireProtocol.maxFrameBytes
+              !["history/query", "cockpit/query"].contains(method) || queries < 2 else { throw EngineClientError.localBusy }
+        if ["rows/subscribe", "history/query", "cockpit/query", "publication/get", "plugin/install"].contains(method) {
+            let reserved = pending.values.filter { ["rows/subscribe", "history/query", "cockpit/query", "publication/get", "plugin/install"].contains($0.method) }.count * WireProtocol.maxFrameBytes
             guard reserved + deliveries.reduce(0, { $0 + $1.bytes }) + WireProtocol.maxFrameBytes <= 32 << 20 else { throw EngineClientError.localBusy }
         }
         let id = try nextID(); let key = requestKey(id)
@@ -284,6 +285,7 @@ public actor ProcessEngineClient: EngineClient {
         let current = control ? controlWrites : writes
         guard current.count < (control ? 256 : 64), current.reduce(0, { $0 + $1.data.count }) + data.count <= (control ? 4 << 20 : 32 << 20) else { throw EngineClientError.localBusy }
         var entry = ClientPending(id: id, method: method, purpose: purpose, grant: grant, continuation: continuation)
+        entry.pluginTool = pluginTool
         let token = child!.id
         entry.timeout = Task { [weak self] in
             do { try await Task.sleep(for: timeout); await self?.timedOut(key, child: token) } catch {}
@@ -339,7 +341,7 @@ public actor ProcessEngineClient: EngineClient {
     func timedOut(_ key: String, child id: UUID) {
         guard child?.id == id, let entry = pending[key] else { return }
         if entry.sent { sendCancel(entry.id) }
-        let error: EngineClientError = (entry.receiptKnown ? nil : entry.grant).map { .mutationOutcomeUnknown(requestID: $0.requestId, expected: EngineConsentFloor(storeEpoch: $0.expectStoreEpoch, generation: $0.expectGeneration)) } ?? .deadlineExceeded(entry.sent ? .cancelled : .notSent)
+        let error: EngineClientError = (entry.receiptKnown ? nil : entry.grant).map { .mutationOutcomeUnknown(requestID: $0.requestId, expected: EngineConsentFloor(storeEpoch: $0.expectStoreEpoch, generation: $0.expectGeneration)) } ?? .deadlineExceeded(entry.sent ? (entry.method == "plugin/install" ? .outcomeUnknown : .cancelled) : .notSent)
         finishRequest(key, error: error)
         if entry.purpose == .initialize { initializationFailed(id, error: error) }
         if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, .staleValue)) }
@@ -349,7 +351,7 @@ public actor ProcessEngineClient: EngineClient {
         if entry.sent { sendCancel(entry.id) }
         let error: EngineClientError
         if entry.sent, let grant = entry.grant, !entry.receiptKnown { error = .mutationOutcomeUnknown(requestID: grant.requestId, expected: EngineConsentFloor(storeEpoch: grant.expectStoreEpoch, generation: grant.expectGeneration)) }
-        else { error = .interrupted(.cancelled) }
+        else { error = .interrupted(entry.sent && entry.method == "plugin/install" ? .outcomeUnknown : .cancelled) }
         finishRequest(key, error: error)
     }
     func finishRequest(_ key: String, error: EngineClientError? = nil) {
@@ -374,9 +376,9 @@ public actor ProcessEngineClient: EngineClient {
         }
     }
 
-    func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil) async throws -> EngineRequestCompletion {
+    func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil) async throws -> EngineRequestCompletion {
         guard handshaken, child != nil, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
-        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
+        if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         let maximum: Duration = method == "plugin/install" ? .seconds(120) : runtime.requestTimeout
         let bound = min(timeout ?? maximum, maximum)
@@ -387,7 +389,7 @@ public actor ProcessEngineClient: EngineClient {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 do {
-                    let key = try enqueue(method, params: parameters, purpose: .request, grant: grant, timeout: bound, continuation: continuation)
+                    let key = try enqueue(method, params: parameters, purpose: .request, grant: grant, pluginTool: pluginTool, timeout: bound, continuation: continuation)
                     cancellation.install { [weak self] in Task { await self?.cancelRequest(key) } }
                 } catch {
                     if let grant { retireIntent(requestID: grant.requestId, unlessCommitted: false) }
@@ -402,19 +404,12 @@ public actor ProcessEngineClient: EngineClient {
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("refresh/request", value, timeout: timeout) }
     public func history(_ value: WireHistoryQueryParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("history/query", value, timeout: timeout) }
     public func diagnostics(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("diagnostics/get", WireEmpty(), timeout: timeout) }
+    public func cockpit(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("cockpit/query", WireEmpty(), timeout: timeout) }
     public func pluginInstall(_ value: WirePluginInstallParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion {
-        guard handshaken, !epochUncertain else { throw EngineClientError.notReady }
-        guard capabilities.contains("plugin_install") else { throw EngineClientError.unsupportedCapability }
-        // No generated result root exists yet. Never execute a host mutation and
-        // then label an unchecked JSON body a successful installation.
-        emit(.featureFailure(.pluginInstall, .featureDecode(.pluginInstall)))
-        throw EngineClientError.featureDecode(.pluginInstall)
+        try await request("plugin/install", value, timeout: timeout, pluginTool: value.tool)
     }
     public func publication(timeout: Duration? = nil) async throws -> EngineRequestCompletion {
-        guard handshaken, !epochUncertain else { throw EngineClientError.notReady }
-        guard capabilities.contains("publication") else { throw EngineClientError.unsupportedCapability }
-        emit(.featureFailure(.publication, .featureDecode(.publication)))
-        throw EngineClientError.featureDecode(.publication)
+        try await request("publication/get", WireEmpty(), timeout: timeout)
     }
 }
 

@@ -176,7 +176,7 @@ func testRegisteredCockpitAndCursor(t *testing.T, p *queryBinary, home string) {
 	if json.Unmarshal(current["result"], &facts) != nil {
 		t.Fatal("consent read failed")
 	}
-	grant := p.call("consent/grant", wire.ConsentGrantParams{RequestID: "u3c-cursor-local", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeCursorLocalHistory}, Deny: []string{}})
+	grant := p.call("consent/grant", wire.ConsentGrantParams{RequestID: "u3c-cursor-local", ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{consent.ScopeCursorLocalHistory}, Deny: []string{consent.ScopeCursorAccountUsageSavedLogin}})
 	if _, ok := grant["error"]; ok {
 		t.Fatalf("Cursor local grant rejected: %s", grant["error"])
 	}
@@ -212,12 +212,12 @@ func testRegisteredCockpitAndCursor(t *testing.T, p *queryBinary, home string) {
 	remote := p.call("refresh/request", wire.RefreshRequestParams{Scopes: []string{consent.ScopeCursorAccountUsageSavedLogin}})
 	var blocked wire.Envelope[[]wire.RefreshScheduled]
 	if json.Unmarshal(remote["result"], &blocked) != nil || len(blocked.Data) != 1 || blocked.Data[0].DisabledReason == nil {
-		t.Fatal("Cursor account POST veto lost")
+		t.Fatalf("denied Cursor account scope admitted: %s", remote["result"])
 	}
 	retained := p.call("history/query", wire.HistoryQueryParams{Tool: "cursor", Kind: wire.HistoryTokens, Limit: 10})
 	var kept wire.Envelope[wire.HistoryPage]
 	if json.Unmarshal(retained["result"], &kept) != nil || len(kept.Data.Items) != 2 {
-		t.Fatal("account POST veto erased local Cursor history")
+		t.Fatal("denied account refresh erased local Cursor history")
 	}
 	cockpit := p.call("cockpit/query", map[string]any{})
 	var display wire.Envelope[wire.CockpitData]
@@ -255,8 +255,8 @@ func testRegisteredCockpitAndCursor(t *testing.T, p *queryBinary, home string) {
 		t.Fatal("consent readback failed")
 	}
 	for _, fact := range currentFacts.Data.Scopes {
-		if fact.Scope == consent.ScopeCursorAccountUsageSavedLogin && (fact.Disabled == nil || string(*fact.Disabled) != "policy_pending") {
-			t.Fatal("Cursor history enabled account POST")
+		if fact.Scope == consent.ScopeCursorAccountUsageSavedLogin && (fact.Disabled != nil || fact.DefaultCheck || fact.State != wire.ConsentDenied) {
+			t.Fatal("Cursor account denial or unchecked default lost")
 		}
 	}
 }
@@ -291,7 +291,8 @@ func setupQueryHome(t *testing.T) string {
 		t.Fatal(result)
 	}
 	// Synthetic legacy input: an older writer granted account usage, which still
-	// must not grant the independent local path or bypass the compiled POST veto.
+	// must not grant the independent local path. The local grant test explicitly
+	// denies this account scope while preserving its numeric history.
 	if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "cursor", true, "native:cursor", "native", now) }); err != nil {
 		t.Fatal(err)
 	}

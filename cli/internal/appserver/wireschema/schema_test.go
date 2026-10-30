@@ -233,3 +233,32 @@ func TestHistoryBoundsAndTypedDisabledReasons(t *testing.T) {
 		}
 	}
 }
+
+func TestFeatureRootsAndPublicationRequest(t *testing.T) {
+	if err := validate(t, schema(t, "Request"), wire.Request{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`"typed-publication"`), Method: "publication/get", Params: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal("registered publication request missing from generated protocol", err)
+	}
+	var publication wire.PublicationResult
+	if err := json.Unmarshal([]byte(`{"contractVersion":1,"schemaVersion":1,"publicationId":"synthetic","publishedAt":null,"units":{"ability":"websiteAbility","cost":"usdPerReferenceTask","time":"taskTimeCrossModel"},"capabilities":{},"models":[],"lineups":[],"speedTiers":[],"resets":[],"windows":[],"multipliers":null,"multiplierHorizon":null,"planMetering":null}`), &publication); err != nil {
+		t.Fatal(err)
+	}
+	if err := validate(t, schema(t, "PublicationResult"), publication); err != nil {
+		t.Fatal(err)
+	}
+	s := schema(t, "PluginInstallResult")
+	result := wire.PluginInstallResult{SchemaVersion: 1, Tool: wire.PluginCodex, Status: wire.PluginPlanned, Commands: [][]string{{"codex", "plugin", "marketplace"}, {"codex", "plugin", "add"}}, Docs: "https://github.com/modelplan/modelplan/tree/main/codex"}
+	if err := validate(t, s, result); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutation := range []func(*wire.PluginInstallResult){
+		func(r *wire.PluginInstallResult) { r.Status = "future-unknown" },
+		func(r *wire.PluginInstallResult) { r.Completed = 3 },
+		func(r *wire.PluginInstallResult) { r.Commands = r.Commands[:1] },
+	} {
+		bad := result
+		mutation(&bad)
+		if err := validate(t, s, bad); err == nil {
+			t.Fatal("invalid installer receipt accepted")
+		}
+	}
+}

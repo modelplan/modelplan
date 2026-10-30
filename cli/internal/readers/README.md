@@ -17,18 +17,22 @@ rejection would reset its budget and is forbidden.
 | `zai.account_usage.api_key` | `api.z.ai` or `open.bigmodel.cn` | GET `/api/monitor/usage/quota/limit` | 1 |
 | `opencodego.account_usage.api_key` | `opencode.ai` | GET `/zen/go/v1/usage` | 1 |
 | `grok.account_usage.saved_login` | `cli-chat-proxy.grok.com` | GET `/v1/billing?format=credits` | 1 |
-| `gemini.account_usage.saved_login` (**policy_pending**) | `cloudcode-pa.googleapis.com` | optional POST `/v1internal:loadCodeAssist`, POST `/v1internal:retrieveUserQuota` | 2 |
-| `cursor.account_usage.saved_login` (**policy_pending**) | `cursor.com`, then `api2.cursor.sh` | optional POST `/api/dashboard/get-plan-info`, POST `/aiserver.v1.DashboardService/GetCurrentPeriodUsage` | 2 |
+| `gemini.account_usage.saved_login` | `cloudcode-pa.googleapis.com` | optional POST `/v1internal:loadCodeAssist`, POST `/v1internal:retrieveUserQuota` | 2 |
+| `cursor.account_usage.saved_login` | `cursor.com`, then `api2.cursor.sh` | optional POST `/api/dashboard/get-plan-info`, POST `/aiserver.v1.DashboardService/GetCurrentPeriodUsage` | 2 |
 
-The POST pins are dormant. `CheckAdmission` rejects both scopes independently of
-saved-login consent, before transport I/O; no runtime flag approves them.
+The owner approved exactly the Gemini Code Assist and Cursor POST sets on
+2026-10-29 as pinned in the [Gemini card](https://github.com/modelplan/modelplan/blob/9a5c61e6dfb95d5b1e67288da0a9db86a2addb08/docs/readers/gemini.md)
+and [Cursor card](https://github.com/modelplan/modelplan/blob/9a5c61e6dfb95d5b1e67288da0a9db86a2addb08/docs/readers/cursor.md).
+`CheckAdmission` permits only those compiled sets; this does not grant consent.
+Both scopes remain O-class with `defaultCheck: false`, and users opt in per scope.
+No runtime flag or catalogue field can expand a request set.
 Gemini load bodies contain only the fixed health-check mode, fixed IDE/plugin
 metadata and an optional validated project selector. Quota bodies contain only
 a required validated project. Cursor bodies are exactly `{}`. Unknown/duplicate
 fields, null project/metadata, extra headers and unreviewed bodies are rejected.
 Cursor's first authority allows its app-derived cookie and Origin; its second
 allows bearer authorization and Connect version. Those credential headers cannot
-be forwarded between its authorities. An owner policy decision is still required.
+be forwarded between its authorities.
 The independent local-history scopes remain eligible under their own consent.
 
 All other paths, parameters, body-bearing GETs, authority overrides, extra header
@@ -53,10 +57,10 @@ outbound request, including unexpected attempts. It opens no socket and keeps no
 credentials, headers or bodies. Production-boundary tests inject it beneath the
 client constructed by the actual reader. Other fixtures route the final socket
 to localhost while retaining compiled production authorities above the guard.
-Historical Gemini/Cursor parser/identity fixtures explicitly bypass both policy
-and transport admission in test code only. Strict production POST regressions
-retain the unchanged policy and use valid synthetic logins and `ProductionPaths`.
-Dormant POST schema tests validate the pins without approving either scope.
+Gemini/Cursor parser/identity fixtures retain the production admission and
+transport guard. Actual-reader tests capture the production-created client,
+check one guard and a shared 20-second deadline for the entire logical read,
+and probe terminal auth/redirect stops at both request slots.
 
 Run from `cli/`:
 
@@ -67,16 +71,19 @@ go test -race ./internal/readers/... ./internal/quota -count=1
 
 | Scenario | L1 evidence |
 | --- | --- |
-| U2a-POST | Production refresh/diagnostics emit zero calls, never schedule remote reads, suppress retained captures and report policy_pending. Valid synthetic logins prevent a missing-credential false pass. |
-| U2a-AUTH | MiniMax production dispatch stops on 401/403 in both regions; every active HTTP reader's actual constructed client rejects subsequent requests. |
+| U2a-POST | Presence alone emits zero calls. Per-scope opt-in produces only the pinned cold pair or warm usage request; revoke suppresses accounts. Fresh constructors and diagnostics preserve the shared budget. |
+| U2a-AUTH | MiniMax stops on 401/403 in both regions. Gemini/Cursor stop after 401/403 or redirect at either slot; the production-created client refuses further requests. |
 | U2a-LOCAL | Independent local-history admission remains eligible; the Gemini production history fixture retains seeded counts. |
 | U2a-DESTINATIONS | Production off-host regressions failed before wiring. Actual clients reject excess calls, redirects and requests after auth failure. Fixtures verify expected positive requests and decoding. |
-| U2a-POST-PINS | Closed body schemas, exact destinations and method, header whitelist, and Cursor credential separation are checked while admission stays pending. |
+| U2a-POST-PINS | Only pinned methods/destinations/closed bodies/header names pass the guard. GET substitution, extra fields/headers/calls, off-host credentials and cross-authority Cursor headers fail before recording. |
 
-U14 completion still requires the real app-server constructor and an independent
-CLI on one synthetic shared home: grant POST account scopes and local history,
-require policy_pending/zero vendor calls, return MiniMax 401 and 403 separately,
-and query retained local history. Cursor has a scope but no local count adapter
-on this base, so that history capability is unsupported. Bind outcomes to the
-source and packaged subject SHAs. These local tests do not claim that L2 result,
-live vendor acceptance, native UI or L3 evidence.
+The U14 provider-only executable keeps the real constructor/backend/guard and
+records only fixed route labels and shape/credential-match booleans. Approved
+scopes start unset and unchecked, then each explicit grant succeeds without
+granting its peer. Each cold read produces a positive quota using its two pinned
+requests. Independent CLI refresh retains all provider budget hashes, app-server
+cooldown deadlines and raw call counts. Gemini and Cursor local history retain
+identical positive typed values. The recorder independently rejects bad bodies;
+a negative-control overlay removes the guard and changes a producer body, which
+must fail the run. Linux execution is L1 engine evidence; dedicated device L2,
+live vendor acceptance, native UI and L3 remain separate.

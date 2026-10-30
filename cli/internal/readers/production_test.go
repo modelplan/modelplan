@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,7 +20,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
-func postProductionPaths(t *testing.T, provider string, now time.Time) quota.Paths {
+func postProductionPaths(t *testing.T, provider string, now time.Time, allowed bool) quota.Paths {
 	t.Helper()
 	testenv.IsolateHome(t)
 	home := os.Getenv("HOME")
@@ -57,55 +58,121 @@ func postProductionPaths(t *testing.T, provider string, now time.Time) quota.Pat
 			t.Fatal(err)
 		}
 	}
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
-		return consent.Set(s, provider, true, "native:"+provider, quota.BackendNative, now)
-	}); err != nil {
+	if _, err := consent.EnsureStore(consent.Path()); err != nil {
 		t.Fatal(err)
+	}
+	if allowed {
+		setPOSTConsent(t, provider, true)
 	}
 	return quota.ProductionPaths(t.TempDir(), "1.0.0")
 }
 
-// Red line: real production paths, including retained consent, cannot send the
-// unapproved POSTs. Valid synthetic logins make missing/expired credentials an
-// invalid explanation for zero calls. No test policy override is used here.
-func TestProductionPOSTGateOverridesSavedLoginConsent(t *testing.T) {
-	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
-	for _, provider := range []string{"gemini", "cursor"} {
-		t.Run(provider, func(t *testing.T) {
-			paths := postProductionPaths(t, provider, now)
-			record := readertest.NewTransport(readertest.Response{StatusCode: 200, Body: `{}`}, readertest.Response{StatusCode: 200, Body: `{}`})
-			old := http.DefaultTransport
+func setPOSTConsent(t *testing.T, provider string, allowed bool) {
+	t.Helper()
+	state, err := consent.Load(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := consent.ScopeGeminiAccountUsageSavedLogin
+	if provider == "cursor" {
+		scope = consent.ScopeCursorAccountUsageSavedLogin
+	}
+	grant := consent.Grant{RequestID: fmt.Sprintf("post-%s-%t-%d", provider, allowed, state.Generation), ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, ConsentTextVersion: consent.TextVersion}
+	if allowed {
+		grant.Allow = []string{scope}
+	} else {
+		grant.Deny = []string{scope}
+	}
+	_, err = consent.ApplyGrant(consent.Path(), grant, consent.GrantHooks{Admit: func(consent.ScopeDefinition) (consent.Record, error) {
+		return consent.Record{ReaderID: "native:" + provider, Backend: quota.BackendNative}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The real production constructor requires an explicit saved-login scope grant.
+// Approved cold reads use two pinned requests; warm reads use only usage. A new
+// constructor/diagnostic call cannot bypass the persisted shared budget.
+func TestProductionApprovedPOSTConsentColdWarmAndSharedBudget(t *testing.T) {
+	now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	for _, read := range approvedPOSTReads() {
+		t.Run(read.name, func(t *testing.T) {
+			paths := postProductionPaths(t, read.name, now, false)
+			files := []string{"assist.json", "quota.json"}
+			if read.name == "cursor" {
+				files = []string{"merged-plan.json", "period-usage.json"}
+			}
+			responses := []readertest.Response{}
+			for _, file := range append(files, files[1]) {
+				body, err := os.ReadFile(filepath.Join("..", "quota", "testdata", read.name, file))
+				if err != nil {
+					t.Fatal(err)
+				}
+				responses = append(responses, readertest.Response{StatusCode: 200, Body: string(body)})
+			}
+			record := readertest.NewTransport(responses...)
+			previous := http.DefaultTransport
 			http.DefaultTransport = record
-			defer func() { http.DefaultTransport = old }()
-			if quota.ReaderAdmitted(paths, provider) || quota.NativeDue(paths, now) {
-				t.Error("unapproved scope admitted or scheduled")
+			t.Cleanup(func() { http.DefaultTransport = previous })
+			if quota.ReaderAdmitted(paths, read.name) {
+				t.Fatal("O-class scope admitted by presence alone")
 			}
 			_ = quota.RefreshNative(context.Background(), paths, now)
-			_ = quota.RefreshReaderDiagnostics(context.Background(), paths, now.Add(time.Hour))
-			if err := checkRequests(record.Requests(), nil); err != nil {
-				t.Error(err)
+			if len(record.Requests()) != 0 {
+				t.Fatal("request before per-scope consent")
 			}
-			found := false
-			for _, row := range quota.ReaderDiagnostics(paths, now) {
-				if row.Provider == provider {
-					found = true
-					if row.Admitted != "no" || row.State != "unavailable:policy_pending" || row.Windows != 0 {
-						t.Errorf("missing policy gate diagnostic: %+v", row)
-					}
-				}
+			setPOSTConsent(t, read.name, true)
+			paths = quota.ProductionPaths(paths.Cache, "1.0.0")
+			if !quota.ReaderAdmitted(paths, read.name) || !quota.NativeDue(paths, now) {
+				t.Fatal("approved scope not scheduled after opt-in")
 			}
-			if !found {
-				t.Error("missing provider diagnostic")
+			if err := quota.RefreshNative(context.Background(), paths, now); err != nil {
+				t.Fatal(err)
+			}
+			want := []readertest.Request{}
+			for _, p := range read.requests {
+				r := p.request(t)
+				want = append(want, readertest.Request{Method: r.Method, Host: r.URL.Host, Path: r.URL.EscapedPath()})
+				r.Body.Close()
+			}
+			if err := checkRequests(record.Requests(), want); err != nil {
+				t.Fatal(err)
+			}
+			if len(quota.ReadPermitted(paths, now).Accounts) == 0 {
+				t.Fatal("approved production read produced no account")
+			}
+			again := quota.ProductionPaths(paths.Cache, "1.0.0")
+			_ = quota.RefreshNative(context.Background(), again, now.Add(time.Minute))
+			_ = quota.RefreshReaderDiagnostics(context.Background(), again, now.Add(2*time.Minute))
+			if err := checkRequests(record.Requests(), want); err != nil {
+				t.Fatal("shared budget bypassed", err)
+			}
+			if err := quota.RefreshNative(context.Background(), again, now.Add(10*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			want = append(want, want[1])
+			if err := checkRequests(record.Requests(), want); err != nil {
+				t.Fatal("warm read did not retain its request set", err)
+			}
+			setPOSTConsent(t, read.name, false)
+			revoked := quota.ProductionPaths(paths.Cache, "1.0.0")
+			_ = quota.RefreshNative(context.Background(), revoked, now.Add(time.Hour))
+			if quota.ReaderAdmitted(revoked, read.name) || len(quota.ReadPermitted(revoked, now.Add(time.Hour)).Accounts) != 0 {
+				t.Fatal("revoked account remained admitted")
+			}
+			if err := checkRequests(record.Requests(), want); err != nil {
+				t.Fatal("request after revoke", err)
 			}
 		})
 	}
 }
 
-func TestProductionPOSTGateSuppressesRetainedRemoteCapture(t *testing.T) {
+func TestProductionUnconsentedPOSTSuppressesRetainedRemoteCapture(t *testing.T) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
 	for _, provider := range []string{"gemini", "cursor"} {
 		t.Run(provider, func(t *testing.T) {
-			paths := postProductionPaths(t, provider, now)
+			paths := postProductionPaths(t, provider, now, false)
 			file := filepath.Join(paths.Cache, "observed", "readers", provider+".json")
 			capture := map[string]any{"schemaVersion": 1, "provider": provider, "entries": []any{map[string]any{"profileKey": "synthetic-profile", "status": "ok", "account": map[string]any{"source": provider, "observedAt": now, "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "observedAt": now}}}}}}
 			data, err := json.Marshal(capture)

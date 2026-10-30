@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
-	"github.com/modelplan/modelplan/cli/internal/plugininstall"
 )
 
 type object = map[string]any
@@ -71,7 +70,8 @@ func Generate(root string) ([]byte, error) {
 	// spelling of generic instantiations.
 	roots := map[string]reflect.Type{
 		"PluginInstallParams":  reflect.TypeFor[wire.PluginInstallParams](),
-		"PluginInstallResult":  reflect.TypeFor[plugininstall.Result](),
+		"PublicationResult":    reflect.TypeFor[wire.PublicationResult](),
+		"PluginInstallResult":  reflect.TypeFor[wire.PluginInstallResult](),
 		"InitializeParams":     reflect.TypeFor[wire.InitializeParams](),
 		"InitializeResult":     reflect.TypeFor[wire.InitializeResult](),
 		"RowsSnapshot":         reflect.TypeFor[wire.RowsSnapshot](),
@@ -108,7 +108,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -126,7 +126,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env
@@ -209,7 +209,7 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 				}
 				property := props[name].(object)
 				switch key {
-				case "minimum", "maximum", "minLength", "maxLength", "maxItems":
+				case "minimum", "maximum", "minLength", "maxLength", "minItems", "maxItems":
 					number, err := strconv.Atoi(value)
 					if err != nil {
 						panic("invalid numeric wire constraint")

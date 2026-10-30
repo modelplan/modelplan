@@ -1429,21 +1429,37 @@
             },
             "type": "array"
           },
+          "maxItems": 2,
+          "minItems": 2,
           "type": "array"
         },
         "completed": {
+          "maximum": 2,
+          "minimum": 0,
           "type": "integer"
         },
         "docs": {
           "type": "string"
         },
         "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
           "type": "integer"
         },
         "status": {
+          "enum": [
+            "installed",
+            "instructions",
+            "planned",
+            "failed"
+          ],
           "type": "string"
         },
         "tool": {
+          "enum": [
+            "claude-code",
+            "codex"
+          ],
           "type": "string"
         }
       },
@@ -1485,6 +1501,175 @@
         "storeEpoch",
         "consentGeneration",
         "data"
+      ],
+      "type": "object"
+    },
+    "PublicationCapability": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "PublicationResult": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PublicationCapability"
+          },
+          "type": "object"
+        },
+        "contractVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "lineups": {
+          "items": {},
+          "type": "array"
+        },
+        "models": {
+          "items": {},
+          "type": "array"
+        },
+        "multiplierHorizon": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "multipliers": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "planMetering": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publicationId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "publishedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resets": {
+          "items": {},
+          "type": "array"
+        },
+        "schemaVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "selectionRevision": {},
+        "speedTiers": {
+          "items": {},
+          "type": "array"
+        },
+        "units": {
+          "$ref": "#/$defs/PublicationUnits"
+        },
+        "windows": {
+          "items": {},
+          "type": "array"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "capabilities",
+        "schemaVersion",
+        "publicationId",
+        "publishedAt",
+        "units",
+        "models",
+        "lineups",
+        "speedTiers",
+        "resets",
+        "windows",
+        "multipliers",
+        "multiplierHorizon",
+        "planMetering"
+      ],
+      "type": "object"
+    },
+    "PublicationResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/PublicationResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "PublicationUnits": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "type": "string"
+        },
+        "cost": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ability",
+        "cost",
+        "time"
       ],
       "type": "object"
     },
@@ -1884,6 +2069,30 @@
               "const": "2.0"
             },
             "method": {
+              "const": "publication/get"
+            },
+            "params": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "required": [
+            "jsonrpc",
+            "method",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/RequestID"
+            },
+            "jsonrpc": {
+              "const": "2.0"
+            },
+            "method": {
               "const": "refresh/request"
             },
             "params": {
@@ -2000,6 +2209,9 @@
                 },
                 {
                   "$ref": "#/$defs/PluginInstallResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/PublicationResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"

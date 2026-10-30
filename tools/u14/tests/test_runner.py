@@ -19,10 +19,30 @@ import run as engine_cli
 
 
 def valid_admission_observation():
+    pins = {
+        'gemini': [('cloudcode-pa.googleapis.com', '/v1internal:loadCodeAssist'),
+                   ('cloudcode-pa.googleapis.com', '/v1internal:retrieveUserQuota')],
+        'cursor': [('cursor.com', '/api/dashboard/get-plan-info'),
+                   ('api2.cursor.sh', '/aiserver.v1.DashboardService/GetCurrentPeriodUsage')],
+    }
+    post_scopes = {}
+    for tool, requests in pins.items():
+        cases = {}
+        for status in ('404', '401', '403'):
+            deadline = {'scope': tool + '.account_usage.saved_login', 'disabledReason': 'cooldown',
+                        'at': '2100-01-01T00:00:00Z'}
+            cases[status] = {'calls': 2, 'readingAvailable': True,
+                'requests': [{'event': tool + '-post', 'method': 'POST', 'host': host, 'path': path,
+                              'status': 200, 'bodyMatched': True, 'headersMatched': True, 'credentialMatched': True}
+                             for host, path in requests],
+                'beforeCli': dict(deadline), 'afterCli': dict(deadline),
+                'nextAttemptAt': '2100-01-01T00:00:00Z',
+                'budgetBeforeSha256': 'a' * 64, 'budgetAfterSha256': 'a' * 64}
+        post_scopes[tool] = {'calls': 6, 'initialState': 'unset', 'defaultCheck': False,
+                            'grantable': True, 'beforeConsentCalls': 0, 'syntheticLoginPresent': True, 'cases': cases}
     return {
         'sharedSyntheticHome': True, 'unexpectedCalls': 0,
-        'postScopes': {p: {'calls': 0, 'disabledReason': 'policy_pending', 'syntheticLoginPresent': True}
-                       for p in ('gemini', 'cursor')},
+        'postScopes': post_scopes,
         'localHistory': {p: {'before': 2, 'after': 2, 'beforeSha256': 'a' * 64, 'afterSha256': 'a' * 64}
                          for p in ('gemini', 'cursor')},
         'legacyControl': {'calls': 2, 'statuses': [404, 200], 'readingAvailable': True},
@@ -162,7 +182,11 @@ class RealBinaryTests(unittest.TestCase):
         observation = valid_admission_observation()
         self.assertEqual(evaluate_admission(observation)['outcome'], 'pass')
         for mutate in [lambda x: x['postScopes']['gemini'].update(calls=1),
-                       lambda x: x['postScopes']['cursor'].update(disabledReason='ok'),
+                       lambda x: x['postScopes']['cursor'].update(defaultCheck=True),
+                       lambda x: x['postScopes']['gemini'].update(initialState='allowed'),
+                       lambda x: x['postScopes']['gemini'].update(grantable=False),
+                       lambda x: x['postScopes']['gemini'].update(beforeConsentCalls=1),
+                       lambda x: x.update(unexpectedCalls=1),
                        lambda x: x['localHistory']['gemini'].update(after=0),
                        lambda x: x['localHistory']['cursor'].update(before=0, after=0),
                        lambda x: x['localHistory']['cursor'].update(outcome='unsupported'),
@@ -173,6 +197,50 @@ class RealBinaryTests(unittest.TestCase):
             mutate(invalid)
             with self.assertRaises(EngineFailure):
                 evaluate_admission(invalid)
+
+    def test_post_evaluator_rejects_unpinned_bodies_routes_calls_and_budget_changes(self):
+        mutations = [lambda c: c['requests'][0].update(method='GET'),
+                     lambda c: c['requests'][0].update(host='unreviewed.invalid'),
+                     lambda c: c['requests'][0].update(path='/generation'),
+                     lambda c: c['requests'][0].update(bodyMatched=False),
+                     lambda c: c['requests'][0].update(headersMatched=False),
+                     lambda c: c['requests'][0].update(credentialMatched=False),
+                     lambda c: c['requests'][0].update(event='unlisted-provider-request'),
+                     lambda c: c['requests'][0].update(status=401),
+                     lambda c: c.update(calls=3),
+                     lambda c: c.update(readingAvailable=False),
+                     lambda c: c['afterCli'].update(at='2099-01-01T00:00:00Z'),
+                     lambda c: c.update(budgetAfterSha256='b' * 64)]
+        for tool in ('gemini', 'cursor'):
+            for mutate in mutations:
+                observation = valid_admission_observation()
+                mutate(observation['postScopes'][tool]['cases']['404'])
+                with self.subTest(tool=tool, mutation=mutate), self.assertRaises(EngineFailure):
+                    evaluate_admission(observation)
+
+    def test_post_recorder_rejects_bad_body_even_when_production_guard_is_removed(self):
+        # Fail the independent recorder if a producer and its guard both regress.
+        source = REPO / 'cli/internal/quota/gemini.go'
+        original = source.read_text()
+        self.assertEqual(original.count('"mode": "HEALTH_CHECK"'), 1)
+        bad = Path(self.work.name) / 'gemini_bad_body.go'
+        write_private(bad, original.replace('"mode": "HEALTH_CHECK"', '"mode": "ONBOARD"').encode())
+        client = Path(self.work.name) / 'unguarded_client.go'
+        write_private(client, b'package quota\nimport "net/http"\nvar accountReadClient = func(_ string,c *http.Client)*http.Client{return c}\n')
+        overlay = load_json(Path(type(self).work.name) / 'providers-overlay.json')
+        overlay['Replace'][str(source)] = str(bad)
+        overlay['Replace'][str(REPO / 'cli/internal/quota/reader_client.go')] = str(client)
+        overlay_path = Path(self.work.name) / 'bad-post-overlay.json'
+        write_private(overlay_path, encoded(overlay))
+        binary = Path(self.work.name) / 'modelplan-bad-post'
+        build_binary(REPO, binary, overlay_path)
+        with self.assertRaisesRegex(EngineFailure, 'gemini-post-capture-not-committed'):
+            admission(binary, self.home, load_json(ROOT / 'examples/admission-plan.json'))
+        events = (self.home / '404/.u14-http-events.jsonl').read_text().splitlines()
+        import json
+        requests = [json.loads(line) for line in events]
+        self.assertTrue(any(r['provider'] == 'gemini' and r['event'] == 'unlisted-provider-request'
+                            and not r['bodyMatched'] for r in requests))
 
     def test_history_preservation_rejects_changed_values_with_the_same_row_count(self):
         for tool in ('gemini', 'cursor'):

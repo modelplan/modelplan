@@ -53,11 +53,11 @@ func TestScopePlanKeepsReservationWithoutCapture(t *testing.T) {
 		t.Fatal("planning created a capture")
 	}
 }
-func TestScopePlanPolicyPendingNeedsNoCredentialsOrBudget(t *testing.T) {
+func TestScopePlanApprovedPOSTWithoutProfileNeedsNoCredentialsOrBudget(t *testing.T) {
 	p := schedulePaths(t, consent.ScopeGeminiAccountUsageSavedLogin)
 	plan, err := PlanScopeRefresh(p, consent.ScopeGeminiAccountUsageSavedLogin, time.Now())
-	if err != nil || !plan.PolicyPending || plan.Admitted {
-		t.Fatalf("POST scope was admitted: %+v %v", plan, err)
+	if err != nil || plan.PolicyPending || plan.Admitted {
+		t.Fatalf("missing-profile scope was admitted: %+v %v", plan, err)
 	}
 	if _, err := os.Stat(filepath.Join(p.Cache, "observed")); !os.IsNotExist(err) {
 		t.Fatal("planning created a reservation or reading")

@@ -20,7 +20,7 @@ func TestSharedProjectionKeepsRuntimeRoute(t *testing.T) {
 		t.Fatal("runtime route lost")
 	}
 }
-func TestSharedProjectionNormalizesKeychainAndPolicyFacts(t *testing.T) {
+func TestSharedProjectionKeepsApprovedPOSTOptIn(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("MODELPLAN_READERS", "")
 	b, err := NewSharedBackend(SharedConfig{
@@ -50,12 +50,12 @@ func TestSharedProjectionNormalizesKeychainAndPolicyFacts(t *testing.T) {
 	if fact := seen[consent.ScopeClaudeAccountUsageSavedLogin]; fact.Keychain == nil || *fact.Keychain != wire.KeychainAllow {
 		t.Fatalf("wrong keychain vocabulary: %+v", fact)
 	}
-	if fact := seen[consent.ScopeGeminiAccountUsageSavedLogin]; fact.Disabled == nil || *fact.Disabled != wire.ScopePolicyPending {
-		t.Fatal("policy pending not exposed")
+	if fact := seen[consent.ScopeGeminiAccountUsageSavedLogin]; fact.Disabled != nil || fact.DefaultCheck || fact.State != wire.ConsentUnset {
+		t.Fatal("approved POST scope was disabled or pre-selected")
 	}
 	for _, scope := range view.Scopes {
 		if scope == consent.ScopeGeminiAccountUsageSavedLogin {
-			t.Fatal("policy pending scope admitted")
+			t.Fatal("unset O-class scope admitted")
 		}
 	}
 }
