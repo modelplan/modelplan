@@ -415,7 +415,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	defer applyClaudeSessions(r, p, now)
 	ss, err := Selections(p)
 	if err != nil {
-		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})
+		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
 		return
 	}
 	legacySelections := map[string]bool{}

@@ -21,6 +21,14 @@ jobs:
       - name: CLI tests
         working-directory: cli
         run: go vet ./... && go test ./...
+      - name: Reader reason codes and writer canaries (uncached)
+        working-directory: cli
+        run: >-
+          go test -count=1 ./internal/testenv ./internal/quota ./internal/connections ./cmd/modelplan
+          -run 'Test(ReaderReason|NativeConnectionReasons|CodexRuntimeErrorOutput|KiroRuntimeErrorOutput|CodexProcessErrorOutput|CodexTimeoutKeepsSafeReason|RuntimeErrorsStayOutOfCLIJSONAndLogs)'
+      - name: Release source rejects private Apple SPI
+        working-directory: cli
+        run: go run ./internal/releaseguard/cmd --root ..
       # Child go-build inputs are outside Go's test-cache dependency tracking.
       - name: Real-binary app contract schemas and fixture drift (uncached)
         run: make app-cli-contract-check
