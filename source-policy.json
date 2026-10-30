@@ -78,7 +78,15 @@
       "desktop/official-visuals/runtime/canopy-c01/pane-890-2x.png": "19b37a5f559ae400541007721e05a9016e4ffa3b102a53f993ad636a63d7a199",
       "desktop/official-visuals/runtime/canopy-c01/window-890-2x.png": "2ec9bd34fcac613b385db0f8ab9b6ce88d76905feb557a7a2ba66d48d2005264",
       "desktop/official-visuals/runtime/canopy-c01/aperture-890-2x.png": "d9778c2a895c96f768333a0189b684a098d60b29187a9d21c3aefe03af18ffa8",
-      "desktop/official-visuals/runtime/canopy-c01/solid-outline-890-2x.png": "3da44669818854b371d709975b2fc529a1376c40d0abcd403a9baf90bfa610bb"
+      "desktop/official-visuals/runtime/canopy-c01/solid-outline-890-2x.png": "3da44669818854b371d709975b2fc529a1376c40d0abcd403a9baf90bfa610bb",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-en.png": "6a3905bc4670ab66e13a1466a4916934d66fc37e964596687d9be0086cb40bbe",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-zh-CN.png": "8a4113cf6b94dd3fc5e3382243433c764f49bfe4f583ddd2c8671d947da8a266",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-night-en.png": "3176387be32958ee5d698ee034ab36a0c2a406803403532e89eb8fb1c5a184b8",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-night-zh-CN.png": "99c78fcfc27fe2b1a1120ecd25d6f97000ab7ed92c170b8a55d856cb4e4ecaf2",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-en.png": "9126e9585898a7e9f32eb38607dd1a11623b991c3546cc9622ff39c3d2894fee",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-zh-CN.png": "b588abd35d1200d2c5cee1c6c831297ec7f3bf97b7489ea8bc3d93d87063f9e4",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-en.png": "8b444c34e19cfaf82c4d68924eee408d239d71b90e5e0d841e95d494a190a80b",
+      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-zh-CN.png": "a8f5f8df5e31c7f94e0d2d695d424771df6f96ac8463db62bb8ade40b3e37466"
     },
     "historicalMit": {
       "desktop/official-visuals/HISTORICAL-MIT.txt": "6d98a3aa9160bbfd0ee9420a2cec649267ea4c3513436c32306b922666555abe",
