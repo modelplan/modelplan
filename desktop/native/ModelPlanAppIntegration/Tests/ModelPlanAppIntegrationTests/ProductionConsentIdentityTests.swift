@@ -25,9 +25,9 @@ import ModelPlanSettings
     private final class Placement: CommunityPlacementProducing {
         var onPlacementObserved: ((DockEdgePlacement?, Bool) -> Void)?
     }
-    private let arm64Source = "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda"
-    private let amd64Source = "397b98c22e209e10c924e34347f5b4c14e837eb2c50086c6fd2c160c858c2868"
-    private func bundle(version: String = "0.5.48", source: String? = nil) throws -> URL {
+    private let arm64Source = "24bf94ae061ddb94a5a7898c7f852c60e5442b2792ac1aff0a4a0ab7639be09e"
+    private let amd64Source = "a92b0f6ae1ab5a1cfef1723250dc7b4c9b95eeac7ca19ff8429e1ae9f49c76fc"
+    private func bundle(version: String = "0.5.49", source: String? = nil) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("consent-identity-" + UUID().uuidString).resolvingSymlinksInPath()
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let helpers = root.appendingPathComponent("Contents/Helpers"), resources = root.appendingPathComponent("Contents/Resources")
@@ -67,8 +67,8 @@ import ModelPlanSettings
             let helper = root.appendingPathComponent("Contents/Helpers/modelplan")
             switch failure {
             case "old": try updateInfo(root) { $0["ModelPlanHelperVersion"] = "0.5.42" }
-            case "previous-release": try updateInfo(root) { $0["ModelPlanHelperVersion"] = "0.5.46" }
-            case "previous-source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256"] = "72c43fef8631399137ff9a651e984121fa19cbc77969f0a317c74c41b28f29e2" }
+            case "previous-release": try updateInfo(root) { $0["ModelPlanHelperVersion"] = "0.5.48" }
+            case "previous-source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256"] = "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda" }
             case "source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256"] = String(repeating: "b", count: 64) }
             case "bundled": try updateInfo(root) { $0["ModelPlanBundledHelperSHA256"] = String(repeating: "c", count: 64) }
             case "pin": try Data((String(repeating: "d", count: 64) + "\n").utf8).write(to: root.appendingPathComponent("Contents/Resources/modelplan.sha256"))
