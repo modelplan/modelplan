@@ -72,6 +72,9 @@ extension ProcessEngineClient {
             if consumerBlocked { consumerBlocked = false }
             if epochProbe == nil, !epochUncertain, handshaken, let current = context, authoritative(current.floor.storeEpoch) {
                 clearWaiting = nil; gateClosed = false
+                if !stopped && !stopping && !requiresRetry && !consumerBlocked && child != nil {
+                    deliveryAuthority.replace(with: current)
+                }
                 emit(.context(current), revision: revision)
                 emit(.connection(.ready(current)), revision: revision, ready: true)
                 attemptCredentials()
@@ -103,6 +106,7 @@ extension ProcessEngineClient {
     func consumerStalled(id: UUID? = nil) {
         if let id, delivering?.id != id { return }
         guard !consumerBlocked else { return }
+        deliveryAuthority.replace(with: nil)
         consumerBlocked = true; stopped = true; requiresRetry = true
         deliveryTask?.cancel(); deliveryTimer?.cancel()
         // The outstanding consume may be non-cooperative. Do not create another
@@ -114,6 +118,7 @@ extension ProcessEngineClient {
         emit(.connection(.stopped(.consumerUnavailable)))
     }
     func invalidate(_ reason: EngineInvalidationReason, next: EngineConsentFloor?) {
+        deliveryAuthority.replace(with: nil)
         let previous = context
         if revision == UInt64.max { stopped = true; failRequests(.protocolViolation); return }
         revision += 1; gateClosed = true; clearWaiting = revision

@@ -8,6 +8,7 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor RouteClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     var stops=0
     func start() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
     func retry() throws -> EngineDeliveryContext { throw EngineClientError.notReady }

@@ -6,6 +6,7 @@ import XCTest
 @testable import ModelPlanCockpitWeb
 
 private actor HeldClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
   var requests = 0
   var waiter: CheckedContinuation<EngineRequestCompletion, Error>?
   func start() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
