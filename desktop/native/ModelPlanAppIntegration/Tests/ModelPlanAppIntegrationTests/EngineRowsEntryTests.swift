@@ -39,6 +39,7 @@ private actor RowsEntryClient: EngineClient {
         var projection = try XCTUnwrap(object["projection"] as? [String: Any])
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         rows[0]["surfaces"] = ["dock", "menu"]
+        rows[0]["expiresAt"] = "2027-01-01T00:00:00Z" // This scenario is live; the separate expiry scenario advances beyond it.
         rows[0]["name"] = ["en": "Engine-only row", "zh": "引擎行"]
         rows[0]["reason"] = ["code": "ok", "text": ["en": "Engine-only reason", "zh": "引擎原因"]]
         projection["rows"] = rows; object["projection"] = projection
