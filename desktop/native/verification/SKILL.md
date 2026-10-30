@@ -56,3 +56,5 @@ node scripts/check-source-policy.mjs
 ```
 
 Drive/Evidence portions that need no GUI also belong on the standard free hosted macOS checks. Actual test-build compilation, scoped PID capability, two-second preflight, full cycles and cleanup at the submitted head remain required run evidence; their missing outcomes stay explicit.
+
+Role-counter follow-up: `role_counters.py` filters only effective-user `com.apple.WebKit.*` helper PIDs, records pre/post start identities and refuses foreign/ambiguous candidates. It never inspects WindowServer. CPU remains genuine directed top; resident bytes come from identity-checked `ps -o rss` KiB with explicit `ps-rss` provenance in a separate raw file, never relabelled top MEM or native-self-counters. Canonical statistics for that additional RSS source require a separately approved reducer contract.
