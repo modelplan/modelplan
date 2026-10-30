@@ -36,4 +36,4 @@ class StartupRace(unittest.TestCase):
    a=D.Attempt(dict(batch=d,scratch=d));a.app=type('App',(),{'poll':lambda self:None})();a.roles={'WebContent':dict(pid=2,startSeconds=100,startMicroseconds=1)};a.live=lambda:None;a.events=lambda:[]
    a.topStop.wait=lambda _:a.topStop.set()
    with patch.object(D.subprocess,'run') as run:
-    a.top_worker();run.assert_not_called()
+    a.top_worker();run.assert_not_called();self.assertIsNone(a.collectorError)
