@@ -105,4 +105,22 @@ import XCTest
         XCTAssertEqual(reads, 2, "restart must not retain a stopped sample")
     }
 
+    func testEntryQueriesFreshProbeBetweenSamplerTicks() throws {
+        var point: CGPoint? = CGPoint(x: 2, y: 3)
+        let surface = PulsePanelPointerSurface(pointSource: { point })
+        var reports: [CGPoint?] = []; surface.onChange = { reports.append($0) }
+        surface.setActive(true); defer { surface.stop() }
+        surface.sampleNow()
+        point = CGPoint(x: 29, y: 31)
+        let entry = try XCTUnwrap(surface.subviews.first { !$0.trackingAreas.isEmpty })
+        let event = try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 1, trackingNumber: 0, userData: nil))
+        entry.mouseEntered(with: event)
+        XCTAssertEqual(reports.count, 2)
+        XCTAssertEqual(reports.last!, point, "entry must read the linked live probe, not the previous sample")
+        surface.reportAgain(); surface.sampleNow()
+        XCTAssertEqual(reports.count, 3, "production reparent/reprobe must also use the linked probe")
+    }
+
 }

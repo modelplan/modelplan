@@ -23,21 +23,27 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
-      "sha256": "871b928018dc3409a16ffde5b69d7ca4cf9400db7d9402439846dc657848ab39",
+      "sha256": "a558dba3a309ca72ef4cb1ebd1af28efe50aec70522830217a289197baae9707",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
       "adaptations": [
         "inject optional local sample source for non-window behavior tests",
         "ignore queued samples after stop; reset deduplication on restart",
-        "transparent AppKit surface composes sampler and entry reporter; explicit visibility lifecycle gates sampling"
+        "transparent AppKit surface composes sampler and entry reporter; explicit visibility lifecycle gates sampling",
+        "remove unused SwiftUI representable wrapper; normal AppKit host consumes the tracking/sampling implementation",
+        "production composition owns PointerProbe and uses its current/reportAgain paths for entry and reparenting"
       ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PointerEntryReporter.swift",
-      "sha256": "887c6415087e2c0edd83b0937ab23da56970ac4c04a104e7a01f1ab931d771a4",
+      "sha256": "c75af61854fb0a4e0d2a020f94d69c6f65bb36d6ae78769f08f5a8358a783a43",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
-      "implementationModified": false
+      "implementationModified": true,
+      "upstreamSHA256": "887c6415087e2c0edd83b0937ab23da56970ac4c04a104e7a01f1ab931d771a4",
+      "adaptations": [
+        "remove unused SwiftUI representable wrapper; normal AppKit host consumes the tracking/sampling implementation"
+      ]
     },
     {
       "path": "docs/borrowed/pulse/LICENSE",

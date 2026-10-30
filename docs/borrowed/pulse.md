@@ -8,7 +8,7 @@ Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052
 
 - PanelScreen provides display identity and pure notch geometry.
 - ActiveDisplayFollower supplies pointer-defined active-display observations without application/window scanning.
-- PanelPointerWatcher samples flipped local coordinates, deduplicates small movements and supports explicit reprobe/stop. PointerProbe remains the borrowed immediate-query helper.
+- PanelPointerWatcher samples flipped local coordinates, deduplicates small movements and supports explicit reprobe/stop. PointerProbe is linked by the production composition for immediate entry-time queries and reprobing.
 - PointerEntryReporter installs one activeAlways/inVisibleRect tracking area; entry is paired with sampling instead of trusting exits.
 - PanelPlacement retains the rail-based geometry, edge/axis model, ratios and default-right behavior. It uses an injected saved-placement callback instead of UserDefaults, takes a caller-owned card gap and omits unused visual state.
 - PulseDockPanel adapts the pinned FloatingPanelController's non-key window and window-level down/drag/up transaction. It falls through for controls/control-click and cancels capture when hidden. The optional input-arrival observer contains only event type/timestamp and has no production subscriber.
@@ -28,13 +28,13 @@ The live follower starts only while permitted, shown and configured to follow. I
 
 ## Sampler and entry composition
 
-The host mounts one transparent PulsePanelPointerSurface behind the active expanded or sliver content. It composes the borrowed sampler and entry reporter. Its hitTest always returns nil, it adds no accessibility element or click-catching region, and its observers resize with content bounds. Entry forces another sample even after an already absent value; ordinary samples remain deduplicated.
+The host mounts one transparent PulsePanelPointerSurface behind the active expanded or sliver content. It composes the borrowed sampler and entry reporter. Its hitTest always returns nil, it adds no accessibility element or click-catching region, and its observers resize with content bounds. Entry uses the linked PointerProbe.current to sample fresh coordinates between timer ticks, with PointerProbe.reportAgain resetting deduplication even after an already absent value. Reparenting also reprobes through that same object. Ordinary timer samples remain deduplicated.
 
 Callbacks invalidate observation through the same controller. They do not reveal/collapse directly or presume nil means outside: the controller reads fresh global pointer, wake and separate-card facts and retains dwell/grace deadlines. Suppression, suspension and retirement stop sampling and ignore late entry/sample work. Reparenting between sliver and expanded content resets sample memory. No global input monitor, new window, persistence or second visibility state machine is added.
 
 ## Validation and completion boundary
 
-Twenty-six pure Pulse cases pass: placement/persistence/defaults, negative-origin and missing-display intent, notch cases, input capture/release/cancel, follower refusal/retry/stop, sampler/reprobe/teardown composed entry/click-through behavior, weak multi-window presence/closing and focus policy, and explicit login requests with observed approval/failure/unsupported states. Fifteen actual no-window Host/controller regressions pass: positioning/anchors/topology, preview/release/stop, live follow/held-press refusal, entry-driven dwell/reveal and sampler-driven grace/collapse, plus lifecycle shutdown without Settings changes.
+Twenty-seven pure Pulse cases pass: placement/persistence/defaults, negative-origin and missing-display intent, notch cases, input capture/release/cancel, follower refusal/retry/stop, sampler/reprobe/teardown composed entry/click-through behavior, weak multi-window presence/closing and focus policy, and explicit login requests with observed approval/failure/unsupported states. Fifteen actual no-window Host/controller regressions pass: positioning/anchors/topology, preview/release/stop, live follow/held-press refusal, entry-driven dwell/reveal and sampler-driven grace/collapse, plus lifecycle shutdown without Settings changes.
 
 A compiled negative control for the earlier positioning slice made the Pulse facade return no frame and caused the actual Host wake test to fail; restored source passed. Current sampler/entry checks use synthetic local/global points and direct local event objects, without posting input. Source policy, borrowed manifest, catalog license digests, vendored coverage and generated-notice consistency pass.
 
@@ -52,3 +52,10 @@ PulseLoginItem never registers during construction, observation or restoration. 
 CommunityLoginServiceAdapter consumes a canonical SettingsHostRequest only when its revision and saved choice still match. Its effect authorization defaults false. Authorized requests are consumed at most once per revision; stale/replayed and unrelated requests cannot execute a login effect. It maps service facts back to LoginServiceState without editing the preference file or replacing the editor's one onHostRequest receiver. Three tests use actual editor/first-run commit requests and fake service effects; they prove default-on/no-registration, host authorization, revision/replay checks, observed requiresApproval and no rewrite after the native effect.
 
 **Normal-entry integration remains pending.** The entry owner should retain one presence owner, track only Settings/cockpit full windows, and apply it at show/minimize/close/suspend transitions. It should forward accepted login requests from its existing system-effect receiver to the adapter with the current snapshot and explicit host authorization, then refresh observed capabilities separately. Unhandled requests still belong to their existing consumers. No entry ownership is taken by this slice, and no real activation/login-item operation, native GUI or L2 is executed by its tests.
+
+
+## Production caller condition
+
+The unconditional normal caller chain is `ProductionDockFactory.community` → `StaticDockPreviewHost.present` → `bindPointerInput` → `PulsePanelPointerSurface`. The native-panel branch mounts the same surface behind its real expanded/sliver content; the no-window test branch exercises that same binder separately. The surface owns `PanelPointerWatcher.WatcherView`, `PointerEntryReporter.TrackingView` and the linked `PointerProbe`; entry uses both probe current/reprobe methods and changed samples refresh the existing controller.
+
+Unused SwiftUI NSViewRepresentable wrappers were removed from the two adapted files. Their remaining AppKit implementation has production consumers rather than being retained solely for tests. A focused entry test changes the synthetic point between timer ticks and requires the fresh linked-probe result. A compiled negative control temporarily disconnecting that production probe link fails the freshness assertion; exact source restoration returns all 27 pure cases to pass. These source consumers do not establish actual OS input delivery; the declared real-input L2 is still required.

@@ -1,7 +1,6 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
-// ModelPlan adaptation: injected sampling, explicit lifecycle fence and AppKit composition surface.
+// ModelPlan adaptation: AppKit-only composition, injected sampling and lifecycle fence; unused SwiftUI wrapper removed.
 import AppKit
-import SwiftUI
 
 /// Reports where the pointer is inside the panel, by sampling its position
 /// rather than by listening for enter/exit events.
@@ -20,27 +19,7 @@ import SwiftUI
 /// or by an event that never arrives.
 ///
 /// Attach as a background of a view that fills the panel.
-struct PanelPointerWatcher: NSViewRepresentable {
-    let onChange: (CGPoint?) -> Void
-    /// Answers where the pointer is now, in the same space, between samples.
-    var probe: PointerProbe?
-
-    func makeNSView(context: Context) -> WatcherView {
-        let view = WatcherView()
-        view.onChange = onChange
-        probe?.view = view
-        return view
-    }
-
-    func updateNSView(_ view: WatcherView, context: Context) {
-        view.onChange = onChange
-        probe?.view = view
-    }
-
-    static func dismantleNSView(_ view: WatcherView, coordinator: ()) {
-        view.stop()
-    }
-
+enum PanelPointerWatcher {
     final class WatcherView: NSView {
         var onChange: ((CGPoint?) -> Void)?
         private let pointSource: (() -> CGPoint?)?
@@ -107,9 +86,10 @@ struct PanelPointerWatcher: NSViewRepresentable {
             return bounds.contains(local) ? local : nil
         }
 
-        func sample() {
+        func sample(read: (() -> CGPoint?)? = nil) {
             guard samplingEnabled, timer != nil, pointSource != nil || window != nil else { return }
-            let point = currentPoint()
+            let point: CGPoint?
+            if let read { point = read() } else { point = currentPoint() }
 
             // Only speak up when something actually changed, so a resting
             // pointer doesn't churn SwiftUI state six times a second.
@@ -159,12 +139,14 @@ final class PointerProbe {
     public var onChange: ((CGPoint?) -> Void)?
     private let watcher: PanelPointerWatcher.WatcherView
     private let entry: PointerEntryReporter.TrackingView
+    private let probe = PointerProbe()
     public private(set) var isActive = false
     public override var isFlipped: Bool { true }
     public init(pointSource: (() -> CGPoint?)? = nil) {
         watcher = PanelPointerWatcher.WatcherView(pointSource: pointSource)
         entry = PointerEntryReporter.TrackingView()
         super.init(frame: .zero)
+        probe.view = watcher
         setAccessibilityElement(false)
         watcher.samplingEnabled = false
         watcher.setAccessibilityElement(false); entry.setAccessibilityElement(false)
@@ -181,7 +163,8 @@ final class PointerProbe {
             guard let self, self.isActive else { return }
             // An entry can arrive after a previous absent sample. Force that
             // same value through again so the controller samples current truth.
-            self.watcher.reportAgain(); self.watcher.sample()
+            self.probe.reportAgain()
+            self.watcher.sample(read: self.probe.current)
         }
         entry.updateTrackingAreas()
     }
@@ -192,6 +175,6 @@ final class PointerProbe {
         watcher.samplingEnabled = active
     }
     public func sampleNow() { watcher.sample() }
-    public func reportAgain() { watcher.reportAgain() }
+    public func reportAgain() { probe.reportAgain() }
     public func stop() { setActive(false) }
 }
