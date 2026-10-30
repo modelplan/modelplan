@@ -141,3 +141,24 @@ scratch were released. App post-close RSS: 72.11 / 72.14 / 73.84 MiB; no numeric
 memory pass is claimed. Child resident bytes remain separately labelled ps-rss.
 This passes this fresh-profile CPU target; it does not bind the private candidate
 entry or establish populated/retained-owner-profile fidelity or U13/L2.
+
+## Shared production-entry run
+
+The corrected single-client route has a new
+[relative numerical receipt](../verification/results/u11-shared-console-20261030.json),
+measured at `74f2396fe853c0737936869cf9b52ca6e5e6f422`. The real
+EngineRowsEntry factory and its Dock/status-menu Console selectors delivered
+three complete cycles. App+WebContent: **1.8510 / 1.5793 / 1.6744%** of one core;
+mean **1.7016% <=6%**. Both Apps exited0; guardian, observers and run leases were
+cleaned. M4 approved the unchanged shared action seam at d3eba026. The native
+head's CI passes. No old standalone/partial-run result is substituted.
+
+The automatic U10 staging change is owned by M0, not applied to its workflow
+from this PR. The exact proposed step is recorded in `u10-cockpit-stage.patch`;
+first-candidate assembly must not ship a placeholder or omit its manifest pin.
+Inherited merged-main consent construction remains staged and is explicitly
+outside U11's done criteria by coordinator scope acceptance; Settings adoption
+stays with its owner. The current #355 handoff also reports a pre-existing
+session reduced-motion WebKit failure (15/16 tests pass); retain that known
+upstream issue rather than claim an all-green web result. Sealed-candidate,
+owner-shaped, official fidelity and U13/L2 are separate gates.

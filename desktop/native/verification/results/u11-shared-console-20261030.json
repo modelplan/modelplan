@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "runID": "u11-shared-console-20261030T1113Z-r1",
+  "measuredNativeHead": "74f2396fe853c0737936869cf9b52ca6e5e6f422",
+  "nativeBinarySHA256": "ef5cf6b9617a408e4dba35b8c8e62dbcde64580f0663f0a3595b5f2c9f831e41",
+  "webHead": "16aadf3e0c6248902a9f63e96845e448905ad05f",
+  "webManifestSHA256": "5dd26b770d8491ff3661f54f4e86aa576cc9dbb05a13200a0d0238e2097122bd",
+  "cliVersion": "v0.5.48",
+  "cliBinarySHA256": "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda",
+  "profile": "fresh synthetic HOME/TMP with empty codex presence; offline/read-only actual shared CLI; normal EngineRowsEntry factory; unsigned harness",
+  "cycles": [
+    {
+      "cycle": 1,
+      "openCPUOneCorePercent": {
+        "App": 1.815311330183424,
+        "WebContent": 0.03571428571428571,
+        "GPU": 0.002380952380952381
+      },
+      "cpuSamples": {
+        "App": 64,
+        "WebContent": 42,
+        "GPU": 42
+      },
+      "appPlusWebContent": 1.8510256158977099,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 28098560,
+        "GPU": 22544384
+      },
+      "lastAfterCloseAppResidentBytes": 84656128
+    },
+    {
+      "cycle": 2,
+      "openCPUOneCorePercent": {
+        "App": 1.537850679278758,
+        "WebContent": 0.041463414634146344,
+        "GPU": 0.0
+      },
+      "cpuSamples": {
+        "App": 63,
+        "WebContent": 41,
+        "GPU": 41
+      },
+      "appPlusWebContent": 1.5793140939129044,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 27820032,
+        "GPU": 22560768
+      },
+      "lastAfterCloseAppResidentBytes": 86327296
+    },
+    {
+      "cycle": 3,
+      "openCPUOneCorePercent": {
+        "App": 1.5500539709315337,
+        "WebContent": 0.12439024390243904,
+        "GPU": 0.0024390243902439024
+      },
+      "cpuSamples": {
+        "App": 64,
+        "WebContent": 41,
+        "GPU": 41
+      },
+      "appPlusWebContent": 1.6744442148339729,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 38600704,
+        "GPU": 30752768
+      },
+      "lastAfterCloseAppResidentBytes": 83951616
+    }
+  ],
+  "meanAppPlusWebContentOneCorePercent": 1.7015946415481957,
+  "targetOneCorePercent": 6,
+  "cpuBudgetVerdict": "pass",
+  "averaging": "arithmetic mean of three per-cycle App+WebContent canonical open role means, matching the coordinator budget definition",
+  "steadyCallbackCheckpoints": 180,
+  "steadyNonzeroCallbackCheckpoints": 0,
+  "privateCandidateAssembly": "normal app startup consumes the shared factory; exact Dock/status actions exercised in unsigned synthetic harness; sealed candidate is M0 pipeline work",
+  "ownerShapedAndOfficialFidelity": "not-run",
+  "energy": "unsupported",
+  "memoryAcceptance": "not claimed; no numeric memory tolerance supplied",
+  "cleanup": {
+    "ownedExited": true,
+    "guardianExited": true,
+    "topObserverJoined": true,
+    "scratchRemoved": [
+      "home",
+      "tmp"
+    ],
+    "leaseReleased": true
+  },
+  "ownedExitCodes": [
+    {
+      "role": "preflight",
+      "exitCode": 0
+    },
+    {
+      "role": "measure",
+      "exitCode": 0
+    }
+  ],
+  "license": "MIT; synthetic verification metadata",
+  "fullEvidenceManifestSHA256": "59e14cc1122c74c5680137343aa117bffa3052437e5a09a6076007b6cf4a36cd",
+  "productionRoute": "CommunityApp.main -> EngineRowsEntry.make -> shared factory -> EngineDockMenuApplication.showConsole -> one client/Store and WK bridge",
+  "engineEntrySource": "982e282c8b2047419ce891ba7935d7a3ceac849d",
+  "m4SeamReview": "merge at d3eba0268049b8f74fea7209b936416ee96eee9a",
+  "bookingPolicy": "364 unmerged at admission; announced exclusive lease/guardian/stop/full-reserve guards used",
+  "knownUpstreamIssue": "355 reports existing session reduced-motion WebKit failure; no all-green web verdict claimed",
+  "evidenceID": "u11-shared-console-20261030T1113Z-r1@sha256:59e14cc1122c74c5680137343aa117bffa3052437e5a09a6076007b6cf4a36cd",
+  "deliveredActions": [
+    "Dock.showConsole",
+    "status-menu.showConsole",
+    "Dock.showConsole"
+  ]
+}
