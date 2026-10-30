@@ -89,6 +89,18 @@ private actor HeldClient: EngineClient {
   func consume(_ event: EngineClientEvent) { if case .clearPrivateViews = event { clears += 1 } }
 }
 final class CoordinatorTests: XCTestCase {
+  @MainActor func testFirstOpenWithoutContextHasUnavailableActionAndNoPage() async {
+    var pages = 0, unavailable = 0
+    let coordinator = EngineCockpitCoordinator { pages += 1; return PageProbe($0) }
+    let client = HeldClient(); coordinator.bind(client: client)
+    coordinator.onUnavailable = { unavailable += 1 }
+    coordinator.open()
+    XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, 1)
+    let requests = await client.requests
+    XCTAssertEqual(requests, 0)
+    await coordinator.shutdown()
+  }
+
   @MainActor func testOrderedEngineDeliveryClearAckAndStaleReplyRejection() async throws {
     let downstream = DownstreamProbe()
     var page: PageProbe?

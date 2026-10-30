@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "runID": "u11-wired-20261030T0905Z-r6",
+  "measuredNativeHead": "9f9d360a97f3523821375be9cfb912e30b450c5c",
+  "nativeBinarySHA256": "4fdf2ec534283348bf9f5204a8650d1642c188e21d952990838f24fcf03d73c9",
+  "webHead": "44e2ffa4758df79883cb5f0bf2daf6980a4203c4",
+  "webManifestSHA256": "985b744bb0b97acd8f550fe3be1e103efeb5db4c9a50d52f677b7f0566e07c77",
+  "cliVersion": "v0.5.48",
+  "cliBinarySHA256": "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda",
+  "profile": "fresh synthetic HOME/TMP; offline/read-only actual CLI; no owner profile, no U12/3D",
+  "cycles": [
+    {
+      "cycle": 1,
+      "openCPUOneCorePercent": {
+        "App": 1.317106776862472,
+        "WebContent": 0.10243902439024391,
+        "GPU": 0.007317073170731709
+      },
+      "cpuSamples": {
+        "App": 65,
+        "WebContent": 41,
+        "GPU": 41
+      },
+      "appPlusWebContent": 1.419545801252716,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 31850496,
+        "GPU": 19693568
+      },
+      "lastAfterCloseAppResidentBytes": 75612160
+    },
+    {
+      "cycle": 2,
+      "openCPUOneCorePercent": {
+        "App": 0.9237942252426224,
+        "WebContent": 0.08536585365853659,
+        "GPU": 0.0024390243902439024
+      },
+      "cpuSamples": {
+        "App": 64,
+        "WebContent": 41,
+        "GPU": 41
+      },
+      "appPlusWebContent": 1.009160078901159,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 27361280,
+        "GPU": 19152896
+      },
+      "lastAfterCloseAppResidentBytes": 75644928
+    },
+    {
+      "cycle": 3,
+      "openCPUOneCorePercent": {
+        "App": 1.0292682559070887,
+        "WebContent": 0.08536585365853659,
+        "GPU": 0.0024390243902439024
+      },
+      "cpuSamples": {
+        "App": 63,
+        "WebContent": 41,
+        "GPU": 41
+      },
+      "appPlusWebContent": 1.1146341095656254,
+      "lastOpenResidentBytesPSRSS": {
+        "WebContent": 28180480,
+        "GPU": 18317312
+      },
+      "lastAfterCloseAppResidentBytes": 77430784
+    }
+  ],
+  "meanAppPlusWebContentOneCorePercent": 1.1811133299065002,
+  "targetOneCorePercent": 6,
+  "cpuBudgetVerdict": "pass",
+  "averaging": "arithmetic mean of three per-cycle App+WebContent canonical open role means, matching the coordinator budget definition",
+  "steadyCallbackCheckpoints": 180,
+  "steadyNonzeroCallbackCheckpoints": 0,
+  "privateCandidateAssembly": "pending; same production coordinator/window executed via verification adapter",
+  "ownerShapedAndOfficialFidelity": "not-run",
+  "energy": "unsupported",
+  "memoryAcceptance": "not claimed; no numeric memory tolerance supplied",
+  "cleanup": {
+    "ownedExited": true,
+    "guardianExited": true,
+    "topObserverJoined": true,
+    "scratchRemoved": [
+      "home",
+      "tmp"
+    ],
+    "leaseReleased": true
+  },
+  "ownedExitCodes": [
+    {
+      "role": "preflight",
+      "exitCode": 0
+    },
+    {
+      "role": "measure",
+      "exitCode": 0
+    }
+  ],
+  "license": "MIT; synthetic verification metadata",
+  "fullEvidencePath": "/mnt/shared/modelplan/handoffs/20261030-u11a-skill/u11-wired-20261030T0905Z-r6/",
+  "fullEvidenceManifestSHA256": "356c68063ebfe156fe3fabfa6929d632eb7c17135dc89751ac6ce0921fe488c1"
+}

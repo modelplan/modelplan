@@ -12,7 +12,7 @@ let package = Package(
       dependencies: [.product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb")],
       path: ".",
       exclude: [
-        "bin", "tests", "fixtures", "__pycache__", "SKILL.md", "feature-map.md",
+        "bin", "tests", "fixtures", "results", "__pycache__", "SKILL.md", "feature-map.md",
         "ObservationSelfTests.swift", "test_observation.py", "test-animation-observer.mjs",
         "test-stable-layer.mjs", "animation-observer.js", "stable-layer.js",
       ], sources: ["Observation.swift", "U11aHost.swift", "U11WiredAdapter.swift"],

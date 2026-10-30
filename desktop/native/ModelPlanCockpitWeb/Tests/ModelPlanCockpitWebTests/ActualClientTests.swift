@@ -30,6 +30,9 @@ final class ActualClientTests: XCTestCase {
       "u11-engine-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: home) }
+    // Positive-control tool presence must be synthetic, not inferred from apps
+    // installed on the test host. A blank-host query correctly has no scopes.
+    try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
     let environment = [
       "HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
     ]

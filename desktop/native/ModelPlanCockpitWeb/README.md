@@ -57,12 +57,17 @@ argument transport, strict reply field sets, duplicate/nesting rejection, a
 1 MiB cap and canonical decimal UInt64 strings. No private WebKit selector is in
 this product's release build; optional verification hooks are compile gated.
 
-The first actual preflight found no installed page API. The local scheme handler
+The first actual preflight found no installed page API at navigation completion. The local scheme handler
 initially supplied a plain URLResponse; WebKit requires an HTTP response with
 CORS headers for module fetches ([WebKit contract](https://bugs.webkit.org/show_bug.cgi?id=205198)).
-The response now supplies JavaScript MIME, explicit noncredentialed static-file
-CORS and no-store. A regression guards that response boundary; private data is
-never served by this handler. Native failure receipts contain only bounded stage
+The response supplies JavaScript MIME, explicit noncredentialed static-file
+CORS and no-store. That alone did not resolve the actual failure: the complete
+module graph had been served but had not evaluated when native delivered load.
+Bootstrap now awaits the exact pinned entry module before load delivery, with
+no polling or idle timer. The actual repeated-window preflight and three cycles
+then pass. A regression guards the response boundary, and Doctor refuses any
+budget run without the installed page/query/RAF receipts. Private data is never
+served by this handler. Native failure receipts contain only bounded stage
 names, with no message bodies or engine values.
 
 ## Verification
@@ -87,3 +92,23 @@ Target: App + WebContent mean <=6% of one core. Unit tests and headless/Linux
 estimates do not prove that target, actual candidate reachability, fresh plus
 owner-shaped production behavior, official pixel fidelity or L2. Keep the draft
 until the separately linked native evidence and candidate assembly are reviewed.
+
+The hosted real-client positive fixture additionally creates an empty `.codex`
+inside its disposable HOME. Without explicit synthetic tool presence it depended
+on the host's installed-app detection; clean hosted Macs correctly had no
+`cockpit/query` scopes. No account, credential, quota or real tool profile is
+created. Production scope admission remains unchanged.
+
+## Measured synthetic CPU target
+
+[Native run receipt](../verification/results/u11-native-20261030.json): native
+`9f9d360a97f3523821375be9cfb912e30b450c5c`, unchanged official web manifest
+`985b744bb0b97acd8f550fe3be1e103efeb5db4c9a50d52f677b7f0566e07c77`.
+Three App+WebContent one-core means: **1.4195 / 1.0092 / 1.1146%**; mean
+**1.1811% <=6%**. There are 180 settled-idle checkpoints with zero rAF/timer
+counts, separate from the deliberately nonzero RAF positive controls.
+Both Apps exited0, watchdog and observers stopped, and run leases/synthetic
+scratch were released. App post-close RSS: 72.11 / 72.14 / 73.84 MiB; no numeric
+memory pass is claimed. Child resident bytes remain separately labelled ps-rss.
+This passes this fresh-profile CPU target; it does not bind the private candidate
+entry or establish populated/retained-owner-profile fidelity or U13/L2.
