@@ -184,3 +184,13 @@ path. Intent arrays remain explicit choices; no consent defaults or scope policy
 are inferred. The producer's consentTextVersion field is additive for older
 consumers, but the new factory requires version-bearing facts; an old CLI cannot
 supply them and grant stays unavailable until its accepted facts decode.
+
+**Shipping boundary:** the current generated decoder requires
+`consentTextVersion`. Against CLI v0.5.48 facts without it, decoding fails closed
+as a consent feature failure; the factory has no accepted facts and throws
+`missingConsentFacts` (or `missingContext` before a context exists). It does not
+substitute a version. The native CLI pin **must move to released v0.5.49 before
+any consumer built with these new wire bindings ships**. That release and pin
+bump follow the merge; this PR does not perform them. Older consumers can still
+ignore the new field emitted by the updated producer; this is not a guarantee
+that the new decoder accepts the older producer.
