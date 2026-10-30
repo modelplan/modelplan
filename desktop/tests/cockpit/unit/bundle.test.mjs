@@ -2,17 +2,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync,existsSync,rmSync } from 'node:fs';
+import { readFileSync,existsSync,rmSync,mkdirSync,writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 const project=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 test('both editions have reproducible bounded manifests; community excludes reserved assets',()=>{
   for(const edition of ['community','official']) {
+    // A reused compilation directory must not ship a deleted source.
+    mkdirSync(project+'.tmp/compiled/src',{recursive:true});
+    for(const suffix of ['js','d.ts'])writeFileSync(project+'.tmp/compiled/src/removed-module.'+suffix,'export const retired = true;\n');
     rmSync(project+'.tmp/'+edition,{recursive:true,force:true});
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     const root=project+'.tmp/'+edition+'/',manifest=JSON.parse(readFileSync(root+'bundle-manifest.json'));
     assert.equal(manifest.edition,edition);assert.equal(manifest.interfaceOnly,true);
+    for(const suffix of ['js','d.ts'])assert.equal(existsSync(root+'src/removed-module.'+suffix),false,'stale compiled files must not ship');
+    assert.ok(!Object.keys(manifest.files).some(name=>name.includes('session-state')));
+    assert.doesNotMatch(readFileSync(root+'cockpit.css','utf8'),/--session-|session-transition-flash|[.]session-state/);
     for(const [name,hash]of Object.entries(manifest.files))assert.equal(digest(readFileSync(root+name)),hash,name);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
     const html=readFileSync(root+'index.html','utf8');

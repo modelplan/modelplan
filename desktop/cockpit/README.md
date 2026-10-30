@@ -6,7 +6,7 @@ Native WKWebView construction, scheme serving, registration and final-package
 proof belong to the native integration lane. This bundle is not reached from the
 production app constructor yet. No porthole imagery is displayed and no live 3D
 code is included. Published U12 PNGs may be carried with the verified public
-runtime pack; this view and owner preview do not bind or render them.
+runtime pack; this view does not bind or render them.
 
 ## Build and test
 
@@ -153,44 +153,3 @@ attribution, memory returning after native close or repeated-window growth. The
 verification skill/test-Mac lane must remeasure those on the actual package before
 this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 acceptance
 is claimed here.
-
-## Session state owner preview
-
-`SessionStateTracker` and `mountSessionState` take explicit `idle`, `working`,
-`done` or `error` state for an opaque session ID. The square is 12 CSS pixels:
-hollow grey, solid blue, blue with tick, or red with !. Official values live in
-new `--session-*` tokens, independent of the quota `--st-*` tokens. The owner
-preview uses the standard day blue #2f6bd8.
-
-First observation and unchanged state never flash. A transition may flash once
-per 30 seconds per session: one 160 ms CSS opacity animation, two steps, one
-iteration. Rapid transitions paint the latest state but share the current flash;
-no timer queues a flash after cooldown. Hidden/occluded/non-key input cancels via
-`setVisible(false)`; document visibility and reduced motion are also gated.
-Showing the indicator never replays a flash. No rAF or idle timer is scheduled.
-
-The consumer disposes its indicators and calls `tracker.clear()` when clearing
-private views, before acknowledging the client's barrier. The current
-`WireCockpitData` has no per-session status feed, so this component installs no
-new host message and infers no state from quota or RPC completion. Its production
-state binding remains with the accepted consumer contract; the preview uses only
-explicit synthetic states.
-
-Reproduce the self-contained offline owner preview from the official bundle:
-
-```sh
-npm run build:official --prefix desktop/cockpit
-PLAYWRIGHT_BROWSERS_PATH=/path/to/ms-playwright \
-  node desktop/tests/cockpit/preview-session-state.mjs .tmp/session-state-preview
-```
-
-The HTML and native/4x PNGs show five synthetic session rows at the bottom of the
-cockpit, with each square at the end of its row. Night and day use the approved
-palette; the preview offers day blue #2f6bd8 only. The transition strip follows
-one complete row idle → working → done, with only its square flashing.
-The current bundle has no session list: its bottom tape displays observation
-timestamps. This preview uses the approved P6 study's record-strip structure
-and typography, without installing a product renderer or session feed. Included
-notices retain the reserved visuals, MIT code and all four public OFL font grants.
-Owner preview approval is required before merge, in addition to M2's native
-measurement; headless images are not native/U11a acceptance.

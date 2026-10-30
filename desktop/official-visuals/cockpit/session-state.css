@@ -1,5 +1,0 @@
-/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
-/* Copyright (c) 2026 ModelPlan. Owner-approved session palette, 2026-10-30. */
-:root,[data-theme=night]{--session-idle:#858d99;--session-working:#7fb2ff;--session-done:#7fb2ff;--session-error:#ef4444;--session-mark:#101820;--session-error-mark:#101820}
-[data-theme=day]{--session-idle:#5d636b;--session-working:#2f6bd8;--session-done:#2f6bd8;--session-error:#c42b2b;--session-mark:#fff;--session-error-mark:#fff}
-[data-theme=day][data-session-palette=darker],[data-theme=day] [data-session-palette=darker]{--session-working:#2a5fc4;--session-done:#2a5fc4}
