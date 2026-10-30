@@ -267,6 +267,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   private func fail(_ failure: CockpitWindowFailure = .localEncoding) {
+    guard !ending else { return }
     onFailure?(failure)
     discard()
   }

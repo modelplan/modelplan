@@ -67,6 +67,7 @@ import ModelPlanSettings
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    var pageFailure: (() -> Void)?
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
@@ -79,6 +80,7 @@ import ModelPlanSettings
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
@@ -98,6 +100,7 @@ import ModelPlanSettings
     init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition) {
         self.owner=owner;self.composition=composition
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
+        owner.pageFailure = { [weak self] in self?.unavailable() }
         owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
     }
     func show() {
@@ -129,8 +132,9 @@ import ModelPlanSettings
     func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
+        let initiatedInForeground=NSApp.isActive
         Task { @MainActor [weak self] in
-            guard let self,NSApp.isActive else { return }
+            guard let self,initiatedInForeground else { return }
             let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
             alert.informativeText=history
                 ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
