@@ -31,10 +31,10 @@ python3 tools/u14/engine_drive/release.py \
   --tag vX.Y.Z --commit <full-release-tag-commit> \
   --output .tmp/engine-drive/subject
 python3 tools/u14/engine_drive/release.py \
-  --tag v0.5.46 --commit 26e51d92981b8074f91b7cb145b9832ea62abcc9 \
+  --tag v0.5.46 --commit 3602d410b17f9376278413633abeec6e3572ee56 \
   --output .tmp/engine-drive/old46
 python3 tools/u14/engine_drive/release.py \
-  --tag v0.5.47 --commit db2589e2fc3ef08dd0ae5bf7a4a8f98fd230ae46 \
+  --tag v0.5.47 --commit f830589cc613daf16267c692b735c3a240ec4d2e \
   --output .tmp/engine-drive/old47
 ```
 

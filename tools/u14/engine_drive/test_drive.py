@@ -80,7 +80,8 @@ class DriveTests(unittest.TestCase):
         self.assertFalse((self.args.output / '.work').exists())
 
     def test_absolute_deadline_marks_active_case_timeout_and_rest_not_run(self):
-        self.args.deadline = time.time() + 15.25  # 15s cleanup reserve, 250ms work
+        self.args.deadline = time.time() + 17  # 15s cleanup reserve, 2s work
+        self.args.scenario_timeout = 20
         with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
             status, result = self.execute()
         self.assertEqual(status, 1)
@@ -126,6 +127,16 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'not-run')
         self.assertTrue(all(s['reason'] == 'preflight-or-harness-failed' for s in result['scenarios']))
         self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+
+    def test_annotated_release_tag_resolves_to_commit_not_tag_object(self):
+        tag = io.BytesIO(json.dumps(dict(object=dict(type='tag', sha='a' * 40))).encode())
+        commit = io.BytesIO(json.dumps(dict(object=dict(type='commit', sha='b' * 40))).encode())
+        with patch.object(release.urllib.request, 'urlopen', side_effect=[tag, commit]):
+            self.assertEqual(release.resolve_commit('v0.5.47'), 'b' * 40)
+        with patch.object(release, 'resolve_commit', return_value='b' * 40):
+            with self.assertRaisesRegex(ValueError, 'release-tag-commit-mismatch'):
+                release.fetch('v0.5.47', 'a' * 40, self.root / 'must-not-exist')
+        self.assertFalse((self.root / 'must-not-exist').exists())
 
     def test_release_checksum_and_executable_bytes_are_both_checked(self):
         asset = release.asset_name()
