@@ -10,13 +10,8 @@ public struct DockContentSnapshot: Sendable {
     public let menuRows: [RowsRow]
     public let summary: RowsRowsSummary?
 }
-/// Temporary U6 declaration until the containing Dock host exposes the shared seam.
-@MainActor public protocol DockContentProvider: AnyObject {
-    var dockContent: DockContentSnapshot { get }
-    var dockContentDidChange: (() -> Void)? { get set }
-}
 /// Presentation fanout over the native store's already-admitted rows, never a protocol reducer.
-@MainActor public final class EngineDockMenuProvider: DockContentProvider, EngineStoreSink {
+@MainActor public final class EngineDockMenuProvider: EngineStoreSink {
     public private(set) var dockContent = DockContentSnapshot(status: .loading, dockRows: [], menuRows: [], summary: nil)
     public var dockContentDidChange: (() -> Void)?
     private let store: EngineStore

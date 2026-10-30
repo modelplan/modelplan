@@ -12,9 +12,15 @@ let package = Package(
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
         .package(name: "ModelPlanSettings", path: "../ModelPlanSettings"),
+        .package(path: "../ModelPlanEngineStore"),
+        .package(path: "../../../clients/swift/ModelPlanEngineClient"),
+        .package(path: "../../../clients/swift/ModelPlanWire"),
     ],
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
+            .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore"),
+            .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
             .product(name: "ModelPlanCore", package: "ModelPlanNative"),
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanAssembly", package: "ModelPlanNative"),
@@ -26,6 +32,8 @@ let package = Package(
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ], resources: [.copy("Resources")]),
         .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
+            .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
             "ModelPlanAppIntegration",
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
@@ -36,6 +44,6 @@ let package = Package(
             .product(name: "ModelPlanCore", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ], path: "AppCLIContractTests"),
-        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration"], resources: [.process("Fixtures")]),
+        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore")], resources: [.process("Fixtures")]),
     ]
 )
