@@ -173,16 +173,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       }
     } catch { fail() }
   }
-  private func send(_ raw: String, clear: Bool = false) {
+  private func send(_ raw: String, clear: Bool = false, bootstrap: Bool = false) {
     guard let web else {
       fail()
       return
     }
     // JSON is an argument, never interpolated into executable JavaScript.
-    let code =
+    let body =
       clear
       ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected'"
       : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected'"
+    // Navigation completion need not mean the module graph has evaluated.
+    // Await the exact pinned entry module once; no polling or idle timer.
+    let code = (bootstrap ? "await import('modelplan-cockpit://bundle/src/main.js');" : "") + body
     web.callAsyncJavaScript(code, arguments: ["raw": raw], in: nil, in: .page) {
       [weak self] result in
       Task { @MainActor in
@@ -252,7 +255,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       fail()
       return
     }
-    do { send(try bridge.load(appearance)) } catch { fail() }
+    do { send(try bridge.load(appearance), bootstrap: true) } catch { fail() }
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail(.contentTerminated) }
   public func webView(

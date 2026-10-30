@@ -4,6 +4,23 @@ import XCTest
 
 @testable import ModelPlanCockpitWeb
 
+@MainActor private final class ClientStages: EngineClientEventConsumer {
+  var stages: [String] = []
+  func consume(_ event: EngineClientEvent) {
+    switch event {
+    case .clearPrivateViews: stages.append("clear")
+    case .context: stages.append("context")
+    case .connection(.ready): stages.append("ready")
+    case .connection(.stopped(let reason)): stages.append("stopped:" + String(describing: reason))
+    case .featureFailure(let feature, let error):
+      let category: String
+      switch error { case .featureDecode: category = "decode"; case .rpc: category = "rpc"; default: category = "transport" }
+      stages.append("failure:" + String(describing: feature) + ":" + category)
+    case .response(_, .cockpit): stages.append("cockpit-response")
+    default: break
+    }
+  }
+}
 final class ActualClientTests: XCTestCase {
   @MainActor func testPublishedCLIQueryAndClearThroughActualClientConstructor() async throws {
     guard let binary = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"] else {
@@ -35,7 +52,8 @@ final class ActualClientTests: XCTestCase {
     }
     XCTAssertEqual(initProcess.terminationStatus, 0)
     var page: PageProbe?
-    let coordinator = EngineCockpitCoordinator {
+    let stages = ClientStages()
+    let coordinator = EngineCockpitCoordinator(downstream: stages) {
       let p = PageProbe($0)
       page = p
       return p
@@ -52,7 +70,7 @@ final class ActualClientTests: XCTestCase {
     }
     XCTAssertEqual(
       page?.displays, 1,
-      "Actual cockpit/query must reach the same page through the ordered event consumer")
+      "Actual cockpit/query must reach the same page; bounded stages: \(stages.stages)")
     XCTAssertTrue(page?.privateVisible == true)
     await coordinator.shutdown()
     XCTAssertTrue(page?.state.disposed == true)

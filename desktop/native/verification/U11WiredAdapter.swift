@@ -11,7 +11,7 @@
   init(_ host: U11aHost) { self.host = host }
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
     guard let host, host.config["mode"] as? String == "preflight", message.frameInfo.isMainFrame,
-      message.frameInfo.request.url?.scheme == "modelplan-cockpit", message.frameInfo.request.url?.host == "bundle",
+      message.webView === host.web,
       let body = message.body as? [String:Any], body.count <= 5,
       let stage = body["stage"] as? String, ["error", "rejection", "csp", "dom"].contains(stage) else { return }
     var row:[String:Any] = ["event":"u11-install-diagnostic", "stage":stage]
