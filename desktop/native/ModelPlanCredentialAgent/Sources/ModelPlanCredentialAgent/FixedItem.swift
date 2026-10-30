@@ -25,14 +25,21 @@ public struct FixedItemQuery: Sendable {
                 kSecUseAuthenticationContext as String: context]
     }
 }
+public enum ItemReadTermination: Sendable {
+    case canceled, timeout
+    public var outcome: WireCredentialOutcome { self == .timeout ? .timeout : .canceled }
+}
 public struct ItemRead: Sendable {
-    public let status: Int32
+    /// nil when the operation was stopped before another OS call was admitted.
+    public let status: Int32?
     public let data: Data?
-    public init(status: Int32, data: Data? = nil) { self.status = status; self.data = data }
+    public let termination: ItemReadTermination?
+    public init(status: Int32, data: Data? = nil) { self.status = status; self.data = data; termination = nil }
+    public init(termination: ItemReadTermination) { status = nil; data = nil; self.termination = termination }
 }
 public protocol FixedItemReading: Sendable {
     /// Runs on the bounded worker, never MainActor.
-    func read(_ query: FixedItemQuery) -> ItemRead
+    func read(_ query: FixedItemQuery, authorize: @Sendable () -> ItemReadTermination?) -> ItemRead
 }
 /// Low-level seam for validating actual query dictionaries without a Keychain.
 public struct ItemMatch {
@@ -55,8 +62,9 @@ public struct SystemItemMatcher: ItemMatching {
 public struct SecurityItemReader: FixedItemReading {
     private let matcher: any ItemMatching
     public init(matcher: any ItemMatching = SystemItemMatcher()) { self.matcher = matcher }
-    public func read(_ query: FixedItemQuery) -> ItemRead {
+    public func read(_ query: FixedItemQuery, authorize: @Sendable () -> ItemReadTermination?) -> ItemRead {
         // Password data is not a legal all-matches return. Enumerate only attributes/ref.
+        if let stopped = authorize() { return .init(termination: stopped) }
         let enumeration = matcher.copyMatching(query.attributes)
         guard enumeration.status == errSecSuccess else { return .init(status: enumeration.status) }
         guard let items = enumeration.value as? [[String: Any]] else { return .init(status: errSecDecode) }
@@ -66,6 +74,7 @@ public struct SecurityItemReader: FixedItemReading {
               let ref = item[kSecValuePersistentRef as String] as? Data,
               !ref.isEmpty, ref.count <= 4096 else { return .init(status: errSecDecode) }
         // Read exactly that reference; never select the first of multiple matches.
+        if let stopped = authorize() { return .init(termination: stopped) }
         let result = matcher.copyMatching(query.dataAttributes(persistentRef: ref))
         guard result.status == errSecSuccess else { return .init(status: result.status) }
         guard let data = result.value as? Data, data.count <= 64 * 1024 else { return .init(status: errSecDecode) }

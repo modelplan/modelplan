@@ -10,7 +10,7 @@ EngineClient retains explicit-action/receipt matching, replay protection and fin
 
 Only Claude's saved-login scope and the fixed generic-password service are accepted.
 Requests cannot select services, accounts, files or executables. Enumeration returns only attributes and persistent references; after uniqueness/service checks, a second single-match query reads data by that exact persistent reference. Ambiguous items fail.
-Background queries prohibit authentication UI. One worker performs the blocking read;
+Background queries prohibit authentication UI. The reader requires the agent's injected operation checkpoint before each OS call; cancellation, deadline expiry or lost context after enumeration prevents the second interactive query entirely. A pre-call terminal result has no OSStatus or data. One worker performs the blocking read;
 logical timeout/cancel does not cancel the OS call, and its slot stays occupied until it
 returns. Late values cannot complete twice. The final writer must still reject stale
 results because a revoke can race any local fence check.

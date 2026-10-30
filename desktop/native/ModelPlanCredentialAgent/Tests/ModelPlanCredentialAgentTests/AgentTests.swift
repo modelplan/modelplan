@@ -35,7 +35,7 @@ private final class FakeReader: FixedItemReading, @unchecked Sendable {
     }
     func waitUntilStarted() { XCTAssertEqual(started.wait(timeout: .now() + 1), .success) }
     var calls: [Bool] { lock.lock(); defer { lock.unlock() }; return queries }
-    func read(_ query: FixedItemQuery) -> ItemRead {
+    func read(_ query: FixedItemQuery, authorize: @Sendable () -> ItemReadTermination?) -> ItemRead {
         lock.lock(); queries.append(query.interactive); lock.unlock()
         XCTAssertFalse(Thread.isMainThread)
         started.signal()
@@ -71,9 +71,17 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual((FixedItemQuery(interactive: true).attributes[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed, false)
     }
     private var item: [String: Any] { [kSecAttrService as String: "Claude Code-credentials", kSecValuePersistentRef as String: Data([1, 2, 3])] }
+    func testTerminalCheckpointBeforeEnumerationMakesNoOSCall() {
+        for reason in [ItemReadTermination.canceled, .timeout] {
+            let matcher = FakeMatcher([])
+            let read = SecurityItemReader(matcher: matcher).read(.init(interactive: true), authorize: { reason })
+            XCTAssertEqual(read.termination?.outcome, reason.outcome)
+            XCTAssertNil(read.status); XCTAssertNil(read.data); XCTAssertTrue(matcher.queries.isEmpty)
+        }
+    }
     func testRealReaderEnumeratesThenReadsExactlyOnePersistentReference() {
         let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item]), .init(status: errSecSuccess, value: tokenData as CFData)])
-        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false), authorize: { nil })
         XCTAssertEqual(read.status, errSecSuccess); XCTAssertEqual(read.data, tokenData)
         XCTAssertEqual(matcher.queries.count, 2)
         let second = matcher.queries[1]
@@ -85,25 +93,25 @@ final class AgentTests: XCTestCase {
     }
     func testRealReaderNotFoundAndEmptyEnumerationNeverReadData() {
         for first in [ItemMatch(status: errSecItemNotFound), .init(status: errSecSuccess, value: [[String: Any]]())] {
-            let matcher = FakeMatcher([first]), read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+            let matcher = FakeMatcher([first]), read = SecurityItemReader(matcher: matcher).read(.init(interactive: false), authorize: { nil })
             XCTAssertEqual(read.status, errSecItemNotFound); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
         }
     }
     func testRealReaderRejectsAmbiguityWithoutReadingAnyPassword() {
         let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item, item])])
-        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false), authorize: { nil })
         XCTAssertEqual(read.status, errSecDuplicateItem); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
     }
     func testRealReaderRejectsMalformedOrWrongServiceReference() {
         for value in [[kSecAttrService as String: "other"], [kSecAttrService as String: "Claude Code-credentials"], [kSecAttrService as String: "Claude Code-credentials", kSecValuePersistentRef as String: Data()]] {
             let matcher = FakeMatcher([.init(status: errSecSuccess, value: [value])])
-            let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false))
+            let read = SecurityItemReader(matcher: matcher).read(.init(interactive: false), authorize: { nil })
             XCTAssertEqual(read.status, errSecDecode); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 1)
         }
     }
     func testRealReaderItemCanDisappearBetweenEnumerationAndRead() {
         let matcher = FakeMatcher([.init(status: errSecSuccess, value: [item]), .init(status: errSecItemNotFound)])
-        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: true))
+        let read = SecurityItemReader(matcher: matcher).read(.init(interactive: true), authorize: { nil })
         XCTAssertEqual(read.status, errSecItemNotFound); XCTAssertNil(read.data); XCTAssertEqual(matcher.queries.count, 2)
     }
     func testEverySecurityFailureHasNoToken() async throws {

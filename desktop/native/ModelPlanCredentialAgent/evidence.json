@@ -11,19 +11,23 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "d890f7509ead6f51f2b90ec3f30e1e25c8499f7f2a051cf0cfadb8debc896c7d"
+      "sha256": "d61637309532975e3f3586253d8ec77c25c39988aed10b52907d802d281e4f81"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
-      "sha256": "ad87ae142a0db9daa35db2c1f56035cbb98c74fe90ab56c2a339b0441137d086"
+      "sha256": "a9df1303c64ef11c88b0b35b96009fe0c9cd2d985b2ed715f5f62023eb67e20a"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
-      "sha256": "40d78df1762ebcf3c3850eaae354b248bdc28e0e2f3c454afebe9cdcb3328936"
+      "sha256": "3670d89bb63f8f68f1dd12405cf6826bd467c998cebeba6ffe52eb4a061679de"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
-      "sha256": "7901f7dbc39b67d1b7514135c401f1f4a764574e6cc4fcf0b01a823346aed969"
+      "sha256": "0c0eebe27bc3d873c4334ee6d762a808159be765f432bfa8b7e2e65581889383"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
+      "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
     }
   ],
   "scenarios": [
@@ -84,7 +88,27 @@
       "outcome": "pass"
     },
     {
+      "id": "testTerminalCheckpointBeforeEnumerationMakesNoOSCall",
+      "outcome": "pass"
+    },
+    {
       "id": "testTimeoutRetainsWorkerSlotAndDropsLateToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testActiveInteractiveOperationStillReadsAfterEnumeration",
+      "outcome": "pass"
+    },
+    {
+      "id": "testCancelWhileEnumerationBlockedSuppressesSecretQuery",
+      "outcome": "pass"
+    },
+    {
+      "id": "testExpiryWhileEnumerationBlockedSuppressesSecretQuery",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRevokeWhileEnumerationBlockedSuppressesSecretQuery",
       "outcome": "pass"
     },
     {
@@ -124,6 +148,19 @@
     "path": ".github/workflows/u7-credential-agent.yml",
     "sha256": "2fa64e8d139ff64b080a52ddbd429857231e7b96d3e2e8ea56ca74e2ee84df54",
     "outcome": "not-run",
-    "note": "New standalone package job; hosted execution follows push"
+    "note": "New head requires its own hosted execution after push"
+  },
+  "betweenQueryRegression": {
+    "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
+    "baselineOutcome": "fail",
+    "baselineFailures": [
+      "cancel-after-enumeration-start",
+      "expiry-after-enumeration-start",
+      "revoke-after-enumeration-start"
+    ],
+    "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
+    "fixedOutcome": "pass",
+    "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
+    "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
   }
 }

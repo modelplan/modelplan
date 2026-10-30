@@ -12,7 +12,11 @@ private final class Completion: @unchecked Sendable {
         if let result { lock.unlock(); value.resume(returning: result) }
         else { continuation = value; lock.unlock() }
     }
-    var active: Bool { lock.lock(); defer { lock.unlock() }; return result == nil }
+    var termination: ItemReadTermination? {
+        lock.lock(); defer { lock.unlock() }
+        guard let result else { return nil }
+        return result.outcome == .timeout ? .timeout : .canceled
+    }
     func finish(_ value: WireCredentialResult) {
         lock.lock()
         guard result == nil else { lock.unlock(); return }
@@ -45,6 +49,14 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
         guard ContinuousClock.now < operation.deadline else { return outcome(.timeout) }
         guard acquire() else { return outcome(.error) }
         let completion = Completion()
+        // onCancel retires this logical operation even while its worker is inside an OS call.
+        // The same checkpoint gates both reader stages and final result handling.
+        @Sendable func checkpoint() -> ItemReadTermination? {
+            if let stopped = completion.termination { return stopped }
+            if ContinuousClock.now >= operation.deadline { return .timeout }
+            if !isCurrent(operation.delivery) { return .canceled }
+            return nil
+        }
         let timeout = Task {
             do { try await Task.sleep(until: operation.deadline, clock: .continuous) }
             catch { return }
@@ -56,12 +68,12 @@ public final class NativeCredentialAgent: CredentialAgent, @unchecked Sendable {
                 completion.install(callback)
                 queue.async { [self] in
                     defer { release() }
-                    guard completion.active, isCurrent(operation.delivery) else { completion.finish(outcome(.canceled)); return }
-                    let result = reader.read(.init(interactive: operation.request.interactive))
-                    guard completion.active else { return }
-                    guard ContinuousClock.now < operation.deadline else { completion.finish(outcome(.timeout)); return }
-                    guard isCurrent(operation.delivery) else { completion.finish(outcome(.canceled)); return }
-                    let kind = SecurityOutcome.map(result.status)
+                    if let stopped = checkpoint() { completion.finish(outcome(stopped.outcome)); return }
+                    let result = reader.read(.init(interactive: operation.request.interactive), authorize: checkpoint)
+                    if let stopped = checkpoint() { completion.finish(outcome(stopped.outcome)); return }
+                    if let stopped = result.termination { completion.finish(outcome(stopped.outcome)); return }
+                    guard let status = result.status else { completion.finish(outcome(.error)); return }
+                    let kind = SecurityOutcome.map(status)
                     guard kind == .ok else { completion.finish(outcome(kind)); return }
                     guard let data = result.data, data.count <= 64 * 1024,
                           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
