@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+/* Copyright (c) 2026 ModelPlan. Existing public c01 exports only; no U12 still. */
+.ck-portrow{isolation:isolate}.ck-port{background:transparent!important;box-shadow:none!important;overflow:visible}.ck-portrow::before{content:'';position:absolute;inset:-1px -30px;z-index:3;pointer-events:none;background:url('./runtime/canopy-c01/canopy-890-2x.png') center/100% 100% no-repeat}.ck-port::before{content:'';position:absolute;inset:-1px -30px;z-index:1;pointer-events:none;background:url('./runtime/canopy-c01/pane-890-2x.png') center/100% 100% no-repeat}.hud{z-index:2}
+[data-profile=compact] .ck-portrow::before{background-image:url('./runtime/canopy-c01/canopy-640-2x.png')}[data-profile=compact] .ck-port::before{background-image:url('./runtime/canopy-c01/pane-640-2x.png')}

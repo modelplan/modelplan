@@ -1,0 +1,85 @@
+/* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 ModelPlan. Owner-released G/P6 port; source 1d3f82429f1b853314ee120d4bd0007f84fc051d. */
+:root{
+
+  --time-dot-on:rgba(255,255,255,.8);--time-dot-off:rgba(255,255,255,.15);
+  --st-ok:#5ad9ba;--st-mid:#eac17b;--st-low:#ef4444;
+
+  --st-low-day:color-mix(in srgb,var(--st-low) 75%,#000);
+  --trial:#9fd2ff;--gold-lcd:#d4b994;--fire:#df604c;
+  --burn:#7ff0d6;--burn-hot:#e9fff8;
+
+  --lamp-amber:radial-gradient(circle at 50% 40%,#f7dca6,#eac17b 45%,#b98a3f);--lamp-red:radial-gradient(circle at 50% 40%,color-mix(in srgb,var(--st-low) 45%,#fff),var(--st-low) 45%,color-mix(in srgb,var(--st-low) 68%,#000));
+
+
+  --lcd-glass:radial-gradient(130% 120% at 25% 0%,#05080f,#03060a 72%);
+  --lcd-ink:#e9edf0;--lcd-muted:#87939e;--lcd-ghost:#ffffff0c;--lcd-rule:#ffffff12;--lcd-glare:#ffffff0a;
+  --port-bg:radial-gradient(ellipse at 50% 30%,#14202c,#070a0f 75%);
+  --well-in:inset 0 2px 4px #000c,inset 0 0 0 1px #000;
+  --slot-1:#090c10;--slot-2:#121820;--slot-deep:#03060a;--tog-well:#06090d;
+  --glass-solid:#171e26f5;
+  --dock-tip-bg:#121417ee;--dock-tip-ink:#e9e3d8;--dock-tip-line:#ffffff1a;
+
+  --bz-in:inset 0 2px 5px #000000b8;
+
+  --lamp-ink:#2a1810;
+}
+
+
+:root[data-theme="night"]{
+  color-scheme:dark;
+  --gold-metal:#d4b994;--fire-metal:#df604c;
+  --metal-1:#202124;--metal-2:#1c1d1f;--metal-3:#141517;--metal-sheen:#ffffff0a;
+  --metal-solid-1:#2a2b2e;--metal-solid-2:#1c1d1f;
+  --shell-shadow:0 30px 70px #000c,inset 0 0 0 1px #ffffff12,inset 0 1px 0 #ffffff1a;
+  --hair:#9c968d33;
+  --key-1:#2c2e31;--key-2:#202124;--key-p1:#222326;--key-p2:#1a1b1d;
+  --caution-1:#252629;--caution-2:#1c1d20;--deadfront-ink:#1d1e21;
+  --raised:inset 0 1px 0 #ffffff1c,inset 0 -1px 0 #0006,0 1px 2px #000a,0 0 0 1px #0b0c0e;
+  --pressed:inset 0 1px 3px #000c,0 0 0 1px #0b0c0e;
+  --well:var(--well-in),0 1px 0 #ffffff0f;
+  --seam-dark:#0a0b0c;--seam-light:#ffffff0a;
+  --silk:#87939e;--silk-hi:#e9edf0;--silk-dim:#586773;
+  --led-off:#2a2d31;--slat-1:#2c2e31;--slat-2:#1c1d1f;
+  --pin-well-1:#0b0f13;--pin-well-2:#080b0e;
+  --key-logo-filter:none;
+
+  --pop-bg:#0f1113f2;--pop-solid:#0f1113;--pop-ink:#e8e9ea;--pop-ink2:#9aa1a9;--pop-ink3:#7c838b;--pop-line:#ffffff16;--pop-btn-line:#ffffff1c;
+  --pop-shadow:0 18px 40px #000b;--pop-logo-filter:brightness(0) invert(1);--card-warn-ink:var(--st-low);
+  --mb-bg:#1b1d22d9;--mb-ink:#d9dadc;--mb-ink2:#8e939b;--mb-hover:#ffffff1f;--mb-line:#ffffff12;
+  --body-bg:#0b0d10;--body-ink:#e8e9ea;
+
+  --bz-ring:#060708;--bz-lip:#ffffff12;--bz-lip-b:#ffffff24;
+
+  --key-led-on:#e9edf0;--key-led-glow:0 0 5px #e9edf0b3;
+}
+
+
+:root[data-theme="day"]{
+  color-scheme:light;
+  --gold-metal:#90704d;--fire-metal:#bb342c;
+
+  --metal-1:#c3c7cc;--metal-2:#b7bcc1;--metal-3:#aab0b6;--metal-sheen:#ffffff59;
+  --metal-solid-1:#c6cacf;--metal-solid-2:#b2b7bc;
+  --shell-shadow:0 30px 70px #0007,inset 0 0 0 1px #0000003d,inset 0 1px 0 #ffffff99;
+  --hair:#0000002b;
+  --key-1:#d2d6da;--key-2:#bfc4c9;--key-p1:#b2b7bc;--key-p2:#a7adb3;
+  --caution-1:#c6cace;--caution-2:#b4b9be;--deadfront-ink:#9aa0a7;
+  --raised:inset 0 1px 0 #ffffffb3,inset 0 -1px 0 #00000026,0 1px 2px #0000004d,0 0 0 1px #868c93;
+  --pressed:inset 0 1px 3px #00000059,0 0 0 1px #868c93;
+  --well:var(--well-in),0 1px 0 #ffffff8c;
+  --seam-dark:#0000002e;--seam-light:#ffffff73;
+
+  --silk:#262b31;--silk-hi:#0d1013;--silk-dim:#3a4047;
+  --led-off:#868c93;--slat-1:#b8bdc2;--slat-2:#9da3a9;
+  --pin-well-1:#6f747b;--pin-well-2:#5f646b;
+  --key-logo-filter:brightness(0) opacity(.78);
+  --pop-bg:#f4f5f6f5;--pop-solid:#f4f5f6;--pop-ink:#1b1e22;--pop-ink2:#4f5660;--pop-ink3:#686f79;--pop-line:#0000001a;--pop-btn-line:#00000026;
+  --pop-shadow:0 18px 40px #0000003a;--pop-logo-filter:brightness(0) opacity(.8);--card-warn-ink:var(--st-low-day);
+  --mb-bg:#eceef0d9;--mb-ink:#1d1f22;--mb-ink2:#5d636b;--mb-hover:#0000001a;--mb-line:#0000001a;
+  --body-bg:#d9dce0;--body-ink:#1b1e22;
+
+  --bz-ring:#14171b;--bz-lip:#e4e7ea99;--bz-lip-b:#f6f7f8e6;
+
+  --key-led-on:#1f252b;--key-led-glow:none;
+}
