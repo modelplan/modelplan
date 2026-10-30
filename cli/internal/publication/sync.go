@@ -62,11 +62,11 @@ func New(base string, st *store.Store, version string) (*Client, error) {
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("invalid publication base URL")
 	}
 	local := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
 	if u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Scheme != "https" && !(u.Scheme == "http" && local)) {
-		return nil, fmt.Errorf("base %q must be https (http only for localhost)", base)
+		return nil, errors.New("publication base must be https (http only for localhost), without userinfo, query or fragment")
 	}
 	return &Client{
 		Base:      strings.TrimRight(base, "/"),
@@ -77,6 +77,23 @@ func New(base string, st *store.Store, version string) (*Client, error) {
 		Jitter:    func() time.Duration { return time.Duration(rand.Int64N(int64(maxCheckJitter) + 1)) },
 		wait:      waitForCheck,
 	}, nil
+}
+
+// DisplayBase returns a URL suitable for display, without credentials, query or fragment.
+func DisplayBase(base string) string {
+	if base == "" {
+		return ""
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "[invalid URL]"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
 }
 
 type pointer struct {
@@ -302,7 +319,7 @@ func Load(s *store.Store) (*digest.Digest, store.State, error) {
 func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+path, nil)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, "", 0, errors.New("invalid publication request")
 	}
 	req.Header.Set("User-Agent", c.UserAgent)
 	req.Header.Set("Accept", "application/json")
@@ -311,7 +328,10 @@ func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, in
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, "", 0, err
+		if ctx.Err() != nil {
+			return nil, "", 0, ctx.Err()
+		}
+		return nil, "", 0, errors.New("publication request failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
