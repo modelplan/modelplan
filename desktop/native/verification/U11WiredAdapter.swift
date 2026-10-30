@@ -6,7 +6,23 @@
   import ModelPlanCockpitWeb
   import ModelPlanEngineClient
 
-  @MainActor final class U11WiredSession {
+  @MainActor final class U11DiagnosticHandler: NSObject, WKScriptMessageHandler {
+  weak var host: U11aHost?
+  init(_ host: U11aHost) { self.host = host }
+  func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    guard let host, host.config["mode"] as? String == "preflight", message.frameInfo.isMainFrame,
+      message.frameInfo.request.url?.scheme == "modelplan-cockpit", message.frameInfo.request.url?.host == "bundle",
+      let body = message.body as? [String:Any], body.count <= 5,
+      let stage = body["stage"] as? String, ["error", "rejection", "csp", "dom"].contains(stage) else { return }
+    var row:[String:Any] = ["event":"u11-install-diagnostic", "stage":stage]
+    // This channel exists only in synthetic preflight; no rendered DTO/owner data.
+    for key in ["message", "directive"] { if let value = body[key] as? String { row[key] = String(value.prefix(160)) } }
+    for key in ["api", "opaqueOrigin"] { if let value = body[key] as? Bool { row[key] = value } }
+    host.emit(row)
+  }
+}
+
+@MainActor final class U11WiredSession {
     weak var host: U11aHost?
     let coordinator: EngineCockpitCoordinator
     let client: ProcessEngineClient
@@ -26,7 +42,10 @@
         let controller = CockpitWindowController(
           bundle: bundle, context: context,
           appearance: .init(theme: .night, locale: .en, profile: .full))
-        controller.onFailure = { [weak host] failure in host?.emit(["event":"wired-failure","stage":failure.rawValue]); host?.stop("wired-page-" + failure.rawValue) }
+        controller.verificationResource = { [weak host] path in
+        if host?.config["mode"] as? String == "preflight" { host?.emit(["event":"u11-bundle-resource", "path":path]) }
+      }
+      controller.onFailure = { [weak host] failure in host?.emit(["event":"wired-failure","stage":failure.rawValue]); host?.stop("wired-page-" + failure.rawValue) }
         controller.onRendered = { [weak host] in
           host?.wired?.rendered = true
           host?.emit(["event": "cockpit-query-rendered"])
@@ -44,6 +63,13 @@
             }
           }
           host.frameHandler = frame
+        if host.config["mode"] as? String == "preflight" {
+          configuration.userContentController.add(U11DiagnosticHandler(host), name:"verificationDiagnostic")
+          let diagnostics = """
+          (()=>{const post=x=>window.webkit.messageHandlers.verificationDiagnostic.postMessage(x);addEventListener('error',e=>post({stage:'error',message:String(e.message||'module-resource-load-failed')}),true);addEventListener('unhandledrejection',e=>post({stage:'rejection',message:String(e.reason?.message||'promise-rejected')}));addEventListener('securitypolicyviolation',e=>post({stage:'csp',directive:e.effectiveDirective}));addEventListener('DOMContentLoaded',()=>post({stage:'dom',api:!!window.modelPlanCockpit,opaqueOrigin:location.origin==='null'}));})();
+          """
+          configuration.userContentController.addUserScript(WKUserScript(source:diagnostics,injectionTime:.atDocumentStart,forMainFrameOnly:true))
+        }
           configuration.userContentController.add(frame, name: "verificationFrames")
           let js =
             (try? String(

@@ -20,7 +20,8 @@ enum CockpitSchemeResponse {
 
 private final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
-  init(_ bundle: VerifiedCockpitBundle) { self.bundle = bundle }
+  let observed: ((String) -> Void)?
+  init(_ bundle: VerifiedCockpitBundle, observed: ((String) -> Void)? = nil) { self.bundle = bundle; self.observed = observed }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     do {
       guard let url = task.request.url, url.scheme == "modelplan-cockpit", url.host == "bundle",
@@ -29,6 +30,7 @@ private final class BundleScheme: NSObject, WKURLSchemeHandler {
       else { throw CockpitBundleError.unsafePath }
       let path = String(url.path.dropFirst())
       let data = try bundle.resource(path: path)
+      observed?(path)
       let mime =
         [
           "html": "text/html", "js": "text/javascript", "css": "text/css",
@@ -74,6 +76,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   #if MODELPLAN_TEST_ONLY_SPI
     public var verificationWebView: WKWebView? { web }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
+    public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
   #endif
   public var queryTicket: CockpitQueryTicket? { bridge.queryTicket }
@@ -97,7 +100,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
+    #if MODELPLAN_TEST_ONLY_SPI
+    config.setURLSchemeHandler(BundleScheme(bundle, observed: verificationResource), forURLScheme: "modelplan-cockpit")
+    #else
     config.setURLSchemeHandler(BundleScheme(bundle), forURLScheme: "modelplan-cockpit")
+    #endif
     proxy.owner = self
     config.userContentController.add(proxy, name: "cockpit")
     #if MODELPLAN_TEST_ONLY_SPI
