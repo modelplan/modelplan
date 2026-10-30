@@ -11,7 +11,9 @@ import {
   writeFile,
   lstat,
   realpath,
+  cp,
 } from "node:fs/promises";
+import { verifyVisualPack } from "../scripts/check-visual-pack.mjs";
 import { resolve, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
@@ -24,6 +26,7 @@ const external = args.length === 2 && args[0] === "--visual-package";
 if (args.length && !official && !external) throw Error(usage);
 const publicRoot = await realpath(here("../"));
 let visual = null;
+let runtimePack = null;
 if (official) {
   // Only this branch reads the reserved folder; the community build never does.
   const reserved = here("official-visuals");
@@ -35,6 +38,8 @@ if (official) {
     relative(publicRoot, visual) !== "desktop" + sep + "official-visuals"
   )
     throw Error("official_visuals_must_be_desktop_official_visuals");
+  verifyVisualPack(publicRoot);
+  runtimePack = resolve(visual, "runtime");
 } else if (external) {
   visual = await realpath(resolve(args[1]));
   if (
@@ -98,6 +103,9 @@ let css = await readFile(here("app/style.css"), "utf8");
 if (visual) {
   css += "\n" + (await readFile(resolve(visual, "theme.css"), "utf8"));
   await copyFile(resolve(visual, "LICENSE.md"), dist + "VISUAL-LICENSE.md");
+}
+if (official) {
+  await cp(runtimePack, dist + "runtime", { recursive: true, force: false });
 }
 await writeFile(dist + "app.css", css);
 await copyFile(here("app/index.html"), dist + "index.html");

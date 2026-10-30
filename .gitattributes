@@ -1,0 +1,5 @@
+# Exact upstream licence/NOTICE formatting is preserved in snapshots and generated views.
+cli/THIRD-PARTY-NOTICES.md -whitespace
+desktop/third-party/NOTICES.md -whitespace
+desktop/third-party/licenses/pulse/THIRD_PARTY_NOTICES.md -whitespace
+desktop/third-party/licenses/go/modernc.org/memory/LICENSE-MMAP-GO -whitespace

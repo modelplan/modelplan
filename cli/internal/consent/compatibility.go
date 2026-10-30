@@ -98,12 +98,8 @@ func SetKeychain(r *Record, choice string) {
 	r.restoreKeychain()
 }
 
-// Hinted is the only existing top-level extensible map which every supported
-// writer round-trips without changing its entries. Hint code uses valid tool
-// IDs; '/' makes this reserved namespace disjoint. Encoding each immutable
-// receipt into a true-valued key retains atomic single-file commits and avoids
-// a sidecar journal or a schema bump that disables older CLI copies. No tool
-// hints or receipt keys are emitted by consent --json.
+// Schema-1 receipt encoding is migration input only. Schema 2 stores explicit
+// epoch/request-id keys; older writers reject the entire store.
 const receiptPrefix = "consent-api/receipt/v1/"
 
 func loadReceipts(s *State, raw []byte) error {
@@ -132,6 +128,17 @@ func loadReceipts(s *State, raw []byte) error {
 		seen[id] = true
 		s.Requests[id] = receipt
 	}
+	for id, receipt := range s.Requests {
+		if len(receipt.RequestHash) != 64 || !json.Valid(receipt.Result) {
+			return errors.New("invalid consent receipts")
+		}
+		if s.SchemaVersion == 2 {
+			epoch, requestID, ok := strings.Cut(id, "/")
+			if !ok || epoch != s.StoreEpoch || requestID == "" {
+				return errors.New("invalid consent receipt epoch")
+			}
+		}
+	}
 	return nil
 }
 
@@ -143,13 +150,6 @@ func storeReceipts(s *State) error {
 		if !strings.HasPrefix(key, receiptPrefix) {
 			hinted[key] = value
 		}
-	}
-	for id, receipt := range s.Requests {
-		b, err := json.Marshal(receipt)
-		if err != nil {
-			return err
-		}
-		hinted[receiptPrefix+id+"/"+base64.RawURLEncoding.EncodeToString(b)] = true
 	}
 	s.Hinted = hinted
 	return nil

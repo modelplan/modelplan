@@ -33,12 +33,13 @@ const (
 )
 
 type accountSnap struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	ObservedAt    time.Time `json:"observedAt"`
-	Status        string    `json:"status"` // ok | error
-	Error         string    `json:"error,omitempty"`
-	Plan          string    `json:"plan,omitempty"`
-	Windows       []Window  `json:"windows,omitempty"`
+	Admission     *consent.CaptureStamp `json:"admission,omitempty"`
+	SchemaVersion int                   `json:"schemaVersion"`
+	ObservedAt    time.Time             `json:"observedAt"`
+	Status        string                `json:"status"` // ok | error
+	Error         string                `json:"error,omitempty"`
+	Plan          string                `json:"plan,omitempty"`
+	Windows       []Window              `json:"windows,omitempty"`
 	// Credits: available reset credits; Expiries has one entry per credit whose details were
 	// returned (nil time = never expires). Count may exceed len(Expiries).
 	Credits *struct {
@@ -75,15 +76,8 @@ func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
 		return false
 	}
-	s := loadAccount(cache)
-	if s == nil {
-		return true
-	}
-	wait := AccountEvery
-	if s.Status != "ok" {
-		wait = accountRetryAfter
-	}
-	return now.Sub(s.ObservedAt) >= wait
+	next, err := codexRefreshNext(cache)
+	return err == nil && !now.Before(next)
 }
 
 // CodexAccountOff: MODELPLAN_CODEX_ACCOUNT=off keeps the CLI to the session logs.
@@ -111,6 +105,9 @@ func CodexBin(home string) string {
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
 // (or the failure, so a missing login is not retried for half an hour). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
+	if cache == "" {
+		return errors.New("reader budget unavailable")
+	}
 	admission, err := consent.ReaderLockContext(ctx)
 	if err != nil {
 		return err
@@ -121,31 +118,57 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.New("Codex reader not permitted")
 	}
 	commit := func(s *accountSnap) error {
-		return consent.Publish(state.Generation, func() error { return save(cache, s) })
+		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
+		wait := AccountEvery
+		if s.Status != "ok" {
+			wait = accountRetryAfter
+		}
+		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
+			return err
+		}
+		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")
 	}
-	if codex == "" {
-		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
-	}
+
 	unlock, ok := lock(cache, now)
 	if !ok {
 		return errors.New("another refresh is running")
 	}
 	defer unlock()
-	if !consent.CurrentGeneration(state.Generation) {
+	next, err := codexRefreshNext(cache)
+	if err != nil {
+		return err
+	}
+	if now.Before(next) {
+		return nil
+	}
+	if err := reserveReaderAttempt(cache, "codex", now.Add(AccountEvery)); err != nil {
+		return err
+	}
+	if codex == "" {
+		return commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "codex not found"})
+	}
+	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
 	}
 	ctx, cancel := context.WithTimeout(ctx, accountTimeout)
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil {
-		status, reason := "error", short(err.Error())
+		// Runtime and process errors may contain credentials, paths or identities.
+		// Discard their text before either returning the failure or caching it.
+		status, reason := "error", errorCode(err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			reason = "timeout"
+		}
+		safeErr := codeError(reason, reason)
 		if errors.Is(err, toolcli.ErrRuntimeMissing) {
 			status, reason = toolcli.RuntimeMissing, toolcli.RuntimeNextStep
+			safeErr = toolcli.ErrRuntimeMissing
 		}
-		return errors.Join(err, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
+		return errors.Join(safeErr, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
 	}
 	s := snapFrom(resp, now)
 	if resp.identity != "" {
@@ -253,7 +276,7 @@ func askCodex(ctx context.Context, codex string) (*rlResponse, error) {
 				continue
 			}
 			if m.Error != nil {
-				return nil, errors.New(m.Error.Message)
+				return nil, codeError("other", "other")
 			}
 			return m.Result, nil
 		}
@@ -373,8 +396,18 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 
 // applyAccount merges a recent account reading into the Codex account from the logs: newest
 // observation per window, the account's plan and its reset credits. Without logs it stands alone.
-func applyAccount(r *Report, cache string, now time.Time) {
+func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
+	admission := consent.Capture()
+	if len(admissions) > 0 {
+		admission = admissions[0]
+	}
+	if !admission.Allows("codex", consent.Runtime) {
+		return
+	}
 	s := loadAccount(cache)
+	if s != nil && !admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
+		return
+	}
 	if s != nil && s.Status == toolcli.RuntimeMissing && now.Sub(s.ObservedAt) <= accountKeep && !s.ObservedAt.After(now) {
 		r.Sources = append(r.Sources, SourceStatus{Source: "codex-account", Status: toolcli.RuntimeMissing, Reason: toolcli.RuntimeNextStep, ErrorCode: "runtime_missing"})
 	}
@@ -462,4 +495,28 @@ func creditCards(count int, expiries []*time.Time) []Card {
 		cards = append(cards, Card{Kind: "full", Count: &rest})
 	}
 	return cards
+}
+
+// The independent attempt file survives Forget and is checked inside the
+// existing provider lock by explicit CLI and app-server refreshes alike.
+func codexRefreshNext(cache string) (time.Time, error) {
+	next, err := loadReaderAttempt(cache, "codex")
+	if err != nil {
+		return next, err
+	}
+	if snapshot := loadAccount(cache); snapshot != nil {
+		wait := AccountEvery
+		if snapshot.Status != "ok" {
+			wait = accountRetryAfter
+		}
+		until := snapshot.ObservedAt.Add(wait)
+		if until.After(next) {
+			next = until
+		}
+	} else {
+		if _, status := readBounded(accountPath(cache), 256<<10); status != "missing" {
+			return next, errors.New("reader budget unavailable")
+		}
+	}
+	return next, nil
 }

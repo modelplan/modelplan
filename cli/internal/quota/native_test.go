@@ -56,7 +56,7 @@ func TestParseZai(t *testing.T) {
 	}
 
 	for body, want := range map[string]string{
-		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "the quota API said no: Invalid key",
+		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "schema_changed",
 		`{"code":200,"success":true,"data":{}}`:                                              "unsupported quota format",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3}]}}`:   "unsupported quota entry",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":"x"}]}}`: "unsupported quota entry",
@@ -81,7 +81,7 @@ func zaiServer(t *testing.T) (*[]string, func()) {
 		w.Write([]byte(`{"code":200,"success":true,"data":{"planName":"GLM Coding Pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":61,"nextResetTime":` + itoa64(time.Now().Add(time.Hour).UnixMilli()) + `}]}}`))
 	}))
 	oldHosts, oldClient := zaiHosts, nativeClient
-	zaiHosts, nativeClient = map[string]string{"global": srv.URL, "bigmodel-cn": srv.URL}, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "api.z.ai", "open.bigmodel.cn")
 	return &seen, func() { srv.Close(); zaiHosts, nativeClient = oldHosts, oldClient }
 }
 
@@ -260,7 +260,7 @@ func TestNativeOpenCodeGoRefresh(t *testing.T) {
 	}))
 	defer srv.Close()
 	oldHosts, oldClient := opencodegoHosts, nativeClient
-	opencodegoHosts, nativeClient = map[string]string{"global": srv.URL}, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "opencode.ai")
 	defer func() { opencodegoHosts, nativeClient = oldHosts, oldClient }()
 	p := nativePaths(t)
 	t.Setenv("OPENCODE_API_KEY", "test-key")

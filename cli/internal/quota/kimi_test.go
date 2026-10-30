@@ -81,8 +81,7 @@ func TestKimiOptInRegionsCacheAndPrivacy(t *testing.T) {
 	defer srv.Close()
 	oldHosts, oldClient := kimiHosts, nativeClient
 	defer func() { kimiHosts, nativeClient = oldHosts, oldClient }()
-	kimiHosts = map[string]string{"china": srv.URL, "international": srv.URL}
-	nativeClient = srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "api.kimi.com", "api.kimi.ai")
 	if NativeDue(p, kimiNow) {
 		t.Fatal("enabled by key alone")
 	}
@@ -188,10 +187,7 @@ func TestKimiFailuresDoNotFollowRedirectsOrEchoBodies(t *testing.T) {
 				w.Write([]byte(`{"error":"secret-must-not-escape"}`))
 			}))
 			defer srv.Close()
-			old := kimiHosts
-			defer func() { kimiHosts = old }()
-			kimiHosts = map[string]string{"china": srv.URL}
-			e := fetchKimi(context.Background(), srv.Client(), "china", "synthetic-secret", kimiNow)
+			e := fetchKimi(context.Background(), readerFixtureClient(t, srv, "api.kimi.com"), "china", "synthetic-secret", kimiNow)
 			b, _ := json.Marshal(e)
 			if e.Status != "error" || hits != 1 || strings.Contains(string(b), "secret-must-not-escape") {
 				t.Fatal(string(b), hits)

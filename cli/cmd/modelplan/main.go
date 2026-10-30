@@ -25,6 +25,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/qwenusage"
 	"github.com/modelplan/modelplan/cli/internal/render"
 	"github.com/modelplan/modelplan/cli/internal/snapshot"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -59,7 +60,11 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        5 min in the background; MODELPLAN_CODEX_ACCOUNT=off to skip)
   modelplan detect [--json]            presence-only tool detection; no credentials or network
   modelplan consent --json             read shared consent and bilingual consent text
-  modelplan consent grant --json       atomically apply one JSON request from stdin
+  modelplan consent grant --json       atomically apply a per-scope JSON request from stdin
+  modelplan consent init --json        establish the store epoch before mutation
+  modelplan consent cleanup --json     retry interrupted scoped erasure
+  modelplan consent reset confirmed --json
+                                       confirmed recovery with a new epoch; grants must be given again
   modelplan connect <provider> [--backend native|codexbar] [--region …] [--key-env NAME]
   modelplan connect --detected [--privacy automatic|passive] [--json]
                                        preview or confirm the pre-checked detected-tool list once
@@ -152,6 +157,9 @@ func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
 var startDetached = detach.Start
 
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "app-server" {
+		return appServerCmd(args[1:], stdin, stdout, stderr)
+	}
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		fmt.Fprint(stdout, usage)
 		return 0
@@ -631,7 +639,7 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 		return 0
 	}
 	code := 0
-	if err := consent.Publish(state.Generation, func() error {
+	if err := consent.Publish(state.Fence(), func() error {
 		code = statuslineInput(in, stdout, style, st, c, harness, modelID, effort, false)
 		return nil
 	}); err != nil {
@@ -1008,45 +1016,74 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}
 	}
-	paths := quotaPaths(st)
-	report := quota.ReadPermitted(paths, now)
-	if !readOnly {
-		observeQuotaHistory(st, report, now)
-		observeCodexSpeed(st, now)
-		observeAgents(st, now)
-		observeLiveSessions(st, paths, report, now)
-	}
-	state := advise.Load(st.Dir)
-	es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
-	if !readOnly {
-		_ = state.Save(st.Dir, now)
-	}
-	ledger := speed.Load(st.Dir)
-	perf, ok := speed.LoadPerf(st.Dir)
-	long, longOK := speed.LoadLong(st.Dir)
-	pace, paceOK := history.LoadPace(st.Dir)
-	home, _ := os.UserHomeDir()
-	localUsage := permittedLocalUsage(home, "gemini", now)
-	qwenLocal := permittedLocalUsage(home, "qwen", now)
-	connectionEnv := connections.Local(paths)
-	connectionEnv.Gemini = &localUsage
-	connectionEnv.Qwen = &qwenLocal
-	fv := history.ReadEffortSuggestion(st.Dir, d, now)
-	if fv.Suggestion != nil {
-		style := render.Style{T: render.ZH}
-		if c.lang == "en" {
-			style.T = render.EN
+	result := consent.BuildStable(func(admission consent.Admission) snapshot.Snapshot {
+		paths := quota.ProductionPathsWithAdmission(st.Dir, version, admission)
+		report := quota.ReadPermitted(paths, now)
+		if !readOnly {
+			observeQuotaHistory(st, report, now)
+			observeCodexSpeed(st, now)
+			observeAgents(st, now)
+			observeLiveSessions(st, paths, report, now)
 		}
-		fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
-	}
-	boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
-	return printJSON(stdout, snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistories(home, st.Dir, true, now), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
-		Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
-		QwenUsage:   qwenSnapshot(now),
-		Connections: connections.Diagnose(connectionEnv, report),
-		Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
-		EffortSuggestion: fv.Suggestion, EffortSuggestionRevision: fv.Revision,
-		Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now}))
+		state := advise.Load(st.Dir)
+		es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
+		if !readOnly {
+			_ = state.Save(st.Dir, now)
+		}
+		ledger := speed.Load(st.Dir)
+		perf, ok := speed.LoadPerf(st.Dir)
+		long, longOK := speed.LoadLong(st.Dir)
+		pace, paceOK := history.LoadPace(st.Dir)
+		home, _ := os.UserHomeDir()
+		localUsageFor := func(tool string) localusage.Report {
+			status, read := localusage.GeminiStatus, localusage.ReadGemini
+			if tool == "qwen" {
+				status, read = localusage.QwenStatus, localusage.ReadQwen
+			}
+			if admission.Allows(tool, consent.Local) {
+				return read(home, now)
+			}
+			r := status(home, now)
+			r.Status, r.Enabled, r.Reason = "off", false, "reader-consent-or-privacy"
+			return r
+		}
+		localUsage := localUsageFor("gemini")
+		qwenLocal := localUsageFor("qwen")
+		var qwenExport *qwenusage.Report
+		if path := qwenusage.Configured(); path != "" && admission.Allows("qwen", consent.Local) {
+			r := qwenusage.Read(path, now)
+			qwenExport = &r
+		}
+		connectionEnv := connections.Local(paths)
+		connectionEnv.Gemini = &localUsage
+		connectionEnv.Qwen = &qwenLocal
+		fv := history.ReadEffortSuggestion(st.Dir, d, now)
+		if fv.Suggestion != nil {
+			style := render.Style{T: render.ZH}
+			if c.lang == "en" {
+				style.T = render.EN
+			}
+			fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
+		}
+		boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
+		return snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistoriesWithAdmission(home, st.Dir, true, now, admission), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
+			Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
+			QwenUsage:   qwenExport,
+			Connections: connections.DiagnoseWithAdmission(connectionEnv, report, admission),
+			Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
+			EffortSuggestion: fv.Suggestion, EffortSuggestionRevision: fv.Revision,
+			Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now})
+	}, func(admission consent.Admission) snapshot.Snapshot {
+		// A second change publishes only the user's own declarations. No tool
+		// account, connection, history, session or advice survives a discarded build.
+		home, _ := os.UserHomeDir()
+		report := quota.ReadDeclared(quota.Paths{LocalFile: filepath.Join(home, ".config", "modelplan", "local.json")}, now)
+		report.ConsentGeneration = admission.Generation()
+		report.ConsentStoreEpoch = admission.Fence().StoreEpoch
+		report.Sources = append(report.Sources, quota.SourceStatus{Source: "readers", Status: "off", Reason: "consent-changed"})
+		return snapshot.Build(snapshot.Input{Report: report, Digest: d, State: ps, CLIVersion: version, Now: now})
+	})
+	return printJSON(stdout, result)
 }
 
 // observeLiveSessions never queries accounts; it only reuses local bindings already read above.

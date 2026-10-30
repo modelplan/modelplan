@@ -1,0 +1,8 @@
+{
+  "sessionId": "s-synthetic",
+  "protocolVersion": "1.0",
+  "appVersion": "synthetic",
+  "capabilities": [
+    "synthetic"
+  ]
+}

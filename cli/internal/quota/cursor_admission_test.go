@@ -78,7 +78,7 @@ func cursorPeriodServer(t *testing.T, token string, mode *string, paths *[]strin
 		_, _ = w.Write(b)
 	}))
 	oldHost, oldRPC, oldClient := cursorHost, cursorRPCHost, nativeClient
-	cursorHost, cursorRPCHost, nativeClient = srv.URL, srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cursor.com", "api2.cursor.sh")
 	t.Cleanup(func() { srv.Close(); cursorHost, cursorRPCHost, nativeClient = oldHost, oldRPC, oldClient })
 }
 
@@ -238,7 +238,7 @@ func TestCursorDoesNotForwardSavedLoginOnRedirect(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, target.URL, 302) }))
 	defer srv.Close()
 	oldHost, oldRPC, oldClient := cursorHost, cursorRPCHost, nativeClient
-	cursorHost, cursorRPCHost, nativeClient = srv.URL, srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cursor.com", "api2.cursor.sh")
 	defer func() { cursorHost, cursorRPCHost, nativeClient = oldHost, oldRPC, oldClient }()
 	if err := RefreshNative(context.Background(), p, cursorNow); err != nil {
 		t.Fatal(err)

@@ -2,9 +2,9 @@ name: macOS distribution scaffold
 on:
   push:
     branches: [main]
-    paths: ["desktop/native/**", "codex/cli-pin.json", ".github/workflows/macos-distribution.yml"]
+    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", "codex/cli-pin.json", ".github/workflows/macos-distribution.yml"]
   pull_request:
-    paths: ["desktop/native/tools/distribution/**", ".github/workflows/macos-distribution.yml"]
+    paths: ["desktop/native/**", "clients/swift/**", "cli/internal/releaseguard/**", ".github/workflows/macos-distribution.yml"]
   workflow_dispatch:
     inputs:
       prepare_signed_candidate:
@@ -37,6 +37,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
       - name: Select newest installed Xcode for Swift 6 source
         run: |
           python3 - <<'PY'
@@ -56,8 +59,12 @@ jobs:
       - name: Fetch CLI archives from the reviewed native consent pin
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
       - name: Build universal neutral app (ad-hoc only)
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
+      - name: Reject known private SPI in the built release binary
+        working-directory: cli
+        run: go run ./internal/releaseguard/cmd --binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"
+      - name: Archive checked universal neutral app
         run: |
-          bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
           mkdir -p "$RUNNER_TEMP/neutral-artifact"
           ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-universal-unsigned.zip"
           python3 - <<'PY'

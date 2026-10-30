@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,11 +17,13 @@ import (
 // native connection is the consent: only an enabled connection dispatches Collect.
 // Passive blocks the authenticated runtime, including potential Keychain reads.
 type AntigravityAccess struct {
-	StillValid func() bool
-	Publish    func(func() error) error
-	Allowed    bool
-	Denied     bool
-	Privacy    string
+	Admission      *consent.CaptureStamp
+	CaptureAllowed func(*consent.CaptureStamp) bool
+	StillValid     func() bool
+	Publish        func(func() error) error
+	Allowed        bool
+	Denied         bool
+	Privacy        string
 	// An opaque keyed generation changed after login changes or Settings Retry.
 	// Never pass a token, account ID or path.
 	LoginGeneration string
@@ -136,6 +139,9 @@ func ReadAntigravityCache(ctx context.Context, cache string, now time.Time) Anti
 		return r
 	}
 	s := loadAntigravityState(cache)
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeAntigravityRuntimeUsage, access.CaptureAllowed) {
+		s.Good = nil
+	}
 	r.Availability = s.Availability
 	if r.Availability == "" || s.LoginGeneration != access.LoginGeneration {
 		r.Availability = "stale"
@@ -173,6 +179,9 @@ func ReadAntigravityCache(ctx context.Context, cache string, now time.Time) Anti
 	return r
 }
 func antigravityCachedEntry(s antigravityState, now time.Time, generation string) codexbarEntry {
+	if s.Good != nil && !typedCaptureAllowed(s.Good.Admission, consent.ScopeAntigravityRuntimeUsage, nil) {
+		s.Good = nil
+	}
 	availability := s.Availability
 	if s.LoginGeneration != generation {
 		availability = "stale"
@@ -210,6 +219,10 @@ var antigravityAttempts sync.Map
 
 func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now time.Time) codexbarEntry {
 	access, blocked := antigravityAdmission(ctx)
+	if access.Admission == nil {
+		state, _ := consent.Current()
+		access.Admission = state.CaptureStamp(consent.ScopeAntigravityRuntimeUsage)
+	}
 	if blocked != "" {
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext(blocked)}
 	}
@@ -247,6 +260,7 @@ func collectAntigravity(ctx context.Context, _ *http.Client, cache string, now t
 		return codexbarEntry{Status: "error", ObservedAt: now.UTC(), Error: antigravityNext("consent_required")}
 	}
 	if e.Status == "ok" {
+		e.Admission = access.Admission
 		s.Good = &e
 		s.GoodGeneration = access.LoginGeneration
 		s.Failures = 0

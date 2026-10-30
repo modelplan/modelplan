@@ -97,6 +97,12 @@ func yesNo(ok bool, reason string) Level {
 
 // Diagnose reports every known source, in a fixed order.
 func Diagnose(e Env, r quota.Report) []Connection {
+	return DiagnoseWithAdmission(e, r, consent.Capture())
+}
+
+// DiagnoseWithAdmission shares the reader/projection permission input. The
+// command fences the complete snapshot before publishing these diagnostics.
+func DiagnoseWithAdmission(e Env, r quota.Report, admission consent.Admission) []Connection {
 	status := map[string]quota.SourceStatus{}
 	for _, s := range r.Sources {
 		status[s.Source] = s
@@ -175,7 +181,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		cc.History = Level{Status: "no", Reason: s.Status}
 	}
 	cc.Quota = quotaLevel("claude-code")
-	nativeClaudeConnection(&cc, e, account["claude-code"], status["native:claude"])
+	nativeClaudeConnection(&cc, e, account["claude-code"], status["native:claude"], admission)
 	out = append(out, cc)
 
 	// OpenCode V2 and ZCode: sessions from their own databases (speed's sqlite.go); their quota is
@@ -196,7 +202,11 @@ func Diagnose(e Env, r quota.Report) []Connection {
 	// Other plans' quota, natively or through CodexBar, each provider only when the user enabled
 	// it. The entry's id names the backend that serves it.
 	sel := map[string]quota.Selection{}
-	ss, err := quota.Selections(quota.Paths{CodexBarFile: e.CodexBarFile, ConnectionsFile: e.ConnectionsFile})
+	paths := quota.Paths{CodexBarFile: e.CodexBarFile, ConnectionsFile: e.ConnectionsFile}
+	if e.Paths != nil {
+		paths = *e.Paths
+	}
+	ss, err := quota.SelectionsWithAdmission(paths, admission)
 	for _, x := range ss {
 		sel[x.Provider] = x
 	}
@@ -298,7 +308,7 @@ func Diagnose(e Env, r quota.Report) []Connection {
 		out = append(out, c)
 	}
 	if qwenusage.Configured() != "" {
-		out = append(out, Qwen())
+		out = append(out, qwenWithAdmission(admission))
 	}
 	return out
 }
@@ -311,12 +321,14 @@ func dataHome(home string) string {
 }
 
 // Qwen describes the explicitly selected aggregate export. No runtime discovery.
-func Qwen() Connection {
+func Qwen() Connection { return qwenWithAdmission(consent.Capture()) }
+
+func qwenWithAdmission(admission consent.Admission) Connection {
 	c := Connection{ID: "qwen-code", Kind: "agent", Support: "usage-only", Installed: Level{Status: "unknown"},
 		History: Level{Status: "off", Reason: "not-enabled"}, Authorization: Level{Status: "off", Reason: qwenusage.ExportEnv},
 		Quota: Level{Status: "not-applicable", Reason: "local-usage-only"}, Reads: []string{"env:" + qwenusage.ExportEnv},
 		Network: "none", Privacy: "Only aggregated tokens and model names are read; no credentials, prompts, replies or account identities are read or stored. Exports are never rewritten."}
-	if !consent.Allowed("qwen", consent.Local) {
+	if !admission.Allows("qwen", consent.Local) {
 		c.Authorization = Level{Status: "off", Reason: "reader-consent-or-privacy"}
 		c.History = Level{Status: "off", Reason: "reader-consent-or-privacy"}
 		return c
@@ -335,8 +347,8 @@ func Qwen() Connection {
 
 // nativeClaudeConnection reports the current shared grant and production admission;
 // status-line history remains a separate source and never proves a native quota read.
-func nativeClaudeConnection(c *Connection, e Env, account *quota.Account, source quota.SourceStatus) {
-	state, mode := consent.Current()
+func nativeClaudeConnection(c *Connection, e Env, account *quota.Account, source quota.SourceStatus, admission consent.Admission) {
+	state, mode := admission.State(), admission.Mode()
 	record, decided := state.Tools["claude"]
 	if !decided {
 		return

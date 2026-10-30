@@ -1,0 +1,206 @@
+{
+  "jsonrpc": "2.0",
+  "id": 31,
+  "result": {
+    "sessionId": "s-retired",
+    "storeEpoch": "e-retired",
+    "consentGeneration": 7,
+    "scopes": [
+      "claude.account_usage.saved_login",
+      "codex.runtime_usage"
+    ],
+    "data": {
+      "sequence": 1,
+      "projection": {
+        "rowsVersion": 1,
+        "rows": [
+          {
+            "id": "claude",
+            "kind": "tool",
+            "order": 0,
+            "name": {
+              "en": "Claude Code",
+              "zh": "Claude Code"
+            },
+            "vendorKey": "claude",
+            "surfaces": [
+              "dock",
+              "menu",
+              "settings"
+            ],
+            "consent": "allowed",
+            "state": "fresh",
+            "reason": {
+              "code": "ok",
+              "text": {
+                "en": "Reading available",
+                "zh": "读数可用"
+              }
+            },
+            "nextStep": null,
+            "accounts": [
+              {
+                "route": "saved_login_api",
+                "subscriptionRef": null,
+                "accountLocator": null,
+                "plan": {
+                  "id": "pro",
+                  "name": {
+                    "en": "Pro",
+                    "zh": "Pro"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "current",
+                "observedAt": "2026-10-29T11:59:00Z",
+                "freshUntil": "2026-10-29T13:00:00Z",
+                "lastFailure": null,
+                "windows": [
+                  {
+                    "id": "session:18000:main:main",
+                    "role": "session",
+                    "durationSeconds": 18000,
+                    "label": {
+                      "en": "Session",
+                      "zh": "会话"
+                    },
+                    "limitKey": "main",
+                    "poolKey": "main",
+                    "resetMode": "unknown",
+                    "remainingPercent": 75,
+                    "resetsAt": "2026-10-29T14:00:00Z",
+                    "observedAt": "2026-10-29T11:59:00Z",
+                    "current": true,
+                    "validUntil": "2026-10-29T13:00:00Z"
+                  }
+                ]
+              }
+            ],
+            "expiresAt": "2026-10-29T13:00:00Z",
+            "stateAfterExpiry": {
+              "state": "stale",
+              "reason": {
+                "code": "stale_reading",
+                "text": {
+                  "en": "A retained reading is shown",
+                  "zh": "正在显示保留的旧读数"
+                }
+              },
+              "nextStep": {
+                "action": "refresh",
+                "text": {
+                  "en": "Refresh when permitted",
+                  "zh": "在允许时刷新"
+                }
+              }
+            }
+          },
+          {
+            "id": "codex",
+            "kind": "tool",
+            "order": 1,
+            "name": {
+              "en": "Codex",
+              "zh": "Codex"
+            },
+            "vendorKey": "openai",
+            "surfaces": [
+              "dock",
+              "menu",
+              "settings"
+            ],
+            "consent": "retired",
+            "state": "needs_action",
+            "reason": {
+              "code": "catalogue_retired",
+              "text": {
+                "en": "The allowed tool was retired from the catalogue",
+                "zh": "已授权工具已从目录移除"
+              }
+            },
+            "nextStep": {
+              "action": "open_settings_consent",
+              "text": {
+                "en": "Review reader consent in Settings",
+                "zh": "在设置中检查读取授权"
+              }
+            },
+            "accounts": [
+              {
+                "route": "runtime_rpc",
+                "subscriptionRef": null,
+                "accountLocator": null,
+                "plan": {
+                  "id": "pro",
+                  "name": {
+                    "en": "Pro",
+                    "zh": "Pro"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "current",
+                "observedAt": "2026-10-29T11:59:00Z",
+                "freshUntil": "2026-10-29T13:00:00Z",
+                "lastFailure": null,
+                "windows": [
+                  {
+                    "id": "session:18000:main:main",
+                    "role": "session",
+                    "durationSeconds": 18000,
+                    "label": {
+                      "en": "Session",
+                      "zh": "会话"
+                    },
+                    "limitKey": "main",
+                    "poolKey": "main",
+                    "resetMode": "unknown",
+                    "remainingPercent": 75,
+                    "resetsAt": "2026-10-29T14:00:00Z",
+                    "observedAt": "2026-10-29T11:59:00Z",
+                    "current": true,
+                    "validUntil": "2026-10-29T13:00:00Z"
+                  }
+                ]
+              }
+            ],
+            "expiresAt": "2026-10-29T13:00:00Z",
+            "stateAfterExpiry": {
+              "state": "needs_action",
+              "reason": {
+                "code": "catalogue_retired",
+                "text": {
+                  "en": "The allowed tool was retired from the catalogue",
+                  "zh": "已授权工具已从目录移除"
+                }
+              },
+              "nextStep": {
+                "action": "open_settings_consent",
+                "text": {
+                  "en": "Review reader consent in Settings",
+                  "zh": "在设置中检查读取授权"
+                }
+              }
+            }
+          }
+        ],
+        "rowsSummary": {
+          "state": "ok",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "Readings and actions are available",
+              "zh": "读数或操作可用"
+            }
+          },
+          "text": {
+            "en": "Readings and actions are available",
+            "zh": "读数或操作可用"
+          },
+          "nextStep": null
+        }
+      }
+    }
+  }
+}

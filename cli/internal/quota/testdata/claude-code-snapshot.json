@@ -1,4 +1,9 @@
 {
+  "admission": {
+    "storeEpoch": "",
+    "generation": 0,
+    "scope": "claude.local_history"
+  },
   "schemaVersion": 1,
   "source": "claude-code-statusline",
   "observedAt": "2026-10-14T09:58:00Z",

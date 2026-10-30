@@ -14,7 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
-func TestCursorConsentGrantAdmitsMissingStandardProfile(t *testing.T) {
+func TestCursorConsentGrantAllowsApprovedPOSTButReportsMissingLogin(t *testing.T) {
 	home := consentAPIHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".cursor"), 0700); err != nil {
 		t.Fatal(err)

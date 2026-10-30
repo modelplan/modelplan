@@ -192,7 +192,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 								t.Fatal(row)
 							}
 						case "state":
-							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|other))?)$`).MatchString(value.(string)) {
+							if !regexp.MustCompile(`^(ok|stale|not_supported_yet|unavailable:(policy_pending|denied|consent_required|privacy_blocked|not_detected|rate_limited|login_expired|confirmation_needed|partial|not_read|reader_error|no_key|update_required|catalogue_off|not_admitted|config_unavailable|cache_unavailable)(:(file_missing|file_unreadable|parse_error|schema_changed|http_401|http_403|http_429|http_5xx|network|timeout|runtime_missing|unsupported_login|other))?)$`).MatchString(value.(string)) {
 								t.Fatal("unreviewed state", row)
 							}
 						case "last":

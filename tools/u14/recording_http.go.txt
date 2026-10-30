@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: MIT
+// Virtual quota file supplied only by the U14 fake-provider Go build overlay.
+package quota
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+type u14RecordingTransport struct{}
+
+func u14HTTPClient() *http.Client {
+	return &http.Client{Timeout: nativeTimeout, Transport: u14RecordingTransport{}}
+}
+
+// Match this scenario's fixed synthetic inputs independently of the production
+// guard. Exact fixture bodies are stricter than the approved Gemini schema;
+// production transport tests separately cover every legal selector/body shape.
+func u14POSTMatches(r *http.Request, expectedBody string, credentials http.Header) (bool, bool, bool) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4097))
+	r.Body.Close()
+	bodyOK := err == nil && bytes.Equal(body, []byte(expectedBody)) && r.ContentLength == int64(len(body)) && len(r.TransferEncoding) == 0
+	expected := credentials.Clone()
+	expected.Set("Accept", "application/json")
+	expected.Set("Content-Type", "application/json")
+	expected.Set("User-Agent", "modelplan")
+	headersOK := len(r.Header) == len(expected)
+	for name, values := range r.Header {
+		if len(values) != 1 || r.Header.Get(name) != expected.Get(name) {
+			headersOK = false
+		}
+	}
+	credentialOK := true
+	for name := range credentials {
+		if r.Header.Get(name) != credentials.Get(name) {
+			credentialOK = false
+		}
+	}
+	return bodyOK, headersOK, credentialOK
+}
+
+// Only compiled route labels and booleans enter the trace. No credential,
+// header value, body, arbitrary URL or response body is retained.
+func (u14RecordingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	home := os.Getenv("HOME")
+	marker, err := os.ReadFile(filepath.Join(home, ".u14-baseline.json"))
+	if err != nil || !bytes.Contains(marker, []byte(`"shapeSha256"`)) {
+		return nil, errors.New("synthetic baseline required")
+	}
+	var input struct {
+		Status int `json:"minimaxStatus"`
+	}
+	raw, err := os.ReadFile(filepath.Join(home, ".u14-engine-fixture.json"))
+	if err != nil || json.Unmarshal(raw, &input) != nil {
+		return nil, errors.New("synthetic provider unavailable")
+	}
+	event, provider, host, path := "unlisted-provider-request", "other", "other", "unlisted"
+	method := "OTHER"
+	if request.Method == "GET" || request.Method == "POST" {
+		method = request.Method
+	}
+	status, body := 503, []byte(`{}`)
+	bodyOK, headersOK, credentialOK := false, false, false
+	destinationOK := request.URL.Scheme == "https" && request.URL.RawQuery == "" && !request.URL.ForceQuery && request.URL.User == nil && request.URL.Fragment == "" && (request.Host == "" || request.Host == request.URL.Host)
+	reset := time.Now().UTC().Add(7 * 24 * time.Hour)
+	cursorPayload := []byte("{\n  \"exp\": 4070908800,\n  \"sub\": \"auth|synthetic-u14-account\"\n}\n")
+	cursorToken := "e30." + base64.RawURLEncoding.EncodeToString(cursorPayload) + ".synthetic-signature"
+	switch request.URL.Host {
+	case "cloudcode-pa.googleapis.com":
+		provider, host = "gemini", "cloudcode-pa.googleapis.com"
+		expected := ""
+		switch request.URL.EscapedPath() {
+		case "/v1internal:loadCodeAssist":
+			path, expected = "/v1internal:loadCodeAssist", `{"metadata":{"ideType":"GEMINI_CLI","pluginType":"GEMINI"},"mode":"HEALTH_CHECK"}`
+			body = []byte(`{"currentTier":{"id":"standard-tier"},"cloudaicompanionProject":"u14-synthetic-project"}`)
+		case "/v1internal:retrieveUserQuota":
+			path, expected = "/v1internal:retrieveUserQuota", `{"project":"u14-synthetic-project"}`
+			body, _ = json.Marshal(map[string]any{"buckets": []any{map[string]any{"remainingFraction": 0.75, "resetTime": reset.Format(time.RFC3339), "modelId": "gemini-2.5-pro", "tokenType": "REQUESTS"}}})
+		}
+		if expected != "" && request.Body != nil {
+			bodyOK, headersOK, credentialOK = u14POSTMatches(request, expected, http.Header{"Authorization": {"Bearer U14-SYNTHETIC-GEMINI-ACCESS"}})
+		}
+		if destinationOK && method == "POST" && bodyOK && headersOK && credentialOK {
+			event, status = "gemini-post", 200
+		}
+	case "cursor.com", "api2.cursor.sh":
+		provider, host = "cursor", request.URL.Host
+		credentials := http.Header{}
+		switch {
+		case host == "cursor.com" && request.URL.EscapedPath() == "/api/dashboard/get-plan-info":
+			path = "/api/dashboard/get-plan-info"
+			credentials.Set("Cookie", "WorkosCursorSessionToken=synthetic-u14-account%3A%3A"+cursorToken)
+			credentials.Set("Origin", "https://cursor.com")
+			body, _ = json.Marshal(map[string]any{"isMerged": true, "planInfo": map[string]any{"planName": "premium", "includedUsagePeriod": "INCLUDED_USAGE_PERIOD_WEEKLY", "includedUsageResetsAt": reset.UnixMilli()}})
+		case host == "api2.cursor.sh" && request.URL.EscapedPath() == "/aiserver.v1.DashboardService/GetCurrentPeriodUsage":
+			path = "/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
+			credentials.Set("Authorization", "Bearer "+cursorToken)
+			credentials.Set("Connect-Protocol-Version", "1")
+			body = []byte(`{"planUsage":{"totalPercentUsed":41}}`)
+		}
+		if len(credentials) > 0 && request.Body != nil {
+			bodyOK, headersOK, credentialOK = u14POSTMatches(request, "{}", credentials)
+		}
+		if destinationOK && method == "POST" && bodyOK && headersOK && credentialOK {
+			event, status = "cursor-post", 200
+		}
+	case "api.minimax.io", "api.minimaxi.com":
+		provider, host = "minimax", request.URL.Host
+		if destinationOK && method == "GET" {
+			switch request.URL.EscapedPath() {
+			case miniMaxCurrentPath:
+				event, path, status = "minimax-current", miniMaxCurrentPath, input.Status
+			case miniMaxLegacyPath:
+				event, path, status = "minimax-legacy", miniMaxLegacyPath, 200
+				body = []byte(`{"data":{"model_remains":[{"model_name":"general","current_interval_remaining_percent":75}]}}`)
+			}
+		}
+		credentialOK = request.Header.Get("Authorization") == "Bearer U14-SYNTHETIC-MINIMAX-KEY"
+	}
+	record := struct {
+		Event             string `json:"event"`
+		Provider          string `json:"provider"`
+		Method            string `json:"method"`
+		Host              string `json:"host"`
+		Path              string `json:"path"`
+		Status            int    `json:"status"`
+		CredentialMatched bool   `json:"credentialMatched"`
+		BodyMatched       bool   `json:"bodyMatched"`
+		HeadersMatched    bool   `json:"headersMatched"`
+	}{event, provider, method, host, path, status, credentialOK, bodyOK, headersOK}
+	file, err := os.OpenFile(filepath.Join(home, ".u14-http-events.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return nil, err
+	}
+	raw, _ = json.Marshal(record)
+	_, err = file.Write(append(raw, '\n'))
+	file.Close()
+	if err != nil {
+		return nil, err
+	}
+	if event == "unlisted-provider-request" || (status != 200 && status != 401 && status != 403 && status != 404) {
+		return nil, errors.New("fixture destination refused")
+	}
+	// Terminal replies are consumed by the real guard and reader, never retried here.
+	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(body)), Request: request}, nil
+}

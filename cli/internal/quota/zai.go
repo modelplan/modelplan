@@ -3,6 +3,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"math"
 	"net/http"
 	"sort"
@@ -49,6 +50,7 @@ type zaiResponse struct {
 }
 
 func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	c = accountReadClient(consent.ScopeZaiAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	host := zaiHosts[region]
 	if host == "" {
@@ -74,10 +76,7 @@ var zaiUnit = map[int]int{1: 1440, 3: 60, 5: 1, 6: 10080}
 func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
 	if !r.Success || r.Code != 200 {
-		e.Error = "the quota API said no"
-		if m := label(r.Msg); m != "" {
-			e.Error += ": " + m
-		}
+		e.Error = e.ErrorCode
 		return e
 	}
 	if r.Data == nil || r.Data.Limits == nil {

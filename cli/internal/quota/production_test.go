@@ -20,6 +20,8 @@ import (
 // Setup helpers below create handwritten logins and inject local transports.
 // Their test-only Paths/grants are discarded. Every request and projection in
 // this test uses the exact ProductionPaths constructor called by the CLI/App.
+// All fixtures, including the approved POST readers, retain the real compiled
+// admission and transport guards. Only the final socket is routed to localhost.
 var productionManagedTests = map[string]func(*testing.T) (time.Time, func() int){
 	"claude": func(t *testing.T) (time.Time, func() int) {
 		_ = claudeTestPaths(t)
@@ -272,10 +274,9 @@ var productionLegacyTests = map[string]func(*testing.T) (time.Time, func() int){
 	"minimax": func(t *testing.T) (time.Time, func() int) {
 		hits := 0
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; _, _ = w.Write([]byte(minimaxModern)) }))
-		old, client := minimaxHosts, nativeClient
-		t.Cleanup(func() { srv.Close(); minimaxHosts, nativeClient = old, client })
-		minimaxHosts = map[string]string{"international": srv.URL, "china": srv.URL}
-		nativeClient = srv.Client()
+		client := nativeClient
+		t.Cleanup(func() { srv.Close(); nativeClient = client })
+		nativeClient = readerFixtureClient(t, srv, "api.minimax.io", "api.minimaxi.com")
 		t.Setenv("MINIMAX_CODING_API_KEY", "synthetic-key")
 		return minimaxNow, func() int { return hits }
 	},
@@ -287,8 +288,7 @@ var productionLegacyTests = map[string]func(*testing.T) (time.Time, func() int){
 		}))
 		old, client := opencodegoHosts, nativeClient
 		t.Cleanup(func() { srv.Close(); opencodegoHosts, nativeClient = old, client })
-		opencodegoHosts = map[string]string{"global": srv.URL}
-		nativeClient = srv.Client()
+		nativeClient = readerFixtureClient(t, srv, "opencode.ai")
 		t.Setenv("OPENCODE_API_KEY", "synthetic-key")
 		return now, func() int { return hits }
 	},

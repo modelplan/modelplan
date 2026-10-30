@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Add the pure CLI rows projection core: stable tool membership, contextual reason mapping, per-profile value states, conservative clocks, and field-specific privacy checks. Missing or retired allowed tools take priority over no-reader guidance. Production desktop integration follows the reader/consent adapters; quota output is unchanged.
+  新增纯 CLI 行投影核心：稳定工具成员、按上下文映射原因、按资料区分读数状态、保守时钟与逐字段隐私校验。已授权但缺失或退休的工具优先于无读取器提示；生产桌面接线随后与读取/授权适配器集成，额度输出不变。
+
 - Granting Claude Keychain access in Settings now runs one foreground read right away, so the macOS prompt appears while you are there. Before, only two-second background reads ran, an unanswered prompt timed out, and the Keychain state stayed stuck so Claude never got a reading. Replays, grants without Keychain, and Keychain denials read nothing.
   在设置中允许 Claude 访问钥匙串后，会立即在前台读取一次，macOS 提示框会在你操作时弹出。以前只有两秒的后台读取，提示框来不及回应就超时，钥匙串状态被锁住，Claude 一直读不到数。重放请求、未涉及钥匙串的授权和拒绝钥匙串都不会读取。
 

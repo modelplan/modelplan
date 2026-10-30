@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/keychain"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"net/http"
@@ -187,7 +188,19 @@ func RefreshNative(ctx context.Context, p Paths, now time.Time) error {
 	return refreshNative(ctx, p, now, false)
 }
 
+// RefreshNativeProviders narrows the existing dispatcher to compiled provider
+// IDs. It shares all normal locks, reservations, collectors and publication.
+func RefreshNativeProviders(ctx context.Context, p Paths, now time.Time, providers []string) error {
+	selected := map[string]bool{}
+	for _, provider := range providers {
+		selected[provider] = true
+	}
+	return refreshNativeSelected(ctx, p, now, false, selected)
+}
 func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool) error {
+	return refreshNativeSelected(ctx, p, now, diagnostic, nil)
+}
+func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnostic bool, selected map[string]bool) error {
 	if !nativePrivacyAllows() || ctx.Err() != nil {
 		return errors.New("personal readers are suspended")
 	}
@@ -200,10 +213,13 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	if err != nil {
 		return err
 	}
+	if p.Admission != nil && p.Admission.Fence() != state.Fence() {
+		return errors.New("consent changed; refresh stopped")
+	}
 	sessionRead := false
-	if !diagnostic {
+	if selected == nil && !diagnostic {
 		sessionRead = refreshProductionClaudeSessions(ctx, p, now)
-	} else if claudeSessionsDue(p, now) && diagnosticSessionDue(p, now) {
+	} else if selected == nil && claudeSessionsDue(p, now) && diagnosticSessionDue(p, now) {
 		if err := reserveReaderAttempt(p.Cache, "claude-session", now.Add(5*time.Minute)); err != nil {
 			return err
 		}
@@ -212,14 +228,14 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	on := active(p, BackendNative)
 	legacy := on[:0]
 	for _, x := range on {
-		if legacyNativeReader(p, x.Provider) {
+		if (selected == nil || selected[x.Provider]) && legacyNativeReader(p, x.Provider) {
 			legacy = append(legacy, x)
 		}
 	}
 	on = legacy
 	managed := []string{}
 	for provider, n := range nativeReaders {
-		if n.Managed != nil {
+		if (selected == nil || selected[provider]) && n.Managed != nil {
 			if _, allowed := readerAllowed(p, provider); allowed {
 				managed = append(managed, provider)
 			}
@@ -257,8 +273,20 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 		}
 	}
 	s := &nativeSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Providers: []codexbarEntry{}}
+	if selected != nil {
+		ids := []string{}
+		for provider := range previous {
+			if !selected[provider] {
+				ids = append(ids, provider)
+			}
+		}
+		sort.Strings(ids)
+		for _, provider := range ids {
+			s.Providers = append(s.Providers, previous[provider])
+		}
+	}
 	for _, x := range on {
-		if !consent.CurrentGeneration(state.Generation) {
+		if !consent.CurrentFence(state.Fence()) {
 			return errors.New("consent changed; refresh stopped")
 		}
 		var e codexbarEntry
@@ -302,6 +330,9 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 			e.ErrorCode = ReaderErrorCode(e.ErrorCode)
 			e.Error = e.ErrorCode
 		}
+		if e.Status == "ok" && e.Admission == nil {
+			e.Admission = state.CaptureStamp(captureScope(p, x.Provider, false))
+		}
 		e.Provider, e.Source = x.Provider, "api"
 		if x.Provider == "kimi" || x.Provider == "minimax" {
 			e.Region, e.KeyEnv = x.Region, x.KeyEnv
@@ -334,7 +365,7 @@ func refreshNative(ctx context.Context, p Paths, now time.Time, diagnostic bool)
 	if err := os.MkdirAll(filepath.Dir(nativePath(p.Cache)), 0o700); err != nil {
 		return err
 	}
-	if err := consent.Publish(state.Generation, func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
+	if err := consent.Publish(state.Fence(), func() error { return writeAtomic(nativePath(p.Cache), append(b, '\n')) }); err != nil {
 		return err
 	}
 	return refreshErr
@@ -384,7 +415,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	defer applyClaudeSessions(r, p, now)
 	ss, err := Selections(p)
 	if err != nil {
-		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: short(err.Error())})
+		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
 		return
 	}
 	legacySelections := map[string]bool{}
@@ -395,6 +426,18 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	}
 	for provider, n := range nativeReaders {
 		if n.Managed != nil && !legacySelections[provider] {
+			if _, pending := PolicyPending(provider); pending {
+				if p.ReaderAccess == nil {
+					// Legacy cache-only readers report the veto only when a retained capture
+					// exists; an unrelated fresh read must not invent provider membership.
+					if _, err := os.Stat(readerPath(p.Cache, provider)); err == nil || !os.IsNotExist(err) {
+						r.Sources = append(r.Sources, policyPendingSource(provider))
+					}
+				} else if _, exists := p.ReaderAccess.Grants[provider]; exists {
+					r.Sources = append(r.Sources, policyPendingSource(provider))
+				}
+				continue
+			}
 			if p.ReaderAccess != nil {
 				if _, allowed := readerAllowed(p, provider); !allowed {
 					continue
@@ -417,8 +460,15 @@ func applyNative(r *Report, p Paths, now time.Time) {
 		if x.Backend != BackendNative {
 			continue
 		}
+		if _, pending := PolicyPending(x.Provider); pending {
+			r.Sources = append(r.Sources, policyPendingSource(x.Provider))
+			continue
+		}
 		st := SourceStatus{Source: "native:" + x.Provider}
 		e, ok := by[x.Provider]
+		if ok && e.Status == "ok" && !captureAllowed(p, x.Provider, e.Admission, false) {
+			ok = false
+		}
 		switch {
 		case x.Blocked == "no-native-reader":
 			st.Status, st.Reason = "unsupported_schema", "no native reader for "+x.Provider+"; set its backend to codexbar-compat"
@@ -536,5 +586,52 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 		return err
 	}
 	defer admission()
-	return refreshManagedAttempt(ctx, InteractiveReaders(p), provider, now, true)
+	if provider != "claude" {
+		return errors.New("no interactive credential adapter")
+	}
+	g, allowed := readerAllowed(p, provider)
+	if !allowed || !g.Keychain {
+		return errors.New("keychain consent required")
+	}
+	profiles := g.Profiles
+	if len(profiles) == 0 {
+		profiles = nativeReaders[provider].Profiles()
+	}
+	if len(profiles) != 1 {
+		return errors.New("unsupported profile selection")
+	}
+	profileKey := readerHash(p.Cache, provider+":profile", profiles[0].Root+"\x00"+profiles[0].AccountFile)
+	if profileKey == "" {
+		return errors.New("identity key unavailable")
+	}
+	// This operation is interactive even when the remote budget is closed. Keep
+	// its credential only in this stack frame and reuse it if a remote read is due.
+	credential := g.Credential
+	if credential == nil {
+		if claudeSecurity == nil {
+			return errors.New(claudeAppRequired)
+		}
+		credential = func(ctx context.Context) ([]byte, string) {
+			k := (keychain.Reader{Cache: p.Cache, Execute: claudeSecurity}).ClaudeCredentials(ctx, keychain.Policy{Allowed: true, PriorGrant: g.KeychainPriorGrant, Interactive: true, ProfileRef: profileKey})
+			if k.State != "ok" {
+				return nil, k.State
+			}
+			return k.Value, ""
+		}
+	}
+	value, status := credential(ctx)
+	defer clear(value)
+	if status != "" {
+		return recordClaudeCredentialOutcome(p, g, profileKey, status, now)
+	}
+	if g.StillValid != nil && !g.StillValid() {
+		return errors.New("reader consent changed")
+	}
+	if err := recordClaudeCredentialOutcome(p, g, profileKey, "ok", now); err != nil {
+		return err
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
+	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
+	p.ReaderAccess = access
+	return refreshManaged(ctx, p, provider, now)
 }

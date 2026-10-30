@@ -71,7 +71,7 @@ func grokTestServer(t *testing.T, mode *string, hits *int) {
 		_, _ = w.Write(b)
 	}))
 	oldHost, oldClient := grokHost, nativeClient
-	grokHost, nativeClient = srv.URL, srv.Client()
+	nativeClient = readerFixtureClient(t, srv, "cli-chat-proxy.grok.com")
 	t.Cleanup(func() { srv.Close(); grokHost, nativeClient = oldHost, oldClient })
 }
 

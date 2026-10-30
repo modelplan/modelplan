@@ -6,6 +6,75 @@
   "consentTextVersion": 2,
   "generation": 1,
   "mode": "automatic",
+  "scopes": [
+    {
+      "cleanupPending": false,
+      "defaultCheck": false,
+      "detected": true,
+      "keychain": "unset",
+      "retired": false,
+      "route": "saved_login_api",
+      "scope": "claude.account_usage.saved_login",
+      "state": "unset",
+      "tool": "claude"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": true,
+      "keychain": null,
+      "retired": false,
+      "route": "local_log",
+      "scope": "claude.local_history",
+      "state": "unset",
+      "tool": "claude"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": true,
+      "keychain": null,
+      "retired": false,
+      "route": "local_log",
+      "scope": "codex.local_history",
+      "state": "allowed",
+      "tool": "codex"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": true,
+      "keychain": null,
+      "retired": false,
+      "route": "runtime_rpc",
+      "scope": "codex.runtime_usage",
+      "state": "allowed",
+      "tool": "codex"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": true,
+      "keychain": null,
+      "retired": false,
+      "route": "local_log",
+      "scope": "copilot.local_history",
+      "state": "allowed",
+      "tool": "copilot"
+    },
+    {
+      "cleanupPending": false,
+      "defaultCheck": true,
+      "detected": true,
+      "keychain": null,
+      "retired": false,
+      "route": "runtime_rpc",
+      "scope": "copilot.runtime_usage",
+      "state": "allowed",
+      "tool": "copilot"
+    }
+  ],
+  "storeEpoch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "tools": [
     {
       "accessClass": "standard",

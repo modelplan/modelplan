@@ -238,14 +238,10 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 		return 0
 	}
 	err = consent.Change(consent.Path(), func(current *consent.State) error {
-		if current.Generation != state.Generation {
+		if current.Fence() != state.Fence() {
 			return errors.New("consent changed while choosing; retry")
 		}
 		current.Privacy = state.Privacy
-		// Keep existing API-key/region configuration, without starting a reader.
-		if err := consent.Set(current, id, true, e.ReaderID, backend, time.Now()); err != nil {
-			return err
-		}
 		record := current.Tools[id]
 		record.Region = region
 		record.KeyEnv = keyEnv
@@ -257,6 +253,10 @@ func connectProvider(args []string, stdin io.Reader, stdout, stderr io.Writer, s
 		record.BrowserSession = browser
 		record.BrowserCookieCache = record.BrowserCookieCache || browser
 		current.Tools[id] = record
+		if err := consent.Set(current, id, true, e.ReaderID, backend, time.Now()); err != nil {
+			return err
+		}
+		consent.SetBrowserSession(current, id, browser)
 		return nil
 	})
 	if err != nil {

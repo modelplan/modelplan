@@ -2,6 +2,7 @@ name: e2e-journey
 on:
   pull_request:
     paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml"]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
     paths: ["cli/**", "desktop/native/**", ".github/workflows/e2e-journey.yml"]
@@ -15,6 +16,10 @@ concurrency:
   cancel-in-progress: true
 jobs:
   e2e-journey:
+    # Legacy (beta07-architecture) app journey. That app is frozen by foundation v2, and its consent contract
+    # no longer matches the CLI (schema-2 consent). It now runs only on manual dispatch. The U14 runner
+    # (tools/u14) carries the engine scenarios, and the new app's UI scenarios replace this job in U6/U8/U10.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     timeout-minutes: 25
     steps:

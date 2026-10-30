@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: MIT
+name: U14 macOS skeleton
+on:
+  workflow_dispatch:
+    inputs:
+      preference_case:
+        description: Synthetic preference case
+        type: choice
+        options: [coexistence, fresh, corrupt-beta07, missing-beta07, corrupt-native, corrupt-core, all-corrupt, new-exists, corrupt-new, invalid-progress]
+        default: coexistence
+      scenarios:
+        description: all or comma-separated A01-A19 (unsupported until feature drivers land)
+        default: all
+        type: string
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - tools/u14/**
+      - desktop/native/**
+      - .github/workflows/u14-macos.yml
+permissions:
+  contents: read
+concurrency:
+  group: u14-macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos-skeleton:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      U14_CASE: ${{ inputs.preference_case || 'coexistence' }}
+      U14_SCENARIOS: ${{ inputs.scenarios || 'all' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Keep all scratch under the ignored worktree directory
+        run: |
+          mkdir -p .tmp/tmp
+          printf '*\n' > .tmp/.gitignore
+          echo "TMPDIR=$GITHUB_WORKSPACE/.tmp/tmp" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Source policy and part E regression checks
+        run: |
+          node scripts/check-source-policy.mjs
+          python3 -m unittest discover -s tools/u14/tests -p test_macos_runner.py -v
+      - name: Build actual bundle, launch synthetic app, collect AX and offscreen evidence
+        run: python3 tools/u14/macos_runner.py --output "$GITHUB_WORKSPACE/.tmp/u14-macos" --case "$U14_CASE" --scenarios "$U14_SCENARIOS"
+      - name: Preserve only the part-B synthetic evidence bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u14-macos-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/.tmp/u14-macos/bundle
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove this job's generated scratch
+        if: always()
+        continue-on-error: true
+        run: |
+          if rm -rf "$GITHUB_WORKSPACE/.tmp/u14-macos" "$GITHUB_WORKSPACE/.tmp/tmp"; then
+            printf '### Scratch cleanup\n\npassed\n' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '::warning title=U14 scratch cleanup::Scratch removal failed; scenario outcomes remain in the uploaded part-B bundle.'
+            printf '### Scratch cleanup\n\nfailed; scenario outcomes and the uploaded part-B evidence are unchanged.\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

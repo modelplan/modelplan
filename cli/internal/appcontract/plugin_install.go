@@ -68,7 +68,7 @@ func (s *suite) capturePluginInstalls(tmp string) error {
 			if err := json.Unmarshal(s.files[entry.File], &result); err != nil {
 				return err
 			}
-			if entry.Encoding != "json" || entry.ExitCode != tc.exit || result.Tool != tool || result.Status != tc.status || result.Completed != tc.completed {
+			if entry.Encoding != "json" || entry.ExitCode != tc.exit || string(result.Tool) != tool || string(result.Status) != tc.status || result.Completed != tc.completed {
 				return fmt.Errorf("%s: wrong binary result exit=%d encoding=%s result=%+v", name, entry.ExitCode, entry.Encoding, result)
 			}
 			raw, err := os.ReadFile(callsFile)
