@@ -3,6 +3,8 @@ import AppKit
 import ModelPlanWire
 import WebKit
 
+public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, localEncoding }
+
 private final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   init(_ bundle: VerifiedCockpitBundle) { self.bundle = bundle }
@@ -57,7 +59,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
   public var onClosed: (() -> Void)?
-  public var onFailure: (() -> Void)?
+  public var onFailure: ((CockpitWindowFailure) -> Void)?
   #if MODELPLAN_TEST_ONLY_SPI
     public var verificationWebView: WKWebView? { web }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
@@ -147,7 +149,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         clearWaiter = continuation
         deadline = Task { @MainActor [weak self] in
           do { try await Task.sleep(for: .seconds(2)) } catch { return }
-          self?.fail()
+          self?.fail(.clearDeadline)
         }
         send(message, clear: true)
       }
@@ -161,14 +163,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     // JSON is an argument, never interpolated into executable JavaScript.
     let code =
       clear
-      ? "return window.modelPlanCockpit?.clear(raw) === true"
-      : "return window.modelPlanCockpit?.receive(raw) === true"
+      ? "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.clear(raw)===true?'accepted':'rejected'"
+      : "if(!window.modelPlanCockpit)return 'missing';return window.modelPlanCockpit.receive(raw)===true?'accepted':'rejected'"
     web.callAsyncJavaScript(code, arguments: ["raw": raw], in: nil, in: .page) {
       [weak self] result in
       Task { @MainActor in
         switch result {
-        case .success(let accepted): if accepted as? Bool != true { self?.fail() }
-        case .failure: self?.fail()
+        case .success(let accepted):
+          if accepted as? String == "missing" { self?.fail(.pageAPIUnavailable) }
+          else if accepted as? String != "accepted" { self?.fail(.messageRejected) }
+        case .failure: self?.fail(.javascriptFailed)
         }
       }
     }
@@ -232,17 +236,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     do { send(try bridge.load(appearance)) } catch { fail() }
   }
-  public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail() }
+  public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail(.contentTerminated) }
   public func webView(
     _ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error
-  ) { fail() }
+  ) { fail(.navigationFailed) }
   public func webView(
     _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
     withError error: Error
-  ) { fail() }
+  ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
-  private func fail() {
-    onFailure?()
+  private func fail(_ failure: CockpitWindowFailure = .localEncoding) {
+    onFailure?(failure)
     discard()
   }
   public func discard() {

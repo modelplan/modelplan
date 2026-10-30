@@ -26,7 +26,7 @@
         let controller = CockpitWindowController(
           bundle: bundle, context: context,
           appearance: .init(theme: .night, locale: .en, profile: .full))
-        controller.onFailure = { [weak host] in host?.stop("wired-page-failed") }
+        controller.onFailure = { [weak host] failure in host?.emit(["event":"wired-failure","stage":failure.rawValue]); host?.stop("wired-page-" + failure.rawValue) }
         controller.onRendered = { [weak host] in
           host?.wired?.rendered = true
           host?.emit(["event": "cockpit-query-rendered"])
