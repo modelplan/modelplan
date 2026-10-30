@@ -117,6 +117,8 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     public func removeObserver(_ id: UUID) { observers.removeValue(forKey: id) }
     private func changed() { for body in Array(observers.values) { body() } }
+    /// Re-render connection readiness without treating it as a consent response.
+    public func refreshAvailability() { changed() }
     /// Called only by the native accepted-event consumer, never by an RPC Task completion.
     public func receiveAcceptedFacts(_ value: WireConsentFacts) {
         acceptedFactsCallbackToken = UUID()
@@ -143,7 +145,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     // Visible-draft equality only, not a canonicalizer, freshness test or protocol acceptance rule.
     private func sameVisibleFacts(_ old: WireConsentFacts?, _ new: WireConsentFacts) -> Bool {
-        guard let old, old.scopes.count == new.scopes.count else { return false }
+        guard let old, old.consentTextVersion == new.consentTextVersion, old.scopes.count == new.scopes.count else { return false }
         return zip(old.scopes, new.scopes).allSatisfy { a, b in
             a.scope == b.scope && a.tool == b.tool && a.route == b.route && a.detected == b.detected &&
             a.retired == b.retired && a.state == b.state && a.defaultCheck == b.defaultCheck &&
@@ -232,7 +234,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
                     phase = .idle; notice = .requestFailed
                 default: phase = .waitingForFacts; notice = .outcomeUnknown
                 }
-            } else if error is ScopeConsentCommandFailure {
+            } else if error is ScopeConsentCommandFailure || error is EngineConsentGrantError {
                 phase = .idle; notice = .requestFailed
             } else {
                 phase = .waitingForFacts; notice = .outcomeUnknown

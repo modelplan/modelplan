@@ -20,7 +20,7 @@ import ModelPlanWire
 /// Native scope surface. Constructing or rerendering it never sends a command.
 @MainActor public final class SettingsScopeConsentView: NSStackView {
     private let controller: ScopeConsentController
-    private let language: SettingsLanguage
+    private var language: SettingsLanguage
     private var observer: UUID?
     private var buttons: [NSButton] = []
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese) {
@@ -28,6 +28,11 @@ import ModelPlanWire
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
+    }
+    /// Follow the shared Settings editor language without changing any draft.
+    public func apply(language: SettingsLanguage) {
+        guard self.language != language else { return }
+        self.language = language; render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
     public func suspend() {

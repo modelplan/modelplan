@@ -6,6 +6,43 @@ import ModelPlanWire
 @testable import ModelPlanSettings
 
 @MainActor final class ScopeConsentFlowTests: XCTestCase {
+    func testChangingSurfaceLanguagePreservesDraft() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        controller.choose(ScopeConsentFixtures.gemini, selected: true)
+        let selected = controller.selectedIDs
+        let view = SettingsScopeConsentView(controller: controller, language: .chinese)
+        view.apply(language: .english)
+        XCTAssertTrue(viewTexts(view).contains("Reading permissions"))
+        XCTAssertEqual(controller.selectedIDs, selected)
+    }
+    func testStaleGrantFactoryFailsBeforeDispatchWithoutUnknownOutcome() async throws {
+        let engine = ScopeConsentTestClient()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true }, makeGrant: { _ in
+            throw EngineConsentGrantError.staleConsentFacts
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts())
+        let request = try XCTUnwrap(controller.requestAllow())
+        await controller.confirm(request.id)
+        if case .idle = controller.phase {} else { XCTFail("A local factory refusal cannot be a sent mutation") }
+        if case .requestFailed = controller.notice {} else { XCTFail("The caller can safely refresh and retry") }
+        let sent = await engine.recordedGrants(); XCTAssertTrue(sent.isEmpty)
+    }
+    func testNewConsentTextVersionRetiresOldConfirmation() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        let original = try ScopeConsentFixtures.facts()
+        controller.receiveAcceptedFacts(original)
+        XCTAssertNotNil(controller.requestAllow())
+        controller.receiveAcceptedFacts(try WireConsentFacts(consentTextVersion: original.consentTextVersion + 1, scopes: original.scopes))
+        if case .idle = controller.phase {} else { XCTFail("A new consent text requires a new confirmation") }
+    }
     func testSavedLoginScopesStayOptInAndExplainSignedBuildGate() throws {
         let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
             try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)

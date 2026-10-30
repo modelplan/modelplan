@@ -101,6 +101,7 @@ enum SettingsWords {
     private let glass = NSVisualEffectView()
     private let stack = NSStackView()
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
+    private let scopeConsentEntry: ScopeConsentEntry?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -119,8 +120,8 @@ enum SettingsWords {
     let firstRunPreviewButton = NSButton()
 
     public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil,
-                clipboard: SettingsDiagnosticClipboard? = nil) {
-        self.editor = editor; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
+                clipboard: SettingsDiagnosticClipboard? = nil, scopeConsentEntry: ScopeConsentEntry? = nil) {
+        self.editor = editor; self.scopeConsentEntry = scopeConsentEntry; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
         self.clipboard = clipboard ?? SystemDiagnosticClipboard()
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
@@ -167,7 +168,7 @@ enum SettingsWords {
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
     public func windowWillClose(_ notification: Notification) {
         for row in rows.values { row.diagram?.stop() }
-        connectionsView.suspend()
+        if scopeConsentEntry == nil { connectionsView.suspend() }
     }
     public func controlTextDidChange(_ obj: Notification) { if obj.object as? NSSearchField === searchField { refresh() } }
     public func numberOfRows(in tableView: NSTableView) -> Int { SettingsStructure.task65.panes.count }
@@ -210,8 +211,9 @@ enum SettingsWords {
         status.setAccessibilityIdentifier("settings.status"); status.setAccessibilityRole(.staticText)
         empty.font = .systemFont(ofSize: 13); empty.textColor = .secondaryLabelColor
         for view in [heading, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
-        stack.addArrangedSubview(connectionsView)
-        connectionsView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
+        stack.addArrangedSubview(connectionContent)
+        connectionContent.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         NSLayoutConstraint.activate([
             side.leadingAnchor.constraint(equalTo: root.leadingAnchor), side.topAnchor.constraint(equalTo: root.topAnchor),
             side.bottomAnchor.constraint(equalTo: root.bottomAnchor), side.widthAnchor.constraint(equalToConstant: 236),
@@ -262,11 +264,15 @@ enum SettingsWords {
         if window?.appearance?.name != desiredAppearance { window?.appearance = desiredAppearance.flatMap(NSAppearance.init(named:)) }
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let connectionsWereHidden = connectionsView.isHidden
-        connectionsView.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
+        scopeConsentEntry?.view.apply(language: language)
+        let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
+        let connectionsWereHidden = connectionContent.isHidden
+        connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
             : !["connect", "tool", "plugin", "连接", "工具", "插件", "订阅"].contains(where: { query.localizedCaseInsensitiveContains($0) })
-        if connectionsView.isHidden && !connectionsWereHidden { connectionsView.suspend() }
-        connectionsView.apply(language: language)
+        if scopeConsentEntry == nil {
+            if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
+            connectionsView.apply(language: language)
+        }
         heading.stringValue = query.isEmpty
             ? SettingsStructure.task65.panes.first(where: { $0.id == selectedPaneID })!.title.value(language)
             : SettingsWords.text("Search results", "搜索结果", language)

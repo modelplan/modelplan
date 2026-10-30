@@ -23,12 +23,12 @@ private actor RowsEntryClient: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string(request.requestId)) }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-refresh")) }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-plugin")) }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 @MainActor private final class EntrySettingsSurface: SettingsWindowSurface {
@@ -49,6 +49,79 @@ private actor RowsEntryClient: EngineClient {
     func hide() {}
 }
 @MainActor final class EngineRowsEntryTests: XCTestCase {
+    func testPluginResultUsesAcceptedRequestPairAcrossOtherResponsesAndClear() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-plugin-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json")))
+        let plugin = try WireDecoder.decode(WirePluginInstallResult.self, from: Data(contentsOf: captures.appendingPathComponent("WirePluginInstallResult.json")))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false, makeClient: { _, store in RowsEntryClient(store: store, rows: rows) })
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        let controller = app.scopeConsentEntry.controller
+        controller.requestPluginInstall(.codex)
+        guard case .confirmation(let id, _) = controller.pluginPhase else { return XCTFail("Missing user confirmation") }
+        await controller.confirmPluginInstall(id)
+        if case .unverified = controller.pluginPhase {} else { XCTFail("Completion is not a plugin result") }
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: plugin), delivery: context)
+        await app.composition.store.consume(.response(requestID: .string("other"), .pluginInstall(reply)))
+        if case .unverified = controller.pluginPhase {} else { XCTFail("An unrelated result cannot complete this request") }
+        await app.composition.store.consume(.response(requestID: .string("synthetic-plugin"), .pluginInstall(reply)))
+        if case .result(.planned) = controller.pluginPhase {} else { XCTFail("Only the accepted matching pair sets result") }
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        if case .idle = controller.pluginPhase {} else { XCTFail("Clear must withdraw the result synchronously") }
+    }
+    func testUnrelatedStoreEventsDoNotSatisfyConsentReadback() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-readback-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
+        var scopes = try XCTUnwrap(object["scopes"] as? [[String: Any]])
+        scopes[0]["route"] = "local_log"; scopes[0]["detected"] = true; scopes[0]["state"] = "unset"; scopes[0]["defaultCheck"] = true
+        scopes[0].removeValue(forKey: "disabledReason"); scopes[0].removeValue(forKey: "keychain"); object["scopes"] = scopes
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json")))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false, makeClient: { _, store in RowsEntryClient(store: store, rows: rows) })
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: facts), delivery: context)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        await app.composition.store.consume(.consentChanged(reply))
+        let request = try XCTUnwrap(app.scopeConsentEntry.controller.requestAllow())
+        await app.scopeConsentEntry.controller.confirm(request.id)
+        if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Completion cannot prove consent") }
+        await app.composition.store.consume(.connection(.ready(context)))
+        if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Unrelated snapshot must not count as readback") }
+        await app.composition.store.consume(.consentChanged(reply))
+        if case .idle = app.scopeConsentEntry.controller.phase {} else { XCTFail("A newly accepted consent event closes readback") }
+    }
+    func testScopeConsentIsWiredFromNormalEntryAndClearsBeforeAcknowledgement() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireConsentFacts.json").standardizedFileURL
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: Data(contentsOf: capture))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false)
+        let entry = app.scopeConsentEntry
+        XCTAssertTrue(app.settingsHost.scopeConsentEntry === entry)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: facts), delivery: context)
+        await app.composition.store.consume(.consentChanged(reply))
+        XCTAssertEqual(entry.controller.facts?.consentTextVersion, facts.consentTextVersion)
+        XCTAssertTrue(entry.controller.isMutationServiceReady)
+        let window = SettingsWindowController(editor: app.settingsHost.application.editor, scopeConsentEntry: entry)
+        func find(_ view: NSView, _ id: String) -> Bool { view.accessibilityIdentifier() == id || view.subviews.contains { find($0, id) } }
+        XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
+        XCTAssertFalse(entry.controller.canMutate)
+        XCTAssertTrue(entry.controller.canInspect, "An online engine must allow consent recovery after clear")
+    }
     func testNormalEntryStoreReadsMigratedSettingsAndCoreAfterRestart() async throws {
         let support = FileManager.default.temporaryDirectory.appendingPathComponent("u6-migration-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
