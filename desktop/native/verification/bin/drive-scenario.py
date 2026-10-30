@@ -3,6 +3,7 @@
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
 from launch import validate
+from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,value):
@@ -112,6 +113,7 @@ class Attempt:
         c=self.c
         if not valid(c,time.time()):raise ValueError('announcement/GO/window/remaining-time invalid')
         if hashlib.sha256(Path(c['binary']).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary changed')
+        if check(Path(c['inputRoot']),c['entry']):raise ValueError('relative-module-dependencies-missing')
         self.out.mkdir(exist_ok=False);self.scratch.mkdir(exist_ok=False)
         write(self.out/'README.json',dict(purpose='U11a synthetic observation; actual outcomes follow',runID=c['runID'],epoch=c['epoch'],head=c['head'],source='native-self-counters',noRealAccounts=True))
         locks=Path(c['locks']);self.lock=locks/'M1-candidate-gui';self.lock.mkdir();write(self.lock/'owner.json',dict(runID=c['runID'],epoch=c['epoch'],pid=os.getpid()))

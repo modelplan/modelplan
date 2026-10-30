@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: MIT
-import importlib.util,sys,unittest
+import importlib.util,sys,tempfile,unittest
 from pathlib import Path
 B=Path(__file__).parents[1]/'bin'
 sys.path.insert(0,str(B))
 def load(name):
  s=importlib.util.spec_from_file_location(name,B/(name+'.py'));m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
-D=load('drive-scenario');E=load('export-native')
+D=load('drive-scenario');E=load('export-native');I=load('check_inputs')
 class Drive(unittest.TestCase):
+ def test_real_relative_import_failure_before_launch(self):
+  with tempfile.TemporaryDirectory() as d:
+   root=Path(d);(root/'index.html').write_text('<script type="module" src="app.js"></script>');(root/'app.js').write_text("import {face} from './support/face.js';")
+   self.assertEqual(I.check(root,'index.html')[0]['target'],'support/face.js')
+   (root/'support').mkdir();(root/'support/face.js').write_text('export const face=1;')
+   self.assertEqual(I.check(root,'index.html'),[])
+
  def test_three_cycles_and_grant(self):
   self.assertEqual(len(D.plan()),9);self.assertEqual(sum(x[2] for x in D.plan()),540)
   c=dict(GO=True,announcementID='synthetic',start=1000,expiresAt=2200)
