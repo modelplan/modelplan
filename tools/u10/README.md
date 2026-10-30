@@ -22,7 +22,7 @@ release publication or secrets are part of this workflow.
   remains `not-run`.
 - The existing `package-neutral.sh` compiles the production native executable and
   fetches no replacement engine. Its reviewed native CLI archive input comes from
-  `desktop/native/consent-cli-pin.json` (v0.5.48), independently of plugin pins.
+  `desktop/native/consent-cli-pin.json` (v0.5.49), independently of plugin pins.
 - `Contents/Resources/OfficialVisuals` contains only the public official assets,
   including their runtime manifest and reserved visual licence. The public icon
   is also installed as the app icon. OFL fonts, each family licence, font manifest

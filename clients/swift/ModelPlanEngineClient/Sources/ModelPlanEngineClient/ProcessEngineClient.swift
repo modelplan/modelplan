@@ -46,6 +46,7 @@ struct ClientDelivery {
 
 /// App-side protocol client. UI state and Security.framework remain with its consumers.
 public actor ProcessEngineClient: EngineClient {
+    nonisolated let deliveryAuthority = DeliveryAuthority()
     let configuration: EngineClientConfiguration
     let consumer: any EngineClientEventConsumer
     let credentialAgent: (any CredentialAgent)?
@@ -120,6 +121,10 @@ public actor ProcessEngineClient: EngineClient {
         floor.map { EngineDeliveryContext(sessionID: sessionID, floor: $0, revision: revision) }
     }
 
+    public nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool {
+        deliveryAuthority.isCurrent(context)
+    }
+
     public func start() async throws -> EngineDeliveryContext {
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
         guard !consumerBlocked && !requiresRetry && !stopping else { throw EngineClientError.notReady }
@@ -145,6 +150,7 @@ public actor ProcessEngineClient: EngineClient {
         return try await start()
     }
     public func stop() async {
+        deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
         stopped = true; stopping = true
         let retiring = restartTask
@@ -180,6 +186,7 @@ public actor ProcessEngineClient: EngineClient {
 
     func launch() {
         guard child == nil && unreapedProcess == nil && !stopped && !consumerBlocked && !stopping else { return }
+        deliveryAuthority.replace(with: nil)
         do {
             try validateConfiguration()
             sessionID = "s-" + UUID().uuidString.lowercased()
@@ -214,6 +221,7 @@ public actor ProcessEngineClient: EngineClient {
 
     func ended(_ id: UUID, protocolFault: Bool, planned: Bool = false) {
         guard let process = child, process.id == id else { return }
+        deliveryAuthority.replace(with: nil)
         child = nil; handshaken = false; writerRunning = false
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
@@ -235,7 +243,11 @@ public actor ProcessEngineClient: EngineClient {
             catch { await self.restartFinished(launch: false) }
         }
     }
-    func cleanupFailed(_ process: EngineProcess) { unreapedProcess = process; stopped = true; requiresRetry = true; restartTask = nil; emit(.connection(.stopped(.processCleanupFailed))) }
+    func cleanupFailed(_ process: EngineProcess) {
+        deliveryAuthority.replace(with: nil)
+        unreapedProcess = process; stopped = true; requiresRetry = true; restartTask = nil
+        emit(.connection(.stopped(.processCleanupFailed)))
+    }
     func restartFinished(launch shouldLaunch: Bool) {
         restartTask = nil
         if shouldLaunch && !stopped { launch() }
@@ -248,6 +260,7 @@ public actor ProcessEngineClient: EngineClient {
         ended(id, protocolFault: false)
     }
     func protocolMismatch() {
+        deliveryAuthority.replace(with: nil)
         stopped = true; requiresRetry = true; fatalMismatch = true
         failStarts(.protocolMismatch)
         if let process = child { ended(process.id, protocolFault: false) }
