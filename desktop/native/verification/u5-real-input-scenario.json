@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "unit": "U5",
+  "profile": "synthetic",
+  "maximumSeconds": 1200,
+  "entryProduct": "ModelPlanCommunityApp",
+  "requiredNativeCLIVersion": "0.5.48",
+  "route": [
+    "CommunityApp",
+    "ProductionDockFactory.community",
+    "StaticDockPreviewHost.present",
+    "bindPointerInput",
+    "PulsePanelPointerSurface",
+    "PanelPointerWatcher.WatcherView",
+    "PointerEntryReporter.TrackingView",
+    "PointerProbe"
+  ],
+  "doctorScenario": "native-dock",
+  "scenarios": [
+    {
+      "id": "U5-pointer-entry",
+      "actions": [
+        "move the real pointer from outside to the owned Dock wake region",
+        "observe entry and reveal after dwell without activation"
+      ],
+      "assertions": [
+        "entryObserved",
+        "revealAfterDwell",
+        "nonActivatingPreserved"
+      ]
+    },
+    {
+      "id": "U5-sampler",
+      "actions": [
+        "move the real pointer away from the expanded Dock",
+        "observe sampler/leave grace collapse",
+        "re-enter after collapse"
+      ],
+      "assertions": [
+        "samplerObserved",
+        "collapseAfterGrace",
+        "reentryObserved"
+      ]
+    },
+    {
+      "id": "U5-display-following",
+      "actions": [
+        "cross to another physical display",
+        "hold a Dock background press before movement",
+        "verify no jump then release and retry following"
+      ],
+      "assertions": [
+        "followObserved",
+        "heldPressNoJump",
+        "releaseFollowRetry",
+        "savedIntentNotRewritten"
+      ]
+    },
+    {
+      "id": "U5-presence-login-stubs",
+      "actions": [
+        "exercise candidate-bound Settings/cockpit presence with application effects stubbed",
+        "deliver explicit login choice to the candidate-bound stub service",
+        "retain observed requiresApproval"
+      ],
+      "assertions": [
+        "stubSystemCallsOnly",
+        "candidateBoundStubActions",
+        "multiWindowPresenceObserved",
+        "restorationNoFocusSteal",
+        "explicitLoginRequestObserved",
+        "requiresApprovalTruthful",
+        "realLoginItemsUntouched"
+      ]
+    },
+    {
+      "id": "U5-atomic-migration-synthetic-profile",
+      "actions": [
+        "start from the declared synthetic legacy profile",
+        "observe the candidate migration transaction",
+        "restart the owned candidate and inspect the synthetic result"
+      ],
+      "assertions": [
+        "migrationObservedThroughCandidate",
+        "newStorePublished",
+        "oldFilesUnchanged",
+        "coreSettingsPreserved",
+        "restartObserved",
+        "restartRestoredPlacement",
+        "readerConsentNotPromoted"
+      ]
+    }
+  ],
+  "forbidden": [
+    "owner account/profile data",
+    "real login item mutation",
+    "real Keychain or credential access",
+    "unscoped process discovery",
+    "direct handler/hitTest calls presented as delivered input",
+    "GUI before the native v0.5.48 pin merge and matching announced lease"
+  ],
+  "proofLimit": "Scenario receipts require actual owned-candidate action/state evidence and cleanup. Source/L1 checks alone do not establish real-input L2; missing consumers or capabilities remain explicit. No owner L3 or release acceptance.",
+  "profileShape": "fixtures/u5-synthetic-shape.json",
+  "preferenceCases": [
+    "coexistence",
+    "corrupt-beta07"
+  ]
+}

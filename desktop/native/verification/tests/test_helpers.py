@@ -9,7 +9,7 @@ from attribute_webkit import attribute
 
 class Helpers(unittest.TestCase):
     def test_doctor_separates_conditions_with_timestamp_and_actual_call(self):
-        d={k:True for k in CONDITIONS}|dict(timestamp='2026-01-01T00:00:00Z',activationCall='not-invoked')
+        d={k:True for k in CONDITIONS}|dict(WebKitPID=314,timestamp='2026-01-01T00:00:00Z',activationCall='not-invoked')
         for k in CONDITIONS:
             r=doctor(d|{k:False});self.assertEqual(r['outcome'],'not-run');self.assertEqual(r['checks'][k]['status'],'fail')
             self.assertEqual(sum(x['status']=='fail' for x in r['checks'].values()),1)
