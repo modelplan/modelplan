@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": "engine-drive-v1-pending-review",
+  "fidelity": "hand-built",
+  "approvalRef": null,
+  "covers": [
+    "tool-presence",
+    "preference-files",
+    "schema-1-consent",
+    "history-optional-model-shapes"
+  ],
+  "knownGaps": [
+    "Pending coordinator review; no approved owner-shaped baseline and no L2 until approval.",
+    "Optional-model records are type-only historical shapes, not live query fixtures or Swift decoder proof.",
+    "Fixed synthetic runtime, no live vendor, Keychain, native UI, owner account, or L3 coverage."
+  ],
+  "tools": [
+    "claude",
+    "codex",
+    "gemini",
+    "copilot"
+  ],
+  "files": [
+    {
+      "path": ".claude/settings.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "env": {
+            "kind": "object",
+            "fields": {
+              "SYNTHETIC_SETTING": {
+                "kind": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": ".claude/.credentials.json",
+      "state": "empty"
+    },
+    {
+      "path": ".codex/config.toml",
+      "state": "empty"
+    },
+    {
+      "path": ".gemini/settings.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {}
+      }
+    },
+    {
+      "path": ".config/modelplan/connections.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "schemaVersion": {
+            "kind": "number"
+          },
+          "connections": {
+            "kind": "array",
+            "items": []
+          }
+        }
+      }
+    },
+    {
+      "path": ".u14-synthetic-inputs/history-omitted.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "schemaVersion": {
+            "kind": "number"
+          },
+          "kind": {
+            "kind": "string"
+          },
+          "generatedAt": {
+            "kind": "string"
+          },
+          "accounts": {
+            "kind": "array",
+            "items": []
+          },
+          "paceHistory": {
+            "kind": "object",
+            "fields": {
+              "groups": {
+                "kind": "array",
+                "items": [
+                  {
+                    "kind": "object",
+                    "fields": {
+                      "source": {
+                        "kind": "string"
+                      },
+                      "kind": {
+                        "kind": "string"
+                      },
+                      "cycles": {
+                        "kind": "array",
+                        "items": [
+                          {
+                            "kind": "object",
+                            "fields": {
+                              "spent": {
+                                "kind": "array",
+                                "items": [
+                                  {
+                                    "kind": "object",
+                                    "fields": {
+                                      "points": {
+                                        "kind": "number"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": ".u14-synthetic-inputs/history-null.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "schemaVersion": {
+            "kind": "number"
+          },
+          "kind": {
+            "kind": "string"
+          },
+          "generatedAt": {
+            "kind": "string"
+          },
+          "accounts": {
+            "kind": "array",
+            "items": []
+          },
+          "paceHistory": {
+            "kind": "object",
+            "fields": {
+              "groups": {
+                "kind": "array",
+                "items": [
+                  {
+                    "kind": "object",
+                    "fields": {
+                      "source": {
+                        "kind": "string"
+                      },
+                      "kind": {
+                        "kind": "string"
+                      },
+                      "cycles": {
+                        "kind": "array",
+                        "items": [
+                          {
+                            "kind": "object",
+                            "fields": {
+                              "spent": {
+                                "kind": "array",
+                                "items": [
+                                  {
+                                    "kind": "object",
+                                    "fields": {
+                                      "points": {
+                                        "kind": "number"
+                                      },
+                                      "model": {
+                                        "kind": "null"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "path": ".u14-synthetic-inputs/history-reported.json",
+      "state": "json",
+      "shape": {
+        "kind": "object",
+        "fields": {
+          "schemaVersion": {
+            "kind": "number"
+          },
+          "kind": {
+            "kind": "string"
+          },
+          "generatedAt": {
+            "kind": "string"
+          },
+          "accounts": {
+            "kind": "array",
+            "items": []
+          },
+          "paceHistory": {
+            "kind": "object",
+            "fields": {
+              "groups": {
+                "kind": "array",
+                "items": [
+                  {
+                    "kind": "object",
+                    "fields": {
+                      "source": {
+                        "kind": "string"
+                      },
+                      "kind": {
+                        "kind": "string"
+                      },
+                      "cycles": {
+                        "kind": "array",
+                        "items": [
+                          {
+                            "kind": "object",
+                            "fields": {
+                              "spent": {
+                                "kind": "array",
+                                "items": [
+                                  {
+                                    "kind": "object",
+                                    "fields": {
+                                      "points": {
+                                        "kind": "number"
+                                      },
+                                      "model": {
+                                        "kind": "string"
+                                      }
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "consent": {
+    "state": "v1",
+    "privacy": "automatic",
+    "tools": {
+      "claude": "denied",
+      "codex": "allowed",
+      "gemini": "unset"
+    }
+  }
+}
