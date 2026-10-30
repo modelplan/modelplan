@@ -2,6 +2,7 @@
 import AppKit
 import CoreGraphics
 import ModelPlanCore
+import ModelPlanShell
 import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanCommunityHost
@@ -518,8 +519,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
     }
-    private func makePanel() -> NSPanel {
-        let value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    private func makePanel(forDock: Bool = false) -> NSPanel {
+        let value: NSPanel
+        if forDock {
+            let dock = PulseDockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            dock.mouseHandler = self
+            value = dock
+        } else {
+            value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        }
         value.isFloatingPanel = true; value.level = .floating; value.isOpaque = false
         value.backgroundColor = .clear; value.hasShadow = false; value.hidesOnDeactivate = false
         value.isReleasedWhenClosed = false
@@ -564,7 +572,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard permitted, !retired, let frame = value.paintedFrame else {
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
-        if panel == nil { panel = makePanel() }
+        if panel == nil { panel = makePanel(forDock: true) }
         guard let panel else { publishPlacementObservation(nil); return }
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
@@ -725,3 +733,25 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 }
 
 extension StaticDockPreviewHost: CommunityDockConsentReceiving {}
+
+// Window-level native event capture is borrowed from Pulse; the existing
+// background-region/consent/lifecycle gates remain authoritative for this slice.
+extension StaticDockPreviewHost: PulsePanelMouseHandling {
+    public func beginPanelMove(windowPoint: CGPoint, globalPoint: CGPoint) -> Bool {
+        guard permitted, !retired, !rendering, let panel,
+              edge.presentation?.state == .expanded else { return false }
+        let orientation = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let view = edgeViews[orientation] ?? dockView
+        guard view.window === panel else { return false }
+        return edge.beginBackgroundMove(local: view.convert(windowPoint, from: nil), global: globalPoint)
+    }
+    public func continuePanelMove(globalPoint: CGPoint) {
+        guard permitted, !retired else { edge.cancelBackgroundMove(); return }
+        edge.updateBackgroundMove(global: globalPoint)
+    }
+    public func finishPanelMove(globalPoint: CGPoint) {
+        guard permitted, !retired else { edge.cancelBackgroundMove(); return }
+        edge.endBackgroundMove(global: globalPoint)
+    }
+    public func cancelPanelMove() { edge.cancelBackgroundMove() }
+}

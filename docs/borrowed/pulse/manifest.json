@@ -35,9 +35,14 @@
     },
     {
       "path": "docs/borrowed/pulse/UPSTREAM_THIRD_PARTY_NOTICES.md",
-      "sha256": "b150905e59e27f043e77a0d5465ccf62d70d3ac1dd477212d2d7995cc8286732",
+      "sha256": "7cd46ef6e9d91dc2d17b3983621a5e99d5363b2b0179e0f4fc02c90ccacc99f7",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
-      "implementationModified": false
+      "implementationModified": false,
+      "upstreamSHA256": "b150905e59e27f043e77a0d5465ccf62d70d3ac1dd477212d2d7995cc8286732",
+      "formattingModified": true,
+      "adaptations": [
+        "normalize trailing whitespace only; attribution content retained"
+      ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPlacement.swift",
@@ -49,6 +54,19 @@
         "replace UserDefaults persistence with an injected saved-placement callback",
         "remove unused liquid-visual state",
         "parameterize card gap instead of importing upstream visual layout"
+      ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
+      "sha256": "433584db88b78a314f843b090860f3366bb37a5ad98b60b761c9b7b74c271c62",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
+      "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
+      "implementationModified": true,
+      "adaptations": [
+        "non-key/non-main window and window-level mouse transaction only",
+        "injected region/lifecycle handler and cancellation",
+        "private appearance selector and visual/provider logic omitted"
       ]
     }
   ]

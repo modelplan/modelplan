@@ -1,6 +1,6 @@
 # Pulse shell intake (U5, interface only)
 
-Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The four files in `Sources/ModelPlanShell/Pulse` are copied byte-for-byte from `Sources/Pulse/Panel`, retaining their Apache-2.0 copyright headers. `pulse/LICENSE` retains the full license. The pinned tree has no file named NOTICE; its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming those unrelated components were ported. `pulse/manifest.json` binds the copied files.
+Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The four files in `Sources/ModelPlanShell/Pulse` are copied byte-for-byte from `Sources/Pulse/Panel`, retaining their Apache-2.0 copyright headers. `pulse/LICENSE` retains the full license. The pinned tree has no file named NOTICE; its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming those unrelated components were ported. Its trailing whitespace is normalized; the original and adapted digests are both recorded. `pulse/manifest.json` binds the copied files.
 
 ## Reviewed first slice
 
@@ -22,3 +22,9 @@ FloatingPanelController still contains AppSettings, PanelIntent, fixed layout an
 ## Completion boundary
 
 M4 supplies the separately owned, product-identity-keyed migration candidate; M0 integrates one atomic no-replace destination store. Existing paths remain until the replacement call chain, packaged synthetic-profile L2 and historical regression scenarios pass. The first-run/right, explicit-left, retained/corrupt preferences, actual/saved edge and real-input checks belong to U5; physical/display limitations remain explicit. No owner L3 or real-account input is used here.
+
+## Wired panel event slice
+
+The normal companion factory retains StaticDockPreviewHost; its Dock-only makePanel route now constructs PulseDockPanel. Card and outline panels are unchanged. The borrowed window-level down/drag/up transaction delegates to the existing painted-region/lifecycle gates, falls through for controls/control-click, and cancels capture when hidden. The panel cannot become key/main, and its optional numeric-only arrival callback does not log input contents. No upstream private appearance selector is present.
+
+Eleven pure source tests cover placement, input capture/release/cancel, control exclusion and asymmetric-notch/null cases. These are not actual native event delivery. The final unified shell/controller, follower/sampler/entry L1 behavior coverage, migration-store integration and real-input/package L2 remain pending. This slice does not close U5 or an owner report.
