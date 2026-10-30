@@ -649,6 +649,48 @@
       "paths": [
         "cli/internal/quota/kiro.go"
       ]
+    },
+    {
+      "id": "pulse-native-shell",
+      "kind": "source-port",
+      "name": "Pulse native shell",
+      "version": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "licenseSpdxId": "Apache-2.0",
+      "copyright": [
+        "Copyright (c) 2026 qunqin24"
+      ],
+      "licenseTextPath": "licenses/pulse/LICENSE.txt",
+      "licenseFiles": [
+        {
+          "path": "licenses/pulse/LICENSE.txt",
+          "sourceFile": "LICENSE",
+          "sha256": "70bb8a2fe5879d148ef66a069beb84929727879c4a0323d1045b3f166ebbab9e"
+        },
+        {
+          "path": "licenses/pulse/THIRD_PARTY_NOTICES.md",
+          "sourceFile": "THIRD_PARTY_NOTICES.md",
+          "sha256": "b150905e59e27f043e77a0d5465ccf62d70d3ac1dd477212d2d7995cc8286732"
+        }
+      ],
+      "source": "https://github.com/qunqin24/Pulse/tree/7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "usedBy": [
+        "Native Dock shell: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, and FloatingPanel event-routing adaptation in PulseDockPanel",
+        "Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json",
+        "The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components"
+      ],
+      "upstreamNotice": {
+        "present": false,
+        "checkedRevision": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+        "retainedAttributionFile": "THIRD_PARTY_NOTICES.md"
+      },
+      "paths": [
+        "desktop/native/Sources/ModelPlanShell/Pulse/PanelScreen.swift",
+        "desktop/native/Sources/ModelPlanShell/Pulse/ActiveDisplayFollower.swift",
+        "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
+        "desktop/native/Sources/ModelPlanShell/Pulse/PointerEntryReporter.swift",
+        "desktop/native/Sources/ModelPlanShell/Pulse/PanelPlacement.swift",
+        "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift"
+      ]
     }
   ]
 }
