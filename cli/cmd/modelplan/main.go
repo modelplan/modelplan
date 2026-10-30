@@ -116,6 +116,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
   modelplan doctor                     show base URL, cache and publication state
   modelplan doctor readers [--refresh] sanitised native-reader verification; cache only by default
   modelplan doctor --share             sanitised cache source/status report; no readers or network
+  modelplan diagnostics --share        copy-safe versions, enabled scopes and recent error codes
   modelplan update                     explicitly update a standalone/Skill copy from the verified publication pin
   modelplan plugin install claude-code|codex
                                        install through the host CLI; otherwise print its commands
@@ -198,7 +199,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
 	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
-	share := fs.Bool("share", false, "doctor: print only sanitised cache source/status information")
+	share := fs.Bool("share", false, "doctor/diagnostics: print a sanitised share report")
+	appVersion := fs.String("app-version", "", "diagnostics: enclosing app version (optional)")
 	if err := fs.Parse(reorder(rest)); err != nil {
 		return exitUsage
 	}
@@ -229,6 +231,18 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if *refreshReaders {
 		fmt.Fprintln(stderr, "--refresh requires doctor readers")
 		return exitUsage
+	}
+	if cmd == "diagnostics" {
+		if !*share || fs.NArg() != 0 || *refreshReaders {
+			fmt.Fprintln(stderr, "usage: modelplan diagnostics --share [--app-version VERSION]")
+			return exitUsage
+		}
+		st, err := store.Locate()
+		if err != nil {
+			fmt.Fprintln(stderr, "diagnostics: cache_unavailable")
+			return exitErr
+		}
+		return printJSON(stdout, diagnostics.CollectFeedback(st.Dir, version, *appVersion, time.Now()))
 	}
 	if *share {
 		if cmd != "doctor" || fs.NArg() != 0 {
@@ -1215,7 +1229,7 @@ func reorder(args []string) []string {
 	return append(fl, pos...)
 }
 
-var takesValue = map[string]bool{"provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
+var takesValue = map[string]bool{"app-version": true, "provider": true, "plan": true, "profile": true, "privacy": true, "effort-suggestion": true, "export": true, "backend": true, "region": true, "key-env": true, "lang": true, "base": true, "dev": true, "harness": true, "model": true, "effort": true, "source": true, "hook": true, "add-system": true, "add-context": true}
 
 func printJSON(w io.Writer, v any) int {
 	e := json.NewEncoder(w)
