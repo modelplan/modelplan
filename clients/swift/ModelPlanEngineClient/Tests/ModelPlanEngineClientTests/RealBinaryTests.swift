@@ -172,12 +172,19 @@ extension RealBinaryTests {
         seed["storeEpoch"] = String(repeating: "f", count: 32); seed["generation"] = 41
         try JSONSerialization.data(withJSONObject: seed).write(to: file)
         let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe)
-        addTeardownBlock { await client.stop() }
+        addTeardownBlock { await probe.resumeClear(); await client.stop() }
         let first = try await client.start()
+        XCTAssertTrue(client.isCurrent(first))
+        await probe.suspendNextClear()
         try cli(binary, home: home, arguments: ["consent", "reset", "confirmed", "--json"])
+        try await eventually { await probe.clearIsPaused() }
+        XCTAssertFalse(client.isCurrent(first), "an unfamiliar epoch withdraws the old context before clear acknowledgement")
+        await probe.resumeClear()
         try await eventually { await probe.readyContexts().contains { $0.floor.storeEpoch != first.floor.storeEpoch } }
         let latestContext = await probe.readyContexts().last
         let latest = try XCTUnwrap(latestContext)
+        XCTAssertTrue(client.isCurrent(latest))
+        XCTAssertFalse(client.isCurrent(first))
         XCTAssertEqual(latest.floor.generation, 1)
         XCTAssertNotEqual(latest.floor.storeEpoch, first.floor.storeEpoch)
         XCTAssertEqual(latest.sessionID, first.sessionID, "epoch confirmation should not need a new child")
@@ -231,12 +238,14 @@ extension RealBinaryTests {
         let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "probe-fails"), home: home), consumer: probe, runtime: runtime)
         addTeardownBlock { await client.stop() }
         let original = try await client.start()
+        XCTAssertTrue(client.isCurrent(original))
         do { _ = try await client.diagnostics(); XCTFail("unconfirmed epoch was delivered") } catch {}
         try await eventually { await client.confirmationIsPendingOrFailed() }
         let observed9 = await client.floor
         XCTAssertEqual(observed9, original.floor)
         let observed10 = await client.gateClosed
         XCTAssertTrue(observed10)
+        XCTAssertFalse(client.isCurrent(original), "failed epoch confirmation must not restore the old authority")
         do { _ = try await client.subscribeRows(); XCTFail("private request admitted while epoch was uncertain") } catch {}
     }
     func testRealFiveCrashesStopAndUseFreshSessions() async throws {
@@ -244,7 +253,7 @@ extension RealBinaryTests {
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
         let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe)
         addTeardownBlock { await client.stop() }
-        _ = try await client.start()
+        let original = try await client.start()
         let began = ProcessInfo.processInfo.systemUptime
         for index in 0..<5 {
             let ownedPID = await client.processIdentifier
@@ -253,6 +262,7 @@ extension RealBinaryTests {
             if index < 4 { try await eventually({ await probe.readyContexts().count >= index + 2 }, timeout: Double(1 << index) + 5) }
         }
         try await eventually { await probe.stopped(.crashLimit) }
+        XCTAssertFalse(client.isCurrent(original))
         let observed11 = await probe.crashDelays()
         XCTAssertEqual(observed11, [1, 2, 4, 8])
         let sessions = await probe.readyContexts().map(\.sessionID)
@@ -280,12 +290,13 @@ extension RealBinaryTests {
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])
         let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe)
         addTeardownBlock { await probe.resumeClear(); await client.stop() }
-        _ = try await client.start()
+        let original = try await client.start()
         try await eventually { await probe.rowCount() > 0 }
         let originalCount = await probe.rowCount()
         await probe.suspendNextClear()
         try externalGrant(binary, home: home, deny: ["codex.local_history"])
         try await eventually { await probe.clearIsPaused() }
+        XCTAssertFalse(client.isCurrent(original), "revoke must withdraw authority while the consumer is paused")
         let request = Task { () -> Bool in
             do { _ = try await client.diagnostics(); return true } catch { return false }
         }
@@ -297,6 +308,9 @@ extension RealBinaryTests {
         await probe.resumeClear()
         _ = await request.value
         try await eventually { await probe.readyContexts().last?.floor == latest }
+        let currentValue = await probe.readyContexts().last
+        XCTAssertTrue(client.isCurrent(try XCTUnwrap(currentValue)))
+        XCTAssertFalse(client.isCurrent(original))
         try await eventually { await probe.rowCount() > originalCount }
         let ordered = await probe.orderedClears()
         XCTAssertTrue(ordered)
@@ -323,12 +337,16 @@ extension RealBinaryTests {
         let ownedPID = await client.processIdentifier
         XCTAssertEqual(kill(try XCTUnwrap(ownedPID), SIGKILL), 0)
         guard case .interrupted(.connectionLost)? = await read.value else { return XCTFail("old read reported success/unknown outcome") }
+        XCTAssertFalse(client.isCurrent(initial), "connection loss withdraws the old session before backoff completes")
         guard case .interrupted(.connectionLost)? = await refresh.value else { return XCTFail("old refresh did not terminate on restart") }
         guard case .mutationOutcomeUnknown(let requestID, let expected)? = await grant.value else { return XCTFail("sent grant without receipt reported success") }
         XCTAssertEqual(requestID, params.requestId); XCTAssertEqual(expected, initial.floor)
         let readyBeforeRestart = await probe.readyContexts().count
         XCTAssertEqual(readyBeforeRestart, 1, "old waiters must finish before a new handshake")
         try await eventually { await probe.readyContexts().count == 2 }
+        let restartedValue = await probe.readyContexts().last
+        XCTAssertTrue(client.isCurrent(try XCTUnwrap(restartedValue)))
+        XCTAssertFalse(client.isCurrent(initial))
         // Explicit identical replay, no automatic mutation replay by the client.
         _ = try await client.grant(params)
         let replay = await probe.grants().last
@@ -363,16 +381,18 @@ extension RealBinaryTests {
         var runtime = ClientRuntime(); runtime.consumerTimeout = .milliseconds(200)
         let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe, runtime: runtime)
         addTeardownBlock { await probe.resumeClear(); await client.stop() }
-        _ = try await client.start()
+        let original = try await client.start()
         try await eventually { await probe.rowCount() > 0 }
         await probe.suspendNextClear()
         try externalGrant(binary, home: home, deny: ["codex.local_history"])
         try await eventually { await probe.clearIsPaused() }
         try await eventually { await client.consumerHasStopped() }
+        XCTAssertFalse(client.isCurrent(original))
         let pid = await client.processIdentifier; XCTAssertNil(pid)
         do { _ = try await client.retry(); XCTFail("stalled consumer admitted another session") } catch {}
         await probe.resumeClear()
         try await eventually { await probe.stopped(.consumerUnavailable) }
+        XCTAssertFalse(client.isCurrent(original), "a late clear acknowledgement cannot restore a stopped client")
     }
 }
 

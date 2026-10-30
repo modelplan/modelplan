@@ -62,6 +62,22 @@ cannot confirm it. Failed confirmation leaves views cleared; sentinel/unavailabl
 contexts cannot replace a committed floor. Retired epoch bookkeeping is bounded
 and triggers a controlled reconnect when full.
 
+`EngineClient.isCurrent(_:)` is synchronous and safe from any thread, including
+an OS credential callback. It compares the entire package-issued context:
+session, equality-only store epoch, generation and revision. It reads a locked
+value owned by the transport, rather than a possibly delayed UI snapshot. A
+cached initial floor is not current. A context becomes current only after the
+authoritative handshake/floor and the matching private-clear acknowledgement;
+revoke, uncertain/superseded epoch, disconnect, stop and protocol failure withdraw
+it before waiter completion or clear delivery. A new handshake cannot revive an
+old session, and a late clear acknowledgement cannot revive a stopped client.
+
+Use this as a point-in-time veto before credential work and again before using
+its callback. A true result does not grant consent, validate an action/deadline,
+reserve future validity or cancel an OS call. The credential agent still checks
+the operation's scope and action; the client independently rejects stale results.
+The native constructor/OS adapter supplies the callback wiring.
+
 A historical same-epoch receipt is transaction metadata with its actual
 `committedGeneration` and original epoch. It never lowers the floor, restores
 facts or authorizes prompting. `supersededByLaterConsent` is recalculated before

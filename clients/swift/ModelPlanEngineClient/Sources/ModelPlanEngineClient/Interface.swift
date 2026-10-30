@@ -94,6 +94,11 @@ public protocol CredentialAgent: Sendable {
 /// Task cancellation sends a bounded $/cancel for the original wire id when sent.
 /// nil timeouts select bounded method defaults, not unlimited waits.
 public protocol EngineClient: Actor {
+    /// A synchronous, thread-safe point-in-time veto for credential callbacks.
+    /// True only for the accepted session, epoch, generation and revision after
+    /// clear acknowledgement. False during invalidation, stop or restart.
+    /// This does not grant scope, reserve validity or cancel an OS operation.
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool
     func start() async throws -> EngineDeliveryContext
     func stop() async
     func retry() async throws -> EngineDeliveryContext
