@@ -2,7 +2,7 @@
 """One announced U11a attempt. No account access, input synthesis or PID discovery."""
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
-from launch import validate,validate_release,admit
+from admission import load_and_admit
 from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
@@ -47,7 +47,7 @@ class LocalServer(http.server.ThreadingHTTPServer):
 
 class Attempt:
     def __init__(self,c):
-        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
+        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=Path(c.get('leasePath',self.scratch/'lease.json'));self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
     def live(self):
         if self.stop.exists() or time.time()>=self.c['expiresAt']-90:raise RuntimeError('stop-or-expiry')
         g=read(self.lease)
@@ -75,13 +75,18 @@ class Attempt:
             if self.app.poll() is not None:raise RuntimeError('subject-exited')
             time.sleep(.2)
         raise RuntimeError('command-timeout')
+    def contract(self,required_seconds):
+        c=self.c
+        return dict(profile='synthetic',binarySHA256=c.get('binarySHA256',''),argv=[c.get('binary','')],
+                    leasePath=str(self.lease),releasePath=c['releasePath'],stopPath=str(self.stop),
+                    expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
+                    requiredSeconds=required_seconds,booking=c.get('booking'))
     def launch(self,mode):
         self.raw=self.out/(mode+'-raw.jsonl')
         home=self.scratch/'home'/mode;tmp=self.scratch/'tmp'/mode;home.mkdir(parents=True);tmp.mkdir(parents=True)
         cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'])
         file=self.scratch/(mode+'-config.json');write(file,cfg)
-        lease=read(self.lease);contract=dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=read(self.c['releasePath']),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists(),booking=self.c.get('booking'))
-        validate(contract,time.time());admit(contract)
+        load_and_admit(self.contract(690 if mode=='preflight' else 630))
         with (self.scratch/(mode+'-console.log')).open('x') as console:
             self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
         ident=cleanup.identity(self.app.pid)
@@ -125,8 +130,7 @@ class Attempt:
     def run(self):
         c=self.c
         if not valid(c,time.time()):raise ValueError('announcement/GO/window/remaining-time invalid')
-        admit(dict(booking=c.get('booking'),lease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),requiredSeconds=690))
-        validate_release(dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),read(c['releasePath']))
+        load_and_admit(self.contract(690))
         if hashlib.sha256(Path(c['binary']).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary changed')
         if check(Path(c['inputRoot']),c['entry']):raise ValueError('relative-module-dependencies-missing')
         self.out.mkdir(exist_ok=False);self.scratch.mkdir(exist_ok=False)

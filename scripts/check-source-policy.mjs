@@ -80,6 +80,13 @@ for (const p of tracked) {
       !/\/(?:mnt|home)\//.test(bytes.toString()),
       `verification/tools must use configured paths, not owner mount/home literals: ${p}`,
     );
+    const isTest = /\/(?:tests\/|test_[^/]+\.py$|test-[^/]+\.mjs$)/.test(p);
+    if (p !== "desktop/native/verification/bin/release.py" && !isTest) {
+      assert.ok(
+        !/\b(?:guardianGO|m1Released|[A-Za-z_]\w*Confirmed)\b/.test(bytes.toString()),
+        `release approval fields belong only in the M1 release writer and tests: ${p}`,
+      );
+    }
   }
   if (!inReserved(p)) {
     assert.ok(

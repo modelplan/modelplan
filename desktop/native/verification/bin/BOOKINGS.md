@@ -96,12 +96,55 @@ is one attempt: if another reservation exists or races it, stop, release only
 this attempt's resources and report to the coordinator. No GUI busy-retry loop.
 
 Both tools require `releasePath` in the run config, pointing to the existing
-coordinator-directed release file. Drive reads and checks this external release
-before starting any child (including its guardian), then rereads it before each
-subject launch. It never manufactures release approval from a lease. The file
-must match the run/epoch and absolute lease start/expiry, confirm the directed
-announcement, and attest `m1Released` or `guardianGO`. Missing, false, revoked or
-mismatched release records refuse execution.
+M1 release file, plus `leasePath` and `stopPath`. The shared `admission.py` loader
+reads both files, validates release approval, live heartbeat, timing, exclusivity
+and stop state, then calls the live booking gate. Launch uses it before setup
+and again after hashing; Drive uses it before any child (including its guardian)
+and before each subject launch. Inline run-config approvals cannot replace the
+external files. Missing, false, revoked or mismatched records refuse execution.
+
+## Exact M1 command sequence
+
+Set `MODELPLAN_BOOKING_LEDGER` to the shared ledger path configured by the
+coordinator. Set `LEASE_PATH`, `RELEASE_PATH`, `RUN_CONFIG`, `RUN_ID`, `EPOCH`
+and `APPROVAL_URL` to the agreed synthetic run files/identifiers and the https URL
+of the coordinator's OK comment. The run config must reference these same lease
+and release files, the stop path, the returned booking ID and booked unit/scenario.
+
+```sh
+python3 desktop/native/verification/bin/book.py request \
+  --lane M1 --unit U11a --scenario cold --minutes 20
+# Set BOOKING_ID to the returned id; start only after the queued head is handed off.
+python3 desktop/native/verification/bin/book.py start \
+  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
+# M2's independent watchdog must maintain this issued lease's fresh heartbeat and stop/deadline checks.
+python3 desktop/native/verification/bin/release.py \
+  --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
+  --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
+python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute
+# After the subject exits and independent Cleanup/closure checks pass:
+python3 desktop/native/verification/bin/book.py finish \
+  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
+```
+
+If work is abandoned **while still queued**, replace start/release/launch with:
+
+```sh
+python3 desktop/native/verification/bin/book.py withdraw \
+  --id "$BOOKING_ID" --lane M1 --reason "unit no longer ready"
+```
+
+`start` emits a lease snapshot with the exact booked start/deadline and initial
+heartbeat; this is not an independent watchdog or release approval. The heartbeat
+must stay at most two seconds old. Only M1 runs `release.py`, with explicit
+`--lane M1` and `--approval`; the writer checks the started head and exact issued
+lease identity/interval under the ledger lock, refuses expired leases and never
+overwrites a receipt. The receipt contains only that identity and M1's approval
+reference. The lane flag and approval reference attest the operator's authority;
+trusted writers must verify the linked comment is the coordinator's OK.
+M1 may release a booked session owned by another requesting lane, but must use
+that lane for its booking start/finish operations. Withdrawal cannot cancel an
+already started session. A release never extends a lease or certifies cleanup.
 
 After all grouped scenarios and the shared Cleanup procedure, confirm closure
 and finish explicitly:

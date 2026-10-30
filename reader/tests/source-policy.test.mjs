@@ -9,7 +9,7 @@ test('the real public policy gate rejects private source, official assets and ow
  assert.match(check(),/verified/);
  const cases=[['server/','__source_policy_probe__.txt'],['core/','__scoring_probe__.mjs'],['codex/ui/kit/','__source_policy_probe__.svg']];
  for(const directory of ['desktop/native/verification/','tools/'])
-  for(const literal of ['/mnt/private/ledger','/home/private/ledger'])
+  for(const literal of ['/mnt/private/ledger','/home/private/ledger','guardianGO','m1Released','coordinatorConfirmed'])
    cases.push([directory,'__owner_path_probe__.txt',literal]);
  for(const [directory,name,content='Synthetic policy probe; not production data.'] of cases){
   const dir=new URL(directory,'file://'+root),file=new URL(name,dir);
@@ -19,6 +19,7 @@ test('the real public policy gate rejects private source, official assets and ow
    await writeFile(file,content,{flag:'wx'});
    assert.throws(check,error=>{
     if(content.startsWith('/'))assert.match(String(error.stderr),/verification\/tools must use configured paths/);
+    else if(['guardianGO','m1Released','coordinatorConfirmed'].includes(content))assert.match(String(error.stderr),/release approval fields belong only/);
     else assert.match(error.message,/Command failed/);
     return true;
    });

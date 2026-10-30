@@ -189,7 +189,9 @@ class Ledger:
             head = self.head(bookings)
             if not head or head['id'] != ident or head['lane'] != lane or head['state'] != 'queued':
                 raise ValueError('only the queued head may start; stop and wait for handoff, do not busy-retry')
-            return self.append(file, events, now, 'start', ident, runID=run_id, epoch=epoch)
+            return self.append(file, events, now, 'start', ident, runID=run_id, epoch=epoch,
+                               notBefore=now, expiresAt=now + head['maxSeconds'],
+                               exclusive=True, ownerPreempted=False, guardianHeartbeatAt=now)
 
     def finish(self, ident, lane, run_id, epoch, *, cleaned=False):
         if cleaned is not True:

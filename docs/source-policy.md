@@ -40,6 +40,9 @@ The gate also rejects literal `/mnt/` and `/home/` paths anywhere under
 `desktop/native/verification/` and `tools/`, including documentation and fixtures.
 Use caller/coordinator configuration and synthetic fixture paths instead of
 embedding owner-specific mount or home locations in public development tools.
+The same directories may name release approval fields only in the M1 release
+writer (`desktop/native/verification/bin/release.py`) and tests; execution tools
+must load the external receipt through the shared admission helper.
 
 The same gate verifies the separate third-party font pack: manifest and file
 hashes, the four approved families/used weights, complete OFL notices, NOTICE rows

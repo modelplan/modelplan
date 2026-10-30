@@ -270,10 +270,14 @@ class Bookings(unittest.TestCase):
         self.now = time.time() - 1
         ident = self.request()
         self.ledger.start(ident, 'M2', 'run', 'epoch')
-        lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1000,
+        lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1200,
                      guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True)
-        return dict(profile='synthetic', lease=lease,
-                    release=lease | dict(guardianGO=True, m0DirectedAnnouncementConfirmed=True),
+        release = lease | dict(m1Released=True, approval='https://example.test/coordinator#issuecomment-1')
+        lease_path = self.root / 'issued-lease.json'; lease_path.write_text(json.dumps(lease))
+        release_path = self.root / 'release.json'; release_path.write_text(json.dumps(release))
+        return dict(profile='synthetic', lease=lease, release=release,
+                    runID='run', epoch='epoch', start=self.now, expiresAt=lease['expiresAt'],
+                    leasePath=str(lease_path), releasePath=str(release_path),
                     requiredSeconds=690, stop=False, argv=['unused'], binarySHA256='a' * 64,
                     booking=dict(id=ident, lane='M2', unit='U11a', scenario='cold', ledger=str(self.path)))
 
@@ -317,8 +321,8 @@ class Bookings(unittest.TestCase):
                        binarySHA256=hashlib.sha256(b'synthetic').hexdigest(), head='synthetic',
                        inputRoot=str(inputs), entry='index.html', locks=str(locks),
                        buildRoots=[], resourceRoot=str(self.root), scripts=[])
-        records = [None, False, c['release'] | dict(guardianGO=False),
-                   c['release'] | dict(m0DirectedAnnouncementConfirmed=False)]
+        records = [None, False, c['release'] | dict(m1Released=False, guardianGO=True),
+                   c['release'] | dict(approval='http://example.test/coordinator')]
         records += [c['release'] | {k: v} for k, v in
                     (('runID', 'other'), ('epoch', 'old'), ('notBefore', 1), ('expiresAt', 2))]
         for record in records:
@@ -377,7 +381,7 @@ class Bookings(unittest.TestCase):
         Path(c['releasePath']).write_text(json.dumps(c['release']))
         config = self.root / 'run.json'; config.write_text(json.dumps(c))
         with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=Mock(pid=123)) as popen:
-            with patch.object(launch, 'admit', side_effect=[True, ValueError('booking finished')]):
+            with patch.object(launch, 'load_and_admit', side_effect=[c, ValueError('booking finished')]):
                 with self.assertRaisesRegex(ValueError, 'booking finished'):
                     launch.main()
                 popen.assert_not_called()
@@ -389,10 +393,10 @@ class Bookings(unittest.TestCase):
             popen.assert_called_once()
 
     def test_drive_refuses_missing_booking_before_any_resource_or_process(self):
-        now = time.time()
-        attempt = drive.Attempt(dict(runID='run', epoch='epoch', GO=True, announcementID='synthetic',
-                                     start=now - 1, expiresAt=now + 900, batch=str(self.root / 'batch'),
-                                     scratch=str(self.root / 'scratch')))
+        c = self.active_contract()
+        del c['booking']
+        attempt = drive.Attempt(c | dict(GO=True, announcementID='synthetic', binary='unused',
+                                        batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch')))
         with patch.object(drive.subprocess, 'Popen') as popen:
             with self.assertRaisesRegex(ValueError, 'head booking'):
                 attempt.run()
@@ -425,7 +429,8 @@ class Bookings(unittest.TestCase):
                    expiresAt=c['lease']['expiresAt'], booking=c['booking'], head='synthetic',
                    binary=str(binary), binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
                    inputRoot=str(inputs), entry='index.html', batch=str(self.root / 'batch'),
-                   scratch=str(self.root / 'scratch'), locks=str(locks), releasePath=str(self.root / 'release.json'))
+                   scratch=str(self.root / 'scratch'), locks=str(locks), releasePath=str(self.root / 'release.json'),
+                   leasePath=c['leasePath'])
         Path(cfg['releasePath']).write_text(json.dumps(c['release']))
         config = self.root / 'drive.json'; config.write_text(json.dumps(cfg))
         with patch.object(sys, 'argv', ['drive', '--config', str(config)]), patch.object(drive.time, 'sleep') as sleep, patch.object(drive.subprocess, 'Popen') as popen:
