@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import socket
 import sys
 import tarfile
 import tempfile
@@ -38,6 +39,16 @@ class DriveTests(unittest.TestCase):
             status = drive.execute(self.args)
         manifest = json.loads((self.args.output / 'manifest.json').read_text())
         return status, manifest
+
+    def test_loopback_recording_trap_does_not_probe_host_dns(self):
+        with patch.object(socket, 'getfqdn', side_effect=AssertionError('DNS forbidden')), \
+             patch.object(socket, 'gethostbyaddr', side_effect=AssertionError('DNS forbidden')):
+            server = drive.LoopbackTrapServer(('127.0.0.1', 0), drive.fixture.Trap)
+            try:
+                self.assertEqual(server.server_address[0], '127.0.0.1')
+                self.assertEqual(server.server_name, 'localhost')
+            finally:
+                server.server_close()
 
     def test_source_or_pending_profile_cannot_qualify_as_l2(self):
         self.args.level = 'L2'

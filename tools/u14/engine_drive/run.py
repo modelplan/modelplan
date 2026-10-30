@@ -9,6 +9,7 @@ import platform
 import re
 import shutil
 import signal
+import socketserver
 import subprocess
 import sys
 import threading
@@ -39,6 +40,16 @@ def atomic(path, value):
     temporary.replace(path)
 
 
+class LoopbackTrapServer(fixture.http.server.ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer normally performs a reverse-DNS hostname lookup here. This
+        # recording trap has a fixed loopback identity; no host discovery or DNS
+        # is required (and shared macOS resolvers can stall for tens of seconds).
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
+
 def worker(config_path):
     config = load_json(config_path)
     # Keep the session leader alive through the TERM grace period. On Darwin,
@@ -56,7 +67,7 @@ def worker(config_path):
                   errno=getattr(exc, 'errno', None)))
             os._exit(127)
     threading.Thread(target=stop_owned_group, daemon=True).start()
-    trap = fixture.http.server.ThreadingHTTPServer(('127.0.0.1', 0), fixture.Trap)
+    trap = LoopbackTrapServer(('127.0.0.1', 0), fixture.Trap)
     threading.Thread(target=trap.serve_forever, daemon=True).start()
     result = dict(outcome='fail', reason='scenario-assertion')
     # Survives loss of the parent: this worker owns its session, and never lets
