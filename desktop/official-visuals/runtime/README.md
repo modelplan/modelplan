@@ -8,7 +8,7 @@ This pack is covered by the [ModelPlan Official Visuals License 1.0](../LICENSE.
 ModelPlan and Model Plan are marks of ModelPlan. No trademark rights are granted;
 see [the trademark notice](../../../TRADEMARKS.md).
 
-The first runtime batch contains:
+The runtime pack contains:
 
 - **A5 recessed ignition:** day/night idle/pressed caps, raised guard, inner
   contact shadow and outer contact shadow, at 2x and 3x. Layer order is outer
@@ -31,4 +31,6 @@ Native Dock/cockpit consumers bind the manifest in their own integration work.
 
 The integrity check is `node scripts/check-visual-pack.mjs`. It checks the exact
 file set, hashes, dimensions, baseline associations, licence registry and public
-metadata. Porthole artwork and fonts are not included in this batch.
+metadata. The porthole-stills/ pack adds the approved 980 PNG stills and its own runtime
+manifest, checksums and badge notice. Fonts remain separately licensed under
+desktop/third-party/fonts/.
