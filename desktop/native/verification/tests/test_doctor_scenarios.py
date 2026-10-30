@@ -9,8 +9,8 @@ class DoctorScenarioTests(unittest.TestCase):
         _,required=requirements_for(scope)
         return {k:True for k in required}|dict(timestamp='2026-01-01T00:00:00Z',activationCall='not-invoked')
     def test_native_dock_does_not_require_key_active_or_webkit(self):
-        value=self.observation('U5')|dict(key=False,active=False,WebKit=False)
-        result=doctor(value,'U5')
+        value=self.observation('native-dock')|dict(key=False,active=False,WebKit=False)
+        result=doctor(value,'native-dock')
         self.assertEqual(result['outcome'],'pass')
         self.assertEqual(set(result['checks']),{'running','disk','lease','visible','onScreen','nonActivating'})
         self.assertFalse(result['observations']['key']['required'])
@@ -44,6 +44,12 @@ class DoctorScenarioTests(unittest.TestCase):
         with self.assertRaises(ValueError):doctor(value,'unbound')
         with self.assertRaises(ValueError):doctor(value,{})
         with self.assertRaises(ValueError):doctor(value|{'activationCall':''},'native-dock')
+    def test_u5_pointer_requires_post_events_but_migration_remains_independent(self):
+        value=self.observation('native-dock')
+        self.assertEqual(doctor(value,'U5')['outcome'],'not-run')
+        self.assertEqual(doctor(value|{'postEvents':False},'U5')['checks']['postEvents']['status'],'fail')
+        self.assertEqual(doctor(value|{'postEvents':True},'U5')['outcome'],'pass')
+        self.assertEqual(doctor(value|{'postEvents':False},'native-dock')['outcome'],'pass')
     def test_boolean_truth_is_not_replaced_by_strings_or_numbers(self):
         value=self.observation('native-dock')
         for invalid in (1,'true',None):self.assertEqual(doctor(value|{'onScreen':invalid},'native-dock')['outcome'],'not-run')

@@ -46,9 +46,10 @@ import ModelPlanSettings
             let background = U5Backdrop(contentRect: screen.frame, styleMask: [.borderless,.nonactivatingPanel], backing: .buffered, defer: false)
             background.backgroundColor = NSColor(calibratedWhite: 0.16, alpha: 1); background.isOpaque = true
             background.level = .init(rawValue: NSWindow.Level.floating.rawValue - 1)
-            background.ignoresMouseEvents = true; background.setAccessibilityElement(false); background.orderFrontRegardless()
+            background.ignoresMouseEvents = false; background.setAccessibilityElement(false); background.orderFrontRegardless()
             backdrops.append(background)
         }
+        panel.acceptsMouseMovedEvents = true
         if let dock = panel as? PulseDockPanel {
             let previous = dock.receivedInput
             dock.receivedInput = { [weak self] type, time in previous?(type,time); self?.emit("native-input", ["type":type.rawValue,"eventTimestamp":time]) }
@@ -64,6 +65,7 @@ import ModelPlanSettings
         guard let path = config["output"] as? String else { return }
         var data = values; data["event"] = event; data["timestamp"] = ISO8601DateFormatter().string(from: Date())
         data["pid"] = ProcessInfo.processInfo.processIdentifier
+        data["uptimeSeconds"] = ProcessInfo.processInfo.systemUptime
         data["windowID"] = panel?.windowNumber
         guard let bytes = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]) else { return }
         if !FileManager.default.fileExists(atPath: path) { FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions:0o600]) }
@@ -84,10 +86,16 @@ import ModelPlanSettings
               !FileManager.default.fileExists(atPath: stop) else { finish(); return }
         let frame = panel.frame
         let onScreen = NSScreen.screens.contains { $0.visibleFrame.intersection(frame).width > 0 && $0.visibleFrame.intersection(frame).height > 0 }
-        emit("native-observation", ["running":true,"visible":panel.isVisible,"onScreen":onScreen,
+        let primary = NSScreen.screens.first?.frame ?? frame
+        let ownScreen = NSScreen.screens.first(where: { $0.frame.intersects(frame) })?.frame ?? primary
+        let outsideX = frame.midX < ownScreen.midX ? min(ownScreen.maxX - 30, frame.midX + 180) : max(ownScreen.minX + 30, frame.midX - 180)
+        let anchors: [String: Any] = ["insideCG":[frame.midX,primary.maxY-frame.midY],"outsideCG":[outsideX,primary.maxY-frame.midY],
+            "displayCentersCG":NSScreen.screens.map { [$0.frame.midX,primary.maxY-$0.frame.midY] }]
+        emit("native-observation", ["running":true,"visible":panel.isVisible && panel.occlusionState.contains(.visible),"onScreen":onScreen,
             "nonActivating":panel.styleMask.contains(.nonactivatingPanel) && !panel.canBecomeKey && !panel.canBecomeMain,
-            "key":panel.isKeyWindow,"active":NSApp.isActive,"activationCall":"not-invoked-by-subject",
+            "key":panel.isKeyWindow,"active":NSApp.isActive,"activationCall":"not-invoked-by-Dock-observer",
             "disk":config["diskAdmitted"] as? Bool == true,"lease":true,
+            "inputAnchors":anchors,
             "frame":["x":frame.minX,"y":frame.minY,"width":frame.width,"height":frame.height],
             "state":String(describing:host.edgePresentation?.state),"edge":String(describing:host.edgePresentation?.placement?.edge),
             "physicalDisplayCount":NSScreen.screens.count])
@@ -134,8 +142,11 @@ import ModelPlanSettings
         let after = try paths.map { try Data(contentsOf:support.appendingPathComponent("ModelPlan/"+$0)) }
         let bytes = try Data(contentsOf:support.appendingPathComponent("ModelPlan/settings.json"))
         let object = try JSONSerialization.jsonObject(with:bytes) as! [String:Any]
-        let restored = host?.edgePresentation?.placement?.edge == .bottom
-        emit("command-result", ["id":id,"command":mutate ? "migration":"read-migration","assertions":["migrationObservedThroughCandidate":true,
+        let restored = host?.currentMenuBarPreferences?.dockEdge == .bottom
+        emit("command-result", ["id":id,"command":mutate ? "migration":"read-migration",
+            "legacyBeforeSHA256":before.map { SHA256.hash(data:$0).map { String(format:"%02x",$0) }.joined() },
+            "legacyAfterSHA256":after.map { SHA256.hash(data:$0).map { String(format:"%02x",$0) }.joined() },
+            "assertions":["migrationObservedThroughCandidate":true,
             "newStorePublished":true,"oldFilesUnchanged":before == after,"coreSettingsPreserved":snapshot.preferences.dockEdge == .bottom && core?.favouriteModelIDs == ["u5-restart-sentinel"],
             "restartObserved":!mutate,"restartRestoredPlacement":restored,"readerConsentNotPromoted":(object["settings"] as? [String:Any])?["readerConsent"] == nil]])
     }

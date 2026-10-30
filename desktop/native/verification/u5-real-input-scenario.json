@@ -28,7 +28,8 @@
         "revealAfterDwell",
         "nonActivatingPreserved"
       ],
-      "nativeInputRequired": true
+      "nativeInputRequired": true,
+      "doctorScenario": "u5-pointer"
     },
     {
       "id": "U5-sampler",
@@ -42,7 +43,8 @@
         "collapseAfterGrace",
         "reentryObserved"
       ],
-      "nativeInputRequired": true
+      "nativeInputRequired": true,
+      "doctorScenario": "u5-pointer"
     },
     {
       "id": "U5-display-following",
@@ -57,7 +59,8 @@
         "releaseFollowRetry",
         "savedIntentNotRewritten"
       ],
-      "nativeInputRequired": true
+      "nativeInputRequired": true,
+      "doctorScenario": "u5-pointer"
     },
     {
       "id": "U5-presence-login-stubs",
@@ -75,7 +78,8 @@
         "requiresApprovalTruthful",
         "realLoginItemsUntouched"
       ],
-      "nativeInputRequired": false
+      "nativeInputRequired": false,
+      "doctorScenario": "native-dock"
     },
     {
       "id": "U5-atomic-migration-synthetic-profile",
@@ -93,7 +97,8 @@
         "restartRestoredPlacement",
         "readerConsentNotPromoted"
       ],
-      "nativeInputRequired": false
+      "nativeInputRequired": false,
+      "doctorScenario": "native-dock"
     }
   ],
   "forbidden": [
@@ -109,5 +114,14 @@
   "preferenceCases": [
     "coexistence",
     "corrupt-beta07"
-  ]
+  ],
+  "executionOrder": [
+    "U5-atomic-migration-synthetic-profile",
+    "U5-presence-login-stubs",
+    "U5-pointer-entry",
+    "U5-sampler",
+    "U5-display-following"
+  ],
+  "timedWindowComputerUseReads": false,
+  "pointerDriver": "bin/pointer_drive"
 }

@@ -8,10 +8,11 @@ SCENARIO_REQUIREMENTS={
     'cockpit':BASE_REQUIREMENTS+('active','key','visible','WebKitPID'),
     'native-dock':BASE_REQUIREMENTS+('visible','onScreen','nonActivating'),
     'settings':BASE_REQUIREMENTS+('key','visible'),
+    'u5-pointer':BASE_REQUIREMENTS+('visible','onScreen','nonActivating','postEvents'),
 }
 # Compatibility for the existing helper tests/importers: the default scope is cockpit.
 CONDITIONS=SCENARIO_REQUIREMENTS['cockpit']
-ALIASES={'U11a':'cockpit','U5':'native-dock','U6':'native-dock','U8':'settings'}
+ALIASES={'U11a':'cockpit','U5':'u5-pointer','U6':'native-dock','U8':'settings'}
 OBSERVATION_ALIASES={'active':'appActive','key':'keyWindow','visible':'windowVisible',
                      'WebKitPID':'webContentPID','onScreen':'onScreenFrame','nonActivating':'nonActivatingPanel'}
 

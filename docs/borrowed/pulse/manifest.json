@@ -78,7 +78,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
-      "sha256": "433584db88b78a314f843b090860f3366bb37a5ad98b60b761c9b7b74c271c62",
+      "sha256": "732dce220a986b9e914cf4d9b28c541e2c5c792eb54424979d891c2197f4f56b",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
@@ -86,7 +86,8 @@
       "adaptations": [
         "non-key/non-main window and window-level mouse transaction only",
         "injected region/lifecycle handler and cancellation",
-        "private appearance selector and visual/provider logic omitted"
+        "private appearance selector and visual/provider logic omitted",
+        "numeric moved/entered/exited observation forwards events unchanged; test builds enable mouse-moved receipt delivery"
       ]
     },
     {

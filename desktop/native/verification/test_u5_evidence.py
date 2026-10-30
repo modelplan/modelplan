@@ -4,7 +4,7 @@ from pathlib import Path
 spec=importlib.util.spec_from_file_location('u5_evidence',Path(__file__).parent/'bin/evidence-u5.py');u5=importlib.util.module_from_spec(spec);spec.loader.exec_module(u5)
 class U5EvidenceTests(unittest.TestCase):
     def receipt(self):
-        observation=dict(running=True,disk=True,lease=True,visible=True,onScreen=True,nonActivating=True,key=False,
+        observation=dict(running=True,disk=True,lease=True,visible=True,onScreen=True,nonActivating=True,key=False,postEvents=True,
                          timestamp='2026-01-01T00:00:00Z',activationCall='not-invoked')
         r=dict(profile='synthetic',headSHA='a'*40,binarySHA256='b'*64,packageSHA256='c'*64,profileSHA256='d'*64,helperSHA256='e'*64,cliVersion='0.5.48',durationSeconds=60)
         r.update({k:True for k in u5.COMMON})
@@ -62,6 +62,11 @@ class U5EvidenceTests(unittest.TestCase):
             expected='not-run' if u5.CASES[name]['nativeInputRequired'] else 'pass'
             self.assertEqual(u5.qualify(r)[name],expected)
             case['candidateBound']=False;self.assertEqual(u5.qualify(r)[name],'not-run')
+    def test_post_events_gate_only_blocks_the_pointer_cases(self):
+        r=self.receipt()
+        for case in r['scenarios'].values():case['nativeObservation']['postEvents']=False
+        result=u5.qualify(r)
+        for name,spec in u5.CASES.items():self.assertEqual(result[name],'not-run' if spec['nativeInputRequired'] else 'pass')
     def test_owner_profile_is_rejected(self):
         r=self.receipt();r['profile']='owner'
         with self.assertRaises(ValueError):u5.qualify(r)

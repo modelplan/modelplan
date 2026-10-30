@@ -35,7 +35,7 @@ def qualify(receipt):
         if not (physical or candidate_command) or case.get('resultObserved') is not True:continue
         native=case.get('nativeObservation')
         if not isinstance(native,dict):continue
-        try:gate=DOCTOR.doctor(native,SPEC['doctorScenario'])
+        try:gate=DOCTOR.doctor(native,spec.get('doctorScenario',SPEC['doctorScenario']))
         except ValueError:continue
         if gate['outcome']!='pass':continue
         refs=case.get('actionEvidenceFiles')
