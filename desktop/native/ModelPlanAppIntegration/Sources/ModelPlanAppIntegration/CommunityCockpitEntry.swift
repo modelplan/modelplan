@@ -104,6 +104,8 @@ import ModelPlanWire
             }
         }
         coordinator.onClosed = { [weak self] in
+            // Mark retirement in this turn before any repeat click can start.
+            self?.stopping = true
             Task { @MainActor [weak self] in await self?.stop() }
         }
         termination = NotificationCenter.default.addObserver(forName:NSApplication.willTerminateNotification,object:NSApplication.shared,queue:.main) { [weak self] _ in
