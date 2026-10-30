@@ -1,6 +1,6 @@
 # Pulse shell intake (U5, interface only)
 
-Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The four files in `Sources/ModelPlanShell/Pulse` are copied byte-for-byte from `Sources/Pulse/Panel`, retaining their Apache-2.0 copyright headers. `pulse/LICENSE` retains the full license. The pinned tree has no file named NOTICE; its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming those unrelated components were ported. Its trailing whitespace is normalized; the original and adapted digests are both recorded. `pulse/manifest.json` binds the copied files.
+Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The initial four files in `Sources/ModelPlanShell/Pulse` came byte-for-byte from `Sources/Pulse/Panel`, retaining their Apache-2.0 copyright headers. ActiveDisplayFollower is now adapted with an injectable sample source and stop/restart callback fence; the original and adapted hashes are recorded. `pulse/LICENSE` retains the full license. The pinned tree has no file named NOTICE; its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming those unrelated components were ported. Its trailing whitespace is normalized; the original and adapted digests are both recorded. `pulse/manifest.json` binds the copied files.
 
 ## Reviewed first slice
 
@@ -28,3 +28,7 @@ M4 supplies the separately owned, product-identity-keyed migration candidate; M0
 The normal companion factory retains StaticDockPreviewHost; its Dock-only makePanel route now constructs PulseDockPanel. Card and outline panels are unchanged. The borrowed window-level down/drag/up transaction delegates to the existing painted-region/lifecycle gates, falls through for controls/control-click, and cancels capture when hidden. The panel cannot become key/main, and its optional numeric-only arrival callback does not log input contents. No upstream private appearance selector is present.
 
 Eleven pure source tests cover placement, input capture/release/cancel, control exclusion and asymmetric-notch/null cases. These are not actual native event delivery. The final unified shell/controller, follower/sampler/entry L1 behavior coverage, migration-store integration and real-input/package L2 remain pending. This slice does not close U5 or an owner report.
+
+## Display-follower L1 qualification
+
+The production timer and pure tests share the display-sampling seam. Three added cases prove refusal/retry before deduplication, explicit reprobe, stop/no sampling plus reset on restart, and callback-triggered stop without latching stale identity. Fourteen pure tests pass in total. No real display identity or pointer is sampled in these tests. Sampler coordinate/reprobe/teardown and tracking entry coverage, full controller integration and real native arrival are still pending; this is not a packaged L2 result.

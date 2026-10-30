@@ -11,9 +11,14 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/ActiveDisplayFollower.swift",
-      "sha256": "6b399f89672e40179ef04f55951b31ae9869e503291d29320fb5d42ca87446d2",
+      "sha256": "d90c5fdc6d8a36bcda29de762e7fd286cb0e704f5fb58f608e150892dacce47a",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
-      "implementationModified": false
+      "implementationModified": true,
+      "upstreamSHA256": "6b399f89672e40179ef04f55951b31ae9869e503291d29320fb5d42ca87446d2",
+      "adaptations": [
+        "inject current-display source for non-GUI tests",
+        "stop/restart generation check prevents callback latching stale identifier"
+      ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",

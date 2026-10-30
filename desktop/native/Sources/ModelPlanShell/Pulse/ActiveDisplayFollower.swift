@@ -1,4 +1,5 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
+// ModelPlan adaptation: injectable display sampling and stop/restart callback fence.
 import AppKit
 
 /// Watches which display the pointer is on, so the panel can be moved onto it.
@@ -32,6 +33,14 @@ final class ActiveDisplayFollower {
     /// this fires once per crossing, not once per frame.
     private static let interval: TimeInterval = 0.25
 
+    private var generation: UInt = 0
+    private let currentDisplayIdentifier: @MainActor () -> String?
+    init(currentDisplayIdentifier: @escaping @MainActor () -> String? = {
+        guard NSScreen.screens.count > 1,
+              let screen = PanelScreen.containing(NSEvent.mouseLocation) else { return nil }
+        return PanelScreen.identifier(of: screen)
+    }) { self.currentDisplayIdentifier = currentDisplayIdentifier }
+
     private var timer: Timer?
     private var lastIdentifier: String?
 
@@ -39,6 +48,7 @@ final class ActiveDisplayFollower {
 
     func start() {
         guard timer == nil else { return }
+        generation &+= 1
 
         let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.sample() }
@@ -50,6 +60,7 @@ final class ActiveDisplayFollower {
     }
 
     func stop() {
+        generation &+= 1
         timer?.invalidate()
         timer = nil
         lastIdentifier = nil
@@ -63,21 +74,18 @@ final class ActiveDisplayFollower {
     /// otherwise read as "nothing to do" while the panel sits on a fallback
     /// screen nobody chose.
     func forgetLastDisplay() {
+        generation &+= 1
         lastIdentifier = nil
     }
 
-    private func sample() {
-        // One display cannot be departed from. Cheaper than asking where the
-        // pointer is, and it is the common case.
-        guard NSScreen.screens.count > 1 else { return }
-
-        guard
-            let screen = PanelScreen.containing(NSEvent.mouseLocation),
-            let identifier = PanelScreen.identifier(of: screen),
-            identifier != lastIdentifier
-        else { return }
-
-        if onEnter?(identifier) == false { return }
-        lastIdentifier = identifier
+    // Same seam the production timer invokes; tests supply only synthetic ids.
+    func sample() {
+        guard timer != nil else { return }
+        let token = generation
+        guard let identifier = currentDisplayIdentifier(), identifier != lastIdentifier else { return }
+        let accepted = onEnter?(identifier) != false
+        // A callback may stop or restart tracking; it cannot latch old state.
+        guard timer != nil, generation == token else { return }
+        if accepted { lastIdentifier = identifier }
     }
 }
