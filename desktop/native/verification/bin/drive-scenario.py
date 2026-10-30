@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: MIT
-"""One announced U11a attempt. No account access, input synthesis or PID discovery."""
+"""One announced U11a attempt. No account access or input synthesis; only the authorized WebKit-family PID filter."""
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
 from launch import validate
 from check_inputs import check
+from role_counters import snapshot,qualify,rss
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,value):
@@ -42,7 +43,7 @@ class LocalServer(http.server.ThreadingHTTPServer):
 
 class Attempt:
     def __init__(self,c):
-        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
+        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event();self.roles={};self.known=[];self.snapshotBefore=None;self.snapshotIndex=0
     def live(self):
         if self.stop.exists() or time.time()>=self.c['expiresAt']-90:raise RuntimeError('stop-or-expiry')
         g=read(self.lease)
@@ -62,6 +63,9 @@ class Attempt:
             time.sleep(.2)
     def command(self,command,phase,cycle):
         self.live();nonce=uuid.uuid4().hex
+        if command=='open':
+            self.roles={};self.snapshotBefore=snapshot(self.c['runID'],cleanup.identity);self.snapshotIndex+=1
+            write(self.out/('webkit-before-'+str(self.snapshotIndex)+'.json'),self.snapshotBefore)
         write(self.control,dict(runID=self.c['runID'],epoch=self.c['epoch'],nonce=nonce,command=command,phase=phase,cycle=cycle))
         end=time.monotonic()+30
         while time.monotonic()<end:
@@ -86,7 +90,15 @@ class Attempt:
         while time.monotonic()<deadline:
             self.live();rows=self.events()
             opens=[x for x in rows if x.get('event')=='open-request']
-            if opens and any(x.get('event')=='doctor' and x.get('viewID')==opens[-1].get('viewID') and x.get('elapsedSeconds',0)>=opens[-1]['elapsedSeconds'] and set(x.get('checks',{}))==set(('running','active','key','visible','WebKit','disk','lease')) and all(v is True for v in x['checks'].values()) and x.get('rafProof') for x in rows):return
+            if opens and any(x.get('event')=='doctor' and x.get('viewID')==opens[-1].get('viewID') and x.get('elapsedSeconds',0)>=opens[-1]['elapsedSeconds'] and set(x.get('checks',{}))==set(('running','active','key','visible','WebKit','disk','lease')) and all(v is True for v in x['checks'].values()) and x.get('rafProof') for x in rows):
+                logged=next((r for r in reversed(rows) if r.get('event')=='process-attribution' and r.get('viewID')==opens[-1].get('viewID')),{'status':'unsupported'})
+                after=snapshot(self.c['runID'],cleanup.identity);roles=qualify(self.snapshotBefore,after,logged,self.known)
+                write(self.out/('webkit-after-'+str(self.snapshotIndex)+'.json'),after);write(self.out/('role-map-'+str(self.snapshotIndex)+'.json'),roles)
+                self.roles={k:v for k,v in roles.items() if k in ('WebContent','GPU') and v.get('status')=='attributed'}
+                for v in roles.get('auxiliary',[]):self.roles['OtherWebKit:'+v['helper']]=v
+                for v in [*self.roles.values(),*roles.get('auxiliary',[])]:
+                    if v not in self.known:self.known.append(v)
+                return
             if self.app.poll() is not None:raise RuntimeError('subject-exited')
             time.sleep(.2)
         raise RuntimeError('doctor-or-frame-timeout')
@@ -95,27 +107,33 @@ class Attempt:
         try:self.app.wait(timeout=5)
         except subprocess.TimeoutExpired:raise RuntimeError('subject-quit-timeout')
     def top_worker(self):
-        with (self.out/'top-samples.jsonl').open('x') as f:
+        with (self.out/'top-samples.jsonl').open('x') as f,(self.out/'pid-rss-samples.jsonl').open('x') as mem,(self.out/'auxiliary-top-samples.jsonl').open('x') as aux:
             while not self.topStop.is_set() and self.app.poll() is None:
-                rows=self.events();attrs=[r for r in rows if r.get('event')=='process-attribution'];retired=[r for r in rows if r.get('event')=='process-attribution-retired']
-                if not attrs or (retired and retired[-1]['elapsedSeconds']>=attrs[-1]['elapsedSeconds']):self.topStop.wait(.3);continue
-                r=attrs[-1]
-                if r.get('status')!='attributed' or not cleanup.matches(cleanup.identity(r['pid']),r):self.topStop.wait(.3);continue
-                self.live();before=rows[-1]
-                command=['/usr/bin/top','-l','2','-s','1','-pid',str(r['pid']),'-stats','pid,cpu','-ncols','80']
+                roles=self.roles.copy()
+                if not roles:self.topStop.wait(.3);continue
+                self.live();rows=self.events();before=rows[-1]
+                roles={k:v for k,v in roles.items() if cleanup.matches(cleanup.identity(v['pid']),v)}
+                if not roles:self.topStop.wait(.3);continue
+                command=['/usr/bin/top','-l','2','-s','1','-stats','pid,cpu','-ncols','80']
+                for v in roles.values():command+=['-pid',str(v['pid'])]
                 try:
                     result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,timeout=5)
-                    values=[]
+                    values={v['pid']:[] for v in roles.values()}
                     for line in result.stdout.splitlines():
                         m=re.fullmatch(r'\s*(\d+)[+-]?\s+([0-9]+(?:\.[0-9]+)?)\s*',line)
-                        if m and int(m[1])==r['pid']:values.append(float(m[2]))
-                    # Top's first interval is invalid. Discard all global headers,
-                    # preserve actual CPU only; top MEM is not resident RSS.
-                    after=self.events()[-1]
-                    if len(values)>=2 and before['phase']==after['phase'] and before['cycle']==after['cycle'] and cleanup.matches(cleanup.identity(r['pid']),r):
-                        f.write(json.dumps(dict(run_id=self.c['runID'],scenario='A-cycle'+str(after['cycle']),timestamp=time.time(),role='WebContent',phase=after['phase'],pid=r['pid'],cpu_percent=values[-1],rss_bytes=None,energy_impact=None))+'\n');f.flush()
+                        if m and int(m[1]) in values:values[int(m[1])].append(float(m[2]))
+                    after=self.events()[-1];stamp=time.time()
+                    if before['phase']!=after['phase'] or before['cycle']!=after['cycle']:continue
+                    for role,v in roles.items():
+                        if not cleanup.matches(cleanup.identity(v['pid']),v):continue
+                        row=dict(run_id=self.c['runID'],scenario='A-cycle'+str(after['cycle']),timestamp=stamp,role=role,phase=after['phase'],pid=v['pid'],energy_impact=None)
+                        if len(values[v['pid']])>=2:
+                            target=f if role in ('WebContent','GPU') else aux
+                            target.write(json.dumps(row|dict(cpu_percent=values[v['pid']][-1],rss_bytes=None))+'\n');target.flush()
+                        resident=rss(v,cleanup.identity)
+                        mem.write(json.dumps(row|dict(rss_bytes=resident,source='ps-rss',unit='bytes',startSeconds=v['startSeconds'],startMicroseconds=v['startMicroseconds']))+'\n');mem.flush()
                 except (OSError,subprocess.TimeoutExpired):pass
-    
+
     def run(self):
         c=self.c
         if not valid(c,time.time()):raise ValueError('announcement/GO/window/remaining-time invalid')
