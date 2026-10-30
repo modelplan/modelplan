@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -77,6 +79,27 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(result['cleanup']['outcome'], 'cleaned')
         self.assertFalse((self.args.output / '.work').exists())
 
+    def test_absolute_deadline_marks_active_case_timeout_and_rest_not_run(self):
+        self.args.deadline = time.time() + 15.25  # 15s cleanup reserve, 250ms work
+        with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
+            status, result = self.execute()
+        self.assertEqual(status, 1)
+        self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
+        self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+
+    def test_stop_during_case_ends_owned_process_and_keeps_remaining_not_run(self):
+        self.args.stop_file = self.root / 'stop-during'
+        timer = threading.Timer(.25, self.args.stop_file.touch)
+        timer.start()
+        self.addCleanup(timer.cancel)
+        with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']):
+            status, result = self.execute()
+        self.assertEqual(status, 1)
+        self.assertTrue(all(s['outcome'] == 'not-run' and s['reason'] == 'caller-stop'
+                            for s in result['scenarios']))
+        self.assertEqual(result['cleanup']['outcome'], 'cleaned')
+
     def test_cleanup_failure_keeps_original_results_and_durable_evidence(self):
         def finish(args, output, scratch, manifest, *rest):
             for s in manifest['scenarios']:
@@ -93,6 +116,7 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(result['outcome'], 'pass')
         self.assertTrue(all(s['outcome'] == 'pass' for s in result['scenarios']))
         self.assertEqual(result['cleanup']['outcome'], 'failed')
+        self.assertIsNone(result['earnedLevel'])
         self.assertEqual(json.loads((self.args.output / 'cleanup.json').read_text())['reasons'], ['scratch-removal-failed'])
 
     def test_preflight_failure_also_has_all_scenario_outcomes(self):

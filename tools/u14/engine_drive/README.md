@@ -85,7 +85,7 @@ profile hash/approval, platform attribution, stable scenario IDs and per-case
 `pass/fail/not-run/unsupported/timeout`, duration and hashed relative evidence
 references. `cleanup.json` reports `cleaned/failed` separately. There is no GUI
 arrival, AX, screenshot or native-surface claim. RPC evidence contains only
-allowlisted method/id/error-code/frame-hash records; raw diagnostics, paths,
+allowlisted method/id/error-code/session/epoch/generation/sequence/frame-hash records; raw diagnostics, paths,
 environment and raw home contents are never exported. Every executed scenario
 retains the U14 baseline hash/file-kind report. Evidence is written atomically
 before scratch removal. Cleanup failures preserve the original outcomes and

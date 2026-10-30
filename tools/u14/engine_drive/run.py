@@ -44,6 +44,11 @@ def worker(config_path):
     trap = fixture.http.server.ThreadingHTTPServer(('127.0.0.1', 0), fixture.Trap)
     threading.Thread(target=trap.serve_forever, daemon=True).start()
     result = dict(outcome='fail', reason='scenario-assertion')
+    # Survives loss of the parent: this worker owns its session, and never lets
+    # a stalled child run beyond the declared scenario bound plus cleanup grace.
+    watchdog = threading.Timer(config['watchdogSeconds'], lambda: os.killpg(os.getpgrp(), signal.SIGKILL))
+    watchdog.daemon = True
+    watchdog.start()
     try:
         h = Home(Path(config['home']), Path(config['binary']),
                  'http://127.0.0.1:%d' % trap.server_port, load_json(config['shape']))
@@ -85,9 +90,9 @@ def qualification(level, shape, subject, old, context):
             reasons.append('dedicated-test-mac-required')
         if subject.get('kind') != 'released':
             reasons.append('released-subject-required')
-        if shape['fidelity'] != 'approved-shape-export' or not shape['approvalRef']:
+        if shape['fidelity'] != 'approved-shape-export' or not (shape['approvalRef'] or '').strip():
             reasons.append('coordinator-shape-approval-required')
-        if not context or context.get('dedicatedTestMac') is not True or not context.get('approvalRef'):
+        if not context or context.get('dedicatedTestMac') is not True or not context.get('approvalRef', '').strip():
             reasons.append('dedicated-mac-run-approval-required')
         if set(old) != {'v0.5.46', 'v0.5.47'}:
             reasons.append('both-old-releases-required')
@@ -116,7 +121,8 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
         config_path = scratch / (scenario + '-config.json')
         config = dict(binary=str(binary), shape=str((output / 'profile.json').resolve()),
                       home=str((scratch / (scenario + '-home')).resolve()), scenario=scenario,
-                      result=str(result_path.resolve()), old=old.get(scenario.removeprefix('U2-old-writer-')))
+                      result=str(result_path.resolve()), watchdogSeconds=args.scenario_timeout + 5,
+                      old=old.get(scenario.removeprefix('U2-old-writer-')))
         atomic(config_path, config)
         process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--worker', str(config_path)],
                                    start_new_session=True, stdin=subprocess.PIPE,
@@ -134,8 +140,10 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
                     entry.update(outcome='timeout', reason='scenario-deadline')
                     break
                 time.sleep(.05)
-            if interrupted:
+            if interrupted == 'caller-stop':
                 entry.update(outcome='not-run', reason=interrupted)
+            elif interrupted == 'run-deadline':
+                entry.update(outcome='timeout', reason='run-deadline')
             elif result_path.exists() and entry['outcome'] != 'timeout':
                 result = load_json(result_path)
                 entry.update(outcome=result['outcome'], reason=result['reason'])
@@ -148,11 +156,13 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
             # Outcome is durable BEFORE termination/removal. Cleanup has its own
             # receipt and never replaces scenario results.
             entry['durationSeconds'] = round(time.monotonic() - began, 3)
-            atomic(output / 'manifest.json', manifest)
             try:
-                terminate(process)
-            except Exception:
-                cleanup_errors.append('owned-process-cleanup-unconfirmed')
+                atomic(output / 'manifest.json', manifest)
+            finally:
+                try:
+                    terminate(process)
+                except Exception:
+                    cleanup_errors.append('owned-process-cleanup-unconfirmed')
     return cleanup_errors
 
 
@@ -220,10 +230,11 @@ def execute(args):
         manifest['earnedLevel'] = args.level if manifest['outcome'] == 'pass' else None
         manifest['durationSeconds'] = round(time.monotonic() - start, 3)
         atomic(output / 'manifest.json', manifest)
-        try:
-            shutil.rmtree(scratch)
-        except OSError:
-            cleanup_errors.append('scratch-removal-failed')
+        if not cleanup_errors:
+            try:
+                shutil.rmtree(scratch)
+            except OSError:
+                cleanup_errors.append('scratch-removal-failed')
         manifest['cleanup'] = dict(outcome='failed' if cleanup_errors else 'cleaned', reasons=cleanup_errors,
                                    retained=['manifest.json', 'profile.json', 'scenario evidence'])
         if cleanup_errors:

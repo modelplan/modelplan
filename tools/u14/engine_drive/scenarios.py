@@ -74,10 +74,20 @@ class Home(fixture.Home):
 
 def transcript(engine):
     # No raw diagnostics, environment, local paths or arbitrary RPC data exported.
-    return [dict(method=m.get('method'), id=m.get('id'),
-                 code=m.get('error', {}).get('code'),
-                 sha256=hashlib.sha256(json.dumps(m, sort_keys=True).encode()).hexdigest())
-            for m in engine.messages]
+    result = []
+    for message in engine.messages:
+        envelope = message.get('result', message.get('params', message.get('error', {}).get('data', {})))
+        record = dict(method=message.get('method'), id=message.get('id'),
+                      code=message.get('error', {}).get('code'),
+                      sha256=hashlib.sha256(json.dumps(message, sort_keys=True).encode()).hexdigest())
+        for key in ('sessionId', 'storeEpoch', 'consentGeneration'):
+            if key in envelope:
+                record[key] = envelope[key]
+        data = envelope.get('data', {})
+        if isinstance(data, dict) and 'sequence' in data:
+            record['sequence'] = data['sequence']
+        result.append(record)
+    return result
 
 
 def run(scenario, h, old=None):
