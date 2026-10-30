@@ -5,11 +5,11 @@ import PackageDescription
 let package = Package(
   name: "U11WiredVerification", platforms: [.macOS(.v14)],
   products: [.executable(name: "U11WiredHost", targets: ["U11WiredHost"])],
-  dependencies: [.package(path: "../ModelPlanCockpitWeb"), .package(path: "../ModelPlanAppIntegration")],
+  dependencies: [.package(path: "../ModelPlanCockpitWeb"), .package(path: "../ModelPlanAppIntegration"), .package(path: "../ModelPlanSettings")],
   targets: [
     .executableTarget(
       name: "U11WiredHost",
-      dependencies: [.product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"), .product(name: "ModelPlanAppIntegration", package: "ModelPlanAppIntegration")],
+      dependencies: [.product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"), .product(name: "ModelPlanAppIntegration", package: "ModelPlanAppIntegration"), .product(name: "ModelPlanSettings", package: "ModelPlanSettings")],
       path: ".",
       exclude: [
         "bin", "tests", "fixtures", "results", "__pycache__", "SKILL.md", "feature-map.md",

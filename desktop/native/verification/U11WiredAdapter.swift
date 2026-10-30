@@ -6,6 +6,7 @@
   import ModelPlanCockpitWeb
   import ModelPlanEngineClient
 import ModelPlanAppIntegration
+import ModelPlanSettings
 
   @MainActor final class U11DiagnosticHandler: NSObject, WKScriptMessageHandler {
   weak var host: U11aHost?
@@ -125,24 +126,38 @@ import ModelPlanAppIntegration
   }
 @MainActor final class U11ProductWiredSession: U11WiredDriving {
   weak var host: U11aHost?
-  let dock: StaticDockPreviewHost
-  var rendered = false
-  init(host: U11aHost) {
+  let application: EngineDockMenuApplication
+  var rendered = false, started = false
+  var opens = 0
+  init(host: U11aHost) throws {
     self.host = host
-    dock = ProductionDockFactory.community()
-    CommunityCockpitEntry.verificationPage = { [weak host] page in attachU11Verification(page, host: host) }
+    let home=ProcessInfo.processInfo.environment["HOME"]!,tmp=ProcessInfo.processInfo.environment["TMPDIR"]!
+    let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:URL(fileURLWithPath:home).appendingPathComponent("synthetic-support"))
+    application=EngineRowsEntry.make(configuration:.init(executableURL:Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),applicationVersion:"synthetic-u11-shared-entry",allowedEnvironment:["HOME":home,"TMPDIR":tmp,"PATH":"/usr/bin:/bin","LANG":"en_US.UTF-8"],offline:true,readOnly:true),settingsStore:store,bundleURL:Bundle.main.bundleURL)
+    CommunityCockpitApplicationFactory.verificationPage = { [weak host] page in attachU11Verification(page, host: host) }
   }
   func open() async throws {
-    rendered = false; dock.setPresentationAllowed(true)
-    guard NSApp.sendAction(NSSelectorFromString("openConsole"), to: dock, from: nil) else { throw CockpitBridgeError.unavailable }
+    rendered = false
+    if !started {
+      await application.prepare();application.composition.dock.setPresentationAllowed(true)
+      await application.composition.start();started=true
+    }
+    opens += 1
+    let delivered:Bool
+    if opens % 2 == 1 {
+      delivered=NSApp.sendAction(NSSelectorFromString("openConsole"),to:application.composition.dock,from:nil)
+    } else {
+      delivered=NSApp.sendAction(NSSelectorFromString("showConsoleMenu"),to:application,from:nil)
+    }
+    host?.emit(["event":"product-console-action","route":opens % 2 == 1 ? "Dock.showConsole":"status-menu.showConsole","delivered":delivered])
+    guard delivered else { throw CockpitBridgeError.unavailable }
   }
-  func close() { CommunityCockpitEntry.closeWindow(); rendered = false }
+  func close() { host?.window?.close();rendered=false }
   func shutdown() async {
-    await CommunityCockpitEntry.shutdown()
-    CommunityCockpitEntry.verificationPage = nil; dock.close()
+    await application.composition.stop()
+    CommunityCockpitApplicationFactory.verificationPage=nil
   }
 }
-
 extension U11aHost {
     func openWiredView() {
       guard web == nil, permitted(), let config = config["wired"] as? [String: Any] else { return }
@@ -161,7 +176,7 @@ extension U11aHost {
       Task { @MainActor in
         do {
           if wired == nil {
-          if config["productEntry"] as? Bool == true { wired = U11ProductWiredSession(host: self) }
+          if config["productEntry"] as? Bool == true { wired = try U11ProductWiredSession(host: self) }
           else { wired = try U11WiredSession(host: self, config: config) }
         }
           try await wired?.open()

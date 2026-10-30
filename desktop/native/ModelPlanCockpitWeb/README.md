@@ -25,24 +25,26 @@ let client = cockpit.makeClient(configuration: configuration)
 cockpit.open()
 ```
 
-The production app now retains this path lazily through
-`CommunityApp.main` → `ProductionDockFactory.community()` →
-`StaticDockPreviewHost.openConsole` (Dock button and Console context-menu item) →
-`CommunityCockpitEntry` → this coordinator/window. AppIntegration and the actual
-app target depend on this package. The single action edit is within the granted
-entry lease; other Settings/Dock/menu behavior is untouched. The real selector
-has a presentation-admission regression. Settings/Choose setup use the existing
-Settings action; unavailable content/helper/context offers Settings and Status
-with a reason. History has an explicit unavailable next step until its surface
-is delivered. No action can execute arbitrary commands or URLs.
+The normal startup path is `CommunityApp.main` → `runEngineRows` →
+`EngineRowsEntry.make` → `CommunityCockpitApplicationFactory.make`. Its existing
+`EngineDockMenuApplication.showConsole` owns one cached surface used by both
+Dock `showConsole` and the status-menu Console action. The Dock callback is
+unchanged; the only leased action seam is the default factory forward in
+`EngineRowsEntry`. App package declarations are append-only relative to #332.
 
-The product binding verifies the existing helper identity and the explicit
-community/official manifest pin before creating a client. Window close retires
-that client before a repeat open. No caller file-presence flag admits content.
-The verification skill's productEntry mode invokes this exact Dock selector and
-observes the page created by the product binding, rather than constructing a
-second coordinator. Full sealed-candidate/owner-shaped/fidelity acceptance is a
-separate pipeline gate.
+One `ProcessEngineClient` feeds `CockpitStoreFanout`: the existing EngineStore
+clears/applies its synchronous sinks first, and the cockpit then handles the same
+ordered typed event before acknowledgement. No cached Store DTO is re-stamped.
+The coordinator weakly borrows that shared client; closing cockpit cannot stop
+Dock/Settings. Window/bundle creation waits for the explicit Console action.
+
+Both selectors have a same-factory/same-client regression. Clear-order coverage
+checks Store sinks are cleared before the WK acknowledgement barrier. Settings
+and Choose setup use the existing Settings action; missing content/helper/context
+has a reason plus Settings/Dock-readings next steps. History is explicitly
+unavailable until its surface is delivered. The verifier alternates the two real
+selectors through this same entry factory. Full sealed-candidate/owner-shaped
+and fidelity acceptance remains separate.
 
 Before candidate assembly, build the canonical selected edition, then stage its
 verified bytes into U10's existing `desktop/cockpit/dist` input:

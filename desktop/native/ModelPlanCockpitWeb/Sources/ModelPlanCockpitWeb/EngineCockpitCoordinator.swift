@@ -25,10 +25,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
 /// This is the sole cockpit/query requester on its client. Other feature events
 /// continue through the existing consumer, with clear acknowledged last.
 @MainActor public final class EngineCockpitCoordinator: EngineClientEventConsumer {
-  public typealias PageFactory = (CockpitEngineContext) -> any CockpitPageSurface
+  public typealias PageFactory = (CockpitEngineContext) throws -> any CockpitPageSurface
   private let makePage: PageFactory
   private let downstream: (any EngineClientEventConsumer)?
-  private var client: (any EngineClient)?
+  private var ownedClient: (any EngineClient)?
+  private weak var borrowedClient: (any EngineClient)?
+  private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
   private var page: (any CockpitPageSurface)?
   private var request: Task<Void, Never>?
@@ -60,14 +62,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     let value = ProcessEngineClient(
       configuration: configuration, credentialAgent: credentialAgent,
       consumer: WeakCockpitConsumer(self))
-    client = value
+    ownedClient = value
     return value
   }
   /// Injection seam for an already-constructed client whose consumer routes to
   /// consume(). Never construct a second client to display one cockpit.
   public func bind(client: any EngineClient) {
     precondition(self.client == nil)
-    self.client = client
+    self.borrowedClient = client
   }
   public static func bridgeContext(_ context: EngineDeliveryContext) throws -> CockpitEngineContext
   {
@@ -93,7 +95,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       page.open()
       return
     }
-    let newPage = makePage(context)
+    let newPage: any CockpitPageSurface
+    do { newPage = try makePage(context) } catch { onUnavailable?(); return }
     newPage.onReady = { [weak self] in self?.refresh() }
     newPage.onIntent = { [weak self] in self?.onIntent?($0) }
     newPage.onClosed = { [weak self] in
@@ -185,8 +188,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public func shutdown() async {
     close()
     delivery = nil
-    let current = client
-    client = nil
+    let current = ownedClient
+    ownedClient = nil; borrowedClient = nil
     await current?.stop()
   }
 }

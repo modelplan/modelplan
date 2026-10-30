@@ -766,12 +766,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
-    @objc private func openConsole() {
-        guard permitted, !retired else { return }; dismissCard()
-        CommunityCockpitEntry.open(bundle: Bundle.main.bundleURL, preferences: application?.snapshot.preferences,
-            canPresent: { [weak self] in self?.permitted == true && self?.retired == false },
-            showSettings: showSettings, showStatus: showConsole)
-    }
+    @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() {
         guard permitted, !retired else { return }

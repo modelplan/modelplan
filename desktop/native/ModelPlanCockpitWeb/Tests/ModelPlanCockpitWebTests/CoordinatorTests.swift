@@ -98,7 +98,7 @@ final class CoordinatorTests: XCTestCase {
     XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, 1)
     let requests = await client.requests
     XCTAssertEqual(requests, 0)
-    await coordinator.shutdown()
+    await coordinator.shutdown(); await client.stop()
   }
 
   @MainActor func testOrderedEngineDeliveryClearAckAndStaleReplyRejection() async throws {
@@ -154,6 +154,6 @@ final class CoordinatorTests: XCTestCase {
     XCTAssertNil(p.queryTicket)
     await coordinator.consume(event)
     XCTAssertEqual(p.displays, 1, "Old query response cannot regain private DOM after clear")
-    await coordinator.shutdown()
+    await coordinator.shutdown(); await client.stop()
   }
 }
