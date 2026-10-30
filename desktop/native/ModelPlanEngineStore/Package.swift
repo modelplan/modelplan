@@ -7,17 +7,20 @@ let package = Package(
     products: [.library(name: "ModelPlanEngineStore", targets: ["ModelPlanEngineStore"])],
     dependencies: [
         .package(path: "../../../clients/swift/ModelPlanEngineClient"),
-        .package(path: "../../../clients/swift/ModelPlanWire")
+        .package(path: "../../../clients/swift/ModelPlanWire"),
+        .package(path: "../../../clients/swift/ModelPlanEngineStoreCore")
     ],
     targets: [
         .target(name: "ModelPlanEngineStore", dependencies: [
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
-            .product(name: "ModelPlanWire", package: "ModelPlanWire")
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
+            .product(name: "ModelPlanEngineStoreCore", package: "ModelPlanEngineStoreCore")
         ]),
         .testTarget(name: "ModelPlanEngineStoreTests", dependencies: [
             "ModelPlanEngineStore",
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
-            .product(name: "ModelPlanWire", package: "ModelPlanWire")
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
+            .product(name: "ModelPlanEngineStoreCore", package: "ModelPlanEngineStoreCore")
         ])
     ]
 )

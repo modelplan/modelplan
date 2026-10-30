@@ -2,7 +2,8 @@
 # ModelPlanEngineStore (U6 interface only)
 
 A native UI-state consumer of the merged ModelPlanEngineClient package. The store
-applies the already-admitted event stream on MainActor and fans out synchronous
+delegates accepted-value storage to ModelPlanEngineStoreCore, applies its clear
+effect on MainActor and fans out synchronous
 snapshots. It does not implement transport, process supervision, session/epoch/
 generation/sequence acceptance, row classification, or credential access.
 
@@ -25,8 +26,9 @@ U5 and the rest of the feature chain are ready. The old path is not deleted here
   They must not schedule an old snapshot for publication after the callback.
 - A history failure records a feature error without replacing valid rows.
   A historical grant receipt is transaction metadata, not current consent.
-- Plugin/publication remain provisional WireJSONValue results; this store does
-  not interpret them as successful installation or invent a second DTO schema.
+- Publication, plugin-install and cockpit use the generated WirePublicationResult,
+  WirePluginInstallResult and WireCockpitData from the merged portable Core.
+  The native wrapper adds no result schema or competing reducer.
 - Configuration is explicit and passed directly to the real client. There is
   no new environment whitelist: its generated Go-owned WireChildEnvironment
   contract remains authoritative.

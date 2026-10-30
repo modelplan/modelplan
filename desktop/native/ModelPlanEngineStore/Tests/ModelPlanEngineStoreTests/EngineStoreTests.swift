@@ -17,7 +17,7 @@ import ModelPlanWire
     }
     func apply(_ snapshot: EngineStoreSnapshot) {
         received.append(snapshot)
-        privateCachePresent = snapshot.rows != nil || snapshot.history != nil
+        privateCachePresent = snapshot.rows != nil || snapshot.history != nil || snapshot.cockpit != nil
     }
 }
 
@@ -57,14 +57,16 @@ import ModelPlanWire
         await store.consume(.rowsChanged(try reply(capture(WireRowsSnapshot.self, "WireRowsSnapshot.json")), invalidRowCount: 1))
         await store.consume(.consentChanged(try reply(capture(WireConsentFacts.self, "WireConsentFacts.json"))))
         await store.consume(.response(requestID: .string("history"), .history(try reply(capture(WireHistoryPage.self, "WireHistoryPage.json")))))
-        await store.consume(.response(requestID: .string("publication"), .publication(try reply(WireJSONValue.object(["synthetic": .bool(true)])))))
-        await store.consume(.response(requestID: .string("plugin"), .pluginInstall(try reply(WireJSONValue.object(["synthetic": .bool(true)])))))
+        await store.consume(.response(requestID: .string("publication"), .publication(try reply(capture(WirePublicationResult.self, "WirePublicationResult.json")))))
+        await store.consume(.response(requestID: .string("plugin"), .pluginInstall(try reply(capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")))))
         await store.consume(.response(requestID: .string("diagnostics"), .diagnostics(try reply(capture(WireDiagnostics.self, "WireDiagnostics.json")))))
         await store.consume(.response(requestID: .string("refresh"), .refresh(try reply([WireRefreshScheduled]()))))
+        await store.consume(.response(requestID: .string("cockpit"), .cockpit(try reply(capture(WireCockpitData.self, "WireCockpitData.json")))))
         sink.onClear = {
             XCTAssertNil(store.snapshot.rows)
             XCTAssertNil(store.snapshot.consent)
             XCTAssertNil(store.snapshot.history)
+            XCTAssertNil(store.snapshot.cockpit)
             XCTAssertNil(store.snapshot.publication)
             XCTAssertNil(store.snapshot.pluginInstall)
             XCTAssertNil(store.snapshot.diagnostics)
@@ -113,4 +115,21 @@ import ModelPlanWire
         XCTAssertNil(pair.store.snapshot.rows)
         XCTAssertEqual(pair.store.snapshot.connection, .idle)
     }
+    func testTypedResultsAndCockpitFailureRecoveryUsePortableCore() async throws {
+        let store = EngineStore()
+        await store.consume(.featureFailure(.cockpit, .featureDecode(.cockpit)))
+        XCTAssertEqual(store.snapshot.failures.first?.feature, .cockpit)
+        let cockpit = try capture(WireCockpitData.self, "WireCockpitData.json")
+        let publication = try capture(WirePublicationResult.self, "WirePublicationResult.json")
+        let plugin = try capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")
+        await store.consume(.response(requestID: .string("cockpit"), .cockpit(try reply(cockpit))))
+        await store.consume(.response(requestID: .string("publication"), .publication(try reply(publication))))
+        await store.consume(.response(requestID: .string("plugin"), .pluginInstall(try reply(plugin))))
+        XCTAssertFalse(store.snapshot.failures.contains { $0.feature == .cockpit })
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(try encoder.encode(XCTUnwrap(store.snapshot.cockpit)), try encoder.encode(cockpit))
+        XCTAssertEqual(try encoder.encode(XCTUnwrap(store.snapshot.publication)), try encoder.encode(publication))
+        XCTAssertEqual(try encoder.encode(XCTUnwrap(store.snapshot.pluginInstall)), try encoder.encode(plugin))
+    }
+
 }
