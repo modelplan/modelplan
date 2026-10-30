@@ -95,5 +95,11 @@
     },
     "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256."
   },
-  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix."
+  "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix.",
+  "thirdPartyFonts": {
+    "prefix": "desktop/third-party/fonts/",
+    "license": "OFL-1.1",
+    "manifest": "desktop/third-party/fonts/manifest.json",
+    "manifestSha256": "538b8193913d2d9ab3fc4e4c4f07082bebe1cd388a99e2875047cb7b8c583574"
+  }
 }
