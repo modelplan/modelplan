@@ -30,6 +30,7 @@ type field struct {
 	Go, JSON, Swift        string
 	Optional, Omit, Strict bool
 	RequiredNullable       bool
+	NullPolicy             wire.NullPolicy
 	Rule                   map[string]any
 }
 type declaration struct {
@@ -248,6 +249,9 @@ func (m *model) fields(d *declaration) error {
 		}
 		omit := false
 		for _, p := range parts[1:] {
+			if p == "omitzero" {
+				return fmt.Errorf("%s.%s: omitzero is not modeled by the wire generator; use a supported omission declaration", d.Swift, parts[0])
+			}
 			omit = omit || p == "omitempty"
 		}
 		_, pointer := f.Type.(*ast.StarExpr)
@@ -278,7 +282,18 @@ func (m *model) fields(d *declaration) error {
 				}
 			}
 		}
-		d.Fields = append(d.Fields, field{RequiredNullable: requiredNullable, Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: pointer || omit || requiredNullable, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
+		optional := pointer || omit || requiredNullable
+		var nullPolicy wire.NullPolicy
+		if optional || reflect.StructTag(tag).Get("null") != "" {
+			nullPolicy, err = wire.ParseNullPolicy(reflect.StructTag(tag).Get("null"))
+			if err != nil {
+				return fmt.Errorf("%s.%s: %w", d.Swift, parts[0], err)
+			}
+			if nullPolicy == wire.NullDistinct && (!omit || pointer || s != "WireJSONValue") {
+				return fmt.Errorf("%s.%s: distinct null requires an omittable raw JSON value, not a collapsing pointer/scalar", d.Swift, parts[0])
+			}
+		}
+		d.Fields = append(d.Fields, field{RequiredNullable: requiredNullable, NullPolicy: nullPolicy, Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: optional, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
 	}
 	return nil
 }
@@ -407,11 +422,14 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			fmt.Fprintf(b, "        var rowElements = try c.nestedUnkeyedContainer(forKey: .%s)\n        var decodedRows: [RowsRow] = []\n        while !rowElements.isAtEnd {\n            let rowDecoder = try rowElements.superDecoder()\n            decodedRows.append(try WireRowDecoding.decode(from: rowDecoder))\n        }\n        self.%s = decodedRows\n", ident(f.JSON), ident(f.JSON))
 			continue
 		}
-		if f.Optional && f.Omit && f.Swift == "WireJSONValue" {
+		if f.NullPolicy == wire.NullDistinct {
 			// Go RawMessage distinguishes absent (nil) from present JSON null.
 			// decodeIfPresent would collapse those states before re-encoding.
 			fmt.Fprintf(b, "        self.%s = c.contains(.%s) ? try c.decode(WireJSONValue.self, forKey: .%s) : nil\n", ident(f.JSON), ident(f.JSON), ident(f.JSON))
 			continue
+		}
+		if f.NullPolicy == wire.NullForbidden {
+			fmt.Fprintf(b, "        if c.contains(.%s), try c.decodeNil(forKey: .%s) { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON), ident(f.JSON))
 		}
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
