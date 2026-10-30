@@ -80,8 +80,13 @@ test('real WebKit callback counts stay zero; finite opacity motion stops on ever
   await display(page,send);
   const timing=await page.evaluate(()=>({...document.getAnimations()[0].effect.getTiming(),easing:getComputedStyle(document.querySelector('.activity')).animationTimingFunction}));
   expect(timing.iterations).toBe(2);expect(timing.duration).toBe(240);
-  const steps=Number(timing.easing.match(/steps\((\d+)/)[1]);expect(steps/(timing.duration/1000)).toBeLessThanOrEqual(30);
   const frames=await page.evaluate(()=>document.getAnimations()[0].effect.getKeyframes());
+  // CSS easing applies per keyframe interval, not across the whole iteration.
+  for(let i=0;i<frames.length-1;i++){
+    const steps=Number(frames[i].easing.match(/steps\((\d+)/)[1]);
+    const seconds=(frames[i+1].computedOffset-frames[i].computedOffset)*timing.duration/1000;
+    expect(steps/seconds).toBeLessThanOrEqual(30);
+  }
   expect(frames.every(frame=>Object.keys(frame).every(key=>['offset','computedOffset','easing','composite','opacity'].includes(key)))).toBe(true);
   await count('ready-key-visible',['running']);
   await finishMotion(page);await count('visible-idle',[]);
