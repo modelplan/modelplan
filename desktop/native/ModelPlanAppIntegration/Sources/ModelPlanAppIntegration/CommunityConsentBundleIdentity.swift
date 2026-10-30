@@ -5,10 +5,10 @@ import CryptoKit
 /// Consistency with a reviewed release declaration, not standalone source provenance or reader consent.
 /// The packager separately verifies upstream acquisition before assembling/signing the containing bundle.
 public enum CommunityConsentBundleIdentity {
-    public static let version = "0.5.46"
+    public static let version = "0.5.48"
     public static let sourceSHA256ByArchitecture = [
-        "arm64": "72c43fef8631399137ff9a651e984121fa19cbc77969f0a317c74c41b28f29e2",
-        "x86_64": "a5c47042e925da522209d5192860cbf887af6b10fc3c8ff68c4aff1efba25f29",
+        "arm64": "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda",
+        "x86_64": "397b98c22e209e10c924e34347f5b4c14e837eb2c50086c6fd2c160c858c2868",
     ]
     public static func isConsistent(helperVersion: String, sourceHelperSHA256: String,
                                     bundledHelperSHA256: String, resourceHelperSHA256: String,
