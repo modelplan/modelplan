@@ -62,6 +62,7 @@ actor ScopeConsentTestClient: EngineClient {
     }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
     func history(_ query: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { plugins.append(request); throw EngineClientError.featureDecode(.pluginInstall) }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
