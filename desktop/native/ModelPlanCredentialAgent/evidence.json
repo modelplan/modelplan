@@ -1,17 +1,25 @@
 {
-  "stage": "U7 quota-helper transition: permanent token security hold; quota contract blocked",
-  "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
-  "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
-  "profile": "fake readers and injected low-level Security API only; no SecItemCopyMatching or identity/signing operations",
-  "command": "swift test --package-path desktop/native/ModelPlanCredentialAgent",
+  "stage": "wired draft; R2 default-deny; U6 normal constructor integration pending owner base/lease",
   "sources": [
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Helper/main.swift",
+      "sha256": "414a1b68fa0dceba4303004d4228779d4e1c69afa7f2ad9a311004cba9416f4b"
+    },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Package.swift",
       "sha256": "fd19ed9cb74dedb813daeef47c125bcb6577b384be5cf4f60650dd65710bf179"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "21bf33eec23a9bb42bccc6451edf3950118f59ef7941a1a48be72b0a596653af"
+      "sha256": "96dc2fddc221d9dd35e08d2eb7aad260fa11bc5f89bb61dd58b00855610130f4"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/CredentialAgentClientFactory.swift",
+      "sha256": "38690437d8d523c6417a16676cb4d6438d30d8009362afc6b0eaa7cbcc382c71"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedHelperCredentialAgent.swift",
+      "sha256": "b792443dbb8280f2de4f6e619d10426d1af7e535b8fd0cc24387a836b107a96f"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
@@ -26,20 +34,36 @@
       "sha256": "f9aaf45c19f552153444e8d80e7aadcd9e3fe887dc661eaaadcb3102a7b6fb9b"
     },
     {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/HelperProcessTests.swift",
+      "sha256": "6d7a901fbf2f0d11701c3fc56aa8cdd3ab6e283430bb7ffbed60722dea3d7fd5"
+    },
+    {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
       "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
     },
     {
+      "path": "desktop/native/ModelPlanCredentialAgent/reproducibility.json",
+      "sha256": "719596d9d6802bc9bf89fa238beb538255ad14d1513596b980135ef25ddfc005"
+    },
+    {
       "path": "desktop/native/ModelPlanCredentialAgent/tools/HELPER-PLAN.md",
-      "sha256": "f018b97a9ee4c10bb7294a7bb8f8b9999a64fd68c04aaf0834279eecaca34c6e"
+      "sha256": "5057b33008a0fe5e37cebcabcc46ea9b1b97f9a0a712916a3c882ed883b67e38"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/tools/SIGNING-PLAN.md",
       "sha256": "9523851e4d262454099420c2aa219484987575ff575f6308dd2ae248aef1644c"
     },
     {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py",
+      "sha256": "28eeb8f59dee185ea8c62cc8d03c2151ab63f7fa32cd5fbe9425a99f8a3e883d"
+    },
+    {
       "path": "desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py",
       "sha256": "57997242c53f8a10848584c79fb2d6c07b2ad8e85a7fba2d743e69dedc16854a"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/embed_fixed_helper.py",
+      "sha256": "218b60a91fb55e3800ab3c16e776f25ade34abc7619ac0dd97b7c06ea7c25ecd"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_embedded_agent.py",
@@ -47,156 +71,70 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_helper_boundary.py",
-      "sha256": "e076755bba76c2997fbdf10f293bf2a21a43d6b400b271db09fed246c0c9cd27"
+      "sha256": "a2ef428b5ce4af18cf41e0dfc33eeb78df3b4954f49b1fa6a38462ef01f16a86"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_real_helper.py",
+      "sha256": "86a1164ff78025845c9db5e744bf3e24a439716b4fdba5c0c0358d0c87e9e510"
     }
   ],
-  "scenarios": [
-    {
-      "id": "testActualEnumerationDictionaryIsSupportedByTheFakeOS",
-      "outcome": "pass"
-    },
-    {
-      "id": "testCancellationReturnsBeforeBlockedReadAndRejectsLateToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testEverySecurityFailureHasNoToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testExpiredAndStaleRequestsDoNotRead",
-      "outcome": "pass"
-    },
-    {
-      "id": "testFixedQueryBackgroundCannotPrompt",
-      "outcome": "pass"
-    },
-    {
-      "id": "testInteractiveRequiresExplicitAction",
-      "outcome": "pass"
-    },
-    {
-      "id": "testMalformedOrOversizedSuccessIsError",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderEnumeratesThenReadsExactlyOnePersistentReference",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderItemCanDisappearBetweenEnumerationAndRead",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderNotFoundAndEmptyEnumerationNeverReadData",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderRejectsAmbiguityWithoutReadingAnyPassword",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderRejectsMalformedOrWrongServiceReference",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRevokeDuringReadDropsToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testSuccessReturnsOnlyAccessTokenThroughGeneratedResult",
-      "outcome": "pass"
-    },
-    {
-      "id": "testSystemTokenBackendIsPermanentlyDeniedWithoutAnOSLookup",
-      "outcome": "pass"
-    },
-    {
-      "id": "testTerminalCheckpointBeforeEnumerationMakesNoOSCall",
-      "outcome": "pass"
-    },
-    {
-      "id": "testTimeoutRetainsWorkerSlotAndDropsLateToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testActiveInteractiveOperationStillReadsAfterEnumeration",
-      "outcome": "pass"
-    },
-    {
-      "id": "testCancelWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "testExpiryWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRevokeWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "packaging-and-app-source-boundary",
+  "checks": {
+    "swiftSyntheticAndRealDenialHelper": {
       "outcome": "pass",
-      "cases": 9
+      "cases": 27
     },
-    {
-      "id": "quota-helper-executable",
-      "outcome": "not-run"
+    "localPythonPackagingBaseline": {
+      "outcome": "pass",
+      "cases": 9,
+      "note": "previous baseline; three new actual-helper Python cases require the new hosted run"
     },
-    {
-      "id": "quota-only-generated-contract",
-      "outcome": "not-run"
+    "currentPythonRealHelper": {
+      "outcome": "not-run",
+      "reason": "automatic permission approval review timed out twice; execution did not start"
     },
-    {
-      "id": "helper-reproducible-build",
-      "outcome": "not-run"
-    },
-    {
-      "id": "real-two-app-embedding",
-      "outcome": "not-run"
-    },
-    {
-      "id": "native-quota-helper-wiring",
-      "outcome": "not-run"
-    }
-  ],
-  "staticChecks": {
     "source-policy": "pass",
-    "whitespace": "pass"
+    "whitespace": "pass",
+    "helperTwoCleanBuilds": {
+      "schemaVersion": 1,
+      "sha256": "6f35a8f5bdc28b857ad298f6f59f7d31bbe69a450eb9885b26d9cd41f8df6661",
+      "bytes": 1040368,
+      "inputSHA256": "106d2c9d6c7e09509ab4c7ea85cfb7cb1ecc0c0cd9e992b597c112a888006810",
+      "bundleIdentifier": "ai.modelplan.credential-agent"
+    },
+    "twoSyntheticAppEmbedding": "pass",
+    "hostedMacOSProof": "not-run"
   },
-  "level": "L1 fake/static/packaging only; no real quota/helper/reproducibility/OS/L2/L3 completion",
-  "regression": {
-    "id": "actual-enumeration-query-shape",
-    "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
-    "baselineOutcome": "fail",
-    "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
-    "fixedOutcome": "pass"
+  "regressions": {
+    "unsupportedAllMatchData": {
+      "id": "actual-enumeration-query-shape",
+      "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
+      "baselineOutcome": "fail",
+      "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
+      "fixedOutcome": "pass"
+    },
+    "betweenQueryAuthority": {
+      "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
+      "baselineOutcome": "fail",
+      "baselineFailures": [
+        "cancel-after-enumeration-start",
+        "expiry-after-enumeration-start",
+        "revoke-after-enumeration-start"
+      ],
+      "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
+      "fixedOutcome": "pass",
+      "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
+      "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
+    },
+    "helperLaunchUUID": {
+      "baseline": "fail: dyld rejected missing LC_UUID",
+      "fixed": "pass: content-derived UUID retained, each clean helper executes a denial smoke before byte comparison"
+    }
   },
-  "hostedFakeSuite": {
-    "path": ".github/workflows/u7-credential-agent.yml",
-    "sha256": "b99c42baafd817c1541813b8e4108765c5b0df82ebdd0036557f7c9307b93fdf",
-    "outcome": "not-run",
-    "note": "This wired head requires its own hosted run"
-  },
-  "betweenQueryRegression": {
-    "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
-    "baselineOutcome": "fail",
-    "baselineFailures": [
-      "cancel-after-enumeration-start",
-      "expiry-after-enumeration-start",
-      "revoke-after-enumeration-start"
-    ],
-    "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
-    "fixedOutcome": "pass",
-    "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
-    "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
-  },
-  "securityHold": {
-    "systemCredentialMatcher": "permanently default-deny; no OS matching call",
-    "tokenHandoff": "legacy/fake contract coverage only; not installed",
-    "quotaWire": "blocked on canonical replacement for the token-required contract",
-    "sourceGuardBaseline": "fail: real matching call found in App-facing FixedItem.swift",
-    "sourceGuardFixed": "pass"
-  }
+  "notProven": [
+    "U6 normal-entry constructor hookup (base/lease requested)",
+    "production candidate packaging and two-app A14",
+    "real Keychain/ACL/owner profile",
+    "R2 Developer ID authenticated XPC and real token backend"
+  ],
+  "privacy": "No Keychain/identity/trust/GUI operation; no token, quota payload or reader; ad-hoc build sealing only; generated wire contract unchanged"
 }

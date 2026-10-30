@@ -8,4 +8,4 @@ class HelperBoundaryTests(unittest.TestCase):
         root = Path(__file__).parents[2] / 'Sources/ModelPlanCredentialAgent'
         forbidden = re.compile(r'\b(?:SecItemCopyMatching|SecItemAdd|SecItemUpdate|SecItemDelete|SecKeychain\w*)\s*\(')
         violations = [str(path.relative_to(root)) for path in root.rglob('*.swift') if forbidden.search(path.read_text())]
-        self.assertEqual(violations, [], 'Keychain operations belong exclusively in the separate quota helper')
+        self.assertEqual(violations, [], 'Keychain operations belong exclusively in the separate helper after R2')

@@ -1,0 +1,31 @@
+{
+  "outcome": "pass",
+  "cleanBuilds": 2,
+  "inputs": {
+    "recipe": "U7-fixed-helper-v1:Swift5,O,wmo,gnone,prefix-map,macos13,content-uuid,adhoc-runtime,no-entitlements",
+    "compiler": "Apple Swift version 6.2.3 (swiftlang-6.2.3.3.21 clang-1700.6.3.2)\nTarget: arm64-apple-macosx26.0",
+    "sdk": "26.2",
+    "arch": "arm64",
+    "sourceSHA256": {
+      "main.swift": "414a1b68fa0dceba4303004d4228779d4e1c69afa7f2ad9a311004cba9416f4b",
+      "Generated.swift": "98d9d3970336fd5a64df54d3903eb16bc60e85f2e6ef60dfce061393965a79cd"
+    },
+    "builderSHA256": "28eeb8f59dee185ea8c62cc8d03c2151ab63f7fa32cd5fbe9425a99f8a3e883d"
+  },
+  "pin": {
+    "schemaVersion": 1,
+    "sha256": "6f35a8f5bdc28b857ad298f6f59f7d31bbe69a450eb9885b26d9cd41f8df6661",
+    "bytes": 1040368,
+    "inputSHA256": "106d2c9d6c7e09509ab4c7ea85cfb7cb1ecc0c0cd9e992b597c112a888006810",
+    "bundleIdentifier": "ai.modelplan.credential-agent"
+  },
+  "twoSyntheticAppBuilds": {
+    "outcome": "pass",
+    "helperSHA256": "6f35a8f5bdc28b857ad298f6f59f7d31bbe69a450eb9885b26d9cd41f8df6661",
+    "helperBytes": 1040368,
+    "agentInputSHA256": "106d2c9d6c7e09509ab4c7ea85cfb7cb1ecc0c0cd9e992b597c112a888006810",
+    "scope": "packaging byte identity only; not signing/Keychain/A14 proof"
+  },
+  "realCandidateA14": "not-run",
+  "security": "R2 default-deny; ad-hoc runtime; no entitlements, trust or credential action"
+}

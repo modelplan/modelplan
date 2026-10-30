@@ -1,40 +1,67 @@
-# U7 credential helper transition — security hold
+# U7 fixed credential helper — R2 default-deny
 
-The real token-returning system backend is permanently disabled. SystemItemMatcher
-returns an unsupported error without calling any Keychain API. There is no runtime
-flag to enable it. The legacy generated credential-operation logic remains only for
-contract/fake regression coverage and is not wired into the App. Production quota
-helper wiring is blocked on the canonical quota-only contract described in
-`tools/HELPER-PLAN.md`; do not use the old token DTO to transport quota fields.
+The shipped helper consumes the existing generated `WireCredentialRequest` and
+returns `WireCredentialResult(outcome: denied)` for every valid request. It has no
+Keychain, token, quota, HTTP, decoder-for-provider-data, or runtime backend switch.
+ADR0001, ADR0003 and the wire contract remain unchanged. The legacy injectable
+`NativeCredentialAgent` exists for interface/fake regressions; its system matcher
+has no OS lookup and it is not the production helper transport.
 
-Implements the generated Wire credential operation through `EngineClient.CredentialAgent`.
-No app entry, EngineStore, Shell, Go, generated DTO, packaging or signing file is changed.
+Real credential access is gated on **R2**: Developer ID and authenticated XPC with
+Apple-anchored team + identifier requirements on both peers. A helper hash checks
+artifact integrity, not caller authority. No signed caller-manifest workaround is
+implemented. Until R2, denial is the intentional contract result; product copy is
+owned by the engine/UI lanes. This stage is not completion of U7 credential reads,
+A14, real Keychain ACL tests, or owner-profile acceptance.
 
-The reader and a thread-safe `isCurrent(EngineDeliveryContext)` fence are required inputs.
-The fence must compare the authoritative session, epoch, generation and delivery revision.
-EngineClient retains explicit-action/receipt matching, replay protection and final private
-`credentials/result` delivery. A non-nil user action is not new consent authorization.
+## Build once, embed unchanged
 
-Only Claude's saved-login scope and the fixed generic-password service are accepted.
-Requests cannot select services, accounts, files or executables. Enumeration returns only attributes and persistent references; after uniqueness/service checks, a second single-match query reads data by that exact persistent reference. Ambiguous items fail.
-Background queries prohibit authentication UI. The reader requires the agent's injected operation checkpoint before each OS call; cancellation, deadline expiry or lost context after enumeration prevents the second interactive query entirely. A pre-call terminal result has no OSStatus or data. One worker performs the blocking read;
-logical timeout/cancel does not cancel the OS call, and its slot stays occupied until it
-returns. Late values cannot complete twice. The final writer must still reject stale
-results because a revoke can race any local fence check.
+On a macOS build runner:
 
-Only a bounded in-memory `claudeAiOauth.accessToken` is extracted. Refresh tokens are not
-forwarded. There is no tool fallback, logging, web publication or persistence. Memory
-zeroing is not claimed.
+```sh
+python3 desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --output "$ARTIFACT_DIR"
+U7_TEST_HELPER_BINARY="$ARTIFACT_DIR/modelplan-credential-agent" swift test --package-path desktop/native/ModelPlanCredentialAgent
+U7_TEST_HELPER_BINARY="$ARTIFACT_DIR/modelplan-credential-agent" python3 -m unittest discover -s desktop/native/ModelPlanCredentialAgent/tools/tests -v
+```
 
-Security statuses map to `ok`, `canceled`, `denied`, `not_found`,
-`interaction_required` or `error`; logical expiry maps to `timeout`. Invalid/ambiguous data
-maps to `error`. Failures carry no token or expiry and are not stored as latches.
+The builder uses two different clean roots, fixed optimization/target/path-map
+flags, no debug records, the linker’s content-derived Mach-O UUID, deterministic
+hashing and timestamp-free
+ad-hoc build sealing. Hardened runtime and library validation stay enabled; there
+are no entitlement exceptions. No certificate, Keychain or trust setting is used.
+`proof.json` binds the Swift compiler, SDK, architecture, builder and helper/Wire
+source hashes. The final executable bytes must match. Reproducibility is scoped
+to those exact inputs; different SDKs/architectures are different artifacts.
 
-Run `swift test --package-path desktop/native/ModelPlanCredentialAgent`. Tests inject fake readers or low-level matchers; none calls `SecItemCopyMatching`. They cover query flags, error mapping,
-token-only output, malformed/oversized data, action admission, stale contexts, cancellation,
-timeout, blocked-worker bounds and late completion.
+Only the helper's own source, generated Wire dependency, toolchain or build recipe
+changes require a new helper artifact and pin. App-only changes reuse the existing
+reviewed artifact; the app build must not compile or re-sign the embedded helper.
+A helper upgrade changes its code identity and may require renewed access once the
+real backend is enabled. Avoiding prompts across real app upgrades still needs R2
+and A14; this byte proof does not establish an ACL result.
 
-App wiring, synthetic Keychain/UI behavior, stable signing and two-build designated
-requirement/ACL qualification are not-run. Creating an identity is never a package test.
-Those operations require their own reviewed runner and approvals. Owner credentials and
-real ACL proof remain outside this interface stage.
+```sh
+python3 desktop/native/ModelPlanCredentialAgent/tools/embed_fixed_helper.py --artifact "$ARTIFACT_DIR" First.app
+python3 desktop/native/ModelPlanCredentialAgent/tools/embed_fixed_helper.py --artifact "$ARTIFACT_DIR" Second.app
+python3 desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py --pin "$ARTIFACT_DIR/credential-agent.json" First.app Second.app
+```
+
+Run the pair checker **after** all outer-app packaging/signing, against the trusted
+artifact pin rather than a pin taken from either app. Do not recursively re-sign
+the helper. The proof builder also compiles two distinct synthetic app hosts and
+runs this exact embedding/check chain; it never launches them. Those are packaging
+fixtures, not official candidate builds.
+
+## Operation boundary
+
+`FixedHelperCredentialAgent` verifies the pin, launches one bounded helper child,
+sends only the generated request on a private pipe, discards stderr and accepts
+only a matching denial with no token/expiry. Cancellation and deadlines terminate
+only its owned child; the worker slot stays occupied until it exits. Output is
+bounded. Current-context vetoes run before launch and after completion; EngineClient
+also owns final full operation/session admission. `CredentialAgentAuthority` is a
+weak, bind-once bridge to the production `ProcessEngineClient.isCurrent` API and
+starts closed. `CredentialAgentClientFactory.make` constructs and binds that same
+ProcessEngineClient; missing packaging uses a denial-only agent. No always-true
+production fence or in-process reader fallback is
+provided. The U6 constructor/package edits require their owner's active lease.
