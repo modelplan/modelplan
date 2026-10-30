@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+name: Verification pointer helper
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/verification/bin/pointer_drive*'
+      - '.github/workflows/verification-pointer-helper.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/verification/bin/pointer_drive*'
+      - '.github/workflows/verification-pointer-helper.yml'
+permissions:
+  contents: read
+jobs:
+  pointer-helper:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test without posting input or requesting permissions
+        run: |
+          swiftc -parse-as-library -DMODELPLAN_TEST_ONLY_SPI desktop/native/verification/bin/pointer_drive.swift -o "$RUNNER_TEMP/pointer_drive"
+          "$RUNNER_TEMP/pointer_drive" --self-test

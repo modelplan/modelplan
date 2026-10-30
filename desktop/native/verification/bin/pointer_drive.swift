@@ -8,7 +8,14 @@ import CoreGraphics
 import Foundation
 import Darwin
 
-struct PointerStep: Decodable { let x: Double; let y: Double; let seconds: Double; let dwell: Double }
+enum PointerAction: String, Decodable { case move, click }
+struct PointerStep: Decodable {
+    let x: Double, y: Double, seconds: Double, dwell: Double
+    let action: PointerAction?
+    init(x: Double, y: Double, seconds: Double, dwell: Double, action: PointerAction? = nil) {
+        self.x = x; self.y = y; self.seconds = seconds; self.dwell = dwell; self.action = action
+    }
+}
 struct PointerPlan: Decodable {
     let profile: String, runID: String, epoch: String, lease: String, stop: String, output: String
     let subjectPID: Int32, subjectBundle: String
@@ -47,7 +54,23 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
         guard p.profile == "synthetic", !p.runID.isEmpty, !p.epoch.isEmpty, p.subjectPID>0,
               !p.steps.isEmpty, p.steps.count<=4096, !p.allowedRectangles.isEmpty,
               p.steps.allSatisfy({ [$0.x,$0.y,$0.seconds,$0.dwell].allSatisfy(\.isFinite) && $0.seconds>=0 && $0.dwell>=0 }),
-              p.steps.reduce(0,{$0+$1.seconds+$1.dwell})<=1200 else { throw DriveError.invalidPlan }
+              p.steps.reduce(0,{$0+$1.seconds+$1.dwell})<=1200,
+              p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) }) else { throw DriveError.invalidPlan }
+    }
+    // Construct the complete pair before pressing. A receipt failure after down must
+    // still release the button; these closures also allow tests without posting input.
+    static func click(at point: CGPoint, post: (CGEvent) -> Void,
+                      record: (CGEventType) throws -> Void) throws {
+        guard let down = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:point,mouseButton:.left),
+              let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
+        down.setIntegerValueField(.mouseEventClickState,value:1)
+        up.setIntegerValueField(.mouseEventClickState,value:1)
+        var released = false
+        post(down)
+        defer { if !released { post(up) } }
+        try record(.leftMouseDown)
+        post(up); released = true
+        try record(.leftMouseUp)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
         try validate(p)
@@ -74,6 +97,17 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
                     "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
                 if step.seconds>0 { Thread.sleep(forTimeInterval:step.seconds/Double(count)) }
             }
+            if step.action == .click {
+                try live(p)
+                guard AXIsProcessTrusted(),pointAllowed(end,p) else { throw DriveError.outsideScope }
+                try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type in
+                    try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted",
+                        "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"step":index,
+                        "x":end.x,"y":end.y,"button":"left","clickCount":1,
+                        "uptimeSeconds":ProcessInfo.processInfo.systemUptime,
+                        "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
+                })
+            }
             let until = ProcessInfo.processInfo.systemUptime+step.dwell
             while ProcessInfo.processInfo.systemUptime<until { try live(p);Thread.sleep(forTimeInterval:0.025) }
             previous = end
@@ -92,7 +126,30 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
             for bad in [fixture("owner"),fixture("synthetic",-1),fixture("synthetic",Double.infinity),fixture("synthetic",1201)] {
                 do { try validate(bad); preconditionFailure("invalid plan admitted") } catch DriveError.invalidPlan { }
             }
-            print("PASS pointer plan bounds/profile/duration; no permission query or event posted");return
+            let oldStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
+            precondition(oldStep.action == nil) // Existing U5 plans remain move-only.
+            let clickStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"click","x":42,"y":24,"seconds":0,"dwell":0.2}"#.utf8))
+            precondition(clickStep.action == .click)
+            do {
+                _ = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"double-click","x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
+                preconditionFailure("unknown click action admitted")
+            } catch is DecodingError { }
+            let target = CGPoint(x:42,y:24)
+            var events: [CGEvent] = [], records: [CGEventType] = []
+            try click(at:target,post: { events.append($0) },record: { records.append($0) })
+            precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
+            precondition(records == [.leftMouseDown,.leftMouseUp])
+            precondition(events.allSatisfy { $0.location == target && $0.getIntegerValueField(.mouseEventButtonNumber) == 0 && $0.getIntegerValueField(.mouseEventClickState) == 1 })
+            enum ReceiptFailure: Error { case expected }
+            for failAt in [CGEventType.leftMouseDown,.leftMouseUp] {
+                events = []
+                do {
+                    try click(at:target,post: { events.append($0) },record: { if $0 == failAt { throw ReceiptFailure.expected } })
+                    preconditionFailure("receipt failure swallowed")
+                } catch ReceiptFailure.expected { }
+                precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
+            }
+            print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates and failure release; no permission query or event posted");return
         }
         if args.count == 2 && args[1] == "--check" {
             let data = try JSONSerialization.data(withJSONObject:permission(),options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self));return
