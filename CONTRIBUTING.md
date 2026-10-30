@@ -30,6 +30,20 @@ Ground rules:
 - Keep English and Chinese text in step (READMEs, Skill answers, CLI strings).
 - Small, focused PRs with a clear description. CI must be green.
 
+### Reader and release regression checks
+
+CI runs the reader reason conformance tables without the test cache. They inject
+synthetic runtime/vendor errors and check returned entries, retained files,
+connection diagnostics, logs and JSON. New native readers need an error fixture;
+fixed reason codes must survive failure and retained-read paths.
+
+From `cli/`, run `go test -count=1 ./internal/quota ./internal/connections ./cmd/modelplan -run 'Test(ReaderReason|NativeConnectionReasons|.*ErrorOutput|RuntimeErrorsStayOutOfCLIJSONAndLogs)'`
+and `go run ./internal/releaseguard/cmd --root ..`.
+The release scan covers Swift, Go, Objective-C and cgo under `desktop/native` and
+`clients/swift`. Private selectors/KVC require `MODELPLAN_TEST_ONLY_SPI` to exclude
+the code from release; `DEBUG`, test directory names and `flag || platform` are
+not exceptions. This literal-source guard does not resolve computed selectors.
+
 ### Releasing
 
 The plugins bring their own CLI: each pins one release in `cli-pin.json` (version and per-platform SHA-256) and fetches it with `hooks/fetch-cli.sh`. So a CLI change ships in two steps:

@@ -225,7 +225,11 @@ func FetchCodexBar(ctx context.Context, cache, base string) (bin string, err err
 	markFetch(cache, "started")
 	defer func() {
 		if err != nil {
-			markFetch(cache, "failed: "+short(err.Error()))
+			// Do not retain a URL, filesystem path or transport message in
+			// either the fetch marker or a caller's log/JSON error.
+			code := errorCode(err)
+			err = codeError(code, code)
+			markFetch(cache, "failed: "+code)
 		} else {
 			markFetch(cache, "ok")
 		}
@@ -444,7 +448,7 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 	}
 	if bin == "" {
 		return consent.Publish(state.Fence(), func() error {
-			return saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "CodexBar CLI not found"})
+			return saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: "error", Error: "runtime_missing"})
 		})
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "codexbar.lock"), now, time.Duration(len(enabled)+1)*codexbarTimeout)
@@ -475,7 +479,8 @@ func RefreshCodexBar(ctx context.Context, p Paths, bin string, now time.Time) er
 			e.SubscriptionRef = assignSubscription(p.Cache, "codexbar:"+prov, e.identity, now)
 		}
 		if e.Status == "error" && e.Error == "" && err != nil {
-			e.Error = clean(err.Error(), home)
+			e.ErrorCode = errorCode(err)
+			e.Error = e.ErrorCode
 		}
 		s.Providers = append(s.Providers, e)
 	}
@@ -620,7 +625,8 @@ func parseCodexBar(out []byte, provider, home string, now time.Time) codexbarEnt
 	if p.Error != nil || p.Usage == nil {
 		e.Error = "no usage"
 		if p.Error != nil {
-			e.Error = clean(p.Error.Message, home)
+			e.ErrorCode = "other"
+			e.Error = e.ErrorCode
 		}
 		return e
 	}
@@ -741,7 +747,7 @@ func applyCodexBar(r *Report, p Paths, now time.Time) {
 		case s == nil:
 			st.Status, st.Reason = "missing", "no CodexBar reading yet"
 		case s.Status != "ok":
-			st.Status, st.Reason = "unreadable", s.Error
+			st.Status, st.Reason, st.ErrorCode = "unreadable", ReaderErrorCode(s.Error), ReaderErrorCode(s.Error)
 		case !ok:
 			st.Status, st.Reason = "missing", "not read yet"
 		case now.Sub(e.ObservedAt) > codexbarKeep || e.ObservedAt.After(now.Add(5*time.Minute)):
@@ -749,7 +755,7 @@ func applyCodexBar(r *Report, p Paths, now time.Time) {
 		case e.Status == "estimated":
 			st.Status, st.Reason = "estimated", "CodexBar only estimated from this machine's history; not shown as quota"
 		case e.Status != "ok":
-			st.Status, st.Reason = "unavailable", e.Error
+			st.Status, st.Reason, st.ErrorCode = "unavailable", ReaderErrorCode(e.ErrorCode), ReaderErrorCode(e.ErrorCode)
 		case len(e.Windows) == 0:
 			st.Status, st.Reason = "empty", "no usage windows"
 		default:
