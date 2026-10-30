@@ -159,8 +159,8 @@ is claimed here.
 `SessionStateTracker` and `mountSessionState` take explicit `idle`, `working`,
 `done` or `error` state for an opaque session ID. The square is 12 CSS pixels:
 hollow grey, solid blue, blue with tick, or red with !. Official values live in
-new `--session-*` tokens, independent of the quota `--st-*` tokens. Both requested
-day blues are available for owner comparison; the standard remains the default.
+new `--session-*` tokens, independent of the quota `--st-*` tokens. The owner
+preview uses the standard day blue #2f6bd8.
 
 First observation and unchanged state never flash. A transition may flash once
 per 30 seconds per session: one 160 ms CSS opacity animation, two steps, one
@@ -184,9 +184,13 @@ PLAYWRIGHT_BROWSERS_PATH=/path/to/ms-playwright \
   node desktop/tests/cockpit/preview-session-state.mjs .tmp/session-state-preview
 ```
 
-The HTML and native/4x PNGs show all states in day/night, both day blues, actual
-cockpit-rendered quota cells and a frame strip sampled from the two-step CSS
-flash. The button advances synthetic state without an automatic timer. Included
+The HTML and native/4x PNGs show five synthetic session rows at the bottom of the
+cockpit, with each square at the end of its row. Night and day use the approved
+palette; the preview offers day blue #2f6bd8 only. The transition strip follows
+one complete row idle → working → done, with only its square flashing.
+The current bundle has no session list: its bottom tape displays observation
+timestamps. This preview uses the approved P6 study's record-strip structure
+and typography, without installing a product renderer or session feed. Included
 notices retain the reserved visuals, MIT code and all four public OFL font grants.
 Owner preview approval is required before merge, in addition to M2's native
 measurement; headless images are not native/U11a acceptance.
