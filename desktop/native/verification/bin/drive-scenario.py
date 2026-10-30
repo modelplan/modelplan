@@ -9,6 +9,11 @@ spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cle
 def write(path,value):
     path=Path(path);tmp=path.with_name(path.name+'.tmp');tmp.write_text(json.dumps(value));tmp.replace(path)
 def read(path):return json.loads(Path(path).read_text())
+def failure_reason(error):
+    # Filesystem/subprocess messages can contain user/home paths or argv.
+    if isinstance(error,(OSError,subprocess.SubprocessError)):
+        return type(error).__name__+'-errno-'+str(getattr(error,'errno',None))
+    return str(error)
 def plan():return [(cycle,phase,60) for cycle in range(1,4) for phase in ('before-open','open','after-close')]
 def valid(c,now):
     return c.get('GO') is True and c.get('announcementID') and c['start']<=now<c['expiresAt'] and 0<c['expiresAt']-c['start']<=1200 and c['expiresAt']-now>=690
@@ -155,7 +160,7 @@ class Attempt:
                 if phase=='open':self.ready()
                 self.wait(seconds)
             self.quit();result['outcome']='pass-observation-cycles';result['cycles']=3
-        except BaseException as e:result['reason']=str(e);result['outcome']='not-run'
+        except BaseException as e:result['reason']=failure_reason(e);result['outcome']='not-run'
         finally:
             self.topStop.set()
             if self.topThread:self.topThread.join(timeout=8)
@@ -192,6 +197,6 @@ def main():
                 except subprocess.TimeoutExpired:attempt.guard.terminate();attempt.guard.wait(timeout=3)
             for lock in (getattr(attempt,'slot',None),getattr(attempt,'lock',None)):
                 if lock is not None and lock.exists() and read(lock/'owner.json').get('runID')==attempt.c['runID']:(lock/'owner.json').unlink();lock.rmdir()
-            write(attempt.out/'result.json',dict(runID=attempt.c['runID'],outcome='not-run',reason=str(e),AppLaunched=False,cleanup='setup resources released'))
+            write(attempt.out/'result.json',dict(runID=attempt.c['runID'],outcome='not-run',reason=failure_reason(e),AppLaunched=False,cleanup='setup resources released'))
         raise
 if __name__=='__main__':main()

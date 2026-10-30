@@ -111,9 +111,13 @@ stderr with exit status 2.
 
 A process crash can leave a transaction lock or incomplete final line. Neither
 is automatically stolen, truncated or repaired. Stop and report the lock's
-`owner.json` (host/PID) and error. The coordinator must confirm the writer has
-stopped on its host, preserve the ledger and resolve the lock/partial append
-before resuming. Do not use lock age or a remote PID lookup to infer ownership
+`owner.json` and error. The record contains only the caller's lane/unit labels
+where supplied and a random per-process `processToken`, never a hostname, PID
+or user/home path. Status and expiry have no caller lane/unit, so record only
+the token. The token correlates transactions from one process; it does not prove
+that a writer has stopped. The coordinator must confirm closure with the owning
+lane, preserve the ledger and resolve the lock/partial append before resuming.
+Do not use lock age or a remote PID lookup to infer ownership
 is dead. On a refused/ambiguous write, stop and report instead of retrying a
 request that may already have committed. A single locked `status` after recovery
 can establish the recorded state.

@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -130,6 +131,35 @@ class Bookings(unittest.TestCase):
             book.Ledger(self.path, lock_timeout=0).status()
         self.assertTrue(lock.exists())
         self.assertFalse(self.path.exists())
+
+    def test_lock_owner_has_only_opaque_labels_and_no_hostname(self):
+        lock = self.path.with_name('ledger.jsonl.lock')
+        records = []
+
+        def clock():
+            records.append(json.loads((lock / 'owner.json').read_text()))
+            return self.now
+
+        self.ledger.clock = clock
+        with patch.object(socket, 'gethostname', return_value='synthetic-host-identity') as hostname:
+            ident = self.request()
+            self.ledger.status()
+            self.ledger.start(ident, 'M2', 'run', 'epoch')
+            self.ledger.admit(dict(id=ident, lane='M2', unit='U11a', scenario='cold'),
+                              dict(runID='run', epoch='epoch', notBefore=self.now,
+                                   expiresAt=self.now + 60), 60)
+            self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True)
+            self.ledger.expire()
+            book.Ledger(self.path, clock=clock).status()
+            hostname.assert_not_called()
+
+        token = records[0]['processToken']
+        self.assertRegex(token, r'^[0-9a-f]{32}$')
+        labels = [dict(lane='M2', unit='U11a'), {}, dict(lane='M2'),
+                  dict(lane='M2', unit='U11a'), dict(lane='M2'), {}, {}]
+        self.assertEqual(records, [dict(processToken=token, **fields) for fields in labels])
+        self.assertNotIn('synthetic-host-identity', json.dumps(records))
+        self.assertFalse(lock.exists())
 
     def test_partial_or_corrupt_ledger_is_not_repaired_or_appended(self):
         for raw in ('{"unfinished":', '{}\n', 'null\n'):
