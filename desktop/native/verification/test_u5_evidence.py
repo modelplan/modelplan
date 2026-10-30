@@ -6,7 +6,7 @@ class U5EvidenceTests(unittest.TestCase):
     def receipt(self):
         observation=dict(running=True,disk=True,lease=True,visible=True,onScreen=True,nonActivating=True,key=False,postEvents=True,
                          timestamp='2026-01-01T00:00:00Z',activationCall='not-invoked')
-        r=dict(profile='synthetic',headSHA='a'*40,binarySHA256='b'*64,packageSHA256='c'*64,profileSHA256='d'*64,helperSHA256='e'*64,cliVersion='0.5.49',durationSeconds=60)
+        r=dict(profile='synthetic',headSHA='a'*40,binarySHA256='b'*64,packageSHA256='c'*64,profileSHA256='d'*64,helperSHA256='e'*64,cliVersion=u5.SPEC['requiredNativeCLIVersion'],durationSeconds=60)
         r.update({k:True for k in u5.COMMON})
         r['scenarios']={name:dict(attempted=True,inputMethod='computer-use',inputDelivered=True,resultObserved=True,nativeObservation=copy.deepcopy(observation),actionEvidenceFiles=['input.json','state.json'],assertions={k:True for k in s['assertions']}) for name,s in u5.CASES.items()}
         return r
