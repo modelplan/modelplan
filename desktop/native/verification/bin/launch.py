@@ -9,7 +9,7 @@ def validate(config,now):
     lease=config['lease'];release=config['release']
     for k in ('runID','epoch','notBefore','expiresAt'):
         if not lease.get(k) or lease[k]!=release.get(k):raise ValueError('lease/release identity mismatch')
-    if release.get('m1Released') is not True or release.get('m0DirectedAnnouncementConfirmed') is not True:raise ValueError('release missing')
+    if (release.get('m1Released') is not True and release.get('guardianGO') is not True) or release.get('m0DirectedAnnouncementConfirmed') is not True:raise ValueError('release missing')
     values=[now,lease['notBefore'],lease['expiresAt'],lease.get('guardianHeartbeatAt'),config.get('requiredSeconds')]
     if any(type(x) not in (int,float) or not math.isfinite(x) for x in values):raise ValueError('invalid timing')
     if not 0<lease['expiresAt']-lease['notBefore']<=1200:raise ValueError('absolute window invalid')

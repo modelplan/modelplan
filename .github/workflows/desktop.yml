@@ -184,6 +184,14 @@ jobs:
           xcode-select --print-path
           xcodebuild -version
           swift --version
+      - name: Verification Drive and Evidence pure checks
+        run: |
+          python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'
+          python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
+          node desktop/native/verification/test-animation-observer.mjs
+          swiftc desktop/native/verification/Observation.swift desktop/native/verification/ObservationSelfTests.swift -D MODELPLAN_TEST_ONLY_SPI -D MODELPLAN_OBSERVATION_SELF_TEST -o "$RUNNER_TEMP/observation-tests"
+          "$RUNNER_TEMP/observation-tests"
+          swiftc -parse-as-library desktop/native/verification/Observation.swift desktop/native/verification/U11aHost.swift -D MODELPLAN_TEST_ONLY_SPI -o "$RUNNER_TEMP/u11a-host"
       - name: Build the neutral app and all native checks
         run: swift build --package-path desktop/native --jobs 2
       - name: Native lane XCTest suites (selection, instruments, cockpit shell and field)

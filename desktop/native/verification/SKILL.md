@@ -9,7 +9,7 @@ Run from the checkout root. This skill is draft until a verification run at its 
 
 ## 1. Launch
 
-Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. M0 announces the matching run, M1 releases/guards it; owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
+Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. The coordinator grants the epoch and GO; M2 posts window start/end and runs the independent watchdog. Owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
 
 Compile test observation code with `MODELPLAN_TEST_ONLY_SPI`; omit this flag in release. `Observation.swift` excludes the WebKit selector/KVC and test RAF message handler from release. Runtime opt-in alone is insufficient. The scoped SPI is limited to the measured synthetic WKWebView, never process-name discovery.
 
@@ -23,7 +23,7 @@ Keep per-region animation timeline controls from `animation-observer.js` as stro
 
 ## 3. Drive
 
-M1 owns `bin/drive-*` and `tests/test_drive_*.py`; shared protocol changes go through the skill author. Drive remains pending until its scripts and actual delivered-action receipts exist.
+M2 owns `bin/drive-scenario.py` and its independent tests. The command orchestrates one announced epoch with an independent watchdog, separate preflight process, and three measured cycles. M1 independently checks the final closure.
 
 First scenario: U11a, three cycles of **60s pre-open baseline → 60s open → close → 60s post-close**. Preflight two seconds is separate; all waits and cleanup stay within the absolute lease. Gate/frame/post-close evidence missing means **not-run**, never a performance-budget failure. A requested open is not confirmed active appearance. Indicator/session/HUD activity and static porthole inputs must be pinned in the subject.
 
@@ -39,11 +39,11 @@ The approved open budget is average App + WebContent + GPU <=10% of one core. Mi
 
 ## 5. Cleanup
 
-M1 owns `bin/cleanup-*` and `tests/test_cleanup_*.py`. It quits owned processes, verifies closure, releases only this run's lease/resources and deletes only approved scratch. Retain evidence until its cleanup policy permits deletion. M1 posts start and end+cleaned receipts through the integration workflow. No automatic renewal or retry after interruption.
+M2 owns `bin/cleanup-run.py` and its tests. It quits owned processes, verifies closure, releases only this run's lease/resources and deletes only approved scratch. Retain evidence until its cleanup policy permits deletion. M2 posts start and end+cleaned receipts for the granted run; M1 checks closure independently. No automatic renewal or retry after interruption. A granted test run may request foreground activation once when needed; record the actual call, then stop on subsequent loss of activation rather than continuously reclaiming focus.
 
 ## 6. Helpers
 
-M2 owns the whole verification skill, Launch, Doctor, Evidence, shared helpers, feature map and integration; M1 retains the Drive/Cleanup paths above. M0 reviews and merges. Stable commands live in `bin/`; do not rewrite them in each lane.
+M2 owns the whole verification skill, including Drive/Cleanup and integration; M1 independently checks post-run closure. M0 reviews and merges. Stable commands live in `bin/`; do not rewrite them in each lane.
 
 Non-GUI qualification:
 
