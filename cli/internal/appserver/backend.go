@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
@@ -86,7 +87,7 @@ func errorCode(err error) int {
 type UnavailableBackend struct{}
 
 func (UnavailableBackend) Get(context.Context) (View, error) {
-	return View{Stamp: Stamp{Epoch: "unavailable"}, Projection: rows.Build(rows.Input{Now: time.Now(), ReadersOff: true}), Consent: wire.ConsentFacts{Scopes: []wire.ConsentScope{}}, Diagnostics: []wire.ScopeDiag{}, Health: wire.Health{State: wire.HealthDegraded, Code: "consent_unavailable"}}, nil
+	return View{Stamp: Stamp{Epoch: "unavailable"}, Projection: rows.Build(rows.Input{Now: time.Now(), ReadersOff: true}), Consent: wire.ConsentFacts{TextVersion: consent.TextVersion, Scopes: []wire.ConsentScope{}}, Diagnostics: []wire.ScopeDiag{}, Health: wire.Health{State: wire.HealthDegraded, Code: "consent_unavailable"}}, nil
 }
 func (UnavailableBackend) Grant(context.Context, wire.ConsentGrantParams) (GrantResult, error) {
 	return GrantResult{}, ProtocolError{wire.CodeInternal}

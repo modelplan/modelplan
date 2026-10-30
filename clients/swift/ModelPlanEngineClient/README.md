@@ -154,3 +154,43 @@ positive provider quota checks remain separate evidence.
 
 ModelPlanWire and its captures are producer-owned. Regenerate their outputs
 from Go after contract changes; never hand-merge generated files.
+
+## Consent parameters from accepted state
+
+`EngineConsentGrantFactory` is caller-owned and synchronous on MainActor. Its
+provider reads the **current** accepted snapshot on every call; do not capture a
+snapshot once while constructing the Settings command port. For an app-owned
+`ScopeConsentIntent` with the existing requestID/allowIDs/denyIDs/forgetIDs/keychainIDs
+properties, adopt the client projection protocol:
+
+```swift
+extension ScopeConsentIntent: EngineConsentGrantIntent {}
+let factory = EngineConsentGrantFactory { [weak store] in
+    guard let snapshot = store?.snapshot else { return (nil, nil) }
+    return (snapshot.delivery, snapshot.acceptedConsent)
+}
+// Pass to Settings' (ScopeConsentIntent) throws -> WireConsentGrantParams port:
+let makeGrant: (ScopeConsentIntent) throws -> WireConsentGrantParams = { intent in
+    try factory.make(intent)
+}
+```
+
+The factory takes epoch/generation from that delivery context and text version
+from its accepted `WireConsentFacts`; it invents none of them. A missing context,
+missing facts, stale session/floor/revision or invalid version throws the typed
+`EngineConsentGrantError`. These consistency checks do not admit or reorder wire
+events. Clear/restart must clear the accepted snapshot through the ordinary event
+path. Intent arrays remain explicit choices; no consent defaults or scope policy
+are inferred. The producer's consentTextVersion field is additive for older
+consumers, but the new factory requires version-bearing facts; an old CLI cannot
+supply them and grant stays unavailable until its accepted facts decode.
+
+**Shipping boundary:** the current generated decoder requires
+`consentTextVersion`. Against CLI v0.5.48 facts without it, decoding fails closed
+as a consent feature failure; the factory has no accepted facts and throws
+`missingConsentFacts` (or `missingContext` before a context exists). It does not
+substitute a version. The native CLI pin **must move to released v0.5.49 before
+any consumer built with these new wire bindings ships**. That release and pin
+bump follow the merge; this PR does not perform them. Older consumers can still
+ignore the new field emitted by the updated producer; this is not a guarantee
+that the new decoder accepts the older producer.
