@@ -46,6 +46,8 @@ jobs:
           TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
         run: python3 -m unittest discover -s tools/u14/engine_drive -p 'test_*.py' -v
       - name: Fetch ordinary old released writers
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 tools/u14/engine_drive/release.py --tag v0.5.46 --commit 3602d410b17f9376278413633abeec6e3572ee56 --output .tmp/engine-drive/old46
           python3 tools/u14/engine_drive/release.py --tag v0.5.47 --commit f830589cc613daf16267c692b735c3a240ec4d2e --output .tmp/engine-drive/old47

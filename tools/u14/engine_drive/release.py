@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import platform
 import re
@@ -66,18 +67,26 @@ def verify(record_path):
                            checksumsSHA256=sha(checksums), url=BASE + tag + '/' + asset)
 
 
+def api_json(url):
+    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'modelplan-u14-engine-drive'}
+    # Optional public-repository read token avoids shared hosted-runner API limits.
+    # It is never sent to release redirects, the subject, or synthetic providers.
+    if os.environ.get('GITHUB_TOKEN'):
+        headers['Authorization'] = 'Bearer ' + os.environ['GITHUB_TOKEN']
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+        return json.loads(response.read(65536))
+
+
 def resolve_commit(tag):
     url = 'https://api.github.com/repos/modelplan/modelplan/git/ref/tags/' + tag
-    with urllib.request.urlopen(url, timeout=30) as response:
-        obj = json.loads(response.read(65536))['object']
+    obj = api_json(url)['object']
     for _ in range(4):
         if obj['type'] == 'commit' and re.fullmatch(r'[a-f0-9]{40}', obj['sha']):
             return obj['sha']
         if obj['type'] != 'tag' or not re.fullmatch(r'[a-f0-9]{40}', obj['sha']):
             break
         url = 'https://api.github.com/repos/modelplan/modelplan/git/tags/' + obj['sha']
-        with urllib.request.urlopen(url, timeout=30) as response:
-            obj = json.loads(response.read(65536))['object']
+        obj = api_json(url)['object']
     raise ValueError('invalid-release-tag')
 
 

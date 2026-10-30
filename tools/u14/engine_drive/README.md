@@ -50,7 +50,10 @@ release tag, commit, archive hash and executable hash. The runner independently
 rechecks them and requires `--binary` to match those exact released bytes.
 Keep prepared artifacts immutable until execution is complete. The release
 commit is the full commit resolved from its public tag, not the harness head.
-No network download occurs during a Drive run.
+No network download occurs during a Drive run. Release preparation can use an
+optional `GITHUB_TOKEN` for public tag metadata to avoid shared hosted API rate
+limits; the workflow supplies its standard read-only repository token only to
+that step. It is never passed to the engine or synthetic provider.
 
 ## Single entry command for M2 / M0
 
