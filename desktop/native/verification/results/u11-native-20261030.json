@@ -98,6 +98,6 @@
     }
   ],
   "license": "MIT; synthetic verification metadata",
-  "fullEvidencePath": "/mnt/shared/modelplan/handoffs/20261030-u11a-skill/u11-wired-20261030T0905Z-r6/",
-  "fullEvidenceManifestSHA256": "356c68063ebfe156fe3fabfa6929d632eb7c17135dc89751ac6ce0921fe488c1"
+  "fullEvidenceManifestSHA256": "356c68063ebfe156fe3fabfa6929d632eb7c17135dc89751ac6ce0921fe488c1",
+  "evidenceID": "u11-wired-20261030T0905Z-r6@sha256:356c68063ebfe156fe3fabfa6929d632eb7c17135dc89751ac6ce0921fe488c1"
 }
