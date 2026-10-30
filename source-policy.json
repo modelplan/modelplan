@@ -79,7 +79,6 @@
       "desktop/official-visuals/runtime/canopy-c01/window-890-2x.png": "2ec9bd34fcac613b385db0f8ab9b6ce88d76905feb557a7a2ba66d48d2005264",
       "desktop/official-visuals/runtime/canopy-c01/aperture-890-2x.png": "d9778c2a895c96f768333a0189b684a098d60b29187a9d21c3aefe03af18ffa8",
       "desktop/official-visuals/runtime/canopy-c01/solid-outline-890-2x.png": "3da44669818854b371d709975b2fc529a1376c40d0abcd403a9baf90bfa610bb",
-<<<<<<< HEAD
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-en.png": "6a3905bc4670ab66e13a1466a4916934d66fc37e964596687d9be0086cb40bbe",
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-zh-CN.png": "8a4113cf6b94dd3fc5e3382243433c764f49bfe4f583ddd2c8671d947da8a266",
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-night-en.png": "3176387be32958ee5d698ee034ab36a0c2a406803403532e89eb8fb1c5a184b8",
@@ -88,8 +87,6 @@
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-zh-CN.png": "b588abd35d1200d2c5cee1c6c831297ec7f3bf97b7489ea8bc3d93d87063f9e4",
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-en.png": "8b444c34e19cfaf82c4d68924eee408d239d71b90e5e0d841e95d494a190a80b",
       "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-zh-CN.png": "a8f5f8df5e31c7f94e0d2d695d424771df6f96ac8463db62bb8ade40b3e37466",
-=======
->>>>>>> origin/u11-web-355
       "desktop/official-visuals/runtime/porthole-stills/assets/astra-day-heavy-1x.png": "629a3af3ca4f0a50f2ddb8c6cd119a0a0b1b5251576ea88d34905de4ed27f1e3",
       "desktop/official-visuals/runtime/porthole-stills/assets/astra-day-heavy-2x.png": "9c6b60f4d0e756084afc28aaa154a8fbb5bf203233485d56d8fc797c7cd5aad1",
       "desktop/official-visuals/runtime/porthole-stills/assets/astra-day-heavy-flame-1x.png": "4f1e9e2a3537d259b23f2d07dd2abe0e2b73268376e6b735c0188697fece97d0",
@@ -1069,19 +1066,7 @@
       "desktop/official-visuals/runtime/porthole-stills/assets/terra-5.6-night-standard-1x.png": "a88b4a000971168580a5d8dd179c44fba4ee8d3565b6ed1fa8b5fc4c47f54be7",
       "desktop/official-visuals/runtime/porthole-stills/assets/terra-5.6-night-standard-2x.png": "c7dad4873c10e056430ce4e10af48ec0b56584e4b790b55ebc4cae2d7d8616a5",
       "desktop/official-visuals/runtime/porthole-stills/assets/terra-5.6-night-standard-flame-1x.png": "c08418fc4f8cd14a073bd653a252030f9dab410c0caa0392471896ac6c5c5a2e",
-<<<<<<< HEAD
       "desktop/official-visuals/runtime/porthole-stills/assets/terra-5.6-night-standard-flame-2x.png": "935ea874a6ce6570782d86e42067341c6ce25f7eb263c3edd7559cab864ecf45"
-=======
-      "desktop/official-visuals/runtime/porthole-stills/assets/terra-5.6-night-standard-flame-2x.png": "935ea874a6ce6570782d86e42067341c6ce25f7eb263c3edd7559cab864ecf45",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-zh-CN.png": "a8f5f8df5e31c7f94e0d2d695d424771df6f96ac8463db62bb8ade40b3e37466",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-night-en.png": "8b444c34e19cfaf82c4d68924eee408d239d71b90e5e0d841e95d494a190a80b",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-night-zh-CN.png": "99c78fcfc27fe2b1a1120ecd25d6f97000ab7ed92c170b8a55d856cb4e4ecaf2",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-zh-CN.png": "b588abd35d1200d2c5cee1c6c831297ec7f3bf97b7489ea8bc3d93d87063f9e4",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-en.png": "6a3905bc4670ab66e13a1466a4916934d66fc37e964596687d9be0086cb40bbe",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/full-day-en.png": "9126e9585898a7e9f32eb38607dd1a11623b991c3546cc9622ff39c3d2894fee",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-day-zh-CN.png": "8a4113cf6b94dd3fc5e3382243433c764f49bfe4f583ddd2c8671d947da8a266",
-      "desktop/official-visuals/cockpit-baselines/webkit-linux-arm64/compact-night-en.png": "3176387be32958ee5d698ee034ab36a0c2a406803403532e89eb8fb1c5a184b8"
->>>>>>> origin/u11-web-355
     },
     "historicalMit": {
       "desktop/official-visuals/HISTORICAL-MIT.txt": "6d98a3aa9160bbfd0ee9420a2cec649267ea4c3513436c32306b922666555abe",
