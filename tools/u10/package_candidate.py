@@ -28,13 +28,15 @@ def module(name, path):
 
 identity = module('u10_identity', ROOT / 'desktop/native/tools/write-consent-bundle-identity.py')
 release = module('u10_release', ROOT / 'desktop/native/tools/distribution/release.py')
+credential_artifact = module('u10_credential_artifact', ROOT / 'desktop/native/tools/distribution/fetch_credential_artifact.py')
 BUNDLE_ID = 'ai.modelplan.candidate'
 HELPER_VERSION = '0.5.49'
 
 
-def run(*args):
+def run(*args, env=None):
+    env = {k: v for k, v in (os.environ if env is None else env).items() if k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
     try:
-        return subprocess.check_output([str(a) for a in args], stderr=subprocess.STDOUT)
+        return subprocess.check_output([str(a) for a in args], stderr=subprocess.STDOUT, env=env)
     except subprocess.CalledProcessError as error:
         sys.stderr.buffer.write(error.output)
         raise
@@ -148,9 +150,10 @@ def configure_product(app, source, build_number, root=ROOT):
         'keychainTwoBuildAcceptance': 'not-run'}))
 
 
-def verify_credential_helper(app, command=run):
-    artifact = os.environ.get('MODELPLAN_CREDENTIAL_AGENT_ARTIFACT')
-    expected = os.environ.get('MODELPLAN_CREDENTIAL_AGENT_SHA256')
+def verify_credential_helper(app, command=run, environment=None):
+    environment = os.environ if environment is None else environment
+    artifact = environment.get('MODELPLAN_CREDENTIAL_AGENT_ARTIFACT')
+    expected = environment.get('MODELPLAN_CREDENTIAL_AGENT_SHA256')
     if not artifact or not expected:
         raise ValueError('Approved credential helper artifact and independent SHA256 are required')
     command(sys.executable, '-B', ROOT / 'desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py',
@@ -207,10 +210,13 @@ def build(output, candidate_id, build_number):
     output.mkdir(parents=True)
     work = output / 'work'
     work.mkdir()
+    binding = credential_artifact.acquire(work / 'credential-input')
+    credential_env = {k: v for k, v in os.environ.items() if k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
+    credential_env.update(binding['environment'])
     archives = work / 'cli-archives'
     release.fetch_cli(pin_path, archives)
     # Preserve the release scaffold and its consumer; this path has no unverified identity switch.
-    run('bash', ROOT / 'desktop/native/tools/package-neutral.sh', archives, work / 'native')
+    run('bash', ROOT / 'desktop/native/tools/package-neutral.sh', archives, work / 'native', env=credential_env)
     app = output / 'ModelPlan.app'
     shutil.move(work / 'native/ModelPlan Community.app', app)
     configure_product(app, source, build_number)
@@ -223,7 +229,7 @@ def build(output, candidate_id, build_number):
             raise ValueError('App and helper must be universal')
     # The subprocess cwd is explicit; no global cwd mutation or helper execution.
     subprocess.run(['go', 'run', './internal/releaseguard/cmd', '--binary',
-                    str(app / 'Contents/MacOS/ModelPlanCommunity')], cwd=ROOT / 'cli', check=True)
+                    str(app / 'Contents/MacOS/ModelPlanCommunity')], cwd=ROOT / 'cli', env=credential_env, check=True)
     archive = output / 'ModelPlan-candidate-adhoc.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, archive)
     release.check_archive(archive)
@@ -234,7 +240,7 @@ def build(output, candidate_id, build_number):
     receipt = {'schemaVersion': 1, 'stage': 'interface-only', 'sourceCommit': source,
                'bundleIdentifier': BUNDLE_ID, 'helperVersion': HELPER_VERSION,
                'appVersion': load_json(ROOT / 'desktop/package.json')['version'], 'buildNumber': build_number,
-               'identity': sealed, 'resources': resources, 'signing': 'ad-hoc',
+               'identity': sealed, 'resources': resources, 'credentialArtifact': binding['approval'], 'signing': 'ad-hoc',
                'notarized': False, 'published': False, 'intelExecution': 'not-run',
                'L2': 'not-run', 'L3': 'not-run', 'keychainTwoBuildAcceptance': 'not-run',
                'archive': {'file': archive.name, 'sha256': release.sha256(archive)}}
@@ -244,7 +250,7 @@ def build(output, candidate_id, build_number):
         raise ValueError('Sealed app changed after manifest generation')
     verify_identity(app, source, raw_identity(raw_inputs))
     # U10 re-seals the App after the neutral scaffold; verify the pin after this final seal too.
-    verify_credential_helper(app)
+    verify_credential_helper(app, environment=credential_env)
     (output / 'SHA256SUMS').write_text(''.join(
         f'{release.sha256(p)}  {p.relative_to(output).as_posix()}\n'
         for p in (archive, output / 'packaging-receipt.json', output / 'evidence/manifest.json')))

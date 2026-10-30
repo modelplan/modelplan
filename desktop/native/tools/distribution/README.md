@@ -107,7 +107,8 @@ helper builder, executes the helper, or re-signs it. Existing CLI signing is
 separate. `--single` proves one final App's pin, not two-App, Keychain or A14 proof.
 The helper remains R2 default-deny.
 
-The canonical U7 tools are supplied by public #369. Packaging callers must provide
+The canonical U7 tools are supplied by prerequisite public #376; App wiring stays
+in #369. Packaging callers must provide
 their reviewed artifact inputs before enabling this hook; there is no silent
 fallback. The shell fixture tests use inert build/signing/verifier boundaries and
 prove orchestration and failure propagation only.
@@ -115,3 +116,32 @@ prove orchestration and failure propagation only.
 U10 modifies and re-seals its outer App after the neutral scaffold; it therefore
 runs the same `--single` checker again after its final seal/archive identity
 checks, before writing delivery checksums. It consumes the same approved inputs.
+
+## Coordinator-approved producer-run binding
+
+The reviewed triple lives at `desktop/native/credential-agent-artifact-pin.json`
+with exactly three string fields: `runID`, `artifactName`, and `sha256`. The last
+field is the credential-helper **binary** SHA-256, not GitHub's ZIP digest. This
+file is added or updated only after the coordinator approves that exact triple;
+no placeholder approval or build-derived automatic approval is supplied.
+
+`fetch_credential_artifact.py` resolves only that run in `modelplan/modelplan`,
+requires a successful completed main push/manual run from the same repository,
+selects the unique unexpired named artifact in that run, safely reads its ZIP,
+and checks the binary and descriptor against the independently approved digest.
+It exports the artifact directory/digest only after verification. There is no
+latest-run fallback or helper builder call. Missing approvals, wrong run/name,
+expired or ambiguous artifacts, unsafe members and digest mismatches fail closed.
+The canonical U7 embed/final tools still own universal/signature/full-pin checks.
+
+macos-distribution and desktop app-smoke use the CLI's `--github-env` output.
+U10 and the e2e builder call the same downloader before CLI/App compilation,
+passing the verified binding explicitly to `package-neutral.sh`; e2e does not
+create a second helper. Their artifact-consuming jobs add only `actions: read`
+to `contents: read`. The ephemeral download token is not exported in the binding
+or passed by the Python callers to packaging children. No signing secret or
+release permission is added. The producer workflow remains M3-owned.
+
+The producer artifact also carries `SHA256SUMS` and `LICENSE.txt`; the downloader
+retains both alongside the binary, pin and proof. These audit checksums do not
+replace the coordinator-approved independent binary digest.

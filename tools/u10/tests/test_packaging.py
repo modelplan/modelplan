@@ -194,6 +194,18 @@ class PackagingTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 packaging.verify_credential_helper(self.app, reject)
 
+    def test_missing_approved_credential_input_stops_before_cli_fetch_or_build(self):
+        with patch.object(packaging.platform, 'system', return_value='Darwin'), \
+             patch.object(packaging, 'git', side_effect=['a' * 40, '']), \
+             patch.object(packaging, 'load_json', return_value={'version': packaging.HELPER_VERSION}), \
+             patch.object(packaging.credential_artifact, 'acquire', side_effect=ValueError('approval missing')), \
+             patch.object(packaging.release, 'fetch_cli') as cli_fetch, \
+             patch.object(packaging, 'run') as build:
+            with self.assertRaisesRegex(ValueError, 'approval missing'):
+                packaging.build(self.root / 'missing-approved-artifact', 'synthetic-candidate', '1')
+            cli_fetch.assert_not_called()
+            build.assert_not_called()
+
     def test_linux_cannot_claim_a_real_mac_package(self):
         with patch.object(packaging.platform, 'system', return_value='Linux'):
             with self.assertRaisesRegex(ValueError, 'requires macOS'):
