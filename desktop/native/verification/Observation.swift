@@ -25,12 +25,14 @@ struct WindowObservation: Codable {
 struct RAFProgress {
     private var firstTime:Double?, firstFrame:Int?, lastFrame:Int?
     private(set) var failed=false
+    private(set) var elapsedSeconds:Double=0
     mutating func observe(frame:Int,now:Double)->String {
         guard !failed,now.isFinite,frame>0 else{return "not-run"}
         if let last=lastFrame,frame<=last {failed=true;return "fail"}
         if let first=firstTime,now<first {failed=true;return "fail"}
         if firstTime==nil {firstTime=now;firstFrame=frame};lastFrame=frame
-        return now-firstTime!>=2 && frame>firstFrame! ? "pass":"not-run"
+        elapsedSeconds=now-firstTime!
+        return elapsedSeconds>=2 && frame>firstFrame! ? "pass":"not-run"
     }
 }
 
@@ -59,7 +61,7 @@ struct RAFProgress {
               n.doubleValue<Double(Int.max) else{return}
         let now=Double(DispatchTime.now().uptimeNanoseconds)/1e9
         let outcome=proof.observe(frame:n.intValue,now:now)
-        emit(["event":"raf-preflight","nativeTimestampSeconds":now,"frames":n.intValue,"outcome":outcome])
+        emit(["event":"raf-preflight","nativeElapsedSeconds":proof.elapsedSeconds,"timestamp":ISO8601DateFormatter().string(from:Date()),"frames":n.intValue,"outcome":outcome])
     }
 }
 #endif
