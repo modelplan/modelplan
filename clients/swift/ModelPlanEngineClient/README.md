@@ -154,3 +154,33 @@ positive provider quota checks remain separate evidence.
 
 ModelPlanWire and its captures are producer-owned. Regenerate their outputs
 from Go after contract changes; never hand-merge generated files.
+
+## Consent parameters from accepted state
+
+`EngineConsentGrantFactory` is caller-owned and synchronous on MainActor. Its
+provider reads the **current** accepted snapshot on every call; do not capture a
+snapshot once while constructing the Settings command port. For an app-owned
+`ScopeConsentIntent` with the existing requestID/allowIDs/denyIDs/forgetIDs/keychainIDs
+properties, adopt the client projection protocol:
+
+```swift
+extension ScopeConsentIntent: EngineConsentGrantIntent {}
+let factory = EngineConsentGrantFactory { [weak store] in
+    guard let snapshot = store?.snapshot else { return (nil, nil) }
+    return (snapshot.delivery, snapshot.acceptedConsent)
+}
+// Pass to Settings' (ScopeConsentIntent) throws -> WireConsentGrantParams port:
+let makeGrant: (ScopeConsentIntent) throws -> WireConsentGrantParams = { intent in
+    try factory.make(intent)
+}
+```
+
+The factory takes epoch/generation from that delivery context and text version
+from its accepted `WireConsentFacts`; it invents none of them. A missing context,
+missing facts, stale session/floor/revision or invalid version throws the typed
+`EngineConsentGrantError`. These consistency checks do not admit or reorder wire
+events. Clear/restart must clear the accepted snapshot through the ordinary event
+path. Intent arrays remain explicit choices; no consent defaults or scope policy
+are inferred. The producer's consentTextVersion field is additive for older
+consumers, but the new factory requires version-bearing facts; an old CLI cannot
+supply them and grant stays unavailable until its accepted facts decode.

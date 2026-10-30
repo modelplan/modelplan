@@ -55,15 +55,73 @@ final class EngineStoreCoreTests: XCTestCase {
         XCTAssertNil(snapshot.rows, file: file, line: line)
         XCTAssertEqual(snapshot.invalidRowCount, 0, file: file, line: line)
         XCTAssertNil(snapshot.consent, file: file, line: line)
+        XCTAssertNil(snapshot.acceptedConsent, file: file, line: line)
         XCTAssertNil(snapshot.history, file: file, line: line)
         XCTAssertNil(snapshot.cockpit, file: file, line: line)
         XCTAssertNil(snapshot.publication, file: file, line: line)
         XCTAssertNil(snapshot.pluginInstall, file: file, line: line)
+        XCTAssertNil(snapshot.lastPluginInstall, file: file, line: line)
         XCTAssertNil(snapshot.diagnostics, file: file, line: line)
         XCTAssertNil(snapshot.refresh, file: file, line: line)
         XCTAssertNil(snapshot.lastGrant, file: file, line: line)
         XCTAssertNil(snapshot.health, file: file, line: line)
         XCTAssertTrue(snapshot.failures.isEmpty, file: file, line: line)
+    }
+
+    func testPluginInstallPairSequenceCannotBorrowAnUnrelatedResponseID() throws {
+        let result = try capture(WirePluginInstallResult.self, "WirePluginInstallResult.json")
+        let diagnostics = try capture(WireDiagnostics.self, "WireDiagnostics.json")
+        let ids: [WireRequestID] = [.string("install-a"), .signed(9_007_199_254_740_993), .unsigned(UInt64.max)]
+        var core = EngineStoreCore()
+        XCTAssertNil(core.snapshot.lastPluginInstall)
+        for id in ids {
+            _ = core.apply(.response(requestID: id, .pluginInstall(try reply(result))))
+            let pair = try XCTUnwrap(core.snapshot.lastPluginInstall)
+            XCTAssertEqual(pair.requestID, id)
+            XCTAssertEqual(try bytes(pair.result), try bytes(result))
+            // This used to make lastResponseRequestID + pluginInstall a false pair.
+            _ = core.apply(.response(requestID: .string("unrelated"), .diagnostics(try reply(diagnostics))))
+            XCTAssertEqual(core.snapshot.lastResponseRequestID, .string("unrelated"))
+            XCTAssertEqual(core.snapshot.lastPluginInstall?.requestID, id)
+            XCTAssertEqual(try bytes(core.snapshot.lastPluginInstall?.result), try bytes(result))
+            XCTAssertEqual(try bytes(core.snapshot.pluginInstall), try bytes(result))
+            XCTAssertEqual(pair.requestID, id, "previous snapshot pair is a value")
+        }
+        _ = core.apply(.clearPrivateViews(.init(revision: 8, reason: .generationAdvanced,
+                                                previous: context(), nextFloor: context(8).floor)))
+        XCTAssertNil(core.snapshot.lastPluginInstall)
+        XCTAssertNil(core.snapshot.pluginInstall)
+        _ = core.apply(.response(requestID: .string("after-clear"), .diagnostics(try reply(diagnostics, 8))))
+        XCTAssertNil(core.snapshot.lastPluginInstall)
+    }
+
+    func testLiveFactoryUsesAcceptedConsentEventsAndClearWithdrawsAuthority() async throws {
+        let current = context(), next = context(8)
+        let facts = try capture(WireConsentFacts.self, "WireConsentFacts.json")
+        let accepted = try reply(facts), fresh = try reply(facts, 8)
+        let invalidation = EngineInvalidation(revision: 8, reason: .generationAdvanced, previous: current, nextFloor: next.floor)
+        try await MainActor.run {
+            var core = EngineStoreCore()
+            let factory = EngineConsentGrantFactory { (core.snapshot.delivery, core.snapshot.acceptedConsent) }
+            struct Intent: EngineConsentGrantIntent {
+                let requestID = "settings-gesture"
+                let allowIDs: [String]
+                let denyIDs: [String] = [], forgetIDs: [String] = [], keychainIDs: [String] = []
+            }
+            let intent = Intent(allowIDs: [facts.scopes[0].scope])
+            _ = core.apply(.context(current))
+            XCTAssertThrowsError(try factory.make(intent)) { XCTAssertEqual($0 as? EngineConsentGrantError, .missingConsentFacts) }
+            _ = core.apply(.consentChanged(accepted))
+            XCTAssertEqual(try factory.make(intent).expectGeneration, 7)
+            XCTAssertEqual(try factory.make(intent).consentTextVersion, facts.consentTextVersion)
+            _ = core.apply(.context(next))
+            XCTAssertThrowsError(try factory.make(intent)) { XCTAssertEqual($0 as? EngineConsentGrantError, .staleConsentFacts) }
+            _ = core.apply(.response(requestID: .string("current-consent"), .consent(fresh)))
+            XCTAssertEqual(try factory.make(intent).expectGeneration, 8)
+            _ = core.apply(.clearPrivateViews(invalidation))
+            XCTAssertNil(core.snapshot.acceptedConsent)
+            XCTAssertThrowsError(try factory.make(intent)) { XCTAssertEqual($0 as? EngineConsentGrantError, .missingContext) }
+        }
     }
 
     func testInitialStateAndConnectionEventsTable() {
