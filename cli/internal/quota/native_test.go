@@ -56,13 +56,46 @@ func TestParseZai(t *testing.T) {
 	}
 
 	for body, want := range map[string]string{
-		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "schema_changed",
+		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "http_401",
 		`{"code":200,"success":true,"data":{}}`:                                              "unsupported quota format",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3}]}}`:   "unsupported quota entry",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":"x"}]}}`: "unsupported quota entry",
 	} {
 		if e := zaiParse(t, body); e.Status != "error" || e.Error != want {
 			t.Errorf("%s: %+v", body, e)
+		}
+	}
+}
+
+// Keep the documented business-code table separate from unknown monitor codes.
+func TestParseZaiBodyCodes(t *testing.T) {
+	for want, codes := range map[string][]int{
+		"http_401": {401, 1000, 1001, 1003, 1005},
+		"http_403": {403, 1220},
+		"http_429": {429, 1113, 1302, 1305, 1308, 1309, 1310, 1311, 1313, 1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321},
+		"http_5xx": {500, 1200, 1230, 1234},
+		"other":    {0, 200, 1002, 1210, 1303, 1312, 987654},
+	} {
+		for _, code := range codes {
+			for _, body := range []string{
+				`{"code":` + itoa(code) + `,"success":false,"msg":"Authentication failed HTTP 429 synthetic-secret"}`,
+				`{"error":{"code":"` + itoa(code) + `","message":"synthetic-secret"}}`,
+				`{"error":{"code":` + itoa(code) + `,"message":"synthetic-secret"}}`,
+			} {
+				e := zaiParse(t, body)
+				if e.Status != "error" || e.ErrorCode != want || e.Error != want || len(e.Windows) != 0 {
+					t.Fatalf("body code %d: reason = %q, code = %q; want %q", code, e.Error, e.ErrorCode, want)
+				}
+			}
+		}
+	}
+	// A claimed success must not hide a body error.
+	for _, body := range []string{
+		`{"code":401,"success":true}`,
+		`{"code":200,"success":true,"error":{"code":"1001"},"data":{"limits":[]}}`,
+	} {
+		if e := zaiParse(t, body); e.Status != "error" || e.ErrorCode != "http_401" {
+			t.Fatal("body rejection accepted as success")
 		}
 	}
 }
