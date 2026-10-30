@@ -9,7 +9,6 @@ import json
 import math
 import os
 from pathlib import Path
-import socket
 import stat
 import sys
 import time
@@ -18,6 +17,7 @@ import uuid
 DEFAULT_LEDGER = Path('/mnt/shared/modelplan/handoffs/gui-bookings/ledger.jsonl')
 MAX_SECONDS = 20 * 60
 GRACE_SECONDS = 120
+PROCESS_TOKEN = uuid.uuid4().hex
 
 
 def label(value, name):
@@ -38,7 +38,7 @@ class Ledger:
         self.lock_timeout = lock_timeout
 
     @contextmanager
-    def locked(self):
+    def locked(self, *, lane=None, unit=None):
         """mkdir is the cross-host lock; flock is additional where supported.
 
         Never steal a lock based on its age: an SMB-disconnected writer could
@@ -57,7 +57,12 @@ class Ledger:
                     raise ValueError(f'ledger transaction locked: {lock}; stop and report, do not busy-retry')
                 time.sleep(0.02)
         try:
-            (lock / 'owner.json').write_text(json.dumps(dict(host=socket.gethostname(), pid=os.getpid())))
+            owner = dict(processToken=PROCESS_TOKEN)
+            if lane is not None:
+                owner['lane'] = lane
+            if unit is not None:
+                owner['unit'] = unit
+            (lock / 'owner.json').write_text(json.dumps(owner))
             fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, 'a+b') as file:
                 if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
@@ -149,7 +154,7 @@ class Ledger:
 
     def request(self, lane, unit, scenarios, seconds=MAX_SECONDS):
         label(lane, 'lane'); label(unit, 'unit'); self.check_request(scenarios, seconds)
-        with self.locked() as (file, events, bookings, now):
+        with self.locked(lane=lane, unit=unit) as (file, events, bookings, now):
             return self.append(file, events, now, 'request', uuid.uuid4().hex,
                                lane=lane, unit=unit, scenarios=scenarios, maxSeconds=seconds)
 
@@ -163,7 +168,7 @@ class Ledger:
 
     def start(self, ident, lane, run_id, epoch):
         label(run_id, 'runID'); label(epoch, 'epoch')
-        with self.locked() as (file, events, bookings, now):
+        with self.locked(lane=lane) as (file, events, bookings, now):
             head = self.head(bookings)
             if not head or head['id'] != ident or head['lane'] != lane or head['state'] != 'queued':
                 raise ValueError('only the queued head may start; stop and wait for handoff, do not busy-retry')
@@ -172,7 +177,7 @@ class Ledger:
     def finish(self, ident, lane, run_id, epoch, *, cleaned=False):
         if cleaned is not True:
             raise ValueError('finish requires an explicit cleanup confirmation')
-        with self.locked() as (file, events, bookings, now):
+        with self.locked(lane=lane) as (file, events, bookings, now):
             self.owner(self.head(bookings), ident, lane, run_id, epoch)
             return self.append(file, events, now, 'finish', ident, receipt='end + cleaned', cleaned=True)
 
@@ -185,7 +190,7 @@ class Ledger:
                                reason='max duration plus grace elapsed; cleanup unconfirmed')
 
     def admit(self, booking, lease, required_seconds):
-        with self.locked() as (_, events, bookings, now):
+        with self.locked(lane=booking.get('lane'), unit=booking.get('unit')) as (_, events, bookings, now):
             head = self.head(bookings)
             self.owner(head, booking['id'], booking['lane'], lease['runID'], lease['epoch'])
             if booking['unit'] != head['unit'] or booking['scenario'] not in head['scenarios']:
