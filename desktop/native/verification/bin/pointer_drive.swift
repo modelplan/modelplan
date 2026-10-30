@@ -24,6 +24,36 @@ struct PointerPlan: Decodable {
 }
 enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnded, cannotCreateEvent }
 
+/// Remembers the release event for a button that is down, so a termination signal can
+/// release it. Signal delivery goes to a background queue because the main thread may be
+/// blocked in the synchronous drive loop.
+final class ButtonGuard: @unchecked Sendable {
+    static let shared = ButtonGuard()
+    private let lock = NSLock()
+    private var pendingUp: CGEvent?
+    func pressed(_ up: CGEvent) { lock.lock(); pendingUp = up; lock.unlock() }
+    func released() { lock.lock(); pendingUp = nil; lock.unlock() }
+    /// Posts the pending release, if any, and reports whether one was outstanding.
+    @discardableResult func releaseIfHeld(post: (CGEvent) -> Void) -> Bool {
+        lock.lock(); let up = pendingUp; pendingUp = nil; lock.unlock()
+        guard let up else { return false }
+        post(up); return true
+    }
+    private var sources: [DispatchSourceSignal] = []
+    func installTerminationRelease() {
+        for sig in [SIGTERM, SIGINT] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInteractive))
+            source.setEventHandler { [weak self] in
+                self?.releaseIfHeld(post: { $0.post(tap: .cghidEventTap) })
+                exit(128 + sig)
+            }
+            source.resume()
+            sources.append(source)
+        }
+    }
+}
+
 @MainActor @main enum PointerDrive {
     static func permission() -> [String: Any] {
         ["event":"pointer-host-permission","postEvents":AXIsProcessTrusted(),
@@ -57,19 +87,21 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
               p.steps.reduce(0,{$0+$1.seconds+$1.dwell})<=1200,
               p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) }) else { throw DriveError.invalidPlan }
     }
-    // Construct the complete pair before pressing. A receipt failure after down must
-    // still release the button; these closures also allow tests without posting input.
+    // Construct the complete pair before pressing, then post down and up back to back with
+    // no I/O between them; receipts are written only after the button is released. The
+    // guard covers the remaining window: a SIGTERM/SIGINT from verification cleanup that
+    // arrives while a button is held posts the matching up before the process exits.
     static func click(at point: CGPoint, post: (CGEvent) -> Void,
-                      record: (CGEventType) throws -> Void) throws {
+                      record: (CGEventType) throws -> Void, guardState: ButtonGuard = .shared) throws {
         guard let down = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:point,mouseButton:.left),
               let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
         down.setIntegerValueField(.mouseEventClickState,value:1)
         up.setIntegerValueField(.mouseEventClickState,value:1)
-        var released = false
+        guardState.pressed(up)
         post(down)
-        defer { if !released { post(up) } }
+        post(up)
+        guardState.released()
         try record(.leftMouseDown)
-        post(up); released = true
         try record(.leftMouseUp)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
@@ -149,7 +181,24 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
                 } catch ReceiptFailure.expected { }
                 precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
             }
-            print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates and failure release; no permission query or event posted");return
+            // No receipt I/O runs between down and up: when the first receipt write starts,
+            // both events have already been posted.
+            final class Posted { var types: [CGEventType] = [] }
+            let posted = Posted()
+            try click(at:target,post: { posted.types.append($0.type) },record: { type in
+                if type == .leftMouseDown { precondition(posted.types == [.leftMouseDown,.leftMouseUp]) }
+            })
+            // A termination while the button is held releases it exactly once.
+            let probe = ButtonGuard()
+            guard let heldUp = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:target,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
+            var released: [CGEvent] = []
+            probe.pressed(heldUp)
+            precondition(probe.releaseIfHeld(post: { released.append($0) }))
+            precondition(released.map(\.type) == [.leftMouseUp])
+            precondition(!probe.releaseIfHeld(post: { released.append($0) }))
+            probe.pressed(heldUp); probe.released()
+            precondition(!probe.releaseIfHeld(post: { released.append($0) }) && released.count == 1)
+            print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
         }
         if args.count == 2 && args[1] == "--check" {
             let data = try JSONSerialization.data(withJSONObject:permission(),options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self));return
@@ -164,6 +213,7 @@ enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnde
         catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended"],to:out);throw error }
     }
     static func main() {
+        ButtonGuard.shared.installTerminationRelease()
         do { try entry() }
         catch { print("{\"event\":\"pointer-error\",\"outcome\":\"not-run\",\"reason\":\"invalid-or-ended-verification-contract\"}");exit(1) }
     }
