@@ -51,6 +51,7 @@ Non-GUI qualification:
 python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'
 python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
 node desktop/native/verification/test-animation-observer.mjs
+node desktop/native/verification/test-stable-layer.mjs
 node scripts/check-source-policy.mjs
 ```
 
