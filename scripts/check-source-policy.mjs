@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { verifyPortholePack } from "./check-porthole-pack.mjs";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -9,6 +10,7 @@ const read = async (p) => readFile(resolve(root, p));
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const policy = JSON.parse(await read("source-policy.json"));
 verifyFontPack(root);
+verifyPortholePack(root);
 const tracked = execFileSync(
   "git",
   ["ls-files", "--cached", "--others", "--exclude-standard"],
