@@ -327,6 +327,44 @@ import ModelPlanWire
         XCTAssertNotNil(controller.facts)
         if case .idle = controller.phase {} else { XCTFail("Cancel must leave the confirmation") }
     }
+    func testAcceptedPluginPlanIsCorrelatedBeforeCompletionAndShownAfterward() async throws {
+        let engine = ScopeConsentTestClient(); await engine.holdPlugin()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true })
+        let controller = ScopeConsentController(commands: commands)
+        let view = SettingsScopeConsentView(controller: controller, language: .english)
+        try await activate(view, "scope.plugin.codex")
+        let confirm = try XCTUnwrap(control(view, "scope.plugin.confirm") as? ScopeConsentButton)
+        let task = Task { await confirm.invoke?() }
+        await engine.waitForPluginStart()
+        let result = try WirePluginInstallResult(schemaVersion: 1, tool: .codex, status: .planned,
+            commands: [["codex", "one"], ["codex", "two"]], completed: 0, docs: "https://example.invalid")
+        controller.receiveAcceptedPluginResult(requestID: .string("rpc-u8"), result: result)
+        XCTAssertFalse(viewTexts(view).contains { $0.contains("plan is ready") }, "The request ID is not correlated until completion")
+        await engine.finishPlugin(); await task.value
+        XCTAssertTrue(viewTexts(view).contains { $0.contains("plan is ready") })
+        XCTAssertFalse(viewTexts(view).contains { $0 == "Installed" })
+    }
+    func testAcceptedPluginResultRejectsOtherRequestAndClearWithdrawsState() async throws {
+        let engine = ScopeConsentTestClient(); await engine.holdPlugin()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true })
+        let controller = ScopeConsentController(commands: commands)
+        let view = SettingsScopeConsentView(controller: controller, language: .english)
+        try await activate(view, "scope.plugin.codex")
+        let confirm = try XCTUnwrap(control(view, "scope.plugin.confirm") as? ScopeConsentButton)
+        let task = Task { await confirm.invoke?() }; await engine.waitForPluginStart()
+        let result = try WirePluginInstallResult(schemaVersion: 1, tool: .codex, status: .installed,
+            commands: [["codex", "one"], ["codex", "two"]], completed: 2, docs: "https://example.invalid")
+        controller.receiveAcceptedPluginResult(requestID: .string("other-request"), result: result)
+        await engine.finishPlugin(); await task.value
+        XCTAssertFalse(viewTexts(view).contains { $0.contains("reports the plugin installed") })
+        controller.receiveAcceptedPluginResult(requestID: .string("other-request"), result: result)
+        XCTAssertFalse(viewTexts(view).contains { $0.contains("reports the plugin installed") })
+        controller.receiveAcceptedPluginResult(requestID: .string("rpc-u8"), result: result)
+        XCTAssertTrue(viewTexts(view).contains { $0.contains("reports the plugin installed") })
+        controller.clearAcceptedPrivateState()
+        controller.receiveAcceptedPluginResult(requestID: .string("rpc-u8"), result: result)
+        XCTAssertFalse(viewTexts(view).contains { $0.contains("reports the plugin installed") })
+    }
     func testOffscreenScopeControlRequiresConfirmationAndOnlyAcceptedFactsAuthorize() async throws {
         let engine = ScopeConsentTestClient()
         let commands = EngineClientScopeConsentCommands(client: engine, ready: { true }, makeGrant: { intent in

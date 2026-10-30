@@ -11,7 +11,7 @@ public enum ScopeConsentPhase: Sendable {
     case idle, confirmation(ScopeConsentConfirmation), sending, waitingForFacts
 }
 public enum ScopePluginPhase: Sendable {
-    case idle, confirmation(id: UUID, tool: WirePluginTool), sending, unverified
+    case idle, confirmation(id: UUID, tool: WirePluginTool), sending, unverified, result(WirePluginInstallStatus)
 }
 public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedAwaitingFacts, requestFailed, checking, waitingForFacts, cleanupPending }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
@@ -27,6 +27,9 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     private var inspectionToken: UUID?
     public private(set) var pluginPhase: ScopePluginPhase = .idle
     private var pluginToken: UUID?
+    private var expectedPluginTool: WirePluginTool?
+    private var completedPluginRequestID: WireRequestID?
+    private var pendingPluginResults: [(WireRequestID, WirePluginInstallStatus)] = []
     private let commands: any ScopeConsentCommands
     // A UI request token only; never a protocol session, epoch or generation fence.
     private var lastIntentRequestID: String?
@@ -40,6 +43,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public var canRequestPlugin: Bool { commands.isReady && pluginToken == nil }
     public func requestPluginInstall(_ tool: WirePluginTool) {
         guard canRequestPlugin, tool.isKnown else { return }
+        expectedPluginTool = tool; completedPluginRequestID = nil; pendingPluginResults = []
         pluginPhase = .confirmation(id: UUID(), tool: tool); changed()
     }
     public func confirmPluginInstall(_ id: UUID) async {
@@ -47,16 +51,33 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
               canRequestPlugin, !Task.isCancelled else { return }
         let token = UUID(); pluginToken = token; pluginPhase = .sending; changed()
         guard pluginToken == token, !Task.isCancelled else { return }
-        do { _ = try await commands.pluginInstall(try .init(tool: tool)) }
-        catch { /* Only bounded human guidance below; no raw error or direct CLI fallback. */ }
-        guard pluginToken == token else { return }
-        pluginToken = nil
-        // The current generated contract has no result root. Completion is never an installation proof.
-        pluginPhase = .unverified; changed()
+        do {
+            let completion = try await commands.pluginInstall(try .init(tool: tool))
+            guard pluginToken == token else { return }
+            pluginToken = nil; completedPluginRequestID = completion.requestID
+            if let match = pendingPluginResults.first(where: { $0.0 == completion.requestID }) {
+                pluginPhase = .result(match.1)
+            } else { pluginPhase = .unverified }
+            pendingPluginResults = []; changed()
+        } catch {
+            guard pluginToken == token else { return }
+            pluginToken = nil; expectedPluginTool = nil; completedPluginRequestID = nil
+            pendingPluginResults = []; pluginPhase = .unverified; changed()
+        }
+    }
+    /// Only call with the native store's accepted typed result; completion supplies correlation only.
+    public func receiveAcceptedPluginResult(requestID: WireRequestID, result: WirePluginInstallResult) {
+        guard result.tool == expectedPluginTool else { return }
+        if let completedPluginRequestID {
+            guard requestID == completedPluginRequestID else { return }
+            pluginPhase = .result(result.status); changed()
+        } else if pluginToken != nil, pendingPluginResults.count < 16 {
+            pendingPluginResults.append((requestID, result.status))
+        }
     }
     public func cancelPluginConfirmation() {
         guard case .confirmation = pluginPhase else { return }
-        pluginPhase = .idle; changed()
+        pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []; changed()
     }
     public func cancelConfirmation() {
         guard case .confirmation = phase else { return }
@@ -158,7 +179,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) { rowsSummary = value.projection.rowsSummary; changed() }
     public func clearAcceptedPrivateState() {
-        lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle
+        lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil; notice = .none
         facts = nil; rowsSummary = nil; selectedIDs = []; phase = .idle; changed()
     }

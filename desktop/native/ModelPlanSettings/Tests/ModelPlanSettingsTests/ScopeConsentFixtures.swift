@@ -33,6 +33,12 @@ actor ScopeConsentTestClient: EngineClient {
     private var inspections = 0
     func failGrant(_ error: EngineClientError) { failure = error }
     func inspectionCount() -> Int { inspections }
+    private var pluginHold = false
+    private var pluginHeld: CheckedContinuation<Void, Never>?
+    private var pluginStarted: CheckedContinuation<Void, Never>?
+    func holdPlugin() { pluginHold = true }
+    func waitForPluginStart() async { if !plugins.isEmpty { return }; await withCheckedContinuation { pluginStarted = $0 } }
+    func finishPlugin() { pluginHeld?.resume(); pluginHeld = nil; pluginHold = false }
     private var plugins: [WirePluginInstallParams] = []
     func recordedPlugins() -> [WirePluginInstallParams] { plugins }
     private var grants: [WireConsentGrantParams] = []
@@ -63,7 +69,9 @@ actor ScopeConsentTestClient: EngineClient {
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
     func history(_ query: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { plugins.append(request); throw EngineClientError.featureDecode(.pluginInstall) }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { plugins.append(request); pluginStarted?.resume(); pluginStarted = nil
+        if pluginHold { await withCheckedContinuation { pluginHeld = $0 }; return try completion() }
+        throw EngineClientError.featureDecode(.pluginInstall) }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
 }

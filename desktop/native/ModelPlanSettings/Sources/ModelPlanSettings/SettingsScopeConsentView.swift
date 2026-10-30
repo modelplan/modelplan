@@ -103,6 +103,14 @@ import ModelPlanWire
             addArrangedSubview(synchronousButton(.init("Cancel", "取消"), id: "scope.plugin.cancel") { [weak self] in self?.controller.cancelPluginConfirmation() })
         case .sending: label(.init("Sending the plugin request…", "正在提交插件请求…"))
         case .unverified: label(.init("Plugin installation could not be verified. Check the plugin in the target tool; no installation success is assumed.", "无法核验插件安装结果，请在目标工具中检查插件；尚未假定安装成功。"))
+        case .result(let status):
+            switch status {
+            case .installed: label(.init("The engine reports the plugin installed. Check it in the target tool.", "引擎报告插件已安装，请在目标工具中检查。"))
+            case .planned: label(.init("The plugin installation plan is ready. Follow the target tool's plugin setup instructions.", "插件安装计划已就绪，请按照目标工具的插件设置说明操作。"))
+            case .instructions: label(.init("The host tool needs manual plugin setup. Follow its plugin setup instructions.", "宿主工具需要手动设置插件，请按照其插件设置说明操作。"))
+            case .failed: label(.init("The plugin installation did not finish. Check the target tool and try again.", "插件安装未完成，请检查目标工具后重试。"))
+            case .unknown: label(.init("The plugin result is not recognized. Check the target tool.", "无法识别插件结果，请在目标工具中检查。"))
+            }
         }
         guard let facts = controller.facts else {
             label(.init("Permission details are not ready. Check the engine connection.", "权限信息尚未就绪，请检查引擎连接。")); return
