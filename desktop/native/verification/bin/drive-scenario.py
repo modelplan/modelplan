@@ -43,8 +43,9 @@ class LocalServer(http.server.ThreadingHTTPServer):
 
 class Attempt:
     def __init__(self,c):
-        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event();self.roles={};self.known=[];self.snapshotBefore=None;self.snapshotIndex=0
+        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event();self.roles={};self.known=[];self.snapshotBefore=None;self.snapshotIndex=0;self.collectorError=None
     def live(self):
+        if self.collectorError:raise RuntimeError('collector-failed:'+self.collectorError)
         if self.stop.exists() or time.time()>=self.c['expiresAt']-90:raise RuntimeError('stop-or-expiry')
         g=read(self.lease)
         if g.get('runID')!=self.c['runID'] or g.get('epoch')!=self.c['epoch'] or g.get('ownerPreempted') is not False or not 0<=time.time()-g['guardianHeartbeatAt']<=2:raise RuntimeError('guardian-not-live')
@@ -107,11 +108,20 @@ class Attempt:
         try:self.app.wait(timeout=5)
         except subprocess.TimeoutExpired:raise RuntimeError('subject-quit-timeout')
     def top_worker(self):
+        try:self.collect_roles()
+        except Exception as error:
+            if not self.topStop.is_set() and not self.stop.exists():
+                self.collectorError=type(error).__name__
+                write(self.out/'collector-error.json',dict(reason=self.collectorError))
+            self.topStop.set()
+    def collect_roles(self):
         with (self.out/'top-samples.jsonl').open('x') as f,(self.out/'pid-rss-samples.jsonl').open('x') as mem,(self.out/'auxiliary-top-samples.jsonl').open('x') as aux:
             while not self.topStop.is_set() and self.app.poll() is None:
                 roles=self.roles.copy()
                 if not roles:self.topStop.wait(.3);continue
-                self.live();rows=self.events();before=rows[-1]
+                self.live();rows=self.events()
+                if not rows:self.topStop.wait(.2);continue
+                before=rows[-1]
                 roles={k:v for k,v in roles.items() if cleanup.matches(cleanup.identity(v['pid']),v)}
                 if not roles:self.topStop.wait(.3);continue
                 command=['/usr/bin/top','-l','2','-s','1','-stats','pid,cpu','-ncols','80']
@@ -191,6 +201,8 @@ class Attempt:
             result['cleanup']=dict(ownedExited=all(p.poll() is not None for p,_ in self.children),guardianExited=self.guard is None or self.guard.poll() is not None,topObserverJoined=self.topThread is None or not self.topThread.is_alive(),scratchRemoved=cleanup.remove_scratch(self.scratch,['home','tmp']))
             for lock in (getattr(self,'slot',None),getattr(self,'lock',None)):
                 if lock is not None and lock.exists() and read(lock/'owner.json').get('runID')==c['runID']:(lock/'owner.json').unlink();lock.rmdir()
+            result['roleMaps']=[read(p) for p in sorted(self.out.glob('role-map-*.json'))]
+            result['GPU']='see-roleMaps; no fixed attribution assumption'
             result['cleanup']['leaseReleased']=True
             result['ownedExitCodes']=[dict(role=i['role'],exitCode=p.returncode) for p,i in self.children]
             result['stopReason']=read(self.stop).get('reason')

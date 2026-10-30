@@ -26,3 +26,14 @@ class Roles(unittest.TestCase):
    self.assertEqual(R.rss(w,lambda _:w),123*1024)
    calls=iter([w,w|dict(startSeconds=999)])
    self.assertIsNone(R.rss(w,lambda _:next(calls)))
+
+class StartupRace(unittest.TestCase):
+ def test_seeded_roles_wait_for_first_cold_event(self):
+  import importlib.util,tempfile,threading
+  path=Path(__file__).parents[1]/'bin/drive-scenario.py'
+  spec=importlib.util.spec_from_file_location('drive_race',path);D=importlib.util.module_from_spec(spec);spec.loader.exec_module(D)
+  with tempfile.TemporaryDirectory() as d:
+   a=D.Attempt(dict(batch=d,scratch=d));a.app=type('App',(),{'poll':lambda self:None})();a.roles={'WebContent':dict(pid=2,startSeconds=100,startMicroseconds=1)};a.live=lambda:None;a.events=lambda:[]
+   a.topStop.wait=lambda _:a.topStop.set()
+   with patch.object(D.subprocess,'run') as run:
+    a.top_worker();run.assert_not_called()
