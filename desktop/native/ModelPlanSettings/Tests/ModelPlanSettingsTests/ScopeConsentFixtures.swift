@@ -29,6 +29,7 @@ enum ScopeConsentFixtures {
     }
 }
 actor ScopeConsentTestClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     private var failure: EngineClientError?
     private var inspections = 0
     func failGrant(_ error: EngineClientError) { failure = error }

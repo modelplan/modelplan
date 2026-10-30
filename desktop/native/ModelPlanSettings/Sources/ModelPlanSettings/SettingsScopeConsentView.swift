@@ -130,6 +130,9 @@ import ModelPlanWire
             let id = scope.scope
             let title = scopeTitle(scope)
             label(title)
+            if scope.route == .savedLoginApi {
+                label(.init("This reading path needs a signed build.", "此读取路径需要签名版本。"))
+            }
             if !scope.route.isKnown {
                 label(.init("Update the app to allow this new reading path. Revoke and Forget remain available.", "请更新应用后再授权这种新读取路径；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {

@@ -6,6 +6,17 @@ import ModelPlanWire
 @testable import ModelPlanSettings
 
 @MainActor final class ScopeConsentFlowTests: XCTestCase {
+    func testSavedLoginScopesStayOptInAndExplainSignedBuildGate() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts(cursorDefault: true))
+        XCTAssertFalse(controller.selectedIDs.contains(ScopeConsentFixtures.cursor))
+        XCTAssertTrue(controller.selectedIDs.contains(ScopeConsentFixtures.local))
+        let view = SettingsScopeConsentView(controller: controller, language: .english)
+        XCTAssertTrue(viewTexts(view).contains { $0.localizedCaseInsensitiveContains("needs a signed build") })
+    }
     func testGrantFactoryReadsAcceptedFactsForIntent() throws {
         let facts = try ScopeConsentFixtures.facts()
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 3), revision: 1)

@@ -131,7 +131,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
                     if old.state != scope.state || old.keychain != scope.keychain || old.route != scope.route {
                         selectedIDs.remove(scope.scope)
                     }
-                } else if scope.state == .unset && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
+                } else if scope.state == .unset && scope.route != .savedLoginApi && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
                     selectedIDs.insert(scope.scope)
                 }
             }
