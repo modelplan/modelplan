@@ -58,7 +58,7 @@ jobs:
         env:
           TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
         run: |
-          python3 tools/u14/engine_drive/run.py --binary .tmp/engine-drive/modelplan --source-sha "$GITHUB_SHA" --old-release .tmp/engine-drive/old46/release.json --old-release .tmp/engine-drive/old47/release.json --level L1 --output .tmp/engine-drive/evidence
+          exec python3 tools/u14/engine_drive/run.py --binary .tmp/engine-drive/modelplan --source-sha "$GITHUB_SHA" --old-release .tmp/engine-drive/old46/release.json --old-release .tmp/engine-drive/old47/release.json --level L1 --output .tmp/engine-drive/evidence
       - name: Retain outcomes before cleanup
         if: always()
         uses: actions/upload-artifact@v4
