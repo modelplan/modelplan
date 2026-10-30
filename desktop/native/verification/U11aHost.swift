@@ -90,7 +90,8 @@ import Darwin
                 if let frames=result["frames"] as? [String:Any] {self.emit(frames)}
                 if let activity=result["activity"] as? [String:Any] {
                     self.emit(activity)
-                    self.subjectReady=activity["phase"] as? String=="open" && (activity["loadedPNGCount"] as? Int ?? 0)>0
+                    let count=activity["staticPNGCount"] as? Int ?? 0
+                    self.subjectReady=activity["phase"] as? String=="open" && count>0 && activity["loadedPNGCount"] as? Int==count
                 }
             }
             if self.raf && self.subjectReady,let window=self.window {
