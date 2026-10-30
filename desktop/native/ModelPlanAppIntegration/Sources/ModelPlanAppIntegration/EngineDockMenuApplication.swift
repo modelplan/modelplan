@@ -90,6 +90,9 @@ import ModelPlanSettings
         status?.button?.image = image; status?.button?.contentTintColor = nil
         status?.button?.title = composition.menuPresentation.title
         status?.button?.toolTip = composition.menuPresentation.detail
+        #if MODELPLAN_U6_DRIVE
+        if let button = status?.button { driveGuard?.recordStatusButtonFrame(button) }
+        #endif
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }

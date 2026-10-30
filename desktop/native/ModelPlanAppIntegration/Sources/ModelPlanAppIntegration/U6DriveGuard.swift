@@ -74,6 +74,21 @@ import AppKit
         let nonActivating = visible && panels.allSatisfy { $0.styleMask.contains(.nonactivatingPanel) }
         emit("doctor", fields:["visible":visible,"onScreen":onScreen,"nonActivating":nonActivating,"ownerStopArmed":armed])
     }
+    /// Window-server coordinates in AppKit screen space, only for the owned status item.
+    func recordStatusButtonFrame(_ button: NSStatusBarButton) {
+        guard let window = button.window, window.isVisible else { return }
+        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+        guard frame.width > 0, frame.height > 0 else { return }
+        let fields: [String: Any] = ["x": frame.origin.x, "y": frame.origin.y,
+            "width": frame.width, "height": frame.height, "coordinateSpace": "appkit-screen"]
+        emitObject("status-item-frame", fields: fields)
+    }
+    private func emitObject(_ event: String, fields: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject:["runID":runID,"epoch":epoch,"event":event,"timestamp":Date().timeIntervalSince1970,"checks":fields],options:[.sortedKeys]) else { return }
+        if !FileManager.default.fileExists(atPath:observations.path) { FileManager.default.createFile(atPath:observations.path,contents:nil) }
+        guard let handle = try? FileHandle(forWritingTo: observations) else { return }
+        defer { try? handle.close() }; try? handle.seekToEnd(); try? handle.write(contentsOf:data + Data([10]))
+    }
     func recordClear() {
         emit("accepted-clear",fields:["priorPrivateContent":priorPrivateContent,"trackingClosed":trackedMenus.isEmpty,
             "oldItemTitlesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty },
