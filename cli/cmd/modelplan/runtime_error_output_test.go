@@ -5,13 +5,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
+	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
 func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
@@ -23,6 +26,12 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 			}
 			t.Run(provider+"/"+strconv.Itoa(stage), func(t *testing.T) {
 				home := nativeRefreshHome(t)
+				checkLogs := testenv.CaptureReasonLogs(t)
+				defer func() {
+					if err := checkLogs(); err != nil {
+						t.Error(err)
+					}
+				}()
 				t.Setenv("MODELPLAN_IDENTITY", "")
 				message := strings.Join(canaries, " | ")
 				quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
@@ -95,6 +104,9 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 					t.Fatal(err)
 				}
 				assertSafe("CLI stderr/process log", string(logged))
+				if err := testenv.CheckCLIReasonLog(string(logged)); err != nil {
+					t.Error(err)
+				}
 				if provider == "codex" && stage != 3 && !strings.Contains(string(logged), "codex account: other") {
 					t.Error("CLI did not report the fixed failure")
 				}
@@ -105,6 +117,9 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 				retained, err := os.ReadFile(filepath.Join(st.Dir, "observed", capture))
 				if err != nil {
 					t.Fatal(err)
+				}
+				if err := testenv.CheckReaderReasons(retained); err != nil {
+					t.Error(err)
 				}
 				if stage != 3 && !bytes.Contains(retained, []byte(`"error": "other"`)) {
 					t.Error("expected retained safe failure missing")
@@ -137,5 +152,66 @@ func TestRuntimeErrorsStayOutOfCLIJSONAndLogs(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestReaderReasonRetainedFetchCLI(t *testing.T) {
+	for _, message := range []string{"arbitrary vendor prose", "reader wrapper: other", "sk-SYNTHETIC-OLD-FETCH-token"} {
+		t.Run(message, func(t *testing.T) {
+			nativeRefreshHome(t)
+			checkLogs := testenv.CaptureReasonLogs(t)
+			defer func() {
+				if err := checkLogs(); err != nil {
+					t.Error(err)
+				}
+			}()
+			st, err := store.Locate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(st.Dir, "codexbar", "fetch-result")
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			input := []byte(quota.CodexBarVersion + " failed: download failed: " + message + "\n")
+			if err := os.WriteFile(path, input, 0600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, out, stderr := consentRun([]string{"codexbar", "status", "--json", "--offline"}, "")
+			if code != 0 || stderr != "" {
+				t.Fatal("retained fetch status failed")
+			}
+			var result struct{ Fetch string }
+			if err := json.Unmarshal([]byte(out), &result); err != nil {
+				t.Fatal(err)
+			}
+			if err := testenv.CheckReaderReasons(map[string]string{"fetch": result.Fetch}); err != nil {
+				t.Error(err)
+			}
+			if result.Fetch != quota.CodexBarVersion+" failed: other" {
+				t.Error("retained fetch output was not canonicalized")
+			}
+			// Exercise a real log writer, then validate its retained artifact in full.
+			var processLog bytes.Buffer
+			log.New(&processLog, "", 0).Print(quota.CodexBarFetchResult(st.Dir))
+			if err := testenv.CheckReaderReasons(testenv.FetchReason(processLog.String())); err != nil {
+				t.Error(err)
+			}
+			after, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(input, retained) || !after.ModTime().Equal(before.ModTime()) {
+				t.Error("cache-only status altered the retained marker or retry floor")
+			}
+		})
 	}
 }

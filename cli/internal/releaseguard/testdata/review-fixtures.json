@@ -1,0 +1,113 @@
+{
+  "license": "MIT",
+  "fixtures": [
+    {
+      "name": "objc-elif",
+      "path": "Probe.m",
+      "source": "#if MODELPLAN_TEST_ONLY_SPI\n#elif __APPLE__\n[view valueForKey:@\"_privatePID\"];\n#endif\n",
+      "hits": 1
+    },
+    {
+      "name": "cgo-elif",
+      "path": "Probe.go",
+      "source": "package probe\n/*\n#if MODELPLAN_TEST_ONLY_SPI\n#elif __APPLE__\n[view valueForKey:@\"_privatePID\"];\n#endif\n*/\nimport \"C\"\n",
+      "hits": 1
+    },
+    {
+      "name": "objc-selector",
+      "path": "Probe.m",
+      "source": "SEL probe = @selector(_privatePID);\n",
+      "hits": 1
+    },
+    {
+      "name": "objc-selector-test-only",
+      "path": "Probe.m",
+      "source": "#if MODELPLAN_TEST_ONLY_SPI\nSEL probe = @selector(_privatePID);\n#endif\n",
+      "hits": 0
+    },
+    {
+      "name": "swift-nested-setter",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: \"_privatePID\")\n",
+      "hits": 1
+    },
+    {
+      "name": "swift-number-setter",
+      "path": "Probe.swift",
+      "source": "view.setValue(NSNumber(value: 1), forKey: \"_privatePID\")\n",
+      "hits": 1
+    },
+    {
+      "name": "swift-multiline-nested",
+      "path": "Probe.swift",
+      "source": "view.setValue(\n makeValue((1, factory())),\n forKey: \"_privatePID\"\n)\n",
+      "hits": 1
+    },
+    {
+      "name": "swift-nested-public",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: \"title\")\n",
+      "hits": 0
+    },
+    {
+      "name": "objc-defined-elif",
+      "path": "Probe.m",
+      "source": "#if defined(MODELPLAN_TEST_ONLY_SPI)\n#elif defined(__APPLE__)\nSEL probe = @selector(_privatePID);\n#endif\n",
+      "hits": 1
+    },
+    {
+      "name": "objc-ifdef-else",
+      "path": "Probe.m",
+      "source": "#ifdef MODELPLAN_TEST_ONLY_SPI\n#else\n[view valueForKey:@\"_privatePID\"];\n#endif\n",
+      "hits": 1
+    },
+    {
+      "name": "objc-ifndef-test-else",
+      "path": "Probe.m",
+      "source": "#ifndef MODELPLAN_TEST_ONLY_SPI\n#else\n[view valueForKey:@\"_privatePID\"];\n#endif\n",
+      "hits": 0
+    },
+    {
+      "name": "objc-elif-test-only",
+      "path": "Probe.m",
+      "source": "#if __APPLE__\nint ok = 1;\n#elif MODELPLAN_TEST_ONLY_SPI\n[view valueForKey:@\"_privatePID\"];\n#endif\n",
+      "hits": 0
+    },
+    {
+      "name": "nested-non-kvc-key-is-public",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(forKey: \"_argument\"), forKey: \"title\")\n",
+      "hits": 0
+    },
+    {
+      "name": "grouped-getter",
+      "path": "Probe.swift",
+      "source": "view.value(forKey: (\"_privatePID\"))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-setter",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: ((\"_privatePID\")))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-selector",
+      "path": "Probe.swift",
+      "source": "view.perform(NSSelectorFromString((\"_privatePID\")))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-public",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: ((\"title\")))\n",
+      "hits": 0
+    },
+    {
+      "name": "grouped-test-only",
+      "path": "Probe.swift",
+      "source": "#if MODELPLAN_TEST_ONLY_SPI\nview.value(forKey: (\"_privatePID\"))\n#endif\n",
+      "hits": 0
+    }
+  ]
+}

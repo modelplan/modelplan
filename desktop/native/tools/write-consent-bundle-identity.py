@@ -8,8 +8,8 @@ import re
 from pathlib import Path
 
 SOURCE = {
-    'arm64': '72c43fef8631399137ff9a651e984121fa19cbc77969f0a317c74c41b28f29e2',
-    'x86_64': 'a5c47042e925da522209d5192860cbf887af6b10fc3c8ff68c4aff1efba25f29',
+    'arm64': '0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda',
+    'x86_64': '397b98c22e209e10c924e34347f5b4c14e837eb2c50086c6fd2c160c858c2868',
 }
 
 def digest_file(path):
@@ -20,7 +20,7 @@ def digest_file(path):
 def metadata(source, raw, bundled):
     if not re.fullmatch('[0-9a-f]{40}', source) or raw != SOURCE or not re.fullmatch('[0-9a-f]{64}', bundled):
         raise ValueError('unverified release/source identity')
-    return {'ModelPlanPublicSource': source, 'ModelPlanHelperVersion': '0.5.46',
+    return {'ModelPlanPublicSource': source, 'ModelPlanHelperVersion': '0.5.48',
             'ModelPlanSourceHelperSHA256ByArchitecture': dict(raw),
             'ModelPlanBundledHelperSHA256': bundled}
 
@@ -43,7 +43,7 @@ def main():
     if a.self_test:
         value = metadata('a' * 40, SOURCE, 'b' * 64)
         assert value['ModelPlanSourceHelperSHA256ByArchitecture'] == SOURCE
-        assert value['ModelPlanHelperVersion'] == '0.5.46'
+        assert value['ModelPlanHelperVersion'] == '0.5.48'
         for source, raw in [('bad', SOURCE), ('a' * 40, {**SOURCE, 'arm64': '0' * 64})]:
             try: metadata(source, raw, 'b' * 64)
             except ValueError: pass

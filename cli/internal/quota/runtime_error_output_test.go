@@ -4,6 +4,7 @@ package quota
 import (
 	"context"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/testenv"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -37,6 +38,11 @@ func assertRuntimeCacheSafe(t *testing.T, cache string) {
 		b, err := os.ReadFile(path)
 		if err == nil {
 			assertNoRuntimeCanary(t, "cache file "+filepath.Base(path), string(b))
+			if strings.HasSuffix(path, ".json") {
+				if err := testenv.CheckReaderReasons(b); err != nil {
+					t.Errorf("retained reader JSON %s: %v", filepath.Base(path), err)
+				}
+			}
 		}
 		return err
 	}); err != nil {
@@ -82,6 +88,7 @@ func TestCodexRuntimeErrorOutput(t *testing.T) {
 		for index, canary := range runtimeErrorCanaries {
 			t.Run(strconv.Itoa(slot)+"/"+strconv.Itoa(index), func(t *testing.T) {
 				isolateHome(t)
+				defer captureReaderReasonLogs(t)()
 				t.Setenv("MODELPLAN_IDENTITY", "")
 				bin := runtimeErrorChild(t, slot, false, canary, acctResponse)
 				_, err := askCodex(context.Background(), bin)
@@ -130,6 +137,7 @@ func TestKiroRuntimeErrorOutput(t *testing.T) {
 			for index, canary := range runtimeErrorCanaries {
 				t.Run(name+"/"+strconv.Itoa(stage)+"/"+strconv.Itoa(index), func(t *testing.T) {
 					isolateHome(t)
+					defer captureReaderReasonLogs(t)()
 					t.Setenv("MODELPLAN_HISTORY", "off")
 					slot := stage
 					if slot == 0 {
@@ -184,6 +192,7 @@ func TestCodexProcessErrorOutput(t *testing.T) {
 	for index, canary := range runtimeErrorCanaries {
 		t.Run(strconv.Itoa(index), func(t *testing.T) {
 			isolateHome(t)
+			defer captureReaderReasonLogs(t)()
 			cache := t.TempDir()
 			// Startup errors can include the whole executable path as well as RPC text.
 			bin := filepath.Join(t.TempDir(), canary, "missing-runtime")
@@ -203,6 +212,7 @@ func TestCodexProcessErrorOutput(t *testing.T) {
 
 func TestCodexTimeoutKeepsSafeReason(t *testing.T) {
 	isolateHome(t)
+	defer captureReaderReasonLogs(t)()
 	cache := t.TempDir()
 	bin := filepath.Join(t.TempDir(), "runtime")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nwhile IFS= read -r line; do :; done\n"), 0700); err != nil {

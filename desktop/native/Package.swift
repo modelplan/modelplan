@@ -21,6 +21,7 @@ let package = Package(name: "ModelPlanNative", platforms: [.macOS(.v14)], produc
     .target(name: "ModelPlanAssembly", dependencies: ["ModelPlanCore", "ModelPlanSelection", "ModelPlanInstruments"]),
     .testTarget(name: "ModelPlanAssemblyTests", dependencies: ["ModelPlanAssembly"], path: "AssemblyTests"),
     .target(name: "ModelPlanShell", dependencies: ["ModelPlanCore"]),
+    .testTarget(name: "ModelPlanShellTests", dependencies: ["ModelPlanShell"], path: "ShellTests"),
     .executableTarget(name: "ModelPlanFieldProbe", dependencies: ["ModelPlanCore", "ModelPlanShell"], path: "FieldProbe"),
     .target(name: "ModelPlanPrimitives", dependencies: ["ModelPlanCore"]),
     .executableTarget(name: "ModelPlanPrimitiveProbe", dependencies: ["ModelPlanCore", "ModelPlanPrimitives"], path: "PrimitiveProbe"),

@@ -103,10 +103,10 @@ func TestCodexBarReadsEnabledProvidersWithoutIdentities(t *testing.T) {
 	if s := status["codexbar:opencodego"]; s.Status != "estimated" {
 		t.Fatalf("estimated local history is not quota: %+v", s)
 	}
-	if s := status["codexbar:copilot"]; s.Status != "unavailable" || s.Reason != "No available fetch strategy for copilot." {
+	if s := status["codexbar:copilot"]; s.Status != "unavailable" || s.Reason != "other" || s.ErrorCode != "other" {
 		t.Fatalf("copilot = %+v", s)
 	}
-	if s := status["codexbar:kiro"]; s.Status != "unavailable" || strings.Contains(s.Reason, "someone") || !strings.Contains(s.Reason, "kiro-cli login") {
+	if s := status["codexbar:kiro"]; s.Status != "unavailable" || s.Reason != "other" || s.ErrorCode != "other" {
 		t.Fatalf("kiro = %+v", s)
 	}
 	if CodexBarDue(p, cbNow.Add(9*time.Minute)) || !CodexBarDue(p, cbNow.Add(10*time.Minute)) {
@@ -161,7 +161,7 @@ func TestCodexBarMissingBinaryIsRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := Read(p, cbNow)
-	if s := codexbarSources(r); len(r.Accounts) != 0 || len(s) != 1 || s[0].Status != "unreadable" || s[0].Reason != "CodexBar CLI not found" {
+	if s := codexbarSources(r); len(r.Accounts) != 0 || len(s) != 1 || s[0].Status != "unreadable" || s[0].Reason != "runtime_missing" || s[0].ErrorCode != "runtime_missing" {
 		t.Fatalf("report = %+v", r)
 	}
 }
@@ -223,7 +223,7 @@ func TestFetchCodexBarChecksTheSumAndStaysInItsDirectory(t *testing.T) {
 	cache := t.TempDir()
 	served = append([]byte(nil), good...)
 	served[len(served)-1] ^= 1
-	if _, err := FetchCodexBar(context.Background(), cache, srv.URL); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+	if _, err := FetchCodexBar(context.Background(), cache, srv.URL); err == nil || errorCode(err) != "other" {
 		t.Fatalf("a changed archive must not install: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cache, "codexbar", CodexBarVersion)); err == nil {
@@ -309,7 +309,7 @@ func TestPinnedCodexBarIsFetchedEvenWithAUserCopy(t *testing.T) {
 	if _, err := FetchCodexBar(context.Background(), cache, "http://127.0.0.1:9"); err == nil {
 		t.Fatal("no server: the fetch fails")
 	}
-	if !strings.HasPrefix(CodexBarFetchResult(cache), CodexBarVersion+" failed: download failed") {
+	if CodexBarFetchResult(cache) != CodexBarVersion+" failed: other" {
 		t.Fatalf("fetch result = %q", CodexBarFetchResult(cache))
 	}
 	if CodexBarFetchDue(cache, time.Now()) || !CodexBarFetchDue(cache, time.Now().Add(31*time.Minute)) {

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT
+name: third-party notices
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: notices-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  notices:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare owned scratch
+        run: mkdir -p .tmp/notices
+      - name: Verify shipped coverage and generated notices
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            python3 scripts/third-party-notices.py --swift-manifests
+          else
+            python3 scripts/third-party-notices.py
+          fi
+      - name: Coverage regressions and missing-entry negative controls
+        env:
+          TMPDIR: ${{ github.workspace }}/.tmp/notices
+        run: python3 -m unittest discover -s scripts/tests -p test_third_party_notices.py -v
+      - name: Remove owned scratch
+        if: always()
+        run: rm -rf .tmp/notices
