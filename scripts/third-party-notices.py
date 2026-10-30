@@ -13,7 +13,14 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = 'desktop/third-party/notices.json'
 BASE = 'desktop/third-party'
-TARGETS = ('darwin/arm64', 'darwin/amd64', 'linux/arm64', 'linux/amd64', 'windows/amd64', 'windows/arm64')
+def release_targets(root):
+    recipe = (root / '.github/workflows/release.yml').read_text()
+    loops = re.findall(r'^\s*for target in ([^;$\n]+); do\s*$', recipe, re.M)
+    require(len(loops) == 1, 'release target recipe changed; update notice inventory parser')
+    targets = loops[0].split()
+    require(targets and len(set(targets)) == len(targets) and
+            all(re.fullmatch(r'[a-z0-9]+/[a-z0-9]+', target) for target in targets), 'invalid release targets')
+    return targets
 
 
 def require(condition, message):
@@ -32,7 +39,7 @@ def go_inventory(root):
     versions = {m['Path']: m['Version'] for m in mod['Require']}
     require(not mod.get('Replace'), 'Go replace directives require an explicit notice provenance review')
     inventory = {}
-    for target in TARGETS:
+    for target in release_targets(root):
         goos, arch = target.split('/')
         output = subprocess.check_output(['go', 'list', '-mod=readonly', '-deps', '-f',
             '{{if and .Module (not .Module.Main)}}{{.Module.Path}} {{.Module.Version}} {{.Module.Dir}}{{end}}',
@@ -83,8 +90,10 @@ def check_swift_manifests(root, files, pins):
     """Host Swift evaluates manifests so computed/conditional URLs cannot evade CI."""
     sources = {v['source'].rstrip('/').removesuffix('.git').lower() for v in pins.values()}
     for path in [p for p in files if Path(p).name == 'Package.swift']:
+        scratch = root / '.tmp/notices/swift-manifests' / hashlib.sha256(path.encode()).hexdigest()[:12]
         package = json.loads(subprocess.check_output(['swift', 'package', '--package-path', str((root / path).parent),
-                                                      'dump-package'], text=True))
+            '--scratch-path', str(scratch), '--cache-path', str(root / '.tmp/notices/swift-cache'),
+            'dump-package'], text=True))
         for dependency in package.get('dependencies', []):
             if 'fileSystem' in dependency:
                 continue
