@@ -13,6 +13,9 @@ import ModelPlanSettings
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
     private var terminating = false
+    #if MODELPLAN_U6_DRIVE
+    private var driveGuard: U6DriveGuard?
+    #endif
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
@@ -31,7 +34,12 @@ import ModelPlanSettings
         self.contextSource = contextSource
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
         super.init()
-        composition.menuDidChange = { [weak self] in self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render() }
+        composition.menuDidChange = { [weak self] in
+            self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
+            #if MODELPLAN_U6_DRIVE
+            if self?.composition.provider.dockContent.status == .cleared { self?.driveGuard?.recordClear() }
+            #endif
+        }
         composition.dock.showSettings = settingsHost.action
         composition.dock.showConsole = { [weak self] in self?.showConsole() }
     }
@@ -52,6 +60,14 @@ import ModelPlanSettings
     public func prepare() async { await settings.reload() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        #if MODELPLAN_U6_DRIVE
+        do { driveGuard = try U6DriveGuard.attach(ownsMenu: { [weak self] menu in
+            guard let self else { return false }; return menu.delegate === self || menu.delegate === self.composition.dock
+        }, hasPrivateContent: { [weak self] in
+            guard let value = self?.composition.provider.dockContent else { return false }
+            return !value.dockRows.isEmpty || !value.menuRows.isEmpty
+        }) } catch { NSApplication.shared.terminate(nil); return }
+        #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
     }
