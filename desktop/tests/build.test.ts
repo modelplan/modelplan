@@ -23,6 +23,10 @@ test('--official assembles desktop/official-visuals/; the default community buil
   assert.ok(read('main.js').includes('M0-8.2C2.8-6.2'), 'official logo is bundled');
   assert.ok(existsSync(join(dist, 'runtime/manifest.json')), 'official runtime manifest is bundled');
   const runtime = JSON.parse(read('runtime/manifest.json'));
+  const porthole = JSON.parse(read('runtime/porthole-stills/manifest.json'));
+  assert.equal(porthole.files.length, 980);
+  assert.equal(porthole.defaultProjectionId, '4ff2bad27654');
+  assert.match(read('runtime/porthole-stills/BADGE-NOTICE.txt'), /no recognisable third-party logos/);
   for (const entry of runtime.files) {
     assert.ok(readFileSync(join(dist, 'runtime', entry.file)).equals(readFileSync(join(official, 'runtime', entry.file))),
       'official runtime bytes differ: ' + entry.file);
