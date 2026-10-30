@@ -2,28 +2,15 @@
 # U11 native cockpit bridge
 
 The local WKWebView consumer of the web contract in public #355, pinned here to
-`44e2ffa4758df79883cb5f0bf2daf6980a4203c4`. The web source stays in
+`f25e1e821411bdd58cb09d9a388b9064505e856c`. The web source stays in
 `desktop/cockpit/`; this package has no renderer, copied DTO or private art.
 
-`EngineCockpitCoordinator.makeClient` constructs the existing
-`ProcessEngineClient` with a weak ordered consumer proxy. The App retains the
-coordinator, passes its existing EngineStore consumer as `downstream`, and calls
-`open()` from the cockpit action. `cockpit/query` is issued only after page ready;
-its typed ordered response goes directly to `CockpitWindowController.display`.
-The coordinator is the sole cockpit query requester for this client. It stores
-query identity, never a pending private DTO. Existing clients can instead route
-all events through `consume` and call `bind(client:)` once.
-
-```swift
-let bundle = try VerifiedCockpitBundle(root: bundleRoot,
-    manifestSHA256: pinnedManifestSHA, allowOfficial: explicitlyOfficial)
-let cockpit = EngineCockpitCoordinator(bundle: bundle,
-    appearance: .init(theme: .night, locale: .en, profile: .full),
-    downstream: existingStore)
-let client = cockpit.makeClient(configuration: configuration)
-// After normal client startup/context delivery, in the App's cockpit action:
-cockpit.open()
-```
+Production borrows its one existing `ProcessEngineClient` through
+`CockpitStoreFanout`; it does not construct another client for Console. The
+coordinator's standalone `makeClient` API remains for isolated hosts/tests.
+`cockpit/query` is issued only after page ready, and its ordered typed response
+goes directly to `CockpitWindowController.display`. The coordinator stores query
+identity, never a pending private DTO.
 
 The normal startup path is `CommunityApp.main` → `runEngineRows` →
 `EngineRowsEntry.make` → `CommunityCockpitApplicationFactory.make`. Its existing
@@ -153,12 +140,26 @@ mean **1.7016% <=6%**. Both Apps exited0; guardian, observers and run leases wer
 cleaned. M4 approved the unchanged shared action seam at d3eba026. The native
 head's CI passes. No old standalone/partial-run result is substituted.
 
-The automatic U10 staging change is owned by M0, not applied to its workflow
-from this PR. The exact proposed step is recorded in `u10-cockpit-stage.patch`;
-first-candidate assembly must not ship a placeholder or omit its manifest pin.
+The automatic U10 staging change is owned by M0 in #367. Per coordinator decision,
+that separate task does not block native-ready promotion; no candidate is cut
+until #367 merges and its gate rejects a placeholder/missing manifest. The
+proposed step is retained in `u10-cockpit-stage.patch`.
 Inherited merged-main consent construction remains staged and is explicitly
 outside U11's done criteria by coordinator scope acceptance; Settings adoption
-stays with its owner. The current #355 handoff also reports a pre-existing
-session reduced-motion WebKit failure (15/16 tests pass); retain that known
-upstream issue rather than claim an all-green web result. Sealed-candidate,
-owner-shaped, official fidelity and U13/L2 are separate gates.
+stays with its owner. Sealed-candidate, owner-shaped, official fidelity and U13/L2
+are separate gates.
+
+## Current v1 bundle pin
+
+Production now pins #355 `f25e1e821411bdd58cb09d9a388b9064505e856c`.
+Official manifest: `b0acd07ad0e4f6e5c2fef1e5e70f1413d96c1b81bf6f689ef4b911b448fd9360`
+(1069 files); community: `a06423b7730a3b158ff61e1d20d85a649301ae58717877eba48b0c2a0dc5aafe`
+(28 files). Session metadata remains plain tool/project/title/time text.
+
+Active page entry, bridge, text renderer and finite-animation CSS are unchanged
+from the accepted shared-route measurement. The build now copies only current
+compiler outputs. No new performance measurement is asserted or required for
+this repin; the historical receipt retains its actual measured source/digest.
+The coordinator accepts the prior 1.7016% result pending Tier2 review and keeps
+U10 staging separate in #367. DevShared and GUI remain paused; local regressions
+only were used for this update.

@@ -32,6 +32,16 @@ jobs:
         with:
           go-version-file: cli/go.mod
           cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Canonical web/native pin regression (no GUI)
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm test --prefix desktop/cockpit
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
       - name: Build the actual public CLI
         working-directory: cli
         run: |

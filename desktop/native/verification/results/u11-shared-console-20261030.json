@@ -103,7 +103,6 @@
   "engineEntrySource": "982e282c8b2047419ce891ba7935d7a3ceac849d",
   "m4SeamReview": "merge at d3eba0268049b8f74fea7209b936416ee96eee9a",
   "bookingPolicy": "364 unmerged at admission; announced exclusive lease/guardian/stop/full-reserve guards used",
-  "knownUpstreamIssue": "355 reports existing session reduced-motion WebKit failure; no all-green web verdict claimed",
   "evidenceID": "u11-shared-console-20261030T1113Z-r1@sha256:59e14cc1122c74c5680137343aa117bffa3052437e5a09a6076007b6cf4a36cd",
   "deliveredActions": [
     "Dock.showConsole",
