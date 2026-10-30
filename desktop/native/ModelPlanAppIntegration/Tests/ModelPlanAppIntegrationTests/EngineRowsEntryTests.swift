@@ -29,6 +29,23 @@ private actor RowsEntryClient: EngineClient {
     func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
+@MainActor private final class EntrySettingsSurface: SettingsWindowSurface {
+    var shown = 0
+    private var waiter: CheckedContinuation<Void, Never>?
+    func prepare() async {}
+    func show(paneID: String?) { shown += 1; waiter?.resume(); waiter = nil }
+    func hide() {}
+    func waitForShow() async { if shown > 0 { return }; await withCheckedContinuation { waiter = $0 } }
+}
+@MainActor private final class EntryConsoleSurface: EngineRowsConsoleSurface {
+    var shown = 0
+    var lastRows: [String] = []
+    let composition: EngineDockMenuComposition
+    init(_ composition: EngineDockMenuComposition) { self.composition = composition }
+    func show() { shown += 1; render() }
+    func render() { lastRows = composition.provider.dockContent.dockRows.map(\.id) }
+    func hide() {}
+}
 @MainActor final class EngineRowsEntryTests: XCTestCase {
     func testNormalEntryFactoryFeedsActualDockAndMenuThenWithdrawsBeforeClearAck() async throws {
         _ = NSApplication.shared
@@ -44,16 +61,30 @@ private actor RowsEntryClient: EngineClient {
         rows[0]["reason"] = ["code": "ok", "text": ["en": "Engine-only reason", "zh": "引擎原因"]]
         projection["rows"] = rows; object["projection"] = projection
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
+        let settingsSurface = EntrySettingsSurface()
+        var consoleSurface: EntryConsoleSurface?
+        var activationCount = 0
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
             settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings.json")), createsNativePanels: false,
-            makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) })
+            makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) },
+            makeSettingsSurface: { _ in settingsSurface },
+            makeConsole: { let surface = EntryConsoleSurface($0); consoleSurface = surface; return surface },
+            activateSettings: { activationCount += 1 })
+        XCTAssertNotNil(app.composition.dock.showSettings, "Normal Dock Settings must not be a nil action")
+        XCTAssertNotNil(app.composition.dock.showConsole, "Normal Dock Console must not be a nil action")
         await app.prepare(); await app.composition.start()
+        app.composition.dock.showSettings?(); await settingsSurface.waitForShow()
+        XCTAssertEqual(settingsSurface.shown, 1); XCTAssertEqual(activationCount, 1)
+        app.composition.dock.showConsole?(); XCTAssertEqual(consoleSurface?.shown, 1)
+        XCTAssertEqual(consoleSurface?.lastRows, ["codex"])
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Engine-only reason"))
         XCTAssertNil(app.composition.dock.nativePanel)
         var clearObservedBeforeReturn = false
+        let originalMenuChange = app.composition.menuDidChange
         app.composition.menuDidChange = {
+            originalMenuChange?()
             if app.composition.provider.dockContent.status == .cleared {
                 clearObservedBeforeReturn = true
                 XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
@@ -63,6 +94,7 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .connectionLost, previous: nil, nextFloor: nil)))
         XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
+        XCTAssertEqual(consoleSurface?.lastRows, [])
         XCTAssertTrue(clearObservedBeforeReturn)
         XCTAssertTrue(app.composition.provider.dockContent.dockRows.isEmpty)
         await app.composition.stop()

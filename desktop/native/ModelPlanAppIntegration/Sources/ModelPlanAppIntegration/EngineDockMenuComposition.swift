@@ -15,9 +15,14 @@ import ModelPlanCommunityHost
     public var menuDidChange: (() -> Void)?
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
-        let store = EngineStore()
+        let store: EngineStore
+        if let makeClient {
+            store = EngineStore(); client = makeClient(configuration, store)
+        } else {
+            let connection = EngineStoreConnection(configuration: configuration)
+            store = connection.store; client = connection.client
+        }
         self.store = store
-        client = makeClient?(configuration, store) ?? ProcessEngineClient(configuration: configuration, consumer: store)
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
@@ -27,8 +32,9 @@ import ModelPlanCommunityHost
             self?.dock.refreshDockContent(); self?.menuDidChange?()
         }
     }
+    public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date())) }
     public var menuPresentation: CommunityMenuBarPresentation {
-        let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
+        let content = presentedContent
         return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
     }
     public func start() async {

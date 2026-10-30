@@ -10,14 +10,31 @@ import ModelPlanSettings
     private let settings: SettingsApplicationCoordinator
     private var status: NSStatusItem?
     private var terminating = false
+    private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
+    private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
+    private var console: (any EngineRowsConsoleSurface)?
+    private let activateSettings: @MainActor () -> Void
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true,
-                makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil) {
+                makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
+                makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
+                makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, makeClient: makeClient)
         self.composition = composition
+        self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         settings = SettingsApplicationCoordinator(store: settingsStore) { composition.dock.apply($0) }
         super.init()
-        composition.menuDidChange = { [weak self] in self?.renderMenu() }
+        composition.menuDidChange = { [weak self] in self?.renderMenu(); self?.console?.render() }
+        composition.dock.showSettings = settingsHost.action
+        composition.dock.showConsole = { [weak self] in self?.showConsole() }
+    }
+    public func presentSettings() async { await settingsHost.present() }
+    public func showConsole() {
+        guard !terminating else { return }
+        if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        console?.show()
     }
     public func prepare() async { await settings.reload() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -32,6 +49,9 @@ import ModelPlanSettings
         let refresh = menu.addItem(withTitle: "Refresh / 刷新", action: #selector(refreshRows), keyEquivalent: "")
         refresh.target = self
         menu.addItem(.separator())
+        menu.addItem(settingsHost.menuItem(title: "Settings… / 设置…"))
+        let consoleItem = menu.addItem(withTitle: "Dock readings… / Dock 读数…", action: #selector(showConsoleMenu), keyEquivalent: "")
+        consoleItem.target = self
         menu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; status?.menu = menu
         let image = CommunityMenuBarResources.templateImage()
@@ -41,10 +61,11 @@ import ModelPlanSettings
         status?.button?.toolTip = composition.menuPresentation.detail
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
+    @objc private func showConsoleMenu() { showConsole() }
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true
+        terminating = true; settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
