@@ -73,6 +73,7 @@ private actor RowsEntryClient: EngineClient {
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["state"] = "fresh"
         rows[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+        rows[0]["stateAfterExpiry"] = ["state": "stale", "reason": ["code": "ok", "text": ["en": "Engine expiry reason", "zh": "引擎到期原因"]]]
         var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
         accounts[0]["valueState"] = "current"; accounts[0]["freshUntil"] = "2027-01-01T00:00:00Z"
         var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
@@ -88,6 +89,10 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertEqual(content.snapshot.inputs.first?.windows.first?.remainingPercent, 73)
         XCTAssertEqual(content.snapshot.inputs.first?.dataState, .fresh)
         XCTAssertTrue((content.menuStatusLines ?? []).joined().contains("73%"))
+        let expired = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: 1_830_297_600)))
+        XCTAssertNil(expired.snapshot.inputs.first?.windows.first?.remainingPercent)
+        XCTAssertEqual(expired.snapshot.presentationRows["codex"]?.reason, "Engine expiry reason")
+        XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 
 }

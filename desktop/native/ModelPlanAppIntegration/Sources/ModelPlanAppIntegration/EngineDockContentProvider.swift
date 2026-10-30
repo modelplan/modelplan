@@ -15,8 +15,9 @@ import ModelPlanWire
         for row in value.dockRows {
             let input = makeInput(row, now: context.now)
             inputs.append(input)
-            reasons[row.id] = .init(input: input, reason: row.reason.text.en,
-                                    nextStep: row.nextStep?.text.en ?? "Check reading permissions in Settings / 在设置检查读取权限")
+            let message = message(row, now: context.now)
+            reasons[row.id] = .init(input: input, reason: message.0.text.en,
+                                    nextStep: message.1?.text.en ?? "Check reading permissions in Settings / 在设置检查读取权限")
         }
         let status: String
         switch value.status {
@@ -29,7 +30,7 @@ import ModelPlanWire
         let lines = value.menuRows.map { row -> String in
             let reading = try? DockInstrumentProjection.evaluate(makeInput(row, now: context.now), now: context.now)
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
-            return row.name.en + number + " · " + row.reason.text.en
+            return row.name.en + number + " · " + message(row, now: context.now).0.text.en
         }
         return .init(snapshot: .init(inputs: inputs, presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status)
@@ -38,6 +39,12 @@ import ModelPlanWire
         guard let stamp else { return nil }
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue)
+    }
+    private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
+        if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {
+            return (after.reason, after.nextStep)
+        }
+        return (row.reason, row.nextStep)
     }
     private func makeInput(_ row: RowsRow, now: Date) -> DockInstrumentInput {
         var input = DockInstrumentInput(id: row.id, name: row.name.en, windows: [])
