@@ -205,8 +205,31 @@ func CodexBarFetchDue(cache string, now time.Time) bool {
 
 // CodexBarFetchResult: the last fetch's outcome ("" when none was tried).
 func CodexBarFetchResult(cache string) string {
-	b, _ := os.ReadFile(codexbarFetchMark(cache))
-	return strings.TrimSpace(string(b))
+	if cache == "" {
+		return ""
+	}
+	b, status := readBounded(codexbarFetchMark(cache), 4<<10)
+	if status == "missing" {
+		return ""
+	}
+	state := "failed: other"
+	if status == "" {
+		version, retained, ok := strings.Cut(strings.TrimSpace(string(b)), " ")
+		if ok && version == CodexBarVersion {
+			switch retained {
+			case "started", "ok":
+				state = retained
+			default:
+				if code, ok := strings.CutPrefix(retained, "failed: "); ok {
+					state = "failed: " + ReaderErrorCode(code)
+				}
+			}
+		}
+	}
+	// Old versions retained arbitrary download errors here. Status/JSON/log
+	// callers receive only the fixed framing and a canonical code, without
+	// rewriting the marker or changing its persisted retry timestamp.
+	return CodexBarVersion + " " + state
 }
 
 func markFetch(cache, result string) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -29,7 +30,11 @@ func (f Finding) String() string { return fmt.Sprintf("%s:%d: %s", f.Path, f.Lin
 
 const spiLiteral = "(?:(?:@|#+)?\"|`)"
 
-var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiLiteral + `_|\b(?:value|setValue)\s*\([^)]*\bforKey(?:Path)?\s*:\s*` + spiLiteral + `_|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiLiteral + `_|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiLiteral + `_`)
+var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiLiteral + `_|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiLiteral + `_|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiLiteral + `_|@selector\s*\(\s*_`)
+var swiftKVCCall = regexp.MustCompile(`\b(?:value|setValue)\s*\(`)
+var privateKeyLiteral = regexp.MustCompile(`^\s*` + spiLiteral + `_`)
+var branchDirective = regexp.MustCompile(`^#\s*(if|ifdef|ifndef|elif|elseif|else|endif)\b(.*)$`)
+var definedTag = regexp.MustCompile(`\bdefined\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|\s+([A-Za-z_][A-Za-z0-9_]*))`)
 
 // AppleSPI checks all source files, including tests: directory names alone do
 // not establish that code cannot enter a release build.
@@ -59,21 +64,28 @@ func AppleSPI(path, source string) []Finding {
 	var active constraint.Expr
 	var release strings.Builder
 	for _, line := range strings.Split(stripComments(exposeCgoPreamble(path, source)), "\n") {
-		trimmed := strings.TrimSpace(line)
+		directive := branchDirective.FindStringSubmatch(strings.TrimSpace(line))
+		command, conditionText := "", ""
+		if directive != nil {
+			command, conditionText = directive[1], strings.TrimSpace(directive[2])
+		}
 		switch {
-		case strings.HasPrefix(trimmed, "#if "):
-			condition := swiftCondition(strings.TrimSpace(strings.TrimPrefix(trimmed, "#if ")))
+		case command == "if" || command == "ifdef" || command == "ifndef":
+			condition := sourceCondition(conditionText)
+			if command == "ifndef" {
+				condition = &constraint.NotExpr{X: condition}
+			}
 			stack = append(stack, branch{active, condition})
 			active = and(active, condition)
-		case strings.HasPrefix(trimmed, "#elseif ") && len(stack) > 0:
+		case (command == "elseif" || command == "elif") && len(stack) > 0:
 			b := &stack[len(stack)-1]
-			condition := swiftCondition(strings.TrimSpace(strings.TrimPrefix(trimmed, "#elseif ")))
+			condition := sourceCondition(conditionText)
 			active = and(b.parent, and(&constraint.NotExpr{X: b.seen}, condition))
 			b.seen = &constraint.OrExpr{X: b.seen, Y: condition}
-		case trimmed == "#else" && len(stack) > 0:
+		case command == "else" && len(stack) > 0:
 			b := stack[len(stack)-1]
 			active = and(b.parent, &constraint.NotExpr{X: b.seen})
-		case trimmed == "#endif" && len(stack) > 0:
+		case command == "endif" && len(stack) > 0:
 			active = stack[len(stack)-1].parent
 			stack = stack[:len(stack)-1]
 		default:
@@ -85,8 +97,20 @@ func AppleSPI(path, source string) []Finding {
 		release.WriteByte('\n')
 	}
 	text := release.String()
+	var positions []int
 	for _, match := range privateSPI.FindAllStringIndex(text, -1) {
-		findings = append(findings, Finding{path, strings.Count(text[:match[0]], "\n") + 1, "private Apple SPI outside " + TestSPIFlag})
+		positions = append(positions, match[0])
+	}
+	positions = append(positions, swiftPrivateKeyPositions(text)...)
+	sort.Ints(positions)
+	previousLine := 0
+	for _, position := range positions {
+		line := strings.Count(text[:position], "\n") + 1
+		if line == previousLine {
+			continue
+		}
+		previousLine = line
+		findings = append(findings, Finding{path, line, "private Apple SPI outside " + TestSPIFlag})
 	}
 	return findings
 }
@@ -131,7 +155,8 @@ func requiresTestFlag(expr constraint.Expr) bool {
 	possible, _ := releasePossibilities(expr)
 	return !possible
 }
-func swiftCondition(s string) constraint.Expr {
+func sourceCondition(s string) constraint.Expr {
+	s = definedTag.ReplaceAllString(s, "${1}${2}")
 	expr, err := constraint.Parse("//go:build " + s)
 	if err != nil {
 		return &constraint.TagExpr{Tag: "unknown-condition"}
@@ -276,4 +301,71 @@ func exposeCgoPreamble(path, source string) string {
 		}
 	}
 	return string(b)
+}
+
+// Swift's value expression may contain arbitrary nested calls. Walk balanced
+// argument delimiters and inspect only a top-level forKey/forKeyPath label;
+// stopping at the first ')' misses ordinary setters such as makeValue().
+func swiftPrivateKeyPositions(text string) []int {
+	var positions []int
+	for _, match := range swiftKVCCall.FindAllStringIndex(text, -1) {
+		depth, braces, brackets := 1, 0, 0
+		for i := match[1]; i < len(text) && depth > 0; i++ {
+			c := text[i]
+			if c == '"' || c == '\'' || c == '`' {
+				quote := c
+				for i++; i < len(text); i++ {
+					if text[i] == '\\' && quote != '`' {
+						i++
+						continue
+					}
+					if text[i] == quote {
+						break
+					}
+				}
+				continue
+			}
+			switch c {
+			case '(':
+				depth++
+			case ')':
+				depth--
+			case '{':
+				braces++
+			case '}':
+				braces--
+			case '[':
+				brackets++
+			case ']':
+				brackets--
+			}
+			if depth != 1 || braces != 0 || brackets != 0 {
+				continue
+			}
+			if i > 0 && identifierByte(text[i-1]) {
+				continue
+			}
+			for _, label := range []string{"forKeyPath", "forKey"} {
+				if !strings.HasPrefix(text[i:], label) {
+					continue
+				}
+				end := i + len(label)
+				if end < len(text) && identifierByte(text[end]) {
+					continue
+				}
+				for end < len(text) && strings.ContainsRune(" \t\r\n", rune(text[end])) {
+					end++
+				}
+				if end < len(text) && text[end] == ':' && privateKeyLiteral.MatchString(text[end+1:]) {
+					positions = append(positions, match[0])
+					depth = 0
+					break
+				}
+			}
+		}
+	}
+	return positions
+}
+func identifierByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9' || b == '_'
 }

@@ -24,7 +24,7 @@ jobs:
       - name: Reader reason codes and writer canaries (uncached)
         working-directory: cli
         run: >-
-          go test -count=1 ./internal/quota ./internal/connections ./cmd/modelplan
+          go test -count=1 ./internal/testenv ./internal/quota ./internal/connections ./cmd/modelplan
           -run 'Test(ReaderReason|NativeConnectionReasons|CodexRuntimeErrorOutput|KiroRuntimeErrorOutput|CodexProcessErrorOutput|CodexTimeoutKeepsSafeReason|RuntimeErrorsStayOutOfCLIJSONAndLogs)'
       - name: Release source rejects private Apple SPI
         working-directory: cli

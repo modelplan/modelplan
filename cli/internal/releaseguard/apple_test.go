@@ -2,6 +2,7 @@
 package releaseguard
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,5 +69,39 @@ func TestAppleTreeRejectsMinimalBadRelease(t *testing.T) {
 	findings, err = CheckApple(root)
 	if err != nil || len(findings) != 0 {
 		t.Fatalf("test-only SPI rejected: %v %v", findings, err)
+	}
+}
+
+func TestAppleReviewFixturesThroughTree(t *testing.T) {
+	b, err := os.ReadFile("testdata/review-fixtures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		Fixtures []struct {
+			Name, Path, Source string
+			Hits               int
+		}
+	}
+	if err := json.Unmarshal(b, &data); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range data.Fixtures {
+		t.Run(fixture.Name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, dir := range []string{"desktop/native", "clients/swift"} {
+				if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(root, "desktop/native", fixture.Path)
+			if err := os.WriteFile(path, []byte(fixture.Source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hits, err := CheckApple(root)
+			if err != nil || len(hits) != fixture.Hits {
+				t.Fatalf("got %v, %v; want %d findings", hits, err, fixture.Hits)
+			}
+		})
 	}
 }

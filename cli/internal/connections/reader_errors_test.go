@@ -14,6 +14,12 @@ import (
 
 func TestNativeConnectionReasonsAreCodesIncludingLastGood(t *testing.T) {
 	testenv.IsolateHome(t)
+	checkLogs := testenv.CaptureReasonLogs(t)
+	defer func() {
+		if err := checkLogs(); err != nil {
+			t.Error(err)
+		}
+	}()
 	t.Setenv("MODELPLAN_READERS", "")
 	t.Setenv("MODELPLAN_NATIVE", "")
 	home, _ := os.UserHomeDir()

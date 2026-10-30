@@ -33,11 +33,13 @@ Ground rules:
 ### Reader and release regression checks
 
 CI runs the reader reason conformance tables without the test cache. They inject
-synthetic runtime/vendor errors and check returned entries, retained files,
-connection diagnostics, logs and JSON. New native readers need an error fixture;
+synthetic runtime/vendor errors and validate actual reason/error fields against
+closed code vocabularies. Retained files, connection diagnostics, returned errors
+and JSON are checked; real helper logging and stdout/stderr are captured and
+checked for code-only records. Wrapped prose and non-canary text must fail. New native readers need an error fixture;
 fixed reason codes must survive failure and retained-read paths.
 
-From `cli/`, run `go test -count=1 ./internal/quota ./internal/connections ./cmd/modelplan -run 'Test(ReaderReason|NativeConnectionReasons|.*ErrorOutput|RuntimeErrorsStayOutOfCLIJSONAndLogs)'`
+From `cli/`, run `go test -count=1 ./internal/testenv ./internal/quota ./internal/connections ./cmd/modelplan -run 'Test(ReaderReason|NativeConnectionReasons|.*ErrorOutput|RuntimeErrorsStayOutOfCLIJSONAndLogs)'`
 and `go run ./internal/releaseguard/cmd --root ..`.
 The release scan covers Swift, Go, Objective-C and cgo under `desktop/native` and
 `clients/swift`. Private selectors/KVC require `MODELPLAN_TEST_ONLY_SPI` to exclude

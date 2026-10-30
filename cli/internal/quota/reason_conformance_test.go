@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/modelplan/modelplan/cli/internal/testenv"
 	"io"
 	"net/http"
 	"os"
@@ -18,45 +19,46 @@ import (
 type reasonArtifact struct {
 	writer string
 	value  any
-	reason string
 }
 
-// This table deliberately checks complete writer artifacts, not a redacted
-// projection alone. The existing runtime tests also exercise real CLI logs and
-// quota/desktop/connections/doctor JSON, including retained and not-due reads.
-func readerReasonViolation(a reasonArtifact, canary string) error {
-	if a.reason != "" && ReaderErrorCode(a.reason) != a.reason {
-		return fmt.Errorf("non-code reason reached %s", a.writer)
-	}
-	var b []byte
-	switch value := a.value.(type) {
-	case []byte:
-		b = value
-	case error:
-		b = []byte(value.Error())
-	default:
-		var err error
-		b, err = json.Marshal(value)
-		if err != nil {
-			return err
-		}
-	}
-	if strings.Contains(string(b), canary) {
-		return fmt.Errorf("untrusted text reached %s", a.writer)
+// Validate actual fields/returned errors, not a copy supplied by the fixture.
+// No secret substring, including the historical canaries, affects acceptance.
+func readerReasonViolation(a reasonArtifact) error {
+	if err := testenv.CheckReaderReasons(a.value); err != nil {
+		return fmt.Errorf("%s: %w", a.writer, err)
 	}
 	return nil
 }
+func captureReaderReasonLogs(t *testing.T) func() {
+	check := testenv.CaptureReasonLogs(t)
+	return func() {
+		if err := check(); err != nil {
+			t.Error(err)
+		}
+	}
+}
+func readerFailureSource(t *testing.T, r Report, id string) SourceStatus {
+	t.Helper()
+	for _, source := range r.Sources {
+		if source.Source == "native:"+id {
+			return source
+		}
+	}
+	t.Fatal("reader failure source missing", id)
+	return SourceStatus{}
+}
+
 func TestReaderReasonGuardRejectsMinimalBadWriters(t *testing.T) {
 	for _, canary := range runtimeErrorCanaries {
 		raw := errors.New(canary)
 		for _, bad := range []reasonArtifact{
 			{writer: "persisted reason", value: SourceStatus{Reason: raw.Error()}},
-			{writer: "non-code without canary", value: "safe outer data", reason: "arbitrary vendor prose"},
+			{writer: "non-code without canary", value: SourceStatus{Reason: "arbitrary vendor prose"}},
 			{writer: "retained error", value: raw},
 			{writer: "log line", value: fmt.Sprintf("reader: %v", raw)},
 			{writer: "JSON", value: []byte(fmt.Sprintf(`{"error":%q}`, canary))},
 		} {
-			if readerReasonViolation(bad, canary) == nil {
+			if readerReasonViolation(bad) == nil {
 				t.Fatal("guard accepted minimal bad writer", bad.writer)
 			}
 		}
@@ -66,7 +68,7 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 	writers := map[string]func(*testing.T, string) []reasonArtifact{
 		"vendor-zai": func(t *testing.T, text string) []reasonArtifact {
 			e := parseZai(zaiResponse{Msg: text}, acctNow)
-			return []reasonArtifact{{writer: "Z.ai returned entry", value: e, reason: e.Error}}
+			return []reasonArtifact{{writer: "Z.ai returned entry", value: e}}
 		},
 		"vendor-codexbar": func(t *testing.T, text string) []reasonArtifact {
 			raw, _ := json.Marshal([]any{map[string]any{"provider": "kiro", "error": map[string]any{"message": text}}})
@@ -80,7 +82,7 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			return []reasonArtifact{{writer: "CodexBar returned entry", value: e, reason: e.Error}, {writer: "CodexBar retained errors", value: b}}
+			return []reasonArtifact{{writer: "CodexBar returned entry", value: e}, {writer: "CodexBar retained errors", value: b}}
 		},
 		"retained-codexbar": func(t *testing.T, text string) []reasonArtifact {
 			p := cbPaths(t, "kiro")
@@ -95,9 +97,20 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 				if len(report.Sources) != 1 {
 					t.Fatal("retained CodexBar error was not projected")
 				}
-				artifacts = append(artifacts, reasonArtifact{writer: "CodexBar retained " + status + " JSON", value: report, reason: report.Sources[0].Reason})
+				artifacts = append(artifacts, reasonArtifact{writer: "CodexBar retained " + status + " JSON", value: report})
 			}
 			return artifacts
+		},
+		"retained-fetch": func(t *testing.T, text string) []reasonArtifact {
+			cache := t.TempDir()
+			path := codexbarFetchMark(cache)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(CodexBarVersion+" failed: download failed: "+text+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			return []reasonArtifact{{writer: "retained fetch result", value: testenv.FetchReason(CodexBarFetchResult(cache))}}
 		},
 		"download-codexbar": func(t *testing.T, text string) []reasonArtifact {
 			cache := t.TempDir()
@@ -105,7 +118,7 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid URL unexpectedly fetched")
 			}
-			return []reasonArtifact{{writer: "fetch returned error", value: err, reason: err.Error()}, {writer: "fetch retained mark", value: CodexBarFetchResult(cache)}, {writer: "fetch log", value: fmt.Sprint(err)}}
+			return []reasonArtifact{{writer: "fetch returned error", value: err}, {writer: "fetch retained mark", value: testenv.FetchReason(CodexBarFetchResult(cache))}, {writer: "fetch log", value: fmt.Sprint(err)}}
 		},
 		"connections-read": func(t *testing.T, text string) []reasonArtifact {
 			p := nativePaths(t)
@@ -118,15 +131,16 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 			if len(r.Sources) == 0 {
 				t.Fatal("missing connections failure")
 			}
-			return []reasonArtifact{{writer: "connections JSON", value: r, reason: r.Sources[0].Reason}}
+			return []reasonArtifact{{writer: "connections JSON", value: r}}
 		},
 	}
 	for name, writer := range writers {
-		for index, canary := range runtimeErrorCanaries {
+		for index, canary := range append(append([]string{}, runtimeErrorCanaries...), "arbitrary vendor prose") {
 			t.Run(fmt.Sprintf("%s/%d", name, index), func(t *testing.T) {
 				isolateHome(t)
+				defer captureReaderReasonLogs(t)()
 				for _, artifact := range writer(t, canary) {
-					if err := readerReasonViolation(artifact, canary); err != nil {
+					if err := readerReasonViolation(artifact); err != nil {
 						t.Error(err)
 					}
 				}
@@ -154,6 +168,7 @@ func TestReaderReasonRegisteredHTTPConformance(t *testing.T) {
 		for _, mode := range []string{"transport-error", "vendor-body-403", "vendor-body-200"} {
 			t.Run(id+"/"+mode, func(t *testing.T) {
 				isolateHome(t)
+				defer captureReaderReasonLogs(t)()
 				t.Setenv("MODELPLAN_HISTORY", "off")
 				at, _ := setup(t)
 				productionConsent(t, id, true)
@@ -193,11 +208,9 @@ func TestReaderReasonRegisteredHTTPConformance(t *testing.T) {
 					t.Fatal(err)
 				}
 				assertRuntimeCacheSafe(t, cache)
-				for _, artifact := range []reasonArtifact{{writer: "report JSON", value: report}, {writer: "retained report JSON", value: ReadPermitted(p, at.Add(time.Minute))}, {writer: "diagnostics JSON", value: ReaderDiagnostics(p, at)}} {
-					for _, canary := range runtimeErrorCanaries {
-						if err := readerReasonViolation(artifact, canary); err != nil {
-							t.Error(err)
-						}
+				for _, artifact := range []reasonArtifact{{writer: "report JSON", value: readerFailureSource(t, report, id)}, {writer: "retained report JSON", value: readerFailureSource(t, ReadPermitted(p, at.Add(time.Minute)), id)}, {writer: "diagnostics JSON", value: ReaderDiagnostics(p, at)}} {
+					if err := readerReasonViolation(artifact); err != nil {
+						t.Error(err)
 					}
 				}
 			})
@@ -225,9 +238,10 @@ func TestReaderReasonRuntimeConformance(t *testing.T) {
 		if nativeReaders[id] == nil {
 			t.Fatal("runtime fixture no longer names a registered reader", id)
 		}
-		for index, canary := range runtimeErrorCanaries {
+		for index, canary := range append(append([]string{}, runtimeErrorCanaries...), "arbitrary vendor prose") {
 			t.Run(fmt.Sprintf("%s/%d", id, index), func(t *testing.T) {
 				isolateHome(t)
+				defer captureReaderReasonLogs(t)()
 				t.Setenv("MODELPLAN_HISTORY", "off")
 				setup(t, canary)
 				productionConsent(t, id, true)
@@ -236,9 +250,9 @@ func TestReaderReasonRuntimeConformance(t *testing.T) {
 				if e.Status == "ok" || e.ErrorCode == "" || ReaderErrorCode(e.ErrorCode) != e.ErrorCode {
 					t.Fatal("runtime did not return a coded failure")
 				}
-				if err := readerReasonViolation(reasonArtifact{writer: "runtime native entry", value: e}, canary); err != nil {
-					t.Error(err)
-				}
+				// Fixed transient remedies are not persisted; inspect the actual
+				// dispatcher's retained error/code fields below.
+
 				cache := t.TempDir()
 				p := ProductionPaths(cache, "1.0.0")
 				if err := RefreshNative(context.Background(), p, acctNow); err != nil {
@@ -246,10 +260,10 @@ func TestReaderReasonRuntimeConformance(t *testing.T) {
 				}
 				assertRuntimeCacheSafe(t, cache)
 				for _, artifact := range []reasonArtifact{
-					{writer: "runtime report JSON", value: ReadPermitted(p, acctNow)},
+					{writer: "runtime report JSON", value: readerFailureSource(t, ReadPermitted(p, acctNow), id)},
 					{writer: "runtime diagnostics JSON", value: ReaderDiagnostics(p, acctNow)},
 				} {
-					if err := readerReasonViolation(artifact, canary); err != nil {
+					if err := readerReasonViolation(artifact); err != nil {
 						t.Error(err)
 					}
 				}
