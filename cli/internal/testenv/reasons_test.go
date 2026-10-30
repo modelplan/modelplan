@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+var readerLog = log.New(os.Stderr, "", 0)
+var readerStdout = os.Stdout
+
 func TestReaderReasonPositiveVocabulary(t *testing.T) {
 	for _, value := range []any{
 		struct{ Reason string }{"arbitrary vendor prose"},
@@ -40,6 +43,8 @@ func TestReaderReasonPositiveVocabulary(t *testing.T) {
 }
 func TestReaderReasonActualLogging(t *testing.T) {
 	for name, emit := range map[string]func(){
+		"macrev-prebound":    func() { readerLog.Print(fmt.Errorf("reader wrapper: %w", errors.New("arbitrary vendor prose"))) },
+		"prebound-stdout":    func() { fmt.Fprintln(readerStdout, "arbitrary helper prose") },
 		"macrev-wrapped":     func() { log.Print(fmt.Errorf("reader wrapper: %w", errors.New("arbitrary vendor prose"))) },
 		"safe-cause-wrapped": func() { log.Print(fmt.Errorf("reader wrapper: %w", errors.New("other"))) },
 		"helper-prose":       func() { log.Print("arbitrary helper prose") },

@@ -53,3 +53,37 @@ func TestAppleReviewFixturesThroughCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestAppleBinaryCommandRejectsCompiledName(t *testing.T) {
+	guard := filepath.Join(t.TempDir(), "releaseguard")
+	if out, err := exec.Command("go", "build", "-o", guard, ".").CombinedOutput(); err != nil {
+		t.Fatalf("guard build: %v: %s", err, out)
+	}
+	for name, source := range map[string]string{
+		"public":            `package main; import "fmt"; func main(){fmt.Print("publicSelector")}`,
+		"split-source-name": `package main; import "fmt"; func main(){fmt.Print("_" + "webProcessIdentifier")}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			sourcePath := filepath.Join(dir, "main.go")
+			binary := filepath.Join(dir, "release")
+			if err := os.WriteFile(sourcePath, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command("go", "build", "-o", binary, sourcePath).CombinedOutput(); err != nil {
+				t.Fatalf("fixture build: %v: %s", err, out)
+			}
+			out, err := exec.Command(guard, "--binary", binary).CombinedOutput()
+			if name == "public" {
+				if err != nil {
+					t.Fatalf("public binary rejected: %v: %s", err, out)
+				}
+				return
+			}
+			exit, ok := err.(*exec.ExitError)
+			if !ok || exit.ExitCode() != 1 || !strings.Contains(string(out), "denylisted Apple SPI _webProcessIdentifier") {
+				t.Fatalf("denylisted binary accepted: %v: %s", err, out)
+			}
+		})
+	}
+}

@@ -30,9 +30,12 @@ func (f Finding) String() string { return fmt.Sprintf("%s:%d: %s", f.Path, f.Lin
 
 const spiLiteral = "(?:(?:@|#+)?\"|`)"
 
-var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiLiteral + `_|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiLiteral + `_|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiLiteral + `_|@selector\s*\(\s*_`)
+// Harmless grouping parentheses do not turn a literal into a computed key.
+const spiGrouping = `(?:\(\s*)*`
+
+var privateSPI = regexp.MustCompile(`\b_webProcessIdentifier\b|\b[Vv]alueForKey(?:Path)?\s*[:(]\s*` + spiGrouping + spiLiteral + `_|\bsetValue\s*:[^;]*\bforKey(?:Path)?\s*:\s*` + spiGrouping + spiLiteral + `_|\b(?:NSSelectorFromString|Selector|sel_registerName|sel_getUid)\s*\(\s*` + spiGrouping + spiLiteral + `_|@selector\s*\(\s*_`)
 var swiftKVCCall = regexp.MustCompile(`\b(?:value|setValue)\s*\(`)
-var privateKeyLiteral = regexp.MustCompile(`^\s*` + spiLiteral + `_`)
+var privateKeyLiteral = regexp.MustCompile(`^\s*` + spiGrouping + spiLiteral + `_`)
 var branchDirective = regexp.MustCompile(`^#\s*(if|ifdef|ifndef|elif|elseif|else|endif)\b(.*)$`)
 var definedTag = regexp.MustCompile(`\bdefined\s*(?:\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)|\s+([A-Za-z_][A-Za-z0-9_]*))`)
 

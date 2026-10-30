@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"reflect"
 	"regexp"
 	"strings"
@@ -202,19 +201,13 @@ func CheckReasonLog(output string) error {
 	return nil
 }
 
-// CaptureReasonLogs captures standard logging AND incidental stdout/stderr for
-// every exercised reader path. Call the returned check in a defer. Tests using
-// process-wide streams must not run in parallel.
+// CaptureReasonLogs captures the exercised process's descriptors, including
+// package-level loggers bound before this function is called. Use its returned
+// check in a defer; process-wide capture tests must not run in parallel.
 func CaptureReasonLogs(t *testing.T) func() error {
 	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "reader-logs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, stderr := os.Stdout, os.Stderr
-	writer, flags, prefix := log.Writer(), log.Flags(), log.Prefix()
-	os.Stdout, os.Stderr = file, file
-	log.SetOutput(file)
+	finishCapture := captureProcessOutput(t)
+	flags, prefix := log.Flags(), log.Prefix()
 	log.SetFlags(0)
 	log.SetPrefix("")
 	var finished bool
@@ -224,20 +217,14 @@ func CaptureReasonLogs(t *testing.T) func() error {
 			return result
 		}
 		finished = true
-		os.Stdout, os.Stderr = stdout, stderr
-		log.SetOutput(writer)
 		log.SetFlags(flags)
 		log.SetPrefix(prefix)
-		if err := file.Close(); err != nil {
-			result = err
-			return result
-		}
-		b, err := os.ReadFile(file.Name())
+		output, err := finishCapture()
 		if err != nil {
 			result = err
-			return result
+		} else {
+			result = CheckReasonLog(output)
 		}
-		result = CheckReasonLog(string(b))
 		return result
 	}
 	t.Cleanup(func() { _ = finish() })

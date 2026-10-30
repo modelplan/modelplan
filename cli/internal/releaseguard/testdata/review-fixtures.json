@@ -78,6 +78,36 @@
       "path": "Probe.swift",
       "source": "view.setValue(makeValue(forKey: \"_argument\"), forKey: \"title\")\n",
       "hits": 0
+    },
+    {
+      "name": "grouped-getter",
+      "path": "Probe.swift",
+      "source": "view.value(forKey: (\"_privatePID\"))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-setter",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: ((\"_privatePID\")))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-selector",
+      "path": "Probe.swift",
+      "source": "view.perform(NSSelectorFromString((\"_privatePID\")))\n",
+      "hits": 1
+    },
+    {
+      "name": "grouped-public",
+      "path": "Probe.swift",
+      "source": "view.setValue(makeValue(), forKey: ((\"title\")))\n",
+      "hits": 0
+    },
+    {
+      "name": "grouped-test-only",
+      "path": "Probe.swift",
+      "source": "#if MODELPLAN_TEST_ONLY_SPI\nview.value(forKey: (\"_privatePID\"))\n#endif\n",
+      "hits": 0
     }
   ]
 }
