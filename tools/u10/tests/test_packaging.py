@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/u10'))
 import package_candidate as packaging
 
+PIN = json.loads((ROOT / 'desktop/native/consent-cli-pin.json').read_text())
+
 
 class PackagingTests(unittest.TestCase):
     def setUp(self):
@@ -64,7 +66,7 @@ class PackagingTests(unittest.TestCase):
         after = packaging.identity.digest_file(self.helper)
         self.assertNotEqual(before, after)
         self.assertEqual(result['ModelPlanBundledHelperSHA256'], after)
-        self.assertEqual(result['ModelPlanHelperVersion'], '0.5.49')
+        self.assertEqual(result['ModelPlanHelperVersion'], PIN['version'])
         self.assertEqual(result['ModelPlanSourceHelperSHA256ByArchitecture'], self.hashes)
         self.assertEqual(self.commands[0][-1], str(self.helper))
         self.assertEqual(self.commands[1][0], sys.executable)
@@ -156,7 +158,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(result['artifacts']['app'], packaging.artifact(self.app, allow_tree=True))
         self.assertEqual(result['artifacts']['helper']['sha256'], packaging.identity.digest_file(self.helper))
         self.assertEqual(result['sources'], [{'repository': 'modelplan/modelplan', 'sha': source, 'dirty': False}])
-        self.assertEqual(result['artifacts']['helperVersion'], '0.5.49')
+        self.assertEqual(result['artifacts']['helperVersion'], PIN['version'])
         self.assertEqual(result['publicationData']['state'], 'unsupported')
         self.assertTrue(all(s['outcome'] in ('unsupported', 'not-run') for s in result['scenarios']))
         self.assertEqual(result['checks'][0]['id'], 'U10-packaging-identity')

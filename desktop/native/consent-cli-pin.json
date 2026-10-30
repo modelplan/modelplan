@@ -6,5 +6,9 @@
     "darwin_amd64": "39ea577ef9045b7565c19f051b9e36ec12644da322b224e62e7fe9fcdddeade9",
     "linux_arm64": "41a34a6bbb9c619145f34d91c01709443e32894350b113a0be813ff3b8c05c43",
     "linux_amd64": "0205c2740388aece5f34101b1192b68b54d4e9baa4fbfc84801a2c8bd760a8e3"
+  },
+  "sourceSHA256ByArchitecture": {
+    "arm64": "24bf94ae061ddb94a5a7898c7f852c60e5442b2792ac1aff0a4a0ab7639be09e",
+    "x86_64": "a92b0f6ae1ab5a1cfef1723250dc7b4c9b95eeac7ca19ff8429e1ae9f49c76fc"
   }
 }
