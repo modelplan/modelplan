@@ -6,6 +6,16 @@ import ModelPlanWire
 @testable import ModelPlanSettings
 
 @MainActor final class ScopeConsentFlowTests: XCTestCase {
+    func testEntryConsumesAcceptedFactsAndClearsWithoutAFactory() throws {
+        let entry = ScopeConsentEntry(client: ScopeConsentTestClient(), ready: { true }, language: .english)
+        entry.acceptedFacts(try ScopeConsentFixtures.facts())
+        XCTAssertNotNil(entry.controller.facts)
+        XCTAssertFalse(entry.controller.canMutate, "Absent authoritative parameters must disable mutation")
+        XCTAssertEqual(entry.view.accessibilityIdentifier(), "settings.scopeConsent")
+        entry.clearPrivateViews()
+        XCTAssertNil(entry.controller.facts)
+        XCTAssertTrue(entry.controller.selectedIDs.isEmpty)
+    }
     private func control(_ root: NSView, _ id: String) throws -> NSButton {
         func find(_ view: NSView) -> NSButton? {
             if let value = view as? NSButton, value.accessibilityIdentifier() == id { return value }
