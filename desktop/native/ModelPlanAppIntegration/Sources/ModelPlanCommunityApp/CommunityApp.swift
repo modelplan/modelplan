@@ -5,10 +5,22 @@ import ModelPlanShell
 import ModelPlanCommunityHost
 import ModelPlanAppIntegration
 import ModelPlanCore
+import ModelPlanEngineClient
+import ModelPlanWire
 
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
+        // Probe routes retain their existing explicit harness; normal launch consumes app-server rows.
+        let explicitProbe = CommandLine.arguments.contains("--access-probe") || CommandLine.arguments.contains("--runtime-probe")
+        if !explicitProbe && ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] != "1" {
+            #if DEBUG && MODELPLAN_E2E_JOURNEY
+            if !CommunityJourneyCI.enabled { runEngineRows(); return }
+            #else
+            runEngineRows(); return
+            #endif
+        }
+
         #if DEBUG && MODELPLAN_E2E_JOURNEY
         // Headless native panels keep the real store on desktop polling, not visible-account refresh.
         let dock = ProductionDockFactory.community(createsNativePanels: !CommunityJourneyCI.enabled)
@@ -120,4 +132,17 @@ import ModelPlanCore
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
     }
+    @MainActor private static func runEngineRows() {
+        do {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let preferences = try SettingsStore(url: support.appendingPathComponent("ModelPlan/Native/settings-v1.json"))
+            let app = EngineRowsEntry.make(configuration: .init(
+                executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
+                applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
+                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }), settingsStore: preferences)
+            NSApplication.shared.delegate = app
+            withExtendedLifetime(app) { NSApplication.shared.run() }
+        } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }
+    }
+
 }
