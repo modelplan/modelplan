@@ -65,6 +65,8 @@ jobs:
     env:
       MACOSX_DEPLOYMENT_TARGET: '14.0'
       PYTHONDONTWRITEBYTECODE: '1'
+      # Reviewed official web bundle at public PR355 head cdacbb2.
+      COCKPIT_MANIFEST_SHA256: '5dd26b770d8491ff3661f54f4e86aa576cc9dbb05a13200a0d0238e2097122bd'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +96,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as output:
               output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
           PY
+      - name: Build and stage the canonical official cockpit
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build:official --prefix desktop/cockpit
+          node desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs official
+          python3 tools/u10/check_cockpit_staging.py --dist desktop/cockpit/dist --expected-manifest-sha256 "$COCKPIT_MANIFEST_SHA256"
       - name: Assemble and seal candidate, archive, and generate U14 manifest
         run: |
           mkdir -p .tmp/tmp
@@ -102,6 +110,9 @@ jobs:
             --output "$GITHUB_WORKSPACE/.tmp/u10-candidate" \
             --candidate-id "u10-$(git rev-parse HEAD)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --build-number "$GITHUB_RUN_NUMBER"
+      - name: Reject a missing cockpit manifest or packaged placeholder
+        run: |
+          python3 tools/u10/check_cockpit_staging.py --dist desktop/cockpit/dist --expected-manifest-sha256 "$COCKPIT_MANIFEST_SHA256" --candidate .tmp/u10-candidate
       - name: Upload run artifact only
         uses: actions/upload-artifact@v4
         with:
