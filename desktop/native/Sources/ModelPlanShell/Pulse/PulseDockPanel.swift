@@ -65,6 +65,9 @@ import AppKit
         case .leftMouseUp:
             receivedInput?(event.type, event.timestamp)
             handled = input.end(globalPoint: global)
+        case .mouseMoved, .mouseEntered, .mouseExited:
+            receivedInput?(event.type, event.timestamp)
+            handled = false
         default: handled = false
         }
         if !handled { super.sendEvent(event) }

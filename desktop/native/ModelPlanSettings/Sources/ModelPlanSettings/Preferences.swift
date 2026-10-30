@@ -163,6 +163,7 @@ public actor SettingsStore {
     let onboardingDefinition: OnboardingDefinition
     private var current: SettingsPreferences
     private var revision: UInt64 = 0
+    private var foundationBacking: FoundationPreferenceFile.Opened?
     public init(url: URL, onboardingDefinition: OnboardingDefinition = .task65) throws {
         self.url = url; self.onboardingDefinition = onboardingDefinition
         if FileManager.default.fileExists(atPath: url.path) {
@@ -181,6 +182,39 @@ public actor SettingsStore {
         } else { current = SettingsPreferences() }
         current.onboarding.reconcile(in: onboardingDefinition)
     }
+    /// One canonical actor for the new settings/core document. Existing or
+    /// corrupt targets never trigger legacy migration or automatic replacement.
+    public init(foundationAt applicationSupport: URL, product: FoundationSettingsMigration.ProductIdentity,
+                rowIDMap: [String: String] = [:], onboardingDefinition: OnboardingDefinition = .task65) throws {
+        let location = try FoundationPreferenceLocation(applicationSupport: applicationSupport, product: product)
+        let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap)
+        self.url = location.target; self.onboardingDefinition = onboardingDefinition
+        self.current = opened.document.settings; self.foundationBacking = opened
+        current.onboarding.reconcile(in: onboardingDefinition)
+    }
+    public func foundationStatus() -> FoundationPreferenceStatus? {
+        guard let backing = foundationBacking else { return nil }
+        return .init(path: backing.status.path, createdByMigration: backing.status.createdByMigration,
+            readOnlyRecovery: backing.writeBlocked, selection: backing.status.selection, issues: backing.status.issues)
+    }
+    public func coreSnapshot() -> FoundationCorePreferences? { foundationBacking?.document.core }
+    @discardableResult public func updateCore(_ core: FoundationCorePreferences, expectedRevision: UInt64? = nil) throws -> SettingsSnapshot {
+        if let expectedRevision, expectedRevision != revision { throw SettingsError.staleRevision }
+        guard let backing = foundationBacking else { throw FoundationPreferenceError.requiresFoundationStore }
+        guard !backing.writeBlocked else { throw FoundationPreferenceError.recoveryRequired }
+        try persistFoundation(.init(settings: current, core: core), backing: backing)
+        revision &+= 1; return snapshot()
+    }
+    private func persistFoundation(_ document: FoundationPreferenceFile.Document, backing: FoundationPreferenceFile.Opened) throws {
+        let bytes = try document.encoded()
+        do { try FoundationPreferenceFile.replace(bytes, expected: backing) }
+        catch FoundationPreferenceError.durabilityUncertain {
+            foundationBacking?.writeBlocked = true
+            throw FoundationPreferenceError.durabilityUncertain
+        }
+        var committed = backing; committed.document = document; committed.bytes = bytes
+        foundationBacking = committed
+    }
     private struct SchemaHeader: Decodable { let schemaVersion: Int }
     public func snapshot() -> SettingsSnapshot { .init(revision: revision, preferences: current) }
     @discardableResult public func update(expectedRevision: UInt64? = nil,
@@ -188,6 +222,11 @@ public actor SettingsStore {
         if let expectedRevision, expectedRevision != revision { throw SettingsError.staleRevision }
         var candidate = current
         try edit(&candidate); candidate.onboarding.reconcile(in: onboardingDefinition); try candidate.validate()
+        if let backing = foundationBacking {
+            guard !backing.writeBlocked else { throw FoundationPreferenceError.recoveryRequired }
+            try persistFoundation(.init(settings: candidate, core: backing.document.core), backing: backing)
+            current = candidate; revision &+= 1; return snapshot()
+        }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(PreferenceEnvelope(schemaVersion: 1, preferences: candidate))
         guard data.count <= Self.maximumBytes else { throw SettingsError.tooLarge }
