@@ -11,6 +11,7 @@ private struct CaptureIndex: Decodable {
             let null: Bool
             let wrongType: Bool
             let strict: Bool
+            let nullPolicy: String
         }
         let file: String
         let type: String
@@ -332,5 +333,88 @@ extension DecodeTests {
         XCTAssertEqual(value.params, .null)
         let output = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary)
         XCTAssertEqual(output, source as NSDictionary)
+    }
+}
+
+
+extension DecodeTests {
+    func testEveryDeclaredOptionalNullPolicyThroughProductionDecoder() throws {
+        var distinct = 0
+        var checked = 0
+        for entry in try index().cases {
+            for field in entry.optional {
+                checked += 1
+                XCTAssertTrue(["distinct", "coalesced", "forbidden"].contains(field.nullPolicy), entry.type + "." + field.field)
+                var absent = try object(entry.file)
+                absent.removeValue(forKey: field.field)
+                var null = try object(entry.file)
+                null[field.field] = NSNull()
+                if field.nullPolicy == "distinct" {
+                    distinct += 1
+                    XCTAssertTrue(field.omission && field.null, "distinct declaration must admit all three states")
+                    for source in [absent, null, try object(entry.file)] {
+                        let bytes = try roundTripCapture(entry.type, encoded(source))
+                        let output = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+                        XCTAssertEqual(output.keys.contains(field.field), source.keys.contains(field.field), entry.type + "." + field.field + " presence")
+                        XCTAssertEqual(output[field.field] as? NSObject, source[field.field] as? NSObject, entry.type + "." + field.field + " value")
+                    }
+                } else if field.nullPolicy == "coalesced" && field.omission && field.null {
+                    let a = try roundTripCapture(entry.type, encoded(absent))
+                    let b = try roundTripCapture(entry.type, encoded(null))
+                    let aFields = try XCTUnwrap(JSONSerialization.jsonObject(with: a) as? [String: Any])
+                    let bFields = try XCTUnwrap(JSONSerialization.jsonObject(with: b) as? [String: Any])
+                    XCTAssertEqual(aFields.keys.contains(field.field), bFields.keys.contains(field.field), entry.type + "." + field.field)
+                    XCTAssertEqual(aFields[field.field] as? NSObject, bFields[field.field] as? NSObject, entry.type + "." + field.field)
+                } else if field.nullPolicy == "forbidden" {
+                    XCTAssertThrowsError(try roundTripCapture(entry.type, encoded(null)), entry.type + "." + field.field)
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 0)
+        XCTAssertGreaterThan(distinct, 0)
+    }
+}
+
+
+extension DecodeTests {
+    func testHistorySelectorsMatchHandlerOmissionAndNullRules() throws {
+        var omitted = try object("WireHistoryQueryParams.json")
+        omitted.removeValue(forKey: "ref")
+        omitted.removeValue(forKey: "cursor")
+        let valid = try WireDecoder.decode(WireHistoryQueryParams.self, from: encoded(omitted))
+        XCTAssertNil(valid.ref)
+        XCTAssertNil(valid.cursor)
+        for selector in ["ref", "cursor"] {
+            var null = omitted
+            null[selector] = NSNull()
+            XCTAssertThrowsError(try WireDecoder.decode(WireHistoryQueryParams.self, from: encoded(null)), selector + " must be rejected before re-encoding")
+        }
+    }
+}
+
+
+extension DecodeTests {
+    func testCredentialOptionalNullsRespectOutcomePresence() throws {
+        for outcome in ["canceled", "denied", "not_found", "interaction_required", "timeout", "error"] {
+            var omitted = try object("WireCredentialResult.json")
+            omitted["outcome"] = outcome
+            omitted.removeValue(forKey: "accessToken")
+            omitted.removeValue(forKey: "expiresAt")
+            XCTAssertNoThrow(try WireDecoder.decode(WireCredentialResult.self, from: encoded(omitted)))
+            for field in ["accessToken", "expiresAt"] {
+                var null = omitted; null[field] = NSNull()
+                XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(null)), outcome + "." + field)
+            }
+        }
+        for expiry in [false, true] {
+            var ok = try object("WireCredentialResult.json")
+            ok.removeValue(forKey: "expiresAt")
+            if expiry { ok["expiresAt"] = NSNull() }
+            XCTAssertNoThrow(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+            ok.removeValue(forKey: "accessToken")
+            XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+            ok["accessToken"] = NSNull()
+            XCTAssertThrowsError(try WireDecoder.decode(WireCredentialResult.self, from: encoded(ok)))
+        }
     }
 }
