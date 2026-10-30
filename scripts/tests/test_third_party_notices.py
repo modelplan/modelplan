@@ -72,7 +72,8 @@ class NoticeCoverageTests(unittest.TestCase):
     def test_new_vendored_three_pulse_and_apache_files_require_explicit_coverage(self):
         samples = [('desktop/vendor/three.module.min.js', '/* three.js */'),
                    ('desktop/native/pulse/Panel.swift', '// adapted geometry'),
-                   ('desktop/native/Panel.swift', '// SPDX-License-Identifier: Apache-2.0')]
+                   ('desktop/native/Panel.swift', '// SPDX-License-Identifier: Apache-2.0'),
+                   ('desktop/native/PanelHeader.swift', '// Apache-2.0\nimport AppKit')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for path, content in samples:

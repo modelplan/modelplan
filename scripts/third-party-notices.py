@@ -127,9 +127,15 @@ def vendored_coverage(root, files, entries):
             continue
         source = (root / path).read_text(errors='replace')
         is_three = (bool(re.search(r'(^|[/_.-])three([/_.-]|$)', path, re.I)) or
-                    bool(re.search(r'three\.js|THREE\.REVISION|@license\s+three', source)))
+                    bool(re.search(r'three\.js|THREE\.REVISION|@license\s+three', source, re.I)))
         is_pulse = bool(re.search(r'(^|/)pulse/', path, re.I) or re.search(r'ported from Pulse', source, re.I))
-        apache = bool(re.search(r'SPDX-License-Identifier:\s*Apache-2\.0|Licensed under the Apache License', source))
+        leading = []
+        for line in source.splitlines():
+            if line.strip() and not line.lstrip().startswith('//'):
+                break
+            leading.append(line)
+        apache = bool(re.search(r'SPDX-License-Identifier:\s*Apache-2\.0|Licensed under the Apache License', source) or
+                      'Apache-2.0' in '\n'.join(leading))
         if is_three or is_pulse or apache:
             require(path in covered, 'vendored source missing notice: ' + path)
             entry = covered[path]
