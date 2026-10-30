@@ -25,9 +25,9 @@ import ModelPlanSettings
     private final class Placement: CommunityPlacementProducing {
         var onPlacementObserved: ((DockEdgePlacement?, Bool) -> Void)?
     }
-    private let arm64Source = "24bf94ae061ddb94a5a7898c7f852c60e5442b2792ac1aff0a4a0ab7639be09e"
-    private let amd64Source = "a92b0f6ae1ab5a1cfef1723250dc7b4c9b95eeac7ca19ff8429e1ae9f49c76fc"
-    private func bundle(version: String = "0.5.49", source: String? = nil) throws -> URL {
+    private let arm64Source = CommunityConsentBundleIdentity.sourceSHA256ByArchitecture["arm64"]!
+    private let amd64Source = CommunityConsentBundleIdentity.sourceSHA256ByArchitecture["x86_64"]!
+    private func bundle(version: String = CommunityConsentBundleIdentity.version) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("consent-identity-" + UUID().uuidString).resolvingSymlinksInPath()
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let helpers = root.appendingPathComponent("Contents/Helpers"), resources = root.appendingPathComponent("Contents/Resources")
@@ -38,14 +38,13 @@ import ModelPlanSettings
         try bytes.write(to: helpers.appendingPathComponent("modelplan"))
         let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         try Data((digest + "\n").utf8).write(to: resources.appendingPathComponent("modelplan.sha256"))
-        let info = ["ModelPlanPublicSource": String(repeating: "a", count: 40), "ModelPlanHelperVersion": version,
-                    "ModelPlanSourceHelperSHA256": source ?? arm64Source, "ModelPlanBundledHelperSHA256": digest]
+        let info: [String: Any] = ["ModelPlanPublicSource": String(repeating: "a", count: 40), "ModelPlanHelperVersion": version,
+                    "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture, "ModelPlanBundledHelperSHA256": digest]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: root.appendingPathComponent("Contents/Info.plist"))
         return root
     }
     func testActualEntryConsentFactoryAdmitsOnlyTheReviewedConsistentRelease() async throws {
-        for source in [arm64Source, amd64Source] {
-        let location = try bundle(source: source), transport = Transport()
+        let location = try bundle(), transport = Transport()
         let port = CommunityApplicationFactory.makeConsentPort(bundle: location, transport: transport)
         XCTAssertTrue(port.availability.canInspect)
         XCTAssertTrue(port.availability.canGrant); XCTAssertTrue(port.availability.canForget)
@@ -53,7 +52,6 @@ import ModelPlanSettings
         let preview = try await port.readCanonicalConsent()
         XCTAssertEqual(preview.generation, 1)
         let after = await transport.counts(); XCTAssertEqual(after, [1, 0])
-        }
     }
     private func updateInfo(_ root: URL, _ change: (inout [String: Any]) -> Void) throws {
         let path = root.appendingPathComponent("Contents/Info.plist")
@@ -68,8 +66,8 @@ import ModelPlanSettings
             switch failure {
             case "old": try updateInfo(root) { $0["ModelPlanHelperVersion"] = "0.5.42" }
             case "previous-release": try updateInfo(root) { $0["ModelPlanHelperVersion"] = "0.5.48" }
-            case "previous-source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256"] = "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda" }
-            case "source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256"] = String(repeating: "b", count: 64) }
+            case "previous-source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda", "x86_64": self.amd64Source] }
+            case "source": try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": String(repeating: "b", count: 64), "x86_64": self.amd64Source] }
             case "bundled": try updateInfo(root) { $0["ModelPlanBundledHelperSHA256"] = String(repeating: "c", count: 64) }
             case "pin": try Data((String(repeating: "d", count: 64) + "\n").utf8).write(to: root.appendingPathComponent("Contents/Resources/modelplan.sha256"))
             case "missing": try FileManager.default.removeItem(at: helper)
@@ -89,6 +87,22 @@ import ModelPlanSettings
             let calls = await transport.counts(); XCTAssertEqual(calls, [0, 0])
         }
     }
+    func testLegacySingleArchitectureDeclarationNeverReachesConsentTransport() async throws {
+        for source in [arm64Source, amd64Source] {
+            for includeUniversal in [false, true] {
+                let root = try bundle(), transport = Transport()
+                try updateInfo(root) {
+                    if !includeUniversal { $0.removeValue(forKey: "ModelPlanSourceHelperSHA256ByArchitecture") }
+                    $0["ModelPlanSourceHelperSHA256"] = source
+                }
+                let port = CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport)
+                XCTAssertFalse(port.availability.hasAnyAction)
+                XCTAssertEqual(port.availability.reason, .componentUnverified)
+                do { _ = try await port.readCanonicalConsent(); XCTFail("Must refuse before transport") } catch { }
+                let calls = await transport.counts(); XCTAssertEqual(calls, [0, 0])
+            }
+        }
+    }
     func testUniversalDeclarationRequiresBothReviewedRawSourcePins() async throws {
         let root = try bundle(), transport = Transport()
         try updateInfo(root) {
@@ -96,10 +110,12 @@ import ModelPlanSettings
             $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": self.arm64Source, "x86_64": self.amd64Source]
         }
         XCTAssertTrue(CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport).availability.canInspect)
-        try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": self.arm64Source] }
-        XCTAssertFalse(CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport).availability.hasAnyAction)
-        try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = ["arm64": self.arm64Source, "x86_64": String(repeating: "a", count: 64)] }
-        XCTAssertFalse(CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport).availability.hasAnyAction)
+        for sources in [[:], ["arm64": arm64Source], ["x86_64": amd64Source],
+                        ["arm64": arm64Source, "x86_64": String(repeating: "a", count: 64)],
+                        ["arm64": arm64Source, "x86_64": amd64Source, "unknown": arm64Source]] {
+            try updateInfo(root) { $0["ModelPlanSourceHelperSHA256ByArchitecture"] = sources }
+            XCTAssertFalse(CommunityApplicationFactory.makeConsentPort(bundle: root, transport: transport).availability.hasAnyAction)
+        }
         let calls = await transport.counts(); XCTAssertEqual(calls, [0, 0])
     }
 

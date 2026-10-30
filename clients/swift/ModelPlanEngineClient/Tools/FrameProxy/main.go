@@ -163,6 +163,11 @@ func main() {
 				p.paused = true
 			}
 			var late map[string]any
+			var lateCredential map[string]any
+			if p.plan.Mode == "duplicate-credential" && method == "credentials/result" && !p.triggered {
+				p.triggered = true
+				lateCredential = clone(p.credential)
+			}
 			if p.plan.Mode == "late-error" && method == "$/cancel" && p.held != nil {
 				late = p.held
 				p.held = nil
@@ -174,6 +179,10 @@ func main() {
 			}
 			if late != nil {
 				p.send(late)
+			}
+			if lateCredential != nil {
+				p.send(lateCredential)
+				p.trace("duplicate-credential-replayed", false)
 			}
 		}
 		_ = input.Close()
@@ -274,6 +283,7 @@ func main() {
 			continue
 		}
 		if p.plan.Mode == "duplicate-credential" && notification == "credentials/request" {
+			p.credential = clone(m)
 			p.mu.Unlock()
 			p.send(m)
 			p.send(clone(m))

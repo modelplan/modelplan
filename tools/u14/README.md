@@ -34,7 +34,7 @@ visual confirmation remain separate checks.
 u14_run_dir=$(mktemp -d)
 python3 tools/u14/shape_home.py \
   --shape tools/u14/examples/synthetic-shape.json \
-  --case coexistence --output "$u14_run_dir/home"
+  --case coexistence --output "$u14_run_dir/synthetic-home"
 ```
 
 The destination must be a new directory beneath an existing parent with no
@@ -121,7 +121,7 @@ ids are rejected. Use a clean committed subject for evidence generation.
 ```sh
 python3 tools/u14/candidate.py \
   --input "$u14_run_dir/candidate-input.json" \
-  --baseline "$u14_run_dir/home/.u14-baseline.json" \
+  --baseline "$u14_run_dir/synthetic-home/.u14-baseline.json" \
   --output "$u14_run_dir/evidence"
 ```
 
