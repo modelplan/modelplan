@@ -674,3 +674,36 @@ final class PanelPlacement {
 private extension Double {
     var clampedToUnitRange: Double { min(max(self, 0), 1) }
 }
+
+
+/// ModelPlan's edge-only facade over the borrowed rail placement model. The
+/// caller selects an exposed edge and clamps the registered anchor before
+/// asking Pulse for the window frame. No settings or actual display is read.
+public enum PulseDockPlacementGeometry {
+    public enum Edge: Sendable { case left, right, bottom }
+    public static func frame(edge: Edge, in visible: CGRect, size: CGSize,
+                             anchor: CGFloat, alongFraction: Double) -> CGRect? {
+        guard [visible.minX, visible.minY, visible.width, visible.height,
+               size.width, size.height, anchor, CGFloat(alongFraction)].allSatisfy({ $0.isFinite }),
+              visible.width > 0, visible.height > 0, size.width > 0, size.height > 0,
+              size.width <= visible.width, size.height <= visible.height else { return nil }
+        let vertical = edge != .bottom
+        let span = vertical ? visible.height : visible.width
+        let length = vertical ? size.height : size.width
+        let travel = span - length
+        let origin = CGFloat(alongFraction) * span - anchor
+        let ratio = travel > 0 ? Double(origin / travel) : 0
+        let dock: PanelDock
+        switch edge {
+        case .left: dock = .edge(.left)
+        case .right: dock = .edge(.right)
+        case .bottom: dock = .edge(.bottom)
+        }
+        let placement = PanelPlacement(dock: dock, horizontalRatio: vertical ? 0 : ratio,
+                                       verticalRatio: vertical ? 1 - ratio : 0)
+        // Dock content occupies the panel; cards have their own window. Passing
+        // the same rail/panel size removes upstream card-envelope offsets.
+        return placement.layout(in: visible, topEdge: visible.maxY,
+                                bottomEdge: visible.minY, panel: size, rail: size).frame
+    }
+}

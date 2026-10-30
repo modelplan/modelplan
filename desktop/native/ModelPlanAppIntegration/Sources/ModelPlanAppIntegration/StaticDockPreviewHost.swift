@@ -466,9 +466,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
         if let elapsedClock, let edgeScheduling {
-            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read)
+            return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
         }
-        return DockEdgeController(preference: preference, policy: policy, read: read)
+        return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
     }
     private func environment() -> DockEdgeEnvironment {
         let native: DockEdgeEnvironment

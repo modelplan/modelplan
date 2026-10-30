@@ -56,14 +56,15 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPlacement.swift",
-      "sha256": "98ee971a19b96fe22ae37fef50df267adccb77d86db5eef5b36d400420792abf",
+      "sha256": "fdfa022f642b40efe171f943eb0a6654f4798c0ca2af5c712a7fc6f878ce9dc1",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamBlob": "2092fcd79ed54899bc3d62fea75ffe6270479f21",
       "implementationModified": true,
       "adaptations": [
         "replace UserDefaults persistence with an injected saved-placement callback",
         "remove unused liquid-visual state",
-        "parameterize card gap instead of importing upstream visual layout"
+        "parameterize card gap instead of importing upstream visual layout",
+        "public edge-only value facade consumed by the normal host single-controller positioner"
       ]
     },
     {

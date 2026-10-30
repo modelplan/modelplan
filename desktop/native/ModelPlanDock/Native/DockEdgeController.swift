@@ -26,6 +26,24 @@ public struct DockEdgeEnvironment:Sendable {
         self.displays=displays;self.layouts=layouts;self.primaryDisplayID=primaryDisplayID;self.pointer=pointer;self.presence=presence;self.cardFrame=cardFrame
     }
 }
+/// Value-only positioning request. The native composition may supply a borrowed
+/// window positioner while this controller remains the sole visibility/drag owner.
+public struct DockPlacementRequest: Sendable {
+    public let preference: DockEdgePreference
+    public let environment: DockEdgeEnvironment
+    public let nearest: Bool
+    public let wakeDepth: CGFloat
+    public init(preference: DockEdgePreference, environment: DockEdgeEnvironment,
+                nearest: Bool = false, wakeDepth: CGFloat = 20) {
+        self.preference = preference; self.environment = environment
+        self.nearest = nearest; self.wakeDepth = wakeDepth
+    }
+    public func resolveEligibleEdge() throws -> DockEdgePlacement? {
+        try DockEdgeGeometry.resolve(preference: preference, displays: environment.displays,
+            layouts: environment.layouts, pointer: environment.pointer,
+            primaryID: environment.primaryDisplayID, nearest: nearest, wakeDepth: wakeDepth)
+    }
+}
 public struct DockEdgePresentation:Equatable,Sendable {
     public let state:DockSurfaceState,placement:DockEdgePlacement?,snapPreview:DockEdgePlacement?,moving:Bool
     /// Only this painted frame becomes an input surface. Wake/slack/corridors are read-only retention geometry.
@@ -42,6 +60,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public var dragRegions:DockBackgroundDragRegions?{didSet{dragLayout=presentation?.placement?.layout}}
     private var dragLayout:DockEdgeLayout?
     private let read:()->DockEdgeEnvironment,clock:()->TimeInterval,scheduler:any DockEdgeScheduling
+    private let position: (DockPlacementRequest) throws -> DockEdgePlacement?
     private var visibility:DockVisibilityState
     private var running=false,sampling=false,timerGeneration:UInt=0
     private var geometry:[DockDisplayArea]=[],layouts:[DockEdgeLayout]=[]
@@ -49,12 +68,12 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var dragOrigin:CGPoint?,preview:DockEdgePlacement?,dragStartPlacement:DockEdgePlacement?
     private var dragStarted=false
     public var isBackgroundMoving:Bool{dragStarted}
-    public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment){
-        self.preference=preference;visibility = .init(policy:policy);self.clock=clock;self.scheduler=scheduler;self.read=read
+    public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment,position:@escaping (DockPlacementRequest)throws->DockEdgePlacement? = {try $0.resolveEligibleEdge()}){
+        self.preference=preference;visibility = .init(policy:policy);self.clock=clock;self.scheduler=scheduler;self.read=read;self.position=position
     }
-    public convenience init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),read:@escaping ()->DockEdgeEnvironment){
+    public convenience init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),read:@escaping ()->DockEdgeEnvironment,position:@escaping (DockPlacementRequest)throws->DockEdgePlacement? = {try $0.resolveEligibleEdge()}){
         let time=SystemRefreshTime();let clock={time.elapsed}
-        self.init(preference:preference,policy:policy,clock:clock,scheduler:DockCommonModeScheduler(clock:clock),read:read)
+        self.init(preference:preference,policy:policy,clock:clock,scheduler:DockCommonModeScheduler(clock:clock),read:read,position:position)
     }
     /// No window, Settings write, status menu or global keyboard/mouse monitor is created here.
     public func start(){guard !running else{return};running=true;refresh()}
@@ -95,7 +114,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
             let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
             var extraClear:DockRecordedLocks=[]
             if changed{if dragOrigin != nil{extraClear.insert(.drag)};clearMove();geometry=env.displays;layouts=env.layouts;primaryID=env.primaryDisplayID}
-            let place=try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:env.pointer,primaryID:env.primaryDisplayID,wakeDepth:visibility.policy.wakeDepth)
+            let place=try resolve(preference:preference,environment:env,pointer:env.pointer)
             input.outerEdge=place != nil
             if let p=place,let d=env.displays.first(where:{$0.id==p.displayID}),let pointer=env.pointer{
                 input.pointer=DockPresenceArea(painted:p.globalHoverRects,wake:p.wakeFrame,card:env.cardFrame,display:d.usableFrame,edge:p.edge,outerEdge:DockEdgeGeometry.canWake(at:pointer,placement:p,displays:env.displays)).region(at:pointer,policy:visibility.policy)
@@ -140,8 +159,12 @@ public struct DockEdgePresentation:Equatable,Sendable {
             if let current=presentation{publish(.init(state:current.state,placement:current.placement,snapPreview:next,moving:true))}
         }catch{cancelBackgroundMove();onFailure?(error)}
     }
+    private func resolve(preference:DockEdgePreference,environment:DockEdgeEnvironment,pointer:CGPoint?,nearest:Bool=false)throws->DockEdgePlacement? {
+        var input=environment;input.pointer=pointer
+        return try position(.init(preference:preference,environment:input,nearest:nearest,wakeDepth:visibility.policy.wakeDepth))
+    }
     private func moveDestination(global:CGPoint,environment env:DockEdgeEnvironment)throws->DockEdgePlacement?{
-        guard let nearest=try DockEdgeGeometry.resolve(preference:preference,displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,nearest:true,wakeDepth:visibility.policy.wakeDepth) else{return nil}
+        guard let nearest=try resolve(preference:preference,environment:env,pointer:global,nearest:true) else{return nil}
         guard let origin=dragOrigin,let start=dragStartPlacement,start.edge==nearest.edge,
             let display=env.displays.first(where:{$0.id==nearest.displayID}) else{return nearest}
         // Preserve the grabbed point along the original edge; switching edge orientation recentres
@@ -151,7 +174,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         let grab=(vertical ? origin.y:origin.x)-anchor
         let centre=(vertical ? global.y:global.x)-grab
         let fraction=Double((centre-(vertical ? display.usableFrame.minY:display.usableFrame.minX))/(vertical ? display.usableFrame.height:display.usableFrame.width))
-        return try DockEdgeGeometry.resolve(preference:.init(displayID:nearest.displayID,edge:nearest.edge,alongFraction:fraction),displays:env.displays,layouts:env.layouts,pointer:global,primaryID:env.primaryDisplayID,wakeDepth:visibility.policy.wakeDepth)
+        return try resolve(preference:.init(displayID:nearest.displayID,edge:nearest.edge,alongFraction:fraction),environment:env,pointer:global)
     }
     public func endBackgroundMove(global:CGPoint){
         guard running,let origin=dragOrigin else{return}
