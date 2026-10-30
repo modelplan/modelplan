@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "unit": "U6",
+  "id": "U6-DockMenu-empty-synthetic",
+  "profile": "synthetic",
+  "maximumSeconds": 1200,
+  "entryProduct": "ModelPlanCommunityApp",
+  "entryFactory": "EngineRowsEntry.make",
+  "route": [
+    "CommunityApp.runEngineRows",
+    "EngineDockMenuApplication",
+    "EngineDockMenuComposition",
+    "EngineStore",
+    "StaticDockPreviewHost",
+    "system status-item menu"
+  ],
+  "actions": [
+    "observe Dock row values or engine-provided reasons",
+    "deliver one Dock reveal input",
+    "open the ModelPlan status menu",
+    "deliver the Refresh action once",
+    "observe the same source state or explicit failure",
+    "quit through the owned application and verify cleanup"
+  ],
+  "forbidden": [
+    "owner profile or credentials",
+    "Keychain operation",
+    "signing or system modification",
+    "legacy quota transport",
+    "GUI run before matching release/lease and start announcement"
+  ],
+  "proofLimit": "Physical Dock/menu delivery only. No owner freshness, official appearance, performance budget or L2/L3 claim from this scenario alone."
+}
