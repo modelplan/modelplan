@@ -1,0 +1,92 @@
+{
+  "stage": "U7 interface only",
+  "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
+  "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
+  "profile": "injected fake readers only; no SecurityItemCopyMatching or identity/signing operations",
+  "command": "swift test --package-path desktop/native/ModelPlanCredentialAgent",
+  "sources": [
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Package.swift",
+      "sha256": "fd19ed9cb74dedb813daeef47c125bcb6577b384be5cf4f60650dd65710bf179"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/README.md",
+      "sha256": "1ae1fe73e400628de3a2ec37927f4f703ee01087dfc0cfb4b5c17d2157eeb887"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
+      "sha256": "5ca610bf7fe7524a005892a955760f765dd04b6286e20cd4d144afe1e7700647"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
+      "sha256": "40d78df1762ebcf3c3850eaae354b248bdc28e0e2f3c454afebe9cdcb3328936"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
+      "sha256": "9d74c69ad43ec3250795bb621804ae6b78067fac9b1e87c3c8e2faba549ae97e"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "testCancellationReturnsBeforeBlockedReadAndRejectsLateToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testEverySecurityFailureHasNoToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testExpiredAndStaleRequestsDoNotRead",
+      "outcome": "pass"
+    },
+    {
+      "id": "testFixedQueryBackgroundCannotPrompt",
+      "outcome": "pass"
+    },
+    {
+      "id": "testInteractiveRequiresExplicitAction",
+      "outcome": "pass"
+    },
+    {
+      "id": "testMalformedOrOversizedSuccessIsError",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRevokeDuringReadDropsToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testSuccessReturnsOnlyAccessTokenThroughGeneratedResult",
+      "outcome": "pass"
+    },
+    {
+      "id": "testTimeoutRetainsWorkerSlotAndDropsLateToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "app-entry-wiring",
+      "outcome": "not-run"
+    },
+    {
+      "id": "synthetic-keychain-interaction",
+      "outcome": "not-run"
+    },
+    {
+      "id": "background-os-prompt-behavior",
+      "outcome": "not-run"
+    },
+    {
+      "id": "two-signed-builds-same-identity",
+      "outcome": "not-run"
+    },
+    {
+      "id": "real-owner-ACL",
+      "outcome": "not-run"
+    }
+  ],
+  "staticChecks": {
+    "source-policy": "pass",
+    "whitespace": "pass"
+  },
+  "level": "L1 fake contract only; not L2/L3"
+}
