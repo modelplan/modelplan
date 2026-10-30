@@ -113,6 +113,13 @@ def run(scenario, h, old=None):
         require(h.store.read_bytes() == before, 'migration-not-idempotent')
         details['originalSHA256'] = hashlib.sha256(h.v1).hexdigest()
     elif scenario in ('U2-revoke-in-flight', 'U2-reset-old-allow'):
+        if scenario == 'U2-reset-old-allow':
+            # Retain the owner-shaped home but start this variant with fresh
+            # consent so the old allow's expected generation equals reset's 1.
+            # Otherwise the regression could pass on generation mismatch alone.
+            h.store.unlink()
+            h.run(['consent', 'init', '--json'], check=True)
+            require(h.state()['generation'] == 0, 'fresh-consent-generation-not-zero')
         h.allow()
         old_epoch = h.state()['storeEpoch']
         old_allow = h.request(allow=['copilot.runtime_usage'])
@@ -128,7 +135,9 @@ def run(scenario, h, old=None):
                     require(json.loads(h.run(['consent', 'grant', '--json'], old_allow, check=True).stdout)['committed'], 'old-allow-not-committed')
                     h.store.write_text('damaged synthetic store')
                     reset = json.loads(h.run(['consent', 'reset', 'confirmed', '--json'], check=True).stdout)
-                    require(reset['generation'] == 1 and reset['storeEpoch'] != old_epoch, 'reset-not-new-epoch')
+                    require(reset['generation'] == old_allow['expectGeneration'] == 1, 'reset-not-same-numeric-generation')
+                    require(reset['storeEpoch'] != old_epoch, 'reset-not-new-epoch')
+                    details.update(oldAllowExpectedGeneration=old_allow['expectGeneration'], resetGeneration=reset['generation'])
                     retry = json.loads(h.run(['consent', 'grant', '--json'], old_allow).stdout)
                     require(retry.get('error') == 'consent_stale', 'old-allow-replayed-after-reset')
             finally:

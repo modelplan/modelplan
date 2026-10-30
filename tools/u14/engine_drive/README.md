@@ -114,7 +114,7 @@ not whole-ticket closure, native rendering, live providers or final App signing.
 | U2-empty-credentials-isolation | Explicit saved-login grant and refresh with empty credentials produce no account, network call or Claude vendor execution |
 | U2-migration | Schema 1 to 2, byte-identical backup and repeat-load idempotence |
 | U2-revoke-in-flight | Real blocked read, independent deny, cleanup_pending, released read cannot publish |
-| U2-reset-old-allow | Reset reuses generation 1 with a new epoch, rejects historical allow and late publication |
+| U2-reset-old-allow | Fresh consent over retained home; reset reuses exactly the old allow’s expected generation 1 with a new epoch, rejecting historical allow and late publication |
 | U2-two-writers | Concurrent independent CLI writers: one commit, one stale generation |
 | U2-completed-regrant / U2-completed-reset | Positive actual capture, no resurrection after tighten/reset/regrant, shared budget retained |
 | U2-retired-deny / U2-retired-forget | Retired reader's cache removed with readers off, no runtime started |

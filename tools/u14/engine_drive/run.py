@@ -159,6 +159,7 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
                                    start_new_session=True, stdin=subprocess.PIPE,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         began = time.monotonic()
+        print(json.dumps(dict(scenario=scenario, phase='started')), file=sys.stderr, flush=True)
         try:
             while not result_path.exists():
                 if process.poll() is not None:
@@ -187,6 +188,8 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
             # Outcome is durable BEFORE termination/removal. Cleanup has its own
             # receipt and never replaces scenario results.
             entry['durationSeconds'] = round(time.monotonic() - began, 3)
+            print(json.dumps(dict(scenario=scenario, outcome=entry['outcome'], reason=entry['reason'])),
+                  file=sys.stderr, flush=True)
             try:
                 atomic(output / 'manifest.json', manifest)
             finally:
@@ -246,7 +249,8 @@ def execute(args):
                         profile=dict(id=shape['baselineVersion'], sha256=sha(encoded(shape)), fidelity=shape['fidelity'],
                                      approvalRef=shape['approvalRef'], syntheticOnly=True,
                                      variants=['coexistence', 'schema-1 migration', 'fixed synthetic Copilot runtime',
-                                               'blocked/completed capture', 'retired reader cache', 'corrupt store']),
+                                               'blocked/completed capture', 'retired reader cache', 'corrupt store',
+                                               'fresh consent over retained home']),
                         qualification=prereqs, attribution=dict(platform=platform.system(), architecture=platform.machine(),
                             hosted=os.environ.get('GITHUB_ACTIONS') == 'true', context=context))
         atomic(output / 'profile.json', shape)
