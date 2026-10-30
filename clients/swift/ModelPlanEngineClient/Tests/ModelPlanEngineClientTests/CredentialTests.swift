@@ -45,7 +45,7 @@ extension ProcessEngineClient {
     func credentialResultIsQueued() -> Bool {
         credentialWorkers.isEmpty && pending.values.contains { $0.purpose == .credentialResult }
     }
-    func replayCredentialBeforeWriteCompletes(admitWrite: Bool) async throws -> Int {
+    func replayCredentialBeforeWriteCompletes(admitWrite: Bool, expire: Bool) async throws -> Int {
         guard writerRunning, let process = child, let waiting = credentialRequests["claude"], let facts,
               case .object(var fields) = try wireJSON(facts) else { throw TestFailure.childFailed }
         // Dequeue without completing the write to force the second vulnerable
@@ -57,8 +57,9 @@ extension ProcessEngineClient {
         let changed = WireJSONValue.object(["jsonrpc": .string("2.0"), "method": .string("consent/changed"), "params": try wireJSON(facts)])
         receive(process.id, bytes: try JSONEncoder().encode(duplicate))
         receive(process.id, bytes: try JSONEncoder().encode(changed))
-        // A timer callback can already be waiting for this actor when canceled.
-        credentialExpired("claude", operation: waiting.request.operationId)
+        // Expiry must retire admission metadata without appending a timeout
+        // after a result is queued. An admitted write can already be in flight.
+        if expire { credentialExpired("claude", operation: waiting.request.operationId) }
         let results = pending.values.filter { $0.purpose == .credentialResult }.count
         if let admitted {
             try await process.send(admitted.data)
@@ -224,7 +225,7 @@ extension RealBinaryTests {
         try await assertNoCanary(home, probe: probe)
     }
     func testRealCredentialResultCannotBeReadmittedBeforeWriteCompletion() async throws {
-        for admitWrite in [false, true] {
+        for (admitWrite, expire) in [(false, false), (true, true), (false, true)] {
             let binary = try binary(); let home = try credentialHome(); let probe = EventProbe(); let agent = SyntheticAgent(.blocked)
             try cli(binary, home: home, arguments: ["consent", "init", "--json"])
             let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "duplicate-credential"), home: home), credentialAgent: agent, consumer: probe)
@@ -236,15 +237,16 @@ extension RealBinaryTests {
             try await eventually { await client.holdIdleCredentialWriter() }
             await agent.release()
             try await eventually { await client.credentialResultIsQueued() }
-            let queued = try await client.replayCredentialBeforeWriteCompletes(admitWrite: admitWrite)
+            let queued = try await client.replayCredentialBeforeWriteCompletes(admitWrite: admitWrite, expire: expire)
             XCTAssertEqual(queued, 1, "facts, duplicate ingress and an expired timer must not queue another result (admitted: \(admitWrite))")
             try await eventually { await client.credentialResultsSettled() }
             _ = try await client.diagnostics()
             await client.stop()
             let calls = await agent.count(); XCTAssertEqual(calls, 1)
-            XCTAssertEqual(resultCount(home), 1, "each operation must write exactly one result (admitted: \(admitWrite))")
+            let expectedResults = !admitWrite && expire ? 0 : 1
+            XCTAssertEqual(resultCount(home), expectedResults, "each operation must write at most one result; expiry before admission must discard it (admitted: \(admitWrite), expired: \(expire))")
             let trace = try String(contentsOf: home.appendingPathComponent("proxy.trace"), encoding: .utf8)
-            XCTAssertTrue(trace.contains("\"tokenInCredentialResult\":true"), "the original result must survive writer admission")
+            XCTAssertEqual(trace.contains("\"tokenInCredentialResult\":true"), expectedResults == 1, "only the original, unexpired result may reach the writer")
             try await assertNoCanary(home, probe: probe)
         }
     }
