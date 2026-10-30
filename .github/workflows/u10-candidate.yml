@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: MIT
+name: U10 candidate interface
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - tools/u10/**
+      - tools/u14/**
+      - desktop/native/**
+      - desktop/cockpit/**
+      - desktop/official-visuals/**
+      - desktop/third-party/**
+      - desktop/package.json
+      - .github/workflows/u10-candidate.yml
+  push:
+    branches: [main]
+    paths:
+      - tools/u10/**
+      - tools/u14/**
+      - desktop/native/**
+      - desktop/cockpit/**
+      - desktop/official-visuals/**
+      - desktop/third-party/**
+      - desktop/package.json
+      - .github/workflows/u10-candidate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: u10-candidate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Source, visual and OFL font integrity
+        run: |
+          node scripts/check-source-policy.mjs
+          node scripts/check-visual-pack.mjs
+          node scripts/check-font-pack.mjs
+      - name: Packaging identity, release scaffold and U14 contracts
+        run: |
+          python3 -m unittest discover -s tools/u10/tests -v
+          python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
+          python3 -m unittest discover -s tools/u14/tests -p test_harness.py -v
+  candidate:
+    # Drafts run portable contracts first; macOS starts when ready, or by manual dispatch.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: contracts
+    runs-on: macos-latest
+    timeout-minutes: 35
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - name: Select newest installed Xcode for Swift 6 source
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = []
+          for app in Path('/Applications').glob('Xcode*.app'):
+              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
+          if not candidates:
+              raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PY
+      - name: Assemble and seal candidate, archive, and generate U14 manifest
+        run: |
+          mkdir -p .tmp/tmp
+          export TMPDIR="$GITHUB_WORKSPACE/.tmp/tmp"
+          python3 tools/u10/package_candidate.py \
+            --output "$GITHUB_WORKSPACE/.tmp/u10-candidate" \
+            --candidate-id "u10-$(git rev-parse HEAD)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --build-number "$GITHUB_RUN_NUMBER"
+      - name: Upload run artifact only
+        uses: actions/upload-artifact@v4
+        with:
+          name: u10-interface-candidate-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            .tmp/u10-candidate/ModelPlan-candidate-adhoc.zip
+            .tmp/u10-candidate/SHA256SUMS
+            .tmp/u10-candidate/packaging-receipt.json
+            .tmp/u10-candidate/evidence/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove this job's candidate scratch
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE/.tmp/u10-candidate" "$GITHUB_WORKSPACE/.tmp/tmp"
