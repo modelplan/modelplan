@@ -3,17 +3,25 @@ import AppKit
 import XCTest
 import ModelPlanEngineClient
 import ModelPlanEngineStore
-import ModelPlanCockpitWeb
+@testable import ModelPlanCockpitWeb
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor RouteClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     var stops=0
+    var holdCockpit=false
+    var cockpitWaiter:CheckedContinuation<EngineRequestCompletion,Error>?
+    var cockpitPending:Bool { cockpitWaiter != nil }
+    func suspendCockpit(){holdCockpit=true}
+    func failCockpit(){cockpitWaiter?.resume(throwing:EngineClientError.featureDecode(.cockpit));cockpitWaiter=nil}
     func start() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
     func retry() throws -> EngineDeliveryContext { throw EngineClientError.notReady }
     func stop() { stops += 1 }
-    func cockpit(timeout:Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout:Duration?) async throws -> EngineRequestCompletion {
+        if holdCockpit { return try await withCheckedThrowingContinuation { cockpitWaiter=$0 } }
+        throw EngineClientError.unsupportedCapability
+    }
     func subscribeRows(timeout:Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func consent(timeout:Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func grant(_ request:WireConsentGrantParams,userAction:EngineUserAction?,timeout:Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -94,6 +102,42 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let stops=await client.stops
         XCTAssertEqual(stops,0,"Cockpit shutdown must not stop the application's borrowed client")
         await client.stop()
+    }
+
+    @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {
+        for eventFirst in [true,false] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-failure-order-"+UUID().uuidString)
+            defer{try? FileManager.default.removeItem(at:root)}
+            let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+            _=try await settings.update { $0.theme = .day }
+            let client=RouteClient();await client.suspendCockpit()
+            let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+            let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+            let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+            let coordinator=EngineCockpitCoordinator { _ in page }
+            coordinator.bind(client:client);owner.coordinator=coordinator
+            var notices:[CockpitUnavailableNotice]=[]
+            let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{},requestNotice:{notices.append($0)})
+            let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+            await coordinator.consume(.context(context));surface.show()
+            for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+            let pending=await client.cockpitPending;XCTAssertTrue(pending)
+            if eventFirst {
+                await coordinator.consume(.featureFailure(.cockpit,.featureDecode(.cockpit)))
+                await client.failCockpit()
+            } else {
+                await client.failCockpit()
+                await coordinator.joinCurrentQueryForVerification()
+                await coordinator.consume(.featureFailure(.cockpit,.featureDecode(.cockpit)))
+            }
+            for _ in 0..<20 { await Task.yield() }
+            XCTAssertTrue(page.state.disposed,"Feature failure must discard the page")
+            XCTAssertFalse(surface.wantsVisible,"Production close callback must retire presentation")
+            XCTAssertEqual(notices.count,1,"One recovery notice regardless of event/continuation order")
+            XCTAssertEqual(notices.first?.actions,[.settings,.dockReadings,.cancel])
+            let stops=await client.stops;XCTAssertEqual(stops,0)
+            surface.hide();await coordinator.shutdown();await composition.stop()
+        }
     }
 
 }

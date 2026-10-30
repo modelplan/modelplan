@@ -129,7 +129,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     requestToken = token
     requestTicket = ticket
     request = Task { @MainActor [weak self] in
-      do { _ = try await client.cockpit(timeout: .seconds(10)) } catch {
+      do { _ = try await client.cockpit(timeout: .seconds(10)) }
+      catch EngineClientError.featureDecode(.cockpit) {
+        // ProcessEngineClient pairs this completion with the ordered feature
+        // event. That event alone owns the notice, in either scheduling order.
+      } catch {
         if self?.requestToken == token { self?.onUnavailable?() }
       }
       guard let self, self.requestToken == token else { return }
@@ -142,6 +146,11 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       }
     }
   }
+  #if DEBUG
+  // A completion-only join lets verification force the inverse event order;
+  // no response value or publication path is exposed.
+  func joinCurrentQueryForVerification() async { await request?.value }
+  #endif
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
@@ -178,8 +187,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     case .rowsChanged: refresh()
     case .featureFailure(.cockpit, _):
       cancelQuery()
-      close()
+      // Capture the foreground recovery intent before onClosed retires it.
       onUnavailable?()
+      close()
     default: break
     }
     await downstream?.consume(event)

@@ -163,3 +163,16 @@ this repin; the historical receipt retains its actual measured source/digest.
 The coordinator accepts the prior 1.7016% result pending Tier2 review and keeps
 U10 staging separate in #367. DevShared and GUI remain paused; local regressions
 only were used for this update.
+
+## Decode-failure notice ordering
+
+A cockpit decode failure completes the RPC and emits an ordered feature event.
+Their scheduling order is not a UI contract. The coordinator now lets that event
+own the recovery notice and requests it before programmatic close retires the
+foreground intent. Other RPC errors keep their completion-based notice path.
+The production callbacks have an injected non-window presenter/activation seam
+for verification only; the existing Settings/Dock-readings/Cancel actions are
+used by the real alert too. A deterministic inverse-order test proves page
+disposal, exactly one notice with those actions and no borrowed-client stop.
+Negative controls reproduce both the original missing notice and duplicate
+notices if completion/event ownership is removed.

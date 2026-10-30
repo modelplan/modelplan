@@ -62,7 +62,7 @@ import ModelPlanSettings
     }
 }
 
-@MainActor private final class CockpitConsoleOwner {
+@MainActor final class CockpitConsoleOwner {
     let bundle: URL
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
@@ -91,14 +91,27 @@ import ModelPlanSettings
 /// Both menu and Dock actions are retained by EngineDockMenuApplication.showConsole.
 /// Rendering comes only from the same client's ordered typed response, never
 /// from retagging the Store's cached cockpit DTO with a newer context.
-@MainActor private final class SharedEngineCockpitConsole: EngineRowsConsoleSurface {
+enum CockpitRecoveryAction: Equatable { case settings, dockReadings, cancel }
+struct CockpitUnavailableNotice {
+    let history: Bool
+    let actions: [CockpitRecoveryAction] = [.settings, .dockReadings, .cancel]
+}
+
+@MainActor final class SharedEngineCockpitConsole: EngineRowsConsoleSurface {
     let owner: CockpitConsoleOwner
     let composition: EngineDockMenuComposition
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     var fallback: EngineRowsConsole?
-    init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition) {
+    private let isForeground: @MainActor () -> Bool
+    private let activate: @MainActor () -> Void
+    private let requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
+    init(owner:CockpitConsoleOwner,composition:EngineDockMenuComposition,
+         isForeground: @escaping @MainActor () -> Bool = { NSApp.isActive },
+         activate: @escaping @MainActor () -> Void = { if !NSApp.isActive { NSApplication.shared.activate() } },
+         requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
         self.owner=owner;self.composition=composition
+        self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
         owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
@@ -124,7 +137,7 @@ import ModelPlanSettings
                 case .openHistory:self.unavailable(history:true)
                 }
             }
-            if !NSApp.isActive { NSApplication.shared.activate() }
+            activate()
             owner.coordinator?.open();showTask=nil
         }
     }
@@ -132,14 +145,22 @@ import ModelPlanSettings
     func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
-        let initiatedInForeground=NSApp.isActive
+        let initiatedInForeground=isForeground()
+        let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
+            if let requestNotice { requestNotice(notice); return }
             let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
             alert.informativeText=history
                 ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
                 : "Check tool access in Settings, or reinstall this candidate if bundled content is missing. / 请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。"
-            alert.addButton(withTitle:"Open Settings / 打开设置");alert.addButton(withTitle:"Dock readings / Dock 读数");alert.addButton(withTitle:"Cancel / 取消")
+            for action in notice.actions {
+                switch action {
+                case .settings:alert.addButton(withTitle:"Open Settings / 打开设置")
+                case .dockReadings:alert.addButton(withTitle:"Dock readings / Dock 读数")
+                case .cancel:alert.addButton(withTitle:"Cancel / 取消")
+                }
+            }
             switch alert.runModal() {
             case .alertFirstButtonReturn:owner.settings?()
             case .alertSecondButtonReturn:
