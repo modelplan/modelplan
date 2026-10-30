@@ -5,15 +5,21 @@ import ModelPlanDock
 import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
-struct CommunityUnboundDockRow: Sendable {
-    let input: DockInstrumentInput
-    let reason: String
-    let nextStep: String
-    let originalObservedAt: Date?
-    func sourceAndAge(at now: Date) -> String {
+public struct DockContentRow: Sendable {
+    public let input: DockInstrumentInput
+    public let reason: String
+    public let nextStep: String
+    public let originalObservedAt: Date?
+    public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil) {
+        self.input = input; self.reason = reason; self.nextStep = nextStep
+        self.originalObservedAt = originalObservedAt
+    }
+    public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
     }
 }
+typealias CommunityUnboundDockRow = DockContentRow
+
 enum CommunityUnboundDockRows {
     static func make(_ snapshot: JoinedSnapshot, diagnostics: StoreDiagnostics, now: Date,
                      canonicalConsent: ConsentPreview? = nil) -> [CommunityUnboundDockRow] {

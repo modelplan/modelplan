@@ -11,7 +11,17 @@ public struct CommunityDockSnapshot: Sendable {
     public let unavailableReason: String?
     public let readerDiagnostics: [CommunityReaderDiagnostic]
     public let emptyDiagnostic: CommunityReaderDiagnostic?
-    let presentationRows: [String: CommunityUnboundDockRow]
+    public let presentationRows: [String: DockContentRow]
+
+    /// Explicit presentation construction for an external provider. IDs/reasons
+    /// are supplied by that provider; this initializer does not derive membership.
+    public init(inputs: [DockInstrumentInput], subscriptions: [SettingsSubscription] = [],
+                presentationRows: [String: DockContentRow] = [:], unavailableReason: String? = nil,
+                readerDiagnostics: [CommunityReaderDiagnostic] = [], emptyDiagnostic: CommunityReaderDiagnostic? = nil) {
+        self.inputs = inputs; self.subscriptions = subscriptions; self.presentationRows = presentationRows
+        self.unavailableReason = unavailableReason; self.readerDiagnostics = readerDiagnostics
+        self.emptyDiagnostic = emptyDiagnostic
+    }
 
     public init(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics, now: Date,
                 readerFacts: [CommunityReaderFacts]? = nil, canonicalConsent: ConsentPreview? = nil) {

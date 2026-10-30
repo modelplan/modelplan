@@ -1,0 +1,78 @@
+{
+  "upstream": "qunqin24/Pulse",
+  "tag": "v1.12.4",
+  "commit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+  "files": [
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelScreen.swift",
+      "sha256": "49a627328d39b3fe7329c3dd3117645c3dfc9f17f061da8c5a66cc3e9f51dd2c",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": false
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/ActiveDisplayFollower.swift",
+      "sha256": "d90c5fdc6d8a36bcda29de762e7fd286cb0e704f5fb58f608e150892dacce47a",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": true,
+      "upstreamSHA256": "6b399f89672e40179ef04f55951b31ae9869e503291d29320fb5d42ca87446d2",
+      "adaptations": [
+        "inject current-display source for non-GUI tests",
+        "stop/restart generation check prevents callback latching stale identifier"
+      ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
+      "sha256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": false
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PointerEntryReporter.swift",
+      "sha256": "887c6415087e2c0edd83b0937ab23da56970ac4c04a104e7a01f1ab931d771a4",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": false
+    },
+    {
+      "path": "docs/borrowed/pulse/LICENSE",
+      "sha256": "70bb8a2fe5879d148ef66a069beb84929727879c4a0323d1045b3f166ebbab9e",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": false
+    },
+    {
+      "path": "docs/borrowed/pulse/UPSTREAM_THIRD_PARTY_NOTICES.md",
+      "sha256": "7cd46ef6e9d91dc2d17b3983621a5e99d5363b2b0179e0f4fc02c90ccacc99f7",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "implementationModified": false,
+      "upstreamSHA256": "b150905e59e27f043e77a0d5465ccf62d70d3ac1dd477212d2d7995cc8286732",
+      "formattingModified": true,
+      "adaptations": [
+        "normalize trailing whitespace only; attribution content retained"
+      ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPlacement.swift",
+      "sha256": "98ee971a19b96fe22ae37fef50df267adccb77d86db5eef5b36d400420792abf",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamBlob": "2092fcd79ed54899bc3d62fea75ffe6270479f21",
+      "implementationModified": true,
+      "adaptations": [
+        "replace UserDefaults persistence with an injected saved-placement callback",
+        "remove unused liquid-visual state",
+        "parameterize card gap instead of importing upstream visual layout"
+      ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
+      "sha256": "433584db88b78a314f843b090860f3366bb37a5ad98b60b761c9b7b74c271c62",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
+      "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
+      "implementationModified": true,
+      "adaptations": [
+        "non-key/non-main window and window-level mouse transaction only",
+        "injected region/lifecycle handler and cancellation",
+        "private appearance selector and visual/provider logic omitted"
+      ]
+    }
+  ]
+}
