@@ -25,7 +25,6 @@ jobs:
     timeout-minutes: 15
     env:
       PYTHONDONTWRITEBYTECODE: '1'
-      ARTIFACT_DIR: ${{ runner.temp }}/u7-prebuilt-helper
     steps:
       - name: Reject a manual producer run outside main
         if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
@@ -34,13 +33,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Build two clean universal helpers and prove byte identity
-        run: python3 -B desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --universal --output "$ARTIFACT_DIR"
+        run: python3 -B desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --universal --output "$RUNNER_TEMP/u7-prebuilt-helper"
       - name: Exercise unchanged packaging validators and real denial protocol
         env:
           U7_TEST_HELPER_BINARY: ${{ runner.temp }}/u7-prebuilt-helper/modelplan-credential-agent
         run: python3 -B -m unittest discover -s desktop/native/ModelPlanCredentialAgent/tools/tests -v
       - name: Verify the helper hash and record checksums
         id: pin
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/u7-prebuilt-helper
         run: |
           python3 -B - <<'PY'
           import json
