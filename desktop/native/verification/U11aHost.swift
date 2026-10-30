@@ -12,6 +12,9 @@ import Darwin
     var start=DispatchTime.now().uptimeNanoseconds,lastSecond = -1,activation:[String:Any]=[:]
     var root:URL!,leaseURL:URL!,controlURL:URL!,stopURL:URL!,origin:URL!
     var currentCommand=""
+    #if MODELPLAN_U11_WIRED
+    var wired: U11WiredSession?
+    #endif
     func emit(_ row:[String:Any]) {
         var r=row;r["elapsedSeconds"]=Double(DispatchTime.now().uptimeNanoseconds-start)/1e9
         r["timestampUnix"]=Date().timeIntervalSince1970;r["phase"]=phase;r["cycle"]=cycle
@@ -83,15 +86,24 @@ import Darwin
         guard let w=web,!busy else{return};busy=true
         if let a=attribution {emit(a.capture(w))}
         let id=attribution?.viewID
-        w.evaluateJavaScript("({activity:window.__u11aObserve?.(),frames:window.__u11aFrameObserver?.snapshot()})"){[weak self] result,error in
+        #if MODELPLAN_U11_WIRED
+        let observationJS = "({activity:{event:'u11-wired-observation',bridgeReady:window.modelPlanCockpit?.state()==='ready',callbacks:window.__u11CallbackCounts?.()}})"
+        #else
+        let observationJS = "({activity:window.__u11aObserve?.(),frames:window.__u11aFrameObserver?.snapshot()})"
+        #endif
+        w.evaluateJavaScript(observationJS){[weak self] result,error in
             guard let self else{return};self.busy=false
             guard !self.ending,self.attribution?.viewID==id else{return}
             if let result=result as? [String:Any] {
                 if let frames=result["frames"] as? [String:Any] {self.emit(frames)}
                 if let activity=result["activity"] as? [String:Any] {
                     self.emit(activity)
+                    #if MODELPLAN_U11_WIRED
+                    self.subjectReady = activity["bridgeReady"] as? Bool == true && self.wired?.rendered == true
+                    #else
                     let count=activity["staticPNGCount"] as? Int ?? 0
                     self.subjectReady=activity["phase"] as? String=="open" && count>0 && activity["loadedPNGCount"] as? Int==count
+                    #endif
                 }
             }
             if self.raf && self.subjectReady,let window=self.window {
@@ -103,6 +115,9 @@ import Darwin
         }
     }
     func openView(){
+        #if MODELPLAN_U11_WIRED
+        openWiredView()
+        #else
         guard web==nil,permitted() else{return};raf=false;subjectReady=false
         attribution=WebContentAttribution(allowScopedSPI:true)
         let c=WKWebViewConfiguration();c.websiteDataStore = .nonPersistent()
@@ -123,12 +138,17 @@ import Darwin
         let requested = !NSApp.isActive
         if requested {NSApp.activate(ignoringOtherApps:true)}
         activation=VerificationActivation.requestKeyWindow(w);activation["activationCall"]=requested ? "NSApplication.activate(ignoringOtherApps:true);makeKeyAndOrderFront":"makeKeyAndOrderFront";emit(activation)
+        #endif
     }
     func closeView(){
+        #if MODELPLAN_U11_WIRED
+        closeWiredView()
+        #else
         if let a=attribution {a.retire();emit(["event":"process-attribution-retired"])}
         web?.stopLoading();web?.navigationDelegate=nil;web?.configuration.userContentController.removeScriptMessageHandler(forName:"u11a");web?.configuration.userContentController.removeScriptMessageHandler(forName:"verificationFrames")
         window?.contentView=nil;window?.close();web=nil;window=nil;attribution=nil;frameHandler=nil;busy=false
         emit(["event":"view-released"])
+        #endif
     }
     func stop(_ reason:String){
         guard !ending else{return}
@@ -137,7 +157,14 @@ import Darwin
         emit(["event":"local-stop","reason":reason]);finish()
     }
     func applicationDidResignActive(_ n:Notification){if activityStop.armed && !ending {stop("app-deactivated")}}
-    func finish(){guard !ending else{return};ending=true;timer?.invalidate();if let m=monitor {NSEvent.removeMonitor(m);monitor=nil};closeView();emit(["event":"app-cleanup-complete"]);NSApp.terminate(nil)}
+    func finish(){
+        guard !ending else{return};ending=true;timer?.invalidate();if let m=monitor {NSEvent.removeMonitor(m);monitor=nil};closeView()
+        #if MODELPLAN_U11_WIRED
+        Task { @MainActor in await wired?.coordinator.shutdown(); wired = nil; emit(["event":"app-cleanup-complete"]); NSApp.terminate(nil) }
+        #else
+        emit(["event":"app-cleanup-complete"]);NSApp.terminate(nil)
+        #endif
+    }
     func applicationWillTerminate(_ n:Notification){timer?.invalidate();try? output?.close()}
     func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){
         guard m.frameInfo.isMainFrame,m.frameInfo.request.url?.host=="127.0.0.1",let r=m.body as? [String:Any],let b=try? JSONSerialization.data(withJSONObject:r),b.count<16384,let event=r["event"] as? String,["activation-configured","activity-observed","activation-error","activation-timeout"].contains(event) else{return};emit(r)

@@ -1,0 +1,45 @@
+name: U11 native cockpit
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/verification/**'
+      - 'clients/swift/ModelPlanEngineClient/**'
+      - 'clients/swift/ModelPlanWire/**'
+      - '.github/workflows/u11-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/verification/**'
+      - 'clients/swift/ModelPlanEngineClient/**'
+      - 'clients/swift/ModelPlanWire/**'
+      - '.github/workflows/u11-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: u11-native-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - name: Build the actual public CLI
+        working-directory: cli
+        run: go build -o ../.tmp/u11-cli ./cmd/modelplan
+      - name: Native protocol, bundle and actual EngineClient regressions (no GUI)
+        env:
+          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
+        run: swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-native-build --jobs 2
+      - name: Compile production without test SPI
+        run: swift build --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-release-build --configuration release --jobs 2
+      - name: Compile wired verification host (not execution)
+        run: swift build --package-path desktop/native/verification --scratch-path .tmp/u11-host-build --jobs 2 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI
+      - name: Source policy
+        run: node scripts/check-source-policy.mjs

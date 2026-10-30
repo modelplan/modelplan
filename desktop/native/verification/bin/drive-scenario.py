@@ -73,10 +73,14 @@ class Attempt:
     def launch(self,mode):
         self.raw=self.out/(mode+'-raw.jsonl')
         home=self.scratch/'home'/mode;tmp=self.scratch/'tmp'/mode;home.mkdir(parents=True);tmp.mkdir(parents=True)
-        cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'])
+        cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'],wired=self.c.get('wired'))
         file=self.scratch/(mode+'-config.json');write(file,cfg)
         console=(self.scratch/(mode+'-console.log')).open('x')
         lease=read(self.lease);validate(dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists()),time.time())
+        if self.c.get('wired'):
+            helper=self.c['wired']['helper']
+            if hashlib.sha256(Path(helper).read_bytes()).hexdigest()!=self.c['wired']['helperSHA256']:raise ValueError('wired-helper-changed')
+            subprocess.run([helper,'consent','init','--json'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'),timeout=5,check=True)
         self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
         console.close();ident=cleanup.identity(self.app.pid)
         if not ident:raise RuntimeError('subject-identity-unavailable')
