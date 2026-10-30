@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -70,6 +70,18 @@ jobs:
         run: |
           set -euo pipefail
           swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --jobs 2 2>&1 | tee .tmp/tests.log
+      - name: Repeat credential result race regressions 20 times
+        shell: bash
+        env:
+          MODELPLAN_ENGINE_TEST_BINARY: ${{ github.workspace }}/.tmp/modelplan
+          MODELPLAN_ENGINE_TEST_PROXY: ${{ github.workspace }}/.tmp/frame-proxy
+          TMPDIR: ${{ github.workspace }}/.tmp
+        run: |
+          set -euo pipefail
+          for iteration in {1..20}; do
+            echo "Credential race iteration ${iteration}/20"
+            swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --skip-build --jobs 2 --filter 'RealBinaryTests.testReal(DuplicateCredentialRequestCannotUseOperationTwice|CredentialResultCannotBeReadmittedBeforeWriteCompletion)'
+          done 2>&1 | tee .tmp/credential-repeat.log
       - name: Public source policy
         run: node scripts/check-source-policy.mjs
       - name: Preserve bounded synthetic evidence
@@ -81,6 +93,7 @@ jobs:
             .tmp/source.txt
             .tmp/binaries.sha256
             .tmp/tests.log
+            .tmp/credential-repeat.log
           retention-days: 14
       - name: Remove this job's completed scratch
         if: always()

@@ -17,6 +17,9 @@ struct CredentialWaiting {
     let session: String
     let expires: Double
     var timer: Task<Void, Never>?
+    // Retain the admission stamp until the write finishes, but never admit
+    // another agent call or timeout reply after a result has been queued.
+    var resultQueued = false
 }
 struct CredentialWorker {
     let operation: String
@@ -137,12 +140,14 @@ extension ProcessEngineClient {
             worker.task.cancel(); credentialWorkers[provider]?.retired = true
         }
         intents.removeValue(forKey: waiting.request.scope)
-        sendCredentialOutcome(operation, outcome: "timeout")
+        // Expiry still retires queued admission metadata, but cannot append a
+        // second reply after the operation has claimed its result.
+        if !waiting.resultQueued { sendCredentialOutcome(operation, outcome: "timeout") }
     }
     func attemptCredentials() {
         guard !gateClosed, let context, let floor else { return }
         for (provider, waiting) in credentialRequests {
-            guard credentialWorkers[provider] == nil else { continue }
+            guard !waiting.resultQueued, credentialWorkers[provider] == nil else { continue }
             guard waiting.session == sessionID, waiting.stamp == floor, runtime.now() < waiting.expires else {
                 credentialRequests.removeValue(forKey: provider); waiting.timer?.cancel(); continue
             }
@@ -191,6 +196,10 @@ extension ProcessEngineClient {
         guard let worker = credentialWorkers[provider], worker.operation == operation.request.operationId else { return }
         credentialWorkers.removeValue(forKey: provider)
         guard !worker.retired, credentialIsCurrent(worker.operation), !gateClosed else { return }
+        // Actor-atomic transition before enqueueing: facts/clear acknowledgements
+        // may retry admission before nextWrite/writeCompleted runs. The worker
+        // has ended, but this operation already owns its sole result.
+        credentialRequests[provider]?.resultQueued = true
         guard result.operationId == worker.operation,
               ["ok", "canceled", "denied", "not_found", "interaction_required", "timeout", "error"].contains(result.outcome.rawValue),
               (result.outcome.rawValue == "ok" ? validCredentialToken(result) : result.accessToken == nil && result.expiresAt == nil) else {

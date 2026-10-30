@@ -30,7 +30,7 @@ identity = module('u10_identity', ROOT / 'desktop/native/tools/write-consent-bun
 release = module('u10_release', ROOT / 'desktop/native/tools/distribution/release.py')
 credential_artifact = module('u10_credential_artifact', ROOT / 'desktop/native/tools/distribution/fetch_credential_artifact.py')
 BUNDLE_ID = 'ai.modelplan.candidate'
-HELPER_VERSION = '0.5.49'
+HELPER_VERSION = identity.VERSION
 
 
 def run(*args, env=None):
