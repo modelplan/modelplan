@@ -20,7 +20,7 @@ PACKAGE = Path(__file__).resolve().parents[1]
 REPO = PACKAGE.parents[2]
 SOURCES = {'main.swift': PACKAGE / 'Helper/main.swift',
            'Generated.swift': REPO / 'clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift'}
-RECIPE = 'U7-fixed-helper-v1:Swift5,O,wmo,gnone,prefix-map,macos13,content-uuid,adhoc-runtime,no-entitlements'
+RECIPE = 'U7-fixed-helper-v2:Swift5,O,wmo,gnone,prefix-map,macos13,content-uuid,adhoc-runtime,no-entitlements'
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -28,13 +28,14 @@ def digest(path):
 def run(args, **kwargs):
     return subprocess.run(args, check=True, timeout=180, **kwargs)
 
-def inputs():
+def inputs(universal=False):
     compiler = subprocess.check_output(['xcrun', 'swiftc', '--version'], text=True).strip()
     sdk = subprocess.check_output(['xcrun', '--show-sdk-version'], text=True).strip()
     arch = platform.machine()
     if arch not in ('arm64', 'x86_64'):
         raise ValueError('unsupported-architecture')
-    metadata = {'recipe': RECIPE, 'compiler': compiler, 'sdk': sdk, 'arch': arch,
+    metadata = {'recipe': RECIPE, 'compiler': compiler, 'sdk': sdk, 'architectures': ['arm64', 'x86_64'] if universal else [arch],
+                'smokeArchitecture': arch,
                 'sourceSHA256': {name: digest(path) for name, path in SOURCES.items()},
                 'builderSHA256': digest(Path(__file__))}
     return metadata, hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest()
@@ -55,6 +56,12 @@ def build(root, arch):
          '-module-name', 'ModelPlanCredentialAgentHelper', 'main.swift',
          '-o', 'modelplan-credential-agent'], cwd=root, env=env)
     artifact = root / 'modelplan-credential-agent'
+    seal(artifact)
+    if arch == platform.machine():
+        smoke(artifact)
+    return artifact
+
+def seal(artifact):
     run(['/usr/bin/codesign', '--force', '--sign', '-', '--identifier',
          'ai.modelplan.credential-agent', '--options', 'runtime', '--timestamp=none', str(artifact)])
     run(['/usr/bin/codesign', '--verify', '--strict', str(artifact)])
@@ -64,12 +71,28 @@ def build(root, arch):
     entitlements = subprocess.run(['/usr/bin/codesign', '-d', '--entitlements', ':-', str(artifact)], capture_output=True, check=True)
     if entitlements.stdout.strip():
         raise ValueError('unexpected-entitlements')
+
+def smoke(artifact):
     request = {'operationId': 'u7-build-smoke', 'provider': 'claude',
                'scope': 'claude.account_usage.saved_login', 'interactive': False}
     smoke = subprocess.run([str(artifact)], input=json.dumps(request).encode(), capture_output=True,
                            timeout=8, env={'PATH': '/usr/bin:/bin', 'LANG': 'C'})
     if smoke.returncode != 0 or smoke.stderr or json.loads(smoke.stdout) != {'operationId': 'u7-build-smoke', 'outcome': 'denied'}:
         raise ValueError('helper-launch-smoke-failed')
+
+def build_artifact(root, architectures):
+    if len(architectures) == 1:
+        return build(root, architectures[0])
+    slices = []
+    for arch in architectures:
+        directory = root / arch
+        directory.mkdir()
+        slices.append(build(directory, arch))
+    artifact = root / 'modelplan-credential-agent'
+    run(['xcrun', 'lipo', '-create', *map(str, slices), '-output', str(artifact)])
+    seal(artifact)
+    # The OS executes its native slice only; do not invoke Rosetta or install it.
+    smoke(artifact)
     return artifact
 
 def embed(app, artifact, pin):
@@ -92,11 +115,13 @@ def embed(app, artifact, pin):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True, help='New artifact directory; never overwrites')
+    parser.add_argument('--universal', action='store_true', help='Build arm64+x86_64; execute only the native slice')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
-    metadata, input_sha = inputs()
+    metadata, input_sha = inputs(args.universal)
     with tempfile.TemporaryDirectory(prefix='clean-A-', dir=args.output) as a, tempfile.TemporaryDirectory(prefix='different-clean-B-', dir=args.output) as b:
-        first, second = build(Path(a), metadata['arch']), build(Path(b), metadata['arch'])
+        first = build_artifact(Path(a), metadata['architectures'])
+        second = build_artifact(Path(b), metadata['architectures'])
         if first.read_bytes() != second.read_bytes():
             raise ValueError('non-reproducible-helper')
         artifact = args.output / 'modelplan-credential-agent'
@@ -118,7 +143,9 @@ def main():
         (app / 'Contents/Info.plist').write_text('<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>ai.modelplan.u7.synthetic</string><key>CFBundleExecutable</key><string>host</string></dict></plist>')
         embed(app, artifact, pin); apps.append(app)
     proof = {'outcome': 'pass', 'cleanBuilds': 2, 'inputs': metadata, 'pin': pin,
-             'twoSyntheticAppBuilds': check_pair(*apps, pin), 'realCandidateA14': 'not-run',
+             'twoSyntheticAppBuilds': check_pair(*apps, pin),
+             'executedArchitectures': [metadata['smokeArchitecture']],
+             'foreignSliceExecution': 'not-run', 'realCandidateA14': 'not-run',
              'security': 'R2 default-deny; ad-hoc runtime; no entitlements, trust or credential action'}
     (args.output / 'proof.json').write_text(json.dumps(proof, indent=2) + '\n')
     print(json.dumps({'outcome': 'pass', 'helperSHA256': pin['sha256'], 'inputSHA256': input_sha}))

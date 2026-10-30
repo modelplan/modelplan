@@ -1,6 +1,6 @@
 # U7 fixed credential helper — R2 default-deny
 
-The shipped helper consumes the existing generated `WireCredentialRequest` and
+The fixed helper artifact consumes the existing generated `WireCredentialRequest` and
 returns `WireCredentialResult(outcome: denied)` for every valid request. It has no
 Keychain, token, quota, HTTP, decoder-for-provider-data, or runtime backend switch.
 ADR0001, ADR0003 and the wire contract remain unchanged. The legacy injectable
@@ -19,7 +19,7 @@ A14, real Keychain ACL tests, or owner-profile acceptance.
 On a macOS build runner:
 
 ```sh
-python3 desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --output "$ARTIFACT_DIR"
+python3 desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --universal --output "$ARTIFACT_DIR"
 U7_TEST_HELPER_BINARY="$ARTIFACT_DIR/modelplan-credential-agent" swift test --package-path desktop/native/ModelPlanCredentialAgent
 U7_TEST_HELPER_BINARY="$ARTIFACT_DIR/modelplan-credential-agent" python3 -m unittest discover -s desktop/native/ModelPlanCredentialAgent/tools/tests -v
 ```
@@ -31,7 +31,10 @@ ad-hoc build sealing. Hardened runtime and library validation stay enabled; ther
 are no entitlement exceptions. No certificate, Keychain or trust setting is used.
 `proof.json` binds the Swift compiler, SDK, architecture, builder and helper/Wire
 source hashes. The final executable bytes must match. Reproducibility is scoped
-to those exact inputs; different SDKs/architectures are different artifacts.
+to those exact inputs; different SDKs/architecture sets are different artifacts.
+Universal mode builds both slices, compares both final universal files and runs only
+the host-native slice. Foreign-slice execution is explicitly not-run; Rosetta is
+never invoked or installed.
 
 Only the helper's own source, generated Wire dependency, toolchain or build recipe
 changes require a new helper artifact and pin. App-only changes reuse the existing
@@ -64,4 +67,15 @@ weak, bind-once bridge to the production `ProcessEngineClient.isCurrent` API and
 starts closed. `CredentialAgentClientFactory.make` constructs and binds that same
 ProcessEngineClient; missing packaging uses a denial-only agent. No always-true
 production fence or in-process reader fallback is
-provided. The U6 constructor/package edits require their owner's active lease.
+provided. The normal U6 EngineStoreConnection now uses this factory by default and preserves
+an explicitly injected agent. Its dependency additions and constructor injection
+are the only leased U6 edits. The independent IntegrationTests package drives that
+real constructor through a synthetic RPC peer, checking credential capability, R2
+denial and the current-context fence. A separate pinned helper fixture must leave
+a synthetic launch marker; an in-process denial cannot satisfy that assertion.
+
+Production helper embedding still awaits the packaging owner's separate PR; this
+draft does not claim that fallback proves a packaged helper.
+The proposed hook is in tools/package-neutral.patch: it consumes an existing
+universal artifact plus an independently approved SHA, embeds before outer sealing,
+then checks final bytes. It never compiles or re-signs the helper.

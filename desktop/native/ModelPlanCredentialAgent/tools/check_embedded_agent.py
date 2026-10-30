@@ -30,6 +30,11 @@ def validate_pin(pin):
         if not isinstance(pin[key], str) or re.fullmatch('[0-9a-f]{64}', pin[key]) is None:
             raise CheckFailure('invalid-pin-digest')
 
+def require_expected_sha(pin, expected):
+    validate_pin(pin)
+    if expected is not None and (not re.fullmatch('[0-9a-f]{64}', expected) or pin['sha256'] != expected):
+        raise CheckFailure('external-pin-mismatch')
+
 def regular_member(app, relative):
     if app.suffix != '.app' or not app.is_dir() or app.is_symlink():
         raise CheckFailure('invalid-app-root')
@@ -69,12 +74,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--pin', type=Path, required=True, help='Trusted helper artifact pin, independent of the two Apps')
     parser.add_argument('first', type=Path)
-    parser.add_argument('second', type=Path)
+    parser.add_argument('second', type=Path, nargs='?')
+    parser.add_argument('--single', action='store_true', help='Validate one final App, without claiming two-App proof')
+    parser.add_argument('--expected-sha256', help='Approved helper hash supplied independently of the artifact directory')
     args = parser.parse_args()
     try:
         if args.pin.stat().st_size > 4096:
             raise CheckFailure('oversized-trusted-pin')
-        result = check_pair(args.first, args.second, json.loads(args.pin.read_text()))
+        pin = json.loads(args.pin.read_text())
+        require_expected_sha(pin, args.expected_sha256)
+        if args.single:
+            if args.second is not None:
+                parser.error('--single takes exactly one App')
+            result = check_pair(args.first, args.first, pin)
+            result['scope'] = 'single final App pin integrity; not two-App/Keychain/A14 proof'
+        else:
+            if args.second is None:
+                parser.error('two Apps required without --single')
+            result = check_pair(args.first, args.second, pin)
     except (CheckFailure, OSError, ValueError) as error:
         category = str(error) if isinstance(error, CheckFailure) else type(error).__name__
         print(json.dumps({'outcome': 'fail', 'category': category}))

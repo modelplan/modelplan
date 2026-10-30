@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import ModelPlanEngineClient
+import ModelPlanCredentialAgent
 
 /// Production construction seam; constructing it launches no process.
 /// The real app entry will retain this pair and explicitly start/stop client.
@@ -12,9 +13,15 @@ import ModelPlanEngineClient
                 credentialAgent: (any CredentialAgent)? = nil) {
         let store = EngineStore()
         self.store = store
-        self.client = ProcessEngineClient(
-            configuration: configuration, initialFloor: initialFloor,
-            credentialAgent: credentialAgent, consumer: store
-        )
+        if let credentialAgent {
+            self.client = ProcessEngineClient(
+                configuration: configuration, initialFloor: initialFloor,
+                credentialAgent: credentialAgent, consumer: store
+            )
+        } else {
+            self.client = CredentialAgentClientFactory.make(
+                configuration: configuration, initialFloor: initialFloor, consumer: store
+            )
+        }
     }
 }
