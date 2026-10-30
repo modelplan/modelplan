@@ -159,7 +159,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 	}
 	projection := rows.Build(in)
-	facts := wire.ConsentFacts{Scopes: []wire.ConsentScope{}}
+	facts := wire.ConsentFacts{TextVersion: consent.TextVersion, Scopes: []wire.ConsentScope{}}
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
 	state := admission.State()
