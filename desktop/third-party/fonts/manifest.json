@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "license": "OFL-1.1",
+  "families": [
+    {
+      "id": "manrope",
+      "name": "Manrope",
+      "weights": [
+        500,
+        600,
+        700,
+        800
+      ],
+      "package": "@fontsource/manrope",
+      "version": "5.3.0",
+      "source": "https://www.npmjs.com/package/@fontsource/manrope/v/5.3.0",
+      "licenseFile": "manrope/OFL.txt",
+      "copyright": "Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope)"
+    },
+    {
+      "id": "dm-sans",
+      "name": "DM Sans",
+      "weights": [
+        400,
+        500,
+        600,
+        700
+      ],
+      "package": "@fontsource/dm-sans",
+      "version": "5.3.0",
+      "source": "https://www.npmjs.com/package/@fontsource/dm-sans/v/5.3.0",
+      "licenseFile": "dm-sans/OFL.txt",
+      "copyright": "Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts) DMSans-Italic[opsz,wght].ttf: Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)"
+    },
+    {
+      "id": "jetbrains-mono",
+      "name": "JetBrains Mono",
+      "weights": [
+        400,
+        500,
+        600
+      ],
+      "package": "@fontsource/jetbrains-mono",
+      "version": "5.3.0",
+      "source": "https://www.npmjs.com/package/@fontsource/jetbrains-mono/v/5.3.0",
+      "licenseFile": "jetbrains-mono/OFL.txt",
+      "copyright": "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+    },
+    {
+      "id": "share-tech-mono",
+      "name": "Share Tech Mono",
+      "weights": [
+        400
+      ],
+      "package": "@fontsource/share-tech-mono",
+      "version": "5.3.0",
+      "source": "https://www.npmjs.com/package/@fontsource/share-tech-mono/v/5.3.0",
+      "licenseFile": "share-tech-mono/OFL.txt",
+      "copyright": "Copyright (c) 2012, Carrois Type Design, Ralph du Carrois (www.carrois.com post@carrois.com), with Reserved Font Name 'Share'"
+    }
+  ],
+  "files": [
+    {
+      "file": "manrope/OFL.txt",
+      "kind": "license",
+      "license": "OFL-1.1",
+      "sha256": "d826ab6583b12c26807d8716a545bdbbb672df04f48608a364ba9efdbe501c30",
+      "bytes": 4383,
+      "family": "manrope"
+    },
+    {
+      "file": "manrope/manrope-latin-500-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "19874318747181a650eda439c37955220b849d9c4797c9e0718ee67d4bf929bc",
+      "bytes": 14044,
+      "family": "manrope",
+      "weight": 500,
+      "style": "normal"
+    },
+    {
+      "file": "manrope/manrope-latin-600-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "f7ac6258da20ab7541939b59851155753d1d24f1b30cbcb949077a3faa3d1593",
+      "bytes": 14172,
+      "family": "manrope",
+      "weight": 600,
+      "style": "normal"
+    },
+    {
+      "file": "manrope/manrope-latin-700-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "d2a12c85a831e4b5db341767d0347fa3d1361d22a1fcb3e361a16b6c90080f71",
+      "bytes": 14212,
+      "family": "manrope",
+      "weight": 700,
+      "style": "normal"
+    },
+    {
+      "file": "manrope/manrope-latin-800-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "74c161dbcbce7c3590803cc72dc1f63313c360e13367aba5075a7b7b3818ea49",
+      "bytes": 13648,
+      "family": "manrope",
+      "weight": 800,
+      "style": "normal"
+    },
+    {
+      "file": "dm-sans/OFL.txt",
+      "kind": "license",
+      "license": "OFL-1.1",
+      "sha256": "6fbd040a29c2037a765dfb9f2561e9965b5c95c6dcb5dce516089d63d5f17af7",
+      "bytes": 4502,
+      "family": "dm-sans"
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-400-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "4ab51eb2cd7305d177187908d6397474d4520663f6c6e572feb0a64f4fa80006",
+      "bytes": 14200,
+      "family": "dm-sans",
+      "weight": 400,
+      "style": "normal"
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-500-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "19bf1984956517c35c2bd35b6cdedac12a21d6fcd3596c614ecdfb88b648909d",
+      "bytes": 14304,
+      "family": "dm-sans",
+      "weight": 500,
+      "style": "normal"
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-600-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "6bb2b2645ba5eeaecf56322c543fa3a75b87b927977b9c03b1dabc4205089120",
+      "bytes": 14144,
+      "family": "dm-sans",
+      "weight": 600,
+      "style": "normal"
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-700-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "35c5efa0e5daa52ee5c6500f5be354bf751fb65c4e49e1d6806c6eb5883e8fe9",
+      "bytes": 14348,
+      "family": "dm-sans",
+      "weight": 700,
+      "style": "normal"
+    },
+    {
+      "file": "jetbrains-mono/OFL.txt",
+      "kind": "license",
+      "license": "OFL-1.1",
+      "sha256": "403581b69dac5cff4079205e01c6b467e56af449ecbd7247693ddb1baafa005b",
+      "bytes": 4524,
+      "family": "jetbrains-mono"
+    },
+    {
+      "file": "jetbrains-mono/jetbrains-mono-latin-400-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb",
+      "bytes": 21168,
+      "family": "jetbrains-mono",
+      "weight": 400,
+      "style": "normal"
+    },
+    {
+      "file": "jetbrains-mono/jetbrains-mono-latin-500-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "cb182feeed4d798ff6961d3c79f7026279448fca0676438aaecb21f3fc39553a",
+      "bytes": 21832,
+      "family": "jetbrains-mono",
+      "weight": 500,
+      "style": "normal"
+    },
+    {
+      "file": "jetbrains-mono/jetbrains-mono-latin-600-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "400c6bfda18d5d14acad1c15d6dcb9f8e13c015e7286317e0b9a482539bef147",
+      "bytes": 21860,
+      "family": "jetbrains-mono",
+      "weight": 600,
+      "style": "normal"
+    },
+    {
+      "file": "share-tech-mono/OFL.txt",
+      "kind": "license",
+      "license": "OFL-1.1",
+      "sha256": "9909bc951ab73dcf212a1675aab327ffafa853c2b8e8d11a066b1bcc57afeefb",
+      "bytes": 4428,
+      "family": "share-tech-mono"
+    },
+    {
+      "file": "share-tech-mono/share-tech-mono-latin-400-normal.woff2",
+      "kind": "font",
+      "license": "OFL-1.1",
+      "sha256": "41e6b9f297f7d9a2df2aaa274092f76d2f72711a15ca455f7f4f4f92caf16b72",
+      "bytes": 13500,
+      "family": "share-tech-mono",
+      "weight": 400,
+      "style": "normal"
+    },
+    {
+      "file": "fonts.css",
+      "kind": "stylesheet",
+      "license": "MIT",
+      "sha256": "37abcad7efb27a127521bf0efe5fa783c63b4b81c380e34694cf0b47e019ce8e",
+      "bytes": 2328
+    },
+    {
+      "file": "NOTICE.md",
+      "kind": "notice",
+      "license": "MIT",
+      "sha256": "b0ccc26f6164acc77f6ef2d170d2fe086c2c5b2c482ebe036a80550bb8f81e09",
+      "bytes": 1078
+    },
+    {
+      "file": "README.md",
+      "kind": "readme",
+      "license": "MIT",
+      "sha256": "df4e91bff0cbe8c108aaee536b1eeb44572cbeacea7854a04f3c965233b1daf7",
+      "bytes": 1956
+    }
+  ]
+}

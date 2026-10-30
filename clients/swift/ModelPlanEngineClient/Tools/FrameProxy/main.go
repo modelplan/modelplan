@@ -5,7 +5,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -79,6 +81,20 @@ func (p *proxy) release(file string, message map[string]any) {
 	}()
 }
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "seed-publication" {
+		revision := "string"
+		if len(os.Args) == 3 {
+			revision = os.Args[2]
+		}
+		if len(os.Args) > 3 || (revision != "string" && revision != "null" && revision != "absent") {
+			os.Exit(2)
+		}
+		if err := seedPublicCache(revision); err != nil {
+			fmt.Fprintln(os.Stderr, "synthetic seed failed")
+			os.Exit(9)
+		}
+		return
+	}
 	if len(os.Args) < 2 || os.Args[1] != "app-server" {
 		os.Exit(2)
 	}
@@ -196,6 +212,17 @@ func main() {
 				continue
 			}
 		}
+		if p.plan.Mode == "without-features" && method == "initialize" && m["result"] != nil {
+			data := object(object(m["result"])["data"])
+			original, _ := data["capabilities"].([]any)
+			kept := []any{}
+			for _, capability := range original {
+				if capability != "cockpit" && capability != "publication" && capability != "plugin_install" {
+					kept = append(kept, capability)
+				}
+			}
+			data["capabilities"] = kept
+		}
 		if p.plan.Mode == "oversized" && !p.triggered {
 			p.triggered = true
 			p.mu.Unlock()
@@ -251,6 +278,44 @@ func main() {
 			p.send(m)
 			p.send(clone(m))
 			continue
+		}
+		// Labeled faults hold or mutate only ordinary binary responses.
+		if p.plan.Mode == "hold-features" && (method == "cockpit/query" || method == "history/query" || method == "publication/get" || method == "plugin/install") {
+			p.mu.Unlock()
+			p.trace("held-"+method, false)
+			p.release("release-feature", m)
+			continue
+		}
+		if strings.HasPrefix(p.plan.Mode, "cockpit-") && method == "cockpit/query" && m["result"] != nil {
+			env := object(m["result"])
+			switch p.plan.Mode {
+			case "cockpit-malformed":
+				env["data"] = map[string]any{"projection": nil, "subscriptions": []any{}}
+			case "cockpit-higher":
+				env["consentGeneration"] = env["consentGeneration"].(float64) + 1
+			case "cockpit-foreign-epoch":
+				env["storeEpoch"] = "00000000000000000000000000000001"
+			case "cockpit-wrong-session":
+				wrong := clone(m)
+				object(wrong["result"])["sessionId"] = "s-retired"
+				object(wrong["result"])["storeEpoch"] = "00000000000000000000000000000001"
+				p.send(wrong)
+			}
+		}
+		if strings.HasPrefix(p.plan.Mode, "plugin-") && method == "plugin/install" && m["result"] != nil {
+			data := object(object(m["result"])["data"])
+			switch p.plan.Mode {
+			case "plugin-wrong-tool":
+				data["tool"] = "claude-code"
+			case "plugin-unknown-status":
+				data["status"] = "maybe-installed"
+			case "plugin-invalid-completed":
+				data["status"] = "installed"
+				data["completed"] = 0
+			}
+		}
+		if p.plan.Mode == "publication-malformed" && method == "publication/get" && m["result"] != nil {
+			object(object(m["result"])["data"])["models"] = "not-an-array"
 		}
 		if p.plan.Mode == "history-malformed" && method == "history/query" {
 			env := object(m["result"])
@@ -324,4 +389,68 @@ func main() {
 			p.send(after)
 		}
 	}
+}
+
+// Handwritten synthetic public graph, verified by the ordinary loader. This
+// test-only operation refuses non-test homes and never fetches public/live data.
+func seedPublicCache(revision string) error {
+	home := os.Getenv("HOME")
+	if !strings.HasPrefix(filepath.Base(home), "engine-client-") {
+		return fmt.Errorf("not a test home")
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	cache := filepath.Join(base, "modelplan")
+	hash := func(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
+	dependencies := map[string]string{}
+	for _, n := range []string{"models", "registry", "rules", "calendar"} {
+		dependencies[n] = strings.Repeat("a", 64)
+	}
+	data := map[string]any{
+		"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"},
+		"models": []any{map[string]any{"id": "synthetic-u4b", "developerId": "synthetic", "harnessIds": map[string]any{"codex": []string{"synthetic-u4b"}},
+			"efforts": []any{map[string]any{"effort": "medium", "ability": nil, "cost": 1.25, "time": nil, "futurePublishedValue": uint64(9007199254740993)}}}},
+		"lineups": []any{}, "speedTiers": []any{}, "resets": []any{}, "windows": []any{}, "selectionRevision": "synthetic-revision",
+	}
+	if revision == "null" {
+		data["selectionRevision"] = nil
+	}
+	if revision == "absent" {
+		delete(data, "selectionRevision")
+	}
+	object, _ := json.Marshal(map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": dependencies, "data": data})
+	type ref struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		Hash          string `json:"hash"`
+		Bytes         int    `json:"bytes"`
+	}
+	refs := map[string]ref{}
+	for _, n := range []string{"methods", "registry", "models", "plans", "rules", "news", "calendar"} {
+		refs[n] = ref{1, strings.Repeat("a", 64), 2}
+	}
+	refs["client"] = ref{1, hash(object), len(object)}
+	core := struct {
+		SchemaVersion     int               `json:"schemaVersion"`
+		ComparisonVersion string            `json:"comparisonVersion"`
+		Methods           map[string]string `json:"methods"`
+		Components        map[string]ref    `json:"components"`
+	}{
+		1, "synthetic-u4b", map[string]string{"index": "unified-v03-estimator-0.1.0-internal", "recommendation": "balanced-coding-absolute-v4"}, refs}
+	encoded, _ := json.Marshal(core)
+	id := hash(encoded)[:24]
+	manifest := []byte(strings.TrimSuffix(string(encoded), "}") + `,"publicationId":"` + id + `","publishedAt":"2020-01-01T00:00:00Z"}`)
+	now := time.Now().UTC()
+	state, _ := json.Marshal(map[string]any{"base": "http://127.0.0.1:1", "publicationId": id, "manifestHash": hash(manifest), "publishedAt": "2020-01-01T00:00:00Z", "component": "client", "componentHash": hash(object), "checkedAt": now, "nextCheckAt": now.Add(24 * time.Hour), "verifiedAt": now})
+	for name, value := range map[string][]byte{"objects/" + hash(object) + ".json": object, "releases/" + id + "/manifest.json": manifest, "state.json": state} {
+		path := filepath.Join(cache, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, value, 0600); err != nil {
+			return err
+		}
+	}
+	return nil
 }

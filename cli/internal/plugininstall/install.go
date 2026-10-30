@@ -7,18 +7,14 @@ import (
 	"errors"
 	"io"
 	"os/exec"
+
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
 
 var ErrTool = errors.New("supported tools are claude-code and codex")
 
-type Result struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	Tool          string     `json:"tool"`
-	Status        string     `json:"status"` // installed | instructions | planned | failed
-	Commands      [][]string `json:"commands"`
-	Completed     int        `json:"completed"`
-	Docs          string     `json:"docs"`
-}
+// Result is the producer-owned wire receipt shared with app-server.
+type Result = wire.PluginInstallResult
 
 // Environment lets tests use fixture CLIs without installing real plugins.
 type Environment struct {
@@ -27,7 +23,7 @@ type Environment struct {
 }
 
 func Install(ctx context.Context, tool string, execute bool, stdin io.Reader, stdout, stderr io.Writer, env Environment) (Result, error) {
-	r := Result{SchemaVersion: 1, Tool: tool, Status: "instructions"}
+	r := Result{SchemaVersion: 1, Tool: wire.PluginTool(tool), Status: "instructions"}
 	switch tool {
 	case "claude-code":
 		r.Commands = [][]string{

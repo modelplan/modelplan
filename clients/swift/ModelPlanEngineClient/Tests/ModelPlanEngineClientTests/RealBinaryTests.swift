@@ -14,15 +14,24 @@ enum TestFailure: Error { case timeout, childFailed }
 actor EventProbe: EngineClientEventConsumer {
     var events: [EngineClientEvent] = []
     var pauseClear = false
+    var pauseResponse = false
+    var responseWaiter: CheckedContinuation<Void, Never>?
     var clearWaiter: CheckedContinuation<Void, Never>?
     var timeline: [String] = []
     func consume(_ event: EngineClientEvent) async {
         events.append(event)
+        if case .response = event, pauseResponse {
+            pauseResponse = false
+            await withCheckedContinuation { responseWaiter = $0 }
+        }
         let dataRevision: UInt64?
         switch event {
         case .rowsChanged(let value, _): dataRevision = value.delivery.revision
         case .response(_, .rows(let value, _)): dataRevision = value.delivery.revision
         case .response(_, .history(let value)): dataRevision = value.delivery.revision
+        case .response(_, .cockpit(let value)): dataRevision = value.delivery.revision
+        case .response(_, .publication(let value)): dataRevision = value.delivery.revision
+        case .response(_, .pluginInstall(let value)): dataRevision = value.delivery.revision
         default: dataRevision = nil
         }
         if let dataRevision { timeline.append("data:" + String(dataRevision)) }
@@ -33,6 +42,9 @@ actor EventProbe: EngineClientEventConsumer {
         }
         if case .clearPrivateViews(let value) = event { timeline.append("clear-ack:" + String(value.revision)) }
     }
+    func suspendNextResponse() { pauseResponse = true }
+    func responseIsPaused() -> Bool { responseWaiter != nil }
+    func resumeResponse() { responseWaiter?.resume(); responseWaiter = nil }
     func suspendNextClear() { pauseClear = true }
     func resumeClear() { clearWaiter?.resume(); clearWaiter = nil }
     func clearIsPaused() -> Bool { clearWaiter != nil }
@@ -496,8 +508,9 @@ extension RealBinaryTests {
         _ = try await client.subscribeRows()
         let context = try await client.start(); XCTAssertEqual(context, original)
         let after = await probe.rowCount(); XCTAssertEqual(after, before)
-        do { _ = try await client.pluginInstall(try WirePluginInstallParams(tool: WirePluginTool(rawValue: "codex"))); XCTFail("unvalidated install was executed") } catch {}
-        XCTAssertFalse(traceContains(home, method: "plugin/install"))
+        // A malformed history body does not disable independent typed features.
+        _ = try await client.pluginInstall(try WirePluginInstallParams(tool: .codex, offline: true))
+        XCTAssertTrue(traceContains(home, method: "plugin/install"))
     }
     func testRealBrokenStdinWriteDoesNotRaiseHostSIGPIPE() async throws {
         let binary = try binary(); let home = try home()

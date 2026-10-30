@@ -30,6 +30,7 @@ type field struct {
 	Go, JSON, Swift        string
 	Optional, Omit, Strict bool
 	RequiredNullable       bool
+	NullPolicy             wire.NullPolicy
 	Rule                   map[string]any
 }
 type declaration struct {
@@ -96,7 +97,11 @@ func load(root string) (*model, error) {
 		if pkg == "wire" {
 			dir = "appserver/wire"
 		}
-		for _, file := range []string{"types.go", "enums.go"} {
+		files := []string{"types.go", "enums.go"}
+		if pkg == "wire" {
+			files = append(files, "cockpit.go", "results.go")
+		}
+		for _, file := range files {
 			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, "cli/internal", dir, file), nil, 0)
 			if err != nil {
 				return nil, err
@@ -202,7 +207,7 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
-	if name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
+	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
 		return true
 	}
 	switch field {
@@ -244,6 +249,9 @@ func (m *model) fields(d *declaration) error {
 		}
 		omit := false
 		for _, p := range parts[1:] {
+			if p == "omitzero" {
+				return fmt.Errorf("%s.%s: omitzero is not modeled by the wire generator; use a supported omission declaration", d.Swift, parts[0])
+			}
 			omit = omit || p == "omitempty"
 		}
 		_, pointer := f.Type.(*ast.StarExpr)
@@ -266,7 +274,7 @@ func (m *model) fields(d *declaration) error {
 			m.Used[key] = true
 			s = key
 		}
-		requiredNullable := false
+		requiredNullable := pointer && !omit && d.Swift == "WirePublicationResult"
 		if choices, ok := rule["anyOf"].([]any); ok && !pointer && !omit {
 			for _, choice := range choices {
 				if option, ok := choice.(map[string]any); ok && option["type"] == "null" {
@@ -274,7 +282,18 @@ func (m *model) fields(d *declaration) error {
 				}
 			}
 		}
-		d.Fields = append(d.Fields, field{RequiredNullable: requiredNullable, Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: pointer || omit || requiredNullable, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
+		optional := pointer || omit || requiredNullable
+		var nullPolicy wire.NullPolicy
+		if optional || reflect.StructTag(tag).Get("null") != "" {
+			nullPolicy, err = wire.ParseNullPolicy(reflect.StructTag(tag).Get("null"))
+			if err != nil {
+				return fmt.Errorf("%s.%s: %w", d.Swift, parts[0], err)
+			}
+			if nullPolicy == wire.NullDistinct && (!omit || pointer || s != "WireJSONValue") {
+				return fmt.Errorf("%s.%s: distinct null requires an omittable raw JSON value, not a collapsing pointer/scalar", d.Swift, parts[0])
+			}
+		}
+		d.Fields = append(d.Fields, field{RequiredNullable: requiredNullable, NullPolicy: nullPolicy, Go: f.Names[0].Name, JSON: parts[0], Swift: s, Optional: optional, Omit: omit, Strict: strict(d.Swift, parts[0]), Rule: rule})
 	}
 	return nil
 }
@@ -403,6 +422,15 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			fmt.Fprintf(b, "        var rowElements = try c.nestedUnkeyedContainer(forKey: .%s)\n        var decodedRows: [RowsRow] = []\n        while !rowElements.isAtEnd {\n            let rowDecoder = try rowElements.superDecoder()\n            decodedRows.append(try WireRowDecoding.decode(from: rowDecoder))\n        }\n        self.%s = decodedRows\n", ident(f.JSON), ident(f.JSON))
 			continue
 		}
+		if f.NullPolicy == wire.NullDistinct {
+			// Go RawMessage distinguishes absent (nil) from present JSON null.
+			// decodeIfPresent would collapse those states before re-encoding.
+			fmt.Fprintf(b, "        self.%s = c.contains(.%s) ? try c.decode(WireJSONValue.self, forKey: .%s) : nil\n", ident(f.JSON), ident(f.JSON), ident(f.JSON))
+			continue
+		}
+		if f.NullPolicy == wire.NullForbidden {
+			fmt.Fprintf(b, "        if c.contains(.%s), try c.decodeNil(forKey: .%s) { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON), ident(f.JSON))
+		}
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
 		}
@@ -439,7 +467,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	for _, f := range d.Fields {
 		value := ident(f.JSON)
 		switch f.JSON {
-		case "id", "sessionId", "storeEpoch", "expectStoreEpoch", "requestId", "operationId", "scope", "tool", "provider":
+		case "id", "sessionId", "storeEpoch", "expectStoreEpoch", "requestId", "operationId", "scope", "tool", "provider", "publicationId":
 			if f.Swift == "String" {
 				if f.Optional {
 					fmt.Fprintf(b, "        if let value = %s { try WireValidation.identity(value) }\n", value)
@@ -448,7 +476,11 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 				}
 			}
 		case "subscriptionRef", "accountLocator":
-			fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
+			if f.Optional {
+				fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
+			} else {
+				fmt.Fprintf(b, "        try WireValidation.reference(%s)\n", value)
+			}
 		}
 		if f.JSON == "scopes" && f.Swift == "[String]" {
 			values := "scopes"
@@ -489,6 +521,15 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        for scope in allow + deny + (forget ?? []) { try WireValidation.identity(scope) }\n        for (scope, choice) in keychain ?? [:] {\n            try WireValidation.identity(scope)\n            guard [\"allow\", \"deny\"].contains(choice.rawValue) else { throw WireDecodeError.invalidAuthorization }\n        }")
 	case "WireConsentReceipt":
 		fmt.Fprintln(b, "        if committed && committedGeneration == nil { throw WireDecodeError.invalidAuthorization }\n        guard code.isKnown else { throw WireDecodeError.invalidAuthorization }")
+	case "WirePluginInstallResult":
+		fmt.Fprintln(b, `        guard tool.isKnown, status.isKnown, commands.count == 2,
+              commands.allSatisfy({ !$0.isEmpty && $0.allSatisfy { !$0.isEmpty } }) else { throw WireDecodeError.invalidFrame }
+        switch status {
+        case .installed: guard completed == commands.count else { throw WireDecodeError.invalidFrame }
+        case .instructions, .planned: guard completed == 0 else { throw WireDecodeError.invalidFrame }
+        case .failed: guard completed < commands.count else { throw WireDecodeError.invalidFrame }
+        default: throw WireDecodeError.invalidFrame
+        }`)
 	case "WireCredentialResult":
 		fmt.Fprintln(b, "        if outcome.rawValue == \"ok\" {\n            guard let token = accessToken, !token.isEmpty else { throw WireDecodeError.invalidAuthorization }\n        } else if accessToken != nil || expiresAt != nil { throw WireDecodeError.invalidAuthorization }")
 

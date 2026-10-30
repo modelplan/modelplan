@@ -76,6 +76,17 @@ func PublicationHandler(source PublicationSource) (appserver.Handler, error) {
 		if err := ctx.Err(); err != nil {
 			return appserver.Reply{}, err
 		}
-		return appserver.Reply{Stamp: stamp, Data: data}, nil
+		// Marshal only the existing public projection. Decoding the wire root
+		// validates its containers while RawMessage leaves preserve published
+		// nulls, qualifiers, extensions and numbers without a float round trip.
+		encoded, err := json.Marshal(data)
+		if err != nil {
+			return appserver.Reply{}, protocol(wire.CodeInternal)
+		}
+		var result wire.PublicationResult
+		if err := json.Unmarshal(encoded, &result); err != nil {
+			return appserver.Reply{}, protocol(wire.CodeInternal)
+		}
+		return appserver.Reply{Stamp: stamp, Data: result}, nil
 	}}, nil
 }

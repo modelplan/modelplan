@@ -40,43 +40,17 @@ func checkRequests(got, want []readertest.Request) error {
 	return nil
 }
 
-// Red line: unapproved POST account-usage scopes emit zero remote calls, even
-// with consent. Failing example: the old saved-login path posts to plan/quota.
-func TestAdmissionRedLineUnapprovedPOSTMakesZeroRemoteCalls(t *testing.T) {
-	for _, tc := range []struct {
-		name, scope string
-		endpoints   []string
-	}{
-		{"gemini-code-assist", consent.ScopeGeminiAccountUsageSavedLogin, []string{"https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"}},
-		{"cursor-plan-and-period", consent.ScopeCursorAccountUsageSavedLogin, []string{"https://cursor.com/api/dashboard/get-plan-info", "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if !errors.Is(readers.CheckAdmission(tc.scope), readers.ErrPolicyPending) {
-				t.Fatal("POST scope admitted")
-			}
-			record := readertest.NewTransport()
-			client := &http.Client{Transport: readers.NewReadTransport(tc.scope, record)}
-			for _, endpoint := range tc.endpoints {
-				for _, method := range []string{http.MethodPost, http.MethodGet} {
-					if err := send(client, method, endpoint); !errors.Is(err, readers.ErrPolicyPending) {
-						t.Fatalf("expected policy_pending: %v", err)
-					}
-				}
-			}
-			if err := checkRequests(record.Requests(), nil); err != nil {
-				t.Fatal(err)
-			}
-			// Negative control: the same requests without admission trip the oracle.
-			legacy := readertest.NewTransport(readertest.Response{StatusCode: 200}, readertest.Response{StatusCode: 200})
-			for _, endpoint := range tc.endpoints {
-				if err := send(&http.Client{Transport: legacy}, http.MethodPost, endpoint); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := checkRequests(legacy.Requests(), nil); err == nil {
-				t.Fatal("failing example escaped recording")
-			}
-		})
+// Approval is a compiled whitelist, never permission for an unreviewed scope.
+func TestAdmissionUnreviewedPOSTScopeMakesZeroRemoteCalls(t *testing.T) {
+	for _, read := range approvedPOSTReads() {
+		record := readertest.NewTransport(readertest.Response{StatusCode: 200})
+		client := readers.NewReadClient(read.scope+".unreviewed", &http.Client{Transport: record})
+		if err := doApprovedPOST(client, read.requests[0].request(t)); !errors.Is(err, readers.ErrUnsupportedScope) {
+			t.Fatalf("unreviewed scope admitted: %v", err)
+		}
+		if err := checkRequests(record.Requests(), nil); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -116,14 +90,14 @@ func TestAdmissionRedLineMiniMaxStopsOn401Or403(t *testing.T) {
 	}
 }
 
-// Admission is per path: blocking a tool's POST scope must preserve its local
-// history scope. Failing example: a vendor-wide deny rejects local history too.
-func TestAdmissionLocalHistorySurvivesRemotePOSTGate(t *testing.T) {
+// Admission is per path: account approval must preserve independent local history.
+// A local grant can never authorize vendor HTTP.
+func TestAdmissionLocalHistoryIndependentOfPOSTApproval(t *testing.T) {
 	for _, tc := range []struct{ local, remote string }{
 		{consent.ScopeGeminiLocalHistory, consent.ScopeGeminiAccountUsageSavedLogin},
 		{consent.ScopeCursorLocalHistory, consent.ScopeCursorAccountUsageSavedLogin},
 	} {
-		if err := readers.CheckAdmission(tc.remote); !errors.Is(err, readers.ErrPolicyPending) {
+		if err := readers.CheckAdmission(tc.remote); err != nil {
 			t.Fatal(err)
 		}
 		if err := readers.CheckAdmission(tc.local); err != nil {
@@ -139,7 +113,7 @@ func TestAdmissionLocalHistorySurvivesRemotePOSTGate(t *testing.T) {
 		}
 	}
 	// Exercise the existing Gemini decoder through its opt-in local history path.
-	// Cursor has a stable local scope but no count adapter on this source base.
+	// Cursor's numeric adapter is independently covered by production history tests.
 	testenv.IsolateHome(t)
 	home := os.Getenv("HOME")
 	for _, env := range []string{"MODELPLAN_READERS", "MODELPLAN_GEMINI", "MODELPLAN_HISTORY", "MODELPLAN_GEMINI_HOME"} {

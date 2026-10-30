@@ -178,8 +178,8 @@ runner must verify the baseline file hashes before driving the real binary.
 
 `scenarios.json` maps the intents of draft PR #300 onto Appendix A A01–A19.
 It retains the old actual-panel, card guidance, first-read, age and normal-cadence
-refresh assertions. Its old respin gate is superseded. `U2a-admission` adds zero
-unapproved POST calls, terminal MiniMax 401/403 and retained local history.
+refresh assertions. Its old respin gate is superseded. `U2a-admission` checks separately opted-in, approved POST pins, terminal MiniMax
+401/403 and retained local history.
 `U3-backpressure` adds stopped-output flow control and revoke-receipt replay.
 The registry records feature units, required capabilities and baseline structures.
 
@@ -273,16 +273,26 @@ stored by fixture code, and revoked values stay absent after restart.
 
 `U2a-admission` runs the provider-only binary with the unchanged production
 constructor and one shared synthetic home per case. Gemini OAuth and Cursor
-SQLite login inputs are valid synthetic data; missing credentials cannot explain
-zero POST calls. Real schema-1 migration supplies retained grants. A new account
-grant is refused with `policy_pending`, explicit remote refresh is deferred, and
-an independent CLI refresh still reaches no unapproved provider.
+SQLite login inputs are valid synthetic data. Both approved O-class scopes start
+unset and unchecked (`defaultCheck: false`); remote refresh makes zero calls
+before consent. Each scope is separately grantable, and granting Gemini does not
+grant Cursor. Each cold account read must record exactly its two pinned POST
+requests and produce a positive quota reading. The recorder independently matches
+this scenario's synthetic body and named headers; every other method, host, path,
+body or credential placement is unlisted and fails. Extra-field JSON is never
+accepted just because a method/path matches.
+
+Another app request and an independent CLI must preserve each POST provider's
+budget bytes, cooldown deadline and raw request count. This proves the shared
+budget is used by both clients, rather than resetting it inside a logical read.
+The full production transport tests separately check warm usage-only reads,
+all closed-schema variations and 401/403/redirect stops at either POST slot.
 
 A separate MiniMax compatibility control first returns 404 then a successful
 legacy 200 and verifies a positive reading. The 401 and 403 cases must stop after
 one authenticated GET, despite that available legacy reply. Another app request
 and an independent CLI cannot reset the persisted budget. The raw recorder keeps
-only compiled route labels, method/status and a credential-match boolean; header
+only compiled route labels, method/status and body/header/credential-match booleans; header
 values, credentials and bodies are never logged. Gemini and Cursor history are
 checked before and after account reads using positive typed values and hashes,
 not only row counts. Cursor uses two complete synthetic numeric records at the
@@ -297,7 +307,7 @@ individually:
 
 | Scenario | Required outcome |
 |---|---|
-| `U2a-post-veto` | pass: both unapproved scopes make zero underlying calls |
+| `U2a-post-pins` | pass: unchecked scopes require separate opt-in; only two pinned POSTs per cold read; positive quota and shared-budget retention |
 | `U2a-minimax-auth-stop` | pass: 401/403 stop before the legacy route |
 | `U2a-minimax-legacy-control` | pass: the available legacy reply produces a reading |
 | `U2a-local-history-gemini` | pass: typed values remain identical |

@@ -22,7 +22,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.Request](), reflect.TypeFor[wire.ErrorContext](), reflect.TypeFor[wire.RPCError](), reflect.TypeFor[wire.Failure](),
 		reflect.TypeFor[wire.InitializeParams](), reflect.TypeFor[wire.InitializeResult](), reflect.TypeFor[wire.Empty](), reflect.TypeFor[wire.CancelParams](),
 		reflect.TypeFor[wire.RowsSnapshot](), reflect.TypeFor[wire.ConsentScope](), reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](),
-		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](),
+		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
 		reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
@@ -43,6 +43,11 @@ func captureRoots() []captureRoot {
 	)
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
+	if t == reflect.TypeFor[wire.PluginInstallResult]() {
+		return reflect.ValueOf(wire.PluginInstallResult{SchemaVersion: 1, Tool: wire.PluginCodex,
+			Status: wire.PluginPlanned, Commands: [][]string{{"codex", "plugin", "marketplace", "add", "modelplan/modelplan"}, {"codex", "plugin", "add", "modelplan-codex@modelplan"}},
+			Completed: 0, Docs: "https://github.com/modelplan/modelplan/tree/main/codex"}), nil
+	}
 	if t == reflect.TypeFor[time.Time]() {
 		return reflect.ValueOf(time.Date(2026, 10, 29, 12, 0, 0, 123456789, time.UTC)), nil
 	}
@@ -50,6 +55,8 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 		value := `{}`
 		if name == "ID" {
 			value = `9007199254740993`
+		} else if name == "SelectionRevision" {
+			value = `"synthetic"`
 		}
 		return reflect.ValueOf(json.RawMessage(value)), nil
 	}
@@ -138,11 +145,12 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 }
 
 type mutation struct {
-	Field     string `json:"field"`
-	Omission  bool   `json:"omission"`
-	Null      bool   `json:"null"`
-	WrongType bool   `json:"wrongType"`
-	Strict    bool   `json:"strict"`
+	Field      string          `json:"field"`
+	Omission   bool            `json:"omission"`
+	Null       bool            `json:"null"`
+	WrongType  bool            `json:"wrongType"`
+	Strict     bool            `json:"strict"`
+	NullPolicy wire.NullPolicy `json:"nullPolicy"`
 }
 type captureCase struct {
 	File     string     `json:"file"`
@@ -169,7 +177,8 @@ func Captures(root string) (map[string][]byte, error) {
 	roots := captureRoots()
 	sort.Slice(roots, func(i, j int) bool { return roots[i].Name < roots[j].Name })
 	covered := map[string]bool{}
-	var dispatcher strings.Builder
+	var dispatcher, roundTrips strings.Builder
+	roundTrips.WriteString("func roundTripCapture(_ type: String, _ data: Data) throws -> Data {\n    switch type {\n")
 	dispatcher.WriteString("// SPDX-License-Identifier: MIT\n// Code generated from Go capture roots. DO NOT EDIT.\nimport Foundation\nimport ModelPlanWire\n\nfunc decodeCapture(_ type: String, _ data: Data) throws {\n    switch type {\n")
 	for _, r := range roots {
 		covered[r.Name] = true
@@ -195,14 +204,15 @@ func Captures(root string) (map[string][]byte, error) {
 		}
 		for _, f := range d.Fields {
 			if f.Optional {
-				safeNull := !(r.Name == "WireCredentialResult" && f.JSON == "accessToken")
-				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: safeNull && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict})
+				safeNull := f.NullPolicy != wire.NullForbidden
+				c.Optional = append(c.Optional, mutation{Field: f.JSON, Omission: !(r.Name == "WireCredentialResult" && f.JSON == "accessToken") && !f.RequiredNullable, Null: safeNull, WrongType: !f.Strict || f.Swift == "WireJSONValue", Strict: f.Strict, NullPolicy: f.NullPolicy})
 			} else {
 				c.Required = append(c.Required, f.JSON)
 			}
 		}
 		index.Cases = append(index.Cases, c)
 		fmt.Fprintf(&dispatcher, "    case %s: _ = try WireDecoder.decode(%s.self, from: data)\n", quoted(r.Swift), r.Swift)
+		fmt.Fprintf(&roundTrips, "    case %s: return try JSONEncoder().encode(WireDecoder.decode(%s.self, from: data))\n", quoted(r.Swift), r.Swift)
 	}
 	for key := range m.Used {
 		d := m.Types[key]
@@ -211,7 +221,8 @@ func Captures(root string) (map[string][]byte, error) {
 		}
 	}
 	dispatcher.WriteString("    default: throw WireDecodeError.invalidIdentity\n    }\n}\n")
-	files["CaptureTypes.swift"] = []byte(dispatcher.String())
+	roundTrips.WriteString("    default: throw WireDecodeError.invalidIdentity\n    }\n}\n")
+	files["CaptureTypes.swift"] = []byte(dispatcher.String() + "\n" + roundTrips.String())
 	b, err := json.MarshalIndent(index, "", "  ")
 	if err != nil {
 		return nil, err

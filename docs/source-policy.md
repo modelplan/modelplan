@@ -9,6 +9,7 @@ Owner-authorized source split, tracked in the private implementation issue #506.
 | Formula explanations, source weights and result evidence | Methodology docs and published result metadata | Public disclosure; not a license to private production implementation |
 | Production scoring/recommendation implementation, full calibration and model entry/exit | Private production repository | Reserved source; no public engine/parameter snapshot export |
 | Community appearance                                                                                               | `desktop/app/style.css`                             | MIT; independently buildable, neutral default                                                                                                                    |
+| Approved third-party desktop fonts | `desktop/third-party/fonts/` | OFL-1.1 font software, separate from reserved visuals; each family retains its unmodified licence/copyright and NOTICE row; static normal Latin faces only, with an integrity manifest bound in `source-policy.json` |
 | Official brand and distinctive visuals, 3D/material/animation and drawing source | `desktop/official-visuals/` | ModelPlan Official Visuals License 1.0 (`LicenseRef-ModelPlan-Visuals-1.0`), not MIT; read and build for own use, no copying into other products or forks; historical MIT files listed in `source-policy.json` keep their grant; only the `--official` build reads it |
 | Reviewed open data                                                                                                 | `data/`, one-way mirror of the reviewed publication | Per-file SPDX identifiers; CC BY-SA 4.0 for the new ModelPlan original-data publication, historical CC BY 4.0 grants preserved, third-party exceptions retained |
 | Raw upstream observations, source caches, collection/review/publishing/deployment implementation and runtime state | Private producer/operations repository              | Outside this public-source contract                                                                                                                              |
@@ -34,6 +35,13 @@ The public data directory remains an output mirror, not a competing editing sour
 ## Required gate
 
 Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, the reserved official visuals (one prefix, `LICENSE.md`, SPDX headers or listed hashes, no reads from the community build), agent instruction entry points and standard hosted runner policy. Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content (scoring, calibration, operations) into a convenient public folder.
+
+The same gate verifies the separate third-party font pack: manifest and file
+hashes, the four approved families/used weights, complete OFL notices, NOTICE rows
+and local CSS bindings, with no extra files or symlinks. The root MIT and reserved
+visuals grants do not relicense these fonts. Preserve their OFL rights and any
+Reserved Font Names. This asset interface does not register fonts in the native
+app or prove final-package appearance.
 
 ## API access is not the open-data license
 

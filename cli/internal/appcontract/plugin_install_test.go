@@ -160,7 +160,7 @@ func TestPluginStatusVocabularyAndCapturesMatchProduction(t *testing.T) {
 		if err := json.Unmarshal(b, &result); err != nil {
 			t.Fatal(err)
 		}
-		covered[result.Tool+":"+result.Status] = true
+		covered[string(result.Tool)+":"+string(result.Status)] = true
 	}
 	for _, tool := range []string{"claude-code", "codex"} {
 		for status := range actual {

@@ -119,7 +119,7 @@ func TestRealBinaryPluginInstallMatchesStandaloneContract(t *testing.T) {
 				if err := json.Unmarshal(response["result"], &result); err != nil {
 					t.Fatal(err)
 				}
-				if result.Data.Tool != tool || result.Data.Status != test.status || result.Data.Completed != test.completed {
+				if string(result.Data.Tool) != tool || string(result.Data.Status) != test.status || result.Data.Completed != test.completed {
 					t.Fatalf("wrong install result: %+v", result.Data)
 				}
 				raw, _ := json.Marshal(result.Data)
@@ -226,7 +226,7 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 		{name: "offline", scope: consent.ScopeCodexRuntimeUsage, args: []string{"--offline"}, want: wire.RefreshOffline},
 		{name: "read only", scope: consent.ScopeCodexRuntimeUsage, args: []string{"--read-only"}, want: wire.RefreshReadOnly},
 		{name: "readers off", scope: consent.ScopeCodexRuntimeUsage, env: []string{"MODELPLAN_READERS=off"}, want: wire.RefreshReadOnly},
-		{name: "policy pending", scope: consent.ScopeGeminiAccountUsageSavedLogin, want: wire.RefreshReadOnly},
+		{name: "approved POST without profile", scope: consent.ScopeGeminiAccountUsageSavedLogin, want: wire.RefreshReadOnly},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -273,7 +273,7 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 			}
 			if test.scope == consent.ScopeGeminiAccountUsageSavedLogin {
 				if _, err := os.Stat(filepath.Join(home, "cache", "observed", "reader-attempts", "gemini.json")); !os.IsNotExist(err) {
-					t.Fatal("policy_pending reached budget reservation")
+					t.Fatal("unadmitted POST scope reached budget reservation")
 				}
 			}
 		})

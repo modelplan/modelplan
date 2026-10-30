@@ -12,15 +12,15 @@
   ],
   "assertions": [
     "One synthetic home shared by the app-server and independent CLI",
-    "Valid synthetic Gemini OAuth and Cursor SQLite login inputs exclude missing credentials as the reason for zero calls",
-    "Unapproved account POST scopes record zero requests and policy_pending",
-    "Gemini sessions and the compiled optional Cursor numeric export are explicitly refreshed and return positive typed history before account vetoes; both retain identical counts and value hashes afterward",
+    "Valid synthetic Gemini OAuth and Cursor SQLite inputs; approved O-class scopes start unset and unchecked, with zero calls before per-scope opt-in",
+    "Each scope is separately grantable; each cold read records only its two pinned POST requests, closed bodies and separated credential headers, then produces a quota reading",
+    "Gemini and Cursor local history return positive typed counts with identical value hashes before and after account reads",
     "MiniMax 401 and 403 each stop after exactly the first request, with a successful legacy reply available",
-    "The independent CLI preserves the MiniMax budget bytes, app-server cooldown deadline and raw HTTP call count after completed success and auth-failure reads"
+    "The independent CLI preserves all three providers budget bytes, app-server cooldown deadlines and raw HTTP call counts"
   ],
   "knownUnsupported": [],
   "componentScenarioIds": [
-    "U2a-post-veto",
+    "U2a-post-pins",
     "U2a-minimax-auth-stop",
     "U2a-minimax-legacy-control",
     "U2a-local-history-gemini",

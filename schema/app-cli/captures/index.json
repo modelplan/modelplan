@@ -10,42 +10,48 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "accountLocator",
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "credits",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "observedAt",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "freshUntil",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "lastFailure",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -65,7 +71,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -81,7 +88,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -107,7 +115,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -124,14 +133,16 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "disabledReason",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -148,7 +159,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -173,28 +185,32 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "nextStep",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "expiresAt",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "stateAfterExpiry",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -218,7 +234,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -245,35 +262,40 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "remainingPercent",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "resetsAt",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "observedAt",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "validUntil",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -295,6 +317,33 @@
       ]
     },
     {
+      "file": "WireCockpitAccount.json",
+      "type": "WireCockpitAccount",
+      "optional": [],
+      "required": [
+        "tool",
+        "account"
+      ]
+    },
+    {
+      "file": "WireCockpitData.json",
+      "type": "WireCockpitData",
+      "optional": [],
+      "required": [
+        "projection",
+        "subscriptions"
+      ]
+    },
+    {
+      "file": "WireCockpitSubscription.json",
+      "type": "WireCockpitSubscription",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "accounts"
+      ]
+    },
+    {
       "file": "WireConsentFacts.json",
       "type": "WireConsentFacts",
       "optional": [],
@@ -311,14 +360,16 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "keychain",
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -339,14 +390,16 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "cleanupPending",
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -364,14 +417,16 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "disabledReason",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -405,14 +460,16 @@
           "omission": false,
           "null": false,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "expiresAt",
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -429,7 +486,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -454,7 +512,8 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -473,14 +532,16 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "consentGeneration",
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -496,7 +557,8 @@
           "omission": false,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -522,28 +584,32 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "tokens",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "window",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "value",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -559,7 +625,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -573,16 +640,18 @@
         {
           "field": "ref",
           "omission": true,
-          "null": true,
+          "null": false,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "cursor",
           "omission": true,
-          "null": true,
+          "null": false,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -631,11 +700,110 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
         "tool"
+      ]
+    },
+    {
+      "file": "WirePluginInstallResult.json",
+      "type": "WirePluginInstallResult",
+      "optional": [],
+      "required": [
+        "schemaVersion",
+        "tool",
+        "status",
+        "commands",
+        "completed",
+        "docs"
+      ]
+    },
+    {
+      "file": "WirePublicationCapability.json",
+      "type": "WirePublicationCapability",
+      "optional": [
+        {
+          "field": "reason",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "status"
+      ]
+    },
+    {
+      "file": "WirePublicationResult.json",
+      "type": "WirePublicationResult",
+      "optional": [
+        {
+          "field": "publishedAt",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "selectionRevision",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": true,
+          "nullPolicy": "distinct"
+        },
+        {
+          "field": "multipliers",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "multiplierHorizon",
+          "omission": false,
+          "null": true,
+          "wrongType": true,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "planMetering",
+          "omission": false,
+          "null": true,
+          "wrongType": true,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "contractVersion",
+        "capabilities",
+        "schemaVersion",
+        "publicationId",
+        "units",
+        "models",
+        "lineups",
+        "speedTiers",
+        "resets",
+        "windows"
+      ]
+    },
+    {
+      "file": "WirePublicationUnits.json",
+      "type": "WirePublicationUnits",
+      "optional": [],
+      "required": [
+        "ability",
+        "cost",
+        "time"
       ]
     },
     {
@@ -657,7 +825,8 @@
           "omission": true,
           "null": true,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": []
@@ -671,7 +840,8 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -686,16 +856,18 @@
         {
           "field": "id",
           "omission": true,
-          "null": true,
+          "null": false,
           "wrongType": false,
-          "strict": true
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "params",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "distinct"
         }
       ],
       "required": [
@@ -731,14 +903,16 @@
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         },
         {
           "field": "nextDueAt",
           "omission": true,
           "null": true,
           "wrongType": true,
-          "strict": false
+          "strict": false,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
