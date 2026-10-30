@@ -348,6 +348,7 @@
       "type": "WireConsentFacts",
       "optional": [],
       "required": [
+        "consentTextVersion",
         "scopes"
       ]
     },

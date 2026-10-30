@@ -1,4 +1,5 @@
 {
+  "consentTextVersion": 1,
   "scopes": [
     {
       "scope": "codex.runtime_usage",
