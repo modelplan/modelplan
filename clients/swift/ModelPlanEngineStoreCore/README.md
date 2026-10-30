@@ -60,3 +60,20 @@ The dedicated workflow tests Linux Swift and macOS on standard hosted runners,
 with macOS starting when a draft is ready. Synthetic logs are uploaded before
 owned scratch is removed. Stage: **interface only**; normal App entry, real child
 execution through this consumer, native fanout and owner-shaped L2 are not-run.
+
+## Settings mutation and install correlation
+
+`acceptedConsent` retains the admitted consent reply with its delivery metadata;
+`consent` remains the data-only compatibility view. A caller-owned
+`EngineConsentGrantFactory` should read `(snapshot.delivery,
+snapshot.acceptedConsent)` from the current snapshot each time it is invoked.
+The factory rejects mismatched contexts and never takes metadata from a historic
+grant receipt. All accepted consent data/metadata disappears on clear.
+
+`lastPluginInstall` is an `EngineAcceptedPluginInstall` whose `requestID` and
+`result` come from **one** accepted plugin-install response. `apply` replaces the
+whole pair synchronously; unrelated responses leave it intact. The existing
+`pluginInstall` view reads the pair's result. Never join that value with global
+`lastResponseRequestID`: that field may name a different response. Request
+completion is not an installation result. Clear resets the pair before returning
+the clear effect, along with all other private fields.

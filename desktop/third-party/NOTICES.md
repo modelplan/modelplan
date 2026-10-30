@@ -1542,7 +1542,7 @@ Licence: `Apache-2.0`.
 
 Copyright (c) 2026 qunqin24
 
-Used in: Native Dock shell: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, and FloatingPanel event-routing adaptation in PulseDockPanel; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
+Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
 
 Source: https://github.com/qunqin24/Pulse/tree/7668384cbcf357bba7dee4af85b4052a59c6e35d
 

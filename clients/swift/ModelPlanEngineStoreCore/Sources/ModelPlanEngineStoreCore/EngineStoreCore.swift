@@ -8,6 +8,12 @@ public struct EngineStoreFeatureFailure: Sendable {
     public let error: EngineClientError
 }
 
+/// Request identity and result from the same accepted response event.
+public struct EngineAcceptedPluginInstall: Sendable {
+    public let requestID: WireRequestID
+    public let result: WirePluginInstallResult
+}
+
 /// UI-owned accepted values only. No credential payload or protocol reducer.
 public struct EngineStoreSnapshot: Sendable {
     public internal(set) var connection: EngineConnectionState = .idle
@@ -15,11 +21,13 @@ public struct EngineStoreSnapshot: Sendable {
     public internal(set) var lastResponseRequestID: WireRequestID?
     public internal(set) var rows: WireRowsSnapshot?
     public internal(set) var invalidRowCount = 0
-    public internal(set) var consent: WireConsentFacts?
+    public internal(set) var acceptedConsent: EngineReply<WireConsentFacts>?
+    public var consent: WireConsentFacts? { acceptedConsent?.envelope.data }
     public internal(set) var history: WireHistoryPage?
     public internal(set) var cockpit: WireCockpitData?
     public internal(set) var publication: WirePublicationResult?
-    public internal(set) var pluginInstall: WirePluginInstallResult?
+    public internal(set) var lastPluginInstall: EngineAcceptedPluginInstall?
+    public var pluginInstall: WirePluginInstallResult? { lastPluginInstall?.result }
     public internal(set) var diagnostics: WireDiagnostics?
     public internal(set) var refresh: [WireRefreshScheduled]?
     public internal(set) var lastGrant: EngineGrantResult?
@@ -53,13 +61,13 @@ public struct EngineStoreCore: Sendable {
             snapshot.delivery = context
         case .response(let requestID, let response):
             snapshot.lastResponseRequestID = requestID
-            apply(response)
+            apply(response, requestID: requestID)
         case .rowsChanged(let reply, let count):
             snapshot.rows = reply.envelope.data
             snapshot.invalidRowCount = count
             succeeded(.rows)
         case .consentChanged(let reply):
-            snapshot.consent = reply.envelope.data
+            snapshot.acceptedConsent = reply
             succeeded(.consent)
         case .health(let reply):
             snapshot.health = reply.envelope.data
@@ -70,14 +78,14 @@ public struct EngineStoreCore: Sendable {
         return .none
     }
 
-    private mutating func apply(_ response: EngineResponse) {
+    private mutating func apply(_ response: EngineResponse, requestID: WireRequestID) {
         switch response {
         case .rows(let reply, let count):
             snapshot.rows = reply.envelope.data
             snapshot.invalidRowCount = count
             succeeded(.rows)
         case .consent(let reply):
-            snapshot.consent = reply.envelope.data
+            snapshot.acceptedConsent = reply
             succeeded(.consent)
         case .grant(let result):
             // Historical receipts are transaction metadata, never current facts
@@ -92,7 +100,7 @@ public struct EngineStoreCore: Sendable {
             snapshot.cockpit = reply.envelope.data
             succeeded(.cockpit)
         case .pluginInstall(let reply):
-            snapshot.pluginInstall = reply.envelope.data
+            snapshot.lastPluginInstall = .init(requestID: requestID, result: reply.envelope.data)
             succeeded(.pluginInstall)
         case .publication(let reply):
             snapshot.publication = reply.envelope.data

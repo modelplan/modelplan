@@ -1,6 +1,6 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
+// ModelPlan adaptation: AppKit tracking view consumed by the normal host; unused SwiftUI wrapper removed.
 import AppKit
-import SwiftUI
 
 /// Reports when the pointer enters the view it is attached to.
 ///
@@ -19,22 +19,9 @@ import SwiftUI
 /// is answered by `PanelPointerWatcher` instead, which samples its actual
 /// position rather than trusting enter/exit events.
 ///
-/// Attach it as a background so it takes the frame of whatever it is tracking:
-///
-///     someView.background(PointerEntryReporter { ... })
-struct PointerEntryReporter: NSViewRepresentable {
-    let onEnter: () -> Void
-
-    func makeNSView(context: Context) -> TrackingView {
-        let view = TrackingView()
-        view.onEnter = onEnter
-        return view
-    }
-
-    func updateNSView(_ view: TrackingView, context: Context) {
-        view.onEnter = onEnter
-    }
-
+/// The AppKit composition mounts this behind the active panel content and
+/// sizes it to that content, without adding a click-catching view.
+enum PointerEntryReporter {
     final class TrackingView: NSView {
         var onEnter: (() -> Void)?
 
