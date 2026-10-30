@@ -6,6 +6,9 @@ REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menu
 def qualify(receipt):
     if receipt.get('profile') != 'synthetic': raise ValueError('synthetic profile required')
     if receipt.get('timedOut') is True: return 'timeout'
+    for key, size in [('headSHA',40),('binarySHA256',64),('packageSHA256',64),('profileSHA256',64)]:
+        pin = receipt.get(key)
+        if not isinstance(pin,str) or len(pin)!=size or any(c not in '0123456789abcdef' for c in pin): return 'not-run'
     if receipt.get('inputCapability') == 'unsupported': return 'unsupported'
     if receipt.get('stopped') is True: return 'not-run'
     duration = receipt.get('durationSeconds')
@@ -23,6 +26,7 @@ def main():
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
     config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-empty-synthetic',outcome=outcome)],files=receipt.get('actionEvidenceFiles',[]))
     result = shared.manifest(config,args.batch)
+    result['subject'] = {key:receipt.get(key) for key in ('headSHA','binarySHA256','packageSHA256','profileSHA256')}
     with (args.batch/'manifest.json').open('x') as stream: json.dump(result,stream,indent=2)
     print(json.dumps(dict(scenario='U6-DockMenu-empty-synthetic',outcome=outcome)))
 if __name__ == '__main__': main()
