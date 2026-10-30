@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # U5 real-input Drive
 
-This is an additional native-verification scenario, not a replacement Launch/guardian/Cleanup runner. Its subject is the ordinary app built from the U5 PR head with the reviewed native CLI **v0.5.48** pin and helper identity. The U11a host, a stand-alone pointer probe, direct handler calls and hitTest checks are not substitutes for this candidate.
+This is an additional native-verification scenario, not a replacement Launch/guardian/Cleanup runner. Its subject is the ordinary app built from the U5 PR head with the reviewed native CLI **v0.5.49** pin and helper identity. The U11a host, a stand-alone pointer probe, direct handler calls and hitTest checks are not substitutes for this candidate.
 
 ## Prepare before launch
 
@@ -30,7 +30,7 @@ The assertion/route IDs are in `u5-real-input-scenario.json`. For each attempted
 
 Quit the owned app through delivered input. Use the unchanged shared Cleanup with registered process start identities, verify closure, release this run's resources/lease and announce end + cleaned. Stop on owner takeover, stop-hook, stale guardian or deadline; never renew/retry automatically. Do not claim cleanup without closure receipts.
 
-`bin/evidence-u5.py --receipts receipts.json --batch <approved-run-folder>` derives per-case outcomes and delegates manifest/hash generation to shared Evidence. It requires the source/app/package/profile/helper pins, native v0.5.48, matching lease/watchdog/stop, candidate start and owned cleanup. Missing/failed Doctor or direct handler/hitTest input cannot pass. Unit tests of the qualifier use mock receipts and are not a real-input run. Normal-entry/Core/service adapter integration and owner L3 remain distinct completion edges.
+`bin/evidence-u5.py --receipts receipts.json --batch <approved-run-folder>` derives per-case outcomes and delegates manifest/hash generation to shared Evidence. It requires the source/app/package/profile/helper pins, native v0.5.49, matching lease/watchdog/stop, candidate start and owned cleanup. Missing/failed Doctor or direct handler/hitTest input cannot pass. Unit tests of the qualifier use mock receipts and are not a real-input run. Normal-entry/Core/service adapter integration and owner L3 remain distinct completion edges.
 
 Test builds may enable `MODELPLAN_U5_REAL_INPUT`. The retained production Host then installs `U5RealInputObservation`, emitting actual owned-window/input/sample receipts and honoring the same lease/stop paths. A test-only entry callback is compiled out without this flag. The observer uses a neutral owned backdrop, no global input/process discovery, and requires the configured synthetic HOME to match Foundation's resolved HOME. Candidate-local commands may exercise only the explicitly stubbed presence/login and atomic backend cases; they are labelled `candidate-test-command` and never qualify as physical pointer input. The three pointer cases still require actual OS-delivered input. Neither a standalone unit test nor an unbound command can qualify.
 

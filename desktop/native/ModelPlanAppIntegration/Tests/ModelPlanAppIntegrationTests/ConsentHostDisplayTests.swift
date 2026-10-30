@@ -185,9 +185,39 @@ import ModelPlanCore
         XCTAssertEqual(app.editor.connections.snapshot?.tools.first?.authorization, .noConsent)
         let grants = await wire.grantCount(); XCTAssertEqual(grants, 0)
     }
-    func testRecordedPinned548OutputDecodesThroughTheSameSettingsFactory() async throws {
+    func testHistorical548OutputDecodesThroughTheSameSettingsFactory() async throws {
         let fixture = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.48-synthetic", withExtension: "json"))
         let provenanceURL = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.48-provenance", withExtension: "json"))
+        let provenance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: provenanceURL)) as? [String: Any])
+        var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<3 { native.deleteLastPathComponent() }
+        let pin = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: native.appendingPathComponent("consent-cli-pin.json"))) as? [String: Any])
+        XCTAssertEqual(provenance["cliVersion"] as? String, "0.5.48")
+        XCTAssertEqual(provenance["syntheticHomeOnly"] as? Bool, true)
+        let data = try Data(contentsOf: fixture)
+        let decoded = try FeedDecoder.consentPreview(data)
+        XCTAssertEqual(decoded.tools.map(\.id), ["claude", "codex"], "Replay the complete released Linux metadata capture")
+        XCTAssertEqual(decoded.tools.first { $0.id == "codex" }?.hosts, ["https://chatgpt.com (Codex runtime)"])
+        let wire = Wire(data), desktop = Desktop()
+        let backend = CommunityConnectionBackend(port: CommunityCLIConsentPort(transport: wire, apiAvailable: true),
+            desktop: .init(readOnly: desktop, normal: desktop))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("recorded-consent-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json")), apply: { _ in })
+        let base = CommunitySettingsSession(application: app, canPresent: { false })
+        let entry = try CommunityApplicationFactory.connectSettings(base: base, application: app, backend: backend, canPresent: { false })
+        defer { entry.flow.dispose() }
+        await entry.restorePreferences()
+        XCTAssertEqual(app.editor.connections.phase, .idle)
+        XCTAssertEqual(app.editor.connections.snapshot?.consentGeneration, decoded.generation)
+        XCTAssertEqual(app.editor.connections.snapshot?.mode, .off)
+        XCTAssertEqual(app.editor.connections.snapshot?.tools.map { $0.tool.rawValue }, ["claude", "codex"])
+        XCTAssertTrue(app.editor.connections.snapshot?.tools.allSatisfy { $0.authorization == .noConsent } == true)
+        let grants = await wire.grantCount(); XCTAssertEqual(grants, 0)
+    }
+    func testRecordedPinned549OutputDecodesThroughTheSameSettingsFactory() async throws {
+        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.49-synthetic", withExtension: "json"))
+        let provenanceURL = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.49-provenance", withExtension: "json"))
         let provenance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: provenanceURL)) as? [String: Any])
         var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<3 { native.deleteLastPathComponent() }
