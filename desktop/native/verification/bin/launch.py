@@ -2,6 +2,7 @@
 """Validate an explicit synthetic run; execute only with an existing fresh lease."""
 import argparse,hashlib,json,math,os,subprocess,time
 from pathlib import Path
+from book import admit
 def validate(config,now):
     if config.get('profile')!='synthetic':raise ValueError('synthetic profile required')
     pin=config.get('binarySHA256','')
@@ -27,10 +28,12 @@ def main():
     # is not a guardian; the pinned subject must consume that same lease/stop path.
     c['lease']=json.loads(Path(c['leasePath']).read_text());c['release']=json.loads(Path(c['releasePath']).read_text());c['stop']=Path(c['stopPath']).exists()
     validate(c,time.time())
+    admit(c) # Live FIFO admission, before creating a home or starting any process.
     home=Path(c['syntheticHome']);tmp=Path(c['syntheticTmp'])
     home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if hashlib.sha256(binary.read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
+    validate(c,time.time());admit(c) # Recheck after filesystem/hash work; no queued retry.
     child=subprocess.Popen(c['argv'],env={'PATH':'/usr/bin:/bin','HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'})
     print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid}))
 if __name__=='__main__':main()
