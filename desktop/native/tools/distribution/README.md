@@ -145,3 +145,8 @@ release permission is added. The producer workflow remains M3-owned.
 The producer artifact also carries `SHA256SUMS` and `LICENSE.txt`; the downloader
 retains both alongside the binary, pin and proof. These audit checksums do not
 replace the coordinator-approved independent binary digest.
+
+U14 macOS `build_app` is also a production packaging caller: it obtains the same
+approved input before its CLI compilation, passes only the verified binding to
+the packager, and removes download auth from build environments. Its scenario,
+watchdog, synthetic profile and evidence semantics are unchanged.
