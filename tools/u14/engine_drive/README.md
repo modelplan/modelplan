@@ -8,16 +8,20 @@ Copilot stdio runtime is synthetic; it is a positive/blocked reader control, not
 live vendor proof. This is a non-GUI Drive scenario for the native verification
 skill, independent of its GUI guardian/observer implementation.
 
-**Profile status: pending coordinator review.** `profile.json` describes tool
-presence, directory layout, consent v1 and file kinds, with no real values. The
-omitted/null/reported optional-model structures derive from the sanitized
-zero-row contract examples. The type-only records are retained shape inputs,
-not a claim to execute the Swift decoder or history query. U14's existing shape
-builder materializes fixed values. Each scenario adds only the declared fake
-runtime, parseable empty connections v1, and the synthetic mutations below.
-An approval requires a reviewed new profile version, `approved-shape-export`,
-an approval reference, and updated known gaps. The supplied pending profile
-cannot qualify for L2. No owner HOME is read or copied.
+**Profile approved:** baseline `engine-drive-v1`, with the coordinator's
+[approval reference](https://github.com/modelplan/modelplan/pull/350#issuecomment-6513360511)
+in `profile.json`. It describes tool presence, directory layout, consent v1 and
+file kinds, with no real values. The omitted/null/reported optional-model
+structures derive from the sanitized zero-row contract examples. These records
+are retained shape inputs, not Swift decoder or history-query proof. U14's
+existing builder materializes fixed values; each scenario adds only the fixed
+runtime, a recording Claude presence stub, parseable empty connections v1 and
+the declared mutations below. The reviewed `knownGaps` text is retained verbatim;
+its pending-review note predates the approval recorded in the metadata.
+Every scenario asserts the credential placeholder remains empty, zero recorded
+HTTP/proxy calls and zero Claude vendor executions. A separate case explicitly
+grants saved-login scope and attempts refresh against that empty placeholder.
+The owner's real-account check remains L3. No owner HOME is read or copied.
 
 ## Prepare released subjects
 
@@ -103,6 +107,7 @@ not whole-ticket closure, native rendering, live providers or final App signing.
 
 | ID | Driven / observed acceptance |
 | --- | --- |
+| U2-empty-credentials-isolation | Explicit saved-login grant and refresh with empty credentials produce no account, network call or Claude vendor execution |
 | U2-migration | Schema 1 to 2, byte-identical backup and repeat-load idempotence |
 | U2-revoke-in-flight | Real blocked read, independent deny, cleanup_pending, released read cannot publish |
 | U2-reset-old-allow | Reset reuses generation 1 with a new epoch, rejects historical allow and late publication |

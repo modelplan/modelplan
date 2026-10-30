@@ -19,7 +19,7 @@ _spec = importlib.util.spec_from_file_location('consent_fixture', U14.parents[1]
 fixture = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fixture)
 
-IDS = ['U2-migration', 'U2-revoke-in-flight', 'U2-reset-old-allow', 'U2-two-writers',
+IDS = ['U2-empty-credentials-isolation', 'U2-migration', 'U2-revoke-in-flight', 'U2-reset-old-allow', 'U2-two-writers',
        'U2-completed-regrant', 'U2-completed-reset', 'U2-retired-deny', 'U2-retired-forget',
        'U2-old-writer-v0.5.46', 'U2-old-writer-v0.5.47',
        'U3-protocol', 'U3-major-mismatch', 'U3-eof', 'U3-shared-revoke-receipt', 'U3-backpressure-receipt']
@@ -38,6 +38,11 @@ class Home(fixture.Home):
         fake = root / 'bin/copilot'
         fake.write_text(fixture.FAKE_RUNTIME.replace('PYTHON', sys.executable, 1))
         fake.chmod(0o700)
+        # Presence stays synthetic; any attempted Claude vendor execution is
+        # recorded locally and rejected by every scenario's isolation assertion.
+        claude = root / 'bin/claude'
+        claude.write_text('#!/bin/sh\nprintf claude >> "$HOME/.u14-claude-calls"\nexit 69\n')
+        claude.chmod(0o700)
         self.env = {'HOME': str(root), 'PATH': str(root / 'bin') + ':/usr/bin:/bin',
                     'TMPDIR': str(root / '.u14-tmp'), 'MODELPLAN_CACHE': str(root / 'cache'),
                     'MODELPLAN_COPILOT': str(fake), 'MODELPLAN_BASE': 'http://127.0.0.1:1',
@@ -92,7 +97,15 @@ def transcript(engine):
 
 def run(scenario, h, old=None):
     details = {}
-    if scenario == 'U2-migration':
+    if scenario == 'U2-empty-credentials-isolation':
+        # Even an explicit saved-login grant must not turn the empty placeholder
+        # into an authenticated network read, or launch the vendor CLI.
+        h.mutate(allow=['claude.account_usage.saved_login'])
+        h.refresh()
+        report = h.run(['quota', '--json', '--offline'], check=True)
+        require(not json.loads(report.stdout)['accounts'], 'empty-credentials-produced-reading')
+        details['explicitSavedLoginGrant'] = True
+    elif scenario == 'U2-migration':
         require(h.v1 is not None and h.state()['schemaVersion'] == 2, 'migration-not-exercised')
         require((h.store.parent / 'consent.v1.bak').read_bytes() == h.v1, 'migration-backup-not-identical')
         before = h.store.read_bytes()
@@ -251,7 +264,7 @@ def run(scenario, h, old=None):
             engine.initialize()
             response = engine.request('consent/grant', request)['result']
             replay = response['data']
-            require(response['consentGeneration'] == current['generation'], 'historical-receipt-replaced-current-context')
+            require(engine.floor == current['generation'], 'historical-receipt-lowered-current-floor')
             require(h.store.read_bytes() == before_replay, 'historical-receipt-mutated-store')
             require(replay['committedGeneration'] == committed['committedGeneration'], 'receipt-replay-recommitted')
             require(all(not r['accounts'] for r in fresh_rows(engine)['rows'] if r['id'] == 'copilot'), 'replay-restored-private-value')

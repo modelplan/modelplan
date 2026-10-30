@@ -41,6 +41,10 @@ def atomic(path, value):
 
 def worker(config_path):
     config = load_json(config_path)
+    # Keep the session leader alive through the TERM grace period. On Darwin,
+    # signalling a group containing only dead/zombie members can return EPERM.
+    # A real handler resets to the default in exec'd children (unlike SIG_IGN).
+    signal.signal(signal.SIGTERM, lambda *_: None)
     def stop_owned_group():
         sys.stdin.buffer.read(1)
         try:
@@ -65,6 +69,11 @@ def worker(config_path):
                  'http://127.0.0.1:%d' % trap.server_port, load_json(config['shape']))
         old = config.get('old')
         details = run(config['scenario'], h, (old['tag'], Path(old['binary'])) if old else None)
+        from engine_runner import require
+        require((h.root / '.claude/.credentials.json').read_bytes() == b'', 'credential-placeholder-changed')
+        require(not fixture.Trap.calls, 'unexpected-network-io')
+        require(not (h.root / '.u14-claude-calls').exists(), 'unexpected-claude-vendor-io')
+        details['placeholderIsolation'] = dict(credentialBytes=0, networkCalls=0, claudeVendorCalls=0)
         result = dict(outcome='pass', reason='observed', details=details,
                       baseline=h.baseline, provider='fixed synthetic Copilot stdio runtime')
     except Exception as exc:
