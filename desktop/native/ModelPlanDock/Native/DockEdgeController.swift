@@ -68,6 +68,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var dragOrigin:CGPoint?,preview:DockEdgePlacement?,dragStartPlacement:DockEdgePlacement?
     private var dragStarted=false
     public var isBackgroundMoving:Bool{dragStarted}
+    public var isBackgroundPressed:Bool{dragOrigin != nil}
     public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment,position:@escaping (DockPlacementRequest)throws->DockEdgePlacement? = {try $0.resolveEligibleEdge()}){
         self.preference=preference;visibility = .init(policy:policy);self.clock=clock;self.scheduler=scheduler;self.read=read;self.position=position
     }

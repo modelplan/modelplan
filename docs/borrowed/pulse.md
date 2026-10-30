@@ -9,7 +9,7 @@ Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052
 - PanelPointerWatcher and PointerProbe: local view/window-coordinate sampling with teardown and one explicit reprobe; no provider/settings dependency.
 - PointerEntryReporter: activeAlways local tracking-area entry, paired with the sampler for exit decisions.
 
-PanelPlacement is consumed by the normal host positioner as described below. The follower, view sampler and tracking-entry types remain staged for the remaining controller-input integration. Copying them does not prove real-event delivery or L2. The integrated controller must own hover/reveal/collapse/drag and produce event-arrival evidence through the versioned runner.
+PanelPlacement is consumed by the normal host positioner as described below. The follower is also consumed by the normal host lifecycle. View sampler and tracking-entry consumption remain staged for the remaining controller-input integration. Copying them does not prove real-event delivery or L2. The integrated controller must own hover/reveal/collapse/drag and produce event-arrival evidence through the versioned runner.
 
 ## Placement adaptation
 
@@ -46,4 +46,11 @@ ModelPlan's existing resolver retains validation, allowed-edge selection, adjoin
 
 Three focused tests cover all allowed edges/fraction endpoints/asymmetric anchors on a negative-origin display, adjoining-edge and missing-display recovery, and the single controller's preview/release/stop transaction. Together with nine existing no-window host geometry/placement/wake regressions, all 12 pass. A compiled negative control that made the Pulse facade return no frame caused the actual Host wake test to fail; restoration returns the final source to pass. No GUI window, native event-arrival or packaged L2 is claimed by these checks.
 
-Remaining U5 scope includes live follower/sampler/entry consumption, the reviewed presence/login adapters, field-group migration with one atomic destination store, and actual input/restart/migration/package L2. The retained generic controller's standalone default positioner remains available to other consumers while the normal Host explicitly selects Pulse.
+Remaining U5 scope includes live sampler/entry consumption, the reviewed presence/login adapters, field-group migration with one atomic destination store, and actual input/restart/migration/package L2. The retained generic controller's standalone default positioner remains available to other consumers while the normal Host explicitly selects Pulse.
+
+
+## Live display-follower slice
+
+StaticDockPreviewHost now starts the borrowed ActiveDisplayFollower only while permitted, shown and configured to follow the active display. It samples the host's existing display/pointer environment, supplies the observed display to the one positioning controller, and never writes Settings. Disable/fixed-display mode, visibility suspension and retirement stop the follower; topology changes forget the previous observation and reprobe. There is no application/window scanning or second Dock.
+
+The controller exposes whether a background press is held, including the interval before drag movement begins. The follower refuses a display transition during that interval and retries the same observation after cancellation/release, preserving the grab coordinate. Current display observation and saved Settings intent remain separate. Two actual no-window Host tests cover live switching, unchanged file/revision, hide/restart/retirement, held-press refusal/retry and fixed-mode shutdown. Together with existing positioning/wake regressions, all 14 tests pass. Actual native pointer/window-event arrival remains not-run.

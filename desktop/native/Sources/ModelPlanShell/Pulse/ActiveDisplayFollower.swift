@@ -1,5 +1,5 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
-// ModelPlan adaptation: injectable display sampling and stop/restart callback fence.
+// ModelPlan adaptation: injected display sampling, public composition seam and stop/restart callback fence.
 import AppKit
 
 /// Watches which display the pointer is on, so the panel can be moved onto it.
@@ -18,14 +18,14 @@ import AppKit
 ///
 /// Only ever moves the one panel there is. Nothing here creates a second one.
 @MainActor
-final class ActiveDisplayFollower {
+public final class ActiveDisplayFollower {
     /// The pointer has settled on a display other than the one it was last
     /// reported on, named as `PanelScreen` names them.
     ///
     /// Return `false` to say the move could not be made now — while the panel
     /// is under the hand, say — and the same display is offered again on the
     /// next tick rather than being remembered as already handled.
-    var onEnter: ((String) -> Bool)?
+    public var onEnter: ((String) -> Bool)?
 
     /// Slow enough to cost nothing, fast enough that the rail has arrived by
     /// the time the pointer has crossed the bezel and reached anything worth
@@ -35,18 +35,23 @@ final class ActiveDisplayFollower {
 
     private var generation: UInt = 0
     private let currentDisplayIdentifier: @MainActor () -> String?
-    init(currentDisplayIdentifier: @escaping @MainActor () -> String? = {
-        guard NSScreen.screens.count > 1,
-              let screen = PanelScreen.containing(NSEvent.mouseLocation) else { return nil }
-        return PanelScreen.identifier(of: screen)
-    }) { self.currentDisplayIdentifier = currentDisplayIdentifier }
+    public init(currentDisplayIdentifier: @escaping @MainActor () -> String?) {
+        self.currentDisplayIdentifier = currentDisplayIdentifier
+    }
+    public convenience init() {
+        self.init(currentDisplayIdentifier: {
+            guard NSScreen.screens.count > 1,
+                  let screen = PanelScreen.containing(NSEvent.mouseLocation) else { return nil }
+            return PanelScreen.identifier(of: screen)
+        })
+    }
 
     private var timer: Timer?
     private var lastIdentifier: String?
 
-    var isRunning: Bool { timer != nil }
+    public var isRunning: Bool { timer != nil }
 
-    func start() {
+    public func start() {
         guard timer == nil else { return }
         generation &+= 1
 
@@ -59,7 +64,7 @@ final class ActiveDisplayFollower {
         self.timer = timer
     }
 
-    func stop() {
+    public func stop() {
         generation &+= 1
         timer?.invalidate()
         timer = nil
@@ -73,13 +78,13 @@ final class ActiveDisplayFollower {
     /// panel was on leaves the pointer exactly where it was, which this would
     /// otherwise read as "nothing to do" while the panel sits on a fallback
     /// screen nobody chose.
-    func forgetLastDisplay() {
+    public func forgetLastDisplay() {
         generation &+= 1
         lastIdentifier = nil
     }
 
     // Same seam the production timer invokes; tests supply only synthetic ids.
-    func sample() {
+    public func sample() {
         guard timer != nil else { return }
         let token = generation
         guard let identifier = currentDisplayIdentifier(), identifier != lastIdentifier else { return }
