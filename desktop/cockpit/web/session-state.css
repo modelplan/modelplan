@@ -1,0 +1,10 @@
+/* SPDX-License-Identifier: MIT */
+.session-state{box-sizing:border-box;display:inline-block;position:relative;flex:none;width:12px;height:12px;border:1px solid currentColor;border-radius:1px;color:var(--session-idle,currentColor);background:transparent;opacity:1;vertical-align:middle}
+.session-state[data-state=working]{color:var(--session-working,currentColor);background:currentColor}
+.session-state[data-state=done]{color:var(--session-done,currentColor);background:currentColor}
+.session-state[data-state=done]::after{content:'';position:absolute;left:2px;top:2px;width:6px;height:3px;border-left:1px solid var(--session-mark,Canvas);border-bottom:1px solid var(--session-mark,Canvas);transform:rotate(-45deg)}
+.session-state[data-state=error]{color:var(--session-error,currentColor);background:currentColor}
+.session-state[data-state=error]::after{content:'!';position:absolute;inset:0;text-align:center;color:var(--session-error-mark,Canvas);font:800 11px/10px sans-serif}
+@keyframes session-transition-flash{from{opacity:.3}to{opacity:1}}
+.session-state.is-flashing{animation:session-transition-flash 160ms steps(2,end) 1!important}
+@media(prefers-reduced-motion:reduce){.session-state.is-flashing{animation:none!important}}
