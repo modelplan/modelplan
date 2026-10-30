@@ -102,6 +102,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var menuBarPreferencesChanged: (() -> Void)?
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
+    private var contentProvider: any DockContentProvider
+    private var contentMenuStatusLines: [String]?
+    private var contentEmptyText: String?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
     /// Read the very model fed to the retained Dock; no additional producer or projection.
     public var journeySnapshot: CommunityDockSnapshot? { CommunityJourneyCI.enabled ? model : nil }
@@ -209,21 +212,25 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let consoleButton = NSButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
-    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() }) {
-        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities)
+    public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
+                            contentProvider: (any DockContentProvider)? = nil) {
+        self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, contentProvider: contentProvider)
     }
     public convenience init(purpose: DockHostPurpose, appearance: Appearance? = nil,
                             sliverParameters: DockSliverParameters = .current,
                             readerCapabilities: CommunityReaderCapabilities = .init(),
-                            currentDate: @escaping @MainActor () -> Date = { Date() }) {
+                            currentDate: @escaping @MainActor () -> Date = { Date() },
+                            contentProvider: (any DockContentProvider)? = nil) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true,
-                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose)
+                  sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, purpose: purpose, contentProvider: contentProvider)
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
-         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest) {
+         readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
+         contentProvider: (any DockContentProvider)? = nil) {
+        self.contentProvider = contentProvider ?? LegacyDockContentProvider()
         self.purpose = purpose
         self.readerCapabilities = readerCapabilities
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
@@ -288,6 +295,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockConsent = preview
         rebuild()
     }
+    /// Installs the content consumer without replacing window/input ownership.
+    public func setDockContentProvider(_ provider: any DockContentProvider) {
+        guard !retired else { return }
+        contentProvider = provider
+        refreshDockContent()
+    }
+    /// Called by the accepted engine-state consumer; adds no reader or timer.
+    public func refreshDockContent() {
+        guard !retired else { return }
+        inputGeneration &+= 1
+        rebuild()
+    }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard !retired else { return }
         inputGeneration &+= 1
@@ -326,7 +345,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let passPreferences = preferences
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
-        let next = CommunityDockSnapshot(snapshot: snapshot, diagnostics: diagnostics, now: now, readerFacts: facts, canonicalConsent: dockConsent)
+        let content = contentProvider.makeContent(.init(snapshot: snapshot, diagnostics: diagnostics,
+            now: now, readerFacts: facts, canonicalConsent: dockConsent))
+        let next = content.snapshot
+        contentMenuStatusLines = content.menuStatusLines
+        contentEmptyText = content.emptyText
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
@@ -368,7 +391,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if rows.isEmpty && appearance == nil {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            empty.stringValue = contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
@@ -630,7 +653,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     func menu() -> NSMenu {
         let menu = NSMenu(); menu.delegate = self
-        if let model {
+        if let lines = contentMenuStatusLines {
+            for (index, text) in lines.enumerated() {
+                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                status.setAccessibilityIdentifier("dock.provider-status.\(index)")
+                menu.addItem(status)
+            }
+            if !lines.isEmpty { menu.addItem(.separator()) }
+        } else if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
             if let emptyStatus {
                 let status = NSMenuItem(title: emptyStatus, action: nil, keyEquivalent: "")
