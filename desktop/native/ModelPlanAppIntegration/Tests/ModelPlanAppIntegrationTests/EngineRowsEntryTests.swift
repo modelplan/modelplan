@@ -9,6 +9,7 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor RowsEntryClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     let store: EngineStore
     let rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
