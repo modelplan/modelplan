@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "baselineVersion": "engine-drive-v1-pending-review",
-  "fidelity": "hand-built",
-  "approvalRef": null,
+  "baselineVersion": "engine-drive-v1",
+  "fidelity": "approved-shape-export",
+  "approvalRef": "https://github.com/modelplan/modelplan/pull/350#issuecomment-6513360511",
   "covers": [
     "tool-presence",
     "preference-files",

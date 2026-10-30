@@ -193,11 +193,15 @@ def run(scenario, h, old=None):
     elif scenario == 'U3-protocol':
         with h.engine('drive-protocol') as engine:
             hello = engine.initialize()
-            require({'rows', 'consent', 'diagnostics', 'credentials'} <= set(hello['data']['capabilities']), 'production-handler-missing')
+            require({'rows', 'consent', 'diagnostics', 'credentials', 'history', 'refresh', 'publication'} <= set(hello['data']['capabilities']), 'production-handler-missing')
             require(hello['storeEpoch'] == h.state()['storeEpoch'], 'engine-cli-epoch-mismatch')
             projection = fresh_rows(engine)
             ids = [r['id'] for r in projection['rows']]
             require(len(ids) == len(set(ids)), 'duplicate-stable-row-id')
+            detected = json.loads(h.run(['detect', '--json'], check=True).stdout)
+            expected = {t['providerId'] for t in detected['tools'] if t['detected']} | set(h.state()['tools'])
+            require(set(ids) == expected, 'row-membership-mismatch')
+            require(all(projection['rowsSummary']['text'].get(lang) for lang in ('en', 'zh')), 'summary-guidance-missing')
             require(all(not r['accounts'] for r in projection['rows']), 'unexpected-private-account')
             require('result' in engine.request('diagnostics/get'), 'diagnostics-failed')
             rejected = engine.request('diagnostics/get', {'accessToken': 'ENGINE-DRIVE-CANARY'})
@@ -240,9 +244,15 @@ def run(scenario, h, old=None):
             require(committed['committed'], 'forget-not-committed')
             engine.shutdown()
             details['rpc'] = transcript(engine)
+        h.mutate(deny=['retired.old_path'])
+        current = h.state()
+        before_replay = h.store.read_bytes()
         with h.engine('drive-replay') as engine:
             engine.initialize()
-            replay = engine.request('consent/grant', request)['result']['data']
+            response = engine.request('consent/grant', request)['result']
+            replay = response['data']
+            require(response['consentGeneration'] == current['generation'], 'historical-receipt-replaced-current-context')
+            require(h.store.read_bytes() == before_replay, 'historical-receipt-mutated-store')
             require(replay['committedGeneration'] == committed['committedGeneration'], 'receipt-replay-recommitted')
             require(all(not r['accounts'] for r in fresh_rows(engine)['rows'] if r['id'] == 'copilot'), 'replay-restored-private-value')
             engine.shutdown()

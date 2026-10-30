@@ -41,6 +41,17 @@ def atomic(path, value):
 
 def worker(config_path):
     config = load_json(config_path)
+    def stop_owned_group():
+        sys.stdin.buffer.read(1)
+        try:
+            if os.getpgrp() != os.getpid():
+                raise RuntimeError('worker-not-session-leader')
+            os.killpg(os.getpgrp(), signal.SIGKILL)
+        except Exception as exc:
+            atomic(Path(config['cleanupResult']), dict(outcome='failed', failureClass=type(exc).__name__,
+                  errno=getattr(exc, 'errno', None)))
+            os._exit(127)
+    threading.Thread(target=stop_owned_group, daemon=True).start()
     trap = fixture.http.server.ThreadingHTTPServer(('127.0.0.1', 0), fixture.Trap)
     threading.Thread(target=trap.serve_forever, daemon=True).start()
     result = dict(outcome='fail', reason='scenario-assertion')
@@ -73,7 +84,17 @@ def terminate(process):
     # Signal the complete group before reaping its leader, preventing PID reuse.
     if process.returncode is not None:
         raise RuntimeError('worker-identity-lost')
-    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except PermissionError:
+        # Some macOS hosts restrict parent-to-session group signalling. Ask the
+        # still-owned worker to stop its own verified session instead.
+        process.stdin.write(b'S')
+        process.stdin.flush()
+        if process.wait(timeout=3) != -signal.SIGKILL:
+            raise RuntimeError('worker-group-cleanup-unconfirmed')
+        process.stdin.close()
+        return
     time.sleep(.05)
     try:
         os.killpg(process.pid, signal.SIGKILL)
@@ -121,7 +142,8 @@ def run_scenarios(args, output, scratch, manifest, binary, old, deadline):
         config_path = scratch / (scenario + '-config.json')
         config = dict(binary=str(binary), shape=str((output / 'profile.json').resolve()),
                       home=str((scratch / (scenario + '-home')).resolve()), scenario=scenario,
-                      result=str(result_path.resolve()), watchdogSeconds=args.scenario_timeout + 5,
+                      result=str(result_path.resolve()), cleanupResult=str((scratch / (scenario + '-cleanup.json')).resolve()),
+                      watchdogSeconds=args.scenario_timeout + 5,
                       old=old.get(scenario.removeprefix('U2-old-writer-')))
         atomic(config_path, config)
         process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--worker', str(config_path)],
@@ -249,9 +271,10 @@ def execute(args):
 def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--worker':
         status = worker(Path(sys.argv[2]))
-        # Parent retains the session leader until it has durably recorded evidence.
-        sys.stdin.buffer.read(1)
-        return status
+        # The stop thread alone reads control stdin and retains this leader until
+        # evidence is durable; it also handles parent loss (pipe EOF).
+        while True:
+            time.sleep(1)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', required=True, type=Path)
     parser.add_argument('--source-sha', help='full source commit; L1 only without --release')

@@ -41,6 +41,10 @@ class DriveTests(unittest.TestCase):
 
     def test_source_or_pending_profile_cannot_qualify_as_l2(self):
         self.args.level = 'L2'
+        unapproved = json.loads(self.args.shape.read_text())
+        unapproved.update(fidelity='hand-built', approvalRef=None)
+        self.args.shape = self.root / 'pending-profile.json'
+        self.args.shape.write_text(json.dumps(unapproved))
         status, result = self.execute()
         self.assertEqual(status, 1)
         self.assertIsNone(result['earnedLevel'])
