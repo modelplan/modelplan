@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineStore
@@ -150,6 +151,53 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertNil(expired.snapshot.inputs.first?.windows.first?.remainingPercent)
         XCTAssertEqual(expired.snapshot.presentationRows["codex"]?.reason, "Engine expiry reason")
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
+    }
+
+    func testNormalSettingsContextUsesBundleNoticesAndAcceptedEngineReadiness() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u6-about-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let bundle = profile.appendingPathComponent("Synthetic.app")
+        let resources = bundle.appendingPathComponent("Contents/Resources")
+        let helpers = bundle.appendingPathComponent("Contents/Helpers")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: helpers, withIntermediateDirectories: true)
+        let helper = Data("synthetic-not-executable".utf8)
+        let hash = SHA256.hash(data: helper).map { String(format: "%02x", $0) }.joined()
+        try helper.write(to: helpers.appendingPathComponent("modelplan"))
+        try Data(hash.utf8).write(to: resources.appendingPathComponent("modelplan.sha256"))
+        let info: [String: Any] = ["CFBundleShortVersionString": "3.2.1", "ModelPlanPublicSource": String(repeating: "a", count: 40),
+            "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version,
+            "ModelPlanBundledHelperSHA256": hash,
+            "ModelPlanSourceHelperSHA256": try XCTUnwrap(CommunityConsentBundleIdentity.sourceSHA256ByArchitecture.values.first)]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
+        try Data("Synthetic MIT notice".utf8).write(to: resources.appendingPathComponent("LICENSE.txt"))
+        try Data("Synthetic dependency notices".utf8).write(to: resources.appendingPathComponent("CLI-THIRD-PARTY-NOTICES.md"))
+        XCTAssertTrue(CommunityConsentBundleIdentity.matches(bundle: bundle))
+        let summary = try RowsRowsSummary(state: .empty, reason: .init(code: .ok, text: .init(en: "Synthetic", zh: "合成")), text: .init(en: "Synthetic", zh: "合成"))
+        let fixture = try WireRowsSnapshot(sequence: 1, projection: .init(rowsVersion: 1, rows: [], rowsSummary: summary))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "3.2.1", allowedEnvironment: [:]),
+            settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings.json")), createsNativePanels: false, bundleURL: bundle,
+            makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) })
+        XCTAssertEqual(app.currentSettingsContext.about.appVersion, "3.2.1")
+        XCTAssertEqual(app.currentSettingsContext.licenseNotices.count, 2)
+        XCTAssertNotEqual(app.currentSettingsContext.about.macOSVersion, "unknown")
+        XCTAssertNotEqual(app.currentSettingsContext.about.cliState, .ready)
+        await app.prepare(); await app.composition.start()
+        XCTAssertEqual(app.currentSettingsContext.about.cliVersion, CommunityConsentBundleIdentity.version)
+        XCTAssertEqual(app.currentSettingsContext.about.cliState, .ready)
+        await app.composition.store.consume(.connection(.stopped(.requested)))
+        XCTAssertEqual(app.currentSettingsContext.about.cliState, .unavailable)
+        await app.composition.stop()
+        try Data("synthetic-mismatched-helper".utf8).write(to: helpers.appendingPathComponent("modelplan"))
+        let unverified = EngineRowsEntry.make(configuration: .init(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "3.2.1", allowedEnvironment: [:]),
+            settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings-unverified.json")), createsNativePanels: false, bundleURL: bundle,
+            makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) })
+        await unverified.prepare(); await unverified.composition.start()
+        XCTAssertEqual(unverified.currentSettingsContext.about.appVersion, "3.2.1")
+        XCTAssertEqual(unverified.currentSettingsContext.licenseNotices.count, 2)
+        XCTAssertEqual(unverified.currentSettingsContext.about.cliState, .unavailable, "Protocol readiness cannot promote an unverified helper")
+        XCTAssertEqual(unverified.currentSettingsContext.about.cliVersion, "unknown")
+        await unverified.composition.stop()
     }
 
 }

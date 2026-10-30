@@ -8,6 +8,8 @@ import ModelPlanSettings
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
     private let settings: SettingsApplicationCoordinator
+    private let contextSource: EngineSettingsContext
+    private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
     private var terminating = false
@@ -17,7 +19,7 @@ import ModelPlanSettings
     private let activateSettings: @MainActor () -> Void
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
-                createsNativePanels: Bool = true,
+                createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
                 makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                 makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
@@ -25,12 +27,22 @@ import ModelPlanSettings
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, makeClient: makeClient)
         self.composition = composition
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
-        settings = SettingsApplicationCoordinator(store: settingsStore) { composition.dock.apply($0) }
+        let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
+        self.contextSource = contextSource
+        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
         super.init()
-        composition.menuDidChange = { [weak self] in self?.renderMenu(); self?.console?.render() }
+        composition.menuDidChange = { [weak self] in self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render() }
         composition.dock.showSettings = settingsHost.action
         composition.dock.showConsole = { [weak self] in self?.showConsole() }
     }
+    private func updateSettingsContext() {
+        let ready: Bool
+        if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
+        guard ready != lastAboutConnectionReady else { return }
+        lastAboutConnectionReady = ready
+        settings.update(context: contextSource.make(engineReady: ready))
+    }
+    var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
     public func showConsole() {
         guard !terminating else { return }
