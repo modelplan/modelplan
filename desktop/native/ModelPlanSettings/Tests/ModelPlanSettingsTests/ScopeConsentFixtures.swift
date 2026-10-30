@@ -25,7 +25,7 @@ enum ScopeConsentFixtures {
             value.removeValue(forKey: "keychain"); value.removeValue(forKey: "disabledReason")
             return value
         }
-        return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: ["scopes": scopes]))
+        return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: ["consentTextVersion": object["consentTextVersion"] as Any, "scopes": scopes]))
     }
 }
 actor ScopeConsentTestClient: EngineClient {

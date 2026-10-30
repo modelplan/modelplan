@@ -20,6 +20,9 @@ public struct ScopeConsentIntent: Sendable, Equatable {
     public var forgetIDs: [String] { if case .forget(let id) = mutation { return [id] }; return [] }
     public var keychainIDs: [String] { if case .allow(_, let ids) = mutation { return ids.sorted() }; return [] }
 }
+// The client factory constructs wire parameters from its live accepted context.
+extension ScopeConsentIntent: EngineConsentGrantIntent {}
+
 public enum ScopeConsentCommandFailure: Error, Sendable { case notReady, missingMetadata, intentMismatch }
 @MainActor public protocol ScopeConsentCommands: AnyObject {
     var isReady: Bool { get }

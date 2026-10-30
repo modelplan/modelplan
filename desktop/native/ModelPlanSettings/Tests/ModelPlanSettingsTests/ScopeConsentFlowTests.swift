@@ -6,6 +6,22 @@ import ModelPlanWire
 @testable import ModelPlanSettings
 
 @MainActor final class ScopeConsentFlowTests: XCTestCase {
+    func testGrantFactoryReadsAcceptedFactsForIntent() throws {
+        let facts = try ScopeConsentFixtures.facts()
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 3), revision: 1)
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 3, data: facts), delivery: context)
+        var current: EngineReply<WireConsentFacts>? = nil
+        let factory = EngineConsentGrantFactory(accepted: { (context, current) })
+        let intent = ScopeConsentIntent(mutation: .allow(scopes: [ScopeConsentFixtures.local], keychain: []))
+        XCTAssertThrowsError(try factory.make(intent))
+        current = reply
+        let value = try factory.make(intent)
+        XCTAssertEqual(value.consentTextVersion, facts.consentTextVersion)
+        XCTAssertEqual(value.requestId, intent.requestID)
+        XCTAssertEqual(value.allow, [ScopeConsentFixtures.local])
+        current = nil
+        XCTAssertThrowsError(try factory.make(intent), "Factory must read the live provider on every invocation")
+    }
     func testEntryConsumesAcceptedFactsAndClearsWithoutAFactory() throws {
         let entry = ScopeConsentEntry(client: ScopeConsentTestClient(), ready: { true }, language: .english)
         entry.acceptedFacts(try ScopeConsentFixtures.facts())
@@ -314,7 +330,7 @@ import ModelPlanWire
                 consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
         })
         let controller = ScopeConsentController(commands: commands)
-        controller.receiveAcceptedFacts(try .init(scopes: []))
+        controller.receiveAcceptedFacts(try .init(consentTextVersion: ScopeConsentFixtures.facts().consentTextVersion, scopes: []))
         let view = SettingsScopeConsentView(controller: controller, language: .english)
         XCTAssertFalse(try control(view, "scope.allowSelected").isEnabled)
         XCTAssertTrue(try control(view, "scope.inspect").isEnabled)
