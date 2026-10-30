@@ -1351,22 +1351,27 @@ public struct WireCockpitSubscription: Codable, Sendable {
 }
 
 public struct WireConsentFacts: Codable, Sendable {
+    public let `consentTextVersion`: Int
     public let `scopes`: [WireConsentScope]
     private enum CodingKeys: String, CodingKey {
+        case `consentTextVersion`
         case `scopes`
     }
-    public init(`scopes`: [WireConsentScope]) throws {
+    public init(`consentTextVersion`: Int, `scopes`: [WireConsentScope]) throws {
+        self.`consentTextVersion` = `consentTextVersion`
         self.`scopes` = `scopes`
         try validate()
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`consentTextVersion` = try c.decode(Int.self, forKey: .`consentTextVersion`)
         self.`scopes` = try c.decode([WireConsentScope].self, forKey: .`scopes`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`consentTextVersion`, forKey: .`consentTextVersion`)
         try c.encode(`scopes`, forKey: .`scopes`)
     }
     private func validate() throws {
