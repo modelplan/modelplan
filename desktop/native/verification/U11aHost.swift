@@ -118,7 +118,7 @@ import Darwin
         scripts+="window.__u11aFrameObserver=installVerificationAnimationObserver({indicator:'.lamp,.caution,.fd-leds,.ck-lamp,.ck-eng',session:'.tl,.ck-tape,.dk-mfd,.mfd-session',HUD:'.hud'});window.__u11aStopTicks=installVerificationRAFTicks('verificationFrames');"
         c.userContentController.addUserScript(WKUserScript(source:scripts,injectionTime:.atDocumentEnd,forMainFrameOnly:true))
         let v=WKWebView(frame:NSRect(x:0,y:0,width:1100,height:1000),configuration:c);web=v;v.navigationDelegate=self
-        let w=NSWindow(contentRect:v.frame,styleMask:[.titled],backing:.buffered,defer:false);window=w;w.contentView=v;w.title="Synthetic U11a verification";w.acceptsMouseMovedEvents=true
+        let w=NSWindow(contentRect:v.frame,styleMask:[.titled],backing:.buffered,defer:false);window=w;w.isReleasedWhenClosed=false;w.contentView=v;w.title="Synthetic U11a verification";w.acceptsMouseMovedEvents=true
         emit(["event":"open-request"]);v.load(URLRequest(url:origin))
         let requested = !NSApp.isActive
         if requested {NSApp.activate(ignoringOtherApps:true)}

@@ -11,7 +11,7 @@ def write(path,value):
 def read(path):return json.loads(Path(path).read_text())
 def plan():return [(cycle,phase,60) for cycle in range(1,4) for phase in ('before-open','open','after-close')]
 def valid(c,now):
-    return c.get('GO') is True and c.get('announcementID') and c['start']<=now<c['expiresAt'] and 0<c['expiresAt']-c['start']<=1200 and c['expiresAt']-now>=632
+    return c.get('GO') is True and c.get('announcementID') and c['start']<=now<c['expiresAt'] and 0<c['expiresAt']-c['start']<=1200 and c['expiresAt']-now>=690
 
 def guardian(config):
     c=read(config);lease=Path(c['lease']);stop=Path(c['stop'])
@@ -33,11 +33,18 @@ class Files(http.server.SimpleHTTPRequestHandler):
         if not p.is_relative_to(Path(self.directory).resolve()):self.send_error(403);return
         super().do_GET()
 
+class LocalServer(http.server.ThreadingHTTPServer):
+    def handle_error(self,request,client_address):
+        # Closing a measured page may reset its own local connection. Never dump
+        # peer/host data for that normal lifecycle event.
+        if not isinstance(sys.exc_info()[1],(ConnectionResetError,BrokenPipeError)):
+            print('Local input server error: '+type(sys.exc_info()[1]).__name__,flush=True)
+
 class Attempt:
     def __init__(self,c):
         self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=self.scratch/'lease.json';self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
     def live(self):
-        if self.stop.exists() or time.time()>=self.c['expiresAt']:raise RuntimeError('stop-or-expiry')
+        if self.stop.exists() or time.time()>=self.c['expiresAt']-90:raise RuntimeError('stop-or-expiry')
         g=read(self.lease)
         if g.get('runID')!=self.c['runID'] or g.get('epoch')!=self.c['epoch'] or g.get('ownerPreempted') is not False or not 0<=time.time()-g['guardianHeartbeatAt']<=2:raise RuntimeError('guardian-not-live')
     def events(self):
@@ -69,7 +76,7 @@ class Attempt:
         cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'])
         file=self.scratch/(mode+'-config.json');write(file,cfg)
         console=(self.scratch/(mode+'-console.log')).open('x')
-        lease=read(self.lease);validate(dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=632 if mode=='preflight' else 630,stop=self.stop.exists()),time.time())
+        lease=read(self.lease);validate(dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists()),time.time())
         self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
         console.close();ident=cleanup.identity(self.app.pid)
         if not ident:raise RuntimeError('subject-identity-unavailable')
@@ -119,7 +126,7 @@ class Attempt:
         locks=Path(c['locks']);self.lock=locks/'M1-candidate-gui';self.lock.mkdir();write(self.lock/'owner.json',dict(runID=c['runID'],epoch=c['epoch'],pid=os.getpid()))
         self.slot=None;reported=False
         while self.slot is None:
-            if c['expiresAt']-time.time()<632:raise RuntimeError('resource-wait-left-insufficient-run-time')
+            if c['expiresAt']-time.time()<690:raise RuntimeError('resource-wait-left-insufficient-run-time')
             if list(locks.glob('slot*')):
                 if not reported:print('Waiting for existing project heavy reservation',flush=True);reported=True
                 time.sleep(.25);continue
@@ -135,12 +142,12 @@ class Attempt:
         self.guard=subprocess.Popen([sys.executable,__file__,'--guardian',str(gc)])
         end=time.monotonic()+3
         while not self.lease.exists() and time.monotonic()<end:time.sleep(.1)
-        self.server=http.server.ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Files,directory=c['inputRoot']))
+        self.server=LocalServer(('127.0.0.1',0),functools.partial(Files,directory=c['inputRoot']))
         threading.Thread(target=self.server.serve_forever,daemon=True).start()
         self.entry='http://127.0.0.1:'+str(self.server.server_port)+'/'+c['entry']
         result=dict(runID=c['runID'],epoch=c['epoch'],head=c['head'],outcome='not-run',budget='unsupported',GPU='unsupported-no-approved-isolated-session-snapshot',energy='unsupported')
         try:
-            self.launch('preflight');self.command('open','preflight',0);self.ready();self.quit()
+            self.launch('preflight');self.command('open','preflight',0);self.ready();self.command('close','preflight',0);self.command('open','preflight',0);self.ready();self.quit()
             self.control.unlink(missing_ok=True)
             self.launch('measure')
             self.topThread=threading.Thread(target=self.top_worker,daemon=True);self.topThread.start()
@@ -154,7 +161,7 @@ class Attempt:
         finally:
             self.topStop.set()
             if self.topThread:self.topThread.join(timeout=8)
-            write(self.stop,dict(stop=True,reason='run-ended',runID=c['runID'],epoch=c['epoch']))
+            if not self.stop.exists():write(self.stop,dict(stop=True,reason='run-ended',runID=c['runID'],epoch=c['epoch']))
             for proc,ident in self.children:
                 if proc.poll() is None:cleanup.stop_owned(ident)
                 try:proc.wait(timeout=5)
@@ -167,6 +174,8 @@ class Attempt:
             for lock in (getattr(self,'slot',None),getattr(self,'lock',None)):
                 if lock is not None and lock.exists() and read(lock/'owner.json').get('runID')==c['runID']:(lock/'owner.json').unlink();lock.rmdir()
             result['cleanup']['leaseReleased']=True
+            result['ownedExitCodes']=[dict(role=i['role'],exitCode=p.returncode) for p,i in self.children]
+            result['stopReason']=read(self.stop).get('reason')
             write(self.out/'result.json',result)
             print(json.dumps(result),flush=True)
         return result
