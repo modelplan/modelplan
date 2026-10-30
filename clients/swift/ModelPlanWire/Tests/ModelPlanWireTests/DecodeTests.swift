@@ -11,6 +11,7 @@ private struct CaptureIndex: Decodable {
             let null: Bool
             let wrongType: Bool
             let strict: Bool
+            let nullPolicy: String
         }
         let file: String
         let type: String
@@ -332,5 +333,44 @@ extension DecodeTests {
         XCTAssertEqual(value.params, .null)
         let output = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary)
         XCTAssertEqual(output, source as NSDictionary)
+    }
+}
+
+
+extension DecodeTests {
+    func testEveryDeclaredOptionalNullPolicyThroughProductionDecoder() throws {
+        var distinct = 0
+        var checked = 0
+        for entry in try index().cases {
+            for field in entry.optional {
+                checked += 1
+                XCTAssertTrue(["distinct", "coalesced", "forbidden"].contains(field.nullPolicy), entry.type + "." + field.field)
+                var absent = try object(entry.file)
+                absent.removeValue(forKey: field.field)
+                var null = try object(entry.file)
+                null[field.field] = NSNull()
+                if field.nullPolicy == "distinct" {
+                    distinct += 1
+                    XCTAssertTrue(field.omission && field.null, "distinct declaration must admit all three states")
+                    for source in [absent, null, try object(entry.file)] {
+                        let bytes = try roundTripCapture(entry.type, encoded(source))
+                        let output = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+                        XCTAssertEqual(output.keys.contains(field.field), source.keys.contains(field.field), entry.type + "." + field.field + " presence")
+                        XCTAssertEqual(output[field.field] as? NSObject, source[field.field] as? NSObject, entry.type + "." + field.field + " value")
+                    }
+                } else if field.nullPolicy == "coalesced" && field.omission && field.null {
+                    let a = try roundTripCapture(entry.type, encoded(absent))
+                    let b = try roundTripCapture(entry.type, encoded(null))
+                    let aFields = try XCTUnwrap(JSONSerialization.jsonObject(with: a) as? [String: Any])
+                    let bFields = try XCTUnwrap(JSONSerialization.jsonObject(with: b) as? [String: Any])
+                    XCTAssertEqual(aFields.keys.contains(field.field), bFields.keys.contains(field.field), entry.type + "." + field.field)
+                    XCTAssertEqual(aFields[field.field] as? NSObject, bFields[field.field] as? NSObject, entry.type + "." + field.field)
+                } else if field.nullPolicy == "forbidden" {
+                    XCTAssertThrowsError(try roundTripCapture(entry.type, encoded(null)), entry.type + "." + field.field)
+                }
+            }
+        }
+        XCTAssertGreaterThan(checked, 0)
+        XCTAssertGreaterThan(distinct, 0)
     }
 }

@@ -2685,6 +2685,7 @@ public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDeb
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`jsonrpc` = try c.decode(String.self, forKey: .`jsonrpc`)
+        if c.contains(.`id`), try c.decodeNil(forKey: .`id`) { throw WireDecodeError.invalidIdentity }
         self.`id` = try c.decodeIfPresent(WireRequestID.self, forKey: .`id`)
         self.`method` = try c.decode(String.self, forKey: .`method`)
         self.`params` = c.contains(.`params`) ? try c.decode(WireJSONValue.self, forKey: .`params`) : nil
