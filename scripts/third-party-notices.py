@@ -229,10 +229,11 @@ replace them. Licence paths in JSON are relative to this directory, so a future
 About renderer can load each text without a network request. About rendering
 and App resource integration are separate work; this change provides their data.
 
-Components are added with the PRs that ship them. three.js and the future native
-Pulse shell port are not present in this catalog until those PRs land. The existing
-Go Kiro ACP adaptation is covered by the Pulse entry below. Its upstream notices
-are reproduced as provenance; Pulse's icons and other components are not bundled.
+Components are added with the PRs that ship them. The Go Kiro ACP adaptation and
+native Pulse shell port have separate entries pinned to their own source revisions.
+Upstream third-party notices are reproduced as provenance; this does not mean
+Pulse's icons, providers or other unported components are bundled. three.js is
+listed only when a PR actually ships it.
 CodexBar covers the pinned optional helper and the already-ported native readers;
 its separate upstream binary retains its own bundled dependency notices.
 
