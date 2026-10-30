@@ -24,28 +24,36 @@ struct PointerPlan: Decodable {
 }
 enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnded, cannotCreateEvent }
 
-/// Remembers the release event for a button that is down, so a termination signal can
-/// release it. Signal delivery goes to a background queue because the main thread may be
-/// blocked in the synchronous drive loop.
+/// Serialises each button transaction with termination. `press` posts down and records the
+/// pending release inside one critical section; `release` posts up and clears it inside one
+/// critical section. On SIGTERM/SIGINT, `terminate` takes the same lock, posts only a recorded
+/// release, and the process exits while still holding the lock, so the main thread can never
+/// post a down after the emergency up. Both signals share one serial queue.
 final class ButtonGuard: @unchecked Sendable {
     static let shared = ButtonGuard()
     private let lock = NSLock()
     private var pendingUp: CGEvent?
-    func pressed(_ up: CGEvent) { lock.lock(); pendingUp = up; lock.unlock() }
-    func released() { lock.lock(); pendingUp = nil; lock.unlock() }
-    /// Posts the pending release, if any, and reports whether one was outstanding.
-    @discardableResult func releaseIfHeld(post: (CGEvent) -> Void) -> Bool {
-        lock.lock(); let up = pendingUp; pendingUp = nil; lock.unlock()
-        guard let up else { return false }
-        post(up); return true
+    func press(down: CGEvent, up: CGEvent, post: (CGEvent) -> Void) {
+        lock.lock(); post(down); pendingUp = up; lock.unlock()
+    }
+    func release(post: (CGEvent) -> Void) {
+        lock.lock(); if let up = pendingUp { post(up); pendingUp = nil }; lock.unlock()
+    }
+    /// Termination path only: acquires the lock and intentionally never releases it.
+    /// Returns whether a held button was released.
+    @discardableResult func terminate(post: (CGEvent) -> Void) -> Bool {
+        lock.lock()
+        guard let up = pendingUp else { return false }
+        post(up); pendingUp = nil; return true
     }
     private var sources: [DispatchSourceSignal] = []
+    private let signalQueue = DispatchQueue(label: "pointer_drive.termination")
     func installTerminationRelease() {
         for sig in [SIGTERM, SIGINT] {
             signal(sig, SIG_IGN)
-            let source = DispatchSource.makeSignalSource(signal: sig, queue: .global(qos: .userInteractive))
-            source.setEventHandler { [weak self] in
-                self?.releaseIfHeld(post: { $0.post(tap: .cghidEventTap) })
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: signalQueue)
+            source.setEventHandler { [unowned self] in
+                self.terminate(post: { $0.post(tap: .cghidEventTap) })
                 exit(128 + sig)
             }
             source.resume()
@@ -97,10 +105,8 @@ final class ButtonGuard: @unchecked Sendable {
               let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
         down.setIntegerValueField(.mouseEventClickState,value:1)
         up.setIntegerValueField(.mouseEventClickState,value:1)
-        guardState.pressed(up)
-        post(down)
-        post(up)
-        guardState.released()
+        guardState.press(down: down, up: up, post: post)
+        guardState.release(post: post)
         try record(.leftMouseDown)
         try record(.leftMouseUp)
     }
@@ -188,16 +194,23 @@ final class ButtonGuard: @unchecked Sendable {
             try click(at:target,post: { posted.types.append($0.type) },record: { type in
                 if type == .leftMouseDown { precondition(posted.types == [.leftMouseDown,.leftMouseUp]) }
             })
-            // A termination while the button is held releases it exactly once.
-            let probe = ButtonGuard()
-            guard let heldUp = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:target,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
-            var released: [CGEvent] = []
-            probe.pressed(heldUp)
-            precondition(probe.releaseIfHeld(post: { released.append($0) }))
-            precondition(released.map(\.type) == [.leftMouseUp])
-            precondition(!probe.releaseIfHeld(post: { released.append($0) }))
-            probe.pressed(heldUp); probe.released()
-            precondition(!probe.releaseIfHeld(post: { released.append($0) }) && released.count == 1)
+            // A termination while the button is held posts exactly one up, after the down.
+            final class Seen { var types: [CGEventType] = [] }
+            guard let pDown = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:target,mouseButton:.left),
+                  let pUp = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:target,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
+            let held = ButtonGuard(), heldSeen = Seen()
+            held.press(down: pDown, up: pUp, post: { heldSeen.types.append($0.type) })
+            precondition(held.terminate(post: { heldSeen.types.append($0.type) }))
+            precondition(heldSeen.types == [.leftMouseDown,.leftMouseUp])
+            // After a normal release, termination posts nothing.
+            let done = ButtonGuard(), doneSeen = Seen()
+            done.press(down: pDown, up: pUp, post: { doneSeen.types.append($0.type) })
+            done.release(post: { doneSeen.types.append($0.type) })
+            precondition(!done.terminate(post: { doneSeen.types.append($0.type) }))
+            precondition(doneSeen.types == [.leftMouseDown,.leftMouseUp])
+            // Termination before any press posts nothing (no up without a down).
+            let idle = ButtonGuard(), idleSeen = Seen()
+            precondition(!idle.terminate(post: { idleSeen.types.append($0.type) }) && idleSeen.types.isEmpty)
             print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
         }
         if args.count == 2 && args[1] == "--check" {
