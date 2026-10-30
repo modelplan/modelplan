@@ -3,6 +3,7 @@
 package detach
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -113,14 +114,22 @@ func TestStartLockedDoesNotStackChildrenAndKilledWorkerReleasesLock(t *testing.T
 func waitPIDFile(path string, timeout time.Duration) (int, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if b, err := os.ReadFile(path); err == nil {
-			return strconv.Atoi(string(b))
-		} else if !os.IsNotExist(err) {
+		b, err := os.ReadFile(path)
+		if err == nil && len(b) > 0 {
+			pid, err := strconv.Atoi(string(b))
+			if err != nil {
+				return 0, err
+			}
+			if pid <= 0 {
+				return 0, fmt.Errorf("PID publication must be positive")
+			}
+			return pid, nil
+		} else if err != nil && !os.IsNotExist(err) {
 			return 0, err
 		}
 		time.Sleep(time.Millisecond)
 	}
-	return 0, fmt.Errorf("timed out waiting for PID publication")
+	return 0, fmt.Errorf("waiting for PID publication: %w", os.ErrDeadlineExceeded)
 }
 
 func TestWaitPIDFileDoesNotConsumeEmptyPublication(t *testing.T) {
@@ -152,5 +161,25 @@ func TestWaitPIDFileDoesNotConsumeEmptyPublication(t *testing.T) {
 	r := <-read
 	if r.err != nil || r.pid != os.Getpid() {
 		t.Fatalf("completed PID publication: pid=%d err=%v", r.pid, r.err)
+	}
+}
+
+func TestWaitPIDFileRejectsMissingEmptyAndMalformedPublication(t *testing.T) {
+	for _, content := range []string{"missing", "", "not-a-pid", "0", "-1"} {
+		t.Run(content, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "pid")
+			if content != "missing" {
+				if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := waitPIDFile(path, 10*time.Millisecond)
+			if err == nil {
+				t.Fatal("accepted an unpublished or malformed PID")
+			}
+			if (content == "missing" || content == "") && !errors.Is(err, os.ErrDeadlineExceeded) {
+				t.Fatalf("unpublished PID must wait for the deadline: %v", err)
+			}
+		})
 	}
 }
