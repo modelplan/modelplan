@@ -4,6 +4,15 @@ import XCTest
 @testable import ModelPlanCockpitWeb
 
 final class BundleTests: XCTestCase {
+  func testCustomSchemeModuleResponseHasCORSMIMEAndNoCredentialRoute() throws {
+    let response = CockpitSchemeResponse.make(url: URL(string: "modelplan-cockpit://bundle/src/main.js")!, mime: "text/javascript", bytes: 17)
+    XCTAssertEqual(response.statusCode, 200)
+    XCTAssertEqual(response.mimeType, "text/javascript")
+    XCTAssertEqual(response.value(forHTTPHeaderField: "Access-Control-Allow-Origin"), "*")
+    XCTAssertNil(response.value(forHTTPHeaderField: "Access-Control-Allow-Credentials"))
+    XCTAssertEqual(response.value(forHTTPHeaderField: "Cache-Control"), "no-store")
+  }
+
   func root() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(
       "cockpit-bundle-" + UUID().uuidString)

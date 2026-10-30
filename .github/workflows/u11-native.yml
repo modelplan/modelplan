@@ -32,7 +32,9 @@ jobs:
           cache: false
       - name: Build the actual public CLI
         working-directory: cli
-        run: go build -o ../.tmp/u11-cli ./cmd/modelplan
+        run: |
+          mkdir -p ../.tmp
+          go build -o ../.tmp/u11-cli ./cmd/modelplan
       - name: Native protocol, bundle and actual EngineClient regressions (no GUI)
         env:
           MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli

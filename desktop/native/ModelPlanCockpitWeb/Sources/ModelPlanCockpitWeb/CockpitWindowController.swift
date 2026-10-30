@@ -5,6 +5,19 @@ import WebKit
 
 public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, localEncoding }
 
+// WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
+// for a custom scheme. Only public, hash-pinned static files use this response;
+// private DTOs never have a scheme route. No credentialed CORS is enabled.
+enum CockpitSchemeResponse {
+  static func make(url: URL, mime: String, bytes: Int) -> HTTPURLResponse {
+    HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [
+      "Content-Type": mime + (mime.hasPrefix("text/") ? "; charset=utf-8" : ""),
+      "Content-Length": String(bytes), "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+    ])!
+  }
+}
+
 private final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   init(_ bundle: VerifiedCockpitBundle) { self.bundle = bundle }
@@ -22,9 +35,7 @@ private final class BundleScheme: NSObject, WKURLSchemeHandler {
           "json": "application/json", "png": "image/png", "woff2": "font/woff2",
           "woff": "font/woff", "txt": "text/plain", "md": "text/plain",
         ][url.pathExtension] ?? "application/octet-stream"
-      task.didReceive(
-        URLResponse(
-          url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: nil))
+      task.didReceive(CockpitSchemeResponse.make(url: url, mime: mime, bytes: data.count))
       task.didReceive(data)
       task.didFinish()
     } catch { task.didFailWithError(CockpitBundleError.integrity) }

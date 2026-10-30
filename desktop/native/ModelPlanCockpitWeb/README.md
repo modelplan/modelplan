@@ -57,6 +57,14 @@ argument transport, strict reply field sets, duplicate/nesting rejection, a
 1 MiB cap and canonical decimal UInt64 strings. No private WebKit selector is in
 this product's release build; optional verification hooks are compile gated.
 
+The first actual preflight found no installed page API. The local scheme handler
+initially supplied a plain URLResponse; WebKit requires an HTTP response with
+CORS headers for module fetches ([WebKit contract](https://bugs.webkit.org/show_bug.cgi?id=205198)).
+The response now supplies JavaScript MIME, explicit noncredentialed static-file
+CORS and no-store. A regression guards that response boundary; private data is
+never served by this handler. Native failure receipts contain only bounded stage
+names, with no message bodies or engine values.
+
 ## Verification
 
 ```sh
