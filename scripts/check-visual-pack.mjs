@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Public-data-only integrity check. No private checkout or credentials are used.
 import assert from 'node:assert/strict';
+import { verifyPortholePack } from './check-porthole-pack.mjs';
+import { keys, pngSize, privateText } from './visual-pack-format.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -9,16 +11,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const license = 'LicenseRef-ModelPlan-Visuals-1.0';
 const prefix = 'desktop/official-visuals/runtime/';
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const privateText = /sourceRoot|designCommit|designHead|design-handoffs|clients\/official-visuals|guanbear|modelplans\.ai|\/home\/|\/tmp\/|\/mnt\/shared/i;
 const common = ['file', 'kind', 'sha256', 'bytes', 'license', 'size'];
 
-function keys(value, allowed, required = allowed) {
-  assert.ok(value && typeof value === 'object' && !Array.isArray(value), 'manifest object required');
-  assert.ok(Object.keys(value).every(k => allowed.includes(k)), 'unapproved manifest field');
-  assert.ok(required.every(k => Object.hasOwn(value, k)), 'missing manifest field');
-}
-
-function expectedFiles() {
+function expectedFiles(porthole) {
   const files = new Map([['README.md', { kind: 'notice' }]]);
   for (const theme of ['day', 'night']) for (const state of ['idle', 'pressed']) for (const scale of [2, 3]) {
     files.set(`ignition-a5/a5-cap-${theme}-${state}-44x44@${scale}x.png`, { kind: 'ignition-cap', theme, state, scale });
@@ -31,6 +26,11 @@ function expectedFiles() {
       files.set(`canopy-c01/${layer}-${tier}-${scale}x.png`, { kind: 'canopy-layer', tier, scale });
     }
   }
+  if (porthole) for (const f of porthole.descriptors) {
+    const meta = { kind: f.kind };
+    for (const k of ['theme', 'scale']) if (Object.hasOwn(f, k)) meta[k] = f[k];
+    files.set('porthole-stills/' + f.file, meta);
+  }
   return files;
 }
 
@@ -41,7 +41,7 @@ function walk(directory, relative = '') {
     const path = join(directory, item), stat = lstatSync(path);
     assert.ok(!stat.isSymbolicLink(), `symlink in runtime pack: ${name}`);
     if (stat.isDirectory()) {
-      assert.ok(['ignition-a5', 'canopy-c01'].includes(name), 'directory outside manifest');
+      assert.ok(['ignition-a5', 'canopy-c01', 'porthole-stills', 'porthole-stills/assets', 'porthole-stills/assets/projected'].includes(name), 'directory outside manifest');
       files.push(...walk(path, name));
     }
     else {
@@ -50,29 +50,6 @@ function walk(directory, relative = '') {
     }
   }
   return files;
-}
-
-function pngSize(bytes) {
-  assert.ok(bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')), 'PNG signature');
-  let offset = 8, size, data = false, ended = false;
-  while (offset < bytes.length) {
-    assert.ok(offset + 12 <= bytes.length, 'truncated PNG chunk');
-    const length = bytes.readUInt32BE(offset), type = bytes.toString('ascii', offset + 4, offset + 8);
-    assert.ok(offset + length + 12 <= bytes.length, 'truncated PNG data');
-    assert.ok(!['tEXt', 'zTXt', 'iTXt', 'eXIf'].includes(type), 'unreviewed PNG metadata');
-    if (offset === 8) {
-      assert.ok(type === 'IHDR' && length === 13, 'PNG IHDR');
-      size = { width: bytes.readUInt32BE(offset + 8), height: bytes.readUInt32BE(offset + 12) };
-      assert.ok(size.width > 0 && size.height > 0, 'PNG dimensions');
-    }
-    if (type === 'IDAT') data = true;
-    offset += length + 12;
-    if (type === 'IEND') {
-      assert.equal(length, 0, 'PNG IEND'); ended = true; break;
-    }
-  }
-  assert.ok(size && data && ended && offset === bytes.length, 'incomplete PNG');
-  return size;
 }
 
 export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.url))) {
@@ -90,7 +67,8 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
   assert.match(manifest.copyright, /Copyright.*2026.*ModelPlan/);
   assert.match(manifest.trademarkNotice, /ModelPlan.*trademark/i);
   assert.ok(Array.isArray(manifest.files) && Array.isArray(manifest.baselines), 'manifest lists required');
-  const expected = expectedFiles(), seen = new Map(), pngs = {};
+  const porthole = manifest.files.some(f => f.file?.startsWith('porthole-stills/')) ? verifyPortholePack(root) : null;
+  const expected = expectedFiles(porthole), seen = new Map(), pngs = {};
   for (const entry of manifest.files) {
     keys(entry, [...common, 'theme', 'state', 'scale', 'tier'], common);
     assert.ok(typeof entry.file === 'string' && !entry.file.includes('\\') &&
@@ -106,10 +84,10 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
     assert.equal(bytes.length, entry.bytes, 'file size mismatch');
     assert.equal(sha256(bytes), entry.sha256, 'file hash mismatch');
     assert.ok(!privateText.test(bytes.toString('utf8')), 'private string in runtime file');
-    if (entry.kind === 'notice') {
+    if (entry.size === null) {
       assert.equal(entry.size, null, 'notice dimensions');
-      assert.ok(bytes.toString().includes(`SPDX-License-Identifier: ${license}`), 'notice licence');
-      assert.match(bytes.toString(), /ModelPlan.*trademark/i);
+      assert.ok(bytes.toString().includes('SPDX-License-Identifier') && bytes.toString().includes(license), 'notice licence');
+      if (entry.kind === 'notice') assert.match(bytes.toString(), /ModelPlan.*trademark/i);
     } else {
       keys(entry.size, ['width', 'height']);
       assert.deepEqual(pngSize(bytes), entry.size, 'PNG dimensions mismatch');
@@ -132,7 +110,7 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
   const registry = Object.fromEntries(Object.entries(policy.reservedVisuals.binaries).filter(([path]) => path.startsWith(prefix)));
   assert.deepEqual(registry, pngs, 'source-policy binary registry mismatch');
   return { manifestSha256: sha256(raw), pngCount: Object.keys(pngs).length,
-    pngBytes: manifest.files.filter(e => e.kind !== 'notice').reduce((n, e) => n + e.bytes, 0) };
+    pngBytes: manifest.files.filter(e => e.size !== null).reduce((n, e) => n + e.bytes, 0) };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

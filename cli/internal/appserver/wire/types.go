@@ -124,7 +124,8 @@ type ConsentScope struct {
 }
 
 type ConsentFacts struct {
-	Scopes []ConsentScope `json:"scopes"`
+	TextVersion int            `json:"consentTextVersion"`
+	Scopes      []ConsentScope `json:"scopes"`
 }
 
 type ConsentGrantParams struct {

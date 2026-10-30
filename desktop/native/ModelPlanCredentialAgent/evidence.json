@@ -1,0 +1,166 @@
+{
+  "stage": "U7 interface only",
+  "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
+  "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
+  "profile": "fake readers and injected low-level Security API only; no SecItemCopyMatching or identity/signing operations",
+  "command": "swift test --package-path desktop/native/ModelPlanCredentialAgent",
+  "sources": [
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Package.swift",
+      "sha256": "fd19ed9cb74dedb813daeef47c125bcb6577b384be5cf4f60650dd65710bf179"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/README.md",
+      "sha256": "d61637309532975e3f3586253d8ec77c25c39988aed10b52907d802d281e4f81"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
+      "sha256": "a9df1303c64ef11c88b0b35b96009fe0c9cd2d985b2ed715f5f62023eb67e20a"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
+      "sha256": "3670d89bb63f8f68f1dd12405cf6826bd467c998cebeba6ffe52eb4a061679de"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
+      "sha256": "0c0eebe27bc3d873c4334ee6d762a808159be765f432bfa8b7e2e65581889383"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
+      "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "testActualEnumerationDictionaryIsSupportedByTheFakeOS",
+      "outcome": "pass"
+    },
+    {
+      "id": "testCancellationReturnsBeforeBlockedReadAndRejectsLateToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testEverySecurityFailureHasNoToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testExpiredAndStaleRequestsDoNotRead",
+      "outcome": "pass"
+    },
+    {
+      "id": "testFixedQueryBackgroundCannotPrompt",
+      "outcome": "pass"
+    },
+    {
+      "id": "testInteractiveRequiresExplicitAction",
+      "outcome": "pass"
+    },
+    {
+      "id": "testMalformedOrOversizedSuccessIsError",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderEnumeratesThenReadsExactlyOnePersistentReference",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderItemCanDisappearBetweenEnumerationAndRead",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderNotFoundAndEmptyEnumerationNeverReadData",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderRejectsAmbiguityWithoutReadingAnyPassword",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRealReaderRejectsMalformedOrWrongServiceReference",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRevokeDuringReadDropsToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testSuccessReturnsOnlyAccessTokenThroughGeneratedResult",
+      "outcome": "pass"
+    },
+    {
+      "id": "testTerminalCheckpointBeforeEnumerationMakesNoOSCall",
+      "outcome": "pass"
+    },
+    {
+      "id": "testTimeoutRetainsWorkerSlotAndDropsLateToken",
+      "outcome": "pass"
+    },
+    {
+      "id": "testActiveInteractiveOperationStillReadsAfterEnumeration",
+      "outcome": "pass"
+    },
+    {
+      "id": "testCancelWhileEnumerationBlockedSuppressesSecretQuery",
+      "outcome": "pass"
+    },
+    {
+      "id": "testExpiryWhileEnumerationBlockedSuppressesSecretQuery",
+      "outcome": "pass"
+    },
+    {
+      "id": "testRevokeWhileEnumerationBlockedSuppressesSecretQuery",
+      "outcome": "pass"
+    },
+    {
+      "id": "app-entry-wiring",
+      "outcome": "not-run"
+    },
+    {
+      "id": "synthetic-keychain-interaction",
+      "outcome": "not-run"
+    },
+    {
+      "id": "background-os-prompt-behavior",
+      "outcome": "not-run"
+    },
+    {
+      "id": "two-signed-builds-same-identity",
+      "outcome": "not-run"
+    },
+    {
+      "id": "real-owner-ACL",
+      "outcome": "not-run"
+    }
+  ],
+  "staticChecks": {
+    "source-policy": "pass",
+    "whitespace": "pass"
+  },
+  "level": "L1 fake contract only; not L2/L3",
+  "regression": {
+    "id": "actual-enumeration-query-shape",
+    "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
+    "baselineOutcome": "fail",
+    "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
+    "fixedOutcome": "pass"
+  },
+  "hostedFakeSuite": {
+    "path": ".github/workflows/u7-credential-agent.yml",
+    "sha256": "2fa64e8d139ff64b080a52ddbd429857231e7b96d3e2e8ea56ca74e2ee84df54",
+    "outcome": "not-run",
+    "note": "New head requires its own hosted execution after push"
+  },
+  "betweenQueryRegression": {
+    "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
+    "baselineOutcome": "fail",
+    "baselineFailures": [
+      "cancel-after-enumeration-start",
+      "expiry-after-enumeration-start",
+      "revoke-after-enumeration-start"
+    ],
+    "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
+    "fixedOutcome": "pass",
+    "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
+    "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
+  }
+}

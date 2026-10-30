@@ -1,0 +1,4 @@
+SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
+Copyright (c) 2026 ModelPlan. All rights reserved.
+
+Badge interiors are abstract colour fields containing no recognisable third-party logos.
