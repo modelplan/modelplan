@@ -218,6 +218,9 @@
     "ConsentFacts": {
       "additionalProperties": false,
       "properties": {
+        "consentTextVersion": {
+          "type": "integer"
+        },
         "scopes": {
           "items": {
             "$ref": "#/$defs/ConsentScope"
@@ -226,6 +229,7 @@
         }
       },
       "required": [
+        "consentTextVersion",
         "scopes"
       ],
       "type": "object"

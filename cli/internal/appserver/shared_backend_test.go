@@ -43,6 +43,9 @@ func TestSharedProjectionKeepsApprovedPOSTOptIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if view.Consent.TextVersion != consent.TextVersion {
+		t.Fatalf("consent facts text version = %d, want producer version %d", view.Consent.TextVersion, consent.TextVersion)
+	}
 	seen := map[string]wire.ConsentScope{}
 	for _, fact := range view.Consent.Scopes {
 		seen[fact.Scope] = fact
