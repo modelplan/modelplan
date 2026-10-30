@@ -26,7 +26,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]|\.svg$/i);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
-      if(name.startsWith('runtime/'))assert.match(name,/\.(png|json|md|txt)$/i);
+      if(name.startsWith('runtime/'))assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);
