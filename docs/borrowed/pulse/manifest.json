@@ -81,6 +81,35 @@
         "injected region/lifecycle handler and cancellation",
         "private appearance selector and visual/provider logic omitted"
       ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPresence.swift",
+      "sha256": "7e1003f75e80edb6324fb8878ef124ab9e72d3b49f1d5e240a9c65b67aaf4187",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamPath": "Sources/Pulse/App/DockPresence.swift",
+      "upstreamBlob": "76cae288ab067d923f351f7a710eeb17ad69d6db",
+      "upstreamSHA256": "0334183098eea73cbc4d3288168a97b118a482a667b926e5330d24aa6a8b7bf2",
+      "implementationModified": true,
+      "adaptations": [
+        "rename the AppKit icon-presence owner to avoid collision with ModelPlan Dock visibility facts",
+        "remove AppSettings; inject icon policy and application effects; use weak window interface for non-GUI tests",
+        "omit DockQuit Apple-event/process inspection and termination interception",
+        "do not activate restored/programmatic windows; reactivation requires explicit user-presentation input"
+      ]
+    },
+    {
+      "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseLoginItem.swift",
+      "sha256": "2384a29423e372631ea5266cd3b76f1aacd2e5f04ebdef6cf88a210229822b83",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamPath": "Sources/Pulse/App/LoginItem.swift",
+      "upstreamBlob": "80e291a5adfb554ac0d379b327f8935481ce82e9",
+      "upstreamSHA256": "0dff460c640fb5dfef188b1dd5d66c609aee22ff2655b5b1fca8686fb85a10f7",
+      "implementationModified": true,
+      "adaptations": [
+        "modern SMAppService app-bundle route only; no LaunchAgent fallback/adoption/path repair",
+        "remove UserDefaults first-run auto-registration; retain ModelPlan saved default-on preference separately",
+        "inject service and explicit request origin; report approval, unsupported and failure as observed"
+      ]
     }
   ]
 }

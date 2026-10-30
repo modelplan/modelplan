@@ -2,7 +2,7 @@
 
 Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The first four files were copied from `Sources/Pulse/Panel`; original Apache-2.0 copyright headers remain. Adapted files carry modification notices, with original/adapted hashes and upstream paths in `pulse/manifest.json`.
 
-`pulse/LICENSE` retains the full license. The pinned tree has no literal NOTICE file. Its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming unrelated components were ported; trailing whitespace alone is normalized, with both hashes recorded. The distribution catalog has a separate `pulse-native-shell` entry at this pin, covering all six Swift files and the original license/third-party attribution bytes. The older Kiro reader port retains its separate pin.
+`pulse/LICENSE` retains the full license. The pinned tree has no literal NOTICE file. Its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming unrelated components were ported; trailing whitespace alone is normalized, with both hashes recorded. The distribution catalog has a separate `pulse-native-shell` entry at this pin, covering all eight Swift files and the original license/third-party attribution bytes. The older Kiro reader port retains its separate pin.
 
 ## Modules and ownership
 
@@ -12,6 +12,9 @@ Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052
 - PointerEntryReporter installs one activeAlways/inVisibleRect tracking area; entry is paired with sampling instead of trusting exits.
 - PanelPlacement retains the rail-based geometry, edge/axis model, ratios and default-right behavior. It uses an injected saved-placement callback instead of UserDefaults, takes a caller-owned card gap and omits unused visual state.
 - PulseDockPanel adapts the pinned FloatingPanelController's non-key window and window-level down/drag/up transaction. It falls through for controls/control-click and cancels capture when hidden. The optional input-arrival observer contains only event type/timestamp and has no production subscriber.
+
+- PulseDockPresence adapts the weak, shared owner of Settings/cockpit Dock-icon presence, with injected application effects and no AppSettings dependency. DockQuit interception is omitted.
+- PulseLoginItem retains only the modern app-bundle SMAppService route behind an injected service; no first-run default registration, LaunchAgent fallback, adoption or path repair is imported.
 
 No private appearance selector, provider, visual tether, BotMark or update stack is imported. AppSettings is not a dependency of these ported files. Package dependencies are unchanged by the wiring slices.
 
@@ -31,10 +34,21 @@ Callbacks invalidate observation through the same controller. They do not reveal
 
 ## Validation and completion boundary
 
-Nineteen pure Pulse cases pass: placement/persistence/defaults, negative-origin and missing-display intent, notch cases, input capture/release/cancel, follower refusal/retry/stop, sampler/reprobe/teardown and composed entry/click-through behavior. Fifteen actual no-window Host/controller regressions pass: positioning/anchors/topology, preview/release/stop, live follow/held-press refusal, entry-driven dwell/reveal and sampler-driven grace/collapse, plus lifecycle shutdown without Settings changes.
+Twenty-six pure Pulse cases pass: placement/persistence/defaults, negative-origin and missing-display intent, notch cases, input capture/release/cancel, follower refusal/retry/stop, sampler/reprobe/teardown composed entry/click-through behavior, weak multi-window presence/closing and focus policy, and explicit login requests with observed approval/failure/unsupported states. Fifteen actual no-window Host/controller regressions pass: positioning/anchors/topology, preview/release/stop, live follow/held-press refusal, entry-driven dwell/reveal and sampler-driven grace/collapse, plus lifecycle shutdown without Settings changes.
 
 A compiled negative control for the earlier positioning slice made the Pulse facade return no frame and caused the actual Host wake test to fail; restored source passed. Current sampler/entry checks use synthetic local/global points and direct local event objects, without posting input. Source policy, borrowed manifest, catalog license digests, vendored coverage and generated-notice consistency pass.
 
 **Not-run:** native coordinate conversion and OS event delivery, real-input/restart/migration/package L2, and owner L3. Source wiring and local event objects do not prove those outcomes.
 
-Remaining U5 source work is reviewed presence/login adaptation and field-group migration with one atomic no-replace destination store. LoginItem's upstream automatic registration, LaunchAgent migration and path repair are not adopted; ModelPlan's preference default remains ON without executing an OS effect during migration. Migration must preserve old files and unmatched row intent, report corrupt-source/target recovery and never promote app-side readerConsent to engine consent. Existing paths remain until replacement call-chain, synthetic packaged L2 and historical regressions pass. No owner issue is declared fixed by these source slices.
+The presence/login adapters described below are a staged source slice. Remaining U5 source work includes their normal-entry consumption and field-group migration with one atomic no-replace destination store. LoginItem's upstream automatic registration, LaunchAgent migration and path repair are not adopted; ModelPlan's preference default remains ON without executing an OS effect during migration. Migration must preserve old files and unmatched row intent, report corrupt-source/target recovery and never promote app-side readerConsent to engine consent. Existing paths remain until replacement call-chain, synthetic packaged L2 and historical regressions pass. No owner issue is declared fixed by these source slices.
+
+
+## Reviewed presence/login service adapters
+
+PulseDockPresence keeps one weak registry of visible or minimized full windows. Closing one excludes it before its isVisible flag changes, so another tracked window keeps Dock/Command-Tab presence. The icon preference and application effects are injected; tracking/construction do not change activation policy. Restored/programmatic presentation does not activate by default. Only an explicit user-presentation owner may request reactivation. No quit/logout interception or process-sender inspection is ported.
+
+PulseLoginItem never registers during construction, observation or restoration. Bare executables and notFound services are unsupported; there is no fallback file writer. An explicit user choice or accepted first-run completion may request the modern service. Approval-required is not converted to enabled or retried automatically; errors return the newly observed state. ModelPlan's existing openAtLogin default remains true in its Settings store, separate from service observation and effects.
+
+CommunityLoginServiceAdapter consumes a canonical SettingsHostRequest only when its revision and saved choice still match. Its effect authorization defaults false. Authorized requests are consumed at most once per revision; stale/replayed and unrelated requests cannot execute a login effect. It maps service facts back to LoginServiceState without editing the preference file or replacing the editor's one onHostRequest receiver. Three tests use actual editor/first-run commit requests and fake service effects; they prove default-on/no-registration, host authorization, revision/replay checks, observed requiresApproval and no rewrite after the native effect.
+
+**Normal-entry integration remains pending.** The entry owner should retain one presence owner, track only Settings/cockpit full windows, and apply it at show/minimize/close/suspend transitions. It should forward accepted login requests from its existing system-effect receiver to the adapter with the current snapshot and explicit host authorization, then refresh observed capabilities separately. Unhandled requests still belong to their existing consumers. No entry ownership is taken by this slice, and no real activation/login-item operation, native GUI or L2 is executed by its tests.
