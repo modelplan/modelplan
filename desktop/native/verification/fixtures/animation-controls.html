@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Synthetic animation observation controls</title>
+<style>
+body{font:16px system-ui;padding:2rem}section{display:flex;gap:2rem}
+[data-group]{width:7rem;height:4rem;border:1px solid;animation:progress 2s linear infinite alternate}
+@keyframes progress{from{opacity:.3;transform:translateY(0)}to{opacity:1;transform:translateY(8px)}}
+.paused [data-group]{animation-play-state:paused}.hidden section{display:none}
+</style>
+<h1>Synthetic observation controls</h1>
+<p>Running should advance all three counters. Pause or hide must stop advances; they do not establish cockpit performance.</p>
+<button onclick="document.body.classList.toggle('paused')">Pause/resume</button>
+<button onclick="document.body.classList.toggle('hidden')">Hide/show</button>
+<section><div data-group="indicator">Indicator</div><div data-group="session">Session</div><div data-group="HUD">HUD</div></section>
+<script src="../animation-observer.js"></script><script>
+window.observation=installVerificationAnimationObserver({indicator:'[data-group="indicator"]',session:'[data-group="session"]',HUD:'[data-group="HUD"]'});
+addEventListener('pagehide',()=>observation.stop(),{once:true});
+</script></html>

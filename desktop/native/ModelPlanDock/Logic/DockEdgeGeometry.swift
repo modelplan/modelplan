@@ -31,6 +31,11 @@ public struct DockEdgePreference: Equatable, Sendable {
 public struct DockEdgePlacement: Equatable, Sendable {
     public let displayID:String,edge:DockEdge,alongFraction:Double,frame:CGRect,sliverFrame:CGRect,wakeFrame:CGRect
     public let layout:DockEdgeLayout
+    public init(displayID:String,edge:DockEdge,alongFraction:Double,frame:CGRect,
+                sliverFrame:CGRect,wakeFrame:CGRect,layout:DockEdgeLayout) {
+        self.displayID=displayID;self.edge=edge;self.alongFraction=alongFraction
+        self.frame=frame;self.sliverFrame=sliverFrame;self.wakeFrame=wakeFrame;self.layout=layout
+    }
     public var preference:DockEdgePreference{.init(displayID:displayID,edge:edge,alongFraction:alongFraction)}
     public var globalHoverRects:[CGRect]{layout.hoverRects.map{Self.globalRect($0,in:frame,flipped:layout.flipped)}}
     public static func globalRect(_ local:CGRect,in frame:CGRect,flipped:Bool)->CGRect{

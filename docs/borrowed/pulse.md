@@ -1,4 +1,4 @@
-# Pulse shell intake (U5, interface only)
+# Pulse shell and positioning integration (U5)
 
 Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052a59c6e35d`. The initial four files in `Sources/ModelPlanShell/Pulse` came byte-for-byte from `Sources/Pulse/Panel`, retaining their Apache-2.0 copyright headers. ActiveDisplayFollower is now adapted with an injectable sample source and stop/restart callback fence; the original and adapted hashes are recorded. `pulse/LICENSE` retains the full license. The pinned tree has no file named NOTICE; its third-party notices are retained as `pulse/UPSTREAM_THIRD_PARTY_NOTICES.md` for provenance, without claiming those unrelated components were ported. Its trailing whitespace is normalized; the original and adapted digests are both recorded. `pulse/manifest.json` binds the copied files.
 
@@ -9,7 +9,7 @@ Pinned upstream: qunqin24/Pulse v1.12.4, commit `7668384cbcf357bba7dee4af85b4052
 - PanelPointerWatcher and PointerProbe: local view/window-coordinate sampling with teardown and one explicit reprobe; no provider/settings dependency.
 - PointerEntryReporter: activeAlways local tracking-area entry, paired with the sampler for exit decisions.
 
-These are not yet wired to the production controller. Copying them does not prove real-event delivery or L2. The integrated controller must own hover/reveal/collapse/drag and produce event-arrival evidence through the versioned runner.
+PanelPlacement is consumed by the normal host positioner as described below. The follower is also consumed by the normal host lifecycle. View sampler and tracking-entry consumption remain staged for the remaining controller-input integration. Copying them does not prove real-event delivery or L2. The integrated controller must own hover/reveal/collapse/drag and produce event-arrival evidence through the versioned runner.
 
 ## Placement adaptation
 
@@ -27,8 +27,30 @@ M4 supplies the separately owned, product-identity-keyed migration candidate; M0
 
 The normal companion factory retains StaticDockPreviewHost; its Dock-only makePanel route now constructs PulseDockPanel. Card and outline panels are unchanged. The borrowed window-level down/drag/up transaction delegates to the existing painted-region/lifecycle gates, falls through for controls/control-click, and cancels capture when hidden. The panel cannot become key/main, and its optional numeric-only arrival callback does not log input contents. No upstream private appearance selector is present.
 
-Eleven pure source tests cover placement, input capture/release/cancel, control exclusion and asymmetric-notch/null cases. These are not actual native event delivery. The final unified shell/controller, follower/sampler/entry L1 behavior coverage, migration-store integration and real-input/package L2 remain pending. This slice does not close U5 or an owner report.
+Eleven pure source tests cover placement, input capture/release/cancel, control exclusion and asymmetric-notch/null cases. These are not actual native event delivery. The subsequent sections record positioning and primitive L1 progress. Remaining primitive consumption, migration-store integration and real-input/package L2 are still completion work. This slice does not close U5 or an owner report.
 
 ## Display-follower L1 qualification
 
 The production timer and pure tests share the display-sampling seam. Three added cases prove refusal/retry before deduplication, explicit reprobe, stop/no sampling plus reset on restart, and callback-triggered stop without latching stale identity. Fourteen pure tests pass in total. No real display identity or pointer is sampled in these tests. Sampler coordinate/reprobe/teardown and tracking entry coverage, full controller integration and real native arrival are still pending; this is not a packaged L2 result.
+
+## Pointer-sampler and entry L1 qualification
+
+PanelPointerWatcher now has an optional injected local-point source for window-free tests and ignores queued samples once its timer is stopped. Its default still converts the native screen point through the window into the flipped view. Three added tests exercise subpoint deduplication versus one-point movement, exit/reprobe, stop/no reads and restart reset, plus the actual entry callback and one activeAlways/inVisibleRect tracking area across repeated layout passes. Seventeen pure source tests pass. These tests do not prove native screen/window coordinate conversion or OS event delivery; those remain wired-stage real-input acceptance work.
+
+
+## Wired positioning/controller milestone
+
+The normal StaticDockPreviewHost now supplies PulseDockPositioning to its one DockEdgeController. That controller still owns all hover/reveal/collapse deadlines, press/drag/release state and the sole persistence callback; no second visibility model or AppKit controller is introduced. Initial placement, nearest-edge preview and final drop all use the same injected positioner.
+
+ModelPlan's existing resolver retains validation, allowed-edge selection, adjoining-display exclusion, system-Dock avoidance and registered-anchor clamping. The selected display/edge/anchor then goes through the borrowed PanelPlacement geometry for the actual window frame; the sliver and wake registration move with that frame. The edge-only facade converts the existing bottom-to-top centre fraction to Pulse's top-to-bottom available-travel ratio, preserving existing Settings meaning. Cards remain separate windows, so the facade passes the Dock size as both rail and panel, without importing upstream card-envelope or visual constants. Automatic recovery changes actual placement only, never the saved UUID/edge.
+
+Three focused tests cover all allowed edges/fraction endpoints/asymmetric anchors on a negative-origin display, adjoining-edge and missing-display recovery, and the single controller's preview/release/stop transaction. Together with nine existing no-window host geometry/placement/wake regressions, all 12 pass. A compiled negative control that made the Pulse facade return no frame caused the actual Host wake test to fail; restoration returns the final source to pass. No GUI window, native event-arrival or packaged L2 is claimed by these checks.
+
+Remaining U5 scope includes live sampler/entry consumption, the reviewed presence/login adapters, field-group migration with one atomic destination store, and actual input/restart/migration/package L2. The retained generic controller's standalone default positioner remains available to other consumers while the normal Host explicitly selects Pulse.
+
+
+## Live display-follower slice
+
+StaticDockPreviewHost now starts the borrowed ActiveDisplayFollower only while permitted, shown and configured to follow the active display. It samples the host's existing display/pointer environment, supplies the observed display to the one positioning controller, and never writes Settings. Disable/fixed-display mode, visibility suspension and retirement stop the follower; topology changes forget the previous observation and reprobe. There is no application/window scanning or second Dock.
+
+The controller exposes whether a background press is held, including the interval before drag movement begins. The follower refuses a display transition during that interval and retries the same observation after cancellation/release, preserving the grab coordinate. Current display observation and saved Settings intent remain separate. Two actual no-window Host tests cover live switching, unchanged file/revision, hide/restart/retirement, held-press refusal/retry and fixed-mode shutdown. Together with existing positioning/wake regressions, all 14 tests pass. Actual native pointer/window-event arrival remains not-run.

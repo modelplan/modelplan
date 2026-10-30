@@ -11,20 +11,26 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/ActiveDisplayFollower.swift",
-      "sha256": "d90c5fdc6d8a36bcda29de762e7fd286cb0e704f5fb58f608e150892dacce47a",
+      "sha256": "09e9a810bcba092b76c80ade9671ab29a8b8d643ba1c157c7c5f108f8f851fc4",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "6b399f89672e40179ef04f55951b31ae9869e503291d29320fb5d42ca87446d2",
       "adaptations": [
         "inject current-display source for non-GUI tests",
-        "stop/restart generation check prevents callback latching stale identifier"
+        "stop/restart generation check prevents callback latching stale identifier",
+        "public composition seam consumed by normal host; refuses display switching while a panel press is held"
       ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
-      "sha256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
+      "sha256": "afc3c737e141cdf88741ddc6307ed436bb76266051b85ef1129c3fd9d72a375e",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
-      "implementationModified": false
+      "implementationModified": true,
+      "upstreamSHA256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
+      "adaptations": [
+        "inject optional local sample source for non-window behavior tests",
+        "ignore queued samples after stop; reset deduplication on restart"
+      ]
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PointerEntryReporter.swift",
@@ -51,14 +57,15 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPlacement.swift",
-      "sha256": "98ee971a19b96fe22ae37fef50df267adccb77d86db5eef5b36d400420792abf",
+      "sha256": "fdfa022f642b40efe171f943eb0a6654f4798c0ca2af5c712a7fc6f878ce9dc1",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamBlob": "2092fcd79ed54899bc3d62fea75ffe6270479f21",
       "implementationModified": true,
       "adaptations": [
         "replace UserDefaults persistence with an injected saved-placement callback",
         "remove unused liquid-visual state",
-        "parameterize card gap instead of importing upstream visual layout"
+        "parameterize card gap instead of importing upstream visual layout",
+        "public edge-only value facade consumed by the normal host single-controller positioner"
       ]
     },
     {
