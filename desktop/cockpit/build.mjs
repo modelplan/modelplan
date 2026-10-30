@@ -18,6 +18,7 @@ await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+'\n'+await readFile(resolve(here,'web/cockpit.css'),'utf8');
+css+='\n'+await readFile(resolve(here,'web/session-state.css'),'utf8');
 const notices=['MIT: cockpit bridge, schema adapter and community layout.'];
 if (official) {
   // Only this explicit edition reads reserved artwork; the default never does.
@@ -25,6 +26,7 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
+  css+='\n'+await readFile(resolve(assets,'cockpit/session-state.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});
