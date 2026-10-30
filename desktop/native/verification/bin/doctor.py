@@ -37,7 +37,8 @@ def doctor(observation,scenario=None):
     if not isinstance(timestamp,str) or not timestamp:raise ValueError('native timestamp required')
     call=observation.get('activationCall')
     if not isinstance(call,str) or not call:raise ValueError('actual activation call or not-invoked required')
-    scope,requirements=requirements_for(scenario or observation.get('scenario','cockpit'))
+    requested=observation.get('scenario','cockpit') if scenario is None else scenario
+    scope,requirements=requirements_for(requested)
     checks={key:{'status':'pass' if satisfied(observation,key) else 'fail',
                  'required':True,'timestamp':timestamp} for key in requirements}
     # Keep non-required native observations visible without turning them into
