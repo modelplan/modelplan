@@ -214,6 +214,7 @@ def execute(args):
         shape = load_json(args.shape)
         validate(shape, 'shape.schema.json')
         head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT))
         if args.source_sha and not re.fullmatch(r'[0-9a-f]{40}', args.source_sha):
             raise ValueError('full-source-sha-required')
         binary = args.binary.resolve()
@@ -238,7 +239,9 @@ def execute(args):
                         type(context['dedicatedTestMac']) is not bool or not isinstance(context['approvalRef'], str)):
             raise ValueError('invalid-run-context')
         prereqs = qualification(args.level, shape, subject, old, context)
-        manifest.update(harnessHead=head, subject=subject,
+        if args.level == 'L2' and dirty:
+            prereqs.append('clean-harness-checkout-required')
+        manifest.update(harnessHead=head, harnessDirty=dirty, subject=subject,
                         oldSubjects=[{k: v for k, v in o.items() if k != 'binary'} for o in old.values()],
                         profile=dict(id=shape['baselineVersion'], sha256=sha(encoded(shape)), fidelity=shape['fidelity'],
                                      approvalRef=shape['approvalRef'], syntheticOnly=True,

@@ -101,7 +101,8 @@ to complete; neither process exit alone nor a merge earns proof.
 
 Linux and GitHub-hosted macOS always remain L1. L2 requires Darwin outside
 GitHub Actions, an explicit approved dedicated-Mac context, approved shape,
-checksum-verified released subject and both old released writers. Missing L2
+checksum-verified released subject, a clean harness checkout and both old
+released writers. Missing L2
 prerequisites produce `unsupported` outcomes without running a source subject.
 The package never earns L3. This evidence covers these declared engine cases,
 not whole-ticket closure, native rendering, live providers or final App signing.
