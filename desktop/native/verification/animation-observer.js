@@ -33,3 +33,13 @@ globalThis.installVerificationAnimationObserver = function (groups) {
     stop:()=>{stopped=true;cancelAnimationFrame(raf);previous=new WeakMap();}
   };
 };
+
+// Inject only from a test-flagged host with its own scoped message handler.
+globalThis.installVerificationRAFTicks = function (handlerName) {
+  const handler=globalThis.webkit?.messageHandlers?.[handlerName];
+  if(!handler)throw Error('test frame handler unavailable');
+  let count=0,id=0,stopped=false;
+  function tick(){if(stopped)return;handler.postMessage({frames:++count});id=requestAnimationFrame(tick)}
+  id=requestAnimationFrame(tick);
+  return ()=>{stopped=true;cancelAnimationFrame(id)};
+};

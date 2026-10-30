@@ -17,3 +17,8 @@ animation.playState='running';document.hidden=true;animation.currentTime=30;tick
 document.hidden=false;animation.currentTime=40;tick();assert.equal(o.snapshot().groups.indicator.advancingFrames,2);
 o.stop();tick();assert.equal(o.snapshot().groups.indicator.advancingFrames,2);
 console.log('Animation progress/paused/hidden/teardown controls pass');
+const received=[];ctx.webkit={messageHandlers:{testFrames:{postMessage:x=>received.push(x)}}};
+const stopTicks=ctx.installVerificationRAFTicks('testFrames');tick();tick();
+assert.deepEqual(received.map(x=>x.frames),[1,2]);stopTicks();tick();
+assert.equal(received.length,2);
+console.log('Test-only message frame counter advances and stops');

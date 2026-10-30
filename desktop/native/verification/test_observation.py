@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: MIT
 import unittest
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).parent / "bin"))
 from verify_u11a import verify
 
 def fixture():

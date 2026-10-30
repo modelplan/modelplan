@@ -3,6 +3,7 @@
 import AppKit
 import WebKit
 import Darwin
+import CoreFoundation
 
 struct WindowObservation: Codable {
     let appActive: Bool
@@ -16,10 +17,52 @@ struct WindowObservation: Codable {
                           occlusionVisible: window.occlusionState.contains(.visible))
     }
     var fields: [String: Any] {
-        ["event":"window-observation", "appActive":appActive, "keyWindow":keyWindow,
+        ["event":"window-observation", "timestamp":ISO8601DateFormatter().string(from:Date()), "running":true, "appActive":appActive, "keyWindow":keyWindow,
          "windowVisible":windowVisible, "occlusionVisible":occlusionVisible, "ready":ready]
     }
 }
+
+struct RAFProgress {
+    private var firstTime:Double?, firstFrame:Int?, lastFrame:Int?
+    private(set) var failed=false
+    mutating func observe(frame:Int,now:Double)->String {
+        guard !failed,now.isFinite,frame>0 else{return "not-run"}
+        if let last=lastFrame,frame<=last {failed=true;return "fail"}
+        if let first=firstTime,now<first {failed=true;return "fail"}
+        if firstTime==nil {firstTime=now;firstFrame=frame};lastFrame=frame
+        return now-firstTime!>=2 && frame>firstFrame! ? "pass":"not-run"
+    }
+}
+
+#if MODELPLAN_TEST_ONLY_SPI
+@MainActor enum VerificationActivation {
+    static func requestKeyWindow(_ window:NSWindow)->[String:Any] {
+        window.makeKeyAndOrderFront(nil)
+        return ["event":"activation-call","activationCall":"makeKeyAndOrderFront",
+                "timestamp":ISO8601DateFormatter().string(from:Date()),"target":"own-window"]
+    }
+}
+// A separate preflight receiver; native elapsed time is authoritative. Teardown
+// this view before cold baseline sampling. No page content is logged.
+@MainActor final class VerificationFrameHandler: NSObject, WKScriptMessageHandler {
+    private let scheme:String, host:String, emit:([String:Any])->Void
+    private var proof=RAFProgress()
+    init(scheme:String,host:String,emit:@escaping([String:Any])->Void) {
+        self.scheme=scheme;self.host=host;self.emit=emit
+    }
+    func userContentController(_ controller:WKUserContentController,didReceive message:WKScriptMessage) {
+        guard !proof.failed,message.frameInfo.isMainFrame,let url=message.frameInfo.request.url,
+              url.scheme==scheme,url.host==host,
+              let body=message.body as? [String:Any],body.count==1,
+              let n=body["frames"] as? NSNumber,CFGetTypeID(n) != CFBooleanGetTypeID(),
+              n.doubleValue.isFinite,n.doubleValue>0,n.doubleValue.rounded()==n.doubleValue,
+              n.doubleValue<Double(Int.max) else{return}
+        let now=Double(DispatchTime.now().uptimeNanoseconds)/1e9
+        let outcome=proof.observe(frame:n.intValue,now:now)
+        emit(["event":"raf-preflight","nativeTimestampSeconds":now,"frames":n.intValue,"outcome":outcome])
+    }
+}
+#endif
 
 struct WebContentIdentity: Codable, Equatable {
     let pid: Int32
@@ -40,6 +83,7 @@ struct WebContentIdentity: Codable, Equatable {
     func capture(_ view: WKWebView) -> [String: Any] {
         var receipt: [String: Any] = ["event":"process-attribution", "role":"WebContent",
             "viewID":viewID, "generation":generation, "source":"owned-WKWebView-scoped-SPI"]
+        #if MODELPLAN_TEST_ONLY_SPI
         let selector=NSSelectorFromString("_webProcessIdentifier")
         guard allowScopedSPI, view.responds(to:selector),
               let number=view.value(forKey:"_webProcessIdentifier") as? NSNumber,
@@ -60,5 +104,9 @@ struct WebContentIdentity: Codable, Equatable {
         receipt["pid"]=pid;receipt["startSeconds"]=current.startSeconds
         receipt["startMicroseconds"]=current.startMicroseconds
         return receipt
+        #else
+        receipt["status"]="unsupported";receipt["reason"]="test-build-flag-disabled"
+        return receipt
+        #endif
     }
 }

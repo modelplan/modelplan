@@ -1,31 +1,57 @@
 ---
 name: native-verification
-description: Verify native Mac observation and lifecycle scenarios, beginning with U11a cockpit measurement. Use for a synthetic measurement attempt or to qualify its evidence before a performance verdict.
+description: Verify Mac app behavior on a synthetic profile, beginning with the U11a cockpit observation and budget scenario. Use for launch, preflight, evidence collection or review of a native verification attempt.
 ---
 
-# Native verification
+# Native verification (draft)
 
-Scenario 1 is U11a: an existing local cockpit with a still porthole and its indicator, session and HUD animations enabled. Inputs remain caller-supplied; this skill contains no unreleased designs or real profiles.
+Run from the checkout root. This skill is draft until a verification run at its exact head. [Feature map](feature-map.md) is owned by integration; unknown routes remain unbound. Public inputs are neutral placeholders only; approved proprietary art is supplied locally.
 
-Run commands from the checkout root. For observer qualification use the neutral [animation controls](fixtures/animation-controls.html); this checks the observation mechanism, while the actual cockpit still needs its own admitted scenario.
+## 1. Launch
 
-## Prepare and qualify observations
+Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. M0 announces the matching run, M1 releases/guards it; owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
 
-1. Pin the subject, actual used assets, driver and verification source. Start from current public main; `scripts/u11a-aggregate.py` supports `native-self-counters`. Preserve previous attempts as immutable evidence.
-2. Capture each own-window condition with `WindowObservation.capture`: App active, key window, visible, unoccluded. Emit `fields` **before** applying the activation gate on every observation tick. Record the explicit gate policy and elapsed time separately. A conjunction failure must retain which conditions failed. Never infer owner input from failure to become active or repeatedly steal focus.
-3. Inject `animation-observer.js` after the page's setup, then call `installVerificationAnimationObserver` with selectors for `indicator`, `session`, `HUD`. Retain the observer and emit `snapshot()` at least twice during each measured active phase. Attach the same `viewID` and `generation` from the native attribution instance to window and animation receipts. A requestAnimationFrame count alone is not animation proof: the per-group count advances only for visible running animations whose timelines advance. Stop the observer at view teardown. If the subject uses canvas/video/JS rather than Web Animations, supply its own advancing-frame receipt and a reviewed adapter; DOM presence is insufficient.
-4. Bind a `WebContentAttribution` instance to each measured WKWebView. Its optional scoped SPI is verification-only, capability checked, and paired with the returned PID's start identity. Enable it only for this explicit observation task. Emit attribution before targeted sampling; call `retire()` on close, replacement and `webViewWebContentProcessDidTerminate`. A changed PID/start identity retires the previous generation. Missing capability is unsupported. GPU attribution is independent; never infer it from a process name or scan unrelated PIDs.
-5. Run `python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'` and syntax/build checks for the changed sources. These qualify code only, not an active cockpit or performance budget.
+Compile test observation code with `MODELPLAN_TEST_ONLY_SPI`; omit this flag in release. `Observation.swift` excludes the WebKit selector/KVC and test RAF message handler from release. Runtime opt-in alone is insufficient. The scoped SPI is limited to the measured synthetic WKWebView, never process-name discovery.
 
-## Execute and report
+## 2. Doctor
 
-Use the actual per-run exclusive lease, epoch, fresh external guardian heartbeat, stop signal, notBefore and absolute expiry. The remaining interval must cover declared phases plus cleanup; there is no additional 5/20-second start cutoff. Each GUI run includes cleanup within 1200 seconds. Use a synthetic profile; owner takeover stops it. M1 owns guardian and release; M0 announces the matching window. This skill creates neither leases nor scheduling authority. Non-GUI checks do not require a GUI lease; avoid concurrent heavy jobs during an announced measurement.
+Emit `WindowObservation.fields` with native timestamp, actual activation call, viewID and generation before applying any combined gate. `bin/doctor.py` reports running, active, key, visible, WebKit, disk and lease individually as timestamped pass/fail. A failed conjunction must retain which condition failed; it is not evidence of owner input. Record the activation call actually made, including explicit `not-invoked` when none was used. Never repeatedly steal focus.
 
-Collect baseline, open/idle, close recovery and repeated cycles, with complete same-timestamp batches for attributable roles. Export true source/units according to `docs/u11a-aggregation.md`. Native self counters currently identify App only; keep attributed WebContent evidence separate until its measuring source is supported. Run the existing reducer, not a second statistics implementation:
+U11a preflight is a **separate** two-second test-only WKScriptMessageHandler RAF proof. Use `VerificationFrameHandler` and `installVerificationRAFTicks`; native elapsed time and advancing frame counts must span two seconds. Dispose that preflight view/process before starting the cold measurement App/baseline, so preflight cannot prewarm the baseline. No completed GUI receipt is required merely to schedule a future run. The admitted run collects it.
+
+Keep per-region animation timeline controls from `animation-observer.js` as stronger complementary evidence. DOM presence and one RAF are insufficient. [Neutral controls](fixtures/animation-controls.html) qualify the mechanism; they do not substitute for the actual cockpit.
+
+## 3. Drive
+
+M1 owns `bin/drive-*` and `tests/test_drive_*.py`; shared protocol changes go through the skill author. Drive remains pending until its scripts and actual delivered-action receipts exist.
+
+First scenario: U11a, three cycles of **60s pre-open baseline → 60s open → close → 60s post-close**. Preflight two seconds is separate; all waits and cleanup stay within the absolute lease. Gate/frame/post-close evidence missing means **not-run**, never a performance-budget failure. A requested open is not confirmed active appearance. Indicator/session/HUD activity and static porthole inputs must be pinned in the subject.
+
+For each view capture WebContent PID plus start identity; retire on replacement, teardown and `webViewWebContentProcessDidTerminate`. Bind window/frame/attribution receipts to the same viewID/generation. PID changes invalidate previous ownership. GPU/other WebKit attribution uses pre/post snapshots of the already isolated synthetic session only; `bin/attribute_webkit.py` rejects ambiguous or unattributed hosts. No unrelated process inventory or guessed PID. `top` samples only verified role PIDs; missing capability is unsupported, never zero.
+
+## 4. Evidence
+
+`bin/evidence.py` writes a new `manifest.json` and file hashes in the approved independent evidence batch. Bind source head, profile, scenario IDs, outcomes, attribution method, source units and actual cleanup. Reports/CSVs go only to the approved exchange batch, with README/file list; stop and report any refused write to M0, without retry. Project updates are consolidated by M0. Screenshots are synthetic and task-scoped only; no owner account data.
+
+`bin/verify_u11a.py` checks correlated observation evidence. Reuse `scripts/u11a-aggregate.py` and `docs/u11a-aggregation.md`: App uses `native-self-counters`; attributed WebContent/GPU use genuine `top` exports. Never relabel a source or write another reducer.
+
+The approved open budget is average App + WebContent + GPU <=10% of one core. Missing role/activation/frame/post-close coverage cannot establish a total pass. Report canonical after-close RSS differences and cycle endpoints/trend without inventing numeric memory tolerance. Energy may be unsupported. An interrupted actual attempt stays distinguishable from an unlaunched run. A merge or non-GUI check is not GUI/L2 completion.
+
+## 5. Cleanup
+
+M1 owns `bin/cleanup-*` and `tests/test_cleanup_*.py`. It quits owned processes, verifies closure, releases only this run's lease/resources and deletes only approved scratch. Retain evidence until its cleanup policy permits deletion. M1 posts start and end+cleaned receipts through the integration workflow. No automatic renewal or retry after interruption.
+
+## 6. Helpers
+
+M2 owns Launch, Doctor, Evidence and shared helpers; M1 owns Drive/Cleanup paths above. M0 owns scope, feature map and integration. Stable commands live in `bin/`; do not rewrite them in each lane.
+
+Non-GUI qualification:
 
 ```
-python3 scripts/u11a-aggregate.py --input native-self-counters=<export.csv> --output-dir <new-report-dir>
-python3 desktop/native/verification/verify_u11a.py <observation.jsonl> --output <new-observation-result.json>
+python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'
+python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
+node desktop/native/verification/test-animation-observer.mjs
+node scripts/check-source-policy.mjs
 ```
 
-The approved open CPU budget is average App + associated WebContent + attributable GPU <=10% of one core. Missing roles/active-animation proof leave the combined verdict unproven. Report canonical close RSS differences and repeat endpoints/trend; no numeric memory tolerance is implied. Energy may remain unsupported. Record phase outcomes and cleanup; an interrupted actual attempt must not be rewritten as an unlaunched run or a complete A pass. Use only project evidence in comments and preserve private inputs outside public commits.
+Drive/Evidence portions that need no GUI also belong on the standard free hosted macOS checks. Actual test-build compilation, scoped PID capability, two-second preflight, full cycles and cleanup at the submitted head remain required run evidence; their missing outcomes stay explicit.
