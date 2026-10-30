@@ -83,6 +83,7 @@ class Attempt:
         console=(self.scratch/(mode+'-console.log')).open('x')
         lease=read(self.lease);validate(dict(profile='synthetic',binarySHA256=self.c['binarySHA256'],argv=[self.c['binary']],lease=lease,release=lease|dict(guardianGO=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=690 if mode=='preflight' else 630,stop=self.stop.exists()),time.time())
         if self.c.get('wired'):
+            if self.c['wired'].get('productEntry') is True:(home/'.codex').mkdir() # empty synthetic presence; no account/history bytes
             helper=self.c['wired']['helper']
             if hashlib.sha256(Path(helper).read_bytes()).hexdigest()!=self.c['wired']['helperSHA256']:raise ValueError('wired-helper-changed')
             subprocess.run([helper,'consent','init','--json'],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'),timeout=5,check=True)
