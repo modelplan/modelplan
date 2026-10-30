@@ -112,15 +112,23 @@ consent mutation or plugin-install message exists in this protocol.
 
 ## Animation budget and evidence
 
-One opacity-only compositor animation uses 60 discrete steps over 2 seconds,
-therefore at most 30 visible updates per second. The bundle schedules **no rAF,
-timeout or interval callbacks**, including while visible. Visibility/key/occlusion
-changes pause/resume it; clear/unload cancel it. Reduced-motion rendering creates
-no animation. Headless tests wrap actual browser callbacks, prove the rAF counter
-with a positive control, then assert zero callbacks/timers for loaded, ready,
-native-hidden, occluded, non-key, document-hidden, visible-again, cleared and
-unloaded states. `document.hidden` is controlled in headless tests, not presented
-as real OS window occlusion. The WebKit report attaches per-state counts.
+The lamp is static at idle. A change in displayed readings, reasons, summary or
+subscriptions triggers two finite 240 ms CSS opacity pulses (six steps per pulse,
+25 updates/s), then stops. Identical deliveries and observation-time-only updates
+do not restart it. Comparison uses the current DOM within render; no private DTO
+or signature is retained. A hidden, occluded or non-key page cancels the pulse;
+returning visible never replays it, and offscreen changes are not queued.
+Clear/unload cancel it and reduced motion creates no animation. Unused prototype
+animation declarations/keyframes are removed; the bundle has no infinite CSS
+animation declarations and schedules **no rAF, timeout or interval callbacks**.
+
+Headless tests scan computed animation-iteration-count on every element and its
+pseudo-elements, plus runtime effect iterations, with negative controls for both
+elements and pseudo-elements. The rAF positive control precedes zero-count checks
+for loaded, pulsing, visible-idle, hidden, occluded, non-key, document-hidden,
+visible-again, cleared and unloaded states. `document.hidden` is controlled in
+headless tests, not presented as real OS window occlusion. The WebKit report
+attaches per-state counts; visual comparisons also enforce finite iteration counts.
 
 Visual comparisons cover full 636×890 and compact 636×640, both themes and both
 languages, using synthetic Go captures. Ubuntu 24.04 arm64/WebKit 2203 is the

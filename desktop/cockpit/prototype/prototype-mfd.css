@@ -58,8 +58,8 @@
 .al-red{color:var(--red)}.al-amber{color:var(--amber)}.al-blue{color:var(--blue)}
 .al-more{grid-template-columns:1fr!important}
 .al-more button{justify-self:start;font:10px/1.3 var(--f-lcd);color:var(--muted)}.al-more button:hover{color:var(--text)}
-.mfd-alerts.ack{animation:ack .35s ease-out 2}
-@keyframes ack{50%{background:var(--lcd-ghost)}}
+.mfd-alerts.ack{}
+
 .ov-top{display:flex;align-items:flex-end;gap:5px}
 .ov-top em{font:10px/1 var(--f-lcd);color:var(--muted)}
 .ov-sum{font:11px/1 var(--f-lcd)}

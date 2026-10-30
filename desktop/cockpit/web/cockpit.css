@@ -12,3 +12,8 @@
 
 /* The static table replaces the prototype's two direct grid children. */
 #cockpit .ck-eng{display:block}.ck-eng .eng-keys{position:static;inset:auto}.ck-eng .ek-all{position:static;inset:auto;width:auto}.ck-eng .ec{display:block}.eng-krow{min-height:30px}
+
+/* Two 240ms opacity pulses, six steps per iteration (25 updates/s), then idle. */
+@keyframes cockpit-state-pulse{from{opacity:.8}to{opacity:.35}}
+#cockpit .activity.state-pulse{animation:cockpit-state-pulse 240ms steps(6,end) 2!important}
+@media(prefers-reduced-motion:reduce){#cockpit .activity.state-pulse{animation:none!important}}

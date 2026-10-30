@@ -47,46 +47,101 @@ test('browser rejects malformed/unknown input; private HTML is text and clear pr
   expect(await receive(page,send('display',{data}))).toBe(false);
   expect(await receive(page,send('display',{generation:'42',viewRevision:'4',data:sample()}))).toBe(true);
 });
-test('real WebKit callback counts are zero in every state; compositor motion is <=30 fps',async({page},info)=>{
+async function infiniteAnimations(page) {
+  return page.evaluate(()=>{
+    const found=[];
+    for(const element of document.querySelectorAll('*'))for(const pseudo of [null,'::before','::after']) {
+      const style=getComputedStyle(element,pseudo);
+      if(style.animationIterationCount.split(',').some(value=>value.trim()==='infinite'))found.push(element.tagName+'.'+element.className+(pseudo??''));
+    }
+    for(const animation of document.getAnimations())if(!Number.isFinite(animation.effect.getTiming().iterations))found.push('unbounded runtime effect');
+    return found;
+  });
+}
+async function finishMotion(page) {
+  await page.evaluate(()=>Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{}))));
+}
+test('real WebKit callback counts stay zero; finite opacity motion stops on every visibility gate',async({page},info)=>{
   const {send}=await open(page);
-  // Positive control proves the main-world counter sees an actual rAF callback.
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>resolve())));
   expect(await page.evaluate(()=>window.__counts.callbacks)).toBeGreaterThan(0);
   const evidence=[];
-  async function count(state,expectedAnimation) {
+  async function count(state,expected) {
     await page.evaluate(()=>window.__resetCounts());
-    // Web Animations play/pause operations settle on the next animation update.
-    await page.evaluate(()=>Promise.all(document.getAnimations().map(a=>a.ready)));
     const before=await page.evaluate(()=>document.getAnimations().map(a=>a.currentTime));
     await sleep(250);
     const actual=await page.evaluate(()=>({counts:{...window.__counts},animations:document.getAnimations().map(a=>({playState:a.playState,timing:a.effect.getTiming(),keyframes:a.effect.getKeyframes()}))}));
     expect(actual.counts).toEqual({requests:0,callbacks:0,timeouts:0,intervals:0});
-    expect(actual.animations.map(a=>a.playState)).toEqual(expectedAnimation);
-    const after=await page.evaluate(()=>document.getAnimations().map(a=>a.currentTime));
-    if(expectedAnimation[0]==='running')expect(after[0]-before[0]).toBeGreaterThan(100);
-    if(expectedAnimation[0]==='paused')expect(after).toEqual(before);
-    evidence.push({state,currentTimeBefore:before,currentTimeAfter:after,...actual});
+    expect(actual.animations.map(a=>a.playState)).toEqual(expected);
+    expect(await infiniteAnimations(page)).toEqual([]);
+    evidence.push({state,currentTimeBefore:before,...actual});
   }
   await count('loaded-awaiting-data',[]);
-  await display(page,send);await count('ready-key-visible',['running']);
-  const timing=await page.evaluate(()=>document.getAnimations()[0].effect.getTiming());
+  await display(page,send);
+  const timing=await page.evaluate(()=>({...document.getAnimations()[0].effect.getTiming(),easing:getComputedStyle(document.querySelector('.activity')).animationTimingFunction}));
+  expect(timing.iterations).toBe(2);expect(timing.duration).toBe(240);
   const steps=Number(timing.easing.match(/steps\((\d+)/)[1]);expect(steps/(timing.duration/1000)).toBeLessThanOrEqual(30);
   const frames=await page.evaluate(()=>document.getAnimations()[0].effect.getKeyframes());
-  expect(frames.every(frame=>Object.keys(frame).every(key=>['offset','computedOffset','easing','composite','opacity','transform'].includes(key)))).toBe(true);
+  expect(frames.every(frame=>Object.keys(frame).every(key=>['offset','computedOffset','easing','composite','opacity'].includes(key)))).toBe(true);
+  await count('ready-key-visible',['running']);
+  await finishMotion(page);await count('visible-idle',[]);
+  let reading=74;
+  async function changed() {
+    const data=sample();data.projection.rows[0].accounts[0].windows[0].remainingPercent=reading--;
+    expect(await receive(page,send('display',{data}))).toBe(true);
+    expect(await page.evaluate(()=>document.getAnimations().map(a=>a.playState))).toEqual(['running']);
+  }
   for(const [name,visibility] of [
     ['native-hidden',{visible:false,occluded:false,key:true}],
     ['native-occluded',{visible:true,occluded:true,key:true}],
     ['native-not-key',{visible:true,occluded:false,key:false}],
-  ]){expect(await receive(page,send('visibility',visibility))).toBe(true);await count(name,['paused']);}
+  ]){
+    expect(await receive(page,send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+    await changed();expect(await receive(page,send('visibility',visibility))).toBe(true);await count(name,[]);
+  }
   expect(await receive(page,send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  await page.evaluate(()=>window.__setHidden(true));await count('document-hidden',['paused']);
-  await page.evaluate(()=>window.__setHidden(false));await count('visible-again',['running']);
-  expect(await receive(page,send('clear',{viewRevision:'4'}),'clear')).toBe(true);await count('cleared',[]);
+  await changed();await page.evaluate(()=>window.__setHidden(true));await count('document-hidden',[]);
+  await page.evaluate(()=>window.__setHidden(false));await count('visible-again-no-replay',[]);
+  await changed();expect(await receive(page,send('clear',{viewRevision:'4'}),'clear')).toBe(true);await count('cleared',[]);
   expect(await receive(page,send('unload',{viewRevision:'4'}))).toBe(true);await count('unloaded',[]);
   expect(await page.evaluate(()=>window.modelPlanCockpit)).toBeUndefined();expect(await page.locator('#cockpit').textContent()).toBe('');
   const path=info.outputPath('callback-counts.json');await mkdir(dirname(path),{recursive:true});
   await writeFile(path,JSON.stringify({profile:'headless WebKit; document.hidden controlled by test',scenarios:evidence},null,2));
   await info.attach('callback-counts',{path,contentType:'application/json'});
+});
+test('computed animation iteration counts reject infinity, including pseudo-elements',async({page})=>{
+  const {send}=await open(page);await display(page,send);
+  expect(await infiniteAnimations(page)).toEqual([]);
+  // Negative controls prove that the computed-style guard sees both cases,
+  // including disabled animations whose iteration declaration is still infinite.
+  await page.evaluate(()=>document.body.style.setProperty('animation-iteration-count','infinite','important'));
+  expect(await infiniteAnimations(page)).toContain('BODY.r1 reduced');
+  await page.evaluate(()=>document.body.style.removeProperty('animation-iteration-count'));
+  // A same-origin stylesheet meets the page CSP and exercises the pseudo scan.
+  await page.route('**/infinite-guard.css',route=>route.fulfill({contentType:'text/css',body:'#cockpit::before{animation-iteration-count:infinite!important}'}));
+  const probe=await page.addStyleTag({url:'/infinite-guard.css'});
+  expect(await infiniteAnimations(page)).toContain('DIV.ck private-content::before');
+  await probe.evaluate(node=>node.remove());
+  expect(await infiniteAnimations(page)).toEqual([]);
+});
+test('identical and timestamp-only deliveries do not restart motion; hidden changes are not queued',async({page})=>{
+  const {send}=await open(page);await display(page,send);
+  await page.evaluate(()=>window.__firstPulse=document.getAnimations()[0]);
+  expect(await receive(page,send('display',{data:sample()}))).toBe(true);
+  expect(await page.evaluate(()=>document.getAnimations()[0]===window.__firstPulse)).toBe(true);
+  await finishMotion(page);
+  const data=sample();data.projection.rows[0].accounts[0].observedAt='2026-10-29T12:01:00Z';
+  expect(await receive(page,send('display',{data}))).toBe(true);
+  expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
+  data.projection.rows[0].accounts[0].windows[0].remainingPercent=74;
+  expect(await receive(page,send('display',{data}))).toBe(true);
+  expect(await page.evaluate(()=>document.getAnimations().length)).toBe(1);
+  expect(await receive(page,send('visibility',{visible:false,occluded:false,key:true}))).toBe(true);
+  data.projection.rows[0].accounts[0].windows[0].remainingPercent=73;
+  expect(await receive(page,send('display',{data}))).toBe(true);
+  expect(await receive(page,send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
+  expect(await infiniteAnimations(page)).toEqual([]);
 });
 test('fixed keyboard-reachable actions have current context; reduced motion has no animations',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});
@@ -105,6 +160,7 @@ for(const profile of ['full','compact'])for(const theme of ['day','night'])for(c
     await page.setViewportSize({width:636,height:profile==='full'?890:640});await page.emulateMedia({reducedMotion:'reduce'});
     const {send}=await open(page,{theme,locale,profile});await display(page,send);
     await page.evaluate(()=>document.fonts.ready);
+    expect(await infiniteAnimations(page)).toEqual([]);
     await expect(page).toHaveScreenshot(`${profile}-${theme}-${locale}.png`,{animations:'disabled',maxDiffPixels:0});
   });
 }

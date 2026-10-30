@@ -57,12 +57,12 @@ em{font-style:normal}
 .ck-head .caution.lit.red{background:var(--lamp-red);box-shadow:0 0 16px color-mix(in srgb,var(--st-low) 67%,transparent),inset 0 1px 0 color-mix(in srgb,var(--lcd-ink) 40%,transparent),0 0 0 1px var(--slot-deep)}
 .ck-head .caution:active{transform:translateY(1px)}
 
-.ck-head .caution.flash{animation:mc 1s steps(1,end) 1}
+.ck-head .caution.flash{}
 
-.ck.field-live .bz-sheet{animation-play-state:paused}
-@keyframes mc{50%{filter:brightness(.5)}}
-body.reduced .ck-head .caution.flash{animation:none}
-@media(prefers-reduced-motion:reduce){.ck-head .caution.flash{animation:none}}
+.ck.field-live .bz-sheet{}
+
+body.reduced .ck-head .caution.flash{}
+@media(prefers-reduced-motion:reduce){.ck-head .caution.flash{}}
 
 
 
@@ -100,7 +100,7 @@ body.reduced .ck-head .caution.flash{animation:none}
 .hp b{font-weight:500;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hp b.gold{color:var(--gold)}
 .hp-rec{font-size:10px;color:var(--gold)}
 .hp-rec.on{text-shadow:0 0 6px color-mix(in srgb,var(--gold) 53%,transparent)}
-.hp.lock{animation:lockon .55s ease-out 1}
+.hp.lock{}
 .hud-chart{min-width:0;align-self:stretch}
 .hud-chart svg{display:block;overflow:visible}
 .fc-ax{fill:none;stroke:#e9edf033;stroke-width:.8}
@@ -128,8 +128,8 @@ body.reduced .ck-head .caution.flash{animation:none}
 
 
 .seg{display:block;overflow:visible}.seg .on{fill:var(--text)}.seg .gh{fill:var(--lcd-ghost)}
-.lcd-in{animation:lcdin .08s linear both}
-@keyframes lcdin{from{opacity:.25}}
+.lcd-in{}
+
 
 
 
@@ -153,10 +153,10 @@ body.reduced .ck-head .caution.flash{animation:none}
 .tl.run .t-time{position:relative;padding-right:10px}
 .t-time .t-cur{position:absolute;right:0;top:2.5px}
 .t-cur{width:6px;height:11px;background:currentColor;opacity:0}
-.tl.run .t-cur{opacity:1;animation:cur 1.06s steps(1,end) infinite}
-@keyframes cur{50%{opacity:0}}
-.tl.typing{animation:type .22s steps(24,end) both}
-@keyframes type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+.tl.run .t-cur{opacity:1;}
+
+.tl.typing{}
+
 .tl.xhl,.tl:hover{background:#ffffff0c}
 
 
@@ -168,9 +168,9 @@ body.reduced .ck-head .caution.flash{animation:none}
 
 
 body.reduced #cockpit *{transition:none!important}
-body.reduced .lcd-in,body.reduced .tl.typing,body.reduced .hp.lock{animation:none}
-body.reduced .caution.flash{animation:none}
-@media(prefers-reduced-motion:reduce){#cockpit *{transition:none!important}.lcd-in,.tl.typing,.hp.lock,.caution.flash{animation:none}}
+body.reduced .lcd-in,body.reduced .tl.typing,body.reduced .hp.lock{}
+body.reduced .caution.flash{}
+@media(prefers-reduced-motion:reduce){#cockpit *{transition:none!important}.lcd-in,.tl.typing,.hp.lock,.caution.flash{}}
 
 .ov .key{font:500 11px/1 'DM Sans','PingFang SC',sans-serif;color:var(--lcd-muted)}
 .ck .nogl{color:var(--muted);font:11px var(--f-silk)}

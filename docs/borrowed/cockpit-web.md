@@ -34,8 +34,10 @@ The prototype's imported private study assets, private scene/render machinery,
 porthole media, account-to-subscription inference, mock bootstrap and animation
 loops are excluded. `compact-instrument.js`'s canvas/timer implementation is not
 loaded. The public bundle has no runtime 3D, hidden prewarm or idle timers. Its
-single opacity animation is capped at 30 discrete updates per second and paused
-when hidden, occluded or not key. Faders without a Go display value are decorative;
+lamp is static at idle; a changed display triggers two finite 240 ms CSS opacity
+pulses at 25 updates per second. Identical/timestamp-only updates do not restart
+it. Hidden, occluded, non-key, clear and unload cancel it; reduced motion disables
+it. Unused prototype animation declarations and keyframes are removed. Faders without a Go display value are decorative;
 Settings, Choose setup and current tool history use fixed host intents.
 
 Headless WebKit baselines record this implementation at full/compact size, both

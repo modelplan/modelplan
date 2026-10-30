@@ -14,6 +14,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     const root=project+'.tmp/'+edition+'/',manifest=JSON.parse(readFileSync(root+'bundle-manifest.json'));
     assert.equal(manifest.edition,edition);assert.equal(manifest.interfaceOnly,true);
     for(const [name,hash]of Object.entries(manifest.files))assert.equal(digest(readFileSync(root+name)),hash,name);
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');

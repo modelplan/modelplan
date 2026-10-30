@@ -9,13 +9,25 @@ const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,classNa
 // this draws a value; it does not classify quota state or group accounts.
 const litTens=(pct:number|null)=>pct===null||pct<=0?0:Math.max(1,Math.min(10,Math.round(pct/10)));
 export function mountCockpit(root:HTMLElement,action:(kind:'chooseSetup'|'openSettings'|'openHistory',tool?:string)=>void):CockpitView {
-  let locale:Appearance['locale']='en',disposed=false,active=false,animation:Animation|null=null;
+  let locale:Appearance['locale']='en',disposed=false,active=false;
   const frame=prototypeFrame(root);
   frame.settings.onclick=e=>{if(e.isTrusted)action('openSettings');};
   frame.setup.onclick=e=>{if(e.isTrusted)action('chooseSetup');};
   const label=(value:{en:string;zh:string})=>locale==='en'?value.en:value.zh;
-  const stop=()=>{animation?.cancel();animation=null;};
-  const pause=()=>{if(animation){if(active)animation.play();else animation.pause();}};
+  const stop=()=>frame.lamp.classList.remove('state-pulse');
+  const settled=()=>{if(!frame.lamp.getAnimations().some(a=>a.playState==='running'))stop();};
+  frame.lamp.addEventListener('animationend',settled);
+  frame.lamp.addEventListener('animationcancel',settled);
+  // Compare the current private DOM within render; retain no DTO or signature.
+  // Observation times on the tape do not turn a poll into a state change.
+  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
+  const pulse=()=>{
+    stop();
+    if(!active||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    // Restart finite CSS motion on a changed display only; no scheduled callback.
+    void frame.lamp.offsetWidth;
+    frame.lamp.classList.add('state-pulse');
+  };
   const setEmpty=(message:string)=>{
     frame.engine.replaceChildren(element('p',message,'ec-empty'));
     frame.hud.replaceChildren(element('span',words[locale].overview,'silk'));
@@ -54,7 +66,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:'chooseSetup'|'openSe
       setEmpty(words[locale].waiting);
     },
     render(data){
-      if(disposed)throw Error('closed');stop();
+      if(disposed)throw Error('closed');const before=displayedState();
       frame.engine.replaceChildren();const table=element('div',undefined,'u11-engine-table');table.style.setProperty('--n',String(Math.max(1,data.projection.rows.length)));
       const keyrow=element('div',undefined,'eng-krow');keyrow.append(element('span',words[locale].readings,'ek ek-all'));const keys=element('div',undefined,'eng-keys');
       for(const row of data.projection.rows){
@@ -76,11 +88,10 @@ export function mountCockpit(root:HTMLElement,action:(kind:'chooseSetup'|'openSe
       }
       frame.tape.replaceChildren(element('span',words[locale].record,'silk'));
       for(const row of data.projection.rows)for(const a of row.accounts)frame.tape.append(element('span',`${label(row.name)} · ${a.observedAt??words[locale].time}`,'u11-observed'));
-      // 60 compositor-only opacity steps over 2s; no rAF, timeout or interval.
-      if(data.projection.rows.length&&!matchMedia('(prefers-reduced-motion: reduce)').matches){animation=frame.lamp.animate([{opacity:.35},{opacity:.8},{opacity:.35}],{duration:2000,easing:'steps(60, end)',iterations:Infinity});pause();}
+      if(before!==displayedState())pulse();
     },
     clear(){stop();setEmpty(words[locale].cleared);},
-    active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;frame.setup.disabled=!value;pause();},
-    dispose(){if(disposed)return;disposed=true;stop();frame.settings.onclick=null;frame.setup.onclick=null;root.replaceChildren();root.removeAttribute('data-active');},
+    active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;frame.setup.disabled=!value;if(!value)stop();},
+    dispose(){if(disposed)return;disposed=true;stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;frame.setup.onclick=null;root.replaceChildren();root.removeAttribute('data-active');},
   };
 }

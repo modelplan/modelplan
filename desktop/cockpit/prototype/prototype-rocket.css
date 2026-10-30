@@ -88,8 +88,8 @@ body.dock-dragging,body.dock-dragging *{cursor:grabbing!important}body.dock-drag
 .ck[hidden]{display:none}
 .ck.prewarming{transition:none}
 .ck[hidden][data-prewarm]{display:grid;opacity:0;pointer-events:none;will-change:opacity}
-.ck[hidden] *,.ck[hidden] *::before,.ck[hidden] *::after{animation-play-state:paused!important;transition:none!important}
-body.study-hidden *,body.study-hidden *::before,body.study-hidden *::after{animation-play-state:paused!important;transition:none!important}
+.ck[hidden] *,.ck[hidden] *::before,.ck[hidden] *::after{transition:none!important}
+body.study-hidden *,body.study-hidden *::before,body.study-hidden *::after{transition:none!important}
 .ck-shell{position:absolute;inset:0;z-index:-1;border-radius:46% 46% 26px 26px/9% 9% 26px 26px;background:linear-gradient(180deg,#1d2024f2,#121417f5 60%,#0e0f11fa);box-shadow:0 30px 70px #000c,inset 0 0 0 1px #ffffff12,inset 0 1px 0 #ffffff1a;transition:background .4s}
 .ck.solid .ck-shell{background:linear-gradient(180deg,#2a2d31,#1a1c1f)}
 .ck-shell:before{content:"";position:absolute;inset:6px;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--hair);pointer-events:none}
@@ -156,9 +156,9 @@ body.study-hidden *,body.study-hidden *::before,body.study-hidden *::after{anima
 .entry-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .entry-tail-plate{position:absolute;width:235px;height:235px;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,#192125 0 65%,#42474b 66%,#151b20 68% 73%,#40464b 74% 75%,#14191c 76%);box-shadow:0 8px 40px #0009,inset 0 0 0 1px #d7ddd833}
 .ck-afterglow{position:absolute;bottom:-5px;left:30%;right:30%;height:12px;border-radius:50%;background:radial-gradient(ellipse,#71d9bd66,transparent 70%);filter:blur(4px);opacity:.45;pointer-events:none}
-.ck.after-ignition .ck-afterglow{animation:afterglow 2s ease-out forwards}
-@keyframes afterglow{0%{opacity:1;transform:scaleX(.7)}100%{opacity:.24;transform:scaleX(1)}}
-@media(prefers-reduced-motion:reduce){.ck.after-ignition .ck-afterglow{animation:none}}
+.ck.after-ignition .ck-afterglow{}
+
+@media(prefers-reduced-motion:reduce){.ck.after-ignition .ck-afterglow{}}
 
 
 .ck-afterglow{left:3%;right:3%;bottom:-5px;height:14px;background:none;border-bottom:1.4px solid #80d9bd66;border-radius:0 0 50% 50%;filter:drop-shadow(0 0 5px #71d9bd66);clip-path:inset(30% 12% 0 12%);opacity:.32}
@@ -175,7 +175,7 @@ body.study-hidden *,body.study-hidden *::before,body.study-hidden *::after{anima
 .ck-bells i.on{border-color:#80d9bd66;background:radial-gradient(ellipse at 50% 100%,#71d9bd44,transparent 75%);box-shadow:0 3px 6px #71d9bd33}
 .ck-afterglow.active{opacity:.55}
 
-@keyframes lockon{0%{box-shadow:0 0 0 6px #e8c78800,inset 0 0 0 0 #e8c78800}35%{box-shadow:0 0 0 3px #e8c78866}100%{box-shadow:0 0 0 0 #e8c78800}}
+
 
 
 
