@@ -56,7 +56,7 @@ func TestParseZai(t *testing.T) {
 	}
 
 	for body, want := range map[string]string{
-		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "the quota API said no: Invalid key",
+		`{"code":1001,"success":false,"msg":"Invalid key"}`:                                  "schema_changed",
 		`{"code":200,"success":true,"data":{}}`:                                              "unsupported quota format",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3}]}}`:   "unsupported quota entry",
 		`{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":"x"}]}}`: "unsupported quota entry",

@@ -1,0 +1,654 @@
+{
+  "schemaVersion": 1,
+  "components": [
+    {
+      "id": "go:github.com/dustin/go-humanize",
+      "kind": "go-module",
+      "name": "github.com/dustin/go-humanize",
+      "version": "v1.0.1",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2005-2008  Dustin Sallings <dustin@spy.net>"
+      ],
+      "licenseTextPath": "licenses/go/github.com/dustin/go-humanize/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/dustin/go-humanize/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/dustin/go-humanize@v1.0.1",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:github.com/google/uuid",
+      "kind": "go-module",
+      "name": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2009,2014 Google Inc. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer"
+      ],
+      "licenseTextPath": "licenses/go/github.com/google/uuid/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/google/uuid/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/google/uuid@v1.6.0",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "go:github.com/mattn/go-isatty",
+      "kind": "go-module",
+      "name": "github.com/mattn/go-isatty",
+      "version": "v0.0.20",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) Yasuhiro MATSUMOTO <mattn.jp@gmail.com>"
+      ],
+      "licenseTextPath": "licenses/go/github.com/mattn/go-isatty/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/mattn/go-isatty/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/mattn/go-isatty@v0.0.20",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:github.com/ncruces/go-strftime",
+      "kind": "go-module",
+      "name": "github.com/ncruces/go-strftime",
+      "version": "v0.1.9",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2022 Nuno Cruces"
+      ],
+      "licenseTextPath": "licenses/go/github.com/ncruces/go-strftime/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/ncruces/go-strftime/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/ncruces/go-strftime@v0.1.9",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:github.com/pelletier/go-toml/v2",
+      "kind": "go-module",
+      "name": "github.com/pelletier/go-toml/v2",
+      "version": "v2.2.4",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2021 - 2023 Thomas Pelletier"
+      ],
+      "licenseTextPath": "licenses/go/github.com/pelletier/go-toml/v2/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/pelletier/go-toml/v2/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "26844e4b53c5adec04e557fd7dfef281cc0205a7d355626b1c68b778b99e9e7b"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/pelletier/go-toml/v2@v2.2.4",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/amd64",
+        "linux/amd64",
+        "linux/amd64",
+        "linux/amd64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:github.com/remyoudompheng/bigfft",
+      "kind": "go-module",
+      "name": "github.com/remyoudompheng/bigfft",
+      "version": "v0.0.0-20230129092748-24d4a6f8daec",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2012 The Go Authors. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer"
+      ],
+      "licenseTextPath": "licenses/go/github.com/remyoudompheng/bigfft/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/github.com/remyoudompheng/bigfft/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d"
+        }
+      ],
+      "source": "https://pkg.go.dev/github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:golang.org/x/sys",
+      "kind": "go-module",
+      "name": "golang.org/x/sys",
+      "version": "v0.22.0",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2009 The Go Authors. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer"
+      ],
+      "licenseTextPath": "licenses/go/golang.org/x/sys/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/golang.org/x/sys/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+        },
+        {
+          "path": "licenses/go/golang.org/x/sys/PATENTS",
+          "sourceFile": "PATENTS",
+          "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+        }
+      ],
+      "source": "https://pkg.go.dev/golang.org/x/sys@v0.22.0",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64"
+      ]
+    },
+    {
+      "id": "go:modernc.org/libc",
+      "kind": "go-module",
+      "name": "modernc.org/libc",
+      "version": "v1.55.3",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2017 The Libc Authors. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer",
+        "Copyright (c) 2009 The Go Authors. All rights reserved."
+      ],
+      "licenseTextPath": "licenses/go/modernc.org/libc/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/modernc.org/libc/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "95ff867eb55a56935fa7492406cfa953fb7c13ca73f4c0a86ae05756b4605600"
+        },
+        {
+          "path": "licenses/go/modernc.org/libc/LICENSE-GO",
+          "sourceFile": "LICENSE-GO",
+          "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+        }
+      ],
+      "source": "https://pkg.go.dev/modernc.org/libc@v1.55.3",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/amd64",
+        "linux/amd64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:modernc.org/mathutil",
+      "kind": "go-module",
+      "name": "modernc.org/mathutil",
+      "version": "v1.6.0",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2014 The mathutil Authors. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer"
+      ],
+      "licenseTextPath": "licenses/go/modernc.org/mathutil/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/modernc.org/mathutil/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "bfa9bf72a72ca009fd62a8f84fca3dca67e51d93af96352723646599898b6cf5"
+        }
+      ],
+      "source": "https://pkg.go.dev/modernc.org/mathutil@v1.6.0",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:modernc.org/memory",
+      "kind": "go-module",
+      "name": "modernc.org/memory",
+      "version": "v1.8.0",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2017 The Memory Authors. All rights reserved.",
+        "copyright notice, this list of conditions and the following disclaimer",
+        "Copyright (c) 2009 The Go Authors. All rights reserved.",
+        "Copyright (c) 2011, Evan Shaw <edsrzf@gmail.com>"
+      ],
+      "licenseTextPath": "licenses/go/modernc.org/memory/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/modernc.org/memory/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "59895e669f48f168b6b858358f6005779cdf40a265f7828813061b56af67b496"
+        },
+        {
+          "path": "licenses/go/modernc.org/memory/LICENSE-GO",
+          "sourceFile": "LICENSE-GO",
+          "sha256": "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067"
+        },
+        {
+          "path": "licenses/go/modernc.org/memory/LICENSE-MMAP-GO",
+          "sourceFile": "LICENSE-MMAP-GO",
+          "sha256": "c2eba69f20d05414538c3a5df7694dde392e065ff70882e1625e90f5d6659fff"
+        }
+      ],
+      "source": "https://pkg.go.dev/modernc.org/memory@v1.8.0",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "go:modernc.org/sqlite",
+      "kind": "go-module",
+      "name": "modernc.org/sqlite",
+      "version": "v1.34.5",
+      "licenseSpdxId": "BSD-3-Clause",
+      "copyright": [
+        "Copyright (c) 2017 The Sqlite Authors. All rights reserved."
+      ],
+      "licenseTextPath": "licenses/go/modernc.org/sqlite/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/go/modernc.org/sqlite/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "c6fe05491a60ae13bcd223088d2705e36dede24e5587226231d2459ada5c4822"
+        }
+      ],
+      "source": "https://pkg.go.dev/modernc.org/sqlite@v1.34.5",
+      "usedBy": [
+        "Go CLI and the App bundled modelplan helper"
+      ],
+      "paths": [
+        "cli/go.mod"
+      ],
+      "targets": [
+        "darwin/arm64",
+        "darwin/arm64",
+        "darwin/amd64",
+        "darwin/amd64",
+        "linux/arm64",
+        "linux/arm64",
+        "linux/amd64",
+        "linux/amd64",
+        "windows/amd64",
+        "windows/amd64",
+        "windows/arm64",
+        "windows/arm64"
+      ]
+    },
+    {
+      "id": "font:manrope",
+      "kind": "font",
+      "name": "Manrope",
+      "version": "5.3.0",
+      "licenseSpdxId": "OFL-1.1",
+      "copyright": [
+        "Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope)"
+      ],
+      "licenseTextPath": "fonts/manrope/OFL.txt",
+      "licenseFiles": [
+        {
+          "path": "fonts/manrope/OFL.txt",
+          "sourceFile": "OFL.txt",
+          "sha256": "d826ab6583b12c26807d8716a545bdbbb672df04f48608a364ba9efdbe501c30"
+        }
+      ],
+      "source": "https://www.npmjs.com/package/@fontsource/manrope/v/5.3.0",
+      "usedBy": [
+        "Unmodified desktop static normal Latin font assets; native font registration is separate"
+      ],
+      "paths": [
+        "desktop/third-party/fonts/manifest.json"
+      ]
+    },
+    {
+      "id": "font:dm-sans",
+      "kind": "font",
+      "name": "DM Sans",
+      "version": "5.3.0",
+      "licenseSpdxId": "OFL-1.1",
+      "copyright": [
+        "Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts) DMSans-Italic[opsz,wght].ttf: Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)"
+      ],
+      "licenseTextPath": "fonts/dm-sans/OFL.txt",
+      "licenseFiles": [
+        {
+          "path": "fonts/dm-sans/OFL.txt",
+          "sourceFile": "OFL.txt",
+          "sha256": "6fbd040a29c2037a765dfb9f2561e9965b5c95c6dcb5dce516089d63d5f17af7"
+        }
+      ],
+      "source": "https://www.npmjs.com/package/@fontsource/dm-sans/v/5.3.0",
+      "usedBy": [
+        "Unmodified desktop static normal Latin font assets; native font registration is separate"
+      ],
+      "paths": [
+        "desktop/third-party/fonts/manifest.json"
+      ]
+    },
+    {
+      "id": "font:jetbrains-mono",
+      "kind": "font",
+      "name": "JetBrains Mono",
+      "version": "5.3.0",
+      "licenseSpdxId": "OFL-1.1",
+      "copyright": [
+        "Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)"
+      ],
+      "licenseTextPath": "fonts/jetbrains-mono/OFL.txt",
+      "licenseFiles": [
+        {
+          "path": "fonts/jetbrains-mono/OFL.txt",
+          "sourceFile": "OFL.txt",
+          "sha256": "403581b69dac5cff4079205e01c6b467e56af449ecbd7247693ddb1baafa005b"
+        }
+      ],
+      "source": "https://www.npmjs.com/package/@fontsource/jetbrains-mono/v/5.3.0",
+      "usedBy": [
+        "Unmodified desktop static normal Latin font assets; native font registration is separate"
+      ],
+      "paths": [
+        "desktop/third-party/fonts/manifest.json"
+      ]
+    },
+    {
+      "id": "font:share-tech-mono",
+      "kind": "font",
+      "name": "Share Tech Mono",
+      "version": "5.3.0",
+      "licenseSpdxId": "OFL-1.1",
+      "copyright": [
+        "Copyright (c) 2012, Carrois Type Design, Ralph du Carrois (www.carrois.com post@carrois.com), with Reserved Font Name 'Share'"
+      ],
+      "licenseTextPath": "fonts/share-tech-mono/OFL.txt",
+      "licenseFiles": [
+        {
+          "path": "fonts/share-tech-mono/OFL.txt",
+          "sourceFile": "OFL.txt",
+          "sha256": "9909bc951ab73dcf212a1675aab327ffafa853c2b8e8d11a066b1bcc57afeefb"
+        }
+      ],
+      "source": "https://www.npmjs.com/package/@fontsource/share-tech-mono/v/5.3.0",
+      "usedBy": [
+        "Unmodified desktop static normal Latin font assets; native font registration is separate"
+      ],
+      "paths": [
+        "desktop/third-party/fonts/manifest.json"
+      ]
+    },
+    {
+      "id": "codexbar",
+      "kind": "helper",
+      "name": "CodexBar",
+      "version": "0.81.0",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright (c) 2026 Peter Steinberger"
+      ],
+      "licenseTextPath": "licenses/codexbar/LICENSE.txt",
+      "licenseFiles": [
+        {
+          "path": "licenses/codexbar/LICENSE.txt",
+          "sourceFile": "LICENSE",
+          "sha256": "14293556b79940745123d0160c71d27ed0e9fe9b8a848093f3ed78f4853caafe"
+        }
+      ],
+      "source": "https://github.com/steipete/CodexBar/releases/tag/v0.81.0",
+      "usedBy": [
+        "Pinned optional CodexBar compatibility helper (downloaded on consented use)",
+        "Native Go provider adaptations, with original source revisions retained in the ported files"
+      ],
+      "sourceRevisions": {
+        "nativeProviderPorts": "8de11ff"
+      },
+      "paths": [
+        "cli/internal/quota/codexbar-pin.json",
+        "cli/internal/quota/opencodego.go",
+        "cli/internal/quota/zai.go",
+        "cli/internal/quota/quota_native.go"
+      ]
+    },
+    {
+      "id": "pulse",
+      "kind": "source-port",
+      "name": "Pulse",
+      "version": "8410d0817d092011b2106ed6df04eb2693117ca7",
+      "licenseSpdxId": "Apache-2.0",
+      "copyright": [
+        "Copyright (c) 2026 qunqin24"
+      ],
+      "licenseTextPath": "licenses/pulse/LICENSE.txt",
+      "licenseFiles": [
+        {
+          "path": "licenses/pulse/LICENSE.txt",
+          "sourceFile": "LICENSE",
+          "sha256": "70bb8a2fe5879d148ef66a069beb84929727879c4a0323d1045b3f166ebbab9e"
+        },
+        {
+          "path": "licenses/pulse/THIRD_PARTY_NOTICES.md",
+          "sourceFile": "THIRD_PARTY_NOTICES.md",
+          "sha256": "b150905e59e27f043e77a0d5465ccf62d70d3ac1dd477212d2d7995cc8286732"
+        }
+      ],
+      "source": "https://github.com/qunqin24/Pulse/tree/8410d0817d092011b2106ed6df04eb2693117ca7",
+      "usedBy": [
+        "Existing Kiro ACP reader: Swift-to-Go adaptation of KiroACPClient.swift and KiroUsageService.swift; ModelPlan modifications are in cli/internal/quota/kiro.go",
+        "Upstream third-party notices preserved as provenance; no Pulse icons or future native shell ports are included"
+      ],
+      "paths": [
+        "cli/internal/quota/kiro.go"
+      ]
+    }
+  ]
+}

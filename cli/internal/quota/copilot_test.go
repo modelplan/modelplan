@@ -55,6 +55,11 @@ func TestCopilotHelperProcess(t *testing.T) {
 			os.Exit(4) // no session, login or inference may be requested
 		}
 		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":%s}`, req.ID, result)
+		if text := os.Getenv("MODELPLAN_TEST_COPILOT_ERROR_MESSAGE"); text != "" && req.Method == "account.getQuota" {
+			payload, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": text}})
+			body = string(payload)
+			fmt.Fprintln(os.Stderr, text)
+		}
 		fmt.Printf("Content-Length: %d\r\n\r\n%s", len(body), body)
 	}
 }
