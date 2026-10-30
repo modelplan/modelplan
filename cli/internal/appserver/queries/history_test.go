@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync"
 	"testing"
@@ -245,7 +246,18 @@ func TestHistoryCanceledDuringAdmissionNeverReads(t *testing.T) {
 	}
 }
 
+func requireHistorySelectorNullPolicy(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"Ref", "Cursor"} {
+		field, ok := reflect.TypeFor[wire.HistoryQueryParams]().FieldByName(name)
+		if !ok || field.Tag.Get("null") != string(wire.NullForbidden) {
+			t.Fatalf("%s must declare the handler's forbidden-null rule", name)
+		}
+	}
+}
+
 func TestHistoryRejectsNullOptionalSelectors(t *testing.T) {
+	requireHistorySelectorNullPolicy(t)
 	for _, selector := range []string{`"ref":null`, `"cursor":null`, `"ref": null,"cursor":null`} {
 		t.Run(selector, func(t *testing.T) {
 			h, state, source, ctx, _ := setupHistory(t)
@@ -260,6 +272,7 @@ func TestHistoryRejectsNullOptionalSelectors(t *testing.T) {
 }
 
 func TestHistoryAllowsOmittedOptionalSelectors(t *testing.T) {
+	requireHistorySelectorNullPolicy(t)
 	for _, selectors := range []string{"", `,"ref":"","cursor":""`} {
 		h, state, source, ctx, _ := setupHistory(t)
 		reply, err := h.Handle(ctx, json.RawMessage(`{"tool":"claude","kind":"tokens","limit":1`+selectors+`}`), state.stamp)

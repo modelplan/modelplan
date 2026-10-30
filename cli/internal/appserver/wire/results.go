@@ -23,22 +23,22 @@ type PublicationResult struct {
 	Capabilities      map[string]PublicationCapability `json:"capabilities"`
 	SchemaVersion     int                              `json:"schemaVersion" schema:"minimum=1,maximum=1"`
 	PublicationID     string                           `json:"publicationId" schema:"minLength=1"`
-	PublishedAt       *string                          `json:"publishedAt"`
+	PublishedAt       *string                          `json:"publishedAt" null:"coalesced"`
 	Units             PublicationUnits                 `json:"units"`
-	SelectionRevision json.RawMessage                  `json:"selectionRevision,omitempty"`
+	SelectionRevision json.RawMessage                  `json:"selectionRevision,omitempty" null:"distinct"`
 	Models            []json.RawMessage                `json:"models"`
 	Lineups           []json.RawMessage                `json:"lineups"`
 	SpeedTiers        []json.RawMessage                `json:"speedTiers"`
 	Resets            []json.RawMessage                `json:"resets"`
 	Windows           []json.RawMessage                `json:"windows"`
-	Multipliers       *[]json.RawMessage               `json:"multipliers"`
-	MultiplierHorizon *json.RawMessage                 `json:"multiplierHorizon"`
-	PlanMetering      *json.RawMessage                 `json:"planMetering"`
+	Multipliers       *[]json.RawMessage               `json:"multipliers" null:"coalesced"`
+	MultiplierHorizon *json.RawMessage                 `json:"multiplierHorizon" null:"coalesced"`
+	PlanMetering      *json.RawMessage                 `json:"planMetering" null:"coalesced"`
 }
 
 type PublicationCapability struct {
 	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	Reason string `json:"reason,omitempty" null:"coalesced"`
 }
 type PublicationUnits struct {
 	Ability string `json:"ability"`
