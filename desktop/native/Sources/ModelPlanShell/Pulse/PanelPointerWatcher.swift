@@ -1,5 +1,5 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
-// ModelPlan adaptation: injectable local sample source and explicit stopped-sample fence.
+// ModelPlan adaptation: injected sampling, explicit lifecycle fence and AppKit composition surface.
 import AppKit
 import SwiftUI
 
@@ -63,11 +63,17 @@ struct PanelPointerWatcher: NSViewRepresentable {
         private static let interval: TimeInterval = 0.15
 
         private var timer: Timer?
+        var samplingEnabled = true {
+            didSet {
+                if samplingEnabled, window != nil || pointSource != nil { start() }
+                else { stop() }
+            }
+        }
         private var lastReported: CGPoint??
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            window == nil ? stop() : start()
+            window == nil || !samplingEnabled ? stop() : start()
         }
 
         func stop() {
@@ -77,7 +83,7 @@ struct PanelPointerWatcher: NSViewRepresentable {
         }
 
         func start() {
-            guard timer == nil else { return }
+            guard samplingEnabled, timer == nil else { return }
 
             let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
@@ -102,7 +108,7 @@ struct PanelPointerWatcher: NSViewRepresentable {
         }
 
         func sample() {
-            guard timer != nil, pointSource != nil || window != nil else { return }
+            guard samplingEnabled, timer != nil, pointSource != nil || window != nil else { return }
             let point = currentPoint()
 
             // Only speak up when something actually changed, so a resting
@@ -143,4 +149,49 @@ final class PointerProbe {
     /// same "gone", so nothing reported it again and the card stayed open
     /// until the pointer came back and left once more.
     func reportAgain() { view?.reportAgain() }
+}
+
+
+/// AppKit composition of the borrowed sampler and activeAlways entry reporter.
+/// It is only a transparent observation surface: click routing and all hover,
+/// dwell, hide and drag state remain with the caller's single controller.
+@MainActor public final class PulsePanelPointerSurface: NSView {
+    public var onChange: ((CGPoint?) -> Void)?
+    private let watcher: PanelPointerWatcher.WatcherView
+    private let entry: PointerEntryReporter.TrackingView
+    public private(set) var isActive = false
+    public override var isFlipped: Bool { true }
+    public init(pointSource: (() -> CGPoint?)? = nil) {
+        watcher = PanelPointerWatcher.WatcherView(pointSource: pointSource)
+        entry = PointerEntryReporter.TrackingView()
+        super.init(frame: .zero)
+        setAccessibilityElement(false)
+        watcher.samplingEnabled = false
+        watcher.setAccessibilityElement(false); entry.setAccessibilityElement(false)
+        let observers: [NSView] = [watcher, entry]
+        for view in observers {
+            view.frame = bounds; view.autoresizingMask = [.width, .height]
+            addSubview(view)
+        }
+        watcher.onChange = { [weak self] point in
+            guard let self, self.isActive else { return }
+            self.onChange?(point)
+        }
+        entry.onEnter = { [weak self] in
+            guard let self, self.isActive else { return }
+            // An entry can arrive after a previous absent sample. Force that
+            // same value through again so the controller samples current truth.
+            self.watcher.reportAgain(); self.watcher.sample()
+        }
+        entry.updateTrackingAreas()
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+    public override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    public func setActive(_ active: Bool) {
+        isActive = active
+        watcher.samplingEnabled = active
+    }
+    public func sampleNow() { watcher.sample() }
+    public func reportAgain() { watcher.reportAgain() }
+    public func stop() { setActive(false) }
 }

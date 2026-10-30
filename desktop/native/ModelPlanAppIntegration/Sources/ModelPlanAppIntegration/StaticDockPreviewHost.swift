@@ -93,6 +93,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
     private let elapsedClock: (() -> TimeInterval)?
     private let edgeScheduling: (any DockEdgeScheduling)?
+    private let pointerSampleSource: (() -> CGPoint?)?
+    private lazy var pointerSurface = makePointerSurface()
+    var pointerInputView: PulsePanelPointerSurface { pointerSurface }
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
     var nativeMovePreviewPanel: NSPanel? { outlinePanel }
@@ -232,7 +235,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
          sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
          readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
-         contentProvider: (any DockContentProvider)? = nil) {
+         contentProvider: (any DockContentProvider)? = nil, pointerSampleSource: (() -> CGPoint?)? = nil) {
+        self.pointerSampleSource = pointerSampleSource
         self.contentProvider = contentProvider ?? LegacyDockContentProvider()
         self.purpose = purpose
         self.readerCapabilities = readerCapabilities
@@ -322,7 +326,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
         syncDisplayFollower()
     }
     private func makeDisplayFollower() -> ActiveDisplayFollower {
@@ -620,11 +624,43 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             edge.dragRegions = regions; view.backgroundDragDelegate = edge
         }
     }
+    private func makePointerSurface() -> PulsePanelPointerSurface {
+        let surface = PulsePanelPointerSurface(pointSource: pointerSampleSource)
+        surface.onChange = { [weak self] _ in
+            guard let self, self.permitted, !self.retired, !self.rendering else { return }
+            // Local samples invalidate input observation. Resolve fresh global
+            // pointer/card/wake facts through the one controller; nil is not
+            // presumed outside because the pointer may be over a separate card.
+            self.edge.refresh()
+        }
+        return surface
+    }
+    private func bindPointerInput(_ value: DockEdgePresentation, content: NSView? = nil) {
+        guard permitted, !retired, value.paintedFrame != nil else { pointerSurface.stop(); return }
+        let target: NSView
+        if let content { target = content }
+        else {
+            switch value.state {
+            case .expanded: target = container
+            case .sliver: target = sliver
+            case .suppressed: pointerSurface.stop(); return
+            }
+        }
+        if pointerSurface.superview !== target {
+            pointerSurface.stop(); pointerSurface.removeFromSuperview()
+            target.addSubview(pointerSurface, positioned: .below, relativeTo: nil)
+            pointerSurface.reportAgain()
+        }
+        pointerSurface.frame = target.bounds
+        pointerSurface.autoresizingMask = [.width, .height]
+        pointerSurface.setActive(true)
+    }
     private func present(_ value: DockEdgePresentation) {
         // Native panels and the no-window construction checks share this actual input binding.
         bindBackgroundMovement(value)
-        guard createsNativePanels else { publishPlacementObservation(value); return }
+        guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
+            pointerSurface.stop()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil { panel = makePanel(forDock: true) }
@@ -645,10 +681,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
-            catch { panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+            catch { pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
+        case .suppressed: pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
+        bindPointerInput(value, content: content)
         content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
         if let preview = value.snapPreview, let view = edgeViews[preview.edge],
            view.registeredMoveOutlinePath != nil || view.registeredMovePreviewImage != nil {
@@ -787,6 +824,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil
         dismissCard()
         NotificationCenter.default.removeObserver(self)
+        pointerSurface.stop(); pointerSurface.onChange = nil; pointerSurface.removeFromSuperview()
         displayFollower.stop(); followedDisplayID = nil
         edge.stop(); publishPlacementObservation(nil)
         edge.onPresent = nil; edge.onCommittedPlacement = nil

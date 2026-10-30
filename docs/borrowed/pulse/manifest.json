@@ -23,13 +23,14 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
-      "sha256": "afc3c737e141cdf88741ddc6307ed436bb76266051b85ef1129c3fd9d72a375e",
+      "sha256": "871b928018dc3409a16ffde5b69d7ca4cf9400db7d9402439846dc657848ab39",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
       "adaptations": [
         "inject optional local sample source for non-window behavior tests",
-        "ignore queued samples after stop; reset deduplication on restart"
+        "ignore queued samples after stop; reset deduplication on restart",
+        "transparent AppKit surface composes sampler and entry reporter; explicit visibility lifecycle gates sampling"
       ]
     },
     {
