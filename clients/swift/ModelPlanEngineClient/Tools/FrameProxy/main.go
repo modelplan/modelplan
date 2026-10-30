@@ -81,8 +81,15 @@ func (p *proxy) release(file string, message map[string]any) {
 	}()
 }
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "seed-publication" {
-		if err := seedPublicCache(); err != nil {
+	if len(os.Args) >= 2 && os.Args[1] == "seed-publication" {
+		revision := "string"
+		if len(os.Args) == 3 {
+			revision = os.Args[2]
+		}
+		if len(os.Args) > 3 || (revision != "string" && revision != "null" && revision != "absent") {
+			os.Exit(2)
+		}
+		if err := seedPublicCache(revision); err != nil {
 			fmt.Fprintln(os.Stderr, "synthetic seed failed")
 			os.Exit(9)
 		}
@@ -386,7 +393,7 @@ func main() {
 
 // Handwritten synthetic public graph, verified by the ordinary loader. This
 // test-only operation refuses non-test homes and never fetches public/live data.
-func seedPublicCache() error {
+func seedPublicCache(revision string) error {
 	home := os.Getenv("HOME")
 	if !strings.HasPrefix(filepath.Base(home), "engine-client-") {
 		return fmt.Errorf("not a test home")
@@ -406,6 +413,12 @@ func seedPublicCache() error {
 		"models": []any{map[string]any{"id": "synthetic-u4b", "developerId": "synthetic", "harnessIds": map[string]any{"codex": []string{"synthetic-u4b"}},
 			"efforts": []any{map[string]any{"effort": "medium", "ability": nil, "cost": 1.25, "time": nil, "futurePublishedValue": uint64(9007199254740993)}}}},
 		"lineups": []any{}, "speedTiers": []any{}, "resets": []any{}, "windows": []any{}, "selectionRevision": "synthetic-revision",
+	}
+	if revision == "null" {
+		data["selectionRevision"] = nil
+	}
+	if revision == "absent" {
+		delete(data, "selectionRevision")
 	}
 	object, _ := json.Marshal(map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": dependencies, "data": data})
 	type ref struct {

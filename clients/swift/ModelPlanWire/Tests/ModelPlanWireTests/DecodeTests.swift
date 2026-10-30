@@ -304,3 +304,33 @@ final class DecodeTests: XCTestCase {
         XCTAssertThrowsError(try WireDecoder.decode(WireEmpty.self, from: Data(repeating: 32, count: WireProtocol.maxFrameBytes + 1)))
     }
 }
+
+
+extension DecodeTests {
+    func testSelectionRevisionPreservesAbsenceNullAndString() throws {
+        for state in ["absent", "null", "string"] {
+            var source = try object("WirePublicationResult.json")
+            if state == "absent" { source.removeValue(forKey: "selectionRevision") }
+            else { source["selectionRevision"] = state == "null" ? NSNull() : "synthetic-revision" }
+            let value = try WireDecoder.decode(WirePublicationResult.self, from: encoded(source))
+            let output = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary)
+            let expected = source as NSDictionary
+            XCTAssertEqual(output, expected, state + " must retain field presence and value")
+            if state == "absent" { XCTAssertNil(value.selectionRevision) }
+            else if state == "null" { XCTAssertEqual(value.selectionRevision, .null) }
+            else { XCTAssertEqual(value.selectionRevision, .string("synthetic-revision")) }
+        }
+    }
+}
+
+
+extension DecodeTests {
+    func testOptionalRawRequestParamsRetainExplicitNull() throws {
+        var source = try object("WireRequest.json")
+        source["params"] = NSNull()
+        let value = try WireDecoder.decode(WireRequest.self, from: encoded(source))
+        XCTAssertEqual(value.params, .null)
+        let output = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary)
+        XCTAssertEqual(output, source as NSDictionary)
+    }
+}

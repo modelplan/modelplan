@@ -38,9 +38,9 @@ extension RealBinaryTests {
         try cli(binary, home: root, arguments: ["consent", "grant", "--json"], input: JSONEncoder().encode(grant))
         return root
     }
-    func seedPublication(_ root: URL) throws {
+    func seedPublication(_ root: URL, selectionRevision: String = "string") throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_ENGINE_TEST_PROXY"] else { throw XCTSkip("Build FrameProxy") }
-        try cli(URL(fileURLWithPath: path), home: root, arguments: ["seed-publication"])
+        try cli(URL(fileURLWithPath: path), home: root, arguments: ["seed-publication", selectionRevision])
     }
     func releaseFeatures(_ root: URL) throws { try Data().write(to: root.appendingPathComponent("release-feature")) }
 
@@ -68,25 +68,32 @@ extension RealBinaryTests {
     }
 
     func testRealPublicationMatchesVerifiedCLIProjection() async throws {
-        let binary = try binary(); let home = try home(); let probe = EventProbe()
-        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
-        try seedPublication(home)
-        let expected = try cli(binary, home: home, arguments: ["publication", "--json", "--offline"])
-        let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe)
-        addTeardownBlock { await client.stop() }
-        let context = try await client.start()
-        _ = try await client.publication()
-        let observed4 = await probe.publications().last
-        let reply = try XCTUnwrap(observed4)
-        XCTAssertEqual(reply.delivery, context)
-        XCTAssertEqual(reply.envelope.data.units.ability, "websiteAbility")
-        XCTAssertEqual(reply.envelope.data.selectionRevision, "synthetic-revision")
-        // Compare original verified values, including null and an integer above 2^53.
-        let actual = try JSONSerialization.jsonObject(with: JSONEncoder().encode(reply.envelope.data)) as? NSDictionary
-        let original = try JSONSerialization.jsonObject(with: expected) as? NSDictionary
-        XCTAssertEqual(actual, original)
-        let observed5 = await probe.orderedClears()
-        XCTAssertTrue(observed5)
+        for revision in ["string", "null", "absent"] {
+            let binary = try binary(); let home = try home(); let probe = EventProbe()
+            try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+            try seedPublication(home, selectionRevision: revision)
+            let expected = try cli(binary, home: home, arguments: ["publication", "--json", "--offline"])
+            let client = ProcessEngineClient(configuration: configuration(binary, home: home), consumer: probe)
+            addTeardownBlock { await client.stop() }
+            let context = try await client.start()
+            _ = try await client.publication()
+            let observed4 = await probe.publications().last
+            let reply = try XCTUnwrap(observed4)
+            XCTAssertEqual(reply.delivery, context)
+            XCTAssertEqual(reply.envelope.data.units.ability, "websiteAbility")
+            switch revision {
+            case "null": XCTAssertEqual(reply.envelope.data.selectionRevision, .null)
+            case "absent": XCTAssertNil(reply.envelope.data.selectionRevision)
+            default: XCTAssertEqual(reply.envelope.data.selectionRevision, .string("synthetic-revision"))
+            }
+            // Compare original verified values, including null and an integer above 2^53.
+            let actual = try JSONSerialization.jsonObject(with: JSONEncoder().encode(reply.envelope.data)) as? NSDictionary
+            let original = try JSONSerialization.jsonObject(with: expected) as? NSDictionary
+            XCTAssertEqual(actual, original)
+            let observed5 = await probe.orderedClears()
+            XCTAssertTrue(observed5)
+            await client.stop()
+        }
     }
 
     func testRealCockpitDeliversTypedProjectionAndScopes() async throws {

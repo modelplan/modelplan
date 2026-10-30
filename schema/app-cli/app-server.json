@@ -1591,16 +1591,7 @@
           "minimum": 1,
           "type": "integer"
         },
-        "selectionRevision": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
+        "selectionRevision": {},
         "speedTiers": {
           "items": {},
           "type": "array"

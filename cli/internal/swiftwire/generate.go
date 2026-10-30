@@ -407,6 +407,12 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			fmt.Fprintf(b, "        var rowElements = try c.nestedUnkeyedContainer(forKey: .%s)\n        var decodedRows: [RowsRow] = []\n        while !rowElements.isAtEnd {\n            let rowDecoder = try rowElements.superDecoder()\n            decodedRows.append(try WireRowDecoding.decode(from: rowDecoder))\n        }\n        self.%s = decodedRows\n", ident(f.JSON), ident(f.JSON))
 			continue
 		}
+		if f.Optional && f.Omit && f.Swift == "WireJSONValue" {
+			// Go RawMessage distinguishes absent (nil) from present JSON null.
+			// decodeIfPresent would collapse those states before re-encoding.
+			fmt.Fprintf(b, "        self.%s = c.contains(.%s) ? try c.decode(WireJSONValue.self, forKey: .%s) : nil\n", ident(f.JSON), ident(f.JSON), ident(f.JSON))
+			continue
+		}
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
 		}

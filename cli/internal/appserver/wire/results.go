@@ -25,7 +25,7 @@ type PublicationResult struct {
 	PublicationID     string                           `json:"publicationId" schema:"minLength=1"`
 	PublishedAt       *string                          `json:"publishedAt"`
 	Units             PublicationUnits                 `json:"units"`
-	SelectionRevision *string                          `json:"selectionRevision,omitempty"`
+	SelectionRevision json.RawMessage                  `json:"selectionRevision,omitempty"`
 	Models            []json.RawMessage                `json:"models"`
 	Lineups           []json.RawMessage                `json:"lineups"`
 	SpeedTiers        []json.RawMessage                `json:"speedTiers"`
