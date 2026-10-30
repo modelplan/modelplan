@@ -13,6 +13,10 @@
         let observation=WindowObservation(appActive:false,keyWindow:true,windowVisible:true,occlusionVisible:true)
         precondition(!observation.ready)
         precondition(observation.fields["appActive"] as? Bool == false)
+        var cold=ActivityStopState();cold.observe(appActive:false)
+        precondition(!cold.armed)
+        cold.observe(appActive:true);precondition(cold.armed)
+        let nextProcess=ActivityStopState();precondition(!nextProcess.armed)
         print("Observation pure-state checks pass; no NSApplication, GUI or PID probe")
     }
 }

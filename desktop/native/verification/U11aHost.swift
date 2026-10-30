@@ -6,8 +6,9 @@ import Darwin
 #if MODELPLAN_TEST_ONLY_SPI
 @MainActor final class U11aHost:NSObject,NSApplicationDelegate,WKNavigationDelegate,WKScriptMessageHandler {
     var config:[String:Any]=[:],output:FileHandle!,timer:Timer?,window:NSWindow?,web:WKWebView?
+    var activityStop=ActivityStopState()
     var attribution:WebContentAttribution?,frameHandler:VerificationFrameHandler?,monitor:Any?
-    var phase="before-open",cycle=1,raf=false,subjectReady=false,armed=false,ending=false,busy=false
+    var phase="before-open",cycle=1,raf=false,subjectReady=false,ending=false,busy=false
     var start=DispatchTime.now().uptimeNanoseconds,lastSecond = -1,activation:[String:Any]=[:]
     var root:URL!,leaseURL:URL!,controlURL:URL!,stopURL:URL!,origin:URL!
     var currentCommand=""
@@ -38,13 +39,12 @@ import Darwin
         let masks:NSEvent.EventTypeMask=[.keyDown,.keyUp,.flagsChanged,.leftMouseDown,.rightMouseDown,.otherMouseDown,.scrollWheel,.mouseMoved,.leftMouseDragged,.rightMouseDragged,.otherMouseDragged,.magnify,.rotate,.swipe]
         monitor=NSEvent.addLocalMonitorForEvents(matching:masks){[weak self] event in
             guard let self,!self.ending else{return event}
-            if self.window==nil && self.armed {self.stop("app-input");return nil}
+            if self.window==nil && self.activityStop.armed {self.stop("app-input");return nil}
             guard let w=self.window,event.window===w || (event.window==nil && w.isKeyWindow) else{return event}
             self.stop("window-input");return nil
         }
         guard monitor != nil else{stop("input-monitor-unavailable");return}
-        armed=c["ownerObservationEstablished"] as? Bool ?? false
-        if armed {let requested = !NSApp.isActive;if requested {NSApp.activate(ignoringOtherApps:true)};emit(["event":"activation-call","activationCall":requested ? "NSApplication.activate(ignoringOtherApps:true)":"not-invoked-already-active","target":"own-App-cold-baseline"])}
+        if c["mode"] as? String=="measure" {let requested = !NSApp.isActive;if requested {NSApp.activate(ignoringOtherApps:true)};emit(["event":"activation-call","activationCall":requested ? "NSApplication.activate(ignoringOtherApps:true)":"not-invoked-already-active","target":"own-App-cold-baseline"])}
         emit(["event":"host-start","appPID":ProcessInfo.processInfo.processIdentifier,"mode":c["mode"] ?? "measure"])
         timer=Timer.scheduledTimer(withTimeInterval:0.25,repeats:true){[weak self] _ in MainActor.assumeIsolated{self?.step()}}
     }
@@ -57,10 +57,10 @@ import Darwin
             if command=="open" {openView()} else if command=="close" {closeView()} else if command=="quit" {finish();return}
             emit(["event":"command-ack","command":command,"nonce":nonce])
         }
-        if window==nil && armed && !NSApp.isActive {stop("doctor-app-inactive");return}
+        activityStop.observe(appActive:NSApp.isActive)
         if let w=window {
             var r=WindowObservation.capture(w).fields;r["activationCall"]=activation["activationCall"] ?? "not-invoked";emit(r)
-            if WindowObservation.capture(w).ready {armed=true}
+            activityStop.observe(appActive:NSApp.isActive)
         }
         let second=Int(Double(DispatchTime.now().uptimeNanoseconds-start)/1e9)
         if second != lastSecond {lastSecond=second;sample();observe()}
@@ -75,7 +75,7 @@ import Darwin
         var usage=rusage();let ru=getrusage(RUSAGE_SELF,&usage)
         var info=mach_task_basic_info();var count=mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size/MemoryLayout<natural_t>.size)
         let code=withUnsafeMutablePointer(to:&info){p in p.withMemoryRebound(to:integer_t.self,capacity:Int(count)){task_info(mach_task_self_,task_flavor_t(MACH_TASK_BASIC_INFO),$0,&count)}}
-        var r:[String:Any]=["event":"app-sample","pid":ProcessInfo.processInfo.processIdentifier]
+        var r:[String:Any]=["event":"app-sample","pid":ProcessInfo.processInfo.processIdentifier,"appActive":NSApp.isActive,"stopArmed":activityStop.armed]
         if ru==0 {r["cpuSeconds"]=Double(usage.ru_utime.tv_sec+usage.ru_stime.tv_sec)+Double(usage.ru_utime.tv_usec+usage.ru_stime.tv_usec)/1e6}
         if code==KERN_SUCCESS {r["rssBytes"]=info.resident_size};emit(r)
     }
@@ -136,7 +136,7 @@ import Darwin
         if let b=try? JSONSerialization.data(withJSONObject:r){try? b.write(to:stopURL,options:.withoutOverwriting)}
         emit(["event":"local-stop","reason":reason]);finish()
     }
-    func applicationDidResignActive(_ n:Notification){if armed && !ending {stop("app-deactivated")}}
+    func applicationDidResignActive(_ n:Notification){if activityStop.armed && !ending {stop("app-deactivated")}}
     func finish(){guard !ending else{return};ending=true;timer?.invalidate();if let m=monitor {NSEvent.removeMonitor(m);monitor=nil};closeView();emit(["event":"app-cleanup-complete"]);NSApp.terminate(nil)}
     func applicationWillTerminate(_ n:Notification){timer?.invalidate();try? output?.close()}
     func userContentController(_ c:WKUserContentController,didReceive m:WKScriptMessage){

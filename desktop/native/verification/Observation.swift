@@ -22,6 +22,13 @@ struct WindowObservation: Codable {
     }
 }
 
+// A cold baseline has no window. Never transfer arming from a previous App or
+// treat its initial inactive state as owner activity / a failed window gate.
+struct ActivityStopState {
+    private(set) var armed=false
+    mutating func observe(appActive:Bool) { if appActive {armed=true} }
+}
+
 struct RAFProgress {
     private var firstTime:Double?, firstFrame:Int?, lastFrame:Int?
     private(set) var failed=false
