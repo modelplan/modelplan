@@ -25,13 +25,40 @@ let client = cockpit.makeClient(configuration: configuration)
 cockpit.open()
 ```
 
-The product entry must retain this object and map `onIntent` to typed existing
-Settings/Choose setup/history routes. No page message can execute commands,
-open a URL, mutate consent or request credentials. An unavailable context does
-not create a hidden web view: the caller's `onUnavailable` supplies its status.
-This public slice supplies the production constructor seam and a synthetic
-executable using it; applying it to the private candidate entry is still an
-explicit assembly step, not proven by these package tests.
+The production app now retains this path lazily through
+`CommunityApp.main` → `ProductionDockFactory.community()` →
+`StaticDockPreviewHost.openConsole` (Dock button and Console context-menu item) →
+`CommunityCockpitEntry` → this coordinator/window. AppIntegration and the actual
+app target depend on this package. The single action edit is within the granted
+entry lease; other Settings/Dock/menu behavior is untouched. The real selector
+has a presentation-admission regression. Settings/Choose setup use the existing
+Settings action; unavailable content/helper/context offers Settings and Status
+with a reason. History has an explicit unavailable next step until its surface
+is delivered. No action can execute arbitrary commands or URLs.
+
+The product binding verifies the existing helper identity and the explicit
+community/official manifest pin before creating a client. Window close retires
+that client before a repeat open. No caller file-presence flag admits content.
+The verification skill's productEntry mode invokes this exact Dock selector and
+observes the page created by the product binding, rather than constructing a
+second coordinator. Full sealed-candidate/owner-shaped/fidelity acceptance is a
+separate pipeline gate.
+
+Before candidate assembly, build the canonical selected edition, then stage its
+verified bytes into U10's existing `desktop/cockpit/dist` input:
+
+```sh
+npm ci --prefix desktop/cockpit --ignore-scripts
+npm run build:official --prefix desktop/cockpit
+node desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs official
+```
+
+M0's existing U10 assembly copies that directory to `Resources/Cockpit`; it is not
+a second editable web source. Community staging uses the community build and
+`prepare-candidate.mjs community`; no reserved input is required. Missing/mixed
+resources produce a human unavailable path. Signing/publishing remains with the
+packaging owner. Generated-wire synchronization after the normal main merge
+changes only the schema-SHA header; the Cockpit DTO/validator is byte-identical.
 
 Before acknowledging `clearPrivateViews`, the consumer hides the page, cancels
 query identity and awaits an authenticated matching `cleared` receipt, or

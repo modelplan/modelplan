@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/ModelPlanAppIntegration/**'
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/ModelPlanAppIntegration/**'
       - 'desktop/native/verification/**'
       - 'clients/swift/ModelPlanEngineClient/**'
       - 'clients/swift/ModelPlanWire/**'
@@ -43,5 +45,9 @@ jobs:
         run: swift build --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-release-build --configuration release --jobs 2
       - name: Compile wired verification host (not execution)
         run: swift build --package-path desktop/native/verification --scratch-path .tmp/u11-host-build --jobs 2 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI
+      - name: Compile actual product and guard its Dock/menu cockpit action (no windows)
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 --filter CommunityCockpitEntryTests
+      - name: Public numerical receipt privacy
+        run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_public_receipts.py'
       - name: Source policy
         run: node scripts/check-source-policy.mjs

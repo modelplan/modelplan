@@ -12,6 +12,9 @@ let package = Package(
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
         .package(name: "ModelPlanSettings", path: "../ModelPlanSettings"),
+        .package(path: "../ModelPlanCockpitWeb"),
+        .package(path: "../../../clients/swift/ModelPlanEngineClient"),
+        .package(path: "../../../clients/swift/ModelPlanWire"),
     ],
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
@@ -24,9 +27,13 @@ let package = Package(
             .product(name: "ModelPlanField", package: "ModelPlanNative"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
+            .product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"),
+            .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
         ], resources: [.copy("Resources")]),
         .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
             "ModelPlanAppIntegration",
+            .product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),

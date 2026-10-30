@@ -5,6 +5,7 @@
   import WebKit
   import ModelPlanCockpitWeb
   import ModelPlanEngineClient
+import ModelPlanAppIntegration
 
   @MainActor final class U11DiagnosticHandler: NSObject, WKScriptMessageHandler {
   weak var host: U11aHost?
@@ -22,7 +23,13 @@
   }
 }
 
-@MainActor final class U11WiredSession {
+@MainActor protocol U11WiredDriving: AnyObject {
+  var rendered: Bool { get set }
+  func open() async throws
+  func close()
+  func shutdown() async
+}
+@MainActor final class U11WiredSession: U11WiredDriving {
     weak var host: U11aHost?
     let coordinator: EngineCockpitCoordinator
     let client: ProcessEngineClient
@@ -42,7 +49,31 @@
         let controller = CockpitWindowController(
           bundle: bundle, context: context,
           appearance: .init(theme: .night, locale: .en, profile: .full))
-        controller.verificationResource = { [weak host] path in
+        attachU11Verification(controller, host: host)
+      return controller
+      }
+      client = coordinator.makeClient(
+        configuration: .init(
+          executableURL: URL(fileURLWithPath: helper),
+          applicationVersion: "synthetic-u11-verification",
+          allowedEnvironment: [
+            "HOME": home, "TMPDIR": tmp, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
+          ], offline: true, readOnly: true))
+      coordinator.onUnavailable = { [weak host] in host?.stop("engine-cockpit-unavailable") }
+    }
+    func open() async throws {
+      rendered = false
+      _ = try await client.start()
+      coordinator.open()
+    }
+    func close() {
+      coordinator.close()
+      rendered = false
+    }
+    func shutdown() async { await coordinator.shutdown() }
+  }
+  @MainActor private func attachU11Verification(_ controller: CockpitWindowController, host: U11aHost?) {
+      controller.verificationResource = { [weak host] path in
         if host?.config["mode"] as? String == "preflight" { host?.emit(["event":"u11-bundle-resource", "path":path]) }
       }
       controller.onFailure = { [weak host] failure in host?.emit(["event":"wired-failure","stage":failure.rawValue]); host?.stop("wired-page-" + failure.rawValue) }
@@ -91,28 +122,28 @@
           host.activation = ["activationCall": "makeKeyAndOrderFront", "event": "activation-call"]
           host.emit(host.activation)
         }
-        return controller
-      }
-      client = coordinator.makeClient(
-        configuration: .init(
-          executableURL: URL(fileURLWithPath: helper),
-          applicationVersion: "synthetic-u11-verification",
-          allowedEnvironment: [
-            "HOME": home, "TMPDIR": tmp, "PATH": "/usr/bin:/bin", "LANG": "en_US.UTF-8",
-          ], offline: true, readOnly: true))
-      coordinator.onUnavailable = { [weak host] in host?.stop("engine-cockpit-unavailable") }
-    }
-    func open() async throws {
-      rendered = false
-      _ = try await client.start()
-      coordinator.open()
-    }
-    func close() {
-      coordinator.close()
-      rendered = false
-    }
   }
-  extension U11aHost {
+@MainActor final class U11ProductWiredSession: U11WiredDriving {
+  weak var host: U11aHost?
+  let dock: StaticDockPreviewHost
+  var rendered = false
+  init(host: U11aHost) {
+    self.host = host
+    dock = ProductionDockFactory.community()
+    CommunityCockpitEntry.verificationPage = { [weak host] page in attachU11Verification(page, host: host) }
+  }
+  func open() async throws {
+    rendered = false; dock.setPresentationAllowed(true)
+    guard NSApp.sendAction(NSSelectorFromString("openConsole"), to: dock, from: nil) else { throw CockpitBridgeError.unavailable }
+  }
+  func close() { CommunityCockpitEntry.closeWindow(); rendered = false }
+  func shutdown() async {
+    await CommunityCockpitEntry.shutdown()
+    CommunityCockpitEntry.verificationPage = nil; dock.close()
+  }
+}
+
+extension U11aHost {
     func openWiredView() {
       guard web == nil, permitted(), let config = config["wired"] as? [String: Any] else { return }
       raf = false
@@ -129,7 +160,10 @@
       ])
       Task { @MainActor in
         do {
-          if wired == nil { wired = try U11WiredSession(host: self, config: config) }
+          if wired == nil {
+          if config["productEntry"] as? Bool == true { wired = U11ProductWiredSession(host: self) }
+          else { wired = try U11WiredSession(host: self, config: config) }
+        }
           try await wired?.open()
         } catch { stop("wired-setup-failed") }
       }

@@ -13,7 +13,7 @@ import Darwin
     var root:URL!,leaseURL:URL!,controlURL:URL!,stopURL:URL!,origin:URL!
     var currentCommand=""
     #if MODELPLAN_U11_WIRED
-    var wired: U11WiredSession?
+    var wired: (any U11WiredDriving)?
     #endif
     func emit(_ row:[String:Any]) {
         var r=row;r["elapsedSeconds"]=Double(DispatchTime.now().uptimeNanoseconds-start)/1e9
@@ -160,7 +160,7 @@ import Darwin
     func finish(){
         guard !ending else{return};ending=true;timer?.invalidate();if let m=monitor {NSEvent.removeMonitor(m);monitor=nil};closeView()
         #if MODELPLAN_U11_WIRED
-        Task { @MainActor in await wired?.coordinator.shutdown(); wired = nil; emit(["event":"app-cleanup-complete"]); NSApp.terminate(nil) }
+        Task { @MainActor in await wired?.shutdown(); wired = nil; emit(["event":"app-cleanup-complete"]); NSApp.terminate(nil) }
         #else
         emit(["event":"app-cleanup-complete"]);NSApp.terminate(nil)
         #endif

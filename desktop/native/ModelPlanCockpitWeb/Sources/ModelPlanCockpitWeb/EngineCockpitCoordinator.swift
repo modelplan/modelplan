@@ -37,6 +37,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var refreshAgain = false
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onUnavailable: (() -> Void)?
+  public var onClosed: (() -> Void)?
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
@@ -79,6 +80,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       sessionID: session, storeEpoch: context.floor.storeEpoch, generation: context.floor.generation
     )
   }
+  public func start() async throws {
+    guard let client else { throw CockpitBridgeError.unavailable }
+    _ = try await client.start()
+  }
   public func open() {
     guard let delivery, client != nil, let context = try? Self.bridgeContext(delivery) else {
       onUnavailable?()
@@ -94,6 +99,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     newPage.onClosed = { [weak self] in
       self?.cancelQuery()
       self?.page = nil
+      self?.onClosed?()
     }
     page = newPage
     newPage.open()
