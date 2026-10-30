@@ -1,4 +1,5 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
+// ModelPlan adaptation: injectable local sample source and explicit stopped-sample fence.
 import AppKit
 import SwiftUI
 
@@ -42,6 +43,16 @@ struct PanelPointerWatcher: NSViewRepresentable {
 
     final class WatcherView: NSView {
         var onChange: ((CGPoint?) -> Void)?
+        private let pointSource: (() -> CGPoint?)?
+
+        init(pointSource: (() -> CGPoint?)? = nil) {
+            self.pointSource = pointSource
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) {
+            pointSource = nil
+            super.init(coder: coder)
+        }
 
         /// Matches SwiftUI's top-left origin, so the reported point can be
         /// compared against SwiftUI frames without flipping it first.
@@ -65,7 +76,7 @@ struct PanelPointerWatcher: NSViewRepresentable {
             lastReported = nil
         }
 
-        private func start() {
+        func start() {
             guard timer == nil else { return }
 
             let timer = Timer.scheduledTimer(withTimeInterval: Self.interval, repeats: true) { [weak self] _ in
@@ -84,13 +95,14 @@ struct PanelPointerWatcher: NSViewRepresentable {
 
         /// The pointer now, or nil off the panel. Not throttled or deduplicated.
         func currentPoint() -> CGPoint? {
+            if let pointSource { return pointSource() }
             guard let window else { return nil }
             let local = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
             return bounds.contains(local) ? local : nil
         }
 
-        private func sample() {
-            guard window != nil else { return }
+        func sample() {
+            guard timer != nil, pointSource != nil || window != nil else { return }
             let point = currentPoint()
 
             // Only speak up when something actually changed, so a resting

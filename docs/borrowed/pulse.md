@@ -32,3 +32,7 @@ Eleven pure source tests cover placement, input capture/release/cancel, control 
 ## Display-follower L1 qualification
 
 The production timer and pure tests share the display-sampling seam. Three added cases prove refusal/retry before deduplication, explicit reprobe, stop/no sampling plus reset on restart, and callback-triggered stop without latching stale identity. Fourteen pure tests pass in total. No real display identity or pointer is sampled in these tests. Sampler coordinate/reprobe/teardown and tracking entry coverage, full controller integration and real native arrival are still pending; this is not a packaged L2 result.
+
+## Pointer-sampler and entry L1 qualification
+
+PanelPointerWatcher now has an optional injected local-point source for window-free tests and ignores queued samples once its timer is stopped. Its default still converts the native screen point through the window into the flipped view. Three added tests exercise subpoint deduplication versus one-point movement, exit/reprobe, stop/no reads and restart reset, plus the actual entry callback and one activeAlways/inVisibleRect tracking area across repeated layout passes. Seventeen pure source tests pass. These tests do not prove native screen/window coordinate conversion or OS event delivery; those remain wired-stage real-input acceptance work.
