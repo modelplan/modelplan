@@ -27,7 +27,8 @@
         "entryObserved",
         "revealAfterDwell",
         "nonActivatingPreserved"
-      ]
+      ],
+      "nativeInputRequired": true
     },
     {
       "id": "U5-sampler",
@@ -40,7 +41,8 @@
         "samplerObserved",
         "collapseAfterGrace",
         "reentryObserved"
-      ]
+      ],
+      "nativeInputRequired": true
     },
     {
       "id": "U5-display-following",
@@ -54,7 +56,8 @@
         "heldPressNoJump",
         "releaseFollowRetry",
         "savedIntentNotRewritten"
-      ]
+      ],
+      "nativeInputRequired": true
     },
     {
       "id": "U5-presence-login-stubs",
@@ -71,7 +74,8 @@
         "explicitLoginRequestObserved",
         "requiresApprovalTruthful",
         "realLoginItemsUntouched"
-      ]
+      ],
+      "nativeInputRequired": false
     },
     {
       "id": "U5-atomic-migration-synthetic-profile",
@@ -88,7 +92,8 @@
         "restartObserved",
         "restartRestoredPlacement",
         "readerConsentNotPromoted"
-      ]
+      ],
+      "nativeInputRequired": false
     }
   ],
   "forbidden": [

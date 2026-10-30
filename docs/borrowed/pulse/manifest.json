@@ -23,7 +23,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PanelPointerWatcher.swift",
-      "sha256": "a558dba3a309ca72ef4cb1ebd1af28efe50aec70522830217a289197baae9707",
+      "sha256": "de4c7ad30bf2f8818c073aaf63a59ec4bb6940ebdf80af92c69761a33f386885",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "implementationModified": true,
       "upstreamSHA256": "eebbbe8e325b3bee35213e1fe4ba5102f0f8563cf8f297e81eb032122862ba64",
@@ -32,7 +32,8 @@
         "ignore queued samples after stop; reset deduplication on restart",
         "transparent AppKit surface composes sampler and entry reporter; explicit visibility lifecycle gates sampling",
         "remove unused SwiftUI representable wrapper; normal AppKit host consumes the tracking/sampling implementation",
-        "production composition owns PointerProbe and uses its current/reportAgain paths for entry and reparenting"
+        "production composition owns PointerProbe and uses its current/reportAgain paths for entry and reparenting",
+        "compile-time test-only entry arrival callback for scoped real-input evidence; omitted from release"
       ]
     },
     {

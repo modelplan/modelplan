@@ -55,6 +55,13 @@ class U5EvidenceTests(unittest.TestCase):
                 self.assertFalse((support/'settings.json').exists())
                 consent=json.loads((home/'.config/modelplan/consent.json').read_text())
                 self.assertTrue(all(tool['allowed'] is False for tool in consent['tools'].values()))
+    def test_candidate_test_commands_are_limited_to_stub_and_migration_cases(self):
+        for name in u5.CASES:
+            r=self.receipt();case=r['scenarios'][name]
+            case.update(inputMethod='candidate-test-command',candidateBound=True,actionDelivered=True)
+            expected='not-run' if u5.CASES[name]['nativeInputRequired'] else 'pass'
+            self.assertEqual(u5.qualify(r)[name],expected)
+            case['candidateBound']=False;self.assertEqual(u5.qualify(r)[name],'not-run')
     def test_owner_profile_is_rejected(self):
         r=self.receipt();r['profile']='owner'
         with self.assertRaises(ValueError):u5.qualify(r)

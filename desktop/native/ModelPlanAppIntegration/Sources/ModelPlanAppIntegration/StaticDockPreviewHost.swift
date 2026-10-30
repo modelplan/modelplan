@@ -697,6 +697,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
         publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
+        #if DEBUG && MODELPLAN_U5_REAL_INPUT
+        U5RealInputObservation.install(self, panel: panel)
+        #endif
     }
     private func hideMovePreview() {
         outlinePanel?.orderOut(nil)

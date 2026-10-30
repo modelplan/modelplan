@@ -30,7 +30,9 @@ def qualify(receipt):
         if case.get('attempted') is not True:continue
         if case.get('timedOut') is True:outcome[name]='timeout';continue
         if case.get('inputCapability')=='unsupported':outcome[name]='unsupported';continue
-        if case.get('inputMethod') not in INPUT_METHODS or case.get('inputDelivered') is not True or case.get('resultObserved') is not True:continue
+        physical=case.get('inputMethod') in INPUT_METHODS and case.get('inputDelivered') is True
+        candidate_command=(not spec.get('nativeInputRequired',True) and case.get('inputMethod')=='candidate-test-command' and case.get('candidateBound') is True and case.get('actionDelivered') is True)
+        if not (physical or candidate_command) or case.get('resultObserved') is not True:continue
         native=case.get('nativeObservation')
         if not isinstance(native,dict):continue
         try:gate=DOCTOR.doctor(native,SPEC['doctorScenario'])

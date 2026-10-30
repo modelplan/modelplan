@@ -137,6 +137,9 @@ final class PointerProbe {
 /// dwell, hide and drag state remain with the caller's single controller.
 @MainActor public final class PulsePanelPointerSurface: NSView {
     public var onChange: ((CGPoint?) -> Void)?
+    #if DEBUG && MODELPLAN_U5_REAL_INPUT
+    public var verificationEntryObserved: (() -> Void)?
+    #endif
     private let watcher: PanelPointerWatcher.WatcherView
     private let entry: PointerEntryReporter.TrackingView
     private let probe = PointerProbe()
@@ -165,6 +168,9 @@ final class PointerProbe {
             // same value through again so the controller samples current truth.
             self.probe.reportAgain()
             self.watcher.sample(read: self.probe.current)
+            #if DEBUG && MODELPLAN_U5_REAL_INPUT
+            self.verificationEntryObserved?()
+            #endif
         }
         entry.updateTrackingAreas()
     }
