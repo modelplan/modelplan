@@ -6,7 +6,7 @@ body:
     id: client
     attributes:
       label: Client / 客户端
-      options: [Skill, modelplan CLI, Claude Code plugin, Codex plugin, Website]
+      options: [Desktop app, Skill, modelplan CLI, Claude Code plugin, Codex plugin, Website]
     validations: { required: true }
   - type: input
     id: version
@@ -17,8 +17,22 @@ body:
     id: what
     attributes:
       label: What happened / 发生了什么
-      description: Steps, the command or prompt, and the output. 复现步骤、命令或提问、输出。
+      description: Describe the problem and what you observed. 描述问题和观察到的现象。
     validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Include the actions and command needed to reproduce it. 请列出复现所需的操作和命令。
+    validations: { required: true }
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Copy-safe diagnostics / 可安全复制的诊断信息
+      description: |
+        Run `modelplan diagnostics --share`, review its output, and paste it here. It reports versions, consent-enabled reader scopes and recent fixed error codes. If the CLI is unavailable, leave this blank.
+        运行 `modelplan diagnostics --share`，检查输出并粘贴到此处。报告包含版本、已授权的读取范围和近期固定错误代码；无法使用 CLI 时可留空。
+      render: json
   - type: textarea
     id: expected
     attributes:
