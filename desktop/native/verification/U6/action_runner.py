@@ -7,6 +7,7 @@ BIN=Path(__file__).resolve().parents[1]/'bin'
 U6=Path(__file__).resolve().parent
 sys.path.insert(0,str(BIN))
 from admission import load_and_admit
+from guardian import reason_code,BOUNDED_CODES
 
 def uptime():return time.clock_gettime(time.CLOCK_UPTIME_RAW)
 def native(batch,run,epoch,pid):
@@ -28,14 +29,15 @@ def command(args,config,timeout=20):
     if result.returncode:raise ValueError('not-delivered')
     return result
 def finish(batch,run,epoch,pid,steps,reason):
+    reason=None if reason is None else reason_code(reason,BOUNDED_CODES)
     receipt=dict(schema='u6-actions/1',runID=run,epoch=epoch,pid=pid,mono=uptime(),steps=steps,
                  outcome='pass' if reason is None else 'not-run',reason=reason)
     with (batch/'operator-finish.json').open('x') as stream:json.dump(receipt,stream,sort_keys=True);stream.write('\n')
-def request_stop(config):
+def request_stop(config,reason='not-delivered'):
     path=Path(config['stopPath'])
     try:
         with path.open('x') as stream:json.dump(dict(runID=config['expectedLease']['runID'],
-            epoch=config['expectedLease']['epoch'],stop=True,reason='u6-action-refused'),stream)
+            epoch=config['expectedLease']['epoch'],stop=True,reason=reason_code(reason,BOUNDED_CODES)),stream)
     except FileExistsError:pass
 def run(config_path,pointer_binary):
     config=json.loads(Path(config_path).read_text());batch=Path(config['batch']);lease=config['expectedLease']
@@ -86,8 +88,9 @@ def run(config_path,pointer_binary):
                   and r.get('checks',{}).get('sessionID')==b_session,5)
         steps['trackedClear']='pass';finish(batch,run,epoch,pid,steps,None)
     except (OSError,ValueError,subprocess.TimeoutExpired,KeyError) as error:
-        steps[current]='not-run';request_stop(config)
-        if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,'not-delivered')
+        reason=reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES)
+        steps[current]='not-run';request_stop(config,reason)
+        if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,reason)
         raise SystemExit(3) from error
 
 if __name__=='__main__':

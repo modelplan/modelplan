@@ -19,8 +19,10 @@ class U6ActionRunnerTests(unittest.TestCase):
                 self.assertEqual(error.exception.code,3)
             finally:actions.load_and_admit=original
             self.assertTrue((root/'stop.json').is_file())
+            self.assertEqual(json.loads((root/'stop.json').read_text())['reason'],'unknown')
             finish=json.loads((root/'operator-finish.json').read_text())
             self.assertEqual((finish['schema'],finish['runID'],finish['outcome']),('u6-actions/1','run','not-run'))
             self.assertTrue(all(x=='not-run' for x in finish['steps'].values()))
+            self.assertEqual(finish['reason'],'unknown')
 
 if __name__=='__main__':unittest.main()
