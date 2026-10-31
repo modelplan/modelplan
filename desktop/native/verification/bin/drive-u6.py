@@ -1,68 +1,129 @@
 # SPDX-License-Identifier: MIT
-"""U6-specific operator Drive controller using the unchanged shared lease/cleanup helpers."""
-import argparse,hashlib,importlib.util,json,os,signal,subprocess,sys,time,shutil
+"""U6 Dock/menu scenario for CONTROLLER_MODE=launch; --config is the same run config launch.py executes.
+`prepare` (before launch.py): live admission, then slot/contention/disk-floor resources and the native contract.
+`drive` (after launch.py): drives only the subject launch.py registered with the guardian; it never starts or
+signals a process. Closing is the stop file, acted on by launch.py and bin/guardian.py; Drive only observes it."""
+import argparse,hashlib,json,shutil,sys,time
 from pathlib import Path
 from admission import load_and_admit
-BASE=Path(__file__).resolve().parent
-spec=importlib.util.spec_from_file_location('shared_cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
+from guardian import cleanup,identity,launcher_lost
+FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
+DISK_RESERVE=2*3430940672;DISK_FLOOR=8589934592
+REGISTER_SECONDS=15;CLOSE_SECONDS=25 # launch.py TERM 10 s + KILL; guardian TERM 10 s + KILL 5 s
 def write(path,data):
     path=Path(path);temp=path.with_suffix(path.suffix+'.tmp');temp.write_text(json.dumps(data));temp.replace(path)
+def read(path):return json.loads(Path(path).read_text())
+def run_identity(c):e=c['expectedLease'];return e['runID'],e['epoch'],e['notBefore'],e['expiresAt']
+def native_contract(c):return Path(c['scratch']).resolve()/'native-guard.json'
+def failure(e):return str(e) if isinstance(e,RuntimeError) else type(e).__name__ # OS messages can carry paths
 def admit(c,now):
     if c.get('profile')!='synthetic':raise ValueError('synthetic-profile-required')
-    if not c['start']<=now<c['expiresAt'] or not 0<c['expiresAt']-c['start']<=1200:raise ValueError('invalid-window')
+    e=c.get('expectedLease');start,end=(e.get('notBefore'),e.get('expiresAt')) if isinstance(e,dict) else (None,None)
+    if any(type(x) not in (int,float) for x in (start,end)) or not start<=now<end or not 0<end-start<=1200:raise ValueError('invalid-window')
     for name,n in [('head',40),('binarySHA256',64)]:
         value=c.get(name,'')
-        if len(value)!=n or any(x not in '0123456789abcdef' for x in value):raise ValueError('invalid-subject')
-    if Path(c['home']).resolve()!=Path(c['scratch']).resolve()/'home' or Path(c['tmp']).resolve()!=Path(c['scratch']).resolve()/'tmp':raise ValueError('synthetic-root-mismatch')
-    if c['environment'].get('HOME')!=c['home'] or c['environment'].get('TMPDIR','').rstrip('/')!=c['tmp']:raise ValueError('profile-environment-mismatch')
+        if not isinstance(value,str) or len(value)!=n or any(x not in '0123456789abcdef' for x in value):raise ValueError('invalid-subject')
+    scratch=Path(c['scratch']).resolve()
+    if Path(c['syntheticHome']).resolve()!=scratch/'home' or Path(c['syntheticTmp']).resolve()!=scratch/'tmp':raise ValueError('synthetic-root-mismatch')
+    argv=c.get('argv') # launch.py passes the U6 flag; Drive never builds its own argv
+    if not isinstance(argv,list) or len(argv)!=3 or argv[1]!=FLAG or Path(argv[2]).resolve()!=native_contract(c):raise ValueError('u6-argv-mismatch')
+    if Path(c['stopPath']).resolve()!=(Path(c['batch'])/'stop.json').resolve():raise ValueError('stop-path-mismatch')
+    if not isinstance(c.get('subjectPidPath'),str) or not c['subjectPidPath']:raise ValueError('subject-registration-required')
     return True
-def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=Path,required=True);a=parser.parse_args();c=json.loads(a.config.read_text());admit(c,time.time())
-    out=Path(c['batch']);scratch=Path(c['scratch']);assert out.is_dir() and scratch.is_dir()
-    binary=Path(c['binary']);assert hashlib.sha256(binary.read_bytes()).hexdigest()==c['binarySHA256']
-    locks=Path(c['locks']);owned=[];app=None;identity=None
-    stop=Path(c['stopPath']);lease=Path(c['leasePath']);finish=out/'operator-finish.json'
-    if stop.resolve()!=(out/'stop.json').resolve():raise ValueError('stop-path-mismatch')
-    contract=dict(profile='synthetic',binarySHA256=c['binarySHA256'],argv=[str(binary)],
-                  leasePath=str(lease),releasePath=c['releasePath'],stopPath=str(stop),
-                  expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
-                  requiredSeconds=30,booking=c.get('booking'))
-    # M1 runs the independent guardian; admission checks its live lease before setup.
-    load_and_admit(contract)
-    result=dict(runID=c['runID'],epoch=c['epoch'],headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False)
+def request_stop(c,reason):
+    stop=Path(c['stopPath']);run,epoch,_,_=run_identity(c)
+    if not stop.exists():write(stop,dict(runID=run,epoch=epoch,stop=True,reason=reason))
+def owner(lock):
+    try:o=read(lock/'owner.json');return o.get('runID'),o.get('epoch')
+    except (OSError,ValueError,AttributeError):return None
+def release(c):
+    """Release only this run's locks; True when none of them remain."""
+    locks=Path(c['locks']);mine=run_identity(c)[:2]
+    for name in LOCKS:
+        lock=locks/name
+        if owner(lock)==mine:(lock/'owner.json').unlink();lock.rmdir()
+    return all(owner(locks/name)!=mine for name in LOCKS)
+def prepare(c,now):
+    """Before launch.py: every resource check happens here, so a refusal stops the sequence with no app."""
+    admit(c,now);run,epoch,start,end=run_identity(c)
+    out=Path(c['batch']);scratch=Path(c['scratch'])
+    if not out.is_dir() or not scratch.is_dir():raise ValueError('batch-or-scratch-missing')
+    load_and_admit(c) # Live lease/release/booking before any resource; launch.py rechecks before spawning.
+    if hashlib.sha256(Path(c['argv'][0]).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
+    observations=out/'native-observations.jsonl'
+    if observations.exists() or (out/'result.json').exists():raise ValueError('batch-not-fresh')
+    locks=Path(c['locks'])
     try:
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
-        for name in ['M1-candidate-gui','slot1']:
-            lock=locks/name;lock.mkdir();write(lock/'owner.json',dict(runID=c['runID'],epoch=c['epoch'],pid=os.getpid()));owned.append(lock)
+        for name in LOCKS:lock=locks/name;lock.mkdir();write(lock/'owner.json',dict(runID=run,epoch=epoch,role='U6-prepare'))
         if sum((locks/f'slot{i}').exists() for i in (1,2))!=1:raise RuntimeError('resource-contention')
-        if shutil.disk_usage(c['resourceRoot']).free-2*3430940672<8589934592:raise RuntimeError('resource-disk-floor')
-        load_and_admit(contract)
-        native_contract=scratch/'native-guard.json';write(native_contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl'),menuRequest=str(out/'menu-request.json')))
-        with (scratch/'app-stdout.log').open('w') as stdout,(scratch/'app-stderr.log').open('w') as stderr:
-            app=subprocess.Popen([str(binary),'--u6-drive-contract',str(native_contract)],env=c['environment'],stdout=stdout,stderr=stderr,start_new_session=True)
-            identity=cleanup.identity(app.pid);assert identity is not None
-            result['appStarted']=True;write(out/'launch.json',dict(runID=c['runID'],epoch=c['epoch'],ownedPID=app.pid,sourceHead=c['head']))
-            while app.poll() is None and not stop.exists() and not finish.exists() and time.time()<c['expiresAt']:
-                if shutil.disk_usage(c['resourceRoot']).free-2*3430940672<8589934592:raise RuntimeError('resource-disk-floor')
-                time.sleep(.2)
-            if finish.exists():result['operatorReceipts']=json.loads(finish.read_text());result['outcome']='operator-finished'
-            elif stop.exists():result['reason']='stop-hook'
-            elif app.poll() is not None:result['reason']='subject-exited'
-            else:result['outcome']='timeout';result['reason']='absolute-deadline'
-    except Exception as e:result['reason']=str(e) if isinstance(e,RuntimeError) else type(e).__name__
+        if shutil.disk_usage(c['resourceRoot']).free-DISK_RESERVE<DISK_FLOOR:raise RuntimeError('resource-disk-floor')
+        write(native_contract(c),dict(runID=run,epoch=epoch,start=start,expiresAt=end,lease=c['leasePath'],stop=c['stopPath'],observations=str(observations),menuRequest=str(out/'menu-request.json')))
+    except Exception as e:
+        # One attempt, no retry: release this attempt's locks; the stop file makes launch.py's admission refuse.
+        release(c);request_stop(c,'u6-prepare-refused')
+        write(out/'result.json',dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,reason=failure(e)))
+        raise
+    print(json.dumps(dict(runID=run,epoch=epoch,prepared=True)),flush=True)
+def alive(record):return cleanup.matches(identity(record['pid']),record)
+def registered(pid_path,wait=None,clock=time.monotonic,sleep=time.sleep):
+    """The subject launch.py registered: state running, same start identity, its launcher still attached."""
+    end=clock()+(REGISTER_SECONDS if wait is None else wait)
+    while True:
+        try:record=read(pid_path)
+        except (OSError,ValueError):record=None
+        if isinstance(record,dict) and record.get('state')=='running':break
+        if clock()>=end:raise RuntimeError('no-registered-subject')
+        sleep(.2)
+    if type(record.get('pid')) is not int or record['pid']<=0 or not alive(record):raise RuntimeError('subject-identity-mismatch')
+    if launcher_lost(pid_path):raise RuntimeError('subject-launcher-lost')
+    return record
+def bound(observations,run,epoch,record,wait=None,clock=time.monotonic,sleep=time.sleep):
+    """The registered subject read this run's native contract: its 'started' receipt carries the run/epoch."""
+    end=clock()+(REGISTER_SECONDS if wait is None else wait)
+    while alive(record):
+        try:rows=[json.loads(x) for x in Path(observations).read_text().splitlines() if x.strip()]
+        except (OSError,ValueError):rows=[]
+        if any(isinstance(r,dict) and r.get('event')=='started' and r.get('runID')==run and r.get('epoch')==epoch for r in rows):return True
+        if clock()>=end:break
+        sleep(.2)
+    raise RuntimeError('subject-run-receipt-missing')
+def closed(pid_path):
+    """Observed only: no registration means nothing launched; a registered subject must be gone."""
+    try:record=read(pid_path)
+    except FileNotFoundError:return True
+    except (OSError,ValueError):return False
+    return isinstance(record,dict) and record.get('state')=='running' and type(record.get('pid')) is int and not alive(record)
+def drive(c,now,poll=.2,sleep=time.sleep):
+    admit(c,now);run,epoch,_,end=run_identity(c)
+    out=Path(c['batch']);scratch=Path(c['scratch']);stop=Path(c['stopPath']);finish=out/'operator-finish.json';pid_path=Path(c['subjectPidPath'])
+    result=dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,launchedBy='launch.py')
+    try:
+        record=registered(pid_path) # first, so a refusal below is judged after launch.py registered or gave up
+        load_and_admit(c);bound(out/'native-observations.jsonl',run,epoch,record)
+        result['appStarted']=True;write(out/'launch.json',dict(runID=run,epoch=epoch,ownedPID=record['pid'],sourceHead=c['head'],registeredBy='launch.py'))
+        while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:sleep(poll)
+        if finish.exists():result['operatorReceipts']=read(finish);result['outcome']='operator-finished'
+        elif stop.exists():result['reason']='stop-hook'
+        elif not alive(record):result['reason']='subject-exited'
+        else:result['outcome']='timeout';result['reason']='absolute-deadline'
+    except Exception as e:result['reason']=failure(e)
     finally:
-        if not stop.exists():write(stop,dict(runID=c['runID'],epoch=c['epoch'],stop=True,reason='run-ended'))
-        if app is not None:
-            try:app.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                if cleanup.matches(cleanup.identity(app.pid),identity):os.killpg(app.pid,signal.SIGTERM)
-                try:app.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if cleanup.matches(cleanup.identity(app.pid),identity):os.killpg(app.pid,signal.SIGKILL)
-                    app.wait(timeout=5)
-        for lock in owned:
-            if lock.exists() and json.loads((lock/'owner.json').read_text()).get('runID')==c['runID']:(lock/'owner.json').unlink();lock.rmdir()
-        result['cleanup']=dict(ownedAppExited=app is None or app.poll() is not None,guardian='external-M1',leaseReleased=False,scratchRemoved=cleanup.remove_scratch(scratch,['home','tmp']))
-        result['ownedExitCode']=None if app is None else app.returncode
-        write(out/'result.json',result);print(json.dumps({'runID':c['runID'],'outcome':result['outcome'],'appStarted':result['appStarted'],'cleanup':result['cleanup']}),flush=True)
-if __name__=='__main__':main()
+        request_stop(c,'run-ended') # launch.py and the guardian stop the registered subject on this file
+        deadline=time.monotonic()+CLOSE_SECONDS
+        while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
+        gone=closed(pid_path);removed=[]
+        if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
+            try:removed=cleanup.remove_scratch(scratch,['home','tmp'])
+            except (OSError,ValueError):pass
+        result['cleanup']=dict(ownedAppExited=gone,closedBy='launch.py+guardian',guardian='external-M1',
+                               resourcesReleased=gone and release(c),leaseReleased=False,scratchRemoved=removed)
+        write(out/'result.json',result);print(json.dumps({'runID':run,'outcome':result['outcome'],'appStarted':result['appStarted'],'cleanup':result['cleanup']}),flush=True)
+    return result
+def main(argv=None):
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('step',choices=('prepare','drive'));parser.add_argument('--config',type=Path,required=True)
+    a=parser.parse_args(argv);c=json.loads(a.config.read_text())
+    if a.step=='prepare':prepare(c,time.time());return 0
+    k=drive(c,time.time())['cleanup'] # 0 only when closure was observed and this run's resources are released
+    return 0 if k['ownedAppExited'] and k['resourcesReleased'] and {'home','tmp'}<=set(k['scratchRemoved']) else 3
+if __name__=='__main__':sys.exit(main())

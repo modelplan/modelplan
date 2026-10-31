@@ -33,7 +33,9 @@ python3 desktop/native/verification/bin/release.py \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
 # Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
 # second one. Set CONTROLLER_MODE explicitly:
-#  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py)
+#  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py);
+#          a scenario's resource step (slots, disk floor) runs before this case, in the foreground
+#          (set -e stops on refusal), e.g. `python3 desktop/native/verification/bin/drive-u6.py prepare --config "$RUN_CONFIG"`
 #  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); its cleanup result is read
 #          from the batch named in $RUN_CONFIG itself
 # Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
@@ -43,7 +45,7 @@ case "$CONTROLLER_MODE" in
   *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
 esac
 CONTROLLER_PID=$!
-# ... in launch mode, drive the scenario against the launched subject here ...
+# ... in launch mode, drive the scenario against the registered subject here (e.g. drive-u6.py drive) ...
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
 # confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
 # finish at all and report the run as unconfirmed for coordinator follow-up.
