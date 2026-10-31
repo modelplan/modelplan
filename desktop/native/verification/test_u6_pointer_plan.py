@@ -28,39 +28,51 @@ class U6PointerPlanTests(unittest.TestCase):
     def write_rows(self, rows):
         (self.root/'native-observations.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
     def test_dock_move_requires_same_run_expansion_after_posted_input(self):
-        self.write_rows([dict(event='dock-surface-frame',runID='run',epoch='epoch',timestamp=100,
+        self.write_rows([dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=dict(state='sliver',coordinateSpace='cg-screen',x=10,y=20,width=30,height=40,windowNumber=77))])
         tool.make(self.config,'dock')
         plan=json.loads((self.root/'dock-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'],[dict(x=25,y=40,seconds=0,dwell=.25)])
         self.assertEqual(plan['u6OwnedWindowNumber'],77)
         (self.root/'dock-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
-            dict(event='mouse-moved-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=101),
             dict(event='pointer-result',outcome='posted')]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'dock')
         with (self.root/'native-observations.jsonl').open('a') as stream:
-            stream.write(json.dumps(dict(event='dock-surface-frame',runID='run',epoch='epoch',timestamp=102,
+            stream.write(json.dumps(dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=2,mono=102,
                 checks=dict(state='expanded')))+'\n')
         tool.check(self.config,'dock')
     def test_status_click_requires_owned_menu_begin(self):
-        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',timestamp=100,
+        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=dict(coordinateSpace='appkit-screen',cgX=100,cgY=20,width=20,height=20))])
         tool.make(self.config,'status')
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
         (self.root/'status-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
-            dict(event='mouse-moved-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
-            dict(event='mouse-button-down-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
-            dict(event='mouse-button-up-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100.8),
+            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.9),
+            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=101),
             dict(event='pointer-result',outcome='posted')]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')
         with (self.root/'native-observations.jsonl').open('a') as stream:
-            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',timestamp=102,checks=dict(instanceID='owned',surface='status',subjectPID=42)))+'\n')
+            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=102,checks=dict(instanceID='owned',surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
         tool.check(self.config,'status')
         tool.make(self.config,'status','clear')
         clear=json.loads((self.root/'status-pointer-clear-plan.json').read_text())
         self.assertEqual(clear['steps'][0]['action'],'click')
         self.assertNotEqual(clear['output'],plan['output'])
+        (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=103.8),
+            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104),
+            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104.1),
+            dict(event='pointer-result',outcome='posted')]))
+        with self.assertRaisesRegex(ValueError,'first-menu-not-ended'):tool.check(self.config,'status','clear')
+        with (self.root/'native-observations.jsonl').open('a') as stream:
+            stream.write(json.dumps(dict(event='menu-end',runID='run',epoch='epoch',pid=42,seq=3,mono=103,
+                checks=dict(menuObjectID='owned',sessionID='A')))+'\n')
+            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=4,mono=105,
+                checks=dict(instanceID='owned',surface='status',subjectPID=42,menuObjectID='owned',sessionID='B')))+'\n')
+        tool.check(self.config,'status','clear')
     def test_refresh_plan_reuses_physically_opened_status_menu(self):
         self.write_rows([])
         menu.load_and_admit=lambda _:True
