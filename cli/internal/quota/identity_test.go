@@ -34,7 +34,7 @@ func TestClaudeCodeSubscription(t *testing.T) {
 		if err := RecordClaudeCode(cache, in, now); err != nil {
 			t.Fatal(err)
 		}
-		as, _ := readClaudeCode(cache, "")
+		as, _ := readClaudeCode(cache, "", time.Now())
 		if s := as[0].Subscription; s != nil {
 			if s.Status != "verified" || s.Basis != "claude-config" {
 				t.Fatalf("binding = %+v", s)

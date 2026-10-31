@@ -7,8 +7,8 @@ runtime, prove U6/U8/U11 wiring, or earn L2/L3 acceptance.
 The `U10 candidate interface` workflow runs portable contracts on draft PRs and
 builds on standard hosted macOS when ready, on relevant main pushes, or on manual
 dispatch. It checks out the PR head itself, so the manifest identifies the reviewed
-source rather than an unreviewed merge build. Its only token permission is
-`contents: read`. It uploads no artifact after a failed assembly or signature check.
+source rather than an unreviewed merge build. Its contract job keeps `contents: read`; the candidate job also uses
+`actions: read` solely to fetch the coordinator-approved prebuilt credential artifact. It uploads no artifact after a failed assembly or signature check.
 No Developer ID, certificate, protected environment, notarisation, Sparkle,
 release publication or secrets are part of this workflow.
 
@@ -22,7 +22,7 @@ release publication or secrets are part of this workflow.
   remains `not-run`.
 - The existing `package-neutral.sh` compiles the production native executable and
   fetches no replacement engine. Its reviewed native CLI archive input comes from
-  `desktop/native/consent-cli-pin.json` (v0.5.48), independently of plugin pins.
+  `desktop/native/consent-cli-pin.json` (v0.5.49), independently of plugin pins.
 - `Contents/Resources/OfficialVisuals` contains only the public official assets,
   including their runtime manifest and reserved visual licence. The public icon
   is also installed as the app icon. OFL fonts, each family licence, font manifest

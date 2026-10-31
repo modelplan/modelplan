@@ -28,6 +28,8 @@ func TestSuggestEffort(t *testing.T) {
 		{name: "underused", effort: "medium", uses: []float64{40, 45, 50}, direction: "up", ratio: 1.5},
 		{name: "hits", effort: "high", uses: []float64{100, 70, 100}, direction: "down", ratio: 2.0 / 3},
 		{name: "tight", effort: "high", uses: []float64{90, 92, 91}, direction: "down", ratio: 2.0 / 3},
+		{name: "zero", effort: "medium"},
+		{name: "one", effort: "medium", uses: []float64{45}},
 		{name: "short", effort: "medium", uses: []float64{40, 45}},
 		{name: "mixed", effort: "medium", uses: []float64{40, 95, 70}},
 		{name: "no ladder", effort: "medium", uses: []float64{40, 45, 50}, edit: func(l *history.Ledger, d *digest.Digest) { d.Models[0].Efforts = d.Models[0].Efforts[:1] }},
@@ -126,7 +128,7 @@ func writeLedger(t *testing.T, cache string, l history.Ledger) {
 
 func TestEffortSuggestionLocalControls(t *testing.T) {
 	t.Setenv("MODELPLAN_HISTORY", "")
-	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
 	cache, at := t.TempDir(), contracttest.Now
 	d, _ := contracttest.Public()
 	writeLedger(t, cache, contracttest.EffortLedger(at, "medium", false, 40, 45, 50))
@@ -152,11 +154,14 @@ func TestEffortSuggestionLocalControls(t *testing.T) {
 	if count.Load() != 1 {
 		t.Fatalf("concurrent claims = %d", count.Load())
 	}
-	if history.NotifyEffortSuggestion(cache, d, at.Add(24*time.Hour)) != nil {
+	if history.NotifyEffortSuggestion(cache, d, at.Add(time.Minute)) != nil {
 		t.Fatal("repeated inside week")
 	}
 	next := at.Add(7 * 24 * time.Hour)
 	writeLedger(t, cache, contracttest.EffortLedger(next, "medium", false, 40, 45, 50))
+	if history.NotifyEffortSuggestion(cache, d, next.Add(-time.Second)) != nil {
+		t.Fatal("new reset bypassed rolling seven-day throttle")
+	}
 	if history.NotifyEffortSuggestion(cache, d, next) == nil {
 		t.Fatal("not shown next week")
 	}
@@ -187,6 +192,8 @@ func TestEffortSuggestionLocalControls(t *testing.T) {
 }
 
 func TestEffortSuggestionSwitchesAndClock(t *testing.T) {
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
+	t.Setenv("MODELPLAN_HISTORY", "")
 	cache, at := t.TempDir(), contracttest.Now
 	d, _ := contracttest.Public()
 	writeLedger(t, cache, contracttest.EffortLedger(at, "medium", false, 40, 45, 50))
@@ -213,7 +220,7 @@ func TestEffortSuggestionSwitchesAndClock(t *testing.T) {
 
 func TestEffortDismissalExpiresAndReadDoesNotConsumeNotice(t *testing.T) {
 	t.Setenv("MODELPLAN_HISTORY", "")
-	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
 	cache, at := t.TempDir(), contracttest.Now
 	d, _ := contracttest.Public()
 	writeLedger(t, cache, contracttest.EffortLedger(at, "medium", false, 40, 45, 50))
@@ -298,5 +305,89 @@ func TestSuggestDefaultEffortRequiresOneKnownPool(t *testing.T) {
 				t.Fatalf("unexpected suggestion: %+v", v)
 			}
 		})
+	}
+}
+
+func TestEffortSuggestionRolloutRequiresExplicitOptIn(t *testing.T) {
+	t.Setenv("MODELPLAN_HISTORY", "")
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+	d, _ := contracttest.Public()
+	// Neither the earliest go-live date nor a later date enables the default.
+	for _, day := range []string{"2026-10-30", "2026-11-07", "2027-01-01"} {
+		t.Run(day, func(t *testing.T) {
+			at, err := time.Parse("2006-01-02", day)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cache := t.TempDir()
+			writeLedger(t, cache, contracttest.EffortLedger(at, "medium", false, 40, 45, 50))
+			// Old state from the previously enabled version is not an opt-in.
+			if err := os.WriteFile(history.EffortSuggestionPath(cache), []byte(`{"schemaVersion":1,"disabled":false}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(history.EffortSuggestionPath(cache))
+			v := history.SuggestEffort(history.Load(cache), d, at)
+			if v == nil {
+				t.Fatal("synthetic history must be eligible")
+			}
+			if history.ReadEffortSuggestion(cache, d, at).Suggestion != nil || history.NotifyEffortSuggestion(cache, d, at) != nil || history.ClaimEffortSuggestion(cache, v, at) != nil {
+				t.Fatal("default rollout gate ignored")
+			}
+			after, _ := os.ReadFile(history.EffortSuggestionPath(cache))
+			if string(before) != string(after) {
+				t.Fatal("disabled default consumed notice")
+			}
+			if err := history.SetEffortSuggestion(cache, "on", at); err != nil {
+				t.Fatal(err)
+			}
+			if history.NotifyEffortSuggestion(cache, d, at) == nil {
+				t.Fatal("explicit local opt-in ignored")
+			}
+		})
+	}
+}
+
+func TestEffortSuggestionOnlyRightAfterReset(t *testing.T) {
+	t.Setenv("MODELPLAN_HISTORY", "")
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
+	d, _ := contracttest.Public()
+	at := contracttest.Now
+	l := contracttest.EffortLedger(at, "medium", false, 40, 45, 50)
+	reset := l.Cycles[0].ResetsAt
+	for _, tc := range []struct {
+		name   string
+		offset time.Duration
+		want   bool
+	}{
+		{"before reset", -time.Nanosecond, false},
+		{"reset", 0, true},
+		{"first day", 24*time.Hour - time.Nanosecond, true},
+		{"day boundary", 24 * time.Hour, false},
+		{"midweek", 3 * 24 * time.Hour, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := t.TempDir()
+			writeLedger(t, cache, l)
+			now := reset.Add(tc.offset)
+			v := history.NotifyEffortSuggestion(cache, d, now)
+			if (v != nil) != tc.want {
+				t.Fatalf("notice at %s = %+v", now, v)
+			}
+			if v != nil && !v.ExpiresAt.Equal(reset.Add(24*time.Hour)) {
+				t.Fatal("incorrect expiry")
+			}
+			if !tc.want {
+				if _, err := os.Stat(history.EffortSuggestionPath(cache)); !os.IsNotExist(err) {
+					t.Fatal("ineligible time consumed notice", err)
+				}
+			}
+		})
+	}
+	// A precomputed suggestion cannot retain an old full-week expiry and bypass
+	// the reset window at the claim seam.
+	v := history.SuggestEffort(l, d, at)
+	v.ExpiresAt = reset.Add(7 * 24 * time.Hour)
+	if history.ClaimEffortSuggestion(t.TempDir(), v, reset.Add(24*time.Hour)) != nil {
+		t.Fatal("late claim bypassed reset window")
 	}
 }

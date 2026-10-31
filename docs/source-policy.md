@@ -4,7 +4,7 @@ Owner-authorized source split, tracked in the private implementation issue #506.
 
 | Material                                                                                                           | Canonical location                                  | Terms / rule                                                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI, plugins, Skill, generic desktop functionality                                                                 | This repository                                     | MIT software; public standard hosted CI                                                                                                                          |
+| CLI, plugins, Skill, generic desktop functionality                                                                 | This repository                                     | MIT software; public standard hosted CI (one owner-gated Mac exception, below)                                                                                                                    |
 | Publication reader | `reader/` | MIT; validates/caches published results, no scoring or calibration engine |
 | Formula explanations, source weights and result evidence | Methodology docs and published result metadata | Public disclosure; not a license to private production implementation |
 | Production scoring/recommendation implementation, full calibration and model entry/exit | Private production repository | Reserved source; no public engine/parameter snapshot export |
@@ -34,7 +34,26 @@ The public data directory remains an output mirror, not a competing editing sour
 
 ## Required gate
 
-Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, the reserved official visuals (one prefix, `LICENSE.md`, SPDX headers or listed hashes, no reads from the community build), agent instruction entry points and standard hosted runner policy. Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content (scoring, calibration, operations) into a convenient public folder.
+Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, the reserved official visuals (one prefix, `LICENSE.md`, SPDX headers or listed hashes, no reads from the community build), agent instruction entry points and the public runner policy (`scripts/workflow-policy.mjs`). Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content (scoring, calibration, operations) into a convenient public folder.
+
+Public workflows use hosted runners by default. The sole dedicated-Mac entry is
+`trusted-mac.yml` pinned to an immutable reviewed commit, with matching
+server-side runner-group restrictions and an owner-only pre-job gate. Callers
+must not select these runners directly. The path-scoped canonical expression in
+`scripts/workflow-policy.mjs` checks the actual owner and rerun actor, same
+repository and PR author, event type, draft status, OS and switches. The gate
+continues to reject `pull_request_target` and private publishing labels, including
+YAML-escaped spellings. It is defence in depth, not a substitute for the runner
+group's enforced reusable-workflow identity. See [the admission and graphical
+session contract](mac-ci.md).
+
+The gate also rejects literal `/mnt/` and `/home/` paths anywhere under
+`desktop/native/verification/` and `tools/`, including documentation and fixtures.
+Use caller/coordinator configuration and synthetic fixture paths instead of
+embedding owner-specific mount or home locations in public development tools.
+The same directories may name release approval fields only in the M1 release
+writer (`desktop/native/verification/bin/release.py`) and tests; execution tools
+must load the external receipt through the shared admission helper.
 
 The same gate verifies the separate third-party font pack: manifest and file
 hashes, the four approved families/used weights, complete OFL notices, NOTICE rows

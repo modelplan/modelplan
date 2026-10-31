@@ -39,7 +39,10 @@ type zaiResponse struct {
 	Code    int    `json:"code"`
 	Success bool   `json:"success"`
 	Msg     string `json:"msg"`
-	Data    *struct {
+	Error   *struct {
+		Code json.Number `json:"code"`
+	} `json:"error"`
+	Data *struct {
 		Limits      []json.RawMessage `json:"limits"`
 		PlanName    string            `json:"planName"`
 		Plan        string            `json:"plan"`
@@ -70,12 +73,35 @@ func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.
 	return parseZai(r, now)
 }
 
+// zaiBodyErrorCode follows https://docs.z.ai/api-reference/api-code.md.
+// The monitor envelope is not documented there; also accept explicit HTTP-style
+// codes, but never infer a category from vendor messages or unknown business codes.
+func zaiBodyErrorCode(code int64) string {
+	switch code {
+	case 401, 1000, 1001, 1003, 1005:
+		return "http_401"
+	case 403, 1220:
+		return "http_403"
+	case 429, 1113, 1302, 1305, 1308, 1309, 1310, 1311, 1313, 1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321:
+		return "http_429"
+	case 500, 1200, 1230, 1234:
+		return "http_5xx"
+	default:
+		return "other"
+	}
+}
+
 // zaiUnit: minutes per unit (1 day, 3 hour, 5 minute, 6 week).
 var zaiUnit = map[int]int{1: 1440, 3: 60, 5: 1, 6: 10080}
 
 func parseZai(r zaiResponse, now time.Time) codexbarEntry {
 	e := codexbarEntry{ErrorCode: "schema_changed", Status: "error", ObservedAt: now.UTC()}
-	if !r.Success || r.Code != 200 {
+	if r.Error != nil || !r.Success || r.Code != 200 {
+		code := int64(r.Code)
+		if r.Error != nil {
+			code, _ = r.Error.Code.Int64()
+		}
+		e.ErrorCode = zaiBodyErrorCode(code)
 		e.Error = e.ErrorCode
 		return e
 	}

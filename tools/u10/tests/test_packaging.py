@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -11,6 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools/u10'))
 import package_candidate as packaging
+
+PIN = json.loads((ROOT / 'desktop/native/consent-cli-pin.json').read_text())
 
 
 class PackagingTests(unittest.TestCase):
@@ -64,7 +67,7 @@ class PackagingTests(unittest.TestCase):
         after = packaging.identity.digest_file(self.helper)
         self.assertNotEqual(before, after)
         self.assertEqual(result['ModelPlanBundledHelperSHA256'], after)
-        self.assertEqual(result['ModelPlanHelperVersion'], '0.5.48')
+        self.assertEqual(result['ModelPlanHelperVersion'], PIN['version'])
         self.assertEqual(result['ModelPlanSourceHelperSHA256ByArchitecture'], self.hashes)
         self.assertEqual(self.commands[0][-1], str(self.helper))
         self.assertEqual(self.commands[1][0], sys.executable)
@@ -156,7 +159,7 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(result['artifacts']['app'], packaging.artifact(self.app, allow_tree=True))
         self.assertEqual(result['artifacts']['helper']['sha256'], packaging.identity.digest_file(self.helper))
         self.assertEqual(result['sources'], [{'repository': 'modelplan/modelplan', 'sha': source, 'dirty': False}])
-        self.assertEqual(result['artifacts']['helperVersion'], '0.5.48')
+        self.assertEqual(result['artifacts']['helperVersion'], PIN['version'])
         self.assertEqual(result['publicationData']['state'], 'unsupported')
         self.assertTrue(all(s['outcome'] in ('unsupported', 'not-run') for s in result['scenarios']))
         self.assertEqual(result['checks'][0]['id'], 'U10-packaging-identity')
@@ -174,6 +177,36 @@ class PackagingTests(unittest.TestCase):
         for value in ('0', '-1', '1.2', 'abc'):
             with self.assertRaises(ValueError):
                 packaging.configure_product(self.app, self.source, value)
+
+    def test_final_candidate_check_requires_the_external_credential_pin(self):
+        calls = []
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'independent SHA256'):
+                packaging.verify_credential_helper(self.app, lambda *args: calls.append(args))
+        self.assertEqual(calls, [])
+        with patch.dict(os.environ, {'MODELPLAN_CREDENTIAL_AGENT_ARTIFACT': str(self.root),
+                                     'MODELPLAN_CREDENTIAL_AGENT_SHA256': 'c' * 64}):
+            packaging.verify_credential_helper(self.app, lambda *args: calls.append(list(map(str, args))))
+            args = calls[-1]
+            self.assertIn('--single', args)
+            self.assertEqual(args[args.index('--expected-sha256') + 1], 'c' * 64)
+            self.assertEqual(args[-1], str(self.app))
+            def reject(*args):
+                raise subprocess.CalledProcessError(1, args)
+            with self.assertRaises(subprocess.CalledProcessError):
+                packaging.verify_credential_helper(self.app, reject)
+
+    def test_missing_approved_credential_input_stops_before_cli_fetch_or_build(self):
+        with patch.object(packaging.platform, 'system', return_value='Darwin'), \
+             patch.object(packaging, 'git', side_effect=['a' * 40, '']), \
+             patch.object(packaging, 'load_json', return_value={'version': packaging.HELPER_VERSION}), \
+             patch.object(packaging.credential_artifact, 'acquire', side_effect=ValueError('approval missing')), \
+             patch.object(packaging.release, 'fetch_cli') as cli_fetch, \
+             patch.object(packaging, 'run') as build:
+            with self.assertRaisesRegex(ValueError, 'approval missing'):
+                packaging.build(self.root / 'missing-approved-artifact', 'synthetic-candidate', '1')
+            cli_fetch.assert_not_called()
+            build.assert_not_called()
 
     def test_linux_cannot_claim_a_real_mac_package(self):
         with patch.object(packaging.platform, 'system', return_value='Linux'):

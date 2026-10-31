@@ -64,3 +64,20 @@ func TestStatuslineMarksEffortsAboveAndBelowStar(t *testing.T) {
 		t.Errorf("narrow drops the ability: %q", got)
 	}
 }
+
+func TestEffortLadderMarksProvisionalAbility(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	m := &digest.Model{ID: "synthetic", Name: "Synthetic", Recommended: "medium",
+		Efforts: []digest.Effort{{Effort: "medium", Label: "Med", Ability: f(50), Cost: f(1)}, {Effort: "xhigh", Label: "XHigh", Ability: f(61), Cost: f(2), Provisional: true}}}
+	for _, tc := range []struct {
+		text Text
+		want string
+	}{{ZH, "61.0 (+11.0分) 暂定"}, {EN, "61.0 (+11.0pts) provisional"}} {
+		var b strings.Builder
+		Style{T: tc.text}.Effort(&b, m)
+		lines := strings.Split(strings.TrimSpace(b.String()), "\n")
+		if len(lines) != 3 || !strings.Contains(lines[1], tc.want) || strings.Contains(lines[2], tc.text.Provisional) {
+			t.Fatalf("ladder = %q; want %q on XHigh only", b.String(), tc.want)
+		}
+	}
+}

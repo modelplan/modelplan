@@ -193,6 +193,27 @@ extension ProcessEngineClient {
         }
     }
 
+    // Only retry the internal, read-only bootstrap subscription. Public request
+    // callers receive the typed busy error and decide their own retry policy.
+    func retryBusyRowsBootstrap(_ id: UUID, error: EngineClientError) {
+        guard child?.id == id, sequence == nil, rowsBootstrapRetry == nil else { return }
+        guard rowsBootstrapBusyCount < 4 else { emit(.featureFailure(.rows, error)); return }
+        rowsBootstrapBusyCount += 1
+        let sleep = runtime.sleep
+        rowsBootstrapRetry = Task { [weak self] in
+            do { try await sleep(.milliseconds(250)); try Task.checkCancellation() }
+            catch { return }
+            await self?.resumeRowsBootstrap(id)
+        }
+    }
+    func resumeRowsBootstrap(_ id: UUID) {
+        rowsBootstrapRetry = nil
+        guard child?.id == id, handshaken, !gateClosed, !stopped, sequence == nil,
+              !pending.values.contains(where: { $0.method == "rows/subscribe" }) else { return }
+        do { _ = try enqueue("rows/subscribe", params: .object([:]), purpose: .bootstrap, timeout: runtime.requestTimeout) }
+        catch { emit(.featureFailure(.rows, .localBusy)) }
+    }
+
     func receive(_ id: UUID, bytes: Data) {
         guard child?.id == id else { return }
         do {
@@ -257,6 +278,11 @@ extension ProcessEngineClient {
                 }
                 if let key, let entry = pending[key] {
                     let error = EngineClientError.rpc(code: failure.error.code, context: failure.error.data)
+                    if entry.purpose == .bootstrap, entry.method == "rows/subscribe", failure.error.code == -32013 {
+                        finishRequest(key, error: error)
+                        retryBusyRowsBootstrap(id, error: error)
+                        return
+                    }
                     if entry.purpose == .initialize { initializationFailed(id, error: error); return }
                     if entry.purpose == .epochProbe { epochProbe = nil; emit(.featureFailure(.consent, error)) }
                     if entry.purpose == .request, gateClosed {
@@ -312,6 +338,7 @@ extension ProcessEngineClient {
             var metadata = false
             switch entry.method {
             case "rows/subscribe":
+                rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
                 let decoded = try decodeEnvelope(envelope, as: WireRowsSnapshot.self)
                 guard acceptSequence(decoded.value.data.sequence) else {
                     if deliveredRowRevision == revision, let deliveredSequence, deliveredSequence >= decoded.value.data.sequence { finishRequest(key) }

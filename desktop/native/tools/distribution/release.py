@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""R7 release plumbing. No credential discovery, publication, or updater runtime."""
+"""macOS release plumbing: secret-backed signing and draft-only beta publication."""
 import argparse
 import base64
 import hashlib
+import html
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -18,6 +20,7 @@ import subprocess
 import tempfile
 from urllib.parse import unquote, urlparse
 from urllib.request import urlopen
+from urllib.error import HTTPError
 import xml.etree.ElementTree as ET
 
 SIGNING = ('MACOS_CERTIFICATE_P12_BASE64', 'MACOS_CERTIFICATE_PASSWORD',
@@ -28,8 +31,25 @@ SPARKLE = ('SPARKLE_ED25519_PRIVATE_KEY', 'SPARKLE_TOOLS_URL',
            'SPARKLE_TOOLS_SHA256', 'MACOS_UPDATE_URL')
 ADHOC_BETA = SPARKLE + ('MACOS_BETA_FEED_URL', 'MACOS_RELEASE_NOTES_URL', 'MACOS_BUNDLE_ID',
                         'MACOS_OFFICIAL_WORKFLOW_ID', 'CANDIDATE_RUN_ID')
+ROOT = Path(__file__).resolve().parents[4]
+CREDENTIAL_PIN_FILE = ROOT / 'desktop/native/credential-agent-artifact-pin.json'
+CREDENTIAL_HELPER = Path('Contents/Helpers/modelplan-credential-agent')
+CREDENTIAL_MANIFEST = Path('Contents/Resources/credential-agent.json')
 NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
 ET.register_namespace('sparkle', NS)
+
+
+class ConfigurationError(ValueError):
+    """Safe diagnostic containing setting names only, never their values."""
+
+
+def require_beta_configuration(env):
+    decision = release_plan(env)['adhoc_appcast']
+    if not decision['requested_on_main']:
+        raise ConfigurationError('Beta requires an explicit canonical-main workflow dispatch')
+    if decision['missing']:
+        raise ConfigurationError('Beta signing is disabled; configure required GitHub environment '
+                                 'secret/settings: ' + ', '.join(decision['missing']))
 
 
 def release_plan(env):
@@ -202,6 +222,33 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     return info
 
 
+def check_credential_pin(app):
+    if CREDENTIAL_PIN_FILE.is_symlink() or not CREDENTIAL_PIN_FILE.is_file() or CREDENTIAL_PIN_FILE.stat().st_size > 4096:
+        raise ValueError('Approved credential helper pin is missing or linked')
+    approved = json.loads(CREDENTIAL_PIN_FILE.read_text())
+    if not isinstance(approved, dict) or set(approved) != {'runID', 'artifactName', 'sha256'}:
+        raise ValueError('Invalid approved credential helper pin')
+    expected = approved.get('sha256')
+    checker_path = ROOT / 'desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py'
+    spec = importlib.util.spec_from_file_location('release_credential_checker', checker_path)
+    checker = importlib.util.module_from_spec(spec); spec.loader.exec_module(checker)
+    pin = json.loads(checker.regular_member(Path(app), CREDENTIAL_MANIFEST).read_text())
+    if not expected:
+        raise ValueError('Approved credential helper SHA is missing')
+    checker.require_expected_sha(pin, expected)
+    checker.check_pair(Path(app), Path(app), pin)
+
+
+def sign_nested(app, codesign):
+    pinned = app / CREDENTIAL_HELPER
+    for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+        if path != pinned and path.is_file() and not path.is_symlink() and b'Mach-O' in run('file', '-b', str(path)):
+            codesign(path)
+    for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+        if not path.is_symlink() and path.suffix in ('.framework', '.app', '.xpc', '.appex'):
+            codesign(path)
+
+
 def sign(app):
     env = os.environ
     validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], env['MACOS_TEAM_ID'])
@@ -223,16 +270,11 @@ def sign(app):
             def codesign(path):
                 run('codesign', '--force', '--sign', env['MACOS_SIGNING_IDENTITY'], '--keychain', str(keychain),
                     '--options', 'runtime', '--timestamp', '--entitlements', str(entitlements), str(path))
-            # Sign Mach-O leaves then nested containers, deepest first. Never use --deep for signing.
-            for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
-                if path.is_file() and not path.is_symlink() and b'Mach-O' in run('file', '-b', str(path)):
-                    codesign(path)
-            for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
-                if not path.is_symlink() and path.suffix in ('.framework', '.app', '.xpc', '.appex'):
-                    codesign(path)
+            sign_nested(app, codesign)
             refresh_helper_identity(app)
             codesign(app)
             run('codesign', '--verify', '--deep', '--strict', str(app))
+            check_credential_pin(app)
             result = subprocess.run(['codesign', '-d', '--verbose=4', str(app)], capture_output=True, check=True)
             if f'TeamIdentifier={env["MACOS_TEAM_ID"]}' not in result.stderr.decode():
                 raise ValueError('Signed team mismatch')
@@ -254,17 +296,81 @@ def notarize(app, output):
         if receipt.get('status') != 'Accepted':
             raise ValueError('Notarization was not accepted; no update candidate produced')
         run('xcrun', 'stapler', 'staple', str(app)); run('xcrun', 'stapler', 'validate', str(app))
-        run('codesign', '--verify', '--deep', '--strict', str(app)); run('spctl', '--assess', '--type', 'execute', str(app))
+        run('codesign', '--verify', '--deep', '--strict', str(app)); check_credential_pin(app); run('spctl', '--assess', '--type', 'execute', str(app))
         (output / 'notary-receipt.json').write_text(json.dumps({'id': receipt['id'], 'status': 'Accepted'}) + '\n')
         run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(output / 'ModelPlan-universal.zip'))
 
 
-def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None, release_notes=None):
+def build_version(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){0,2}', value):
+        raise ValueError('Invalid numeric build version')
+    parts = tuple(map(int, value.split('.')))
+    return parts + (0,) * (3 - len(parts))
+
+
+def previous_beta_items(previous, feed):
+    if previous is None:
+        return []
+    root = ET.fromstring(previous)
+    if root.tag != 'rss' or len(root.findall('channel')) != 1:
+        raise ValueError('Invalid previous beta feed')
+    channel = root.find('channel')
+    if channel.findtext('link') != feed:
+        raise ValueError('Previous beta feed URL mismatch')
+    items = channel.findall('item'); versions = set()
+    for item in items:
+        if item.findtext(f'{{{NS}}}channel') != 'beta':
+            raise ValueError('Non-beta item refused in beta feed')
+        version = build_version(item.findtext(f'{{{NS}}}version'))
+        if version in versions:
+            raise ValueError('Duplicate beta build version')
+        versions.add(version)
+        enclosure = item.find('enclosure')
+        if enclosure is None:
+            raise ValueError('Previous beta enclosure missing')
+        if len(base64.b64decode(enclosure.get(f'{{{NS}}}edSignature', ''), validate=True)) != 64:
+            raise ValueError('Previous beta signature missing')
+        https_url(enclosure.get('url', ''))
+        https_url(item.findtext(f'{{{NS}}}releaseNotesLink', ''))
+        if not re.fullmatch(r'[1-9][0-9]*', enclosure.get('length', '')):
+            raise ValueError('Previous beta archive length invalid')
+    return items
+
+
+def fetch_beta_history(output, *, bootstrap=False):
+    """Only a confirmed 404 may initialize a feed, with explicit first-release opt-in."""
+    feed = beta_feed_url(os.environ)
+    try:
+        with urlopen(feed, timeout=60) as response:
+            previous = response.read(4 * 1024 * 1024 + 1)
+    except HTTPError as error:
+        if error.code != 404 or not bootstrap:
+            raise ValueError('Cannot read beta history; only an explicit bootstrap permits HTTP 404') from None
+        previous = None
+    if previous is not None and len(previous) > 4 * 1024 * 1024:
+        raise ValueError('Beta feed exceeds size limit')
+    previous_beta_items(previous, feed)
+    # An empty RSS is the explicit bootstrap receipt, so later stages always require a file.
+    if previous is None:
+        root = ET.Element('rss', version='2.0'); channel = ET.SubElement(root, 'channel')
+        ET.SubElement(channel, 'link').text = feed
+        previous = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    Path(output).write_bytes(previous)
+
+
+def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None, release_notes=None,
+                  previous=None):
     https_url(download); https_url(feed)
     if channel_name is not None and channel_name != 'beta':
         raise ValueError('Unsupported update channel')
     if channel_name == 'beta':
         https_url(release_notes)
+    version = build_version(info['CFBundleVersion'])
+    if previous is not None and channel_name != 'beta':
+        raise ValueError('Beta history cannot enter the official feed')
+    old_items = previous_beta_items(previous, feed)
+    if any(build_version(item.findtext(f'{{{NS}}}version')) >= version for item in old_items):
+        raise ValueError('Beta build version must increase beyond all published builds')
     if len(base64.b64decode(signature, validate=True)) != 64 or Path(archive).stat().st_size <= 0:
         raise ValueError('A real signature and nonempty archive are required')
     rss = ET.Element('rss', version='2.0'); channel = ET.SubElement(rss, 'channel')
@@ -278,9 +384,11 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
-    ET.SubElement(item, 'description').text = 'Universal binary. Apple silicon tested; Intel untested; 3D may stutter.'
+    ET.SubElement(item, 'description').text = 'Universal macOS 14+ binary. Intel execution untested; 3D may stutter.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
+    for old in sorted(old_items, key=lambda item: build_version(item.findtext(f'{{{NS}}}version')), reverse=True):
+        channel.append(old)
     return ET.tostring(rss, encoding='utf-8', xml_declaration=True)
 
 
@@ -310,66 +418,140 @@ def appcast(app, output, tool):
     if env.get('MACOS_BETA_FEED_URL', '').strip():
         beta_feed_url(env)
     info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
+    check_credential_pin(app)
     signature = sign_archive(info, archive, tool)
     (output / 'appcast.xml').write_bytes(appcast_bytes(info, archive, signature, env['MACOS_UPDATE_URL'], env['MACOS_FEED_URL']))
     (output / 'SHA256SUMS').write_text(f'{sha256(archive)}  {archive.name}\n')
 
 
-def adhoc_appcast(app, output, tool):
+def adhoc_appcast(app, output, tool, *, previous=None):
     env = os.environ
+    require_beta_configuration(env)
     feed = beta_feed_url(env)
     https_url(env['MACOS_UPDATE_URL']); https_url(env['MACOS_RELEASE_NOTES_URL'])
     # Team identity is only optional here; the Developer ID path still supplies and validates it.
     info = validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], None, feed=feed)
     app = Path(app)
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
-    run('codesign', '--force', '--deep', '--sign', '-', str(app))
-    # Deep signing can change the helper bytes. Refresh its integrity record and reseal the app.
+    sign_nested(app, lambda path: run('codesign', '--force', '--sign', '-', str(path)))
+    # The CLI helper may be re-signed; update its own integrity record before the outer seal.
     refresh_helper_identity(app)
     run('codesign', '--force', '--sign', '-', str(app))
     run('codesign', '--verify', '--deep', '--strict', str(app))
+    check_credential_pin(app)
     archive = output / 'ModelPlan-beta-universal.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(archive))
     signature = sign_archive(info, archive, tool)
     appcast = output / 'appcast-beta.xml'
     appcast.write_bytes(appcast_bytes(info, archive, signature, env['MACOS_UPDATE_URL'], feed,
-                                    channel_name='beta', release_notes=env['MACOS_RELEASE_NOTES_URL']))
-    (output / 'SHA256SUMS').write_text(''.join(f'{sha256(path)}  {path.name}\n' for path in (archive, appcast)))
-    # Reviewable REST release metadata only. This code never calls a publishing API.
+                                    channel_name='beta', release_notes=env['MACOS_RELEASE_NOTES_URL'],
+                                    previous=previous))
+    notes = ('# ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)\n\n'
+             'Build: ' + info['CFBundleVersion'] + '\n\nSource commit: ' + env['GITHUB_SHA'] + '\n\n'
+             'Universal macOS 14+ build. Intel execution is untested; 3D may stutter.\n\n'
+             'This beta is ad-hoc signed and is not notarized. Gatekeeper may block first open; '
+             'after trying to open the app, use System Settings → Privacy & Security → Open Anyway '
+             'and confirm the first-open prompt if you trust this release.\n\n'
+             'Accessibility and Screen Recording (TCC) grants may need re-granting after updates.\n\n'
+             'Updates use the separate beta feed and Sparkle EdDSA signatures.\n')
+    markdown = output / 'RELEASE_NOTES.md'; markdown.write_text(notes)
+    rendered = output / 'release-notes.html'
+    rendered.write_text('<!doctype html><meta charset="utf-8"><title>ModelPlan beta</title><pre>' +
+                        html.escape(notes) + '</pre>\n')
+    (output / 'SHA256SUMS').write_text(''.join(f'{sha256(path)}  {path.name}\n'
+                                             for path in (archive, appcast, markdown, rendered)))
     (output / 'draft-release.json').write_text(json.dumps({
         'tag_name': 'macos-beta-' + info['CFBundleVersion'],
         'target_commitish': env['GITHUB_SHA'],
         'name': 'ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)',
         'draft': True, 'prerelease': True,
-        'body': 'Ad-hoc signed, not notarized. First open requires Gatekeeper approval; '
-                'Accessibility and Screen Recording grants may need renewing after updates.\n\n'
-                'Release notes: ' + env['MACOS_RELEASE_NOTES_URL']
+        'body': notes
     }, indent=2) + '\n')
+
+
+def publish_beta(output):
+    """Create a new draft prerelease only; never edit an existing release or live feed."""
+    env = os.environ
+    if (env.get('GITHUB_EVENT_NAME') != 'workflow_dispatch' or
+            env.get('GITHUB_REF') != 'refs/heads/main' or
+            env.get('GITHUB_REPOSITORY') != 'modelplan/modelplan'):
+        raise ConfigurationError('Draft publication requires canonical-main workflow dispatch')
+    output = Path(output)
+    metadata = json.loads((output / 'draft-release.json').read_text())
+    if (metadata.get('draft') is not True or metadata.get('prerelease') is not True or
+            metadata.get('target_commitish') != env['GITHUB_SHA'] or
+            not re.fullmatch(r'[0-9a-f]{40}', env['GITHUB_SHA'])):
+        raise ValueError('Only an exact-commit draft prerelease is allowed')
+    feed = ET.parse(output / 'appcast-beta.xml')
+    items = previous_beta_items(ET.tostring(feed.getroot()), feed.findtext('channel/link'))
+    version = items[0].findtext(f'{{{NS}}}version')
+    if metadata.get('tag_name') != 'macos-beta-' + version:
+        raise ValueError('Beta release tag does not match appcast version')
+    release_url = 'https://github.com/modelplan/modelplan/releases/download/' + metadata['tag_name']
+    if (items[0].find('enclosure').get('url') != release_url + '/ModelPlan-beta-universal.zip' or
+            items[0].findtext(f'{{{NS}}}releaseNotesLink') != release_url + '/release-notes.html'):
+        raise ValueError('Beta appcast URLs must match the draft release assets')
+    names = ('ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
+    expected = ''.join(f'{sha256(output / name)}  {name}\n' for name in names)
+    if (output / 'SHA256SUMS').read_text() != expected:
+        raise ValueError('Beta payload checksum mismatch')
+    # The publishing step receives only GITHUB_TOKEN, never signing secrets.
+    command_env = {k: v for k, v in env.items() if k not in SIGNING + NOTARY + SPARKLE + ADHOC_BETA}
+    # --target is ignored for existing tags. Refuse them instead of attaching this
+    # exact-source payload to a tag that could name another commit.
+    tag = subprocess.run(['gh', 'api', '--include', '--method', 'GET',
+                          'repos/modelplan/modelplan/git/ref/tags/' + metadata['tag_name']],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=command_env)
+    if tag.returncode == 0:
+        raise ValueError('Beta tag already exists; inspect it before retrying')
+    status = (tag.stdout or b'').splitlines()
+    if not status or len(status[0].split()) < 2 or status[0].split()[1] != b'404':
+        raise RuntimeError('Cannot confirm that the beta tag is unused; no release created')
+    result = subprocess.run(['gh', 'release', 'create', metadata['tag_name'],
+                             *(str(output / name) for name in (*names, 'SHA256SUMS', 'draft-release.json')),
+                             '--repo', 'modelplan/modelplan', '--target', env['GITHUB_SHA'],
+                             '--title', metadata['name'], '--notes-file', str(output / 'RELEASE_NOTES.md'),
+                             '--draft', '--prerelease', '--latest=false'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=command_env)
+    if result.returncode:
+        raise RuntimeError('Draft prerelease creation failed; existing releases are never overwritten')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=('plan', 'fetch-cli', 'fetch-sparkle', 'check-archive', 'sign', 'notarize', 'appcast', 'adhoc_appcast'))
+    parser.add_argument('stage', choices=('plan', 'fetch-cli', 'fetch-sparkle', 'fetch-beta-history', 'publish-beta',
+                                        'check-archive', 'sign', 'notarize', 'appcast', 'adhoc_appcast'))
     parser.add_argument('--archive'); parser.add_argument('--app'); parser.add_argument('--output'); parser.add_argument('--pin'); parser.add_argument('--tool')
+    parser.add_argument('--previous-appcast')
+    parser.add_argument('--bootstrap', action='store_true')
     args = parser.parse_args()
     if args.stage == 'plan':
         plan = release_plan(os.environ); print(json.dumps(plan, indent=2))
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             for stage, decision in plan.items(): output.write(f'{stage}={str(decision["ready"]).lower()}\n')
+        if os.environ.get('ADHOC_BETA_REQUESTED') == 'true':
+            require_beta_configuration(os.environ)
     elif args.stage == 'fetch-cli': fetch_cli(args.pin, args.output)
     elif args.stage == 'fetch-sparkle': fetch_sparkle(args.output)
     elif args.stage == 'check-archive': check_archive(args.archive)
+    elif args.stage == 'fetch-beta-history': fetch_beta_history(args.output, bootstrap=args.bootstrap)
+    elif args.stage == 'publish-beta': publish_beta(args.output)
     else:
         if not release_plan(os.environ)[args.stage]['ready']:
             raise ValueError('Release stage is not authorized/configured')
         if args.stage == 'sign': sign(args.app)
         elif args.stage == 'notarize': notarize(args.app, args.output)
         elif args.stage == 'appcast': appcast(args.app, args.output, args.tool)
-        else: adhoc_appcast(args.app, args.output, args.tool)
+        else:
+            if not args.previous_appcast:
+                raise ConfigurationError('Beta generation requires --previous-appcast (fetch-beta-history first)')
+            adhoc_appcast(args.app, args.output, args.tool, previous=Path(args.previous_appcast).read_bytes())
 
 
 if __name__ == '__main__':
     try: main()
+    except ConfigurationError as error:
+        raise SystemExit(str(error)) from None
     except Exception as error:
         # Never include key-tool stdout, environment values or command arguments in errors.
         raise SystemExit(f'Release stage failed: {type(error).__name__}; inspect the nonsecret stage configuration.') from None

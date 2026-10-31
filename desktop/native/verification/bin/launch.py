@@ -1,36 +1,60 @@
 # SPDX-License-Identifier: MIT
 """Validate an explicit synthetic run; execute only with an existing fresh lease."""
-import argparse,hashlib,json,math,os,subprocess,time
+import argparse,hashlib,json,signal,subprocess,sys,time
 from pathlib import Path
-def validate(config,now):
-    if config.get('profile')!='synthetic':raise ValueError('synthetic profile required')
-    pin=config.get('binarySHA256','')
-    if not isinstance(pin,str) or len(pin)!=64 or any(c not in '0123456789abcdef' for c in pin):raise ValueError('explicit binary SHA256 required')
-    lease=config['lease'];release=config['release']
-    for k in ('runID','epoch','notBefore','expiresAt'):
-        if not lease.get(k) or lease[k]!=release.get(k):raise ValueError('lease/release identity mismatch')
-    if (release.get('m1Released') is not True and release.get('guardianGO') is not True) or release.get('m0DirectedAnnouncementConfirmed') is not True:raise ValueError('release missing')
-    values=[now,lease['notBefore'],lease['expiresAt'],lease.get('guardianHeartbeatAt'),config.get('requiredSeconds')]
-    if any(type(x) not in (int,float) or not math.isfinite(x) for x in values):raise ValueError('invalid timing')
-    if not 0<lease['expiresAt']-lease['notBefore']<=1200:raise ValueError('absolute window invalid')
-    if not lease['notBefore']<=now<lease['expiresAt']:raise ValueError('outside window')
-    if not 0<=now-lease['guardianHeartbeatAt']<=2:raise ValueError('heartbeat stale')
-    if config.get('stop') is not False or lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:raise ValueError('stopped/not exclusive')
-    if config['requiredSeconds']<=0 or lease['expiresAt']-now<config['requiredSeconds']:raise ValueError('insufficient phase+cleanup time')
-    if not config.get('argv') or not all(isinstance(x,str) and x for x in config['argv']):raise ValueError('explicit executable arguments required')
-    return True
+from admission import validate,load_and_admit
+from guardian import register,mark_launching
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
-    c=json.loads(a.config.read_text());validate(c,time.time())
-    if not a.execute:print('Run contract valid; no process launched');return
-    # Resolve fresh external records again immediately before launch. This helper
-    # is not a guardian; the pinned subject must consume that same lease/stop path.
-    c['lease']=json.loads(Path(c['leasePath']).read_text());c['release']=json.loads(Path(c['releasePath']).read_text());c['stop']=Path(c['stopPath']).exists()
-    validate(c,time.time())
+    c=json.loads(a.config.read_text())
+    if not a.execute:validate(c,time.time());print('Run contract valid; no process launched');return
+    c=load_and_admit(c) # Read external records before creating synthetic resources.
     home=Path(c['syntheticHome']);tmp=Path(c['syntheticTmp'])
     home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if hashlib.sha256(binary.read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
-    child=subprocess.Popen(c['argv'],env={'PATH':'/usr/bin:/bin','HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'})
-    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid}))
+    c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
+    pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
+    launcher=mark_launching(pid_path) # Until registered, the guardian reports closure unconfirmed.
+    # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
+    # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
+    gate=[sys.executable,'-I','-c',GATE,*c['argv']]
+    child=subprocess.Popen(gate,stdin=subprocess.PIPE,env={'PATH':'/usr/bin:/bin','HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'})
+    def stop_child(*_):
+        child.terminate()
+        try:child.wait(10)
+        except subprocess.TimeoutExpired:child.kill();child.wait()
+        raise SystemExit(3)
+    for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
+    try:
+        register(pid_path,child.pid,launcher)
+        child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
+    except BaseException:
+        stop_child() # Never leave an unregistered child running.
+    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid}),flush=True)
+    # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
+    # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
+    reason=supervise(child,c)
+    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason}))
+    raise SystemExit(0 if reason is None else 3)
+GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
+def stop_reason(c,now):
+    if Path(c['stopPath']).exists():return 'stop-file'
+    try:lease=json.loads(Path(c['leasePath']).read_text())
+    except (OSError,ValueError):return 'lease-unreadable'
+    if any(lease.get(k)!=c['lease'].get(k) for k in ('runID','epoch','notBefore','expiresAt')):return 'lease-identity-changed'
+    if lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:return 'lease-revoked'
+    if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
+    if now>=lease['expiresAt']:return 'deadline'
+    return None
+def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep):
+    while child.poll() is None:
+        reason=stop_reason(c,clock())
+        if reason:
+            child.terminate()
+            try:child.wait(10)
+            except subprocess.TimeoutExpired:child.kill();child.wait()
+            return reason
+        sleep(poll)
+    return None
 if __name__=='__main__':main()

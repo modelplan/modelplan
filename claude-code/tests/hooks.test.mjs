@@ -26,11 +26,14 @@ async function setup({ fetch = false } = {}) {
   };
 }
 
-test('one hook, on UserPromptSubmit; the CLI pin is the release the scripts read', async () => {
+test('a prompt hook and a SessionStart hook after compaction; the CLI pin is the release the scripts read', async () => {
   const { hooks } = JSON.parse(await readFile(join(root, 'hooks/hooks.json'), 'utf8'));
-  assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit']);
+  assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit', 'SessionStart']);
   const [{ hooks: [h] }] = hooks.UserPromptSubmit;
   assert.equal(h.command, 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/modelplan-quota-hints.sh"');
+  const [{ matcher, hooks: [s] }] = hooks.SessionStart;
+  assert.equal(matcher, 'compact|resume');
+  assert.equal(s.command, 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh"');
   assert.match(pin.version, /^\d+\.\d+\.\d+$/);
   assert.equal(pin.release, `https://github.com/modelplan/modelplan/releases/download/v${pin.version}`);
   for (const k of ['darwin_arm64', 'darwin_amd64', 'linux_arm64', 'linux_amd64']) assert.match(pin.sha256[k], /^[0-9a-f]{64}$/, k);
@@ -175,4 +178,29 @@ test('setup lists the other plans read through CodexBar, as the CLI reports them
   const out = sh('setup-status.sh', '');
   assert.match(out, /^codexbar \(other plans, optional\):\n  CodexBar CLI: \/c\/CodexBarCLI \(pinned 0\.76\.0\)\n    zai {10}ok\n    cursor {7}unavailable no session\n/m);
   await rm(home, { recursive: true });
+});
+
+test('after compaction the pinned CLI gets the SessionStart input; nothing else runs or is recorded', async () => {
+  const { home, sh, state, pinned, install, cliRoot } = await setup();
+  const input = '{"session_id":"s","hook_event_name":"SessionStart","source":"compact"}';
+  assert.equal(sh('session-start.sh', input), '', 'no CLI yet: silent');
+  await install('0.0.1');
+  assert.equal(sh('session-start.sh', input), '', 'an older CLI would read the input as a prompt');
+  const sessionCli = (await readFile(join(root, 'hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1];
+  assert.equal((await readFile(join(root, '../codex/hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1], sessionCli, 'both plugins need the same CLI');
+  await pinned(cli('0.5.50', 'echo bad'));
+  assert.equal(sh('session-start.sh', input), '', 'a CLI before SessionStart support is never asked, even when pinned');
+  // The old pinned copy does not hide an eligible CLI the user installed.
+  await install(sessionCli);
+  assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { hints: 1 });
+  await mkdir(join(cliRoot, sessionCli), { recursive: true });
+  await writeFile(join(cliRoot, sessionCli, 'modelplan'), cli(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  await chmod(join(cliRoot, sessionCli, 'modelplan'), 0o755);
+  assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { resent: 1 });
+  assert.equal(await readFile(join(home, 'input'), 'utf8'), input);
+  assert.deepEqual((await readFile(join(home, 'args'), 'utf8')).trim().split('\n'), ['advise', '--hook', 'claude-code']);
+  await assert.rejects(stat(state), 'records nothing');
+  await mkdir(join(home, '.config/modelplan/claude-code'), { recursive: true });
+  await writeFile(join(home, '.config/modelplan/claude-code/automatic-hints'), 'off');
+  assert.equal(sh('session-start.sh', input), '', 'automatic hints off');
 });

@@ -10,6 +10,6 @@ Public clients render published verdicts. Method explanations and source weights
 
 ## Implementation and verification
 
-Keep the community build complete without private files, credentials or a sibling private checkout. Run the applicable checks documented in CONTRIBUTING.md, plus `npm ci --prefix reader && npm test --prefix reader` for reader changes. Preserve generated plugin runtime bundles and dependency locks. Use standard free hosted runners; public PR code never uses private publishing runners.
+Keep the community build complete without private files, credentials or a sibling private checkout. Run the applicable checks documented in CONTRIBUTING.md, plus `npm ci --prefix reader && npm test --prefix reader` for reader changes. Preserve generated plugin runtime bundles and dependency locks. Hosted runners are the default; owner-only Mac checks may use the pinned reusable workflow under [the Mac CI admission contract](docs/mac-ci.md). Public PR code never uses private publishing runners.
 
 Read the task's current issue/comments before editing and report concrete checks. Preserve existing MIT/CC grants and contributor/third-party notices when changing future licensing. Official visuals live in `desktop/official-visuals/` under their reserved license (`LicenseRef-ModelPlan-Visuals-1.0`, not MIT); put new official visual creations there and nowhere else, with the SPDX header or a listed hash. Unreleased designs (studies and prototypes) stay out of this repository until the owner releases them. Scoring, calibration and operations stay private.

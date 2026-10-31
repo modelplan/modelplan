@@ -221,7 +221,7 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 | | 目录 | 说明 |
 | --- | --- | --- |
 | **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | 主角，适用任何支持 Skill 的 Agent：选模型和档位、每升一档的倍数、按剩余额度和重置时间规划 |
-| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及一个 prompt hook：新提示只显示给你，Claude 每个会话只收一份简短的任务开始简报 |
+| Claude Code 插件 | [`claude-code/`](claude-code/) | Skill、`/modelplan:*` 命令、状态栏，以及一个 prompt hook：新提示只显示给你，Claude 每个会话只收一份简短的任务开始简报，额度偏低时收一行事实（压缩后补发） |
 | Codex 插件 | [`codex/`](codex/) | Skill 和 GPT 档位面板：⚡ Fast / Ultrafast 开关、你的 Codex 额度、官方重置公告 |
 | 桌面版（预览） | [`desktop/`](desktop/) | macOS 菜单栏应用：菜单栏显示剩余额度和当前提示，弹窗里看会话、额度和档位曲线，每条提醒只通知一次。测试构建采用 ad-hoc 签名，未公证 |
 | `modelplan` 命令行 | [`cli/`](cli/) | 单个静态可执行文件：`lineup`、`effort`、`models`、`quota`、`advise`、`statusline`、`sync`、`doctor` |

@@ -597,3 +597,35 @@ func TestBriefOncePerThreadAndModel(t *testing.T) {
 		t.Error("a day later is no reason to brief again")
 	}
 }
+
+// A provisional ability is valid within its own model's ladder only: it is never offered as
+// another model's alternative, and a provisional current configuration is not compared at all.
+func TestProvisionalConfigurationsStayOutOfCrossModelAlternatives(t *testing.T) {
+	setup := func(edit func(astra, sol *digest.Model)) *Event {
+		d := fixtureDigest()
+		astra := digest.Model{ID: "astra", Name: "GPT-6 Astra", DeveloperID: "openai", Recommended: "medium", HarnessIDs: map[string][]string{"codex": {"gpt-6-astra"}},
+			Efforts: []digest.Effort{eff("low", "Low", 45, 12), eff("medium", "Med", 51.4, 20.3), eff("high", "High", 53, 26)}}
+		sol := digest.Model{ID: "sol", Name: "GPT-6.1 Sol", DeveloperID: "openai", Recommended: "medium", HarnessIDs: map[string][]string{"codex": {"gpt-6.1-sol"}},
+			Efforts: []digest.Effort{eff("low", "Low", 42.4, 2.5), eff("medium", "Med", 51.2, 3.65), eff("high", "High", 53.8, 5.07)}}
+		edit(&astra, &sol)
+		d.Models = append(d.Models, astra, sol)
+		d.Lineups = append(d.Lineups, digest.PublishedLineup{DeveloperID: "openai", Lineup: lineup.Lineup{Members: []*lineup.Row{
+			{ID: "astra", Ability: 51.4}, {ID: "sol", Ability: 51.2, Tags: []string{"strongest", "best_value"}}}}})
+		d.Resets = nil
+		weekReset := now.Add(8487 * time.Minute)
+		a := quota.Account{Source: "codex", ObservedAt: now, Harness: &quota.Harness{Model: "gpt-6-astra", Effort: "medium"},
+			Windows: []quota.Window{{Kind: "weekly", UsedPercent: f(72), ResetsAt: &weekReset, WindowMinutes: 10080, ResetMode: "fixed", ObservedAt: now}}}
+		quota.Evaluate(&a, now)
+		es := derive(t, Load(t.TempDir()), d, a)
+		if len(es) != 1 || es[0].Type != WindowTight {
+			t.Fatalf("events = %v", types(es))
+		}
+		return &es[0]
+	}
+	if alt := setup(func(_, sol *digest.Model) { sol.Efforts[1].Provisional = true }).Alternative; alt == nil || alt.Model != "sol" || alt.Label != "High" {
+		t.Fatalf("provisional Sol Med must be skipped for Sol High: %+v", alt)
+	}
+	if alt := setup(func(astra, _ *digest.Model) { astra.Efforts[1].Provisional = true }).Alternative; alt != nil {
+		t.Fatalf("a provisional current configuration is not compared across models: %+v", alt)
+	}
+}
