@@ -136,7 +136,8 @@ fi
 ```
 
 `check_launch_cleanup.py` signals and removes nothing. It prints the `launch-cleanup/1` receipt (`runID`, `epoch`, `ok`,
-`checks`, `failures`, `at`) and writes it atomically to `launch-cleanup.json` in the directory of `stopPath`
+`checks`, `failures`, `at`, plus `stopReasonRecorded` and the lease-window inputs `leaseNotBefore`, `leaseExpiresAt`,
+`subjectStartedAt`, `closedAt`, `closedWithinLease`; evidence code checks it with `validate_receipt`) and writes it atomically to `launch-cleanup.json` in the directory of `stopPath`
 (U6: `<batch>/launch-cleanup.json`, read by the evidence builder); a receipt it cannot write fails the check.
 `ok` holds only when: the registration names this run/epoch and its
 subject and launcher identities are gone; launch.py exited 0, or 3 with a stop reason in the stop file; the
@@ -173,8 +174,9 @@ Quit grace: when the stop file appears, `launch.py` and the guardian first give 
 config's `quitGraceSeconds` (default 5, capped at 10) to quit by itself (for U6, the guard's `NSApplication.terminate`
 on the native contract's stop path), polling its identity, and only then send TERM, then KILL, as before. Both record
 `quitGraceUsed` and `exitedDuringGrace` in their output. Other stop reasons (deadline, stale heartbeat, revocation,
-signals) get no grace. The guardian's cleanup reserve stays at least 25 seconds, and admission refuses a lease whose
-remaining time cannot cover the quit grace plus that reserve.
+signals) get no grace. The guardian's cleanup reserve stays at least 25 seconds. Both supervisors end the grace (and
+`launch.py` stops its child as `deadline`) once only 25 seconds remain before `expiresAt`. Admission refuses a lease
+whose remaining time is below `requiredSeconds` (the action phase only) + quit grace + 25 seconds, as one sum.
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
 `bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 30-second cleanup reserve (at least 25), and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs

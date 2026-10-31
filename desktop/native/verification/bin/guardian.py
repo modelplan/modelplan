@@ -34,6 +34,21 @@ IDENTITY = ('runID', 'epoch', 'notBefore', 'expiresAt')
 MIN_RESERVE = 25.0  # TERM grace 10 s + KILL wait 5 s + closure checks and a late wakeup
 QUIT_GRACE_DEFAULT = 5.0  # after the stop file: time for the subject's own normal quit before any signal
 QUIT_GRACE_MAX = 10.0
+# C2.2 section 5: the only failure/engine reasons receipts and the report may carry. The shared supervisors emit
+# their own fixed structured codes (OUTCOMES, launch.STOP_REASONS, check_launch_cleanup reasons) and map anything
+# else to 'unknown' with reason_code(); no free text (engine or exception message) ever enters a receipt.
+BOUNDED_CODES = ('engine-disabled', 'engine-error', 'consent-required', 'timeout', 'not-delivered', 'wrong-subject',
+                 'out-of-window', 'unknown')
+OUTCOMES = frozenset({'error', 'signalled', 'deadline', 'launcher-lost', 'stopped', 'revoked'})
+ERROR_CODES = {'lease is missing identity fields': 'lease-identity-missing',
+               'interval must keep the heartbeat within admission tolerance': 'interval-invalid',
+               'cleanup reserve must cover TERM grace, KILL wait and closure checks': 'reserve-invalid',
+               'quitGraceSeconds must be a finite number of seconds >= 0': 'quit-grace-invalid'}
+
+
+def reason_code(value, allowed):
+    """A bounded reason: `value` when it is one of this tool's fixed codes (or a C2.2 section 5 code), else 'unknown'."""
+    return value if isinstance(value, str) and (value in allowed or value in BOUNDED_CODES) else 'unknown'
 
 
 def quit_grace(value):
@@ -154,8 +169,9 @@ def run_fields(run):
     return dict(runID=run['runID'], epoch=run['epoch'])
 
 
-def register(pid_file, pid, launcher=None, lookup=None, run=None):
-    """The reserving controller records its subject before releasing the exec gate."""
+def register(pid_file, pid, launcher=None, lookup=None, run=None, started_at=None):
+    """The reserving controller records its subject before releasing the exec gate. `started_at` (UNIX seconds,
+    taken before the spawn) is recorded as `startedAt` for the closure check's lease-window inputs."""
     lookup = lookup or identity
     with registration(pid_file):
         try:
@@ -170,7 +186,12 @@ def register(pid_file, pid, launcher=None, lookup=None, run=None):
         ident = lookup(pid)
         if ident is None:
             raise ValueError('subject identity unavailable')
-        write_atomic(pid_file, dict(state='running', launcher=launcher, **bound, **ident))
+        started = {}
+        if started_at is not None:
+            if type(started_at) not in (int, float) or not math.isfinite(started_at):
+                raise ValueError('subject start time invalid')
+            started = dict(startedAt=float(started_at))
+        write_atomic(pid_file, dict(state='running', launcher=launcher, **bound, **ident, **started))
         return ident
 
 
@@ -249,7 +270,7 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
         outcome = 'revoked'
     finally:
         try:
-            stop(stop_path, 'guardian-' + outcome, clock())
+            stop(stop_path, 'guardian-' + reason_code(outcome, OUTCOMES), clock())
         except OSError:
             pass  # still stop the subject; launch.py also stops on a stale heartbeat
         if outcome == 'stopped' and quit_grace > 0:  # only a stop-file ending gives the subject its own quit first
@@ -293,9 +314,10 @@ def main(argv=None):
         outcome, closed = run(args.lease, args.stop, args.interval, args.reserve, args.subject_pid_file,
                               running=lambda: flag['run'], quit_grace=quit_grace(args.quit_grace), report=report)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        print(json.dumps(dict(error=type(error).__name__ if isinstance(error, OSError) else str(error))), file=sys.stderr)
+        code = 'io-error' if isinstance(error, OSError) else ERROR_CODES.get(str(error), 'unknown')
+        print(json.dumps(dict(error=code)), file=sys.stderr)  # fixed codes only, never an exception's text
         return 2
-    print(json.dumps(dict(guardian=outcome, subjectClosed=closed, **report)))
+    print(json.dumps(dict(guardian=reason_code(outcome, OUTCOMES), subjectClosed=closed, **report)))
     return 0 if closed and outcome in ('stopped', 'signalled', 'deadline') else 3
 
 
