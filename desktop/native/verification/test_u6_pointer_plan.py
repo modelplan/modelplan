@@ -36,7 +36,7 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertEqual(plan['u6OwnedWindowNumber'],77)
         (self.root/'dock-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
             dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=101),
-            dict(event='pointer-result',outcome='posted')]))
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'dock')
         with (self.root/'native-observations.jsonl').open('a') as stream:
             stream.write(json.dumps(dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=2,mono=102,
@@ -52,10 +52,10 @@ class U6PointerPlanTests(unittest.TestCase):
             dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100.8),
             dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.9),
             dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=101),
-            dict(event='pointer-result',outcome='posted')]))
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')
         with (self.root/'native-observations.jsonl').open('a') as stream:
-            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=102,checks=dict(instanceID='owned',surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
+            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=100.95,checks=dict(instanceID='owned',surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
         tool.check(self.config,'status')
         tool.make(self.config,'status','clear')
         clear=json.loads((self.root/'status-pointer-clear-plan.json').read_text())
@@ -65,7 +65,7 @@ class U6PointerPlanTests(unittest.TestCase):
             dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=103.8),
             dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104),
             dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104.1),
-            dict(event='pointer-result',outcome='posted')]))
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'first-menu-not-ended'):tool.check(self.config,'status','clear')
         with (self.root/'native-observations.jsonl').open('a') as stream:
             stream.write(json.dumps(dict(event='menu-end',runID='run',epoch='epoch',pid=42,seq=3,mono=103,

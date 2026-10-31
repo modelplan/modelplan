@@ -65,28 +65,31 @@ def check(config, kind, purpose='refresh'):
     up=[r for r in pointer if posting(r,'mouse-button-up-posted','click')]
     if not moved or (kind=='status' and (len(down)!=1 or len(up)!=1 or down[0]['mono']>up[0]['mono'])):
         raise ValueError('physical-input-not-delivered')
-    if not any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' for r in pointer):
+    if not any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' and
+               r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
+               and r.get('targetPID')==plan['subjectPID'] for r in pointer):
         raise ValueError('physical-input-not-delivered')
-    anchor=moved[0]['mono'] if kind=='dock' else up[0]['mono']
+    anchor=moved[0]['mono'] if kind=='dock' else down[0]['mono']
     native = rows(batch/'native-observations.jsonl')
     event = 'dock-surface-frame' if kind == 'dock' else 'menu-begin'
-    window=5 if kind=='dock' else 3
+    upper=anchor+5 if kind=='dock' else up[0]['mono']+3
     observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID']
                 and r.get('epoch') == lease['epoch'] and r.get('pid')==plan['subjectPID']
                 and type(r.get('seq')) is int and type(r.get('mono')) in (int,float)
-                and math.isfinite(r['mono']) and 0<=r['mono']-anchor<=window]
+                and math.isfinite(r['mono']) and anchor<=r['mono']<=upper]
     if kind == 'dock': observed = [r for r in observed if r.get('checks',{}).get('state') == 'expanded']
     else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status'
                       and r.get('checks',{}).get('subjectPID') == plan['subjectPID']]
     if kind=='status' and purpose=='clear':
         first=json.loads((batch/'status-pointer-plan.json').read_text())
         original=rows(first['output'])
+        first_down=next((r for r in original if posting(r,'mouse-button-down-posted','click')),None)
         first_up=next((r for r in original if posting(r,'mouse-button-up-posted','click')),None)
-        if first_up is None: raise ValueError('first-menu-input-missing')
+        if first_down is None or first_up is None: raise ValueError('first-menu-input-missing')
         a=next((r for r in native if r.get('event')=='menu-begin' and r.get('pid')==plan['subjectPID']
             and r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
             and r.get('checks',{}).get('surface')=='status' and type(r.get('mono')) in (int,float)
-            and 0<=r['mono']-first_up['mono']<=3),None)
+            and first_down['mono']<=r['mono']<=first_up['mono']+3),None)
         if a is None: raise ValueError('first-menu-arrival-missing')
         a_id=a.get('checks',{}).get('sessionID');object_id=a.get('checks',{}).get('menuObjectID')
         ended=any(r.get('event')=='menu-end' and r.get('pid')==plan['subjectPID']

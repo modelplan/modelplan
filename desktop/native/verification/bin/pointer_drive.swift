@@ -154,7 +154,9 @@ final class ButtonGuard: @unchecked Sendable {
             while ProcessInfo.processInfo.systemUptime<until { try live(p);Thread.sleep(forTimeInterval:0.025) }
             previous = end
         }
-        try append(["event":"pointer-result","outcome":"posted","arrivalProof":"requires-correlated-native-receipts"],to:file)
+        try append(["event":"pointer-result","outcome":"posted","runID":p.runID,"epoch":p.epoch,
+            "targetPID":p.subjectPID,"mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
+            "arrivalProof":"requires-correlated-native-receipts"],to:file)
     }
     static func entry() throws {
         let args = CommandLine.arguments
@@ -231,7 +233,9 @@ final class ButtonGuard: @unchecked Sendable {
         guard FileManager.default.createFile(atPath:path.path,contents:nil,attributes:[.posixPermissions:0o600]) else { throw DriveError.invalidPlan }
         let out = try FileHandle(forWritingTo:path);defer { try? out.close() }
         do { try execute(plan,file:out) }
-        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended"],to:out);throw error }
+        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended",
+            "runID":plan.runID,"epoch":plan.epoch,"targetPID":plan.subjectPID,
+            "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970],to:out);throw error }
     }
     static func main() {
         ButtonGuard.shared.installTerminationRelease()
