@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/clear-initiated.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "clear-initiated",
+  "description": "Written before menu tracking is cancelled, from EngineInvalidation.nextFloor.",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "kind",
+    "clearID",
+    "storeEpochAfter",
+    "generationAfter",
+    "openSessionIDs"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "kind": {
+      "const": "clear-initiated"
+    },
+    "clearID": {
+      "$ref": "../common.json#/$defs/uuid"
+    },
+    "storeEpochAfter": {
+      "$ref": "../common.json#/$defs/storeEpoch"
+    },
+    "generationAfter": {
+      "$ref": "../common.json#/$defs/generation"
+    },
+    "openSessionIDs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "../common.json#/$defs/uuid"
+      }
+    }
+  },
+  "additionalProperties": false
+}

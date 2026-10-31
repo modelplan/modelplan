@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/common.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "U6 receipt common definitions",
+  "description": "Shared identity, clock and code definitions.",
+  "$defs": {
+    "runID": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+      "description": "Run identity from the lease; binds every receipt to this run."
+    },
+    "epoch": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+      "description": "Lease epoch; binds every receipt to this attempt."
+    },
+    "pid": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Process identifier of the registered subject."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Per-process sequence, strictly increasing in file order; orders app rows."
+    },
+    "mono": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Seconds of ProcessInfo.systemUptime (fractional); orders rows across processes."
+    },
+    "at": {
+      "type": "number",
+      "minimum": 0,
+      "description": "UNIX seconds (fractional); informational only, never used for ordering."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
+      "description": "Foundation UUID.uuidString (upper case)."
+    },
+    "objectID": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$",
+      "description": "Decimal ObjectIdentifier bit pattern of a live AppKit object; stable while it lives."
+    },
+    "storeEpoch": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "description": "Consent store epoch (schema/app-cli consent.json storeEpoch)."
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Consent generation; only meaningful paired with its storeEpoch."
+    },
+    "scenarioReason": {
+      "enum": [
+        "engine-disabled",
+        "engine-error",
+        "consent-required",
+        "timeout",
+        "not-delivered",
+        "wrong-subject",
+        "out-of-window",
+        "unknown"
+      ],
+      "description": "C2.4 section 5 scenario reasons; free text never appears."
+    },
+    "stepOutcome": {
+      "enum": [
+        "pass",
+        "fail",
+        "not-run"
+      ]
+    }
+  }
+}

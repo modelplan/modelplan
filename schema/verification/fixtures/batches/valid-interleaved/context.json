@@ -1,0 +1,20 @@
+{
+  "epoch": "u6-epoch-0001",
+  "homeSHA256": "8a302c5154814f8ca786ca88e7b01bb5771e27b2bb1a6f1334787653966eb331",
+  "launchedPins": {
+    "consentHelper": "498662798a2bd41140059c2d4f5ca890c5c04c997b5cc0895646785f459795d7",
+    "engine": "2582f7c32b26d783479086a22ab126765b376a2a5c39cc30e88f610b4d7da441",
+    "mainExecutable": "297385dec7ba4f55644d25294e11c69c7254aab09101595c87f73924de896ba3"
+  },
+  "leaseExpiresAt": 1900000600.0,
+  "leaseNotBefore": 1900000000.0,
+  "pins": {
+    "consentHelper": "498662798a2bd41140059c2d4f5ca890c5c04c997b5cc0895646785f459795d7",
+    "engine": "2582f7c32b26d783479086a22ab126765b376a2a5c39cc30e88f610b4d7da441",
+    "mainExecutable": "297385dec7ba4f55644d25294e11c69c7254aab09101595c87f73924de896ba3"
+  },
+  "runID": "u6-run-0001",
+  "schema": "u6-replay-context/1",
+  "seedTitleSHA256": "c5e00339dcb95ad49dafee2d9b85380a27937583aebdd6764c33fec53f51c773",
+  "subjectPID": 4242
+}

@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/pointer-receipt.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "U6 pointer receipt row",
+  "description": "One row of a pointer_drive output file. Posted-event rows prove only that an event was posted; arrival is proved by the correlated native row.",
+  "x-file": "dock-pointer.jsonl, status-pointer.jsonl, status-pointer-clear.jsonl (one file per plan)",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/permission"
+    },
+    {
+      "$ref": "#/$defs/moved"
+    },
+    {
+      "$ref": "#/$defs/button"
+    },
+    {
+      "$ref": "#/$defs/result"
+    }
+  ],
+  "$defs": {
+    "permission": {
+      "type": "object",
+      "required": [
+        "kind",
+        "runID",
+        "epoch",
+        "targetPID",
+        "mono",
+        "at",
+        "protocol",
+        "postEvents",
+        "helperPID",
+        "requestsPermission"
+      ],
+      "properties": {
+        "kind": {
+          "const": "pointer-host-permission"
+        },
+        "protocol": {
+          "const": "u6-pointer/1"
+        },
+        "runID": {
+          "$ref": "common.json#/$defs/runID"
+        },
+        "epoch": {
+          "$ref": "common.json#/$defs/epoch"
+        },
+        "targetPID": {
+          "$ref": "common.json#/$defs/pid"
+        },
+        "mono": {
+          "$ref": "common.json#/$defs/mono"
+        },
+        "at": {
+          "$ref": "common.json#/$defs/at"
+        },
+        "postEvents": {
+          "type": "boolean"
+        },
+        "helperPID": {
+          "$ref": "common.json#/$defs/pid"
+        },
+        "requestsPermission": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "moved": {
+      "type": "object",
+      "required": [
+        "kind",
+        "runID",
+        "epoch",
+        "targetPID",
+        "mono",
+        "at",
+        "step",
+        "x",
+        "y",
+        "tap"
+      ],
+      "properties": {
+        "kind": {
+          "const": "mouse-moved-posted"
+        },
+        "runID": {
+          "$ref": "common.json#/$defs/runID"
+        },
+        "epoch": {
+          "$ref": "common.json#/$defs/epoch"
+        },
+        "targetPID": {
+          "$ref": "common.json#/$defs/pid"
+        },
+        "mono": {
+          "$ref": "common.json#/$defs/mono"
+        },
+        "at": {
+          "$ref": "common.json#/$defs/at"
+        },
+        "step": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "tap": {
+          "const": "kCGHIDEventTap"
+        }
+      },
+      "additionalProperties": false
+    },
+    "button": {
+      "type": "object",
+      "required": [
+        "kind",
+        "runID",
+        "epoch",
+        "targetPID",
+        "mono",
+        "at",
+        "step",
+        "x",
+        "y",
+        "button",
+        "clickCount",
+        "tap"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "mouse-button-down-posted",
+            "mouse-button-up-posted"
+          ]
+        },
+        "runID": {
+          "$ref": "common.json#/$defs/runID"
+        },
+        "epoch": {
+          "$ref": "common.json#/$defs/epoch"
+        },
+        "targetPID": {
+          "$ref": "common.json#/$defs/pid"
+        },
+        "mono": {
+          "$ref": "common.json#/$defs/mono"
+        },
+        "at": {
+          "$ref": "common.json#/$defs/at"
+        },
+        "step": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "button": {
+          "const": "left"
+        },
+        "clickCount": {
+          "const": 1
+        },
+        "tap": {
+          "const": "kCGHIDEventTap"
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "kind",
+        "runID",
+        "epoch",
+        "targetPID",
+        "mono",
+        "at",
+        "outcome"
+      ],
+      "properties": {
+        "kind": {
+          "const": "pointer-result"
+        },
+        "runID": {
+          "$ref": "common.json#/$defs/runID"
+        },
+        "epoch": {
+          "$ref": "common.json#/$defs/epoch"
+        },
+        "targetPID": {
+          "$ref": "common.json#/$defs/pid"
+        },
+        "mono": {
+          "$ref": "common.json#/$defs/mono"
+        },
+        "at": {
+          "$ref": "common.json#/$defs/at"
+        },
+        "outcome": {
+          "enum": [
+            "posted",
+            "not-run"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "postEvents-not-granted",
+            "scope-lease-or-subject-ended"
+          ]
+        },
+        "arrivalProof": {
+          "const": "requires-correlated-native-receipts"
+        }
+      },
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "posted"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "arrivalProof"
+        ],
+        "not": {
+          "required": [
+            "reason"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "reason"
+        ],
+        "not": {
+          "required": [
+            "arrivalProof"
+          ]
+        }
+      }
+    }
+  }
+}

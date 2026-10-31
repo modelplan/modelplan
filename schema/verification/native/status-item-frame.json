@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/status-item-frame.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "status-item-frame",
+  "description": "Owned status item button frame (AppKit screen space plus cgX/cgY); the pointer plan clicks its centre.",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "kind",
+    "x",
+    "y",
+    "width",
+    "height",
+    "coordinateSpace",
+    "cgX",
+    "cgY"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "kind": {
+      "const": "status-item-frame"
+    },
+    "x": {
+      "type": "number"
+    },
+    "y": {
+      "type": "number"
+    },
+    "width": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "height": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "coordinateSpace": {
+      "const": "appkit-screen"
+    },
+    "cgX": {
+      "type": "number"
+    },
+    "cgY": {
+      "type": "number"
+    }
+  },
+  "additionalProperties": false
+}

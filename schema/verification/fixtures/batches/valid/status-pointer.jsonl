@@ -1,0 +1,5 @@
+{"at":1900000019.95,"epoch":"u6-epoch-0001","helperPID":7001,"kind":"pointer-host-permission","mono":86419.95,"postEvents":true,"protocol":"u6-pointer/1","requestsPermission":false,"runID":"u6-run-0001","targetPID":4242}
+{"at":1900000020.0,"epoch":"u6-epoch-0001","kind":"mouse-moved-posted","mono":86420.0,"runID":"u6-run-0001","step":0,"tap":"kCGHIDEventTap","targetPID":4242,"x":1212.0,"y":12.5}
+{"at":1900000020.01,"button":"left","clickCount":1,"epoch":"u6-epoch-0001","kind":"mouse-button-down-posted","mono":86420.01,"runID":"u6-run-0001","step":0,"tap":"kCGHIDEventTap","targetPID":4242,"x":1212.0,"y":12.5}
+{"at":1900000020.05,"button":"left","clickCount":1,"epoch":"u6-epoch-0001","kind":"mouse-button-up-posted","mono":86420.05,"runID":"u6-run-0001","step":0,"tap":"kCGHIDEventTap","targetPID":4242,"x":1212.0,"y":12.5}
+{"arrivalProof":"requires-correlated-native-receipts","at":1900000020.3,"epoch":"u6-epoch-0001","kind":"pointer-result","mono":86420.3,"outcome":"posted","runID":"u6-run-0001","targetPID":4242}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/capture-receipt.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "U6 capture receipt",
+  "description": "Single owned-window capture bound to the native dock-surface-frame row (frameSeq) it captured. A file name alone proves nothing.",
+  "x-file": "dock-capture.json",
+  "type": "object",
+  "required": [
+    "schema",
+    "runID",
+    "epoch",
+    "pid",
+    "windowNumber",
+    "frameSeq",
+    "mono",
+    "at",
+    "file",
+    "sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "u6-capture/1"
+    },
+    "runID": {
+      "$ref": "common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "windowNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "frameSeq": {
+      "$ref": "common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "common.json#/$defs/at"
+    },
+    "file": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.png$"
+    },
+    "sha256": {
+      "$ref": "common.json#/$defs/sha256"
+    }
+  },
+  "additionalProperties": false
+}

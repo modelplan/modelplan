@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/stop.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "title": "stop",
+  "description": "The guard began the normal terminate: stop-or-lease-expired (stop file, lease or deadline) or owner-preempted. Only stop-or-lease-expired satisfies step 8.",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "kind"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "kind": {
+      "enum": [
+        "stop-or-lease-expired",
+        "owner-preempted"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
