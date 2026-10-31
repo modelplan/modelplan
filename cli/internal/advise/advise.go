@@ -497,7 +497,7 @@ func tie(l *lineup.Lineup) float64 {
 // within a tie of the current configuration and costs at most betterSaving of it. It follows
 // the published verdict; nil when the model is not beaten or nothing qualifies.
 func (c config) better(d *digest.Digest, harness string) *Step {
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || c.plan != nil || d == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || c.cur.Cost == nil || c.plan != nil || d == nil || harness == "" {
 		return nil
 	}
 	l := d.Lineup(c.model.DeveloperID)
@@ -516,7 +516,7 @@ func (c config) better(d *digest.Digest, harness string) *Step {
 	var best *digest.Effort
 	for i := range m.Efforts {
 		e := &m.Efforts[i]
-		if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-t || *e.Cost > *c.cur.Cost*betterSaving {
+		if !crossModel(e) || e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-t || *e.Cost > *c.cur.Cost*betterSaving {
 			continue
 		}
 		if best == nil || *e.Cost < *best.Cost {
@@ -530,6 +530,10 @@ func (c config) better(d *digest.Digest, harness string) *Step {
 	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
 	return s
 }
+
+// crossModel reports whether a configuration may be compared with another model's. A provisional
+// ability is published for its own model's ladder only.
+func crossModel(e *digest.Effort) bool { return e != nil && !e.Provisional }
 
 func kindOf(delta, tie float64) string {
 	if delta > tie {
@@ -546,7 +550,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 	if c.plan != nil {
 		return c.cheaperInPlan(d, harness)
 	}
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
 		return nil
 	}
 	l := d.Lineup(c.model.DeveloperID)
@@ -562,7 +566,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 		}
 		for i := range m.Efforts {
 			e := &m.Efforts[i]
-			if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-tie(l) || *e.Cost >= *c.cur.Cost {
+			if !crossModel(e) || e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-tie(l) || *e.Cost >= *c.cur.Cost {
 				continue
 			}
 			if best == nil || *e.Cost < *best.Cost || (*e.Cost == *best.Cost && *e.Ability > *best.Ability) {
@@ -582,7 +586,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 // now. A plan where each model has its own pool, or with unpublished rates, has no cross-model
 // cost: nil.
 func (c config) cheaperInPlan(d *digest.Digest, harness string) *Step {
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || harness == "" {
 		return nil
 	}
 	lo := c.plan.cost(c.model, c.cur, c.now, false)
@@ -600,7 +604,7 @@ func (c config) cheaperInPlan(d *digest.Digest, harness string) *Step {
 		for i := range m.Efforts {
 			e := &m.Efforts[i]
 			v := c.plan.cost(m, e, c.now, true)
-			if e.Ability == nil || v == nil || *e.Ability < *c.cur.Ability || *v >= *lo {
+			if !crossModel(e) || e.Ability == nil || v == nil || *e.Ability < *c.cur.Ability || *v >= *lo {
 				continue
 			}
 			if best == nil || *v < bestCost || (*v == bestCost && *e.Ability > *best.Ability) {

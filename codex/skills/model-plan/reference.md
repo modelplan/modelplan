@@ -52,6 +52,7 @@ Use one publication for joined numbers. Supplementary requests should match `pub
 | `ability`, `abilityBasis`                | Published points; not a percentage success rate. Never use `abilityIndex` instead                    |
 | `cost`, `costBasisId`                    | Approximate USD per declared reference task; not a subscription deduction or arbitrary task quote    |
 | `time`, `timeEstimated`, `timeBasis`     | Task-time multiplier with source/cohort/boundary/reference seconds; not AA generation time or TTFT   |
+| `provisional`                            | Only `true` when present: ability is valid within this model's ladder; never compare it across models |
 
 The Go CLI uses the same model keys; its `cost` is USD, not the old unitless expense index. Null is unknown; real zero remains zero. A zero-cost configuration cannot define a cost ratio. For effort comparisons, show each configuration's own ability/cost. Compute simple differences/ratios only with a shared basis and positive denominator; identify the baseline, and do not modify ★. Compare time only with compatible source, cohort and boundary; an estimated ratio remains estimated. Do not turn a benchmark time into a promised completion deadline.
 
