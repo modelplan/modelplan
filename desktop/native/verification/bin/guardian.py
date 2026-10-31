@@ -186,7 +186,7 @@ def launcher_lost(pid_file, lookup=identity):
 
 
 def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.monotonic, sleep=time.sleep,
-              quit_grace=0.0, report=None):
+              quit_grace=0.0, report=None, urgent=lambda: False):
     """Stop the owned subject and confirm it is gone. Returns True only when closure is verified.
 
     No file means nothing was ever launched. A 'launching' marker or an unreadable file is
@@ -203,8 +203,8 @@ def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.mo
         return False
     if quit_grace > 0:  # the subject's own normal quit first; no signal while it still has time
         end = clock() + quit_grace
-        while clock() < end and cleanup.matches(lookup(record['pid']), record):
-            sleep(0.1)
+        while clock() < end and cleanup.matches(lookup(record['pid']), record) and not urgent():
+            sleep(0.1)  # revocation, a signal or the cleanup deadline ends the grace at once (macrev-332-7)
         exited = not cleanup.matches(lookup(record['pid']), record)
         if report is not None:
             report.update(quitGraceUsed=quit_grace, exitedDuringGrace=exited)
@@ -237,13 +237,13 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
             now = clock()
             if not running():
                 outcome = 'signalled'; break
-            if stop_path.exists():
-                outcome = 'stopped'; break
             if now >= lease['expiresAt'] - reserve:
                 outcome = 'deadline'; break
             if pid_file is not None and launcher_lost(pid_file):
                 outcome = 'launcher-lost'; break  # its supervisor died: stop the subject now
-            beat(lease_path, identity, now)
+            beat(lease_path, identity, now)  # raises Revoked first: revocation outranks the stop file
+            if stop_path.exists():
+                outcome = 'stopped'; break
             sleep(interval)
     except Revoked:
         outcome = 'revoked'
@@ -253,7 +253,15 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
         except OSError:
             pass  # still stop the subject; launch.py also stops on a stale heartbeat
         if outcome == 'stopped' and quit_grace > 0:  # only a stop-file ending gives the subject its own quit first
-            closed = kill(pid_file, quit_grace=quit_grace, report=report)
+            def urgent():
+                if not running() or clock() >= lease['expiresAt'] - (reserve - quit_grace):
+                    return True  # keep the TERM/KILL budget inside the reserve
+                try:
+                    cur = json.loads(lease_path.read_text())
+                except (OSError, ValueError):
+                    return True
+                return cur.get('ownerPreempted') is not False or cur.get('exclusive') is not True
+            closed = kill(pid_file, quit_grace=quit_grace, report=report, urgent=urgent)
         else:
             closed = kill(pid_file)
     return outcome, closed

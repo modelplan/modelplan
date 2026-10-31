@@ -63,8 +63,8 @@ def check_prepared(c):
         except (OSError,ValueError,TypeError):o=None
         if not isinstance(o,dict) or (o.get('attempt'),o.get('runID'),o.get('epoch'))!=(r['attempt'],r['runID'],r['epoch']):raise ValueError('prepared resources not held')
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
-def stop_reason(c,now):
-    if Path(c['stopPath']).exists():return 'stop-file'
+def urgent_reason(c,now):
+    """Lease-side reasons to stop at once; they always outrank the stop file and end any quit grace."""
     try:lease=json.loads(Path(c['leasePath']).read_text())
     except (OSError,ValueError):return 'lease-unreadable'
     if any(lease.get(k)!=c['lease'].get(k) for k in ('runID','epoch','notBefore','expiresAt')):return 'lease-identity-changed'
@@ -72,6 +72,8 @@ def stop_reason(c,now):
     if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
     if now>=lease['expiresAt']:return 'deadline'
     return None
+def stop_reason(c,now):
+    return urgent_reason(c,now) or ('stop-file' if Path(c['stopPath']).exists() else None)
 def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,report=None,monotonic=time.monotonic):
     """Stop the child on any stop reason. After the stop file it first waits up to quitGraceSeconds (default 5,
     capped at 10) for the child to quit by itself; it signals (TERM, then KILL) only a child still running then."""
@@ -81,8 +83,11 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,report=None,mono
         if reason:
             if reason=='stop-file' and grace>0:
                 end=monotonic()+grace
-                while child.poll() is None and monotonic()<end:sleep(min(.1,poll))
-                if report is not None:report.update(quitGraceUsed=grace,exitedDuringGrace=child.poll() is not None)
+                while child.poll() is None and monotonic()<end:
+                    urgent=urgent_reason(c,clock())
+                    if urgent:reason=urgent;break # revocation, a stale guardian or the deadline ends the grace (macrev-332-7)
+                    sleep(min(.1,poll))
+                if report is not None:report.update(quitGraceUsed=grace,exitedDuringGrace=child.poll() is not None,graceCutBy=None if reason=='stop-file' else reason)
                 if child.poll() is not None:return reason
             child.terminate()
             try:child.wait(10)

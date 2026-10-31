@@ -44,9 +44,24 @@ class GuardianGraceTests(unittest.TestCase):
         if sig == signal.SIGTERM:
             self.exit_at = self.clock.t + 0.5  # exits shortly after TERM
 
-    def terminate(self, quit_grace, report):
+    def terminate(self, quit_grace, report, urgent=lambda: False):
         return guardian.terminate(self.pid_file, lookup=self.lookup, send=self.send, clock=self.clock,
-                                  sleep=self.clock.sleep, quit_grace=quit_grace, report=report)
+                                  sleep=self.clock.sleep, quit_grace=quit_grace, report=report, urgent=urgent)
+
+    def test_urgent_condition_ends_the_grace_at_once(self):  # macrev-332-7
+        report = {}
+        self.assertTrue(self.terminate(5.0, report, urgent=lambda: self.clock.t >= 101.0))
+        at, sig = self.sent[0]
+        self.assertEqual(sig, signal.SIGTERM); self.assertLess(at, 1.3)
+
+    def test_revocation_outranks_an_existing_stop_file(self):  # macrev-332-7
+        lease = Path(self.dir.name) / 'lease.json'; stop = Path(self.dir.name) / 'STOP'
+        lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1000.0, expiresAt=1100.0, exclusive=False,
+                                         ownerPreempted=True, guardianHeartbeatAt=1000.0)))
+        stop.write_text('{}'); calls = []
+        def kill(pid_file, **grace): calls.append(grace); return True
+        outcome, _ = guardian.run(lease, stop, pid_file=self.pid_file, clock=Clock(1000.0), kill=kill, quit_grace=5.0, report={})
+        self.assertEqual(outcome, 'revoked'); self.assertEqual(calls, [{}])
 
     def test_subject_that_quits_within_the_grace_is_never_signalled(self):
         self.exit_at = 102.0; report = {}
@@ -116,7 +131,7 @@ class LaunchGraceTests(unittest.TestCase):
         clock, child = self.child(exits_after=2.0); report = {}
         reason = launch.supervise(child, self.config(), sleep=clock.sleep, monotonic=clock, report=report)
         self.assertEqual(reason, 'stop-file'); child.terminate.assert_not_called(); child.kill.assert_not_called()
-        self.assertEqual(report, dict(quitGraceUsed=5.0, exitedDuringGrace=True))
+        self.assertEqual(report, dict(quitGraceUsed=5.0, exitedDuringGrace=True, graceCutBy=None))
 
     def test_child_that_ignores_the_grace_is_terminated_after_it(self):
         clock, child = self.child(); report = {}
@@ -125,6 +140,22 @@ class LaunchGraceTests(unittest.TestCase):
         child.terminate.assert_called_once()
         self.assertGreaterEqual(report['termAt'], 10.0); self.assertLess(report['termAt'], 10.3)  # capped at 10
         self.assertEqual((report['quitGraceUsed'], report['exitedDuringGrace']), (10.0, False))
+
+    def test_revoked_lease_with_a_stop_file_present_gets_no_grace(self):  # macrev-332-7
+        clock, child = self.child(); c = self.config()
+        Path(c['leasePath']).write_text(json.dumps(dict(c['lease'], ownerPreempted=True)))
+        child.terminate.side_effect = lambda: setattr(clock, 'hit', clock.t)
+        self.assertEqual(launch.supervise(child, c, sleep=clock.sleep, monotonic=clock), 'lease-revoked')
+        self.assertEqual(clock.hit, 100.0)
+
+    def test_revocation_during_the_grace_ends_it(self):  # macrev-332-7
+        clock, child = self.child(); c = self.config(); report = {}
+        def tick(s):
+            clock.sleep(s)
+            if clock.t >= 102.0: Path(c['leasePath']).write_text(json.dumps(dict(c['lease'], ownerPreempted=True)))
+        child.terminate.side_effect = lambda: setattr(clock, 'hit', clock.t)
+        self.assertEqual(launch.supervise(child, c, sleep=tick, monotonic=clock, report=report), 'lease-revoked')
+        self.assertLess(clock.hit - 100.0, 2.5); self.assertEqual(report['graceCutBy'], 'lease-revoked')
 
     def test_other_stop_reasons_get_no_grace(self):
         clock, child = self.child(); c = self.config(); Path(c['stopPath']).unlink()
