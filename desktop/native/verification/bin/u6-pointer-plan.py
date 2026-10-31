@@ -110,10 +110,11 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
         except ValueError as error:
             expected='dock-not-collapsed' if kind=='dock' else 'park-geometry-missing' if kind=='park' else 'owned-frame-missing'
             if str(error)!=expected or clock()>=deadline:
-                if kind=='dock' and str(error)==expected:
+                if str(error)==expected:
                     try:
-                        with (batch/'dock-plan-refusal.json').open('x') as out:
-                            json.dump(dict(schema='u6-dock-plan-refusal/1',runID=lease['runID'],epoch=lease['epoch'],reason=expected,mono=clock()),out)
+                        with (batch/('dock-plan-refusal.json' if kind=='dock' else prefix(kind,purpose)+'-refusal.json')).open('x') as out:
+                            json.dump(dict(schema='u6-dock-plan-refusal/1' if kind=='dock' else 'u6-pointer-plan-refusal/1',
+                                runID=lease['runID'],epoch=lease['epoch'],kind=kind,purpose=purpose,reason=expected,mono=clock()),out)
                     except OSError:pass
                 raise
             sleep(max(0,min(.05,deadline-clock())))
@@ -147,14 +148,13 @@ def park_geometry(observations,run,epoch,pid):
     latest=docks[-1];display=rectangle(latest.get('checks',{}).get('displayBounds'))
     if display is None:raise ValueError('park-geometry-missing')
     statuses=[r for r in owned if r.get('event')=='status-item-frame']
-    if (not statuses or statuses[-1].get('checks',{}).get('settled') is not True or statuses[-1].get('checks',{}).get('visible') is not True
-        or rectangle([statuses[-1].get('checks',{}).get(k) for k in ('cgX','cgY','width','height')]) is None):
+    if (not statuses or status_exclusion(statuses[-1].get('checks',{})) is None):
         raise ValueError('park-geometry-missing')
     point=(display[0]+display[2]/2,display[1]+display[3]/2);exclusions=[];kinds=set()
     for row in owned:
         event=row.get('event');c=row.get('checks',{})
         if event not in ('dock-surface-frame','status-item-frame'):continue
-        rect=rectangle([c.get(k) for k in (('x','y','width','height') if event=='dock-surface-frame' else ('cgX','cgY','width','height'))])
+        rect=rectangle([c.get(k) for k in ('x','y','width','height')]) if event=='dock-surface-frame' else status_exclusion(c)
         if rect is None:continue
         kinds.add(event);exclusions.append(rect)
         dx=max(rect[0]-point[0],0,point[0]-rect[0]-rect[2]);dy=max(rect[1]-point[1],0,point[1]-rect[1]-rect[3])
@@ -163,6 +163,9 @@ def park_geometry(observations,run,epoch,pid):
     if kinds!={'dock-surface-frame','status-item-frame'} or dock is None or not contains(display,(dock[0]+dock[2]/2,dock[1]+dock[3]/2)):
         raise ValueError('park-geometry-missing')
     return latest,display,exclusions
+
+def status_exclusion(checks):
+    return rectangle(checks.get('observedCGFrame')) or rectangle([checks.get(k) for k in ('cgX','cgY','width','height')])
 
 class ArrivalMissing(ValueError):
     def __init__(self,deadline):

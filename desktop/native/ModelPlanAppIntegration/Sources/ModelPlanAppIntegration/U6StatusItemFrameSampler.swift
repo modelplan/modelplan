@@ -66,6 +66,7 @@ import CoreGraphics
     private var observers: [NSObjectProtocol] = []
     private var visibilityObserver: NSKeyValueObservation?
     private var mustInvalidate = true
+    private var lastObservedFrame:CGRect?
     private var stability=Stability()
     private let emit: ([String:Any]) -> Void
     init(emit: @escaping ([String:Any]) -> Void) { self.emit=emit }
@@ -94,18 +95,26 @@ import CoreGraphics
     func sample(mono: Double = ProcessInfo.processInfo.systemUptime) {
         updateWindow(button?.window)
         let visible=button?.window?.isVisible == true
-        var value: Geometry?
-        if let button,let window=button.window,visible,let screen=window.screen,
-           let id=screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
-           let primary=NSScreen.screens.first {
-            value=Self.geometry(frame:window.convertToScreen(button.convert(button.bounds,to:nil)),
-                screen:screen.frame,primaryTop:primary.frame.maxY,menuHeight:NSStatusBar.system.thickness,
-                active:CGDisplayIsActive(id.uint32Value) != 0)
+        var value: Geometry?,observed:CGRect?
+        if let button,let window=button.window,visible,let primary=NSScreen.screens.first {
+            let raw=window.convertToScreen(button.convert(button.bounds,to:nil))
+            observed=CGRect(x:raw.minX,y:primary.frame.maxY-raw.maxY,width:raw.width,height:raw.height)
+            if let screen=window.screen,let id=screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+                value=Self.geometry(frame:raw,screen:screen.frame,primaryTop:primary.frame.maxY,
+                    menuHeight:NSStatusBar.system.thickness,active:CGDisplayIsActive(id.uint32Value) != 0)
+            }
         }
         let publication=stability.observe(value,windowNumber:button?.window?.windowNumber ?? 0,
-            visible:visible,mono:mono,force:mustInvalidate)
+            visible:visible,mono:mono,force:mustInvalidate || observed != lastObservedFrame)
+        lastObservedFrame=observed
         mustInvalidate=false
-        if let publication { emit(publication.fields) }
+        if let publication {
+            var fields=publication.fields
+            if let r=observed,r.width>0,r.height>0,[r.minX,r.minY,r.width,r.height].allSatisfy(\.isFinite) {
+                fields["observedCGFrame"]=[r.minX,r.minY,r.width,r.height] // exclusion only, never click eligibility
+            }
+            emit(fields)
+        }
     }
     deinit { for observer in observers { NotificationCenter.default.removeObserver(observer) } }
 }

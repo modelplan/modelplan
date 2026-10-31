@@ -86,6 +86,7 @@ final class ButtonGuard: @unchecked Sendable {
             let settled:Bool?,visible:Bool?,frameGeneration:UInt64?,windowNumber:Int?
             let stableSinceMono:Double?,cgX:Double?,cgY:Double?,width:Double?,height:Double?
             let x:Double?,y:Double?
+            let observedCGFrame:[Double]?
             let displayBounds:[Double]?,menuBarBand:[Double]?
         }
         let runID:String,epoch:String,pid:Int32,seq:UInt64,mono:Double
@@ -122,13 +123,16 @@ final class ButtonGuard: @unchecked Sendable {
                   let event=row.event,event=="dock-surface-frame" || event=="status-item-frame",let c=row.checks else { continue }
             if event=="dock-surface-frame" { dock=row }
             else { status=row }
-            guard let x=event=="dock-surface-frame" ? c.x : c.cgX,let y=event=="dock-surface-frame" ? c.y : c.cgY,
-                  let w=c.width,let h=c.height else { continue }
+            let raw=event=="status-item-frame" ? c.observedCGFrame : nil
+            guard raw==nil || raw?.count==4,
+                  let x=raw?[0] ?? (event=="dock-surface-frame" ? c.x : c.cgX),
+                  let y=raw?[1] ?? (event=="dock-surface-frame" ? c.y : c.cgY),
+                  let w=raw?[2] ?? c.width,let h=raw?[3] ?? c.height else { continue }
             guard [x,y,w,h].allSatisfy(\.isFinite),w>0,h>0 else { throw DriveError.outsideScope }
             kinds.insert(event)
             guard hypot(max(x-p.steps[0].x,0,p.steps[0].x-x-w),max(y-p.steps[0].y,0,p.steps[0].y-y-h))>=200 else { throw DriveError.outsideScope }
         }
-        guard kinds.count==2,let s=status?.checks,s.settled==true,s.visible==true,s.cgX != nil,s.cgY != nil,s.width != nil,s.height != nil,
+        guard kinds.count==2,let s=status?.checks,(s.observedCGFrame?.count==4 || (s.cgX != nil && s.cgY != nil && s.width != nil && s.height != nil)),
               let c=dock?.checks,c.displayBounds==d,let x=c.x,let y=c.y,let w=c.width,let h=c.height,
               CGRect(x:d[0],y:d[1],width:d[2],height:d[3]).contains(CGPoint(x:x+w/2,y:y+h/2)) else { throw DriveError.outsideScope }
     }

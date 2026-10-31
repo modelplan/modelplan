@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """M1-only bounded U6 actions against Launch's registered synthetic subject."""
-import argparse,json,os,subprocess,sys,time
+import argparse,json,os,re,subprocess,sys,time
 from pathlib import Path
 
 BIN=Path(__file__).resolve().parents[1]/'bin'
@@ -41,16 +41,58 @@ def pointer_diagnostic(config,label,status,stderr='',timed_out=False):
     # argv, provider values or other host information in the evidence batch.
     with (Path(config['batch'])/(label+'.stderr')).open('x') as out:
         json.dump(receipt,out,sort_keys=True);out.write('\n')
+    return receipt
 
+TOOL_CODES={'park-geometry-missing','dock-not-collapsed','owned-frame-missing','subject-registration-invalid',
+            'native-arrival-missing','park-input-invalid','physical-input-not-delivered','owner-preempted'}
+def action_log(config,step,phase,**fields):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',step):raise ValueError('unknown')
+    lease=config['expectedLease']
+    row=dict(schema='u6-action-log/1',runID=lease['runID'],epoch=lease['epoch'],mono=uptime(),substep=step,phase=phase,**fields)
+    data=(json.dumps(row,sort_keys=True)+'\n').encode()
+    fd=os.open(Path(config['batch'])/'action-log.jsonl',os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
+    try:
+        if os.write(fd,data)!=len(data):raise OSError('action-log-write-incomplete')
+        os.fsync(fd)
+    finally:os.close(fd)
+def refusal(config,step,reason,status=None):
+    if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',step):raise ValueError('unknown')
+    lease=config['expectedLease']
+    try:
+        with (Path(config['batch'])/('action-refusal-'+step+'.json')).open('x') as out:
+            json.dump(dict(schema='u6-action-refusal/1',runID=lease['runID'],epoch=lease['epoch'],substep=step,
+                           reason=reason,exitStatus=status,mono=uptime()),out);out.write('\n')
+    except FileExistsError:pass
+def command_label(args,diagnostic):
+    if diagnostic:return diagnostic
+    name=Path(args[2]).name if len(args)>2 else ''
+    if name=='u6-pointer-plan.py':
+        kind=args[args.index('--kind')+1];mode=args[3]
+        purpose=args[args.index('--purpose')+1] if '--purpose' in args else 'refresh'
+        if kind=='park':return 'park-'+purpose+('-plan' if mode=='make' else '-check')
+        if kind=='dock':return 'sliver-wait' if mode=='make' else 'dock-arrival'
+        return 'status-'+purpose+('-plan' if mode=='make' else '-arrival')
+    return {'capture_owned.py':'dock-capture','prepare_menu_plan.py':'refresh-plan','consent_reset.py':'consent-reset'}.get(name,'command')
+def diagnostic_code(stderr):
+    text=stderr.decode(errors='replace') if isinstance(stderr,bytes) else str(stderr or '')
+    return next((code for code in sorted(TOOL_CODES) if code in text[:4096]),'not-delivered')
 def command(args,config,timeout=20,diagnostic=None):
-    still_admitted(config)
+    step=command_label(args,diagnostic);action_log(config,step,'started')
     env=os.environ.copy();env['PYTHONDONTWRITEBYTECODE']='1'
-    try:result=subprocess.run(args,env=env,text=True,errors='replace',capture_output=True,timeout=timeout)
-    except subprocess.TimeoutExpired as error:
-        if diagnostic:pointer_diagnostic(config,diagnostic,None,error.stderr or '',timed_out=True)
+    try:
+        still_admitted(config)
+        result=subprocess.run(args,env=env,text=True,errors='replace',capture_output=True,timeout=timeout)
+    except Exception as error:
+        code='timeout' if isinstance(error,subprocess.TimeoutExpired) else str(error) if isinstance(error,ValueError) and str(error) in TOOL_CODES else 'command-error'
+        detail=pointer_diagnostic(config,diagnostic,None,getattr(error,'stderr','') or '',timed_out=isinstance(error,subprocess.TimeoutExpired)) if diagnostic else None
+        refusal(config,step,code);action_log(config,step,'refused',reason=code,exitStatus=None,stderrCodes=detail['stderrCodes'] if detail else [code])
         raise
-    if diagnostic:pointer_diagnostic(config,diagnostic,result.returncode,result.stderr)
-    if result.returncode:raise ValueError('not-delivered')
+    detail=pointer_diagnostic(config,diagnostic,result.returncode,result.stderr) if diagnostic else None
+    code=diagnostic_code(result.stderr) if result.returncode else None
+    action_log(config,step,'refused' if result.returncode else 'completed',exitStatus=result.returncode,
+               reason=code,stderrCodes=detail['stderrCodes'] if detail else ([code] if code else ['stderr-present'] if result.stderr else []))
+    if result.returncode:
+        refusal(config,step,code,result.returncode);raise ValueError('not-delivered')
     return result
 def finish(batch,run,epoch,pid,steps,reason):
     reason=None if reason is None else reason_code(reason,BOUNDED_CODES)
@@ -74,13 +116,24 @@ def run(config_path,pointer_binary):
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','park','--purpose',phase)
         command([str(pointer_binary),'--plan',str(batch/('park-pointer-'+phase+'-plan.json'))],config,diagnostic='park-'+phase)
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','park','--purpose',phase)
+    def wait(predicate,seconds):
+        label='native-wait-'+current;action_log(config,label,'started')
+        try:value=await_row(batch,run,epoch,pid,predicate,seconds)
+        except Exception:
+            refusal(config,label,'not-delivered');action_log(config,label,'refused',reason='not-delivered');raise
+        action_log(config,label,'completed');return value
     try:
+        action_log(config,'runner-admission','started')
         still_admitted(config)
+        action_log(config,'runner-admission','completed')
         reg=json.loads(Path(config['subjectPidPath']).read_text());pid=reg.get('pid')
         if type(pid) is not int or pid<=0 or reg.get('runID')!=run or reg.get('epoch')!=epoch:raise ValueError('registered-subject-invalid')
-        await_row(batch,run,epoch,pid,lambda r:r.get('event')=='started',15)
+        action_log(config,'native-started-wait','started')
+        wait(lambda r:r.get('event')=='started',15)
+        action_log(config,'native-started-wait','completed')
         park('start')
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','dock')
+        action_log(config,'dock-plan','completed')
         command([str(pointer_binary),'--plan',str(batch/'dock-pointer-plan.json')],config,diagnostic='dock-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','dock')
         py(U6/'capture_owned.py','--config',config_path)
@@ -89,45 +142,47 @@ def run(config_path,pointer_binary):
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','status')
         command([str(pointer_binary),'--plan',str(batch/'status-pointer-plan.json')],config,diagnostic='status-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','status')
-        a=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status',3)
+        a=wait(lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status',3)
         a_session=a['checks']['sessionID'];steps['menuA']='pass';current='refresh'
         py(U6/'prepare_menu_plan.py','--config',config_path)
         command([str(pointer_binary),'--status-menu-plan',str(batch/'menu-plan.json')],config,timeout=10,diagnostic='menu-refresh')
-        refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
+        refresh=wait(lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                           and r.get('sessionID')==a_session,60)
         if refresh.get('phase')=='deferred':
-            reply=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
+            reply=wait(lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
                             and r.get('requestId')==refresh.get('requestId'),1)
             disposition=reply.get('dispositions',{}).get('copilot.runtime_usage')
             raise ValueError('cooldown' if disposition=='cooldown' else 'consent-required' if disposition=='policy_pending' else 'engine-disabled')
         if refresh.get('phase')=='abandoned':raise ValueError('timeout' if refresh.get('cause')=='deadline' else 'not-delivered')
         if refresh.get('phase')=='failed':raise ValueError(reason_code(refresh.get('reason'),BOUNDED_CODES))
-        await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-end' and r.get('checks',{}).get('sessionID')==a_session,5)
+        wait(lambda r:r.get('event')=='menu-end' and r.get('checks',{}).get('sessionID')==a_session,5)
         steps['refresh']='pass';current='menuB'
 
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','status','--purpose','clear')
         command([str(pointer_binary),'--plan',str(batch/'status-pointer-clear-plan.json')],config,diagnostic='status-pointer-clear')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','status','--purpose','clear')
-        b=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status'
+        b=wait(lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status'
                     and r.get('checks',{}).get('sessionID')!=a_session,3)
         b_session=b['checks']['sessionID'];steps['menuB']='pass';current='privateTitle'
         seed=json.loads((batch/'synthetic-seed.json').read_text())
-        await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-private-title-visible'
+        wait(lambda r:r.get('event')=='menu-private-title-visible'
                   and r.get('checks',{}).get('sessionID')==b_session
                   and r.get('checks',{}).get('titleSHA256')==seed.get('titleSHA256'),3)
         steps['privateTitle']='pass';current='trackedClear'
         py(U6/'consent_reset.py','--config',config_path)
-        clear=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='accepted-clear'
+        clear=wait(lambda r:r.get('event')=='accepted-clear'
                         and b_session in r.get('checks',{}).get('scrubbedSessionIDs',[]),5)
-        await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-scrubbed' and r.get('seq',0)>clear.get('seq',0)
+        wait(lambda r:r.get('event')=='menu-scrubbed' and r.get('seq',0)>clear.get('seq',0)
                   and r.get('checks',{}).get('sessionID')==b_session,5)
         steps['trackedClear']='pass';park('end');finish(batch,run,epoch,pid,steps,None)
-    except (OSError,ValueError,subprocess.TimeoutExpired,KeyError) as error:
+    except Exception as error:
+        refusal(config,'runner-'+current,reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES))
+        action_log(config,'runner-'+current,'refused',reason=reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES))
         reason=reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES)
         # One end park only if the existing admission/stop guards still allow it.
         if not (batch/'park-pointer-end-plan.json').exists():
             try:park('end')
-            except (OSError,ValueError,subprocess.TimeoutExpired,KeyError):pass
+            except Exception:pass
         steps[current]='not-run';request_stop(config,reason)
         if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,reason)
         raise SystemExit(3) from error

@@ -29,6 +29,17 @@ class U6ActionRunnerTests(unittest.TestCase):
                 with self.assertRaises(subprocess.TimeoutExpired):actions.command(['unused'],config,diagnostic='status-pointer')
             receipt=json.loads((Path(directory)/'status-pointer.stderr').read_text())
             self.assertIsNone(receipt['exitStatus']);self.assertEqual(receipt['stderrCodes'],['timeout'])
+    def test_failed_park_planning_leaves_log_and_refusal_without_pointer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=dict(batch=directory,expectedLease=dict(runID='run',epoch='epoch'))
+            args=['python','-B','u6-pointer-plan.py','make','--kind','park','--purpose','start']
+            result=types.SimpleNamespace(returncode=1,stdout='',stderr='ValueError: park-geometry-missing')
+            with patch.object(actions,'still_admitted'),patch.object(actions.subprocess,'run',return_value=result):
+                with self.assertRaises(ValueError):actions.command(args,config)
+            root=Path(directory);rows=[json.loads(line) for line in (root/'action-log.jsonl').read_text().splitlines()]
+            self.assertEqual([r['phase'] for r in rows],['started','refused'])
+            self.assertEqual(rows[-1]['reason'],'park-geometry-missing')
+            self.assertTrue((root/'action-refusal-park-start-plan.json').exists())
     def test_refused_admission_writes_failure_handoff_and_stop(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);config=dict(batch=str(root),stopPath=str(root/'stop.json'),
@@ -104,5 +115,45 @@ class ActionPhaseAdmissionTests(unittest.TestCase):
         self.assertEqual(len(self.checks),4)
         self.assertIn(json.loads((self.root/'stop.json').read_text())['reason'],actions.BOUNDED_CODES)
         self.assertEqual(json.loads((self.root/'operator-finish.json').read_text())['outcome'],'not-run')
+    def test_real_runner_parks_expanded_start_before_sliver_wait_and_reveal(self):
+        pointer_spec=importlib.util.spec_from_file_location('runner_park_pointer',Path(__file__).parent/'bin/u6-pointer-plan.py')
+        pointer=importlib.util.module_from_spec(pointer_spec);pointer_spec.loader.exec_module(pointer)
+        now=[100.1];seq=[21];order=[]
+        def append(state):
+            seq[0]+=1
+            row=dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=4242,seq=seq[0],mono=now[0],
+                checks=dict(state=state,coordinateSpace='cg-screen',x=2556 if state=='sliver' else 2320,
+                    y=1080,width=4 if state=='sliver' else 240,height=88,windowNumber=77,displayBounds=[0,0,2560,1440]))
+            with (self.root/'native-observations.jsonl').open('a') as out:out.write(json.dumps(row)+'\n')
+        append('expanded')
+        with (self.root/'native-observations.jsonl').open('a') as out:
+            out.write(json.dumps(dict(event='status-item-frame',runID='run',epoch='epoch',pid=4242,seq=23,mono=100.1,
+                checks=dict(settled=False,visible=True,windowNumber=1<<32,frameGeneration=1,observedCGFrame=[1800,2,18,18])))+'\n')
+        seq[0]=23
+        def fake_run(args,**_):
+            if len(args)>3 and Path(args[2]).name=='u6-pointer-plan.py' and args[args.index('--kind')+1] in ('park','dock'):
+                mode=args[3];kind=args[args.index('--kind')+1]
+                purpose=args[args.index('--purpose')+1] if '--purpose' in args else 'refresh'
+                if mode=='make':
+                    if kind=='dock':order.append('sliver-wait')
+                    pointer.make(self.config,kind,purpose,clock=lambda:now[0],sleep=lambda t:now.__setitem__(0,now[0]+t))
+                else:pointer.check(self.config,kind,purpose,clock=lambda:now[0],sleep=lambda t:now.__setitem__(0,now[0]+t))
+            elif '--plan' in args and (Path(args[-1]).name.startswith('park-pointer') or Path(args[-1]).name=='dock-pointer-plan.json'):
+                plan=json.loads(Path(args[-1]).read_text());park=plan.get('purpose')=='park';order.append('park-'+plan['parkPhase'] if park else 'reveal')
+                now[0]+=.1
+                rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=4242,mono=now[0],purpose='park' if park else 'drive'),
+                    dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=4242,purpose='park' if park else 'drive')]
+                Path(plan['output']).write_text(''.join(json.dumps(r)+'\n' for r in rows));now[0]+=.05;append('sliver' if park else 'expanded')
+            return types.SimpleNamespace(returncode=0,stdout='',stderr='')
+        with patch.object(actions,'still_admitted'),patch.object(actions,'uptime',lambda:now[0]), \
+             patch.object(actions.subprocess,'run',side_effect=fake_run),patch.object(pointer,'still_admitted'), \
+             patch.object(pointer,'identity',return_value=dict(pid=4242)),patch.object(pointer.cleanup,'matches',return_value=True), \
+             patch.object(pointer,'launcher_lost',return_value=False):
+            actions.run(self.path,self.root/'fake-pointer')
+        self.assertEqual(order,['park-start','sliver-wait','reveal','park-end'])
+        self.assertEqual(json.loads((self.root/'operator-finish.json').read_text())['outcome'],'pass')
+        log=[json.loads(line) for line in (self.root/'action-log.jsonl').read_text().splitlines()]
+        self.assertTrue(any(r['substep']=='park-start-plan' and r['phase']=='completed' for r in log))
+        self.assertTrue(any(r['substep']=='sliver-wait' and r['phase']=='completed' for r in log))
 
 if __name__=='__main__':unittest.main()

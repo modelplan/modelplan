@@ -16,6 +16,12 @@ The named U6 seed uses `--private-tool copilot`, not a display-title argument. A
 
 ## Drive
 
+Every action sub-step appends bounded started/completed/refused rows to action-log.jsonl and every
+refusal writes an exclusive action-refusal-*.json. Child exit status and fixed stderr classifications
+are logged; arbitrary stderr/argv text is not persisted. Park planning uses observedCGFrame only as
+an exclusion rectangle, including when the owned status item is not click-eligible. This prevents
+park from depending on the later status-click readiness gate; it does not relax that gate.
+
 The action runner first parks the pointer at the centre of the active display holding the owned Dock,
 at least 200 CG-screen units from every recorded owned Dock/status rectangle. Park plans/receipts say
 `purpose: park`; the helper permits exactly one zero-duration move step, never a click/button event.
