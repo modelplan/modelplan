@@ -1,21 +1,41 @@
 {
-  "stage": "U7 interface only",
-  "base": "9b390fc6717760baba7e758f1690b6fcbac727f0",
-  "mergedGoBase": "cdccb00a8e61524cf2fc0786815631c157acba7b",
-  "profile": "fake readers and injected low-level Security API only; no SecItemCopyMatching or identity/signing operations",
-  "command": "swift test --package-path desktop/native/ModelPlanCredentialAgent",
+  "stage": "wired normal constructor; R2 default-deny; production helper packaging awaits owner separate PR",
   "sources": [
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Helper/main.swift",
+      "sha256": "414a1b68fa0dceba4303004d4228779d4e1c69afa7f2ad9a311004cba9416f4b"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/IntegrationTests/Package.swift",
+      "sha256": "72d4e32c63e32780c8084acfe7cdac24e45306ca14da53e65a0b762596f98c70"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/IntegrationTests/Tests/U7ConnectionTests/ConnectionTests.swift",
+      "sha256": "44cd6ce50d9d122769587385aa8ec69c245f049ad31997940fbf7b89f887390e"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/IntegrationTests/Tests/U7ConnectionTests/Fixtures/engine.py",
+      "sha256": "458daa879050c220fe6c76cb950d7837280bb1b9d59fd2e478b1ef2a76c5984b"
+    },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Package.swift",
       "sha256": "fd19ed9cb74dedb813daeef47c125bcb6577b384be5cf4f60650dd65710bf179"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/README.md",
-      "sha256": "d61637309532975e3f3586253d8ec77c25c39988aed10b52907d802d281e4f81"
+      "sha256": "717713d68597bc89860f4259c6b8eb9d8958c6f39ae7bb23efea0f61089cba07"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/CredentialAgentClientFactory.swift",
+      "sha256": "38690437d8d523c6417a16676cb4d6438d30d8009362afc6b0eaa7cbcc382c71"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedHelperCredentialAgent.swift",
+      "sha256": "b792443dbb8280f2de4f6e619d10426d1af7e535b8fd0cc24387a836b107a96f"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/FixedItem.swift",
-      "sha256": "a9df1303c64ef11c88b0b35b96009fe0c9cd2d985b2ed715f5f62023eb67e20a"
+      "sha256": "6274f7bc862eb13bc5e42cb8cf4a74a538c437ec2d7b831bb43ae20c8df67043"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Sources/ModelPlanCredentialAgent/NativeCredentialAgent.swift",
@@ -23,144 +43,154 @@
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/AgentTests.swift",
-      "sha256": "0c0eebe27bc3d873c4334ee6d762a808159be765f432bfa8b7e2e65581889383"
+      "sha256": "f9aaf45c19f552153444e8d80e7aadcd9e3fe887dc661eaaadcb3102a7b6fb9b"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/HelperProcessTests.swift",
+      "sha256": "6d7a901fbf2f0d11701c3fc56aa8cdd3ab6e283430bb7ffbed60722dea3d7fd5"
     },
     {
       "path": "desktop/native/ModelPlanCredentialAgent/Tests/ModelPlanCredentialAgentTests/QueryBoundaryTests.swift",
       "sha256": "bb6821f4ea4c0d71ceb31d3421ea481c0f311f89db9d4a889d2556906d98bd2d"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/reproducibility.json",
+      "sha256": "de492b7c28f2b14911be5bd45508c5b97619234e31871b8f8129ae2fdbee544d"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/HELPER-PLAN.md",
+      "sha256": "5057b33008a0fe5e37cebcabcc46ea9b1b97f9a0a712916a3c882ed883b67e38"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/SIGNING-PLAN.md",
+      "sha256": "9523851e4d262454099420c2aa219484987575ff575f6308dd2ae248aef1644c"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py",
+      "sha256": "1349a60ffdaa089858e41b07ea563754f59b7b194f26ecf9a097a5b7c56b6063"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py",
+      "sha256": "7be9a8e76759bcc042dc3d242712a501bd2f81046ebf1afbd875d563905dbbbf"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/embed_fixed_helper.py",
+      "sha256": "b9539216246106beecf52dc7f1c3f2e577a5679324a54dad1ba824aac054b958"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/package-neutral.patch",
+      "sha256": "4b6c4538add57df102e46eef68601adbc27e78d39e27f40040b15ecc5528b637"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_embedded_agent.py",
+      "sha256": "3b5183781b0c70f16dfc3cd31dfeb2da2cfa6220b8a13128542078b00c12ae5b"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_external_pin.py",
+      "sha256": "5c3950368139c2285a2ea8049e5e9bb146e06b2cb94fea32f3a0c064883d2eda"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_helper_boundary.py",
+      "sha256": "a2ef428b5ce4af18cf41e0dfc33eeb78df3b4954f49b1fa6a38462ef01f16a86"
+    },
+    {
+      "path": "desktop/native/ModelPlanCredentialAgent/tools/tests/test_real_helper.py",
+      "sha256": "86a1164ff78025845c9db5e744bf3e24a439716b4fdba5c0c0358d0c87e9e510"
+    },
+    {
+      "path": "desktop/native/ModelPlanEngineStore/Package.swift",
+      "sha256": "e27338c97333eb310b904f10556635414a199106d6f1a46c4ef6bb77760b6fb3"
+    },
+    {
+      "path": "desktop/native/ModelPlanEngineStore/Sources/ModelPlanEngineStore/EngineStoreConnection.swift",
+      "sha256": "3e5710d707b197cb68f18c816e47b6661b62d607e6362f39be56eacb452bc87b"
     }
   ],
-  "scenarios": [
-    {
-      "id": "testActualEnumerationDictionaryIsSupportedByTheFakeOS",
-      "outcome": "pass"
+  "checks": {
+    "swiftAdapterAndRealDenialHelper": {
+      "outcome": "pass",
+      "cases": 27
     },
-    {
-      "id": "testCancellationReturnsBeforeBlockedReadAndRejectsLateToken",
-      "outcome": "pass"
+    "normalConstructorAndPackagedFixture": {
+      "outcome": "pass",
+      "cases": 3
     },
-    {
-      "id": "testEverySecurityFailureHasNoToken",
-      "outcome": "pass"
+    "pythonProtocolAndPackaging": {
+      "outcome": "pass",
+      "cases": 13
     },
-    {
-      "id": "testExpiredAndStaleRequestsDoNotRead",
-      "outcome": "pass"
+    "universalTwoCleanBuilds": {
+      "outcome": "pass",
+      "pin": {
+        "schemaVersion": 1,
+        "sha256": "2ca1f1238b5434f41a950e19d6a8d81cdbd230932745a7d2afbbef2c6499538d",
+        "bytes": 2101712,
+        "inputSHA256": "692f034f589e7ea2be9f6dd4cff3880edcbb4cfe1398475c2c12f339ac398b2a",
+        "bundleIdentifier": "ai.modelplan.credential-agent"
+      }
     },
-    {
-      "id": "testFixedQueryBackgroundCannotPrompt",
-      "outcome": "pass"
-    },
-    {
-      "id": "testInteractiveRequiresExplicitAction",
-      "outcome": "pass"
-    },
-    {
-      "id": "testMalformedOrOversizedSuccessIsError",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderEnumeratesThenReadsExactlyOnePersistentReference",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderItemCanDisappearBetweenEnumerationAndRead",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderNotFoundAndEmptyEnumerationNeverReadData",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderRejectsAmbiguityWithoutReadingAnyPassword",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRealReaderRejectsMalformedOrWrongServiceReference",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRevokeDuringReadDropsToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testSuccessReturnsOnlyAccessTokenThroughGeneratedResult",
-      "outcome": "pass"
-    },
-    {
-      "id": "testTerminalCheckpointBeforeEnumerationMakesNoOSCall",
-      "outcome": "pass"
-    },
-    {
-      "id": "testTimeoutRetainsWorkerSlotAndDropsLateToken",
-      "outcome": "pass"
-    },
-    {
-      "id": "testActiveInteractiveOperationStillReadsAfterEnumeration",
-      "outcome": "pass"
-    },
-    {
-      "id": "testCancelWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "testExpiryWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "testRevokeWhileEnumerationBlockedSuppressesSecretQuery",
-      "outcome": "pass"
-    },
-    {
-      "id": "app-entry-wiring",
-      "outcome": "not-run"
-    },
-    {
-      "id": "synthetic-keychain-interaction",
-      "outcome": "not-run"
-    },
-    {
-      "id": "background-os-prompt-behavior",
-      "outcome": "not-run"
-    },
-    {
-      "id": "two-signed-builds-same-identity",
-      "outcome": "not-run"
-    },
-    {
-      "id": "real-owner-ACL",
-      "outcome": "not-run"
-    }
-  ],
-  "staticChecks": {
+    "twoSyntheticAppEmbedding": "pass",
+    "productionEmbeddingCommandOnSyntheticApp": "pass",
+    "singleFinalPinCheck": "pass",
+    "externalWrongHashNegativeControl": "pass",
+    "proposedPackagingPatchApplyCheck": "pass",
     "source-policy": "pass",
-    "whitespace": "pass"
+    "whitespace": "pass",
+    "currentHeadHostedCI": "not-run"
   },
-  "level": "L1 fake contract only; not L2/L3",
-  "regression": {
-    "id": "actual-enumeration-query-shape",
-    "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
-    "baselineOutcome": "fail",
-    "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
-    "fixedOutcome": "pass"
+  "regressions": {
+    "unsupportedAllMatchData": {
+      "id": "actual-enumeration-query-shape",
+      "baselineSource": "ecb9c0ffd6a9bdf5ebef1635d18d4dfb7a8db1e3",
+      "baselineOutcome": "fail",
+      "baseline": "fake returns errSecParam for the disallowed password/all-matches/data combination",
+      "fixedOutcome": "pass"
+    },
+    "betweenQueryAuthority": {
+      "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
+      "baselineOutcome": "fail",
+      "baselineFailures": [
+        "cancel-after-enumeration-start",
+        "expiry-after-enumeration-start",
+        "revoke-after-enumeration-start"
+      ],
+      "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
+      "fixedOutcome": "pass",
+      "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
+      "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
+    },
+    "helperLaunchUUID": {
+      "baseline": "fail: dyld rejected missing LC_UUID",
+      "fixed": "pass: content-derived UUID retained, each clean helper executes a denial smoke before byte comparison"
+    }
   },
-  "hostedFakeSuite": {
-    "path": ".github/workflows/u7-credential-agent.yml",
-    "sha256": "2fa64e8d139ff64b080a52ddbd429857231e7b96d3e2e8ea56ca74e2ee84df54",
-    "outcome": "not-run",
-    "note": "New head requires its own hosted execution after push"
-  },
-  "betweenQueryRegression": {
-    "baselineImplementation": "6d69523a8b637d78687eb6596cf09610af05dc07",
-    "baselineOutcome": "fail",
-    "baselineFailures": [
-      "cancel-after-enumeration-start",
-      "expiry-after-enumeration-start",
-      "revoke-after-enumeration-start"
+  "notProven": [
+    "production package-neutral.sh helper hook (separate packaging-owner PR; patch supplied)",
+    "final production candidate embedding and two-app A14",
+    "foreign architecture execution (compiled and sealed only)",
+    "real Keychain/ACL/owner profile",
+    "R2 Developer ID authenticated XPC and real token backend"
+  ],
+  "privacy": "No Keychain/identity/trust/GUI operation; no token, quota payload or reader; ad-hoc build sealing only; generated wire contract unchanged",
+  "normalEntry": {
+    "integrationBase": "a699c7ffdda4a7f5936d97f81140ccdf15ec06fa",
+    "productionChain": [
+      "CommunityApp.runEngineRows",
+      "EngineRowsEntry.make",
+      "EngineDockMenuApplication.init",
+      "EngineDockMenuComposition.init",
+      "EngineStoreConnection.init",
+      "CredentialAgentClientFactory.make",
+      "ProcessEngineClient.isCurrent"
     ],
-    "observedBaseline": "each issued the second interactive query (2 calls vs expected1)",
-    "fixedOutcome": "pass",
-    "fixed": "same actual agent+reader with blocking low-level matcher; terminal paths make only1 call, active control makes2; no real query",
-    "redLogSHA256": "982f77828de9432fb00700836df92e1b117c52d66d3c8bd39000a22f3dbb2d8b"
+    "regression": {
+      "baseline": "fail: normal constructor omitted credentials capability and returned interaction_required",
+      "fixed": "pass: capability advertised, typed denied result, no token; explicit injected agent preserved",
+      "packagedPositiveControl": "pass: pinned synthetic subprocess launch marker required, not constant in-process denial"
+    },
+    "leasedSharedFiles": [
+      "desktop/native/ModelPlanEngineStore/Package.swift",
+      "desktop/native/ModelPlanEngineStore/Sources/ModelPlanEngineStore/EngineStoreConnection.swift"
+    ]
   }
 }

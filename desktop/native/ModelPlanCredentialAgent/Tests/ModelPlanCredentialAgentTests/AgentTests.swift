@@ -56,6 +56,11 @@ final class AgentTests: XCTestCase {
               deadline: .now.advanced(by: .seconds(seconds)), userAction: action ? .init(id: UUID()) : nil)
     }
     private let tokenData = Data(#"{"claudeAiOauth":{"accessToken":"U7_FAKE_CANARY","refreshToken":"NEVER_FORWARD"}}"#.utf8)
+    func testSystemTokenBackendIsPermanentlyDeniedWithoutAnOSLookup() {
+        let result = SecurityItemReader().read(.init(interactive: true), authorize: { nil })
+        XCTAssertEqual(result.status, errSecUnimplemented)
+        XCTAssertNil(result.data)
+    }
     func testActualEnumerationDictionaryIsSupportedByTheFakeOS() {
         XCTAssertEqual(queryStatus(FixedItemQuery(interactive: false).attributes), errSecSuccess)
     }
