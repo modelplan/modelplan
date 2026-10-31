@@ -426,14 +426,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		observeCodexSpeed(st, now)
 		observeAgents(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
-		_ = state.Save(st.Dir, now)
 		if c.json {
+			_ = state.Save(st.Dir, now)
 			for i := range es {
 				es[i].Text = map[string]string{"zh": render.Style{T: render.ZH}.AdviceLine(es[i]), "en": render.Style{T: render.EN}.AdviceLine(es[i])}
 			}
 			return printJSON(stdout, map[string]any{"schemaVersion": 1, "evaluatedAt": now.UTC(), "events": nonNil(es)})
 		}
+		es = claimPaceWarnings(st.Dir, es, now)
 		style.Advice(stdout, es)
+		for _, e := range es {
+			if e.Type == advise.WindowPace {
+				state.MarkSeen([]advise.Event{e}, now)
+			}
+		}
+		_ = state.Save(st.Dir, now)
 		return 0
 
 	case "qwen-usage":
@@ -527,6 +534,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "publication":
 		return printJSON(stdout, d.Publication())
 	case "windows":
+		if calendar, _, err := publication.LoadWindows(st); err == nil {
+			d = calendar
+		}
 		now := time.Now()
 		groups := advise.Windows(d, advise.WindowFilter{Provider: *provider, Plan: *planFlag, Model: *modelFlag, Region: *region}, now)
 		if c.json {
@@ -794,6 +804,9 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 			personalAllowed = false
 		}
 		if e.Source == "claude-code" && e.InStatusLine(now) {
+			if e.Type == advise.WindowPace && save && (e.At == nil || !history.ClaimPaceWarning(st.Dir, e.Key, *e.At, now)) {
+				continue
+			}
 			if hint = style.AdviceShort(e); hint != "" {
 				if save {
 					state.NoteShown(e, now)
@@ -929,6 +942,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		es[i].Key = advise.ConfigKey(es[i])
 	}
 	es = state.Unseen(es)
+	es = claimPaceWarnings(st.Dir, es, now)
 	var parts, shown []string
 	if system != "" {
 		shown = append(shown, system)
@@ -1036,6 +1050,17 @@ func refreshCodexBarLater(st *store.Store, now time.Time) {
 	case quota.CodexBarDue(p, now):
 		_ = startDetached("codexbar", "refresh", "--quiet")
 	}
+}
+
+func claimPaceWarnings(cache string, events []advise.Event, now time.Time) []advise.Event {
+	out := make([]advise.Event, 0, len(events))
+	for _, event := range events {
+		if event.Type == advise.WindowPace && (event.At == nil || !history.ClaimPaceWarning(cache, event.Key, *event.At, now)) {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out
 }
 
 func filterSource(es []advise.Event, source string) []advise.Event {

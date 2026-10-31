@@ -14,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -422,14 +423,7 @@ func recentRate(w *Window, now time.Time) {
 	if rise < recentMinRise || *w.UsedPercent >= 100 || w.ResetsInMinutes == nil {
 		return
 	}
-	// Counted from the latest reading, which may be a few minutes old.
-	out := int(math.Ceil((100-*w.UsedPercent)/rate*60 - now.Sub(w.ObservedAt).Minutes()))
-	if out < 1 {
-		out = 1
-	}
-	if out < *w.ResetsInMinutes {
-		w.RunsOutInMinutes = &out
-	}
+	w.RunsOutInMinutes = projectedRunout(w, rate, now)
 }
 
 // sameCycle: two readings name the same reset, within the jitter of a computed reset time.
@@ -441,9 +435,9 @@ func sameCycle(a, b *time.Time) bool {
 	return d < 2*time.Minute && d > -2*time.Minute
 }
 
-// History is kept for recentKeep, one sample per sampleEvery at most.
+// History keeps a sparse day for the full-day rate and a dense hour for bursts.
 const (
-	recentKeep  = time.Hour
+	recentKeep  = 25 * time.Hour
 	sampleEvery = 2 * time.Minute
 )
 
@@ -457,19 +451,27 @@ func withHistory(w, older Window) Window {
 	return w
 }
 
-// thin: the samples of w's cycle within recentKeep before its reading, oldest first, at most one
-// per sampleEvery.
+// thin keeps this cycle's readings, oldest first: ten minutes apart before
+// the recent hour, two minutes apart within it. History off keeps only the hour.
 func thin(ss []Sample, w Window) []Sample {
+	keep := recentKeep
+	if os.Getenv("MODELPLAN_HISTORY") == "off" {
+		keep = time.Hour
+	}
 	var in []Sample
 	for _, s := range ss {
-		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentKeep {
+		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
 			in = append(in, s)
 		}
 	}
 	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
 	var out []Sample
 	for _, s := range in {
-		if len(out) == 0 || s.At.Sub(out[len(out)-1].At) >= sampleEvery {
+		spacing := sampleEvery
+		if w.ObservedAt.Sub(s.At) > time.Hour {
+			spacing = 10 * time.Minute
+		}
+		if len(out) == 0 || s.At.Sub(out[len(out)-1].At) >= spacing {
 			out = append(out, s)
 		}
 	}

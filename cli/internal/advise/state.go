@@ -164,6 +164,13 @@ func (s *State) Save(cache string, now time.Time) error {
 
 func (s *State) prune(now time.Time) {
 	for k, t := range s.Seen {
+		// Monthly windows must not repeat a pace notice after the usual 8-day
+		// state retention. Its key ends with the exact window reset.
+		if strings.HasPrefix(k, WindowPace+"|") {
+			if reset, err := time.Parse(time.RFC3339, k[strings.LastIndex(k, "|")+1:]); err == nil && reset.After(now) {
+				continue
+			}
+		}
 		keep := seenFor
 		if strings.HasPrefix(k, "better|") || strings.HasPrefix(k, shownPrefix+"better|") {
 			keep = betterFor
@@ -479,6 +486,9 @@ func (s *State) firstNoted(key string) *time.Time {
 // NoteShown records that the status line showed a better-model hint, so it stops after
 // betterShown even when no hook tells it.
 func (s *State) NoteShown(e Event, now time.Time) {
+	if e.Type == WindowPace {
+		s.MarkSeen([]Event{e}, now)
+	}
 	if e.Type == BetterModel {
 		s.Once(shownPrefix+e.Key, now)
 	}

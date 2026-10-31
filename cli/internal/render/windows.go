@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
 )
@@ -26,7 +27,8 @@ func (s Style) ratePoint(p advise.RatePoint) string {
 	return out
 }
 
-// Windows displays absolute publication instants in the user's local timezone.
+// Windows displays the next published change in its single schedule timezone,
+// or the user's timezone for a schedule that spans several zones.
 func (s Style) Windows(w io.Writer, groups []advise.WindowGroup) {
 	if len(groups) == 0 {
 		if s.T.Pts == "pts" {
@@ -58,6 +60,12 @@ func (s Style) Windows(w io.Writer, groups []advise.WindowGroup) {
 				title += " · 有适用条件（见 --json）"
 			}
 		}
+		zone := time.Local
+		if len(g.Timezones) == 1 {
+			if loc, err := time.LoadLocation(g.Timezones[0]); err == nil {
+				zone = loc
+			}
+		}
 		printed := false
 		for _, series := range g.Series {
 			label := title
@@ -68,8 +76,12 @@ func (s Style) Windows(w io.Writer, groups []advise.WindowGroup) {
 				label = "  " + series.Model
 			}
 			fmt.Fprintf(w, "%s: %s", label, s.ratePoint(series.Now))
-			for _, change := range series.Changes {
-				fmt.Fprintf(w, " → %s %s", change.At.Local().Format("Jan 02 15:04 MST"), s.ratePoint(change))
+			changes := series.Changes
+			if len(changes) == 0 && series.Next != nil {
+				changes = []advise.RatePoint{*series.Next}
+			}
+			for _, change := range changes {
+				fmt.Fprintf(w, " → %s %s", change.At.In(zone).Format("Mon 15:04 MST"), s.ratePoint(change))
 			}
 			fmt.Fprintln(w)
 			printed = true

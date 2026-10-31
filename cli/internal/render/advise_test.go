@@ -275,3 +275,22 @@ func TestShortHintsForAnotherModel(t *testing.T) {
 		t.Errorf("tight with a model that keeps the ability = %q", got)
 	}
 }
+
+func TestPaceWarningUserCopy(t *testing.T) {
+	n := func(v int) *int { return &v }
+	e := advise.Event{Type: advise.WindowPace, Source: "claude-code", Window: "weekly", RunsOutInMinutes: n(120), InMinutes: n(360)}
+	for _, tc := range []struct {
+		s    Style
+		want string
+	}{
+		{Style{T: EN}, "Claude Code weekly quota runs out in ~2h at the last-24h rate, before the reset in 6h"},
+		{Style{T: ZH}, "按最近 24 小时的速度，Claude Code每周额度约 2时 后用完，早于 6时 后的重置"},
+	} {
+		if got := tc.s.AdviceLine(e); got != tc.want {
+			t.Fatalf("got %q want %q", got, tc.want)
+		}
+		if got := tc.s.AdviceShort(e); !strings.Contains(got, tc.want) {
+			t.Fatal("status line lost pace facts", got)
+		}
+	}
+}

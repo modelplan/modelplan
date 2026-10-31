@@ -168,6 +168,28 @@ func (s Style) AdviceLine(e advise.Event) string {
 	}
 	tail := s.stepTail(st)
 	switch e.Type {
+	case advise.WindowPace:
+		tool := s.qt().Source[e.Source]
+		if tool == "" {
+			tool = e.Plan
+		}
+		kind := s.qt().Kinds[e.Window]
+		if s.T == EN {
+			if e.Window == "weekly" {
+				kind = "weekly"
+			}
+			if e.Window == "monthly" {
+				kind = "monthly"
+			}
+			if e.Limit != "" {
+				kind += " " + LimitName(e.Limit)
+			}
+			return fmt.Sprintf("%s %s quota runs out in ~%s at the last-24h rate, before the reset in %s", tool, kind, s.dur(e.RunsOutInMinutes), s.dur(e.InMinutes))
+		}
+		if e.Limit != "" {
+			kind += " " + LimitName(e.Limit)
+		}
+		return fmt.Sprintf("按最近 24 小时的速度，%s%s额度约 %s 后用完，早于 %s 后的重置", tool, kind, s.dur(e.RunsOutInMinutes), s.dur(e.InMinutes))
 	case advise.WindowExhausted:
 		act := t.Wait
 		if st.Action == "use_card" {
@@ -296,6 +318,9 @@ func (s Style) AdviceLine(e advise.Event) string {
 
 // AdviceShort is the status-line hint, or "" when the quota segment already says it.
 func (s Style) AdviceShort(e advise.Event) string {
+	if e.Type == advise.WindowPace {
+		return s.c(warn, s.AdviceLine(e))
+	}
 	st := e.Suggest
 	if st == nil {
 		return ""

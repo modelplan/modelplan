@@ -64,7 +64,7 @@ type ccSnapshot struct {
 	// SessionKey tells this session's model and effort from another's (the usage windows are
 	// the account's either way); a hash, so the snapshot holds no session id.
 	SessionKey string `json:"sessionKey,omitempty"`
-	// Recent: earlier readings per window kind from the last hour, for the recent rate of use.
+	// Recent: earlier readings per window kind: a sparse day plus the dense recent hour.
 	Recent map[string][]Sample `json:"recent,omitempty"`
 	// Identity: the subscription of the account Claude Code is signed in to (identity.go), with
 	// the size and time of the file it came from, so the file is read again only when it changes.
@@ -118,8 +118,8 @@ func (in StatuslineInput) Account(now time.Time) Account {
 }
 
 // RecordClaudeCode saves the sanitised snapshot. The status line renders often, so an
-// unchanged snapshot is rewritten at most once a minute. The previous readings of the last hour
-// are kept with it, for the recent rate of use.
+// unchanged snapshot is rewritten at most once a minute. The previous day of readings
+// is kept sparsely, with a dense recent hour, for quota-rate estimates.
 func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 	a := in.Account(now)
 	if a.Harness.Model == "" && len(a.Windows) == 0 {

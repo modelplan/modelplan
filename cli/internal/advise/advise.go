@@ -25,6 +25,7 @@ import (
 const (
 	WindowExhausted = "window_exhausted"
 	WindowTight     = "window_tight"
+	WindowPace      = "window_pace_warning"
 	SwitchBack      = "reset_passed_switch_back"
 	// BetterModel: the publication marks the session's model as beaten (dominatedBy), and the
 	// model that beats it runs in this harness at an effort that scores within a tie for clearly
@@ -40,7 +41,7 @@ const (
 	PublicReset       = "public_reset_announced"
 )
 
-var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, BetterModel: 3, ResetSoonSurplus: 4, AnnouncedSurplus: 5, PeakStartsSoon: 6, OffpeakStartsSoon: 7, CardsExpiring: 8, PublicReset: 9}
+var rank = map[string]int{WindowExhausted: 0, WindowPace: 1, WindowTight: 2, SwitchBack: 2, BetterModel: 3, ResetSoonSurplus: 4, AnnouncedSurplus: 5, PeakStartsSoon: 6, OffpeakStartsSoon: 7, CardsExpiring: 8, PublicReset: 9}
 
 const (
 	// A surplus counts as "reset soon" in the last quarter of the window, as in quota's pace rule.
@@ -205,6 +206,7 @@ func Derive(in Input) []Event {
 		// A declared plan a session is linked to is advised through that session.
 		if !(a.Source == "user" && linked[strings.ToLower(a.Plan)]) {
 			es = append(accountEvents(a, in.Digest, now, plan), announcedEvents(a, in.Digest, in.State, now)...)
+			es = append(es, paceEvents(a, in.State, now)...)
 		}
 		if in.State != nil {
 			in.State.arm(es)
