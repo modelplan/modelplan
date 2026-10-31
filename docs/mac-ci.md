@@ -1,6 +1,6 @@
 # Trusted Mac checks
 
-Hosted runners remain the default. The `MAC_CI_RUNNER=self-hosted` repository
+Hosted runners remain the default. The `MAC_CI_RUNNER_V2=self-hosted` repository
 variable opts the owner's same-repository checks into the dedicated Mac group.
 An external fork, another actor or rerun actor, a draft PR, an unsupported event,
 or an unset/other switch value uses hosted runners. Commit author text is not an
@@ -41,6 +41,14 @@ The desktop workflow's `mac_ci_probe=true` dispatch runs only a probe. Its
 to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
+
+## Migration
+
+Keep the legacy `MAC_CI_RUNNER` unset or `hosted`. The versioned switch prevents
+old PR workflow definitions from requesting a group that no longer admits their
+direct jobs. Old queued runs retain their original workflow and resolved runner
+selector: update the PR branch workflow before triggering a new run; simply
+rerunning the old run is not a migration.
 
 ## Scratch and recovery
 
