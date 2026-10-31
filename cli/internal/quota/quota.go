@@ -252,7 +252,7 @@ func Read(p Paths, now time.Time) Report {
 		r.Accounts = append(r.Accounts, a...)
 		r.Sources = append(r.Sources, st)
 	}
-	add(readClaudeCode(p.Cache, p.ClaudeSession))
+	add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
 	if p.CodexHome != "" {

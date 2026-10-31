@@ -168,7 +168,8 @@ def session_key(session_id):
     return hashlib.sha256(("modelplan-session:" + session_id).encode()).hexdigest()[:16] if session_id else ""
 
 
-def read_claude_code(cache, session=""):
+def read_claude_code(cache, session="", now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
     st = {"source": "claude-code"}
     raw, status = read_bounded(os.path.join(cache, "observed", "claude-code.json"), 64 << 10)
     if status:
@@ -182,14 +183,16 @@ def read_claude_code(cache, session=""):
         observed = parse_time(s.get("observedAt"))
         h = s.get("harness") if isinstance(s.get("harness"), dict) else {}
         # Whose model and effort these are; the usage windows are the account's either way. The
-        # top level is the latest writer's; "sessions" keeps each recent session's own reading.
+        # top level is the latest writer's (perhaps another session, or one without an id);
+        # "sessions" keeps each recent session's own reading, used while under a day old.
         key = s.get("sessionKey") if isinstance(s.get("sessionKey"), str) else ""
-        own, own_at = False, None
-        if session and key and session_key(session) != key:
+        own, own_at = bool(session) and session_key(session) == key, None
+        if session and not own:
             for x in s.get("sessions") or []:
-                if isinstance(x, dict) and x.get("sessionKey") == session_key(session) and isinstance(x.get("harness"), dict) \
-                        and parse_time(x.get("observedAt")):
-                    h, own, own_at = x["harness"], True, parse_time(x["observedAt"])
+                at = parse_time(x.get("observedAt")) if isinstance(x, dict) else None
+                if at and x.get("sessionKey") == session_key(session) and isinstance(x.get("harness"), dict) \
+                        and (now - at).total_seconds() < 24 * 3600:
+                    h, own, own_at = x["harness"], True, at
                     break
         harness = {k: clip(h.get(k)) for k in ("model", "effort") if clip(h.get(k))}
         if isinstance(h.get("fastMode"), bool):
@@ -198,8 +201,10 @@ def read_claude_code(cache, session=""):
             harness["version"] = clip(h["version"])
         if own_at:
             harness["observedAt"] = own_at
-        if session and key:
-            harness["attribution"] = "current-thread" if own or session_key(session) == key else "recent-thread"
+        if own:
+            harness["attribution"] = "current-thread"
+        elif session and key:
+            harness["attribution"] = "recent-thread"
         windows = []
         for w in s.get("windows") or []:
             kind = w.get("kind") if w.get("kind") in ("five_hour", "weekly", "spend") else "unknown"
@@ -659,7 +664,7 @@ def default_cache():
 
 def report(cache, codex_home, local_file, now, codex_thread="", claude_session=""):
     accounts, sources = [], []
-    for found, st in (read_claude_code(cache, claude_session), read_codex(codex_home, codex_thread), read_local(local_file, now)):
+    for found, st in (read_claude_code(cache, claude_session, now), read_codex(codex_home, codex_thread), read_local(local_file, now)):
         accounts += found
         sources.append(st)
     for a in accounts:

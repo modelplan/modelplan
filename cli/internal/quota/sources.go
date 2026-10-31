@@ -245,8 +245,9 @@ func content(s ccSnapshot) []byte {
 }
 
 // readClaudeCode: session, when known (the hook's or CLAUDE_CODE_SESSION_ID), marks whose
-// model and effort the snapshot holds: current-thread or recent-thread (another session).
-func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
+// model and effort the snapshot holds: current-thread (its own, from the latest writer or a kept
+// reading under a day old at now) or recent-thread (another session's).
+func readClaudeCode(cache, session string, now time.Time) ([]Account, SourceStatus) {
 	st := SourceStatus{Source: "claude-code"}
 	b, status := readBounded(snapshotPath(cache), 64<<10)
 	if status != "" {
@@ -273,21 +274,24 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 			a.Windows[i].addSample(x)
 		}
 	}
-	if session != "" && s.SessionKey != "" {
-		// The latest writer may be another session; then this session's own last reading, if
-		// kept, gives its model and effort.
-		key, own := SessionKey(session), false
+	if session != "" {
+		// The latest writer may be another session, or one without an id; then this session's
+		// own kept reading, while under a day old, gives its model and effort.
+		key := SessionKey(session)
+		own := key == s.SessionKey
 		for _, x := range s.Sessions {
-			if x.Key == key && key != s.SessionKey && !x.ObservedAt.IsZero() {
+			if !own && x.Key == key && !x.ObservedAt.IsZero() && now.Sub(x.ObservedAt) < ccSessionAge {
 				h, at := x.Harness, x.ObservedAt
 				h.ObservedAt = &at
 				a.Harness, own = &h, true
 				break
 			}
 		}
-		a.Harness.Attribution = "recent-thread"
-		if own || key == s.SessionKey {
+		switch {
+		case own:
 			a.Harness.Attribution = "current-thread"
+		case s.SessionKey != "":
+			a.Harness.Attribution = "recent-thread"
 		}
 	}
 	if a.Windows == nil {
