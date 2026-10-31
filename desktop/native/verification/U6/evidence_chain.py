@@ -177,8 +177,9 @@ def evaluate(config,batch,package,kit_manifest):
         need(all(receipt_schema.registry().valid(r,'runtime-calls.json') and r.get('runID')==run and r.get('epoch')==epoch for r in calls))
         own=[r for r in calls if r.get('runID')==run and r.get('epoch')==epoch
              and r.get('method')=='account.getQuota' and number(r.get('mono'))]
-        reject(any(r['mono']<accepted_reply['mono'] for r in own),'unknown')
-        reject(not any(accepted_reply['mono']<r['mono']<terminal['mono'] for r in own),'unknown')
+        # C2.7: the worker may start before the reply is delivered to the App.
+        reject(any(r['mono']<requested['mono'] for r in own),'unknown')
+        reject(not any(requested['mono']<r['mono']<terminal['mono'] for r in own),'unknown')
         end_a=one(native,lambda r:r.get('event')=='menu-end' and checks(r).get('sessionID')==a_session
                   and checks(r).get('menuObjectID')==object_id and r['seq']>arrival['seq'])
 
