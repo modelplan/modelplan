@@ -3,6 +3,15 @@
 import argparse, importlib.util, json, uuid
 from pathlib import Path
 REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menuInputDelivered', 'menuStateVisible', 'quitDelivered', 'ownedCleanupVerified', 'privateTitleObservedBeforeClear', 'trackedMenuClearObserved')
+def cleanup_outcome(closure, run, epoch):
+    if not isinstance(closure,dict): return 'not-run',['missing-closure-receipt']
+    if closure.get('schema')!='launch-cleanup/1' or closure.get('runID')!=run or closure.get('epoch')!=epoch:
+        return 'not-run',['invalid-closure-receipt']
+    failures=closure.get('failures')
+    if not isinstance(failures,list) or any(not isinstance(x,str) or not x for x in failures):
+        return 'not-run',['invalid-closure-failures']
+    if closure.get('ok') is not True or failures:return 'not-run',failures or ['closure-not-ok']
+    return 'pass',[]
 def native_outcomes(rows, run, epoch):
     """Only app rows for this run can prove Refresh and tracked-menu clear."""
     if not isinstance(rows, list) or not run or not epoch: return ('not-run', 'not-run', None)
@@ -52,7 +61,7 @@ def native_outcomes(rows, run, epoch):
         if item['phase'] == 'completed' and type(item.get('rowsSequenceAfter')) is int and item['rowsSequenceAfter'] > requested[key][1]:
             outcome = 'pass'; break
     return outcome, clear, reason
-def qualify(receipt, rows=None):
+def qualify(receipt, rows=None, closure=None):
     if receipt.get('profile') != 'synthetic': raise ValueError('synthetic profile required')
     if receipt.get('timedOut') is True: return 'timeout'
     for key, size in [('headSHA',40),('binarySHA256',64),('packageSHA256',64),('profileSHA256',64)]:
@@ -60,6 +69,8 @@ def qualify(receipt, rows=None):
         if not isinstance(pin,str) or len(pin)!=size or any(c not in '0123456789abcdef' for c in pin): return 'not-run'
     if receipt.get('inputCapability') == 'unsupported': return 'unsupported'
     if receipt.get('stopped') is True: return 'not-run'
+    cleanup, _ = cleanup_outcome(closure,receipt.get('runID'),receipt.get('epoch'))
+    if cleanup != 'pass': return 'not-run'
     refresh, clear, _ = native_outcomes(rows, receipt.get('runID'), receipt.get('epoch'))
     if refresh == 'fail': return 'fail'
     if refresh != 'pass' or clear != 'pass': return 'not-run'
@@ -76,13 +87,17 @@ def main():
     native = args.batch/'native-observations.jsonl'
     try: rows = [json.loads(line) for line in native.read_text().splitlines() if line.strip()]
     except (OSError, ValueError): rows = []
-    outcome = qualify(receipt, rows)
+    closure_path=args.batch/'launch-cleanup.json'
+    try: closure=json.loads(closure_path.read_text())
+    except (OSError,ValueError): closure=None
+    outcome = qualify(receipt, rows, closure)
     refresh, tracked, refresh_reason = native_outcomes(rows, receipt.get('runID'), receipt.get('epoch'))
+    cleanup,cleanup_failures=cleanup_outcome(closure,receipt.get('runID'),receipt.get('epoch'))
     spec = importlib.util.spec_from_file_location('shared_evidence',Path(__file__).with_name('evidence.py'))
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
-    config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-synthetic',outcome=outcome,refreshCompleted=refresh,trackedClear=tracked,refreshFailureReason=refresh_reason)],files=receipt.get('actionEvidenceFiles',[]))
+    config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-synthetic',outcome=outcome,refreshCompleted=refresh,trackedClear=tracked,refreshFailureReason=refresh_reason,cleanup=cleanup,cleanupFailures=cleanup_failures)],files=receipt.get('actionEvidenceFiles',[]))
     result = shared.manifest(config,args.batch)
     result['subject'] = {key:receipt.get(key) for key in ('headSHA','binarySHA256','packageSHA256','profileSHA256')}
     with (args.batch/'manifest.json').open('x') as stream: json.dump(result,stream,indent=2)
-    print(json.dumps(dict(scenario='U6-DockMenu-synthetic',outcome=outcome,refreshCompleted=refresh,trackedClear=tracked,refreshFailureReason=refresh_reason)))
+    print(json.dumps(dict(scenario='U6-DockMenu-synthetic',outcome=outcome,refreshCompleted=refresh,trackedClear=tracked,refreshFailureReason=refresh_reason,cleanup=cleanup,cleanupFailures=cleanup_failures)))
 if __name__ == '__main__': main()
