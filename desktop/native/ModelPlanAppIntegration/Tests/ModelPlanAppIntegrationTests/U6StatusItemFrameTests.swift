@@ -14,10 +14,20 @@ import XCTest
         let good=try XCTUnwrap(geometry(CGRect(x:1796,y:1403,width:60,height:44)))
         XCTAssertEqual(CGPoint(x:good.frame.midX,y:good.frame.midY),CGPoint(x:1826,y:15))
         var tracker=U6StatusItemFrameSampler.Stability()
-        XCTAssertNil(tracker.observe(good,mono:10));XCTAssertNil(tracker.observe(good,mono:10.49))
-        XCTAssertEqual(tracker.observe(good,mono:10.5),10);XCTAssertNil(tracker.observe(good,mono:10.6))
+        XCTAssertNil(tracker.observe(good,windowNumber:7,visible:true,mono:10)?.stableSince)
+        XCTAssertNil(tracker.observe(good,windowNumber:7,visible:true,mono:10.49))
+        XCTAssertEqual(tracker.observe(good,windowNumber:7,visible:true,mono:10.5)?.stableSince,10)
+        XCTAssertNil(tracker.observe(good,windowNumber:7,visible:true,mono:10.6))
         let moved=try XCTUnwrap(geometry(CGRect(x:1700,y:1403,width:60,height:44)))
-        XCTAssertNil(tracker.observe(moved,mono:11));XCTAssertEqual(tracker.observe(moved,mono:11.5),11)
+        let invalidated=try XCTUnwrap(tracker.observe(moved,windowNumber:7,visible:true,mono:11))
+        XCTAssertNil(invalidated.stableSince);XCTAssertEqual(invalidated.generation,2)
+        XCTAssertEqual(tracker.observe(moved,windowNumber:7,visible:true,mono:11.5)?.stableSince,11)
+        let hidden=try XCTUnwrap(tracker.observe(nil,windowNumber:7,visible:false,mono:12))
+        XCTAssertFalse(hidden.visible);XCTAssertNil(hidden.stableSince);XCTAssertEqual(hidden.generation,3)
+        let replaced=try XCTUnwrap(tracker.observe(good,windowNumber:8,visible:true,mono:13))
+        XCTAssertEqual(replaced.windowNumber,8);XCTAssertEqual(replaced.generation,4);XCTAssertNil(replaced.stableSince)
+        XCTAssertNil(tracker.observe(good,windowNumber:8,visible:true,mono:13.49))
+        XCTAssertEqual(tracker.observe(good,windowNumber:8,visible:true,mono:13.5)?.generation,4)
         XCTAssertNil(U6StatusItemFrameSampler.geometry(frame:good.frame,screen:screen,primaryTop:1440,menuHeight:28,active:false))
     }
 
@@ -34,18 +44,21 @@ import XCTest
         let sampler=U6StatusItemFrameSampler { emitted.append($0) }
         button.title="U6 A";sampler.bind(button)
         let firstDeadline=ProcessInfo.processInfo.systemUptime+8
-        while emitted.isEmpty && ProcessInfo.processInfo.systemUptime<firstDeadline {
+        while emitted.last?["settled"] as? Bool != true && ProcessInfo.processInfo.systemUptime<firstDeadline {
             sampler.sample();try await Task.sleep(for:.milliseconds(50))
         }
-        XCTAssertFalse(emitted.isEmpty,"Initial own status item was never placed")
+        XCTAssertEqual(emitted.last?["settled"] as? Bool,true,"Initial own status item was never placed")
         let count=emitted.count
+        let generation=try XCTUnwrap(emitted.last?["frameGeneration"] as? UInt64)
         button.title="U6 settled frame regression";sampler.bind(button)
         let deadline=ProcessInfo.processInfo.systemUptime+8
-        while emitted.count==count && ProcessInfo.processInfo.systemUptime<deadline {
+        while (emitted.count==count || emitted.last?["settled"] as? Bool != true ||
+               (emitted.last?["frameGeneration"] as? UInt64 ?? 0)<=generation) && ProcessInfo.processInfo.systemUptime<deadline {
             sampler.sample();try await Task.sleep(for:.milliseconds(50))
         }
         XCTAssertGreaterThan(emitted.count,count,"Title change must produce its settled placement")
         let last=try XCTUnwrap(emitted.last),since=try XCTUnwrap(last["stableSinceMono"] as? Double)
+        XCTAssertGreaterThan(try XCTUnwrap(last["frameGeneration"] as? UInt64),generation)
         XCTAssertEqual(last["settled"] as? Bool,true)
         XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime-since,0.5)
         let x=try XCTUnwrap(last["cgX"] as? CGFloat),y=try XCTUnwrap(last["cgY"] as? CGFloat)

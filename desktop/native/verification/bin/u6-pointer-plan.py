@@ -20,18 +20,25 @@ def rectangle(value):
 def contains(rect,point):
     x,y,w,h=rect;return x<=point[0]<x+w and y<=point[1]<y+h
 
-def settled_status(row,rect):
+def settled_status(row,rect,now):
     c=row.get('checks',{});since=c.get('stableSinceMono');display=rectangle(c.get('displayBounds'));band=rectangle(c.get('menuBarBand'))
-    if (c.get('settled') is not True or type(since) not in (int,float) or not math.isfinite(since)
+    if (c.get('settled') is not True or c.get('visible') is not True
+        or type(c.get('frameGeneration')) is not int or c['frameGeneration']<1
+        or type(c.get('windowNumber')) is not int or c['windowNumber']<=0
+        or type(since) not in (int,float) or not math.isfinite(since)
         or not math.isfinite(row['mono']) or row['mono']-since<.5 or display is None or band is None):return False
+    if not math.isfinite(now) or not 0<=now-row['mono']<=2:return False
     x,y,w,h=rect;point=(x+w/2,y+h/2)
     return (y<=display[1]+1 and y+h>=display[1]-1 and band[0]==display[0] and band[1]==display[1]
         and band[2]==display[2] and band[3]<=display[3] and contains(display,point) and contains(band,point))
 
-def latest_frame(observations, event, run, epoch, pid, state=None):
+def latest_frame(observations, event, run, epoch, pid, state=None,now=None):
     for row in reversed(observations):
         if (row.get('event') != event or row.get('runID') != run or row.get('epoch') != epoch
-            or row.get('pid') != pid or type(row.get('seq')) is not int or type(row.get('mono')) not in (int,float)):continue
+            or row.get('pid') != pid):continue
+        if type(row.get('seq')) is not int or row['seq']<1 or type(row.get('mono')) not in (int,float):
+            if event=='status-item-frame':raise ValueError('owned-frame-missing')
+            continue
         checks = row.get('checks', {})
         if state is not None and checks.get('state') != state: continue
         x = checks.get('x' if event == 'dock-surface-frame' else 'cgX')
@@ -40,7 +47,7 @@ def latest_frame(observations, event, run, epoch, pid, state=None):
         space = 'cg-screen' if event == 'dock-surface-frame' else 'appkit-screen'
         if (all(type(v) in (int, float) and math.isfinite(v) for v in (x,y,width,height))
             and width > 0 and height > 0 and checks.get('coordinateSpace') == space):
-            if event=='status-item-frame' and not settled_status(row,(x,y,width,height)):
+            if event=='status-item-frame' and not settled_status(row,(x,y,width,height),system_uptime() if now is None else now):
                 raise ValueError('owned-frame-missing') # never fall back past a newer unready frame
             return row, (x,y,width,height)
         if event=='status-item-frame':raise ValueError('owned-frame-missing')
@@ -65,7 +72,7 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
         if not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
             raise ValueError('subject-registration-invalid')
         try:
-            observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None)
+            observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None,now=clock())
             break
         except ValueError as error:
             if kind!='status' or str(error)!='owned-frame-missing' or clock()>=deadline:raise
@@ -79,6 +86,10 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
         output=str(batch/(stem+'.jsonl')),subjectPID=pid,subjectBundle=str(bundle),allowedRectangles=[[x,y,w,h]],
         steps=[dict(x=x+w/2,y=y+h/2,seconds=0,dwell=0.25,**({'action':'click'} if kind == 'status' else {}))],
         targetPID=pid,u6OwnedWindowNumber=window,u6FrameSeq=observation['seq'])
+    if kind=='status':
+        plan.update(u6InputKind='status',u6Observations=str(batch/'native-observations.jsonl'),
+                    u6StatusFrameGeneration=observation['checks']['frameGeneration'],
+                    u6StatusWindowNumber=observation['checks']['windowNumber'])
     path = batch/(stem+'-plan.json')
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)

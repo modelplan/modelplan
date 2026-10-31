@@ -22,6 +22,18 @@ struct PointerPlan: Decodable {
     let subjectPID: Int32, subjectBundle: String
     let allowedRectangles: [[Double]]
     let steps: [PointerStep]
+    let u6InputKind: String?, u6Observations: String?
+    let u6FrameSeq: UInt64?, u6StatusFrameGeneration: UInt64?
+    let u6StatusWindowNumber: Int?
+    init(profile:String,runID:String,epoch:String,lease:String,stop:String,output:String,
+         subjectPID:Int32,subjectBundle:String,allowedRectangles:[[Double]],steps:[PointerStep],
+         u6InputKind:String? = nil,u6Observations:String? = nil,u6FrameSeq:UInt64? = nil,
+         u6StatusFrameGeneration:UInt64? = nil,u6StatusWindowNumber:Int? = nil) {
+        self.profile=profile;self.runID=runID;self.epoch=epoch;self.lease=lease;self.stop=stop;self.output=output
+        self.subjectPID=subjectPID;self.subjectBundle=subjectBundle;self.allowedRectangles=allowedRectangles;self.steps=steps
+        self.u6InputKind=u6InputKind;self.u6Observations=u6Observations;self.u6FrameSeq=u6FrameSeq
+        self.u6StatusFrameGeneration=u6StatusFrameGeneration;self.u6StatusWindowNumber=u6StatusWindowNumber
+    }
 }
 enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnded, cannotCreateEvent }
 
@@ -64,6 +76,57 @@ final class ButtonGuard: @unchecked Sendable {
 }
 
 @MainActor @main enum PointerDrive {
+    private struct NativeFrame: Decodable {
+        struct Checks: Decodable {
+            let settled:Bool?,visible:Bool?,frameGeneration:UInt64?,windowNumber:Int?
+            let stableSinceMono:Double?,cgX:Double?,cgY:Double?,width:Double?,height:Double?
+            let displayBounds:[Double]?,menuBarBand:[Double]?
+        }
+        let runID:String,epoch:String,pid:Int32,seq:UInt64,mono:Double
+        let event:String?,checks:Checks?
+    }
+    static func currentStatusFrame(_ p:PointerPlan,now:Double=ProcessInfo.processInfo.systemUptime) throws {
+        let bound=p.u6InputKind == "status" || p.u6FrameSeq != nil && p.steps.contains { $0.action == .click }
+        guard bound else { return }
+        guard let path=p.u6Observations,let generation=p.u6StatusFrameGeneration,generation>0,
+              let number=p.u6StatusWindowNumber,number>0,let sequence=p.u6FrameSeq else { throw DriveError.outsideScope }
+        let url=URL(fileURLWithPath:path)
+        guard (try url.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else { throw DriveError.outsideScope }
+        let data=try Data(contentsOf:url);guard data.count<=8_000_000 else { throw DriveError.outsideScope }
+        var latest:NativeFrame?,lastSequence:UInt64=0,lastMono = -Double.infinity
+        for line in data.split(separator:10) where !line.isEmpty {
+            let row=try JSONDecoder().decode(NativeFrame.self,from:Data(line))
+            guard row.runID==p.runID,row.epoch==p.epoch,row.pid==p.subjectPID else { continue }
+            guard row.seq>lastSequence,row.mono.isFinite,row.mono>=lastMono else { throw DriveError.outsideScope }
+            lastSequence=row.seq;lastMono=row.mono
+            if row.event=="status-item-frame" { latest=row }
+        }
+        guard let row=latest,let c=row.checks,c.settled==true,c.visible==true,
+              c.frameGeneration==generation,c.windowNumber==number,row.seq>=sequence,
+              now.isFinite,now-row.mono>=0,now-row.mono<=2,
+              let since=c.stableSinceMono,since.isFinite,row.mono-since>=0.5,
+              let x=c.cgX,let y=c.cgY,let w=c.width,let h=c.height,
+              [x,y,w,h].allSatisfy(\.isFinite),w>0,h>0,
+              let d=c.displayBounds,let b=c.menuBarBand,d.count==4,b.count==4,
+              (d+b).allSatisfy(\.isFinite),d[2]>0,d[3]>0,b[2]>0,b[3]>0,
+              y<=d[1]+1,y+h>=d[1]-1,b[0]==d[0],b[1]==d[1],b[2]==d[2],b[3]<=d[3] else { throw DriveError.outsideScope }
+        let frame=CGRect(x:x,y:y,width:w,height:h),display=CGRect(x:d[0],y:d[1],width:d[2],height:d[3])
+        let band=CGRect(x:b[0],y:b[1],width:b[2],height:b[3])
+        guard p.steps.allSatisfy({ let point=CGPoint(x:$0.x,y:$0.y);return frame.contains(point) && display.contains(point) && band.contains(point) }) else { throw DriveError.outsideScope }
+    }
+    /// Query only the exact native-bound own window; no global window/AX scan,
+    /// image capture, title read or other-application geometry is used.
+    static func currentStatusWindow(_ p:PointerPlan) throws {
+        guard p.u6InputKind=="status" || p.u6FrameSeq != nil && p.steps.contains(where:{$0.action == .click}) else { return }
+        guard let number=p.u6StatusWindowNumber,number>0,
+              let entries=CGWindowListCopyWindowInfo(.optionIncludingWindow,CGWindowID(number)) as? [[String:Any]],
+              entries.count==1,let entry=entries.first,
+              (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value==p.subjectPID,
+              entry[kCGWindowIsOnscreen as String] as? Bool == true,
+              let raw=entry[kCGWindowBounds as String] as? [String:Any],
+              let bounds=CGRect(dictionaryRepresentation:raw as CFDictionary),
+              p.steps.allSatisfy({ bounds.contains(CGPoint(x:$0.x,y:$0.y)) }) else { throw DriveError.outsideScope }
+    }
     static func permission() -> [String: Any] {
         ["event":"pointer-host-permission","postEvents":AXIsProcessTrusted(),
          "helperPID":ProcessInfo.processInfo.processIdentifier,
@@ -115,11 +178,13 @@ final class ButtonGuard: @unchecked Sendable {
     // guard covers the remaining window: a SIGTERM/SIGINT from verification cleanup that
     // arrives while a button is held posts the matching up before the process exits.
     static func click(at point: CGPoint, post: (CGEvent) -> Void,
-                      record: (CGEventType, Double, Double) throws -> Void, guardState: ButtonGuard = .shared) throws {
+                      record: (CGEventType, Double, Double) throws -> Void, guardState: ButtonGuard = .shared,
+                      beforePress: () throws -> Void = {}) throws {
         guard let down = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:point,mouseButton:.left),
               let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
         down.setIntegerValueField(.mouseEventClickState,value:1)
         up.setIntegerValueField(.mouseEventClickState,value:1)
+        try beforePress() // file/window checks finish before the atomic down/up pair
         let downMono=ProcessInfo.processInfo.systemUptime, downAt=Date().timeIntervalSince1970
         guardState.press(down: down, up: up, post: post)
         guardState.release(post: post)
@@ -130,6 +195,7 @@ final class ButtonGuard: @unchecked Sendable {
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
         try validate(p,displays:activeDisplayBounds())
         try live(p)
+        try currentStatusFrame(p);try currentStatusWindow(p)
         let access = permission(); try append(access,to:file)
         guard access["postEvents"] as? Bool == true else {
             try append(["event":"pointer-result","outcome":"not-run","reason":"postEvents-not-granted"],to:file);return
@@ -147,6 +213,7 @@ final class ButtonGuard: @unchecked Sendable {
                 let point = CGPoint(x:previous.x+(end.x-previous.x)*f,y:previous.y+(end.y-previous.y)*f)
                 guard pointAllowed(point,p),onDisplay(point,try activeDisplayBounds()) else { throw DriveError.outsideScope }
                 guard let event = CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
+                try currentStatusFrame(p);try currentStatusWindow(p)
                 event.post(tap:.cghidEventTap)
                 try append(["event":"mouse-moved-posted","kind":"move","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,
                     "step":index,"x":point.x,"y":point.y,"uptimeSeconds":ProcessInfo.processInfo.systemUptime,
@@ -163,7 +230,7 @@ final class ButtonGuard: @unchecked Sendable {
                         "x":end.x,"y":end.y,"button":"left","clickCount":1,
                         "uptimeSeconds":mono,"mono":mono,"at":at,
                         "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
-                })
+                },beforePress: { try currentStatusFrame(p);try currentStatusWindow(p) })
             }
             let until = ProcessInfo.processInfo.systemUptime+step.dwell
             while ProcessInfo.processInfo.systemUptime<until { try live(p);Thread.sleep(forTimeInterval:0.025) }
@@ -203,6 +270,40 @@ final class ButtonGuard: @unchecked Sendable {
             precondition(oldStep.action == nil) // Existing U5 plans remain move-only.
             let clickStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"click","x":42,"y":24,"seconds":0,"dwell":0.2}"#.utf8))
             precondition(clickStep.action == .click)
+            // Real file guard plus fake post sink: a state change between plan
+            // creation and delivery must post neither movement nor button input.
+            let frameFile=FileManager.default.temporaryDirectory.appendingPathComponent("u6-frame-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:frameFile) }
+            let bound=PointerPlan(profile:"synthetic",runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",
+                subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[clickStep],
+                u6InputKind:"status",u6Observations:frameFile.path,u6FrameSeq:1,u6StatusFrameGeneration:1,u6StatusWindowNumber:7)
+            let ready:[String:Any] = ["settled":true,"visible":true,"frameGeneration":1,"windowNumber":7,
+                "stableSinceMono":99,"cgX":0,"cgY":0,"width":100,"height":50,
+                "displayBounds":[0,0,100,100],"menuBarBand":[0,0,100,28]]
+            func writeFrames(_ changes:[[String:Any]]) throws {
+                var data=Data()
+                for (index,checks) in ([ready]+changes).enumerated() {
+                    data += try JSONSerialization.data(withJSONObject:["event":"status-item-frame","runID":"fixture","epoch":"epoch",
+                        "pid":1,"seq":index+1,"mono":100+Double(index)*0.1,"checks":checks]) + Data([10])
+                }
+                try data.write(to:frameFile)
+            }
+            try writeFrames([]);try currentStatusFrame(bound,now:100.2)
+            for change:[String:Any] in [
+                ["settled":false,"visible":true,"frameGeneration":2,"windowNumber":7],
+                ["settled":false,"visible":false,"frameGeneration":2,"windowNumber":7],
+                ["settled":false,"visible":true,"frameGeneration":2,"windowNumber":8]] {
+                try writeFrames([change]);var postedCount=0
+                do {
+                    try click(at:CGPoint(x:42,y:24),post:{ _ in postedCount+=1 },record:{ _,_,_ in },
+                        beforePress:{ try currentStatusFrame(bound,now:100.2) })
+                    preconditionFailure("invalidated frame delivered")
+                } catch DriveError.outsideScope { }
+                precondition(postedCount==0)
+            }
+            try writeFrames([])
+            do { try currentStatusFrame(bound,now:103);preconditionFailure("stale frame admitted") }
+            catch DriveError.outsideScope { }
             do {
                 _ = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"double-click","x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
                 preconditionFailure("unknown click action admitted")
@@ -246,7 +347,7 @@ final class ButtonGuard: @unchecked Sendable {
             // Termination before any press posts nothing (no up without a down).
             let idle = ButtonGuard(), idleSeen = Seen()
             precondition(!idle.terminate(post: { idleSeen.types.append($0.type) }) && idleSeen.types.isEmpty)
-            print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
+            print("PASS pointer bounds/profile/duration, current frame generation/window/visibility/freshness, invalidation before click posts nothing, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
         }
         if args.count == 2 && args[1] == "--check" {
             let data = try JSONSerialization.data(withJSONObject:permission(),options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self));return

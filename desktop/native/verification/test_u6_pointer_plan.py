@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Offline U6 pointer geometry and receipt checks; no GUI or input is posted."""
-import importlib.util, json, sys, tempfile, unittest
+import importlib.util, json, sys, tempfile, unittest, subprocess
 from pathlib import Path
 
 BIN=Path(__file__).parent/'bin'
@@ -29,7 +29,8 @@ class U6PointerPlanTests(unittest.TestCase):
         (self.root/'native-observations.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
     def status_checks(self):
         return dict(coordinateSpace='appkit-screen',x=1796,y=1403,cgX=1796,cgY=-7,width=60,height=44,
-                    settled=True,stableSinceMono=98,displayBounds=[0,0,2560,1440],menuBarBand=[0,0,2560,28])
+                    settled=True,visible=True,frameGeneration=1,windowNumber=7,
+                    stableSinceMono=98,displayBounds=[0,0,2560,1440],menuBarBand=[0,0,2560,28])
     def test_dock_move_requires_same_run_expansion_after_posted_input(self):
         self.write_rows([dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=dict(state='sliver',coordinateSpace='cg-screen',x=10,y=20,width=30,height=40,windowNumber=77))])
@@ -48,7 +49,7 @@ class U6PointerPlanTests(unittest.TestCase):
     def test_status_click_requires_owned_menu_begin(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=self.status_checks())])
-        tool.make(self.config,'status')
+        tool.make(self.config,'status',clock=lambda:100)
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
         (self.root/'status-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
@@ -60,7 +61,7 @@ class U6PointerPlanTests(unittest.TestCase):
         with (self.root/'native-observations.jsonl').open('a') as stream:
             stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=100.95,checks=dict(instanceID='owned',surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
         tool.check(self.config,'status')
-        tool.make(self.config,'status','clear')
+        tool.make(self.config,'status','clear',clock=lambda:100)
         clear=json.loads((self.root/'status-pointer-clear-plan.json').read_text())
         self.assertEqual(clear['steps'][0]['action'],'click')
         self.assertNotEqual(clear['output'],plan['output'])
@@ -90,10 +91,51 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertFalse(plan['statusMenu']['openMenu'])
         self.assertEqual(plan['statusMenu']['request']['action'],'refresh')
 
+    def test_newer_move_hidden_or_replacement_invalidates_settled_frame(self):
+        settled=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,checks=self.status_checks())
+        for change in [dict(visible=True,windowNumber=7),dict(visible=False,windowNumber=7),dict(visible=True,windowNumber=8)]:
+            with self.subTest(change=change):
+                invalid=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=2,mono=100.1,
+                    checks=dict(change,frameGeneration=2,settled=False))
+                self.write_rows([settled,invalid]);now=[100.2]
+                with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+                    tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+                self.assertFalse((self.root/'status-pointer-plan.json').exists())
+        replacement=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=3,mono=106,
+            checks=dict(self.status_checks(),windowNumber=8,frameGeneration=2,stableSinceMono=105))
+        self.write_rows([settled,invalid,replacement]);tool.make(self.config,'status',clock=lambda:106)
+        plan=json.loads((self.root/'status-pointer-plan.json').read_text())
+        self.assertEqual(plan['u6StatusWindowNumber'],8);self.assertEqual(plan['u6StatusFrameGeneration'],2)
+
+    def test_old_settled_frame_is_not_current(self):
+        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,checks=self.status_checks())])
+        now=[103.0]
+        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+            tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+
+    @unittest.skipUnless(sys.platform=='darwin','Production sampler needs AppKit; pure planner regressions run on every platform')
+    def test_production_sampler_invalidations_through_real_planner(self):
+        integration=Path(__file__).parent.parent/'ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/U6StatusItemFrameSampler.swift'
+        harness=Path(__file__).parent/'U6/StatusFrameTransitionCheck/main.swift'
+        if not integration.exists():self.skipTest('Kit omits application source; producer replay runs from the checkout')
+        executable=self.root/'sampler-check'
+        subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(self.root/'swift-cache'),str(integration),str(harness),'-o',str(executable)],check=True,capture_output=True)
+        traces=json.loads(subprocess.check_output([str(executable)]))
+        for change in ['move','hidden','replacement']:
+            with self.subTest(change=change):
+                self.write_rows(traces[change]);now=[100.2]
+                with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+                    tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+                self.write_rows(traces[change+'-settled']);tool.make(self.config,'status',clock=lambda:101.7)
+                plan=json.loads((self.root/'status-pointer-plan.json').read_text())
+                self.assertEqual(plan['steps'][0]['x'],1730 if change=='move' else 1826)
+                self.assertEqual(plan['u6StatusWindowNumber'],8 if change=='replacement' else 7)
+                (self.root/'status-pointer-plan.json').unlink()
+
     def status_input(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=99,
             checks=self.status_checks())])
-        tool.make(self.config,'status')
+        tool.make(self.config,'status',clock=lambda:100)
         rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100),
               dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100),
               dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.1),
@@ -129,7 +171,7 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertFalse((self.root/'status-pointer-plan.json').exists())
         settled=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=14,mono=107,
                      checks=dict(self.status_checks(),stableSinceMono=106.4))
-        self.write_rows(fixture+[settled]);tool.make(self.config,'status')
+        self.write_rows(fixture+[settled]);tool.make(self.config,'status',clock=lambda:107.1)
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual((plan['steps'][0]['x'],plan['steps'][0]['y']),(1826,15))
         self.assertEqual(plan['u6FrameSeq'],14)
@@ -148,7 +190,7 @@ class U6PointerPlanTests(unittest.TestCase):
             for row in [dict(event='menu-begin',seq=2,mono=100.05,checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')),
                         dict(event='menu-end',seq=3,mono=101,checks=dict(menuObjectID='owned',sessionID='A'))]:
                 out.write(json.dumps(dict(runID='run',epoch='epoch',pid=42,**row))+'\n')
-        tool.make(self.config,'status','clear')
+        tool.make(self.config,'status','clear',clock=lambda:100)
         rows=[dict(event='mouse-moved-posted',kind='move',mono=102),dict(event='mouse-button-down-posted',kind='click',mono=102),
               dict(event='mouse-button-up-posted',kind='click',mono=102.1),dict(event='pointer-result',outcome='posted')]
         (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(dict(runID='run',epoch='epoch',targetPID=42,**r))+'\n' for r in rows))

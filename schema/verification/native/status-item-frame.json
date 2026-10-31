@@ -43,15 +43,6 @@
     },
     "checks": {
       "type": "object",
-      "required": [
-        "x",
-        "y",
-        "width",
-        "height",
-        "coordinateSpace",
-        "cgX",
-        "cgY"
-      ],
       "properties": {
         "x": {
           "type": "number"
@@ -87,20 +78,114 @@
           "type": "array",
           "minItems": 4,
           "maxItems": 4,
-          "items": { "type": "number" }
+          "items": {
+            "type": "number"
+          }
         },
         "menuBarBand": {
           "type": "array",
           "minItems": 4,
           "maxItems": 4,
-          "items": { "type": "number" }
+          "items": {
+            "type": "number"
+          }
+        },
+        "frameGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "windowNumber": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "visible": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
       "allOf": [
         {
-          "if": { "required": ["settled"], "properties": { "settled": { "const": true } } },
-          "then": { "required": ["stableSinceMono", "displayBounds", "menuBarBand"] }
+          "if": {
+            "not": {
+              "required": [
+                "frameGeneration"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "coordinateSpace",
+              "cgX",
+              "cgY"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "frameGeneration"
+            ]
+          },
+          "then": {
+            "required": [
+              "windowNumber",
+              "visible",
+              "settled"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "settled"
+            ],
+            "properties": {
+              "settled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height",
+              "coordinateSpace",
+              "cgX",
+              "cgY",
+              "stableSinceMono",
+              "displayBounds",
+              "menuBarBand"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "frameGeneration",
+              "settled"
+            ],
+            "properties": {
+              "settled": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "visible": {
+                "const": true
+              },
+              "windowNumber": {
+                "minimum": 1
+              }
+            }
+          }
         }
       ]
     }
