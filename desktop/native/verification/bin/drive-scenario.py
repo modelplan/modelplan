@@ -3,7 +3,8 @@
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
 from admission import load_and_admit
-from guardian import update_lease,Revoked,locked
+from guardian import update_lease,Revoked,locked,mark_launching,register
+from launch import GATE
 from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
@@ -103,10 +104,20 @@ class Attempt:
         cfg=dict(runID=self.c['runID'],epoch=self.c['epoch'],lease=str(self.lease),control=str(self.control),stop=str(self.stop),output=str(self.raw),mode=mode,ownerObservationEstablished=(mode=='measure'),entryURL=self.entry,scripts=self.c['scripts'],resourceRoot=self.c['resourceRoot'])
         file=self.scratch/(mode+'-config.json');write(file,cfg)
         load_and_admit(self.contract(690 if mode=='preflight' else 630))
+        argv=[self.c['binary'],str(file)];env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8')
+        pid_path=Path(self.c['subjectPidPath']) if self.external else None
+        if pid_path:
+            # M1 flow: the same crash-safe handoff as launch.py. The subject runs only after it is
+            # registered with bin/guardian.py, which stops it if Drive (its launcher) disappears.
+            launcher=mark_launching(pid_path);argv=[sys.executable,'-I','-c',GATE,*argv]
         with (self.scratch/(mode+'-console.log')).open('x') as console:
-            self.app=subprocess.Popen([self.c['binary'],str(file)],stdout=console,stderr=subprocess.STDOUT,env=dict(PATH='/usr/bin:/bin',HOME=str(home),TMPDIR=str(tmp),LANG='en_US.UTF-8'))
-        ident=cleanup.identity(self.app.pid)
-        if not ident:raise RuntimeError('subject-identity-unavailable')
+            self.app=subprocess.Popen(argv,stdin=subprocess.PIPE if pid_path else None,stdout=console,stderr=subprocess.STDOUT,env=env)
+        try:
+            ident=cleanup.identity(self.app.pid)
+            if not ident:raise RuntimeError('subject-identity-unavailable')
+            if pid_path:register(pid_path,self.app.pid,launcher);self.app.stdin.write(b'g');self.app.stdin.close()
+        except BaseException:
+            self.app.kill();self.app.wait();raise  # never leave an unregistered or unsupervised subject
         self.children.append((self.app,ident|dict(role=mode)))
     def ready(self):
         deadline=time.monotonic()+30

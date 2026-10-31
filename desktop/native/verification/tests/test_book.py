@@ -343,18 +343,39 @@ class Bookings(unittest.TestCase):
         c = self.active_contract()
         release = self.root / 'release.json'; release.write_text(json.dumps(c['release']))
         c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
-                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(release))
+                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(release),
+                 subjectPidPath=str(self.root / 'subject.pid'))
         attempt = drive.Attempt(c)
         attempt.out.mkdir(); attempt.scratch.mkdir()
         attempt.lease.write_text(json.dumps(c['lease'])); attempt.entry = 'http://127.0.0.1/synthetic'
         with patch.object(drive.subprocess, 'Popen', return_value=Mock(pid=123)) as popen, \
-                patch.object(drive.cleanup, 'identity', return_value=dict(pid=123)):
+                patch.object(drive.cleanup, 'identity', return_value=dict(pid=123)), \
+                patch.object(drive, 'mark_launching', return_value={}), patch.object(drive, 'register') as registered:
             attempt.launch('preflight')
             popen.assert_called_once()
+            registered.assert_called_once()  # the Drive subject is registered with the guardian before it runs
+            self.assertEqual(popen.call_args.args[0][:3], [sys.executable, '-I', '-c'])  # exec-gated
             release.write_text(json.dumps(c['release'] | dict(epoch='revoked')))
             with self.assertRaisesRegex(ValueError, 'lease/release identity mismatch'):
                 attempt.launch('measure')
             popen.assert_called_once()
+
+    def test_drive_kills_subject_when_registration_fails(self):
+        c = self.active_contract()
+        release = self.root / 'release.json'; release.write_text(json.dumps(c['release']))
+        c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
+                 binary='/bin/sleep', scripts=[], resourceRoot=str(self.root), releasePath=str(release),
+                 subjectPidPath=str(self.root / 'subject.pid'))
+        attempt = drive.Attempt(c)
+        attempt.out.mkdir(); attempt.scratch.mkdir()
+        attempt.lease.write_text(json.dumps(c['lease'])); attempt.entry = 'http://127.0.0.1/synthetic'
+        with patch.object(drive, 'register', side_effect=ValueError('subject identity unavailable')), \
+                patch.object(drive.cleanup, 'identity', return_value=dict(pid=1)):
+            with self.assertRaises(ValueError):
+                attempt.launch('preflight')
+        self.assertIsNotNone(attempt.app.poll())  # the gated child was killed, never released
+        self.assertEqual(attempt.children, [])
+        self.assertEqual(json.loads((self.root / 'subject.pid').read_text())['state'], 'launching')
 
     def test_launch_execute_refuses_without_booking_before_home_or_process(self):
         c = self.active_contract()

@@ -63,7 +63,7 @@ python3 desktop/native/verification/bin/book.py withdraw \
 Keep `LEASE_PATH`, `STOP_PATH` and `SUBJECT_PID_PATH` on the test Mac's local disk (run scratch), never on DevShared: lease writers coordinate with `flock` on `<lease>.lock`, which is only reliable locally. Every lease writer (the guardian, Drive's own guardian, any revocation) goes through `guardian.update_lease`.
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
-`bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 15-second cleanup reserve, and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs
+`bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 30-second cleanup reserve (at least 25), and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs
 from the started head or has expired. Only M1 writes a release, and an existing
 receipt is never overwritten. Run configs supply `leasePath`, `releasePath` and
 `stopPath`, plus the matching booking. Both Launch and Drive use `admission.py` to
