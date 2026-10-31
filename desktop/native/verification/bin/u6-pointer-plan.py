@@ -24,7 +24,11 @@ def latest_frame(observations, event, run, epoch, state=None):
             return row, (x,y,width,height)
     raise ValueError('owned-frame-missing')
 
-def make(config, kind):
+def prefix(kind, purpose):
+    if kind == 'dock' and purpose != 'refresh': raise ValueError('dock-purpose-invalid')
+    return kind+'-pointer'+('-clear' if kind == 'status' and purpose == 'clear' else '')
+
+def make(config, kind, purpose='refresh'):
     load_and_admit(config)
     batch = Path(config['batch'])
     lease = config['expectedLease']
@@ -38,17 +42,18 @@ def make(config, kind):
     window = observation['checks'].get('windowNumber') if kind == 'dock' else None
     if kind == 'dock' and (type(window) is not int or window <= 0): raise ValueError('owned-window-missing')
     bundle = Path(config['argv'][0]).resolve().parent.parent.parent
+    stem=prefix(kind,purpose)
     plan = dict(profile='synthetic',runID=lease['runID'],epoch=lease['epoch'],lease=config['leasePath'],stop=config['stopPath'],
-        output=str(batch/(kind+'-pointer.jsonl')),subjectPID=pid,subjectBundle=str(bundle),allowedRectangles=[[x,y,w,h]],
+        output=str(batch/(stem+'.jsonl')),subjectPID=pid,subjectBundle=str(bundle),allowedRectangles=[[x,y,w,h]],
         steps=[dict(x=x+w/2,y=y+h/2,seconds=0,dwell=0.25,**({'action':'click'} if kind == 'status' else {}))],
         u6OwnedWindowNumber=window)
-    path = batch/(kind+'-pointer-plan.json')
+    path = batch/(stem+'-plan.json')
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)
 
-def check(config, kind):
+def check(config, kind, purpose='refresh'):
     batch = Path(config['batch']); lease = config['expectedLease']
-    plan = json.loads((batch/(kind+'-pointer-plan.json')).read_text())
+    plan = json.loads((batch/(prefix(kind,purpose)+'-plan.json')).read_text())
     pointer = rows(plan['output'])
     event = 'mouse-moved-posted' if kind == 'dock' else 'mouse-button-up-posted'
     delivered = [r for r in pointer if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID']]
@@ -69,9 +74,10 @@ def main():
     p.add_argument('mode',choices=('make','check','window'))
     p.add_argument('--config',type=Path,required=True)
     p.add_argument('--kind',choices=('dock','status'),required=True)
+    p.add_argument('--purpose',choices=('refresh','clear'),default='refresh')
     a=p.parse_args(); c=json.loads(a.config.read_text())
-    if a.mode == 'make': make(c,a.kind)
-    elif a.mode == 'check': check(c,a.kind)
+    if a.mode == 'make': make(c,a.kind,a.purpose)
+    elif a.mode == 'check': check(c,a.kind,a.purpose)
     else:
         if a.kind != 'dock': raise ValueError('only-owned-dock-window-can-be-captured')
         load_and_admit(c)

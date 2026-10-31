@@ -57,6 +57,10 @@ class U6PointerPlanTests(unittest.TestCase):
         with (self.root/'native-observations.jsonl').open('a') as stream:
             stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',timestamp=102,checks=dict(instanceID='owned',surface='status')))+'\n')
         tool.check(self.config,'status')
+        tool.make(self.config,'status','clear')
+        clear=json.loads((self.root/'status-pointer-clear-plan.json').read_text())
+        self.assertEqual(clear['steps'][0]['action'],'click')
+        self.assertNotEqual(clear['output'],plan['output'])
     def test_refresh_plan_reuses_physically_opened_status_menu(self):
         self.write_rows([])
         menu.load_and_admit=lambda _:True

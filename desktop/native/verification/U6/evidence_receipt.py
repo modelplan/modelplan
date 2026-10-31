@@ -12,6 +12,7 @@ def module(name,path):
 pointer=module('u6_pointer_plan',BIN/'u6-pointer-plan.py')
 evidence=module('u6_evidence',BIN/'evidence-u6.py')
 REQUIRED=('run.json','prepared.json','native-observations.jsonl','dock-pointer.jsonl','status-pointer.jsonl',
+          'status-pointer-clear.jsonl',
           'menu-request.json','menu-drive.jsonl','dock-owned.png','consent-reset.json',
           'launch-cleanup.json','result.json','launch.json')
 
@@ -61,11 +62,12 @@ def assemble(config, package):
     app_started=(result.get('runID')==run_id and result.get('epoch')==epoch and result.get('appStarted') is True
                  and launched.get('runID')==run_id and launched.get('epoch')==epoch
                  and launched.get('sourceHead')==config['head'] and started is not None)
-    dock=status=False
-    for kind in ('dock','status'):
-        try:pointer.check(config,kind)
+    dock=status=clear_input=False
+    for kind,purpose in (('dock','refresh'),('status','refresh'),('status','clear')):
+        try:pointer.check(config,kind,purpose)
         except (OSError,ValueError,KeyError,TypeError):continue
         if kind=='dock':dock=True
+        elif purpose=='clear':clear_input=True
         else:status=True
     visual=json.loads((batch/'operator-observations.json').read_text()) if (batch/'operator-observations.json').is_file() else {}
     clear_at=next((r.get('timestamp') for r in native if r.get('event')=='accepted-clear' and r.get('runID')==run_id
@@ -90,7 +92,7 @@ def assemble(config, package):
         menuInputDelivered=status and menu_arrived,menuStateVisible=status and observed and visual.get('privateTitleVisibleBeforeClear') is True,
         quitDelivered=quit_proof.get('requested')=='native-contract-stop' and quit_proof.get('appAcknowledged') is True,
         ownedCleanupVerified=closed,privateTitleObservedBeforeClear=observed and visual.get('privateTitleVisibleBeforeClear') is True,
-        trackedMenuClearObserved=clear=='pass',refreshCompleted=refresh)
+        trackedMenuClearObserved=clear=='pass' and clear_input,refreshCompleted=refresh)
     outcome=evidence.qualify(receipt,native)
     with (batch/'evidence-receipt.json').open('x') as stream:json.dump(receipt,stream,indent=2);stream.write('\n')
     print(json.dumps(dict(outcome=outcome,refreshCompleted=refresh,trackedClear=clear,durationSeconds=duration)))
