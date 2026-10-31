@@ -6,7 +6,7 @@ REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menu
 def native_outcomes(rows, run, epoch):
     """Only app rows for this run can prove Refresh and tracked-menu clear."""
     if not isinstance(rows, list) or not run or not epoch: return ('not-run', 'not-run', None)
-    arrivals = {}
+    delivered = {}
     requested = {}
     terminals = {}
     private_instances = set()
@@ -20,7 +20,7 @@ def native_outcomes(rows, run, epoch):
             if isinstance(key, str):
                 try: uuid.UUID(key)
                 except ValueError: continue
-                arrivals[key] = index
+                delivered[key] = index
         elif event == 'menu-begin' and checks.get('privateContent') is True:
             key = checks.get('instanceID')
             if isinstance(key, str) and key: private_instances.add(key)
@@ -32,13 +32,13 @@ def native_outcomes(rows, run, epoch):
                 and checks.get('oldItemPrivateAttributesScrubbed') is True): clear = 'pass'
         elif row.get('kind') == 'refresh':
             key = row.get('requestId')
-            if not isinstance(key, str) or key not in arrivals or type(row.get('at')) not in (float, int): continue
-            if row.get('phase') == 'requested' and index > arrivals[key] and type(row.get('rowsSequenceBefore')) is int:
+            if not isinstance(key, str) or key not in delivered or type(row.get('at')) not in (float, int): continue
+            if row.get('phase') == 'requested' and index > delivered[key] and type(row.get('rowsSequenceBefore')) is int:
                 requested[key] = (index, row['rowsSequenceBefore'])
             elif row.get('phase') in ('completed', 'failed') and key in requested and index > requested[key][0]:
                 terminals.setdefault(key, []).append(row)
     outcome, reason = 'not-run', None
-    if len(arrivals) != 1 or len(requested) != 1:
+    if len(delivered) != 1 or len(requested) != 1:
         return outcome, clear, reason
     for key, terminal in terminals.items():
         if len(terminal) != 1: continue
