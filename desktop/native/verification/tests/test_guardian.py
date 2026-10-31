@@ -121,7 +121,7 @@ class LaunchSupervisionTests(unittest.TestCase):
         self.assertEqual(reason, 'guardian-heartbeat-stale'); self.assertIsNotNone(code)
 
     def test_stop_file_and_revocation_stop_the_child(self):
-        self.assertEqual(self.run_child(self.config(self.lease(), True))[0], 'stop-file')
+        self.assertEqual(self.run_child(dict(self.config(self.lease(), True), quitGraceSeconds=0))[0], 'stop-file')  # no guardian beats here, so a grace would end as heartbeat-stale
         self.assertEqual(self.run_child(self.config(self.lease(ownerPreempted=True), False))[0], 'lease-revoked')
 
     def test_child_that_exits_itself_is_not_flagged(self):
