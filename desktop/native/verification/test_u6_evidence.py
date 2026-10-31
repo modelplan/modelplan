@@ -34,6 +34,17 @@ class U6FinalEntryTests(unittest.TestCase):
         path=self.root/'launch-cleanup.json';value=json.loads(path.read_text())
         value['checks']['subjectGone']=False;path.write_text(json.dumps(value))
         outcome,_=self.final();self.assertEqual(outcome['outcome'],'fail')
+    def test_schema_invalid_closure_is_not_run(self):
+        path=self.root/'launch-cleanup.json';value=json.loads(path.read_text());value.pop('checks');path.write_text(json.dumps(value))
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
+    def test_foreign_closure_is_not_run(self):
+        path=self.root/'launch-cleanup.json';value=json.loads(path.read_text());value['epoch']='foreign';path.write_text(json.dumps(value))
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
+    def test_clear_after_five_seconds_is_timeout_fail(self):
+        for index,mono in ((13,118.1),(14,118.2),(15,119),(16,120)):
+            self.case.native[index].update(mono=mono,at=mono)
+        self.case.write_native()
+        outcome,_=self.final();self.assertEqual((outcome['outcome'],outcome['reason']),('fail','timeout'))
     def test_review_negative_matrix_through_final_command(self):
         def change_file(name,modify):
             path=self.root/name;value=json.loads(path.read_text());modify(value);path.write_text(json.dumps(value))

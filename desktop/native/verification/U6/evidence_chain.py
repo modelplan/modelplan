@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bin'))
 import check_launch_cleanup
 
-CODES={'engine-disabled','engine-error','consent-required','timeout','not-delivered','wrong-subject','out-of-window','unknown'}
+CODES={'engine-disabled','engine-error','consent-required','timeout','not-delivered','wrong-subject','out-of-window','cooldown','unknown'}
 class Missing(Exception):pass
 class Contradiction(Exception):pass
 def need(value,code='not-delivered'):
@@ -29,8 +29,8 @@ def native_rows(batch,run,epoch,pid):
     need(rows)
     previous=0;previous_mono=-math.inf
     for row in rows:
-        need(type(row.get('seq')) is int and row['seq']>previous and number(row.get('mono')) and number(row.get('at')))
-        need(row['mono']>=previous_mono)
+        need(type(row.get('seq')) is int and row['seq']>0 and number(row.get('mono')) and number(row.get('at')))
+        reject(row['seq']<=previous or row['mono']<previous_mono,'unknown')
         previous=row['seq'];previous_mono=row['mono']
     return rows
 def events(rows,name):return [r for r in rows if r.get('event')==name]
@@ -54,7 +54,10 @@ def click(rows):
     return down,up
 def closure_ok(closure,run,epoch):
     try:check_launch_cleanup.validate_receipt(closure,run,epoch)
-    except ValueError as error:raise Contradiction('unknown') from error
+    except ValueError as error:
+        if str(error) in ('closure-failures-inconsistent','closure-ok-inconsistent','closure-time-inconsistent','closure-window-inconsistent'):
+            raise Contradiction('unknown') from error
+        raise Missing('wrong-subject' if str(error)=='closure-other-run' else 'unknown') from error
     need(closure['ok'] is True)
     reject(not check_launch_cleanup.lease_window_ok(closure),'out-of-window')
     return closure['closedAt']
@@ -182,11 +185,13 @@ def evaluate(config,batch,package,kit_manifest):
                      and checks(r).get('clearID')==clear_id and checks(r).get('storeEpochAfter')==pair[0]
                      and checks(r).get('generationAfter')==pair[1]
                      and b_session in checks(r).get('scrubbedSessionIDs',[]))
+        reject(accepted['mono']-initiated['mono']>5,'timeout')
         reject(any(r.get('event')=='menu-end' and checks(r).get('sessionID')==b_session
                    and r['seq']>=initiated['seq'] and (checks(r).get('cause')!='clear'
                    or checks(r).get('clearID')!=clear_id) for r in native),'not-delivered')
         scrubbed=one(native,lambda r:r.get('event')=='menu-scrubbed' and r['seq']>accepted['seq']
                      and checks(r).get('clearID')==clear_id and checks(r).get('sessionID')==b_session)
+        reject(scrubbed['mono']-initiated['mono']>5,'timeout')
         states=checks(scrubbed).get('itemStates');need(isinstance(states,list))
         actual={x.get('id'):x.get('state') for x in states if isinstance(x,dict)}
         reject(any(actual.get(item) not in ('cleared','deallocated') for item in item_ids)
