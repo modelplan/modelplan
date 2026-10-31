@@ -31,15 +31,19 @@ GUARDIAN_PID=$!
 python3 desktop/native/verification/bin/release.py \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
-# Exactly ONE controller per booking starts subjects (the guardian's registration refuses a second
-# while a registered subject or another controller's handoff is still live). Either:
-#  (a) launch.py, when the scenario drives an app it did not start (e.g. drive-u6.py), or
-#  (b) drive-scenario.py, which starts its own subjects; then do NOT run launch.py.
-# Both stay attached and set subjectPidPath to $SUBJECT_PID_PATH in the run config.
-python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute &   # (a)
+# Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
+# second one. Set CONTROLLER_MODE explicitly:
+#  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py)
+#  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); set DRIVE_BATCH to its batch dir
+# Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
+case "$CONTROLLER_MODE" in
+  launch) python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
+  drive)  : "${DRIVE_BATCH:?DRIVE_BATCH is required in drive mode}"
+          python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
+  *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
+esac
 CONTROLLER_PID=$!
-# ... drive the scenario against the launched subject ...
-# (b) instead: python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & CONTROLLER_PID=$!
+# ... in launch mode, drive the scenario against the launched subject here ...
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
 # confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
 # finish at all and report the run as unconfirmed for coordinator follow-up.
@@ -47,9 +51,10 @@ touch "$STOP_PATH"
 set +e
 wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
 wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
-# (b) only: Drive's own cleanup must be complete (children exited, observer joined, scratch removed, locks released).
 DRIVE_CLEAN=0
-[ -n "${DRIVE_BATCH:-}" ] && { python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cleanup"]; sys.exit(0 if c and all(v is True for v in c.values() if isinstance(v,bool)) else 1)' "$DRIVE_BATCH/result.json" || DRIVE_CLEAN=1; }
+if [ "$CONTROLLER_MODE" = drive ]; then
+  python3 desktop/native/verification/bin/check_drive_cleanup.py "$DRIVE_BATCH/result.json" || DRIVE_CLEAN=1
+fi
 if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
     --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned

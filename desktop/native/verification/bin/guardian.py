@@ -93,39 +93,58 @@ def identity(pid):
     return dict(pid=pid, startSeconds=int(fields[19]), startMicroseconds=0)
 
 
-def mark_launching(pid_file, lookup=None):
-    """A controller (launch.py or Drive), before spawning: nothing can run yet (exec gate).
+@contextlib.contextmanager
+def registration(pid_file):
+    """Serialises every read-check-write of the subject registration across controllers."""
+    with pid_file.with_name(pid_file.name + '.lock').open('a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
-    One controller per booking: refuse while a registered subject is still alive, or while another
-    controller is mid-handoff, so a second registration can never hide a running subject.
+
+def mark_launching(pid_file, lookup=None):
+    """A controller (launch.py or Drive), before spawning: reserve the registration (exec gate).
+
+    One controller per booking: under the registration lock, refuse while a registered subject is
+    still alive or another live controller holds the reservation.
     """
     lookup = lookup or identity
-    if pid_file.exists():
-        try:
-            prior = json.loads(pid_file.read_text())
-        except (OSError, ValueError):
-            raise ValueError('subject registration unreadable; resolve before launching')
+    with registration(pid_file):
         me = lookup(os.getpid())
-        if prior.get('state') == 'running' and cleanup.matches(lookup(prior.get('pid')), prior):
-            raise ValueError('another owned subject is still running; one controller per booking')
-        launcher = prior.get('launcher')
-        if (prior.get('state') == 'launching' and isinstance(launcher, dict)
-                and not cleanup.matches(me, launcher) and cleanup.matches(lookup(launcher.get('pid')), launcher)):
-            raise ValueError('another controller is launching; one controller per booking')
-    launcher = lookup(os.getpid())
-    if launcher is None:
-        raise ValueError('launcher identity unavailable')
-    write_atomic(pid_file, dict(state='launching', launcher=launcher))
-    return launcher
+        if me is None:
+            raise ValueError('launcher identity unavailable')
+        if pid_file.exists():
+            try:
+                prior = json.loads(pid_file.read_text())
+            except (OSError, ValueError):
+                raise ValueError('subject registration unreadable; resolve before launching')
+            if prior.get('state') == 'running' and cleanup.matches(lookup(prior.get('pid')), prior):
+                raise ValueError('another owned subject is still running; one controller per booking')
+            launcher = prior.get('launcher')
+            if (prior.get('state') == 'launching' and isinstance(launcher, dict)
+                    and not cleanup.matches(me, launcher) and cleanup.matches(lookup(launcher.get('pid')), launcher)):
+                raise ValueError('another controller is launching; one controller per booking')
+        write_atomic(pid_file, dict(state='launching', launcher=me))
+        return me
 
 
-def register(pid_file, pid, launcher=None):
-    """launch.py: record the owned subject before releasing its exec gate. Raises if the identity is unknown."""
-    ident = identity(pid)
-    if ident is None:
-        raise ValueError('subject identity unavailable')
-    write_atomic(pid_file, dict(state='running', launcher=launcher, **ident))
-    return ident
+def register(pid_file, pid, launcher=None, lookup=None):
+    """The reserving controller records its subject before releasing the exec gate."""
+    lookup = lookup or identity
+    with registration(pid_file):
+        try:
+            current = json.loads(pid_file.read_text())
+        except (OSError, ValueError):
+            raise ValueError('reservation missing')
+        if current.get('state') != 'launching' or not cleanup.matches(launcher, current.get('launcher') or {}):
+            raise ValueError('reservation not held by this controller')
+        ident = lookup(pid)
+        if ident is None:
+            raise ValueError('subject identity unavailable')
+        write_atomic(pid_file, dict(state='running', launcher=launcher, **ident))
+        return ident
 
 
 def launcher_lost(pid_file, lookup=identity):

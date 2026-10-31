@@ -13,6 +13,7 @@ from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'bin'))
 import guardian  # noqa: E402
+import check_drive_cleanup  # noqa: E402
 import launch  # noqa: E402
 
 
@@ -84,7 +85,7 @@ class GuardianTests(unittest.TestCase):
     def test_error_path_still_stops_and_terminates_subject(self):
         pid_file = self.dir / 'subject.pid'
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        guardian.register(pid_file, child.pid)
+        guardian.register(pid_file, child.pid, guardian.mark_launching(pid_file))
         self.lease.write_text('{not json')
         with self.assertRaises(ValueError):
             guardian.run(self.lease, self.stop, pid_file=pid_file, clock=Clock(1000.0))
@@ -149,7 +150,7 @@ class OwnedSubjectTests(unittest.TestCase):
 
     def test_real_subject_is_stopped_and_confirmed(self):
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        guardian.register(self.pid_file, child.pid)
+        guardian.register(self.pid_file, child.pid, guardian.mark_launching(self.pid_file))
         self.assertTrue(guardian.terminate(self.pid_file, grace=5))
         self.assertIsNotNone(child.wait(5))
 
@@ -208,7 +209,8 @@ class RoundThreeTests(unittest.TestCase):
         lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=now - 5, expiresAt=now + 600, exclusive=True, ownerPreempted=False)))
         dead = subprocess.Popen([sys.executable, '-c', 'pass']); launcher = guardian.identity(dead.pid); dead.wait()
         child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        guardian.register(pid_file, child.pid, launcher or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0))
+        lost = launcher or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0)
+        pid_file.write_text(json.dumps(dict(state='running', launcher=lost, **guardian.identity(child.pid))))
         outcome = guardian.run(lease, stop, pid_file=pid_file, sleep=lambda s: time.sleep(0.05))
         self.assertEqual(outcome, ('launcher-lost', True))
         self.assertIsNotNone(child.wait(5))
@@ -226,7 +228,7 @@ class OneControllerTests(unittest.TestCase):
         d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'
         first = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
         try:
-            guardian.register(pid_file, first.pid, guardian.identity(os.getpid()))
+            guardian.register(pid_file, first.pid, guardian.mark_launching(pid_file))
             with self.assertRaisesRegex(ValueError, 'one controller per booking'):
                 guardian.mark_launching(pid_file)
             self.assertEqual(json.loads(pid_file.read_text())['pid'], first.pid)  # registration not replaced
@@ -234,6 +236,27 @@ class OneControllerTests(unittest.TestCase):
             first.kill(); first.wait()
         guardian.mark_launching(pid_file)  # the first subject has exited: the next subject may register
         self.assertEqual(json.loads(pid_file.read_text())['state'], 'launching')
+
+    def test_concurrent_controllers_admit_exactly_one(self):
+        # Two independent controllers race the reservation; the lock admits exactly one (MACREV round six).
+        d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'; go = d / 'go'
+        script = (f"import sys,time,os; sys.path.insert(0,{str(Path(guardian.__file__).parent)!r}); import guardian\n"
+                  f"from pathlib import Path\nwhile not Path({str(go)!r}).exists(): time.sleep(0.001)\n"
+                  f"try:\n guardian.mark_launching(Path({str(pid_file)!r})); print('admitted'); time.sleep(2)\n"
+                  f"except ValueError: print('refused')\n")
+        procs = [subprocess.Popen([sys.executable, '-c', script], stdout=subprocess.PIPE, text=True) for _ in range(2)]
+        time.sleep(0.5); go.write_text('1')
+        results = sorted(p.communicate(10)[0].strip() for p in procs)
+        self.assertEqual(results, ['admitted', 'refused'])
+
+    def test_register_requires_own_reservation(self):
+        d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'
+        with self.assertRaisesRegex(ValueError, 'reservation missing'):
+            guardian.register(pid_file, os.getpid(), guardian.identity(os.getpid()))
+        other = dict(pid=1, startSeconds=1, startMicroseconds=0)
+        pid_file.write_text(json.dumps(dict(state='launching', launcher=other)))
+        with self.assertRaisesRegex(ValueError, 'not held by this controller'):
+            guardian.register(pid_file, os.getpid(), guardian.identity(os.getpid()))
 
     def test_other_live_controller_mid_handoff_is_refused(self):
         d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'
@@ -244,6 +267,22 @@ class OneControllerTests(unittest.TestCase):
                 guardian.mark_launching(pid_file)
         finally:
             other.kill(); other.wait()
+
+
+class DriveCleanupGateTests(unittest.TestCase):
+    def check(self, content):
+        d = Path(tempfile.mkdtemp()); f = d / 'result.json'
+        if content is not None: f.write_text(content if isinstance(content, str) else json.dumps(content))
+        return check_drive_cleanup.complete(f)
+
+    def test_only_a_complete_successful_cleanup_passes(self):
+        good = dict(cleanup=dict(ownedExited=True, guardianExited=True, topObserverJoined=True, leaseReleased=True, scratchRemoved=['home', 'tmp']))
+        self.assertTrue(self.check(good))
+        for bad in (None, '{broken', dict(), dict(cleanup={}), dict(cleanup=dict(scratchRemoved=[])),
+                    dict(cleanup=good['cleanup'] | dict(ownedExited=False)),
+                    dict(cleanup={k: v for k, v in good['cleanup'].items() if k != 'leaseReleased'}),
+                    dict(cleanup=good['cleanup'] | dict(scratchRemoved=None))):
+            self.assertFalse(self.check(bad), bad)
 
 
 if __name__ == '__main__':
