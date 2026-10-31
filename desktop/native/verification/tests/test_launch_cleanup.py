@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 BIN = Path(__file__).resolve().parents[1] / 'bin'
 sys.path.insert(0, str(BIN))
@@ -32,7 +33,7 @@ class LaunchCleanupTests(unittest.TestCase):
         lease = ledger.start(booking, 'M1', 'run-1', 'epoch-1')
         batch, scratch, locks = self.root / 'batch', self.root / 'scratch', self.root / 'locks'
         for d in (batch, scratch, locks): d.mkdir()
-        (self.root / 'lease.json').write_text(json.dumps(lease))
+        (self.root / 'lease.json').write_text(json.dumps(lease)); self.window = (lease['notBefore'], lease['expiresAt'])
         self.c = dict(profile='synthetic', scenario='u6', argv=['/synthetic/app', '--u6-drive-contract', str(scratch / 'native-guard.json')],
                       expectedLease={k: lease[k] for k in check.IDENTITY},
                       booking=dict(id=booking, lane='M1', unit='U6', scenario='u6', ledger=str(self.root / 'ledger.jsonl')),
@@ -53,7 +54,7 @@ class LaunchCleanupTests(unittest.TestCase):
         self.dir.cleanup()
 
     def register(self, subject, launcher, **run):
-        record = dict(state='running', launcher=launcher, runID='run-1', epoch='epoch-1', **subject)
+        record = dict(state='running', launcher=launcher, runID='run-1', epoch='epoch-1', startedAt=self.window[0] + 1, **subject)
         record.update(run)
         Path(self.c['subjectPidPath']).write_text(json.dumps(record))
 
@@ -62,8 +63,13 @@ class LaunchCleanupTests(unittest.TestCase):
         self.live.append(child)
         return guardian.identity(child.pid)
 
-    def run_check(self, c=None, controller=3, guardian_status=0, scenario_status=0):
-        return check.check(c or self.c, controller, guardian_status, scenario_status)
+    def run_check(self, c=None, controller=3, guardian_status=0, scenario_status=0, now=None):
+        receipt, reasons = check.check(c or self.c, controller, guardian_status, scenario_status,
+                                       now=self.window[0] + 30 if now is None else now)
+        check.validate_receipt(receipt)  # every generated receipt is well-formed and self-consistent
+        for reason in reasons.values():
+            self.assertEqual(check.bounded(reason), reason)  # fixed codes only (C2.2 section 5)
+        return receipt, reasons
 
     def reason(self, name, **statuses):
         return self.run_check(**statuses)[1].get(name)
@@ -170,7 +176,10 @@ class LaunchCleanupTests(unittest.TestCase):
 
     def assert_pinned_shape(self, receipt):
         """launch-cleanup/1, exactly as the U6 evidence builder consumes it."""
-        self.assertEqual(set(receipt), {'schema', 'runID', 'epoch', 'ok', 'checks', 'failures', 'at'})
+        self.assertLessEqual({'schema', 'runID', 'epoch', 'ok', 'checks', 'failures', 'at'}, set(receipt))  # pinned fields
+        self.assertEqual(set(receipt) - {'schema', 'runID', 'epoch', 'ok', 'checks', 'failures', 'at'},
+                         {'stopReasonRecorded', 'leaseNotBefore', 'leaseExpiresAt', 'subjectStartedAt', 'closedAt', 'closedWithinLease'})
+        self.assertIs(check.validate_receipt(receipt), receipt)
         self.assertEqual(receipt['schema'], 'launch-cleanup/1')
         self.assertIsInstance(receipt['runID'], str); self.assertIsInstance(receipt['epoch'], str)
         self.assertIs(type(receipt['ok']), bool)
@@ -209,6 +218,78 @@ class LaunchCleanupTests(unittest.TestCase):
         self.assertEqual(json.loads(missing.stderr)['reasons']['syntheticTmpRemoved'], 'remains:syntheticTmp')
         for stream in (missing.stdout, missing.stderr):
             self.assertNotIn(str(self.root), stream)  # fixed codes only, no paths
+
+    def test_lease_window_inputs_are_recorded_separately_from_ok(self):  # C2.2 section 4, codex-kit-9
+        not_before, expires_at = self.window
+        receipt, _ = self.run_check(now=not_before + 30)
+        self.assertEqual((receipt['leaseNotBefore'], receipt['leaseExpiresAt'], receipt['subjectStartedAt'], receipt['closedAt']),
+                         (not_before, expires_at, not_before + 1, not_before + 30))
+        self.assertTrue(receipt['closedWithinLease']); self.assertTrue(check.lease_window_ok(receipt))
+        late, _ = self.run_check(now=expires_at + 10)  # resources closed, but after the lease: timing FAIL, cleanup still ok
+        self.assertEqual((late['ok'], late['closedAt'], late['closedWithinLease']), (True, expires_at + 10, False))
+        self.assertFalse(check.lease_window_ok(late))
+        self.register(exited_identity(), exited_identity(), startedAt=not_before - 5)  # started before the lease
+        early, _ = self.run_check()
+        self.assertTrue(early['closedWithinLease']); self.assertFalse(check.lease_window_ok(early))
+        self.register(self.alive(), exited_identity())  # not closed: no closure time at all
+        alive, _ = self.run_check()
+        self.assertEqual((alive['closedAt'], alive['closedWithinLease']), (None, False))
+        self.register(exited_identity(), exited_identity(), runID='run-0')  # another run's start never counts
+        self.assertIsNone(self.run_check()[0]['subjectStartedAt'])
+        Path(self.c['leasePath']).write_text('{')
+        unknown, _ = self.run_check()
+        self.assertEqual((unknown['leaseNotBefore'], unknown['leaseExpiresAt'], unknown['closedWithinLease']), (None, None, False))
+
+    def test_guardian_status_still_fails_without_a_stop_path(self):
+        c = {k: v for k, v in self.c.items() if k != 'stopPath'}
+        receipt, reasons = self.run_check(c, controller=0, guardian_status=3)
+        self.assertIn('guardianStatus', receipt['failures']); self.assertNotIn('controllerStatus', receipt['failures'])
+        self.assertEqual(reasons['stopPathPresent'], 'stop-path-missing')
+        self.assertEqual(self.run_check(c, controller=3)[1]['controllerStatus'], 'stop-path-missing')
+
+    def test_validate_receipt_rejects_malformed_and_contradictory_receipts(self):  # macrev-332-5
+        good, _ = self.run_check()
+        self.assertIs(check.validate_receipt(good, 'run-1', 'epoch-1'), good)
+        def bad(**change):
+            r = json.loads(json.dumps(good)); checks = change.pop('checks', {}); r['checks'].update(checks); r.update(change)
+            return r
+        sparse = dict(schema='launch-cleanup/1', runID='run-1', epoch='epoch-1', ok=True, failures=[], at=good['at'])
+        cases = dict(
+            sparse=sparse, contradiction=dict(sparse, checks=dict(subjectGone=False)),
+            not_dict=[], schema=bad(schema='launch-cleanup/2'), missing_key=dict((k, v) for k, v in good.items() if k != 'closedAt'),
+            extra_key=bad(note='x'), ok_with_false_check=bad(checks=dict(locksReleased=False)),
+            ok_but_failures=bad(failures=['locksReleased']), not_ok_without_failures=bad(ok=False),
+            duplicate=bad(ok=False, failures=['locksReleased', 'locksReleased'], checks=dict(locksReleased=False)),
+            unknown_failure=bad(ok=False, failures=['locksReleased', 'quitOk'], checks=dict(locksReleased=False)),
+            missing_check=bad(checks={}) | dict(checks={k: v for k, v in good['checks'].items() if k != 'helpersGone'}),
+            status_bool=bad(checks=dict(guardianStatus=False)), status_str=bad(checks=dict(scenarioStatus='0')),
+            check_int=bad(checks=dict(subjectGone=1)), status_failing=bad(checks=dict(guardianStatus=3)),
+            status_missing=bad(checks=dict(scenarioStatus=None)),
+            controller_3_without_reason=bad(stopReasonRecorded=False),
+            ok_type=bad(ok=1), at_format=bad(at='yesterday'), run_type=bad(runID=None),
+            closed_at_while_alive=bad(ok=False, failures=['subjectGone'], checks=dict(subjectGone=False)),
+            gone_without_closed_at=bad(closedAt=None, closedWithinLease=False),
+            window_claimed=bad(closedAt=good['leaseExpiresAt'] + 1),
+            window_denied=bad(closedWithinLease=False), timing_nan=bad(subjectStartedAt=float('nan')),
+            timing_bool=bad(leaseNotBefore=True), failures_type=bad(failures='none'))
+        for name, receipt in cases.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                check.validate_receipt(receipt)
+        for run in (('run-0', 'epoch-1'), ('run-1', 'epoch-0')):
+            with self.assertRaisesRegex(ValueError, 'closure-other-run'):
+                check.validate_receipt(good, *run)
+        # The defined status rules: controller 3 passes only with a recorded stop reason; 0 always.
+        self.assertTrue(check.validate_receipt(bad(checks=dict(controllerStatus=0), stopReasonRecorded=False)))
+        failing = bad(ok=False, failures=['controllerStatus'], stopReasonRecorded=False)
+        self.assertIs(check.validate_receipt(failing), failing)
+
+    def test_reasons_are_bounded_codes(self):  # C2.2 section 5
+        for value in ('held', 'exit-3', 'exit--1', 'remains:syntheticHome,syntheticHomeSeed'):
+            self.assertEqual(check.bounded(value), value)
+        for value in ('engine said: account alice', 'remains:/private/path', 'exit-3 extra', None, 7):
+            self.assertEqual(check.bounded(value), 'unknown')
+        with unittest.mock.patch.object(check, 'check_lease', return_value='Ledger error at /some/path'):
+            self.assertEqual(self.run_check()[1]['leaseClosable'], 'unknown')
 
     def test_unwritable_receipt_is_not_closure(self):
         Path(self.c['stopPath']).parent.chmod(0o500)

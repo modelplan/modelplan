@@ -326,6 +326,43 @@ class RunBoundRegistrationTests(unittest.TestCase):
     def test_unbound_registration_is_unchanged(self):
         guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file))
         self.assertNotIn('runID', json.loads(self.pid_file.read_text()))
+        self.assertNotIn('startedAt', json.loads(self.pid_file.read_text()))
+
+    def test_register_records_the_subject_start_time(self):  # lease-window qualification input (C2.2 section 4)
+        run = dict(runID='r1', epoch='e1')
+        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file, run=run), run=run,
+                          started_at=1234.5)
+        self.assertEqual(json.loads(self.pid_file.read_text())['startedAt'], 1234.5)
+        for bad in ('1234', float('nan'), True):
+            self.pid_file.unlink()
+            launcher = guardian.mark_launching(self.pid_file, run=run)
+            with self.assertRaisesRegex(ValueError, 'start time invalid'):
+                guardian.register(self.pid_file, self.child.pid, launcher, run=run, started_at=bad)
+
+
+class BoundedGuardianCodesTests(unittest.TestCase):
+    """C2.2 section 5: the guardian's receipts (stdout, stderr, stop file) carry fixed codes, never free text."""
+    def cli(self, lease_text):
+        with tempfile.TemporaryDirectory() as d:
+            lease, stop = Path(d) / 'lease.json', Path(d) / 'STOP'
+            lease.write_text(lease_text)
+            out = subprocess.run([sys.executable, '-B', str(Path(guardian.__file__)), '--lease', str(lease), '--stop', str(stop),
+                                  '--subject-pid-file', str(Path(d) / 'subject.pid')], capture_output=True, text=True, timeout=20)
+            return out, json.loads(stop.read_text()) if stop.exists() else None
+
+    def test_cli_errors_are_fixed_codes(self):
+        out, stop = self.cli(json.dumps(dict(runID='r', epoch='e', notBefore=1.0)))
+        self.assertEqual((out.returncode, json.loads(out.stderr)), (2, dict(error='lease-identity-missing')))
+        self.assertEqual(stop['reason'], 'guardian-error')
+        out, _ = self.cli('{"runID": "alice@example.test token sk-123"')  # unparseable: the parser's text never leaks
+        self.assertEqual(json.loads(out.stderr), dict(error='unknown'))
+        self.assertNotIn('alice', out.stderr + out.stdout)
+
+    def test_reason_code_maps_free_text_to_unknown(self):
+        self.assertEqual(guardian.reason_code('stopped', guardian.OUTCOMES), 'stopped')
+        self.assertEqual(guardian.reason_code('engine-error', guardian.OUTCOMES), 'engine-error')
+        for bad in ('Provider says: quota exceeded', None, 3, ''):
+            self.assertEqual(guardian.reason_code(bad, guardian.OUTCOMES), 'unknown')
 
 
 if __name__ == '__main__':

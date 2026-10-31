@@ -3,7 +3,7 @@
 import argparse,hashlib,json,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
-from guardian import register,mark_launching,quit_grace
+from guardian import register,mark_launching,quit_grace,MIN_RESERVE,reason_code
 from scenario import resolve
 import homeseed
 def main():
@@ -26,6 +26,7 @@ def main():
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*c['argv']]
+    started_at=time.time() # taken before the spawn: the subject cannot have started earlier (lease-window qualification)
     child=subprocess.Popen(gate,stdin=subprocess.PIPE,env={'PATH':'/usr/bin:/bin','HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'})
     def stop_child(*_):
         child.terminate()
@@ -34,16 +35,17 @@ def main():
         raise SystemExit(3)
     for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
     try:
-        register(pid_path,child.pid,launcher,run=run)
+        register(pid_path,child.pid,launcher,run=run,started_at=started_at)
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
         stop_child() # Never leave an unregistered child running.
-    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid}),flush=True)
+    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'startedAt':started_at}),flush=True)
     # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
     # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
     report={'quitGraceUsed':None,'exitedDuringGrace':False}
     reason=supervise(child,c,report=report)
-    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,**report}))
+    if report.get('graceCutBy') is not None:report['graceCutBy']=reason_code(report['graceCutBy'],STOP_REASONS)
+    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':None if reason is None else reason_code(reason,STOP_REASONS),**report}))
     raise SystemExit(0 if reason is None else 3)
 def check_prepared(c):
     """Scenario preparation. A registered receipt scenario (bin/scenarios.json, named by `scenario` or by its argv
@@ -63,14 +65,17 @@ def check_prepared(c):
         except (OSError,ValueError,TypeError):o=None
         if not isinstance(o,dict) or (o.get('attempt'),o.get('runID'),o.get('epoch'))!=(r['attempt'],r['runID'],r['epoch']):raise ValueError('prepared resources not held')
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
+# Every stop reason launch.py reports (C2.2 section 5: fixed structured codes, never free text).
+STOP_REASONS=frozenset({'lease-unreadable','lease-identity-changed','lease-revoked','guardian-heartbeat-stale','deadline','stop-file'})
 def urgent_reason(c,now):
-    """Lease-side reasons to stop at once; they always outrank the stop file and end any quit grace."""
+    """Lease-side reasons to stop at once; they always outrank the stop file and end any quit grace. The deadline is
+    `expiresAt` minus MIN_RESERVE, the same cut the guardian makes: once only 25 s remain, TERM/KILL/closure run now."""
     try:lease=json.loads(Path(c['leasePath']).read_text())
     except (OSError,ValueError):return 'lease-unreadable'
     if any(lease.get(k)!=c['lease'].get(k) for k in ('runID','epoch','notBefore','expiresAt')):return 'lease-identity-changed'
     if lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:return 'lease-revoked'
     if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
-    if now>=lease['expiresAt']:return 'deadline'
+    if not isinstance(lease.get('expiresAt'),(int,float)) or now>=lease['expiresAt']-MIN_RESERVE:return 'deadline' # reserve cut (C2.2 section 4)
     return None
 def stop_reason(c,now):
     return urgent_reason(c,now) or ('stop-file' if Path(c['stopPath']).exists() else None)

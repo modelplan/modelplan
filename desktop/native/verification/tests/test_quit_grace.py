@@ -188,23 +188,102 @@ class LaunchGraceTests(unittest.TestCase):
         self.assertEqual(clock.hit, 100.0)
 
 
+class ReserveCutTests(unittest.TestCase):
+    """C2.2 section 4: both supervisors end the quit grace once only MIN_RESERVE (25 s) remains before expiresAt."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); root = Path(self.dir.name)
+        self.lease, self.stop, self.pid_file = root / 'lease.json', root / 'STOP', root / 'subject.pid'
+        self.pid_file.write_text(json.dumps(SUBJECT))
+
+    def tearDown(self):
+        self.dir.cleanup()
+
+    def write_lease(self, heartbeat, expires=1100.0):
+        self.lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1000.0, expiresAt=expires, exclusive=True,
+                                              ownerPreempted=False, guardianHeartbeatAt=heartbeat)))
+
+    def launch_config(self, **extra):
+        return dict(lease=json.loads(self.lease.read_text()), leasePath=str(self.lease), stopPath=str(self.stop), **extra)
+
+    def child(self, clock):
+        child = Mock(); child.ended = None
+        child.poll.side_effect = lambda: None if child.ended is None else 0
+        child.terminate.side_effect = lambda: setattr(child, 'ended', clock.t)
+        return child
+
+    def test_reserve_crossing_during_the_grace_cuts_both_supervisors_at_once(self):
+        self.write_lease(1069.0); self.stop.write_text('{}'); clock = Clock(1069.0)  # 31 s left, grace 10 configured
+        seen = {}
+        def kill(pid_file, **kw): seen.update(kw); return True
+        guardian.run(self.lease, self.stop, pid_file=self.pid_file, clock=clock, kill=kill, quit_grace=10.0, report={})
+        guardian_urgent = seen['urgent']; guardian_cut = []; stale = []
+        c = self.launch_config(quitGraceSeconds=10)
+        def tick(s):  # one shared wall clock; the guardian's grace loop runs alongside launch.py's
+            clock.sleep(s)
+            if not guardian_cut and guardian_urgent(): guardian_cut.append(clock.t)
+            reason = launch.urgent_reason(c, clock.t)
+            if reason == 'guardian-heartbeat-stale': stale.append(clock.t)
+        child = self.child(clock); report = {}
+        reason = launch.supervise(child, c, clock=clock, sleep=tick, monotonic=clock, report=report)
+        self.assertEqual(reason, 'deadline')
+        self.assertAlmostEqual(child.ended, 1075.0, delta=0.11)  # TERM once 25 s remain, not at the grace end (1079)
+        self.assertAlmostEqual(guardian_cut[0], 1075.0, delta=0.11)
+        self.assertEqual(stale, [])  # the guardian kept beating through the grace (macrev-332-9)
+        self.assertEqual((report['quitGraceUsed'], report['exitedDuringGrace'], report['graceCutBy']), (10.0, False, 'deadline'))
+
+    def test_launch_deadline_is_the_reserve_not_the_absolute_expiry(self):
+        self.write_lease(1070.0); clock = Clock(1070.0); c = self.launch_config()
+        def tick(s):
+            clock.sleep(s); self.write_lease(clock.t)  # a live guardian
+            c['lease'] = dict(c['lease'])
+        child = self.child(clock)
+        self.assertEqual(launch.supervise(child, c, clock=clock, sleep=tick, monotonic=clock), 'deadline')
+        self.assertAlmostEqual(child.ended, 1075.0, delta=0.51)  # no stop file: TERM at the reserve cut
+        self.assertIsNone(launch.urgent_reason(c, 1074.9))
+        self.assertEqual(launch.urgent_reason(c, 1075.0), 'deadline')
+
+    def test_launch_reports_only_fixed_stop_codes(self):  # C2.2 section 5
+        self.write_lease(1000.0); c = self.launch_config()
+        seen = {launch.urgent_reason(c, 1000.0), launch.urgent_reason(c, 1010.0),
+                launch.stop_reason(dict(c, stopPath=str(self.lease)), 1000.0)}
+        self.write_lease(1080.0); seen.add(launch.urgent_reason(c, 1080.0))
+        self.lease.write_text(json.dumps(dict(c['lease'], ownerPreempted=True))); seen.add(launch.urgent_reason(c, 1000.0))
+        self.lease.write_text(json.dumps(dict(c['lease'], epoch='other'))); seen.add(launch.urgent_reason(c, 1000.0))
+        self.lease.write_text('{'); seen.add(launch.urgent_reason(c, 1000.0))
+        self.assertEqual(seen - {None}, set(launch.STOP_REASONS))
+        self.assertEqual(guardian.reason_code('engine said: token expired for alice', launch.STOP_REASONS), 'unknown')
+        self.assertEqual(guardian.reason_code('timeout', launch.STOP_REASONS), 'timeout')
+
+
 class AdmissionGraceTests(unittest.TestCase):
     def config(self, remaining, **extra):
         lease = dict(runID='r', epoch='e', notBefore=1000, expiresAt=1020 + remaining, guardianHeartbeatAt=1019.5,
                      ownerPreempted=False, exclusive=True)
         return dict(profile='synthetic', lease=lease, release=lease | dict(m1Released=True, approval='https://example.test/ok'),
-                    requiredSeconds=10, stop=False, argv=['synthetic-app'], binarySHA256='a' * 64, **extra)
+                    stop=False, argv=['synthetic-app'], binarySHA256='a' * 64, **dict(dict(requiredSeconds=10), **extra))
 
-    def test_remaining_time_must_cover_grace_plus_reserve(self):
-        self.assertTrue(admission.validate(self.config(30), 1020))  # 5 s default grace + 25 s reserve
-        with self.assertRaisesRegex(ValueError, 'quit grace plus cleanup reserve'):
-            admission.validate(self.config(29), 1020)
-        with self.assertRaisesRegex(ValueError, 'quit grace plus cleanup reserve'):
-            admission.validate(self.config(34, quitGraceSeconds=10), 1020)
-        self.assertTrue(admission.validate(self.config(25, quitGraceSeconds=0), 1020))
+    def admits(self, remaining, **extra):
+        try:
+            return admission.validate(self.config(remaining, **extra), 1020)
+        except ValueError as error:
+            self.assertEqual(str(error), 'insufficient time for action phase plus quit grace plus cleanup reserve')
+            return False
+
+    def test_one_additive_budget_action_plus_grace_plus_reserve(self):  # macrev-332-11, codex-kit-9
+        # requiredSeconds 10 (actions only) + default grace 5 + MIN_RESERVE 25 = 40, as one sum.
+        self.assertEqual([self.admits(r) for r in (39.5, 40, 40.5)], [False, True, True])
+        self.assertFalse(self.admits(30))  # the reviewed example: the old separate minima admitted it
+        # Grace configured 30 is capped at 10: 10 + 10 + 25 = 45.
+        self.assertEqual([self.admits(r, quitGraceSeconds=30) for r in (44.9, 45, 45.1)], [False, True, True])
+        self.assertEqual([self.admits(r, quitGraceSeconds=0) for r in (34.9, 35)], [False, True])
+        self.assertEqual(admission.budget(self.config(100, requiredSeconds=90, quitGraceSeconds=10)), 125)
+        self.assertFalse(self.admits(100, requiredSeconds=90, quitGraceSeconds=10))  # codex-kit-9 probe
+
+    def test_required_seconds_and_grace_must_be_valid(self):
+        with self.assertRaisesRegex(ValueError, 'action phase only'):
+            admission.validate(self.config(600, requiredSeconds=0), 1020)
         with self.assertRaisesRegex(ValueError, 'quitGraceSeconds'):
             admission.validate(self.config(600, quitGraceSeconds=-1), 1020)
-
 
 if __name__ == '__main__':
     unittest.main()

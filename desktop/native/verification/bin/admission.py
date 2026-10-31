@@ -10,6 +10,13 @@ from guardian import MIN_RESERVE, quit_grace
 from release import IDENTITY_FIELDS, validate_release
 
 
+def budget(config):
+    """Seconds a launch needs before `expiresAt` (C2.2 section 4), as ONE sum: `requiredSeconds` (the scenario's
+    action phase only, not quit or cleanup) + `quitGraceSeconds` (default 5, capped at 10) + MIN_RESERVE (25 s for
+    TERM, KILL and the closure checks). Admission refuses below it and admits at or above it."""
+    return config['requiredSeconds'] + quit_grace(config.get('quitGraceSeconds')) + MIN_RESERVE
+
+
 def validate(config, now):
     if config.get('profile') != 'synthetic':
         raise ValueError('synthetic profile required')
@@ -32,10 +39,10 @@ def validate(config, now):
         raise ValueError('heartbeat stale')
     if config.get('stop') is not False or lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:
         raise ValueError('stopped/not exclusive')
-    if config['requiredSeconds'] <= 0 or lease['expiresAt'] - now < config['requiredSeconds']:
-        raise ValueError('insufficient phase+cleanup time')
-    if lease['expiresAt'] - now < quit_grace(config.get('quitGraceSeconds')) + MIN_RESERVE:
-        raise ValueError('insufficient time for quit grace plus cleanup reserve')
+    if config['requiredSeconds'] <= 0:
+        raise ValueError('requiredSeconds must be positive (the action phase only)')
+    if lease['expiresAt'] - now < budget(config):
+        raise ValueError('insufficient time for action phase plus quit grace plus cleanup reserve')
     if not config.get('argv') or not all(isinstance(x, str) and x for x in config['argv']):
         raise ValueError('explicit executable arguments required')
     return True
