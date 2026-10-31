@@ -683,7 +683,11 @@ var clientDigestSchema = z3.object({
             cohort: text3,
             boundary: text3,
             referenceSeconds: scalar.positive()
-          }).strict().nullable()
+          }).strict().nullable(),
+          // Present only when true: the ability rests on evidence outside the range its
+          // cross-source link was fitted on. Shown within its own model's ladder only;
+          // the producer already leaves it out of every cross-model lineup.
+          provisional: z3.literal(true).optional()
         }).strict()
       )
     }).strict()

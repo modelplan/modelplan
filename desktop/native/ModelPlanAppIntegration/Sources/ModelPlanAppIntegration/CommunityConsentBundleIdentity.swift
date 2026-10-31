@@ -5,11 +5,6 @@ import CryptoKit
 /// Consistency with a reviewed release declaration, not standalone source provenance or reader consent.
 /// The packager separately verifies upstream acquisition before assembling/signing the containing bundle.
 public enum CommunityConsentBundleIdentity {
-    public static let version = "0.5.48"
-    public static let sourceSHA256ByArchitecture = [
-        "arm64": "0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda",
-        "x86_64": "397b98c22e209e10c924e34347f5b4c14e837eb2c50086c6fd2c160c858c2868",
-    ]
     public static func isConsistent(helperVersion: String, sourceHelperSHA256: String,
                                     bundledHelperSHA256: String, resourceHelperSHA256: String,
                                     actualHelperSHA256: String) -> Bool {
@@ -27,13 +22,9 @@ public enum CommunityConsentBundleIdentity {
                   let publicSource = info["ModelPlanPublicSource"] as? String, hex(publicSource, count: 40),
                   let release = info["ModelPlanHelperVersion"] as? String, release == version,
                   let bundled = info["ModelPlanBundledHelperSHA256"] as? String else { return false }
-            let single = info["ModelPlanSourceHelperSHA256"]
-            let universal = info["ModelPlanSourceHelperSHA256ByArchitecture"]
-            if let source = single as? String {
-                guard universal == nil, sourceSHA256ByArchitecture.values.contains(source) else { return false }
-            } else {
-                guard single == nil, let sources = universal as? [String: String], sources == sourceSHA256ByArchitecture else { return false }
-            }
+            guard info["ModelPlanSourceHelperSHA256"] == nil,
+                  let sources = info["ModelPlanSourceHelperSHA256ByArchitecture"] as? [String: String],
+                  sources == sourceSHA256ByArchitecture else { return false }
             let pinBytes = try read(root.appendingPathComponent("Contents/Resources/modelplan.sha256"), limit: 256)
             guard let text = String(data: pinBytes, encoding: .utf8) else { return false }
             let pin = text.trimmingCharacters(in: .whitespacesAndNewlines)

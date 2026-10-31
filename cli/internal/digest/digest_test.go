@@ -120,3 +120,20 @@ func TestEndpointMatchAndPlanMeteringV13(t *testing.T) {
 		t.Fatalf("bad metering: %v %+v", err, d.PlanMetering)
 	}
 }
+
+func TestEffortProvisionalRoundTripsOnlyWhenSet(t *testing.T) {
+	var es []Effort
+	if err := json.Unmarshal([]byte(`[{"effort":"medium","label":"Med"},{"effort":"xhigh","label":"XHigh","provisional":true}]`), &es); err != nil {
+		t.Fatal(err)
+	}
+	if es[0].Provisional || !es[1].Provisional {
+		t.Fatalf("decoded %+v", es)
+	}
+	out, err := json.Marshal(es)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(out); strings.Count(got, `"provisional":true`) != 1 || strings.Contains(got, `"provisional":false`) {
+		t.Fatalf("encoded %s", got)
+	}
+}

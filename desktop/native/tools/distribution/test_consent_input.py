@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
+import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -23,8 +25,8 @@ class NativeConsentInputTests(unittest.TestCase):
         producer = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(producer)
         version = producer.metadata("a" * 40, dict(producer.SOURCE), "b" * 64)["ModelPlanHelperVersion"]
-        source = (ROOT / "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityConsentBundleIdentity.swift").read_text()
-        runtime = re.search(r'public static let version = "([^"\n]+)"', source)
+        source = (ROOT / "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityConsentCLIIdentity.generated.swift").read_text()
+        runtime = re.search(r'static let version = "([^"\n]+)"', source)
         self.assertIsNotNone(runtime)
         self.assertEqual(runtime.group(1), version, "Producer and runtime must admit the same consent release")
         self.assertEqual(pin["version"], version, "Plugin upgrades must not change the native consent input implicitly")
@@ -34,6 +36,41 @@ class NativeConsentInputTests(unittest.TestCase):
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
         runtime_hashes = dict(re.findall(r'"(arm64|x86_64)": "([0-9a-f]{64})"', source))
         self.assertEqual(runtime_hashes, producer.SOURCE, "Inner Darwin hashes must match in producer and runtime")
+
+
+    def test_every_current_identity_literal_matches_the_single_pin(self):
+        pin = json.loads((ROOT / "desktop/native/consent-cli-pin.json").read_text())
+        def module(name, path):
+            spec = importlib.util.spec_from_file_location(name, path)
+            result = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(result)
+            return result
+
+        producer = module("consent_identity_literals", ROOT / "desktop/native/tools/write-consent-bundle-identity.py")
+        sys.path.insert(0, str(ROOT / "tools/u10"))
+        try:
+            packaging = module("consent_packaging_literals", ROOT / "tools/u10/package_candidate.py")
+        finally:
+            sys.path.pop(0)
+        swift = (ROOT / "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityConsentCLIIdentity.generated.swift").read_text()
+        scenario = json.loads((ROOT / "desktop/native/verification/u5-real-input-scenario.json").read_text())
+        for consumer, version in {
+            "Swift runtime": re.search(r'static let version = "([^"\n]+)"', swift).group(1),
+            "Python producer": producer.VERSION,
+            "Python metadata": producer.metadata("a" * 40, dict(producer.SOURCE), "b" * 64)["ModelPlanHelperVersion"],
+            "U10 candidate": packaging.HELPER_VERSION,
+            "U5 scenario": scenario["requiredNativeCLIVersion"],
+        }.items():
+            with self.subTest(consumer=consumer):
+                self.assertEqual(version, pin["version"])
+        for consumer, hashes in {
+            "Swift thin binaries": dict(re.findall(r'"(arm64|x86_64)": "([0-9a-f]{64})"', swift)),
+            "Python thin binaries": producer.SOURCE,
+            "U10 thin binaries": packaging.identity.SOURCE,
+        }.items():
+            with self.subTest(consumer=consumer):
+                self.assertEqual(hashes, pin["sourceSHA256ByArchitecture"])
+        subprocess.run([sys.executable, "-B", str(ROOT / "desktop/native/tools/generate-consent-cli-identity.py"), "--check"], check=True)
 
 
     def test_current_release_capture_and_provenance_match_native_input(self):
@@ -52,7 +89,7 @@ class NativeConsentInputTests(unittest.TestCase):
             self.assertIs(provenance[gate], True)
         self.assertTrue(provenance["isolation"]["outsideDirectoryReadDenied"])
         self.assertTrue(provenance["isolation"]["networkSocketDenied"])
-        self.assertEqual(provenance["sourceCommit"], "146e959668955d90337ce764b1be39c06456674d")
+        self.assertEqual(provenance["sourceCommit"], "4011d78d81803d82c7e86a35feebdb2d44cbf364")
         self.assertRegex(provenance["rawSourceHelperSHA256"], r"^[0-9a-f]{64}$")
         self.assertEqual(json.loads(capture)["mode"], "off")
 

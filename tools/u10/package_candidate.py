@@ -29,7 +29,7 @@ def module(name, path):
 identity = module('u10_identity', ROOT / 'desktop/native/tools/write-consent-bundle-identity.py')
 release = module('u10_release', ROOT / 'desktop/native/tools/distribution/release.py')
 BUNDLE_ID = 'ai.modelplan.candidate'
-HELPER_VERSION = '0.5.48'
+HELPER_VERSION = identity.VERSION
 
 
 def run(*args):

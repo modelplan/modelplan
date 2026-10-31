@@ -3,14 +3,15 @@
 """Write release identity, or explicit unverified CI metadata, after helper sealing. Never executes helpers."""
 import argparse
 import hashlib
+import json
 import plistlib
 import re
 from pathlib import Path
 
-SOURCE = {
-    'arm64': '0343fdc64d62b7d1f5800d9433780aa2ac4285e6657ce54b7e349a2401139fda',
-    'x86_64': '397b98c22e209e10c924e34347f5b4c14e837eb2c50086c6fd2c160c858c2868',
-}
+# Archive hashes and extracted thin-binary hashes are distinct identities in the same pin.
+PIN = json.loads((Path(__file__).resolve().parents[1] / 'consent-cli-pin.json').read_text())
+VERSION = PIN['version']
+SOURCE = PIN['sourceSHA256ByArchitecture']
 
 def digest_file(path):
     if path.is_symlink() or not path.is_file() or not 0 < path.stat().st_size <= 128 * 1024 * 1024:
@@ -20,7 +21,7 @@ def digest_file(path):
 def metadata(source, raw, bundled):
     if not re.fullmatch('[0-9a-f]{40}', source) or raw != SOURCE or not re.fullmatch('[0-9a-f]{64}', bundled):
         raise ValueError('unverified release/source identity')
-    return {'ModelPlanPublicSource': source, 'ModelPlanHelperVersion': '0.5.48',
+    return {'ModelPlanPublicSource': source, 'ModelPlanHelperVersion': VERSION,
             'ModelPlanSourceHelperSHA256ByArchitecture': dict(raw),
             'ModelPlanBundledHelperSHA256': bundled}
 
@@ -43,7 +44,7 @@ def main():
     if a.self_test:
         value = metadata('a' * 40, SOURCE, 'b' * 64)
         assert value['ModelPlanSourceHelperSHA256ByArchitecture'] == SOURCE
-        assert value['ModelPlanHelperVersion'] == '0.5.48'
+        assert value['ModelPlanHelperVersion'] == VERSION
         for source, raw in [('bad', SOURCE), ('a' * 40, {**SOURCE, 'arm64': '0' * 64})]:
             try: metadata(source, raw, 'b' * 64)
             except ValueError: pass
