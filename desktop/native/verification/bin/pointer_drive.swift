@@ -85,11 +85,16 @@ final class ButtonGuard: @unchecked Sendable {
         let runID:String,epoch:String,pid:Int32,seq:UInt64,mono:Double
         let event:String?,checks:Checks?
     }
+    static func windowID(_ number:Int) throws -> CGWindowID {
+        guard number>0,let id=CGWindowID(exactly:number) else { throw DriveError.outsideScope }
+        return id
+    }
     static func currentStatusFrame(_ p:PointerPlan,now:Double=ProcessInfo.processInfo.systemUptime) throws {
         let bound=p.u6InputKind == "status" || p.u6FrameSeq != nil && p.steps.contains { $0.action == .click }
         guard bound else { return }
         guard let path=p.u6Observations,let generation=p.u6StatusFrameGeneration,generation>0,
-              let number=p.u6StatusWindowNumber,number>0,let sequence=p.u6FrameSeq else { throw DriveError.outsideScope }
+              let number=p.u6StatusWindowNumber,number>0,CGWindowID(exactly:number) != nil,
+              let sequence=p.u6FrameSeq else { throw DriveError.outsideScope }
         let url=URL(fileURLWithPath:path)
         guard (try url.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else { throw DriveError.outsideScope }
         let data=try Data(contentsOf:url);guard data.count<=8_000_000 else { throw DriveError.outsideScope }
@@ -118,8 +123,9 @@ final class ButtonGuard: @unchecked Sendable {
     /// image capture, title read or other-application geometry is used.
     static func currentStatusWindow(_ p:PointerPlan) throws {
         guard p.u6InputKind=="status" || p.u6FrameSeq != nil && p.steps.contains(where:{$0.action == .click}) else { return }
-        guard let number=p.u6StatusWindowNumber,number>0,
-              let entries=CGWindowListCopyWindowInfo(.optionIncludingWindow,CGWindowID(number)) as? [[String:Any]],
+        guard let number=p.u6StatusWindowNumber else { throw DriveError.outsideScope }
+        let id=try windowID(number)
+        guard let entries=CGWindowListCopyWindowInfo(.optionIncludingWindow,id) as? [[String:Any]],
               entries.count==1,let entry=entries.first,
               (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value==p.subjectPID,
               entry[kCGWindowIsOnscreen as String] as? Bool == true,
@@ -193,6 +199,9 @@ final class ButtonGuard: @unchecked Sendable {
         try record(.leftMouseUp,upMono,upAt)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
+        // Reject malformed U6 window bindings before any display/permission or
+        // subject query. This path must remain a bounded refusal, never a cast trap.
+        try currentStatusFrame(p)
         try validate(p,displays:activeDisplayBounds())
         try live(p)
         try currentStatusFrame(p);try currentStatusWindow(p)
@@ -251,6 +260,12 @@ final class ButtonGuard: @unchecked Sendable {
         }
         if args.count == 2 && args[1] == "--self-test" {
             try StatusMenuDrive.selfTest() // Decode/validate only; no AX query, I/O or input.
+            let validID=try windowID(7),maximumID=try windowID(Int(UInt32.max))
+            precondition(validID==7 && maximumID==UInt32.max)
+            for bad in [0,-1,Int(UInt32.max)+1,Int.max] {
+                do { _=try windowID(bad);preconditionFailure("invalid window ID admitted") }
+                catch DriveError.outsideScope { }
+            }
             func fixture(_ profile: String = "synthetic", _ seconds: Double = 1) -> PointerPlan {
                 PointerPlan(profile:profile,runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[.init(x:10,y:10,seconds:seconds,dwell:0.2)])
             }

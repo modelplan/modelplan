@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Fail-closed U6 action handoff; no UI or pointer process is started."""
-import importlib.util,json,tempfile,types,unittest
+import importlib.util,json,tempfile,types,unittest,subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +11,24 @@ import admission,book # bin/ is on sys.path through the runner
 APPROVAL='https://example.test/coordinator#issuecomment-1'
 
 class U6ActionRunnerTests(unittest.TestCase):
+    def test_pointer_signal_and_stderr_are_bounded_and_private(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=dict(batch=directory,expectedLease=dict(runID='run',epoch='epoch'))
+            result=types.SimpleNamespace(returncode=-5,stdout='',stderr='Fatal error: Not enough bits /private/secret '+('x'*9000))
+            with patch.object(actions,'still_admitted'),patch.object(actions.subprocess,'run',return_value=result):
+                with self.assertRaisesRegex(ValueError,'not-delivered'):
+                    actions.command(['unused'],config,diagnostic='status-pointer')
+            data=(Path(directory)/'status-pointer.stderr').read_text();receipt=json.loads(data)
+            self.assertLess(len(data),1024);self.assertNotIn('secret',data)
+            self.assertEqual(receipt['exitStatus'],-5);self.assertEqual(receipt['signal'],5)
+            self.assertIn('integer-out-of-range',receipt['stderrCodes']);self.assertTrue(receipt['stderrTruncated'])
+    def test_pointer_timeout_diagnostic_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=dict(batch=directory,expectedLease=dict(runID='run',epoch='epoch'))
+            with patch.object(actions,'still_admitted'),patch.object(actions.subprocess,'run',side_effect=subprocess.TimeoutExpired('unused',1,stderr=b'private')):
+                with self.assertRaises(subprocess.TimeoutExpired):actions.command(['unused'],config,diagnostic='status-pointer')
+            receipt=json.loads((Path(directory)/'status-pointer.stderr').read_text())
+            self.assertIsNone(receipt['exitStatus']);self.assertEqual(receipt['stderrCodes'],['timeout'])
     def test_refused_admission_writes_failure_handoff_and_stop(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);config=dict(batch=str(root),stopPath=str(root/'stop.json'),

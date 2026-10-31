@@ -11,7 +11,7 @@ import AppKit
                 screen:screen,primaryTop:1440,menuHeight:28,active:true)!
         }
         var result:[String:[[String:Any]]]=[:]
-        for change in ["move","hidden","replacement"] {
+        for change in ["move","hidden","replacement","invalid-window"] {
             var tracker=U6StatusItemFrameSampler.Stability(),rows:[[String:Any]]=[]
             func row(_ value:U6StatusItemFrameSampler.Publication?,_ mono:Double) {
                 if let value { rows.append(["event":"status-item-frame","runID":"run","epoch":"epoch",
@@ -19,7 +19,8 @@ import AppKit
             }
             row(tracker.observe(geometry(1796),windowNumber:7,visible:true,mono:99),99)
             row(tracker.observe(geometry(1796),windowNumber:7,visible:true,mono:100),100)
-            let number=change=="replacement" ? 8 : 7,visible=change != "hidden"
+            let number=change=="invalid-window" ? Int(UInt32.max)+1 : change=="replacement" ? 8 : 7
+            let visible=change != "hidden"
             let next=change=="move" ? geometry(1700) : geometry(1796)
             row(tracker.observe(visible ? next : nil,windowNumber:number,visible:visible,mono:100.1),100.1)
             result[change]=rows

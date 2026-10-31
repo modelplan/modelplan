@@ -24,10 +24,32 @@ def await_row(batch,run,epoch,pid,predicate,seconds):
         if found:return found
         time.sleep(.05)
     raise ValueError('not-delivered')
-def command(args,config,timeout=20):
+def pointer_diagnostic(config,label,status,stderr='',timed_out=False):
+    if label not in ('dock-pointer','status-pointer','status-pointer-clear','menu-refresh'):raise ValueError('unknown')
+    raw=stderr if isinstance(stderr,bytes) else stderr.encode('utf-8',errors='replace')
+    sample=raw[:4096];codes=[]
+    if timed_out:codes.append('timeout')
+    if status is not None and status<0:codes.append('process-signaled')
+    if b'Not enough bits' in sample or b'out of range' in sample:codes.append('integer-out-of-range')
+    if b'Fatal error' in sample:codes.append('runtime-trap')
+    if sample and not codes:codes.append('stderr-present')
+    lease=config['expectedLease']
+    receipt=dict(schema='u6-pointer-exit/1',runID=lease['runID'],epoch=lease['epoch'],
+        exitStatus=status,signal=-status if status is not None and status<0 else None,
+        stderrCodes=codes,stderrBytesCaptured=len(sample),stderrTruncated=len(raw)>len(sample),mono=uptime())
+    # Fixed classifications only: never persist arbitrary stderr, stack paths,
+    # argv, provider values or other host information in the evidence batch.
+    with (Path(config['batch'])/(label+'.stderr')).open('x') as out:
+        json.dump(receipt,out,sort_keys=True);out.write('\n')
+
+def command(args,config,timeout=20,diagnostic=None):
     still_admitted(config)
     env=os.environ.copy();env['PYTHONDONTWRITEBYTECODE']='1'
-    result=subprocess.run(args,env=env,text=True,capture_output=True,timeout=timeout)
+    try:result=subprocess.run(args,env=env,text=True,errors='replace',capture_output=True,timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        if diagnostic:pointer_diagnostic(config,diagnostic,None,error.stderr or '',timed_out=True)
+        raise
+    if diagnostic:pointer_diagnostic(config,diagnostic,result.returncode,result.stderr)
     if result.returncode:raise ValueError('not-delivered')
     return result
 def finish(batch,run,epoch,pid,steps,reason):
@@ -54,18 +76,18 @@ def run(config_path,pointer_binary):
         if type(pid) is not int or pid<=0 or reg.get('runID')!=run or reg.get('epoch')!=epoch:raise ValueError('registered-subject-invalid')
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='started',15)
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','dock')
-        command([str(pointer_binary),'--plan',str(batch/'dock-pointer-plan.json')],config)
+        command([str(pointer_binary),'--plan',str(batch/'dock-pointer-plan.json')],config,diagnostic='dock-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','dock')
         py(U6/'capture_owned.py','--config',config_path)
         steps['dock']='pass';current='menuA'
 
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','status')
-        command([str(pointer_binary),'--plan',str(batch/'status-pointer-plan.json')],config)
+        command([str(pointer_binary),'--plan',str(batch/'status-pointer-plan.json')],config,diagnostic='status-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','status')
         a=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status',3)
         a_session=a['checks']['sessionID'];steps['menuA']='pass';current='refresh'
         py(U6/'prepare_menu_plan.py','--config',config_path)
-        command([str(pointer_binary),'--status-menu-plan',str(batch/'menu-plan.json')],config,timeout=10)
+        command([str(pointer_binary),'--status-menu-plan',str(batch/'menu-plan.json')],config,timeout=10,diagnostic='menu-refresh')
         refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                           and r.get('sessionID')==a_session,60)
         if refresh.get('phase')=='deferred':
@@ -79,7 +101,7 @@ def run(config_path,pointer_binary):
         steps['refresh']='pass';current='menuB'
 
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','status','--purpose','clear')
-        command([str(pointer_binary),'--plan',str(batch/'status-pointer-clear-plan.json')],config)
+        command([str(pointer_binary),'--plan',str(batch/'status-pointer-clear-plan.json')],config,diagnostic='status-pointer-clear')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','status','--purpose','clear')
         b=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status'
                     and r.get('checks',{}).get('sessionID')!=a_session,3)

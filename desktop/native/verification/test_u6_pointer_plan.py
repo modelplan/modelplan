@@ -113,6 +113,23 @@ class U6PointerPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
             tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
 
+    def test_uint32_window_range_and_check_refusal(self):
+        for number in [0,-1,1<<32,True]:
+            with self.subTest(number=number):
+                self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
+                    checks=dict(self.status_checks(),windowNumber=number))]);now=[100.0]
+                with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+                    tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+        self.status_input()
+        path=self.root/'status-pointer-plan.json';plan=json.loads(path.read_text());plan['u6StatusWindowNumber']=1<<32
+        path.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):tool.check(self.config,'status')
+        plan['u6StatusWindowNumber']=7;path.write_text(json.dumps(plan))
+        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
+            checks=dict(self.status_checks(),windowNumber=1<<32))])
+        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):tool.check(self.config,'status')
+        self.assertTrue(tool.valid_window(1));self.assertTrue(tool.valid_window((1<<32)-1))
+
     @unittest.skipUnless(sys.platform=='darwin','Production sampler needs AppKit; pure planner regressions run on every platform')
     def test_production_sampler_invalidations_through_real_planner(self):
         integration=Path(__file__).parent.parent/'ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/U6StatusItemFrameSampler.swift'
@@ -121,6 +138,12 @@ class U6PointerPlanTests(unittest.TestCase):
         executable=self.root/'sampler-check'
         subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(self.root/'swift-cache'),str(integration),str(harness),'-o',str(executable)],check=True,capture_output=True)
         traces=json.loads(subprocess.check_output([str(executable)]))
+        invalid=traces['invalid-window-settled']
+        self.assertEqual(invalid[-1]['checks']['windowNumber'],0)
+        self.assertFalse(invalid[-1]['checks']['settled'])
+        self.write_rows(invalid);now=[101.7]
+        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+            tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
         for change in ['move','hidden','replacement']:
             with self.subTest(change=change):
                 self.write_rows(traces[change]);now=[100.2]

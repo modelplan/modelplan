@@ -58,6 +58,8 @@ import XCTest
         }
         XCTAssertGreaterThan(emitted.count,count,"Title change must produce its settled placement")
         let last=try XCTUnwrap(emitted.last),since=try XCTUnwrap(last["stableSinceMono"] as? Double)
+        let number=try XCTUnwrap(last["windowNumber"] as? Int)
+        XCTAssertGreaterThan(number,0);XCTAssertNotNil(UInt32(exactly:number))
         XCTAssertGreaterThan(try XCTUnwrap(last["frameGeneration"] as? UInt64),generation)
         XCTAssertEqual(last["settled"] as? Bool,true)
         XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime-since,0.5)
