@@ -75,9 +75,34 @@
         },
         "cgY": {
           "type": "number"
+        },
+        "settled": {
+          "type": "boolean"
+        },
+        "stableSinceMono": {
+          "type": "number",
+          "minimum": 0
+        },
+        "displayBounds": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
+        },
+        "menuBarBand": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "type": "number" }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "required": ["settled"], "properties": { "settled": { "const": true } } },
+          "then": { "required": ["stableSinceMono", "displayBounds", "menuBarBand"] }
+        }
+      ]
     }
   },
   "additionalProperties": false

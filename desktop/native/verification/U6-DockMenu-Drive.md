@@ -16,6 +16,26 @@ The named U6 seed uses `--private-tool copilot`, not a display-title argument. A
 
 ## Drive
 
+### Status-frame readiness repair
+
+The test guard binds the owned status button during render but does not publish that render-time frame.
+Its existing tick and owned-window move/resize notifications sample placement. Only a frame crossing the
+top of its active screen, with its centre inside that display and its menu-bar band, is eligible. After
+unchanged geometry for at least 0.5 seconds it emits `settled: true`, `stableSinceMono`, and CG-coordinate
+`displayBounds` / `menuBarBand` rectangles. These additive planning fields do not change historical receipt
+verdict meanings; new status plans require them. The first 13 startup rows from the failed U6-R2 attempt
+are retained as a sanitized regression fixture (identities/times remapped; geometry/order unchanged).
+
+Status-plan creation waits at most five seconds under ongoing admission for an eligible newest frame;
+it does not fall back past a newer unready frame. Physical delivery also checks every point against the
+current active display bounds. Arrival checks re-read receipts through the original button-up + 3 second
+deadline for both status opens (or move + 5 seconds for Dock); they never repost input or extend a lease.
+The hosted Mac test changes its own status-item title and checks the last emitted settled frame; it is
+restricted to a GitHub-hosted worker and performs no owner-device acceptance or booking.
+
+The owner subsequently chose Computer Use-first device acceptance on the pinned 00c1d4f candidate.
+This automated-frame repair remains wanted at normal priority; it does not gate or replace that acceptance.
+
 1. Announce window start on the authoritative unit task before launch. Stop on owner takeover or any guardian/lease/deadline failure. Do not repeatedly reclaim foreground activation.
 2. Launch the actual candidate through shared Launch; `drive-u6.py drive` never starts or signals a process. It drives only the subject `launch.py` registered in `subjectPidPath`, after it checks that subject's start identity, its attached launcher and its `started` receipt for this run/epoch. It refuses when no subject is registered or the identity differs. Record owned process identity and separate active/key/visible/native-panel observations; a non-key Dock panel must not be misreported as a key-window failure. The App may request foreground activation once if the granted contract requires it.
 3. Deliver real input to reveal the Dock. Capture only the owned candidate surface. Observe at least one current reading or explicit engine-provided reason; no value is invented for an empty synthetic profile.

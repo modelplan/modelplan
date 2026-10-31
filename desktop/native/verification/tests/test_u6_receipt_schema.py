@@ -66,6 +66,13 @@ def walk(node, where='$'):
 
 
 class SchemaShapeTests(unittest.TestCase):
+    def test_settled_status_planning_fields_are_closed_and_complete(self):
+        trace=sb.valid(closure_receipt=CLOSURE)
+        row=sb.app_native_row(trace.one('status-item-frame',seq=3))
+        row['checks']['settled']=True
+        self.assertTrue(receipt_schema.native_errors(row))
+        row['checks'].update(stableSinceMono=sb.m(1),displayBounds=[0,0,2560,1440],menuBarBand=[0,0,2560,28])
+        self.assertEqual(receipt_schema.native_errors(row),[])
     def test_schemas_are_draft_2020_12_with_ids_and_supported_keywords_only(self):
         self.assertGreaterEqual(len(REG.documents), 20)
         for relative, identifier in REG.paths.items():

@@ -115,7 +115,7 @@ import ModelPlanMenuVerification
         status?.button?.title = composition.menuPresentation.title
         status?.button?.toolTip = composition.menuPresentation.detail
         #if MODELPLAN_U6_DRIVE
-        if let button = status?.button { driveGuard?.recordStatusButtonFrame(button) }
+        if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }

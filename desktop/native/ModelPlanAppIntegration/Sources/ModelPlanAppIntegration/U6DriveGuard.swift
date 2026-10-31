@@ -41,6 +41,10 @@ import CryptoKit
     private var acceptedClearIDs = Set<String>()
     private weak var dockHost: StaticDockPreviewHost?
     private var lastDockFrameSignature: String?
+    private lazy var statusFrameSampler=U6StatusItemFrameSampler { [weak self] fields in
+        guard let self,self.isLive() else { return }
+        self.emitObject("status-item-frame",fields:fields)
+    }
     private let ownsMenu: (NSMenu) -> Bool
     private let hasPrivateContent: () -> Bool
     private let privateTitle: () -> String?
@@ -258,6 +262,7 @@ import CryptoKit
         let nonActivating = visible && panels.allSatisfy { $0.styleMask.contains(.nonactivatingPanel) }
         emit("doctor", fields:["visible":visible,"onScreen":onScreen,"nonActivating":nonActivating,"ownerStopArmed":armed])
         recordDockSurface()
+        statusFrameSampler.sample()
     }
     private func recordDockSurface() {
         guard let host = dockHost, let panel = host.nativePanel, panel.isVisible,
@@ -271,16 +276,9 @@ import CryptoKit
             "x":frame.minX,"y":primary.frame.maxY-frame.maxY,"width":frame.width,"height":frame.height,
             "coordinateSpace":"cg-screen"])
     }
-    /// Window-server coordinates in AppKit screen space, only for the owned status item.
-    func recordStatusButtonFrame(_ button: NSStatusBarButton) {
-        guard let window = button.window, window.isVisible else { return }
-        let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
-        guard frame.width > 0, frame.height > 0 else { return }
-        let fields: [String: Any] = ["x": frame.origin.x, "y": frame.origin.y,
-            "width": frame.width, "height": frame.height, "coordinateSpace": "appkit-screen",
-            "cgX":frame.minX,"cgY":(NSScreen.screens.first?.frame.maxY ?? 0)-frame.maxY]
-        emitObject("status-item-frame", fields: fields)
-    }
+    /// Binding never emits the render-time placeholder. Window notifications and
+    /// the existing guard tick publish only a top-anchored, stable owned frame.
+    func observeStatusButton(_ button: NSStatusBarButton) { statusFrameSampler.bind(button) }
     private func emitObject(_ event: String, fields: [String: Any]) {
         observationSequence &+= 1
         let now = Date().timeIntervalSince1970

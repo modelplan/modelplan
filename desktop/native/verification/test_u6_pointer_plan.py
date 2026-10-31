@@ -27,6 +27,9 @@ class U6PointerPlanTests(unittest.TestCase):
         self.temp.cleanup()
     def write_rows(self, rows):
         (self.root/'native-observations.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
+    def status_checks(self):
+        return dict(coordinateSpace='appkit-screen',x=1796,y=1403,cgX=1796,cgY=-7,width=60,height=44,
+                    settled=True,stableSinceMono=98,displayBounds=[0,0,2560,1440],menuBarBand=[0,0,2560,28])
     def test_dock_move_requires_same_run_expansion_after_posted_input(self):
         self.write_rows([dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=dict(state='sliver',coordinateSpace='cg-screen',x=10,y=20,width=30,height=40,windowNumber=77))])
@@ -44,7 +47,7 @@ class U6PointerPlanTests(unittest.TestCase):
         tool.check(self.config,'dock')
     def test_status_click_requires_owned_menu_begin(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
-            checks=dict(coordinateSpace='appkit-screen',cgX=100,cgY=20,width=20,height=20))])
+            checks=self.status_checks())])
         tool.make(self.config,'status')
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
@@ -89,7 +92,7 @@ class U6PointerPlanTests(unittest.TestCase):
 
     def status_input(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=99,
-            checks=dict(coordinateSpace='appkit-screen',cgX=100,cgY=20,width=20,height=20))])
+            checks=self.status_checks())])
         tool.make(self.config,'status')
         rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100),
               dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100),
@@ -102,9 +105,9 @@ class U6PointerPlanTests(unittest.TestCase):
         tool.still_admitted=lambda _:checks.append(now[0])
         def sleep(seconds):
             now[0]+=seconds
-            if now[0]>=101:
+            if now[0]>=101.1:
                 with (self.root/'native-observations.jsonl').open('a') as out:
-                    out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=now[0],
+                    out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=101.1,
                         checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
         tool.check(self.config,'status',clock=lambda:now[0],sleep=sleep)
         self.assertGreater(now[0],100.4);self.assertGreater(len(checks),1);self.assertEqual(path.read_bytes(),before)
@@ -115,5 +118,48 @@ class U6PointerPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):
             tool.check(self.config,'status',clock=lambda:now[0],sleep=sleep)
         self.assertAlmostEqual(now[0],103.1);self.assertEqual(path.read_bytes(),before)
+
+    def test_real_startup_fixture_refuses_and_settled_frame_targets_menu_bar(self):
+        fixture=json.loads((Path(__file__).parent/'U6/fixtures/status-frame-startup.json').read_text())
+        self.assertEqual(len(fixture),13)
+        for row in fixture:row.update(runID='run',epoch='epoch')
+        self.write_rows(fixture);now=[101.0]
+        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+            tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda seconds:now.__setitem__(0,now[0]+seconds))
+        self.assertFalse((self.root/'status-pointer-plan.json').exists())
+        settled=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=14,mono=107,
+                     checks=dict(self.status_checks(),stableSinceMono=106.4))
+        self.write_rows(fixture+[settled]);tool.make(self.config,'status')
+        plan=json.loads((self.root/'status-pointer-plan.json').read_text())
+        self.assertEqual((plan['steps'][0]['x'],plan['steps'][0]['y']),(1826,15))
+        self.assertEqual(plan['u6FrameSeq'],14)
+
+    def test_late_menu_begin_at_up_plus_3_1_is_not_arrival(self):
+        self.status_input()
+        with (self.root/'native-observations.jsonl').open('a') as out:
+            out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=103.2,
+                checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
+        with self.assertRaisesRegex(ValueError,'native-arrival-missing'):
+            tool.check(self.config,'status',clock=lambda:104)
+
+    def test_status_clear_waits_for_its_distinct_session(self):
+        self.status_input()
+        with (self.root/'native-observations.jsonl').open('a') as out:
+            for row in [dict(event='menu-begin',seq=2,mono=100.05,checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')),
+                        dict(event='menu-end',seq=3,mono=101,checks=dict(menuObjectID='owned',sessionID='A'))]:
+                out.write(json.dumps(dict(runID='run',epoch='epoch',pid=42,**row))+'\n')
+        tool.make(self.config,'status','clear')
+        rows=[dict(event='mouse-moved-posted',kind='move',mono=102),dict(event='mouse-button-down-posted',kind='click',mono=102),
+              dict(event='mouse-button-up-posted',kind='click',mono=102.1),dict(event='pointer-result',outcome='posted')]
+        (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(dict(runID='run',epoch='epoch',targetPID=42,**r))+'\n' for r in rows))
+        now=[102.4]
+        def sleep(seconds):
+            now[0]+=seconds
+            if now[0]>=103.1:
+                with (self.root/'native-observations.jsonl').open('a') as out:
+                    out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=4,mono=103.1,
+                        checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='B')))+'\n')
+        tool.check(self.config,'status','clear',clock=lambda:now[0],sleep=sleep)
+        self.assertGreaterEqual(now[0],103.1)
 
 if __name__=='__main__':unittest.main()

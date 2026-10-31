@@ -12,6 +12,22 @@ def rows(path):
     if len(data) > 8_000_000: raise ValueError('receipt-limit')
     return [json.loads(line) for line in data.splitlines() if line.strip()]
 
+def rectangle(value):
+    if (isinstance(value,list) and len(value)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in value)
+        and value[2]>0 and value[3]>0):return value
+    return None
+
+def contains(rect,point):
+    x,y,w,h=rect;return x<=point[0]<x+w and y<=point[1]<y+h
+
+def settled_status(row,rect):
+    c=row.get('checks',{});since=c.get('stableSinceMono');display=rectangle(c.get('displayBounds'));band=rectangle(c.get('menuBarBand'))
+    if (c.get('settled') is not True or type(since) not in (int,float) or not math.isfinite(since)
+        or not math.isfinite(row['mono']) or row['mono']-since<.5 or display is None or band is None):return False
+    x,y,w,h=rect;point=(x+w/2,y+h/2)
+    return (y<=display[1]+1 and y+h>=display[1]-1 and band[0]==display[0] and band[1]==display[1]
+        and band[2]==display[2] and band[3]<=display[3] and contains(display,point) and contains(band,point))
+
 def latest_frame(observations, event, run, epoch, pid, state=None):
     for row in reversed(observations):
         if (row.get('event') != event or row.get('runID') != run or row.get('epoch') != epoch
@@ -24,14 +40,17 @@ def latest_frame(observations, event, run, epoch, pid, state=None):
         space = 'cg-screen' if event == 'dock-surface-frame' else 'appkit-screen'
         if (all(type(v) in (int, float) and math.isfinite(v) for v in (x,y,width,height))
             and width > 0 and height > 0 and checks.get('coordinateSpace') == space):
+            if event=='status-item-frame' and not settled_status(row,(x,y,width,height)):
+                raise ValueError('owned-frame-missing') # never fall back past a newer unready frame
             return row, (x,y,width,height)
+        if event=='status-item-frame':raise ValueError('owned-frame-missing')
     raise ValueError('owned-frame-missing')
 
 def prefix(kind, purpose):
     if kind == 'dock' and purpose != 'refresh': raise ValueError('dock-purpose-invalid')
     return kind+'-pointer'+('-clear' if kind == 'status' and purpose == 'clear' else '')
 
-def make(config, kind, purpose='refresh'):
+def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     still_admitted(config)
     batch = Path(config['batch'])
     lease = config['expectedLease']
@@ -40,7 +59,17 @@ def make(config, kind, purpose='refresh'):
     if type(pid) is not int or pid <= 0 or reg.get('state') != 'running' or not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
         raise ValueError('subject-registration-invalid')
     event = 'dock-surface-frame' if kind == 'dock' else 'status-item-frame'
-    observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None)
+    deadline=clock()+5
+    while True:
+        still_admitted(config)
+        if not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
+            raise ValueError('subject-registration-invalid')
+        try:
+            observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None)
+            break
+        except ValueError as error:
+            if kind!='status' or str(error)!='owned-frame-missing' or clock()>=deadline:raise
+            sleep(min(.05,deadline-clock()))
     x,y,w,h = rect
     window = observation['checks'].get('windowNumber') if kind == 'dock' else None
     if kind == 'dock' and (type(window) is not int or window <= 0): raise ValueError('owned-window-missing')

@@ -89,12 +89,26 @@ final class ButtonGuard: @unchecked Sendable {
         p.allowedRectangles.contains { r in r.count == 4 && r.allSatisfy(\.isFinite) && r[2]>0 && r[3]>0 &&
             CGRect(x:r[0],y:r[1],width:r[2],height:r[3]).contains(point) }
     }
-    static func validate(_ p: PointerPlan) throws {
+    static func activeDisplayBounds() throws -> [CGRect] {
+        var count: UInt32=0
+        guard CGGetActiveDisplayList(0,nil,&count) == .success,count>0,count<=64 else { throw DriveError.outsideScope }
+        var ids=[CGDirectDisplayID](repeating:0,count:Int(count));var actual=count
+        let result=ids.withUnsafeMutableBufferPointer { CGGetActiveDisplayList(UInt32($0.count),$0.baseAddress,&actual) }
+        guard result == .success,actual>0,actual<=count else { throw DriveError.outsideScope }
+        let bounds=ids.prefix(Int(actual)).map { CGDisplayBounds($0) }
+        guard bounds.allSatisfy({ !$0.isEmpty && !$0.isInfinite && !$0.isNull }) else { throw DriveError.outsideScope }
+        return bounds
+    }
+    static func onDisplay(_ point: CGPoint, _ displays: [CGRect]) -> Bool {
+        displays.contains { $0.contains(point) }
+    }
+    static func validate(_ p: PointerPlan, displays: [CGRect]) throws {
         guard p.profile == "synthetic", !p.runID.isEmpty, !p.epoch.isEmpty, p.subjectPID>0,
               !p.steps.isEmpty, p.steps.count<=4096, !p.allowedRectangles.isEmpty,
               p.steps.allSatisfy({ [$0.x,$0.y,$0.seconds,$0.dwell].allSatisfy(\.isFinite) && $0.seconds>=0 && $0.dwell>=0 }),
               p.steps.reduce(0,{$0+$1.seconds+$1.dwell})<=1200,
-              p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) }) else { throw DriveError.invalidPlan }
+              !displays.isEmpty,
+              p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) && onDisplay(CGPoint(x:$0.x,y:$0.y),displays) }) else { throw DriveError.invalidPlan }
     }
     // Construct the complete pair before pressing, then post down and up back to back with
     // no I/O between them; receipts are written only after the button is released. The
@@ -114,7 +128,7 @@ final class ButtonGuard: @unchecked Sendable {
         try record(.leftMouseUp,upMono,upAt)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
-        try validate(p)
+        try validate(p,displays:activeDisplayBounds())
         try live(p)
         let access = permission(); try append(access,to:file)
         guard access["postEvents"] as? Bool == true else {
@@ -123,14 +137,15 @@ final class ButtonGuard: @unchecked Sendable {
         var previous = CGPoint(x:p.steps[0].x,y:p.steps[0].y)
         for (index,step) in p.steps.enumerated() {
             let end = CGPoint(x:step.x,y:step.y)
-            guard pointAllowed(previous,p),pointAllowed(end,p) else { throw DriveError.outsideScope }
+            let displays=try activeDisplayBounds()
+            guard pointAllowed(previous,p),pointAllowed(end,p),onDisplay(previous,displays),onDisplay(end,displays) else { throw DriveError.outsideScope }
             let count = max(1,Int(ceil(step.seconds*60)))
             for frame in 1...count {
                 try live(p)
                 guard AXIsProcessTrusted() else { throw DriveError.outsideScope }
                 let f = Double(frame)/Double(count)
                 let point = CGPoint(x:previous.x+(end.x-previous.x)*f,y:previous.y+(end.y-previous.y)*f)
-                guard pointAllowed(point,p) else { throw DriveError.outsideScope }
+                guard pointAllowed(point,p),onDisplay(point,try activeDisplayBounds()) else { throw DriveError.outsideScope }
                 guard let event = CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
                 event.post(tap:.cghidEventTap)
                 try append(["event":"mouse-moved-posted","kind":"move","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,
@@ -141,7 +156,7 @@ final class ButtonGuard: @unchecked Sendable {
             }
             if step.action == .click {
                 try live(p)
-                guard AXIsProcessTrusted(),pointAllowed(end,p) else { throw DriveError.outsideScope }
+                guard AXIsProcessTrusted(),pointAllowed(end,p),onDisplay(end,try activeDisplayBounds()) else { throw DriveError.outsideScope }
                 try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type,mono,at in
                     try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted","kind":"click",
                         "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,"step":index,
@@ -172,11 +187,17 @@ final class ButtonGuard: @unchecked Sendable {
             func fixture(_ profile: String = "synthetic", _ seconds: Double = 1) -> PointerPlan {
                 PointerPlan(profile:profile,runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[.init(x:10,y:10,seconds:seconds,dwell:0.2)])
             }
-            try validate(fixture())
+            let displays=[CGRect(x:0,y:0,width:100,height:100)]
+            try validate(fixture(),displays:displays)
+            precondition(!onDisplay(CGPoint(x:30,y:1440),[CGRect(x:0,y:0,width:2560,height:1440)]))
+            precondition(onDisplay(CGPoint(x:1826,y:15),[CGRect(x:0,y:0,width:2560,height:1440)]))
+            precondition(onDisplay(CGPoint(x:-20,y:10),[CGRect(x:0,y:0,width:100,height:100),CGRect(x:-100,y:0,width:100,height:100)]))
+            do { try validate(fixture(),displays:[CGRect(x:100,y:100,width:100,height:100)]);preconditionFailure("off-display point admitted") }
+            catch DriveError.invalidPlan { }
             precondition(pointAllowed(CGPoint(x:10,y:10),fixture()))
             precondition(!pointAllowed(CGPoint(x:101,y:10),fixture()))
             for bad in [fixture("owner"),fixture("synthetic",-1),fixture("synthetic",Double.infinity),fixture("synthetic",1201)] {
-                do { try validate(bad); preconditionFailure("invalid plan admitted") } catch DriveError.invalidPlan { }
+                do { try validate(bad,displays:displays); preconditionFailure("invalid plan admitted") } catch DriveError.invalidPlan { }
             }
             let oldStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
             precondition(oldStep.action == nil) // Existing U5 plans remain move-only.
