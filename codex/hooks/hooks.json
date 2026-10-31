@@ -11,6 +11,19 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$PLUGIN_ROOT/hooks/session-start.sh\"",
+            "statusMessage": "ModelPlan: quota notice after compaction or resume",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

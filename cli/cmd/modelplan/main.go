@@ -885,8 +885,13 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		SessionID      string `json:"session_id"`
 		Model          string `json:"model"`
 		TranscriptPath string `json:"transcript_path"` // Claude Code: read for local speed measurement
+		Event          string `json:"hook_event_name"`
+		Source         string `json:"source"` // SessionStart: startup | resume | clear | compact
 	}
 	_ = json.Unmarshal(b, &in)
+	if in.Event == "SessionStart" {
+		return sessionStartHook(stdout, style, st, harness, in.SessionID, in.Model, in.Source, now)
+	}
 	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
 	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
 	// brief, and a sync that does not finish in time goes on in the background for the next
@@ -977,26 +982,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 	// The first prompt of a thread gets the task-start brief: the model judges the task, the
 	// publication supplies the options.
 	if in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
-		// Without a reading yet (a first thread, an API-key login, no status line) the brief
-		// still lists the options and the default; the quota and current model are then unknown.
-		acct := &quota.Account{Source: harness, Headroom: "unknown"}
-		for i := range report.Accounts {
-			if report.Accounts[i].Source == harness {
-				acct = &report.Accounts[i]
-			}
-		}
-		switch {
-		case in.Model != "" && (acct.Harness == nil || acct.Harness.Model != in.Model):
-			// The hook names the thread's model (Codex); its effort is known only from that thread's log.
-			x := *acct
-			x.Harness = &quota.Harness{Model: in.Model}
-			acct = &x
-		case harness == "claude-code" && acct.Harness != nil && acct.Harness.Attribution != "current-thread":
-			// The status line's model and effort are another session's (or of unknown session).
-			x := *acct
-			x.Harness = nil
-			acct = &x
-		}
+		acct := threadAccount(report, harness, in.Model)
 		model := ""
 		if acct.Harness != nil {
 			model = acct.Harness.Model
@@ -1012,6 +998,9 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 			}
 		}
 		for _, fact := range state.QuotaNotices(in.SessionID, acct, now) {
+			if fact.Kind == "low" {
+				fact.Down, fact.Cheaper = advise.NoticeSteps(acct, report, d, now)
+			}
 			parts = append(parts, style.QuotaNotice(fact))
 		}
 	}
@@ -1029,6 +1018,60 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		fmt.Fprintln(stdout, string(b))
 	}
 	_ = state.Save(st.Dir, now)
+	return 0
+}
+
+// threadAccount is the prompting thread's account with only that thread's model and effort.
+// Without a reading yet (a first thread, an API-key login, no status line) the quota and the
+// current model are unknown.
+func threadAccount(report quota.Report, harness, model string) *quota.Account {
+	acct := &quota.Account{Source: harness, Headroom: "unknown"}
+	for i := range report.Accounts {
+		if report.Accounts[i].Source == harness {
+			acct = &report.Accounts[i]
+		}
+	}
+	switch {
+	case model != "" && (acct.Harness == nil || acct.Harness.Model != model):
+		// The hook names the thread's model (Codex); its effort is known only from that thread's log.
+		x := *acct
+		x.Harness = &quota.Harness{Model: model}
+		acct = &x
+	case harness == "claude-code" && acct.Harness != nil && acct.Harness.Attribution != "current-thread":
+		// The status line's model and effort are another session's (or of unknown session).
+		x := *acct
+		x.Harness = nil
+		acct = &x
+	}
+	return acct
+}
+
+// sessionStartHook: after Claude Code or Codex compacted or resumed a thread, the model gets
+// back the low or run-out quota notice that thread was sent, when it still holds. Nothing else
+// is sent, refreshed or marked; the next prompt carries on as usual.
+func sessionStartHook(stdout io.Writer, style render.Style, st *store.Store, harness, session, model, source string, now time.Time) int {
+	if session == "" || (source != "compact" && source != "resume") || os.Getenv("MODELPLAN_TASK_BRIEF") == "off" {
+		return 0
+	}
+	paths := quotaPaths(st)
+	if harness == "claude-code" {
+		paths.CodexHome, paths.ClaudeSession = "", session
+	} else {
+		paths.CodexThread = session
+	}
+	report := quota.ReadPermitted(paths, now)
+	if harness == "claude-code" {
+		model = "" // as on a prompt: the status line's reading for this session, not the start's default
+	}
+	acct := threadAccount(report, harness, model)
+	n := advise.Load(st.Dir).QuotaResend(session, acct, now)
+	if n == nil {
+		return 0
+	}
+	d, _, _ := publication.Load(st)
+	n.Down, n.Cheaper = advise.NoticeSteps(acct, report, d, now)
+	b, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": style.QuotaNotice(*n)}})
+	fmt.Fprintln(stdout, string(b))
 	return 0
 }
 

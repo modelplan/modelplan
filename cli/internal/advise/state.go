@@ -118,12 +118,7 @@ func (s *State) Save(cache string, now time.Time) error {
 			local.Windows = map[string]QuotaMark{}
 		}
 		for window, mark := range q.Windows {
-			if own, exists := local.Windows[window]; !exists {
-				local.Windows[window] = mark
-			} else if mark.Recovered && !own.Recovered {
-				own.Recovered = true
-				local.Windows[window] = own
-			}
+			local.Windows[window] = mergeMark(local.Windows[window], mark)
 		}
 		if q.At.After(local.At) {
 			local.At = q.At
@@ -496,6 +491,23 @@ func (s *State) NoteShown(e Event, now time.Time) {
 
 // lasts: how long after its reset an armed window may still say "switch back".
 func (a Armed) lasts() time.Duration { return switchBackFor }
+
+// mergeMark: the later cycle's mark; within one cycle, everything either writer sent.
+func mergeMark(own, disk QuotaMark) QuotaMark {
+	own, disk = own.current(), disk.current()
+	switch {
+	case own.ResetAt.IsZero() || disk.ResetAt.After(own.ResetAt.Add(cycleJitter)):
+		return disk
+	case own.ResetAt.After(disk.ResetAt.Add(cycleJitter)):
+		return own
+	}
+	if disk.Level > 0 && (own.Level == 0 || disk.Level < own.Level) {
+		own.Level = disk.Level
+	}
+	own.Pace, own.Surplus = own.Pace || disk.Pace, own.Surplus || disk.Surplus
+	own.WasLow, own.Recovered = own.WasLow || disk.WasLow, own.Recovered || disk.Recovered
+	return own
+}
 
 func windowNow(a *quota.Account, kind string) *quota.Window {
 	for i := range a.Windows {

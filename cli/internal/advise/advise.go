@@ -307,6 +307,12 @@ func windowKey(prefix string, a *quota.Account, w *quota.Window) string {
 	return strings.Join([]string{prefix, a.Source, a.Plan, w.Kind, w.Limit, at}, "|")
 }
 
+// resetSoonSurplus: a window of the account's pool in its last quarter with a surplus.
+func resetSoonSurplus(a *quota.Account, w *quota.Window) bool {
+	return a.InPool(w) && w.Pace == "surplus" && w.ResetsInMinutes != nil && w.WindowMinutes > 0 &&
+		float64(*w.ResetsInMinutes) <= float64(w.WindowMinutes)*soonShare
+}
+
 func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan) []Event {
 	w := deciding(a)
 	if a.Headroom == "spend" {
@@ -314,8 +320,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		w = nil
 		for i := range a.Windows {
 			x := &a.Windows[i]
-			if a.InPool(x) && x.Pace == "surplus" && x.ResetsInMinutes != nil && x.WindowMinutes > 0 && float64(*x.ResetsInMinutes) <= float64(x.WindowMinutes)*soonShare &&
-				(w == nil || *x.ResetsInMinutes < *w.ResetsInMinutes) {
+			if resetSoonSurplus(a, x) && (w == nil || *x.ResetsInMinutes < *w.ResetsInMinutes) {
 				w = x
 			}
 		}
@@ -642,6 +647,29 @@ func fastNow(a *quota.Account, c config, d *digest.Digest) *Speed {
 		return nil
 	}
 	return quotaSpeed(c, d, harnessOf(a.Source))
+}
+
+// NoticeSteps is what a low quota notice to the model may name, from the thread's own reported
+// model and effort (never another thread's). Above ★: the step to ★, when it saves quota on
+// this plan. At or below ★ no step down (★ is where the effort is worth its cost); only another
+// model that scores as well for less, when one exists.
+func NoticeSteps(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time) (down, cheaper *Step) {
+	if a == nil || a.Harness == nil || a.Harness.Effort == "" || a.Harness.Attribution != "current-thread" || d == nil {
+		return nil, nil
+	}
+	eff, plan := Link(a, r, d)
+	c := current(&eff, d)
+	c.plan, c.now = plan, now
+	if c.model == nil || c.cur == nil || c.model.Effort(a.Harness.Effort) == nil {
+		return nil, nil
+	}
+	if c.rec != nil && index(c.model, c.cur) > index(c.model, c.rec) {
+		if s := c.step("step_down", c.rec); s.CostRatio != nil && *s.CostRatio < 1 {
+			return s, nil
+		}
+		return nil, nil
+	}
+	return nil, c.cheaper(d, harnessOf(a.Source))
 }
 
 // down: back to ★ when above it, otherwise one effort lower.

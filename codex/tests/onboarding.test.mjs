@@ -239,3 +239,29 @@ test('a panel from an older plugin version says the plugin was updated', async (
     /插件已更新到 0\.15\.1，正在运行的还是 0\.14\.0/);
   await rm(h, { recursive: true });
 });
+
+test('after compaction the pinned CLI gets the SessionStart input; nothing else runs or is recorded', async () => {
+  const { hooks } = JSON.parse(await readFile(join(root, 'hooks/hooks.json'), 'utf8'));
+  assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit', 'SessionStart']);
+  const [{ matcher, hooks: [s] }] = hooks.SessionStart;
+  assert.equal(matcher, 'compact|resume');
+  assert.equal(s.command, 'sh "$PLUGIN_ROOT/hooks/session-start.sh"');
+  const h = await home();
+  const input = '{"session_id":"t","hook_event_name":"SessionStart","source":"compact"}';
+  const start = () => execFileSync('sh', [join(root, 'hooks/session-start.sh')], { env: { PATH: '/usr/bin:/bin', HOME: h, PLUGIN_ROOT: root }, input, encoding: 'utf8' });
+  assert.equal(start(), '', 'no CLI yet: silent');
+  await put(join(h, '.local/bin'), script('0.0.1'));
+  assert.equal(start(), '', 'an older CLI would read the input as a prompt');
+  const sessionCli = (await readFile(join(root, 'hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1];
+  await put(pinnedDir(h), script('0.5.50', 'echo bad'));
+  assert.equal(start(), '', 'a CLI before SessionStart support is never asked, even when pinned');
+  await put(pinnedDir(h), script(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  assert.deepEqual(JSON.parse(start()), { resent: 1 });
+  assert.equal(await readFile(join(h, 'input'), 'utf8'), input);
+  assert.equal(await readFile(join(h, 'args'), 'utf8'), 'advise\n--hook\ncodex\n');
+  await assert.rejects(stat(join(h, '.cache/modelplan-codex')), 'records nothing');
+  await mkdir(join(h, '.config/modelplan/codex'), { recursive: true });
+  await writeFile(join(h, '.config/modelplan/codex/automatic-hints'), 'off');
+  assert.equal(start(), '', 'automatic hints off');
+  await rm(h, { recursive: true });
+});

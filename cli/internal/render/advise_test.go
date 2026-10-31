@@ -136,7 +136,7 @@ func TestTaskBriefSaysWhenToSpeak(t *testing.T) {
 		Models:  []advise.BriefModel{{Name: "GPT-6.1 Sol", Rec: "Med", Ability: 51.2, CostRelative: 1.4, Tags: []string{"strongest"}}, {Name: "GPT-6 Astra", Rec: "Med", Ability: 44, CostRelative: 1.6, Skip: true}},
 		Ladder:  []advise.BriefStep{{Label: "Med", Recommended: true, Current: true}, {Label: "High", AbilityDelta: &d, CostRatio: &r}}}
 	got := TaskBrief(b)
-	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "★Med (current) · High +4.8 pts ×1.37", "Say nothing about models or efforts unless", "Default for ordinary tasks: GPT-6.1 Sol ★Med; the thread is on it.", "back to the default after", "never say you changed them", "never a promised saving", "Do not bring up quota"} {
+	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended)", "GPT-6.1 Sol ★Med 51.2 pts ×1.40 (strongest)", "★Med (current) · High +4.8 pts ×1.37", "Say nothing about models or efforts unless", "Default for ordinary tasks: GPT-6.1 Sol ★Med; the thread is on it.", "back to the default after", "never say you changed them", "never a promised saving", "Bring up quota only to pass on a ModelPlan low-quota notice"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -175,7 +175,7 @@ func TestTaskBriefCarriesNoQuota(t *testing.T) {
 			t.Errorf("a tight brief holds %q:\n%s", leak, tight)
 		}
 	}
-	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended).", "one step below the default for a small, bounded change).", "Do not bring up quota", "run `modelplan quota` or `modelplan advise` for current figures"} {
+	for _, want := range []string{"Now: GPT-6.1 Sol · Med (★ recommended).", "one step below the default for a small, bounded change).", "Bring up quota only to pass on a ModelPlan low-quota notice", "run `modelplan quota` or `modelplan advise` for current figures"} {
 		if !strings.Contains(tight, want) {
 			t.Errorf("missing %q in:\n%s", want, tight)
 		}

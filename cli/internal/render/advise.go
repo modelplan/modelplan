@@ -546,7 +546,7 @@ func TaskBrief(b *advise.Brief) string {
 	if b.Headroom == "conserve" || b.Headroom == "exhausted" {
 		up = ""
 	}
-	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change"+up+"). Do not bring up quota: the user sees it themselves. If the user asks about quota or a ModelPlan hint, run `modelplan quota` or `modelplan advise` for current figures.")
+	lines = append(lines, "Say nothing about models or efforts unless the setting clearly does not fit this task; then suggest one configuration from these lines in one sentence with its multiplier and carry on (one step below the default for a small, bounded change"+up+"). Bring up quota only to pass on a ModelPlan low-quota notice: once, in one line, with its step. If the user asks about quota or a ModelPlan hint, run `modelplan quota` or `modelplan advise` for current figures.")
 	return strings.Join(lines, "\n")
 }
 
