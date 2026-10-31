@@ -2,6 +2,7 @@ package advise
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,9 @@ func Load(cache string) *State {
 
 // stateLockWait bounds how long Save waits for another process's save.
 const stateLockWait = time.Second
+
+// ErrStateBusy means another process held the advice-state lock for the full wait.
+var ErrStateBusy = errors.New("advice state busy")
 
 // Save writes only when something changed, merging with what another process (the status
 // line and the hook run side by side) wrote in the meantime. The read, merge and rename hold
