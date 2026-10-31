@@ -117,15 +117,13 @@ python3 desktop/native/verification/bin/book.py request \
 # Set BOOKING_ID to the returned id; start only after the queued head is handed off.
 python3 desktop/native/verification/bin/book.py start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
-# M2's independent watchdog must maintain this issued lease's fresh heartbeat and stop/deadline checks.
-python3 desktop/native/verification/bin/release.py \
-  --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
-  --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
-python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute
-# After the subject exits and independent Cleanup/closure checks pass:
-python3 desktop/native/verification/bin/book.py finish \
-  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 ```
+
+From here on, follow the exact guarded sequence in [`../SKILL.md`](../SKILL.md): start
+`guardian.py` (heartbeat, stop/deadline, subject supervision), then `release.py`, then the
+supervised launch or Drive run, and record `finish --cleaned` only when the guardian has
+confirmed closure. It is not repeated here, so the two cannot drift apart.
+
 
 If work is abandoned **while still queued**, replace start/release/launch with:
 
