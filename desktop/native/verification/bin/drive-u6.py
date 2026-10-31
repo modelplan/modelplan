@@ -122,14 +122,20 @@ def closed(pid_path):
     except (OSError,ValueError):return False
     return isinstance(record,dict) and record.get('state')=='running' and type(record.get('pid')) is int and not alive(record)
 def preserve_runtime_calls(c,run,epoch,pid):
-    source=Path(c['syntheticHome'])/'runtime-calls';target=Path(c['batch'])/'runtime-calls.json'
+    source=Path(c['syntheticHome'])/'.modelplan-stub/runtime-calls.jsonl';target=Path(c['batch'])/'runtime-calls.jsonl'
     if target.exists():raise ValueError('runtime-log-not-fresh')
-    calls=[]
-    if source.exists():
-        if source.is_symlink() or not source.is_file() or source.stat().st_size>65536:raise ValueError('runtime-log-invalid')
-        calls=source.read_text().splitlines()
-        if any(value not in ('connect','auth.getStatus','account.getQuota') for value in calls):raise ValueError('runtime-log-invalid')
-    write(target,dict(schema='u6-runtime-calls/1',runID=run,epoch=epoch,targetPID=pid,calls=calls))
+    if not source.exists():return None
+    if source.is_symlink() or not source.is_file() or source.stat().st_size>65536:raise ValueError('runtime-log-invalid')
+    counters={}
+    for line in source.read_text().splitlines():
+        value=json.loads(line)
+        if (value.get('schema')!='runtime-calls/1' or value.get('runID')!=run or value.get('epoch')!=epoch
+            or value.get('method') not in ('connect','auth.getStatus','account.getQuota')
+            or any(type(value.get(k)) is not int or value[k]<=0 for k in ('pid','ppid','seq'))
+            or type(value.get('mono')) not in (int,float) or value['mono']<0
+            or value['seq']<=counters.get(value['pid'],0)):raise ValueError('runtime-log-invalid')
+        counters[value['pid']]=value['seq']
+    with target.open('xb') as stream:stream.write(source.read_bytes())
     return hashlib.sha256(target.read_bytes()).hexdigest()
 def drive(c,now,poll=.2,sleep=time.sleep):
     admit(c,now);run,epoch,_,end=run_identity(c)

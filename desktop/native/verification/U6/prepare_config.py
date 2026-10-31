@@ -9,10 +9,11 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[4]
 sys.path[:0]=[str(ROOT/'tools/u14/engine_drive'),str(ROOT/'desktop/native/verification/bin')]
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from scenarios import Home
+from scenarios import Home,fixture
 from homeseed import tree_sha256
 from evidence_chain import verify_bundle_members,Missing,Contradiction
 from seed_probe import probe_seed
+from stub_runtime import assert_unshadowed,install
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def absolute(value):
@@ -55,17 +56,25 @@ def prepare(args,make_home=Home,probe=probe_seed):
     tool=args.private_tool
     if tool!='copilot' or tool not in profile.get('tools',[]):raise ValueError('private-tool-not-in-approved-profile')
     seed=scratch/'home-seed'
+    assert_unshadowed(seed)
     synthetic=make_home(seed,helper,'http://127.0.0.1:1',profile)
+    stub_hash=install(seed,run,epoch,fixture.FAKE_RUNTIME)
     synthetic.allow();relocate_cache(seed) # never refresh the real seed or edit its rate-limit state
     probe_tmp=scratch/'seed-probe-tmp';probe_tmp.mkdir()
     twin=scratch/'title-twin'
     try:
-        other=make_home(twin,helper,'http://127.0.0.1:1',profile);other.allow();refresh=other.refresh()
-        if refresh.returncode!=0 or 'account.getQuota' not in other.calls():raise ValueError('twin-reading-missing')
+        assert_unshadowed(twin)
+        other=make_home(twin,helper,'http://127.0.0.1:1',profile)
+        twin_stub_hash=install(twin,run,epoch,fixture.FAKE_RUNTIME)
+        other.allow();refresh=other.refresh()
+        log=twin/'.modelplan-stub/runtime-calls.jsonl'
+        if refresh.returncode!=0 or not log.is_file() or not any(json.loads(line).get('method')=='account.getQuota' for line in log.read_text().splitlines()):
+            raise ValueError('twin-reading-missing')
         relocate_cache(twin)
-        title=probe(helper,twin,probe_tmp,tool,mode='refreshed')
+        identity=probe(helper,twin,probe_tmp,tool,mode='refreshed',expected_stub_hash=twin_stub_hash,details=True)
+        title=identity['title'];account_hash=identity['accountIDSHA256']
         title_hash=hashlib.sha256(title.encode()).hexdigest()
-        probe(helper,seed,probe_tmp,tool,mode='first',expected_title_hash=title_hash)
+        probe(helper,seed,probe_tmp,tool,mode='first',expected_title_hash=title_hash,expected_stub_hash=stub_hash)
     finally:
         shutil.rmtree(probe_tmp)
         if twin.exists():shutil.rmtree(twin)
@@ -81,7 +90,7 @@ def prepare(args,make_home=Home,probe=probe_seed):
         booking=dict(id=args.booking_id,lane='M1',unit='U6',scenario='U6-DockMenu-synthetic',ledger=str(paths['ledger'])),
         expectedLease=dict(runID=run,epoch=epoch)) # the sequence adds notBefore/expiresAt from the started lease
     seed_receipt=dict(schema='u6-seed/1',runID=run,epoch=epoch,homeSeedSHA256=digest,
-        toolID=tool,titleSHA256=title_hash,profileSHA256=sha(profile_path),firstAttempt=True)
+        toolID=tool,titleSHA256=title_hash,accountIDSHA256=account_hash,stubSHA256=stub_hash,profileSHA256=sha(profile_path),firstAttempt=True)
     with (batch/'synthetic-seed.json').open('x') as stream:json.dump(seed_receipt,stream,sort_keys=True);stream.write('\n')
     with (batch/'run.json').open('x') as stream:json.dump(config,stream,indent=2);stream.write('\n')
     print(json.dumps(dict(runID=run,epoch=epoch,head=args.head,seedSHA256=digest)))

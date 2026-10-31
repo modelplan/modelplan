@@ -223,13 +223,14 @@ class U6ReasonTests(unittest.TestCase):
     def test_runtime_call_proof_survives_home_cleanup_with_hash(self):
         with tempfile.TemporaryDirectory() as directory:
             c=config(Path(directory));home=Path(c['syntheticHome']);home.mkdir()
-            (home/'runtime-calls').write_text('connect\nauth.getStatus\naccount.getQuota\n')
+            (home/'.modelplan-stub').mkdir()
+            (home/'.modelplan-stub/runtime-calls.jsonl').write_text(json.dumps(dict(schema='runtime-calls/1',runID='run',epoch='epoch',method='account.getQuota',pid=51,ppid=42,mono=100,seq=1))+'\n')
             digest=drive.preserve_runtime_calls(c,'run','epoch',42)
-            target=Path(c['batch'])/'runtime-calls.json'
+            target=Path(c['batch'])/'runtime-calls.jsonl'
             self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(),digest)
-            proof=json.loads(target.read_text());self.assertEqual(proof['targetPID'],42)
-            self.assertIn('account.getQuota',proof['calls'])
-            (home/'runtime-calls').unlink();home.rmdir()
+            proof=json.loads(target.read_text());self.assertEqual(proof['epoch'],'epoch')
+            self.assertEqual(proof['method'],'account.getQuota')
+            (home/'.modelplan-stub/runtime-calls.jsonl').unlink();(home/'.modelplan-stub').rmdir();home.rmdir()
             self.assertTrue(target.is_file())
     def test_unknown_exception_text_never_enters_receipts(self):
         self.assertEqual(drive.failure(RuntimeError('/synthetic/private/path: arbitrary engine text')),'unknown')

@@ -31,21 +31,23 @@ class U6PrepareConfigTests(unittest.TestCase):
                 locks=str(locks),resource_root=str(root),binary=str(binary),package=str(package),kit_manifest=str(manifest),
                 head='a'*40,private_tool='copilot')
             class FakeHome:
-                def __init__(self,seed,*_):self.seed=seed
-                def allow(self):
-                    self.seed.mkdir();(self.seed/'synthetic.txt').write_text('synthetic');(self.seed/'cache').mkdir()
+                def __init__(self,seed,*_):
+                    self.seed=seed;seed.mkdir();(seed/'bin').mkdir();(seed/'synthetic.txt').write_text('synthetic');(seed/'cache').mkdir()
+                def allow(self):pass
                 def refresh(self):
                     (self.seed/'cache/runtime.txt').write_text('synthetic-runtime')
+                    (self.seed/'.modelplan-stub/runtime-calls.jsonl').write_text('{"method":"account.getQuota"}\n')
                     return types.SimpleNamespace(returncode=0)
                 def calls(self):return 'account.getQuota'
             modes=[]
-            def probe(helper,home,tmp,tool,mode='first',expected_title_hash=None):
+            def probe(helper,home,tmp,tool,mode='first',expected_title_hash=None,expected_stub_hash=None,details=False):
                 self.assertEqual(tool,'copilot')
                 self.assertEqual((prepare.default_cache_dir(home)/'runtime.txt').is_file(),mode=='refreshed')
                 self.assertFalse((home/'cache').exists())
                 modes.append(mode)
+                self.assertEqual(hashlib.sha256((home/'bin/copilot').read_bytes()).hexdigest(),expected_stub_hash)
                 if expected_title_hash:self.assertEqual(expected_title_hash,hashlib.sha256(b'GitHub Copilot').hexdigest())
-                return 'GitHub Copilot'
+                return dict(title='GitHub Copilot',accountIDSHA256='e'*64) if details else 'GitHub Copilot'
             prepare.prepare(args,make_home=FakeHome,probe=probe)
             config=json.loads((batch/'run.json').read_text());seed=json.loads((batch/'synthetic-seed.json').read_text())
             self.assertEqual(config['booking']['unit'],'U6')
