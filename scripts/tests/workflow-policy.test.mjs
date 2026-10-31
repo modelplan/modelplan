@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ALLOWED_ROUTES, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, isWorkflowFile, workflowProblems } from "../workflow-policy.mjs";
 
 const GUARD = "vars.MAC_CI_RUNNER == 'self-hosted' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
 const ROUTED = "jobs:\n" + [...ALLOWED_ROUTES].map((r, i) => `  j${i}:\n    ${r}\n`).join("");
@@ -36,4 +36,26 @@ test("rejects guard look-alikes: branch filters, OR-bypass, quoted keys", () => 
     `jobs:\n  a:\n    runs-on: \${{ (${GUARD} || true) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || 'macos-latest' }}`,
   ];
   for (const t of bad) assert.ok(workflowProblems(t).includes("non-canonical self-hosted route or pull_request_target"), t);
+});
+
+test("rejects escaped spellings that a YAML parser decodes to the forbidden names", () => {
+  for (const t of [
+    'on:\n  "pull_request_tar\\u0067et":',
+    'on:\n  "pull_request\\x5ftarget":',
+    'on:\n  "pull_request_\\\n    target":',
+    'jobs:\n  a:\n    runs-on: "self\\u002dhosted"',
+    'jobs:\n  a:\n    runs-on: "modelplans\\u002dci"',
+  ]) assert.ok(workflowProblems(t).length > 0, t);
+});
+
+test("ordinary shell and regex backslashes stay legal", () => {
+  const run = 'jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          go build -ldflags "-s -w" \\\n            ./cmd\n          python3 -c \'import re; re.findall(r"\\d+", "v1")\'\n';
+  assert.deepEqual(workflowProblems(run), []);
+});
+
+test("both workflow extensions are checked", () => {
+  assert.ok(isWorkflowFile(".github/workflows/ci.yml"));
+  assert.ok(isWorkflowFile(".github/workflows/ci.yaml"));
+  assert.ok(!isWorkflowFile(".github/workflows/nested/ci.yml"));
+  assert.ok(!isWorkflowFile(".github/workflows/README.md"));
 });
