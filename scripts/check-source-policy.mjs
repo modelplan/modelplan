@@ -144,12 +144,18 @@ for (const p of tracked.filter(
     !s.includes("modelplans-publish") && !s.includes("modelplans-ci"),
     "public workflow must not access private runners: " + p,
   );
+  // pull_request_target runs privileged context on fork-controlled input; never used in this repo.
+  assert.ok(!/^\s*pull_request_target\s*:/m.test(s) && !/\bpull_request_target\b\s*[,\]]/.test(s.split("jobs:")[0]),
+    "public workflow must not use pull_request_target: " + p);
+  // Defence in depth only. The enforced boundary is runner-side: the dedicated Mac's pre-job hook
+  // admits only the owner's account, and the private runners are registered to the private repo.
   // The only self-hosted runner allowed is the dedicated public Mac (label modelplan-mac), behind the
   // MAC_CI_RUNNER switch and a same-repository guard so fork pull requests never reach it.
   for (const line of s.split("\n").filter((l) => l.includes("self-hosted"))) {
     assert.ok(
       line.includes("modelplan-mac") &&
         line.includes("vars.MAC_CI_RUNNER == 'self-hosted'") &&
+        line.includes("github.event_name != 'pull_request_target'") &&
         line.includes("github.event.pull_request.head.repo.full_name == github.repository"),
       "self-hosted use must target modelplan-mac behind the switch and fork guard: " + p,
     );
