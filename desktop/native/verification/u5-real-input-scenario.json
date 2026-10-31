@@ -107,7 +107,7 @@
     "real Keychain or credential access",
     "unscoped process discovery",
     "direct handler/hitTest calls presented as delivered input",
-    "GUI before the native v0.5.49 pin merge and matching announced lease"
+    "GUI before the reviewed native CLI pin merge and matching announced lease"
   ],
   "proofLimit": "Scenario receipts require actual owned-candidate action/state evidence and cleanup. Source/L1 checks alone do not establish real-input L2; missing consumers or capabilities remain explicit. No owner L3 or release acceptance.",
   "profileShape": "fixtures/u5-synthetic-shape.json",
