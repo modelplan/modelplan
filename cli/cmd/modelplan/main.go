@@ -44,6 +44,7 @@ const (
 	alarmAfter      = 48 * time.Hour // 数据过期 annunciator
 	backgroundEvery = 10 * time.Minute
 	firstSyncWait   = 3500 * time.Millisecond // hook timeouts are 5 s
+	hookSaveBudget  = 4300 * time.Millisecond // leave time to record an error before the host timeout
 )
 
 const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
@@ -427,7 +428,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		observeAgents(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
 		if c.json {
-			_ = state.Save(st.Dir, now)
+			saveAdviceState(state, st.Dir, now)
 			for i := range es {
 				es[i].Text = map[string]string{"zh": render.Style{T: render.ZH}.AdviceLine(es[i]), "en": render.Style{T: render.EN}.AdviceLine(es[i])}
 			}
@@ -440,7 +441,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 				state.MarkSeen([]advise.Event{e}, now)
 			}
 		}
-		_ = state.Save(st.Dir, now)
+		saveAdviceState(state, st.Dir, now)
 		return 0
 
 	case "qwen-usage":
@@ -823,7 +824,7 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 		}
 	}
 	if save {
-		_ = state.Save(st.Dir, now)
+		saveAdviceState(state, st.Dir, now)
 		if hint == "" && personalAllowed {
 			hint = defaultEffortHint(style, st, d, report, now)
 		}
@@ -876,6 +877,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 }
 
 func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string, now time.Time) int {
+	deadline := time.Now().Add(hookSaveBudget)
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
@@ -1017,7 +1019,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		b, _ := json.Marshal(out)
 		fmt.Fprintln(stdout, string(b))
 	}
-	_ = state.Save(st.Dir, now)
+	saveAdviceStateUntil(state, st.Dir, now, deadline)
 	return 0
 }
 
@@ -1151,7 +1153,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		state := advise.Load(st.Dir)
 		es := advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now})
 		if !readOnly {
-			_ = state.Save(st.Dir, now)
+			saveAdviceState(state, st.Dir, now)
 		}
 		ledger := speed.Load(st.Dir)
 		perf, ok := speed.LoadPerf(st.Dir)
