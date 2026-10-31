@@ -266,8 +266,12 @@ def execute(args):
                             hosted=os.environ.get('GITHUB_ACTIONS') == 'true', context=context))
         atomic(output / 'profile.json', shape)
         atomic(output / 'manifest.json', manifest)
-        limit = min(args.timeout, max(0, args.deadline - time.time())) if args.deadline else args.timeout
-        cleanup_errors = run_scenarios(args, output, scratch, manifest, binary, old, start + max(0, limit - 15))
+        # Both budgets are anchored once on the monotonic clock: the run timeout from start, and the
+        # caller's absolute wall-clock deadline from now (preflight time must not be subtracted twice).
+        end = start + args.timeout
+        if args.deadline:
+            end = min(end, time.monotonic() + max(0, args.deadline - time.time()))
+        cleanup_errors = run_scenarios(args, output, scratch, manifest, binary, old, max(start, end - 15))
     except Exception as exc:
         manifest.update(reason='preflight-or-harness-failed', failureClass=type(exc).__name__)
         for item in manifest['scenarios']:

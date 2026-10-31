@@ -271,7 +271,7 @@ class Bookings(unittest.TestCase):
         ident = self.request()
         self.ledger.start(ident, 'M2', 'run', 'epoch')
         lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1200,
-                     guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True)
+                     guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True, guardian=True)
         release = lease | dict(m1Released=True, approval='https://example.test/coordinator#issuecomment-1')
         lease_path = self.root / 'issued-lease.json'; lease_path.write_text(json.dumps(lease))
         release_path = self.root / 'release.json'; release_path.write_text(json.dumps(release))
@@ -343,18 +343,39 @@ class Bookings(unittest.TestCase):
         c = self.active_contract()
         release = self.root / 'release.json'; release.write_text(json.dumps(c['release']))
         c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
-                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(release))
+                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(release),
+                 subjectPidPath=str(self.root / 'subject.pid'))
         attempt = drive.Attempt(c)
         attempt.out.mkdir(); attempt.scratch.mkdir()
         attempt.lease.write_text(json.dumps(c['lease'])); attempt.entry = 'http://127.0.0.1/synthetic'
         with patch.object(drive.subprocess, 'Popen', return_value=Mock(pid=123)) as popen, \
-                patch.object(drive.cleanup, 'identity', return_value=dict(pid=123)):
+                patch.object(drive.cleanup, 'identity', return_value=dict(pid=123)), \
+                patch.object(drive, 'mark_launching', return_value={}), patch.object(drive, 'register') as registered:
             attempt.launch('preflight')
             popen.assert_called_once()
+            registered.assert_called_once()  # the Drive subject is registered with the guardian before it runs
+            self.assertEqual(popen.call_args.args[0][:3], [sys.executable, '-I', '-c'])  # exec-gated
             release.write_text(json.dumps(c['release'] | dict(epoch='revoked')))
             with self.assertRaisesRegex(ValueError, 'lease/release identity mismatch'):
                 attempt.launch('measure')
             popen.assert_called_once()
+
+    def test_drive_kills_subject_when_registration_fails(self):
+        c = self.active_contract()
+        release = self.root / 'release.json'; release.write_text(json.dumps(c['release']))
+        c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
+                 binary='/bin/sleep', scripts=[], resourceRoot=str(self.root), releasePath=str(release),
+                 subjectPidPath=str(self.root / 'subject.pid'))
+        attempt = drive.Attempt(c)
+        attempt.out.mkdir(); attempt.scratch.mkdir()
+        attempt.lease.write_text(json.dumps(c['lease'])); attempt.entry = 'http://127.0.0.1/synthetic'
+        with patch.object(drive, 'register', side_effect=ValueError('subject identity unavailable')), \
+                patch.object(drive.cleanup, 'identity', return_value=dict(pid=1)):
+            with self.assertRaises(ValueError):
+                attempt.launch('preflight')
+        self.assertIsNotNone(attempt.app.poll())  # the gated child was killed, never released
+        self.assertEqual(attempt.children, [])
+        self.assertEqual(json.loads((self.root / 'subject.pid').read_text())['state'], 'launching')
 
     def test_launch_execute_refuses_without_booking_before_home_or_process(self):
         c = self.active_contract()
@@ -370,6 +391,23 @@ class Bookings(unittest.TestCase):
                 launch.main()
             popen.assert_not_called()
         self.assertFalse((self.root / 'home').exists())
+
+    def test_drive_external_mode_defers_to_guardian_and_fails_closed_on_its_loss(self):
+        # M1 flow: Drive must not heartbeat the external lease; a lost guardian or its stop file stops Drive.
+        c = self.active_contract()
+        lease_path = Path(c['leasePath']); stop_path = self.root / 'external-STOP'
+        cfg = dict(c, batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'), stopPath=str(stop_path))
+        attempt = drive.Attempt(cfg)
+        self.assertTrue(attempt.external); self.assertEqual(attempt.stop, stop_path)
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time())))
+        attempt.live()  # fresh heartbeat from the independent guardian
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time() - 5)))
+        with self.assertRaisesRegex(RuntimeError, 'guardian-not-live'):
+            attempt.live()  # guardian killed: Drive stops instead of keeping the heartbeat alive
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time())))
+        stop_path.write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, 'stop-or-expiry'):
+            attempt.live()
 
     def test_launch_rechecks_booking_after_hash_work_before_spawn(self):
         c = self.active_contract()
@@ -388,9 +426,13 @@ class Bookings(unittest.TestCase):
         # The allowed path invokes a mock only, never an executable.
         c['syntheticHome'] += '-allowed'; c['syntheticTmp'] += '-allowed'
         config.write_text(json.dumps(c))
-        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=Mock(pid=123)) as popen:
-            launch.main()
+        child = Mock(pid=123, returncode=0); child.poll.return_value = 0  # the child exits by itself
+        c['subjectPidPath'] = str(self.root / 'subject.pid'); config.write_text(json.dumps(c))
+        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=child) as popen, patch.object(launch, 'register', return_value={}):
+            with self.assertRaises(SystemExit) as done:
+                launch.main()
             popen.assert_called_once()
+        self.assertEqual(done.exception.code, 0)
 
     def test_drive_refuses_missing_booking_before_any_resource_or_process(self):
         c = self.active_contract()

@@ -188,15 +188,7 @@ func historyReadState(cache, tool string, a HistoryAccess) historyState {
 	if !historyLoad(historyPath(cache, tool, a), &s, 8<<20) || s.SchemaVersion != 1 || len(s.Files) > 256 || len(s.Entries) > 20000 {
 		s = historyState{SchemaVersion: 1}
 	}
-	scope := historyConsentScope(tool)
-	valid := false
-	if a.CaptureAllowed != nil {
-		valid = a.CaptureAllowed(s.Admission)
-	} else {
-		state, err := consent.Load(consent.Path())
-		valid = err == nil && state.CaptureAllowed(s.Admission, scope)
-	}
-	if !valid {
+	if !historyCaptureAllowed(tool, a, s.Admission) {
 		s = historyState{SchemaVersion: 1}
 	}
 	if s.Files == nil {
@@ -206,6 +198,18 @@ func historyReadState(cache, tool string, a HistoryAccess) historyState {
 		s.Entries = map[string]historyStored{}
 	}
 	return s
+}
+
+func historyCaptureAllowed(tool string, a HistoryAccess, stamp *consent.CaptureStamp) bool {
+	scope := historyConsentScope(tool)
+	valid := false
+	if a.CaptureAllowed != nil {
+		valid = a.CaptureAllowed(stamp)
+	} else {
+		state, err := consent.Load(consent.Path())
+		valid = err == nil && state.CaptureAllowed(stamp, scope)
+	}
+	return valid
 }
 
 // ReadHistoryCache opens ModelPlan's sanitised cache only. It does not discover
