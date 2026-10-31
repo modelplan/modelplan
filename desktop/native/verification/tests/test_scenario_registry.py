@@ -140,3 +140,15 @@ class SkillLaunchBranchTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FlagSpellings(unittest.TestCase):
+    def test_equals_form_of_a_registered_flag_still_requires_its_scenario(self):
+        import scenario
+        reg = {"u6": {"argvFlag": "--u6-drive-contract", "prepare": "drive-u6.py prepare", "drive": "drive-u6.py drive", "receipt": True}}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "scenarios.json"; path.write_text(json.dumps(reg))
+            self.assertEqual(scenario.resolve({"argv": ["/bin/app", "--u6-drive-contract=/x/guard.json"]}, path)[0], "u6")
+            with self.assertRaises(ValueError):
+                scenario.resolve({"scenario": "other", "argv": ["/bin/app", "--u6-drive-contract=/x"]}, path)
+            self.assertIsNone(scenario.resolve({"argv": ["/bin/app", "--u6-drive-contractor"]}, path))

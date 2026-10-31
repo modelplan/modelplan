@@ -22,7 +22,7 @@ def resolve(c,path=None):
         # Without the registry no flag can be matched: refuse anything that could be a registered scenario.
         if 'scenario' in c or any(isinstance(x,str) and x.startswith('--') for x in argv):raise ValueError('scenario registry unreadable')
         return None
-    flagged=[n for n,e in reg.items() if e.get('argvFlag') and e['argvFlag'] in argv]
+    flagged=[n for n,e in reg.items() if e.get('argvFlag') and any(isinstance(x,str) and (x==e['argvFlag'] or x.startswith(e['argvFlag']+'=')) for x in argv)]
     if 'scenario' not in c and not flagged:return None
     if 'scenario' in c and (not isinstance(c['scenario'],str) or c['scenario'] not in reg):raise ValueError('unknown scenario')
     name=c['scenario'] if 'scenario' in c else flagged[0]
