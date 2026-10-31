@@ -45,8 +45,7 @@ def posted(batch,stem,run,epoch,pid):
     filtered=[r for r in rows if isinstance(r,dict) and r.get('runID')==run and r.get('epoch')==epoch
               and r.get('targetPID')==pid and number(r.get('mono')) and number(r.get('at'))]
     need(all(receipt_schema.registry().valid(r,'pointer-receipt.json') for r in filtered),'unknown')
-    need(any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' and r.get('runID')==run
-             and r.get('epoch')==epoch and r.get('targetPID')==pid for r in rows))
+    need(any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' for r in filtered))
     return plan,filtered
 def one(rows,predicate):
     found=[r for r in rows if predicate(r)]
@@ -57,6 +56,40 @@ def click(rows):
     up=one(rows,lambda r:r.get('event')=='mouse-button-up-posted' and r.get('kind')=='click')
     need(down['mono']<=up['mono'])
     return down,up
+def status_window_proof(plan,pointer,native):
+    mode=plan.get('statusWindowCheck');need(mode in ('required','unavailable'))
+    expected='verified' if mode=='required' else 'unavailable'
+    posted=[r for r in pointer if r.get('event') in ('mouse-moved-posted','mouse-button-down-posted','mouse-button-up-posted','pointer-result')]
+    for row in posted:
+        reject(row.get('statusWindowCheck')!=expected)
+    raw=plan.get('u6StatusWindowNumber');need(type(raw) is int)
+    reject((1<=raw<=0xffffffff)!=(mode=='required'))
+    if mode=='required':return
+    anchor=next((r for r in native if r.get('seq')==plan.get('u6FrameSeq') and r.get('event')=='status-item-frame'),None)
+    need(anchor is not None)
+    reject(checks(anchor).get('frameGeneration')!=plan.get('u6StatusFrameGeneration') or
+           checks(anchor).get('windowNumber')!=raw or checks(anchor).get('settled') is not True or checks(anchor).get('visible') is not True)
+    def rectangle(value):
+        need(isinstance(value,list) and len(value)==4 and all(number(v) for v in value))
+        need(value[2]>0 and value[3]>0);return value
+    def contains(rect,x,y):return rect[0]<=x<rect[0]+rect[2] and rect[1]<=y<rect[1]+rect[3]
+    actions=[r for r in posted if r.get('event')!='pointer-result'];need(actions)
+    need(isinstance(plan.get('steps'),list) and plan['steps'] and all(isinstance(p,dict) for p in plan['steps']))
+    for row in actions:
+        frames=[r for r in native if r.get('event')=='status-item-frame' and r['mono']<=row['mono']]
+        need(frames);frame=frames[-1];c=checks(frame)
+        reject(c.get('frameGeneration')!=plan.get('u6StatusFrameGeneration') or c.get('windowNumber')!=raw)
+        need(type(plan.get('u6StatusFrameGeneration')) is int and plan['u6StatusFrameGeneration']>0)
+        reject(frame['seq']<anchor['seq'] or c.get('settled') is not True or c.get('visible') is not True)
+        need(number(c.get('stableSinceMono')))
+        reject(not 0<=row['mono']-frame['mono']<=2 or frame['mono']-c['stableSinceMono']<.5)
+        rect=rectangle([c.get(k) for k in ('cgX','cgY','width','height')])
+        display=rectangle(c.get('displayBounds'));band=rectangle(c.get('menuBarBand'))
+        reject(not (rect[1]<=display[1]+1 and rect[1]+rect[3]>=display[1]-1 and
+                    band[:3]==display[:3] and band[3]<=display[3]))
+        for point in [row]+plan['steps']:
+            need(number(point.get('x')) and number(point.get('y')))
+            reject(not all(contains(r,point['x'],point['y']) for r in (rect,display,band)))
 def closure_ok(closure,run,epoch):
     try:check_launch_cleanup.validate_receipt(closure,run,epoch)
     except ValueError as error:
@@ -125,7 +158,8 @@ def evaluate(config,batch,package,kit_manifest):
         reject(hashlib.sha256(image.read_bytes()).hexdigest()!=capture.get('sha256'),'wrong-subject')
 
         step='menu-a'
-        _,first_pointer=posted(batch,'status-pointer',run,epoch,pid);down_a,up_a=click(first_pointer)
+        first_plan,first_pointer=posted(batch,'status-pointer',run,epoch,pid);down_a,up_a=click(first_pointer)
+        status_window_proof(first_plan,first_pointer,native)
         a=one(native,lambda r:r.get('event')=='menu-begin' and checks(r).get('surface')=='status'
               and down_a['mono']<=r['mono']<=up_a['mono']+3)
         a_session=checks(a).get('sessionID');object_id=checks(a).get('menuObjectID')
@@ -185,7 +219,8 @@ def evaluate(config,batch,package,kit_manifest):
                   and checks(r).get('menuObjectID')==object_id and r['seq']>arrival['seq'])
 
         step='menu-b'
-        _,second_pointer=posted(batch,'status-pointer-clear',run,epoch,pid);down_b,up_b=click(second_pointer)
+        second_plan,second_pointer=posted(batch,'status-pointer-clear',run,epoch,pid);down_b,up_b=click(second_pointer)
+        status_window_proof(second_plan,second_pointer,native)
         need(down_b['mono']>end_a['mono'])
         b=one(native,lambda r:r.get('event')=='menu-begin' and checks(r).get('surface')=='status'
               and checks(r).get('menuObjectID')==object_id and checks(r).get('sessionID') not in (None,a_session)

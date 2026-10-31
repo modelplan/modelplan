@@ -45,6 +45,10 @@ In both modes the newest owned frame must be visible and settled, at most 2 s ol
 0.5 s, current in generation, and contain the click within frame ∩ active display ∩ menu-bar band.
 Subject PID/registration/lease checks remain. Arrival remains the App's own matching `menu-begin`
 in [button-down, button-up +3 s]; a posted click without arrival is NOT-RUN in either mode.
+The final evidence reader independently compares each status plan with its posted move/down/up/result
+receipts: required must match verified, unavailable must match unavailable. A mismatch is FAIL.
+For unavailable mode it also rechecks the bound/latest native geometry and each planned/posted point;
+an action-runner PASS or matching mode string cannot replace those raw receipts.
 
 The owner subsequently chose Computer Use-first device acceptance on the pinned 00c1d4f candidate.
 This automated-frame repair remains wanted at normal priority; it does not gate or replace that acceptance.

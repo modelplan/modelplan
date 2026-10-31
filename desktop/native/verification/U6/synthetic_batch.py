@@ -177,7 +177,7 @@ class Trace:
     def files(self):
         native, pointer = (dict, dict) if self.flat else (app_native_row, pointer_drive_row)
         out = {'native-observations.jsonl': jsonl([native(r) for r in self.native]),
-               'dock-pointer.jsonl': jsonl([pointer(r) for r in self.dock]),
+               'dock-pointer.jsonl': jsonl([pointer(r if self.flat else dict(r,statusWindowCheck='not-applicable')) for r in self.dock]),
                'status-pointer.jsonl': jsonl([pointer(r) for r in self.status]),
                'status-pointer-clear.jsonl': jsonl([pointer(r) for r in self.clear]), CAPTURE: self.image}
         if self.runtime is not None:  # the stub log as Drive copies it, and the digest Drive records
@@ -361,7 +361,9 @@ def pointer_drive_row(row):
     if row.get('kind') in _POINTER_ACTION:
         out.update(kind=_POINTER_ACTION[row['kind']], subjectPID=row.get('targetPID'), uptimeSeconds=row.get('mono'),
                    timestamp=_iso(row['at']))
-    elif row.get('kind') == 'pointer-host-permission':
+    if row.get('kind') in _POINTER_ACTION or row.get('kind')=='pointer-result':
+        out.setdefault('statusWindowCheck','verified') # current valid-ID producer serialization
+    if row.get('kind') == 'pointer-host-permission':
         out = dict(event=row['kind'], postEvents=row['postEvents'], helperPID=row['helperPID'],
                    requestsPermission=row['requestsPermission'], timestamp=_iso(row['at']))
     return out
@@ -414,7 +416,8 @@ def kit_batch(ctx, files, root):
                                             profileSHA256=sha('synthetic profile')))
     for stem in ('dock-pointer', 'status-pointer', 'status-pointer-clear'):
         put(batch / (stem + '-plan.json'), dict(profile='synthetic', runID=run, epoch=epoch, subjectPID=pid,
-                                                targetPID=pid, output=str(batch / (stem + '.jsonl'))))
+                                                targetPID=pid, output=str(batch / (stem + '.jsonl')),
+                                                **(dict(statusWindowCheck='required',u6StatusWindowNumber=7) if stem!='dock-pointer' else {})))
     arrivals = []
     for name, data in files.items():
         if name == 'native-observations.jsonl':  # the same bytes the oracle reads
