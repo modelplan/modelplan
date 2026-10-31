@@ -43,9 +43,9 @@ import ModelPlanCommunityHost
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
         catch { /* Accepted client events own errors and current data, never the Task completion. */ }
     }
-    public func refresh() async {
-        do { _ = try await client.refresh(try .init(), timeout: nil) }
-        catch { /* No automatic retry or optimistic value. */ }
+    public func refresh(onResult: (@MainActor (Result<Void, Error>) -> Void)? = nil) async {
+        do { _ = try await client.refresh(try .init(), timeout: nil); onResult?(.success(())) }
+        catch { onResult?(.failure(error)) /* No automatic retry or optimistic value. */ }
     }
     public func stop() async { dock.close(); await client.stop() }
 }

@@ -80,7 +80,7 @@ import ModelPlanMenuVerification
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         #if MODELPLAN_U6_DRIVE
-        driveGuard?.observeStatusMenu(composition: composition, ownsStatusMenu: { [weak self] menu in
+        driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
         }, actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
@@ -112,11 +112,22 @@ import ModelPlanMenuVerification
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func refreshRows() {
-        #if MODELPLAN_U6_DRIVE
-        // The test build issues its single refresh only after the owned menu arrival is validated.
-        if driveGuard != nil { return }
-        #endif
-        Task { await composition.refresh() }
+        Task {
+            #if MODELPLAN_U6_DRIVE
+            if let driveGuard {
+                // The product handler owns the one RPC; the test hook only observes its result.
+                var observer: (@MainActor (Result<Void,Error>) -> Void)?
+                for _ in 0..<25 where observer == nil {
+                    observer = driveGuard.beginProductRefresh(composition: composition)
+                    if observer == nil { try? await Task.sleep(for: .milliseconds(20)) }
+                }
+                guard let observer else { return }
+                await composition.refresh(onResult: observer)
+                return
+            }
+            #endif
+            await composition.refresh()
+        }
     }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }

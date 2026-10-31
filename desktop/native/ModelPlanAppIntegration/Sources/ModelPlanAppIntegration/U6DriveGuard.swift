@@ -3,6 +3,7 @@
 import AppKit
 import ModelPlanMenuVerification
 import ModelPlanEngineClient
+import CryptoKit
 
 /// Test-build-only lease/owner stop hook. Emits only scoped booleans, never other-app identity.
 @MainActor final class U6DriveGuard {
@@ -21,6 +22,9 @@ import ModelPlanEngineClient
     private var privateMenuInstanceIDs = Set<String>()
     private var statusMenuOwner: ((NSMenu) -> Bool)?
     private var activeStatusInstanceID: String?
+    private var arrivedRefreshRequestID: UUID?
+    private var observationSequence: UInt64 = 0
+    private var clearedTrackedInstances = Set<String>()
     private weak var dockHost: StaticDockPreviewHost?
     private var lastDockFrameSignature: String?
     private let ownsMenu: (NSMenu) -> Bool
@@ -60,10 +64,16 @@ import ModelPlanEngineClient
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "subjectPID":ProcessInfo.processInfo.processIdentifier,
                             "surface":self.statusMenuOwner?(menu) == true ? "status" : "dock"])
+                        if self.statusMenuOwner?(menu) == true, self.hasPrivateContent(),
+                           let title = menu.items.first?.title, !title.isEmpty {
+                            let digest = SHA256.hash(data: Data(title.utf8)).map { String(format:"%02x",$0) }.joined()
+                            self.emitObject("menu-private-title-visible", fields:["instanceID":instanceID,"titleSHA256":digest])
+                        }
                     } else {
                         self.trackedMenus.remove(ObjectIdentifier(menu))
                         let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
-                        self.emitObject("menu-end", fields:["instanceID":instanceID])
+                        self.emitObject("menu-end", fields:["instanceID":instanceID,
+                            "cause":self.clearedTrackedInstances.remove(instanceID) != nil ? "clear" : "other"])
                         if self.activeStatusInstanceID == instanceID { self.activeStatusInstanceID = nil }
                     }
                 }
@@ -81,7 +91,7 @@ import ModelPlanEngineClient
         NSApplication.shared.activate(); armed = NSApplication.shared.isActive
         tick()
     }
-    func observeStatusMenu(composition: EngineDockMenuComposition, ownsStatusMenu: @escaping (NSMenu) -> Bool,
+    func observeStatusMenu(ownsStatusMenu: @escaping (NSMenu) -> Bool,
                            actionForItem: @escaping (NSMenuItem) -> StatusMenuAction?) {
         statusMenuOwner = ownsStatusMenu
         arrivalObserver = StatusMenuArrivalObserver(runID: runID, epoch: epoch,
@@ -90,40 +100,41 @@ import ModelPlanEngineClient
                 guard let self, let data = try? Data(contentsOf: self.menuRequest), data.count <= 4096 else { return nil }
                 return try? JSONDecoder().decode(StatusMenuActionRequest.self, from: data)
             }, isLive: { [weak self] in self?.isLive() == true },
-            emit: { [weak self, weak composition] receipt in
+            emit: { [weak self] receipt in
                 guard let self, let instanceID = self.activeStatusInstanceID else { return }
                 var fields = receipt.fields
                 fields["menuInstanceID"] = instanceID
                 fields["deliveryMethod"] = "axpress-menu-item"
                 self.emitObject(receipt.event, fields: fields)
-                if receipt.request.action == .refresh, let composition {
-                    self.beginRefresh(composition: composition, requestID: receipt.request.requestID)
-                }
+                if receipt.request.action == .refresh { self.arrivedRefreshRequestID = receipt.request.requestID }
             })
     }
-    private func beginRefresh(composition: EngineDockMenuComposition, requestID: UUID) {
-        guard isLive() else { return }
+    func beginProductRefresh(composition: EngineDockMenuComposition) -> (@MainActor (Result<Void, Error>) -> Void)? {
+        guard isLive(), let requestID = arrivedRefreshRequestID else { return nil }
+        arrivedRefreshRequestID = nil
         let before = composition.store.snapshot.rows?.sequence ?? 0
         let id = requestID.uuidString
         emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,
                                       "rowsSequenceBefore":before, "at":Date().timeIntervalSince1970])
-        Task { [weak self, weak composition] in
+        return { [weak self, weak composition] result in
             guard let self, let composition else { return }
-            do { _ = try await composition.client.refresh(try .init(), timeout: .seconds(60)) }
-            catch {
+            switch result {
+            case .failure(let error):
                 self.refreshTerminal("failed", requestID:id, fields:["reason":Self.refreshReason(error)])
-                return
+            case .success:
+                Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id) }
             }
-            let deadline = min(self.expiry, Date().timeIntervalSince1970 + 60)
-            while self.isLive() && Date().timeIntervalSince1970 < deadline {
-                if let after = composition.store.snapshot.rows?.sequence, after > before {
-                    self.refreshTerminal("completed", requestID:id, fields:["rowsSequenceAfter":after])
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            self.refreshTerminal("failed", requestID:id, fields:["reason":"rows-timeout"])
         }
+    }
+    private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String) async {
+        let deadline = min(expiry, Date().timeIntervalSince1970 + 60)
+        while isLive() && Date().timeIntervalSince1970 < deadline {
+            if let after = composition.store.snapshot.rows?.sequence, after > before {
+                refreshTerminal("completed", requestID:requestID, fields:["rowsSequenceAfter":after]); return
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        refreshTerminal("failed", requestID:requestID, fields:["reason":"rows-timeout"])
     }
     private func refreshTerminal(_ phase: String, requestID: String, fields: [String: Any]) {
         emitObject("refresh", fields: fields.merging(["kind":"refresh", "phase":phase,
@@ -190,9 +201,13 @@ import ModelPlanEngineClient
         emitObject("status-item-frame", fields: fields)
     }
     private func emitObject(_ event: String, fields: [String: Any]) {
+        observationSequence &+= 1
+        let now = Date().timeIntervalSince1970
+        let base: [String: Any] = ["runID":runID,"epoch":epoch,"pid":ProcessInfo.processInfo.processIdentifier,
+                                   "seq":observationSequence,"at":now]
         let object: [String: Any] = event == "refresh"
-            ? fields.merging(["runID":runID,"epoch":epoch]) { _, bound in bound }
-            : ["runID":runID,"epoch":epoch,"event":event,"timestamp":Date().timeIntervalSince1970,"checks":fields]
+            ? fields.merging(base) { _, bound in bound }
+            : base.merging(["event":event,"timestamp":now,"checks":fields]) { _, added in added }
         guard let data = try? JSONSerialization.data(withJSONObject:object,options:[.sortedKeys]) else { return }
         if !FileManager.default.fileExists(atPath:observations.path) { FileManager.default.createFile(atPath:observations.path,contents:nil) }
         guard let handle = try? FileHandle(forWritingTo: observations) else { return }
@@ -200,6 +215,9 @@ import ModelPlanEngineClient
     }
     func recordClear() {
         let scrubbed = !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty && $0.attributedTitle == nil && $0.toolTip == nil && $0.representedObject == nil }
+        if scrubbed { clearedTrackedInstances.formUnion(privateMenuInstanceIDs.filter { id in
+            trackedMenus.contains { String(UInt(bitPattern:$0)) == id }
+        }) }
         emitObject("accepted-clear",fields:["priorPrivateContent":priorPrivateContent,"trackingClosed":trackedMenus.isEmpty,
             "scrubbedInstanceIDs":scrubbed ? Array(privateMenuInstanceIDs).sorted() : [],
             "oldItemTitlesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty },
@@ -213,10 +231,7 @@ import ModelPlanEngineClient
         NSApplication.shared.terminate(nil)
     }
     private func emit(_ event: String, fields: [String: Bool] = [:]) {
-        guard let data = try? JSONSerialization.data(withJSONObject:["runID":runID,"epoch":epoch,"event":event,"timestamp":Date().timeIntervalSince1970,"checks":fields],options:[.sortedKeys]) else { return }
-        if !FileManager.default.fileExists(atPath:observations.path) { FileManager.default.createFile(atPath:observations.path,contents:nil) }
-        guard let handle = try? FileHandle(forWritingTo: observations) else { return }
-        defer { try? handle.close() }; try? handle.seekToEnd(); try? handle.write(contentsOf:data + Data([10]))
+        emitObject(event,fields:fields)
     }
     deinit { timer?.invalidate(); for token in menuObservers { NotificationCenter.default.removeObserver(token) }; if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) } }
     private enum Failure: Error { case invalid }
