@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import json
+import os
 from pathlib import Path
 import plistlib
 import subprocess
@@ -176,6 +177,36 @@ class PackagingTests(unittest.TestCase):
         for value in ('0', '-1', '1.2', 'abc'):
             with self.assertRaises(ValueError):
                 packaging.configure_product(self.app, self.source, value)
+
+    def test_final_candidate_check_requires_the_external_credential_pin(self):
+        calls = []
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'independent SHA256'):
+                packaging.verify_credential_helper(self.app, lambda *args: calls.append(args))
+        self.assertEqual(calls, [])
+        with patch.dict(os.environ, {'MODELPLAN_CREDENTIAL_AGENT_ARTIFACT': str(self.root),
+                                     'MODELPLAN_CREDENTIAL_AGENT_SHA256': 'c' * 64}):
+            packaging.verify_credential_helper(self.app, lambda *args: calls.append(list(map(str, args))))
+            args = calls[-1]
+            self.assertIn('--single', args)
+            self.assertEqual(args[args.index('--expected-sha256') + 1], 'c' * 64)
+            self.assertEqual(args[-1], str(self.app))
+            def reject(*args):
+                raise subprocess.CalledProcessError(1, args)
+            with self.assertRaises(subprocess.CalledProcessError):
+                packaging.verify_credential_helper(self.app, reject)
+
+    def test_missing_approved_credential_input_stops_before_cli_fetch_or_build(self):
+        with patch.object(packaging.platform, 'system', return_value='Darwin'), \
+             patch.object(packaging, 'git', side_effect=['a' * 40, '']), \
+             patch.object(packaging, 'load_json', return_value={'version': packaging.HELPER_VERSION}), \
+             patch.object(packaging.credential_artifact, 'acquire', side_effect=ValueError('approval missing')), \
+             patch.object(packaging.release, 'fetch_cli') as cli_fetch, \
+             patch.object(packaging, 'run') as build:
+            with self.assertRaisesRegex(ValueError, 'approval missing'):
+                packaging.build(self.root / 'missing-approved-artifact', 'synthetic-candidate', '1')
+            cli_fetch.assert_not_called()
+            build.assert_not_called()
 
     def test_linux_cannot_claim_a_real_mac_package(self):
         with patch.object(packaging.platform, 'system', return_value='Linux'):
