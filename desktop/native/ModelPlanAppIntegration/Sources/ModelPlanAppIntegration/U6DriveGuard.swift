@@ -19,17 +19,23 @@ import ModelPlanEngineClient
     private var retainedItems: [NSMenuItem] = []
     private var priorPrivateContent = false
     private var privateMenuInstanceIDs = Set<String>()
+    private var statusMenuOwner: ((NSMenu) -> Bool)?
+    private weak var dockHost: StaticDockPreviewHost?
+    private var lastDockFrameSignature: String?
     private let ownsMenu: (NSMenu) -> Bool
     private let hasPrivateContent: () -> Bool
-    static func attach(ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool) throws -> U6DriveGuard? {
+    static func attach(ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool,
+                       dockHost: StaticDockPreviewHost) throws -> U6DriveGuard? {
         let args = CommandLine.arguments
         guard let index = args.firstIndex(of: "--u6-drive-contract"), args.indices.contains(index + 1) else { return nil }
         let data = try Data(contentsOf: URL(fileURLWithPath: args[index + 1]))
         guard data.count <= 16_384, let c = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.invalid }
-        let value = try U6DriveGuard(c, ownsMenu: ownsMenu, hasPrivateContent: hasPrivateContent); value.begin(); return value
+        let value = try U6DriveGuard(c, ownsMenu: ownsMenu, hasPrivateContent: hasPrivateContent, dockHost: dockHost); value.begin(); return value
     }
-    private init(_ c: [String: Any], ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool) throws {
+    private init(_ c: [String: Any], ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool,
+                 dockHost: StaticDockPreviewHost) throws {
         self.ownsMenu = ownsMenu; self.hasPrivateContent = hasPrivateContent
+        self.dockHost = dockHost
         guard let runID = c["runID"] as? String, let epoch = c["epoch"] as? String,
               let start = c["start"] as? Double, let expiry = c["expiresAt"] as? Double,
               expiry.isFinite, start.isFinite, expiry > start, expiry-start <= 1200,
@@ -49,7 +55,8 @@ import ModelPlanEngineClient
                         self.trackedMenus.insert(ObjectIdentifier(menu))
                         let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
                         if self.hasPrivateContent() { self.retainedItems += menu.items; self.priorPrivateContent = true; self.privateMenuInstanceIDs.insert(instanceID) }
-                        self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID])
+                        self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
+                            "surface":self.statusMenuOwner?(menu) == true ? "status" : "dock"])
                     } else { self.trackedMenus.remove(ObjectIdentifier(menu)); self.emitObject("menu-end", fields:["instanceID":String(UInt(bitPattern: ObjectIdentifier(menu)))]) }
                 }
             })
@@ -68,6 +75,7 @@ import ModelPlanEngineClient
     }
     func observeStatusMenu(composition: EngineDockMenuComposition, ownsStatusMenu: @escaping (NSMenu) -> Bool,
                            actionForItem: @escaping (NSMenuItem) -> StatusMenuAction?) {
+        statusMenuOwner = ownsStatusMenu
         arrivalObserver = StatusMenuArrivalObserver(runID: runID, epoch: epoch,
             ownsStatusMenu: ownsStatusMenu, actionForItem: actionForItem,
             pendingRequest: { [weak self] in
@@ -146,6 +154,19 @@ import ModelPlanEngineClient
         let onScreen = panels.contains { panel in NSScreen.screens.contains { $0.visibleFrame.intersects(panel.frame) } }
         let nonActivating = visible && panels.allSatisfy { $0.styleMask.contains(.nonactivatingPanel) }
         emit("doctor", fields:["visible":visible,"onScreen":onScreen,"nonActivating":nonActivating,"ownerStopArmed":armed])
+        recordDockSurface()
+    }
+    private func recordDockSurface() {
+        guard let host = dockHost, let panel = host.nativePanel, panel.isVisible,
+              let presentation = host.edgePresentation, let frame = presentation.paintedFrame,
+              let primary = NSScreen.screens.first, frame.width > 0, frame.height > 0 else { return }
+        let state = String(describing: presentation.state)
+        let signature = "\(state):\(frame):\(panel.windowNumber)"
+        guard signature != lastDockFrameSignature else { return }
+        lastDockFrameSignature = signature
+        emitObject("dock-surface-frame", fields:["state":state,"windowNumber":panel.windowNumber,
+            "x":frame.minX,"y":primary.frame.maxY-frame.maxY,"width":frame.width,"height":frame.height,
+            "coordinateSpace":"cg-screen"])
     }
     /// Window-server coordinates in AppKit screen space, only for the owned status item.
     func recordStatusButtonFrame(_ button: NSStatusBarButton) {
@@ -153,7 +174,8 @@ import ModelPlanEngineClient
         let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
         guard frame.width > 0, frame.height > 0 else { return }
         let fields: [String: Any] = ["x": frame.origin.x, "y": frame.origin.y,
-            "width": frame.width, "height": frame.height, "coordinateSpace": "appkit-screen"]
+            "width": frame.width, "height": frame.height, "coordinateSpace": "appkit-screen",
+            "cgX":frame.minX,"cgY":(NSScreen.screens.first?.frame.maxY ?? 0)-frame.maxY]
         emitObject("status-item-frame", fields: fields)
     }
     private func emitObject(_ event: String, fields: [String: Any]) {
