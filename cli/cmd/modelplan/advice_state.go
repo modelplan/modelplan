@@ -20,9 +20,20 @@ const (
 // saveAdviceState retries only lock contention, once. No filesystem error text,
 // quota values or identifiers enter the diagnostic record or fallback stderr.
 func saveAdviceState(state *advise.State, cache string, now time.Time) {
-	err := state.Save(cache, now)
+	saveAdviceStateUntil(state, cache, now, time.Time{})
+}
+
+// A prompt hook has a host deadline; both attempts share its remaining budget.
+func saveAdviceStateUntil(state *advise.State, cache string, now, deadline time.Time) {
+	save := func() error {
+		if deadline.IsZero() {
+			return state.Save(cache, now)
+		}
+		return state.SaveWithLockWait(cache, now, time.Until(deadline))
+	}
+	err := save()
 	if errors.Is(err, advise.ErrStateBusy) {
-		err = state.Save(cache, now)
+		err = save()
 	}
 	if err == nil {
 		return

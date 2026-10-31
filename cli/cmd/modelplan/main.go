@@ -44,6 +44,7 @@ const (
 	alarmAfter      = 48 * time.Hour // 数据过期 annunciator
 	backgroundEvery = 10 * time.Minute
 	firstSyncWait   = 3500 * time.Millisecond // hook timeouts are 5 s
+	hookSaveBudget  = 4300 * time.Millisecond // leave time to record an error before the host timeout
 )
 
 const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
@@ -876,6 +877,7 @@ func adviseHook(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 }
 
 func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *store.Store, client *publication.Client, c common, harness, system, notice string, now time.Time) int {
+	deadline := time.Now().Add(hookSaveBudget)
 	b, _ := io.ReadAll(io.LimitReader(stdin, 1<<20))
 	if harness != "claude-code" && harness != "codex" {
 		return 0
@@ -1017,7 +1019,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		b, _ := json.Marshal(out)
 		fmt.Fprintln(stdout, string(b))
 	}
-	saveAdviceState(state, st.Dir, now)
+	saveAdviceStateUntil(state, st.Dir, now, deadline)
 	return 0
 }
 

@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/publication"
 )
 
 func holdAdviceLock(t *testing.T, cache string) *os.File {
@@ -112,5 +114,52 @@ func TestAdviceSaveFailureFallsBackToFixedCode(t *testing.T) {
 	reportAdviceSaveError(cache, "untrusted-error-details", &fallback)
 	if got := fallback.String(); got != adviceStateSaveFailed+"\n" {
 		t.Fatalf("fallback accepted an unknown code: %q", got)
+	}
+}
+
+func TestAdviceSaveHonorsRemainingHookBudget(t *testing.T) {
+	cache := t.TempDir()
+	holdAdviceLock(t, cache)
+	state := advise.Load(cache)
+	state.Once("synthetic", time.Now())
+	start := time.Now()
+	saveAdviceStateUntil(state, cache, start, start.Add(100*time.Millisecond))
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("lock retry exceeded the caller's budget: %s", elapsed)
+	}
+	b, err := os.ReadFile(filepath.Join(cache, "observed", "advice-save-error.json"))
+	if err != nil || string(b) != "{\"code\":\""+adviceStateBusy+"\"}\n" {
+		t.Fatalf("deadline lost fixed busy code: %s %v", b, err)
+	}
+}
+
+type waitForPublicationTimeout struct{}
+
+func (waitForPublicationTimeout) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+func TestHookFirstSyncAndBusySaveFitHostTimeout(t *testing.T) {
+	h := newQuotaHookTest(t, "claude-code", "en")
+	now := time.Now().UTC()
+	h.reading("claude-code", now, hookWindow("weekly", 18, now.Add(72*time.Hour)))
+	holdAdviceLock(t, h.st.Dir)
+	startDetached = func(...string) error { return nil }
+	client, err := publication.New("https://example.invalid", h.st, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTP.Transport = waitForPublicationTimeout{}
+	var out bytes.Buffer
+	start := time.Now()
+	code := adviseHookAt(strings.NewReader(`{"session_id":"synthetic-thread"}`), &out, h.style, h.st, client, common{}, "claude-code", "", "", now)
+	elapsed := time.Since(start)
+	if code != 0 || !strings.Contains(out.String(), "18% left") || elapsed < firstSyncWait || elapsed >= 5*time.Second {
+		t.Fatalf("hook time/output: code=%d elapsed=%s output=%s", code, elapsed, out.String())
+	}
+	b, err := os.ReadFile(filepath.Join(h.st.Dir, "observed", "advice-save-error.json"))
+	if err != nil || string(b) != "{\"code\":\""+adviceStateBusy+"\"}\n" {
+		t.Fatalf("hook failed to record busy before host timeout: %s %v", b, err)
 	}
 }

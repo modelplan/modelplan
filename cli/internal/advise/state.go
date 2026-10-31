@@ -96,13 +96,24 @@ var ErrStateBusy = errors.New("advice state busy")
 // line and the hook run side by side) wrote in the meantime. The read, merge and rename hold
 // the state lock, so two writers keep each other's marks.
 func (s *State) Save(cache string, now time.Time) error {
+	return s.SaveWithLockWait(cache, now, stateLockWait)
+}
+
+// SaveWithLockWait is Save with a shorter lock wait when the caller has a deadline.
+// A zero or negative wait still attempts the lock once without blocking.
+func (s *State) SaveWithLockWait(cache string, now time.Time, wait time.Duration) error {
 	if !s.changed {
 		return nil
+	}
+	if wait < 0 {
+		wait = 0
+	} else if wait > stateLockWait {
+		wait = stateLockWait
 	}
 	if err := os.MkdirAll(filepath.Dir(path(cache)), 0o700); err != nil {
 		return err
 	}
-	unlock, err := lockState(path(cache))
+	unlock, err := lockState(path(cache), wait)
 	if err != nil {
 		return err
 	}
