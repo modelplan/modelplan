@@ -73,6 +73,8 @@ func lowLevel(left float64) int {
 
 // Runout is when the window runs out before its reset: the weekly window at the last day's
 // rate (a burst is not the week's pace), the 5-hour window at the recent rate (runsOutInMinutes).
+// Unlike the user-only pace warning, the model's factual run-out notice intentionally has no
+// 10-point lead requirement: #392 sends this notice whenever the forecast precedes reset.
 func Runout(w *quota.Window, now time.Time) (*int, string) {
 	var out *int
 	var over string

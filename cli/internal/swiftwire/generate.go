@@ -574,6 +574,7 @@ func Generate(root string) ([]byte, error) {
 	var b bytes.Buffer
 	fmt.Fprint(&b, "// SPDX-License-Identifier: MIT\n// Code generated from Go wire DTOs and JSON tags. DO NOT EDIT.\n// Regenerate: cd cli && go run ./internal/swiftwire/cmd --write\nimport Foundation\n")
 	fmt.Fprintf(&b, "public enum WireProtocol {\n    public static let version = %s\n    public static let jsonrpc = %s\n    public static let rowsVersion = %d\n    public static let maxFrameBytes = %d\n}\n\n", quoted(wire.ProtocolVersion), quoted(wire.JSONRPC), rows.Version, wire.MaxFrameBytes)
+	fmt.Fprintf(&b, "// Named JSON-RPC error codes used by the Swift client.\npublic enum WireErrorCode {\n    public static let protocolMismatch: Int = %d\n    public static let busy: Int = %d\n}\n\n", wire.CodeProtocolMismatch, wire.CodeBusy)
 	writeChildEnvironmentSwift(&b)
 	b.WriteString(support)
 	b.WriteString("\n")
