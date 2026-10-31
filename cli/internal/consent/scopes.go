@@ -3,6 +3,8 @@ package consent
 // Stable read-scope identifiers shared by persistence, reader admission and the
 // app-server. A scope names a read path. New scopes never inherit old grants.
 const (
+	// C15 is an explicit opt-in seam, excluded from the v1 reader inventory.
+	ScopeOpenCodeV2LocalHistory       = "opencode.local_history"
 	ScopeClaudeLocalHistory           = "claude.local_history"
 	ScopeClaudeAccountUsageSavedLogin = "claude.account_usage.saved_login"
 	ScopeCodexLocalHistory            = "codex.local_history"

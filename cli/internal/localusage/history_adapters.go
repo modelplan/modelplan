@@ -109,6 +109,10 @@ func historyAllowed(tool, rel string) bool {
 var historyDepths = map[string]int{"cursor": 0, "amp": 0, "droid": 1, "copilot": 1, "kimi": 2, "grok": 2, "qwen": 3, "gemini": 3}
 
 func historyDepth(tool string) int {
+	// The database seam has no file-discovery adapter and is not registered in v1.
+	if tool == "opencode" {
+		return 0
+	}
 	if tool == projectionTool {
 		return 2
 	}
