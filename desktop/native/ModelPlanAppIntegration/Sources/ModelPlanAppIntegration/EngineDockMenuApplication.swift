@@ -80,7 +80,7 @@ import ModelPlanMenuVerification
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         #if MODELPLAN_U6_DRIVE
-        driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
+        driveGuard?.observeStatusMenu(composition: composition, ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
         }, actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
@@ -111,7 +111,13 @@ import ModelPlanMenuVerification
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func refreshRows() { Task { await composition.refresh() } }
+    @objc private func refreshRows() {
+        #if MODELPLAN_U6_DRIVE
+        // The test build issues its single refresh only after the owned menu arrival is validated.
+        if driveGuard != nil { return }
+        #endif
+        Task { await composition.refresh() }
+    }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settingsHost.suspend(); console?.hide()
