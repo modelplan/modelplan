@@ -1,0 +1,1 @@
+{"epoch": "u6-epoch-0001", "mono": 86440.0, "outcome": "pass", "pid": 4242, "reason": null, "runID": "u6-run-0001", "schema": "u6-actions/1", "steps": {"dock": "pass", "menuA": "pass", "menuB": "pass", "privateTitle": "pass", "refresh": "pass", "trackedClear": "pass"}}

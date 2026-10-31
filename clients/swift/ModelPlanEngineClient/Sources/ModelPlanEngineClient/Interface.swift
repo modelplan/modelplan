@@ -108,6 +108,10 @@ public protocol EngineClient: Actor {
                timeout: Duration?) async throws -> EngineRequestCompletion
     func refresh(_ request: WireRefreshRequestParams,
                  timeout: Duration?) async throws -> EngineRequestCompletion
+    /// Observe the allocated request ID before the request is enqueued. The callback
+    /// cannot send a request and is awaited before any bytes of this call are written.
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
+                 prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion
     func history(_ query: WireHistoryQueryParams,
                  timeout: Duration?) async throws -> EngineRequestCompletion
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion
@@ -115,4 +119,12 @@ public protocol EngineClient: Actor {
                        timeout: Duration?) async throws -> EngineRequestCompletion
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion
+}
+
+extension EngineClient {
+    public func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
+                        prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
+        // A client without the pre-send seam must not invent a correlation ID.
+        throw EngineClientError.unsupportedCapability
+    }
 }

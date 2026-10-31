@@ -35,6 +35,7 @@ import AppKit
             if let child = item.submenu { scrub(child) }
             item.title = ""; item.attributedTitle = nil; item.toolTip = nil
             item.representedObject = nil; item.image = nil
+            item.identifier = nil
             item.target = nil; item.action = nil; item.isEnabled = false
         }
         menu.removeAllItems()

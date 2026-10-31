@@ -1,32 +1,27 @@
 # SPDX-License-Identifier: MIT
 """U6-only receipt qualification; shared Evidence remains the manifest/hash owner."""
-import argparse, importlib.util, json
+import argparse, importlib.util, json, sys
 from pathlib import Path
-REQUIRED = ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible', 'menuInputDelivered', 'menuStateVisible', 'quitDelivered', 'ownedCleanupVerified', 'privateTitleObservedBeforeClear', 'trackedMenuClearObserved')
-def qualify(receipt):
-    if receipt.get('profile') != 'synthetic': raise ValueError('synthetic profile required')
-    if receipt.get('timedOut') is True: return 'timeout'
-    for key, size in [('headSHA',40),('binarySHA256',64),('packageSHA256',64),('profileSHA256',64)]:
-        pin = receipt.get(key)
-        if not isinstance(pin,str) or len(pin)!=size or any(c not in '0123456789abcdef' for c in pin): return 'not-run'
-    if receipt.get('inputCapability') == 'unsupported': return 'unsupported'
-    if receipt.get('stopped') is True: return 'not-run'
-    duration = receipt.get('durationSeconds')
-    if type(duration) not in (int,float) or not 0 < duration <= 1200: return 'not-run'
-    if any(receipt.get(key) is not True for key in REQUIRED): return 'not-run'
-    refs = receipt.get('actionEvidenceFiles')
-    if not isinstance(refs,list) or len(refs) < 2 or any(not isinstance(x,str) or not x for x in refs): return 'not-run'
-    return 'pass'
-def main():
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--receipts',type=Path,required=True); parser.add_argument('--batch',type=Path,required=True)
-    args = parser.parse_args(); receipt = json.loads(args.receipts.read_text())
-    outcome = qualify(receipt)
+    parser.add_argument('--config',type=Path,required=True);parser.add_argument('--batch',type=Path,required=True)
+    parser.add_argument('--package',type=Path,required=True);parser.add_argument('--kit-manifest',type=Path,required=True)
+    args = parser.parse_args(argv)
+    config=json.loads(args.config.read_text());kit_manifest=json.loads(args.kit_manifest.read_text())
+    chain_spec=importlib.util.spec_from_file_location('u6_chain',Path(__file__).parent.parent/'U6/evidence_chain.py')
+    chain=importlib.util.module_from_spec(chain_spec);chain_spec.loader.exec_module(chain)
+    verdict=chain.evaluate(config,args.batch,args.package,kit_manifest)
     spec = importlib.util.spec_from_file_location('shared_evidence',Path(__file__).with_name('evidence.py'))
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
-    config = dict(headSHA=receipt['headSHA'],profile='synthetic',attributionMethod='owned-native-surface-and-delivered-input',scenarios=[dict(id='U6-DockMenu-synthetic',outcome=outcome)],files=receipt.get('actionEvidenceFiles',[]))
-    result = shared.manifest(config,args.batch)
-    result['subject'] = {key:receipt.get(key) for key in ('headSHA','binarySHA256','packageSHA256','profileSHA256')}
+    files=sorted(p.relative_to(args.batch).as_posix() for p in args.batch.rglob('*') if not is_appledouble(p) and p.is_file()
+                 and p.name not in ('manifest.json','filelist.txt','README.md'))
+    report=dict(headSHA=config['head'],profile='synthetic',attributionMethod='c2.3-raw-run-bound-receipts',
+        scenarios=[dict(id='U6-DockMenu-synthetic',outcome=verdict['outcome'],step=verdict['step'],reason=verdict['reason'])],files=files)
+    result = shared.manifest(report,args.batch)
+    result['subject'] = {key:config.get(key) for key in ('head','binarySHA256','packageSHA256','helperSHA256','syntheticHomeSeedSHA256')}
+    result['timing'] = {'durationSeconds':verdict.get('durationSeconds')}
     with (args.batch/'manifest.json').open('x') as stream: json.dump(result,stream,indent=2)
-    print(json.dumps(dict(scenario='U6-DockMenu-synthetic',outcome=outcome)))
+    print(json.dumps(dict(scenario='U6-DockMenu-synthetic',**verdict)))
 if __name__ == '__main__': main()

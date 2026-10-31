@@ -122,6 +122,7 @@ private actor RowsEntryClient: EngineClient {
         retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")
         retainedReading.toolTip = "Engine-only reason"
         retainedReading.representedObject = "Engine-only reason"
+        retainedReading.identifier = NSUserInterfaceItemIdentifier("private-reason")
         XCTAssertTrue(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
         var clearObservedBeforeReturn = false
@@ -138,6 +139,7 @@ private actor RowsEntryClient: EngineClient {
                 XCTAssertNil(retainedReading.attributedTitle)
                 XCTAssertNil(retainedReading.toolTip)
                 XCTAssertNil(retainedReading.representedObject)
+                XCTAssertNil(retainedReading.identifier)
                 XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
                 XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
             }

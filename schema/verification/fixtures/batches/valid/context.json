@@ -1,0 +1,21 @@
+{
+  "epoch": "u6-epoch-0001",
+  "homeSHA256": "8a302c5154814f8ca786ca88e7b01bb5771e27b2bb1a6f1334787653966eb331",
+  "launchedPins": {
+    "consentHelper": "75bb719ae0a735e28027360f59df18cb014ee2bd8da6b64765c447ee72b6ebcf",
+    "engine": "75bb719ae0a735e28027360f59df18cb014ee2bd8da6b64765c447ee72b6ebcf",
+    "mainExecutable": "297385dec7ba4f55644d25294e11c69c7254aab09101595c87f73924de896ba3"
+  },
+  "leaseExpiresAt": 1900000600.0,
+  "leaseNotBefore": 1900000000.0,
+  "pins": {
+    "consentHelper": "75bb719ae0a735e28027360f59df18cb014ee2bd8da6b64765c447ee72b6ebcf",
+    "engine": "75bb719ae0a735e28027360f59df18cb014ee2bd8da6b64765c447ee72b6ebcf",
+    "mainExecutable": "297385dec7ba4f55644d25294e11c69c7254aab09101595c87f73924de896ba3"
+  },
+  "runID": "u6-run-0001",
+  "schema": "u6-replay-context/1",
+  "seedReadingSHA256": "803ad776281b661c306df2b0ce57dd330915d673d3c1950c7604a25122a63d3e",
+  "seedTitleSHA256": "c5e00339dcb95ad49dafee2d9b85380a27937583aebdd6764c33fec53f51c773",
+  "subjectPID": 4242
+}

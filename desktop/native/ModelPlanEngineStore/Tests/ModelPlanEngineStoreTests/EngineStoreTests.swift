@@ -22,6 +22,17 @@ import ModelPlanWire
 }
 
 @MainActor final class EngineStoreTests: XCTestCase {
+    func testRefreshObserverReceivesOnlyItsAcceptedRequestPair() async throws {
+        let store=EngineStore()
+        var observed:[WireRequestID]=[]
+        let token=store.observeRefreshReplies { id,values in observed.append(id);XCTAssertTrue(values.isEmpty) }
+        await store.consume(.response(requestID:.string("own"),.refresh(try reply([WireRefreshScheduled]()))))
+        await store.consume(.featureFailure(.rows,.notReady))
+        XCTAssertEqual(observed,[.string("own")])
+        store.removeRefreshReplyObserver(token)
+        await store.consume(.response(requestID:.string("other"),.refresh(try reply([WireRefreshScheduled]()))))
+        XCTAssertEqual(observed,[.string("own")])
+    }
     private func capture<T: Decodable>(_ type: T.Type, _ file: String) throws -> T {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL

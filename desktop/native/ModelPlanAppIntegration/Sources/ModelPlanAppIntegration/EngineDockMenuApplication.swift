@@ -3,6 +3,9 @@ import AppKit
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+#if MODELPLAN_U6_DRIVE
+import ModelPlanMenuVerification
+#endif
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -36,6 +39,11 @@ import ModelPlanSettings
         self.contextSource = contextSource
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
         super.init()
+        #if MODELPLAN_U6_DRIVE
+        composition.provider.verificationWillClear = { [weak self] invalidation in
+            self?.driveGuard?.recordClearInitiated(invalidation)
+        }
+        #endif
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -73,9 +81,18 @@ import ModelPlanSettings
         }, hasPrivateContent: { [weak self] in
             guard let value = self?.composition.provider.dockContent else { return false }
             return !value.dockRows.isEmpty || !value.menuRows.isEmpty
-        }) } catch { NSApplication.shared.terminate(nil); return }
+        }, privateTitle: { [weak self] in
+            self?.composition.provider.dockContent.menuRows.first(where: { !$0.accounts.isEmpty })?.name.en
+        },
+           dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
+            guard let self else { return false }; return menu === self.status?.menu
+        }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
+           actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
+        #endif
         Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
     }
     private func renderMenu() {
@@ -98,16 +115,38 @@ import ModelPlanSettings
         status?.button?.title = composition.menuPresentation.title
         status?.button?.toolTip = composition.menuPresentation.detail
         #if MODELPLAN_U6_DRIVE
-        if let button = status?.button { driveGuard?.recordStatusButtonFrame(button) }
+        if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func refreshRows() { Task { await composition.refresh() } }
+    @objc private func refreshRows() {
+        Task {
+            #if MODELPLAN_U6_DRIVE
+            if let driveGuard {
+                // The product handler owns the one RPC; the test hook only observes its result.
+                var observer: U6DriveGuard.RefreshObservation?
+                for _ in 0..<25 where observer == nil {
+                    observer = driveGuard.beginProductRefresh(composition: composition)
+                    if observer == nil { try? await Task.sleep(for: .milliseconds(20)) }
+                }
+                guard let observer else { return }
+                await composition.refresh(prepared: observer.prepared, onResult: observer.result)
+                return
+            }
+            #endif
+            await composition.refresh()
+        }
+    }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
+    }
+    public func applicationWillTerminate(_ notification: Notification) {
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.recordTerminateCompleted()
+        #endif
     }
 }

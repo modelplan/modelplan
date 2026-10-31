@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/launch-cleanup.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "launch-cleanup/1",
+  "description": "Independent launch-mode closure receipt. Keys match check_launch_cleanup.KEYS exactly.",
+  "x-file": "launch-cleanup.json (bin/check_launch_cleanup.py)",
+  "x-semantics": "Shape only. validate_receipt additionally requires ok iff every check passes, failures = exactly the failing checks, closedAt present iff subjectGone, and closedWithinLease = closedAt in [leaseNotBefore, leaseExpiresAt).",
+  "type": "object",
+  "required": [
+    "schema",
+    "runID",
+    "epoch",
+    "ok",
+    "checks",
+    "failures",
+    "at",
+    "stopReasonRecorded",
+    "closedWithinLease",
+    "leaseNotBefore",
+    "leaseExpiresAt",
+    "subjectStartedAt",
+    "closedAt"
+  ],
+  "properties": {
+    "schema": {
+      "const": "launch-cleanup/1"
+    },
+    "runID": {
+      "type": "string"
+    },
+    "epoch": {
+      "type": "string"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "subjectGone",
+        "helpersGone",
+        "controllerStatus",
+        "guardianStatus",
+        "scenarioStatus",
+        "leaseClosable",
+        "locksReleased",
+        "syntheticHomeRemoved",
+        "syntheticTmpRemoved",
+        "stopPathPresent"
+      ],
+      "properties": {
+        "subjectGone": {
+          "type": "boolean"
+        },
+        "helpersGone": {
+          "type": "boolean"
+        },
+        "controllerStatus": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "guardianStatus": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "scenarioStatus": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "leaseClosable": {
+          "type": "boolean"
+        },
+        "locksReleased": {
+          "type": "boolean"
+        },
+        "syntheticHomeRemoved": {
+          "type": "boolean"
+        },
+        "syntheticTmpRemoved": {
+          "type": "boolean"
+        },
+        "stopPathPresent": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "failures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "subjectGone",
+          "helpersGone",
+          "controllerStatus",
+          "guardianStatus",
+          "scenarioStatus",
+          "leaseClosable",
+          "locksReleased",
+          "syntheticHomeRemoved",
+          "syntheticTmpRemoved",
+          "stopPathPresent"
+        ]
+      }
+    },
+    "at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "stopReasonRecorded": {
+      "type": "boolean"
+    },
+    "closedWithinLease": {
+      "type": "boolean"
+    },
+    "leaseNotBefore": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "leaseExpiresAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "subjectStartedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "closedAt": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

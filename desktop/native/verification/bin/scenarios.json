@@ -1,0 +1,13 @@
+{
+  "u6": {
+    "argvFlag": "--u6-drive-contract",
+    "unit": "U6",
+    "bookingScenario": "U6-DockMenu-synthetic",
+    "config": "../U6/prepare_config.py",
+    "prepare": "drive-u6.py prepare",
+    "drive": "drive-u6.py drive",
+    "observations": "native-observations.jsonl",
+    "actions": "../U6/action_runner.py",
+    "receipt": true
+  }
+}

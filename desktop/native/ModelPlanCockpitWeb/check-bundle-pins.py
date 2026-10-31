@@ -6,6 +6,9 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'verification'))
+from artifact_paths import is_appledouble
 
 
 def validate(repo):
@@ -25,6 +28,8 @@ def validate(repo):
             raise ValueError('Unexpected canonical edition metadata')
         seen = set()
         for path in root.rglob('*'):
+            if is_appledouble(path):
+                continue
             if path.is_symlink():
                 raise ValueError('Linked build output')
             if not path.is_file() or path == manifest:

@@ -1,0 +1,234 @@
+[
+  {
+    "at": 1000.0,
+    "checks": {},
+    "epoch": "layout-fixture",
+    "event": "started",
+    "mono": 100.0,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 1,
+    "timestamp": 1000.0
+  },
+  {
+    "at": 1000.0026750830002,
+    "checks": {
+      "nonActivating": false,
+      "onScreen": false,
+      "ownerStopArmed": false,
+      "visible": false
+    },
+    "epoch": "layout-fixture",
+    "event": "doctor",
+    "mono": 100.00267508300021,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 2,
+    "timestamp": 1000.0026750830002
+  },
+  {
+    "at": 1000.064939041622,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1418,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -22
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.06493904162198,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 3,
+    "timestamp": 1000.064939041622
+  },
+  {
+    "at": 1000.089047416579,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1418,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -22
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.08904741657898,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 4,
+    "timestamp": 1000.089047416579
+  },
+  {
+    "at": 1000.0974041665904,
+    "checks": {
+      "clearID": "3F58BB15-5026-473D-A951-176629F127C2",
+      "generationAfter": 2,
+      "openSessionIDs": [],
+      "storeEpochAfter": "cdd7be366733581b745c15f6236dd65e"
+    },
+    "epoch": "layout-fixture",
+    "event": "clear-initiated",
+    "mono": 100.09740416659042,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 5,
+    "timestamp": 1000.0974041665904
+  },
+  {
+    "at": 1000.1040961667895,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1429,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -33
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.10409616678953,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 6,
+    "timestamp": 1000.1040961667895
+  },
+  {
+    "at": 1000.1052304580808,
+    "checks": {
+      "clearID": "3F58BB15-5026-473D-A951-176629F127C2",
+      "generationAfter": 2,
+      "priorPrivateContent": false,
+      "scrubbedSessionIDs": [],
+      "storeEpochAfter": "cdd7be366733581b745c15f6236dd65e",
+      "trackingClosed": true
+    },
+    "epoch": "layout-fixture",
+    "event": "accepted-clear",
+    "mono": 100.10523045808077,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 7,
+    "timestamp": 1000.1052304580808
+  },
+  {
+    "at": 1000.1069380831905,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1429,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -33
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.10693808319047,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 8,
+    "timestamp": 1000.1069380831905
+  },
+  {
+    "at": 1000.1327084582299,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1429,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -33
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.1327084582299,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 9,
+    "timestamp": 1000.1327084582299
+  },
+  {
+    "at": 1000.1366947917268,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1429,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -33
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.13669479172677,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 10,
+    "timestamp": 1000.1366947917268
+  },
+  {
+    "at": 1000.1381954164244,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1429,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -33
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.13819541642442,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 11,
+    "timestamp": 1000.1381954164244
+  },
+  {
+    "at": 1000.1440771250054,
+    "checks": {
+      "cgX": 2500,
+      "cgY": -7,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 2500,
+      "y": 1403
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.14407712500542,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 12,
+    "timestamp": 1000.1440771250054
+  },
+  {
+    "at": 1000.156004333403,
+    "checks": {
+      "cgX": 0,
+      "cgY": 1418,
+      "coordinateSpace": "appkit-screen",
+      "height": 44,
+      "width": 60,
+      "x": 0,
+      "y": -22
+    },
+    "epoch": "layout-fixture",
+    "event": "status-item-frame",
+    "mono": 100.15600433340296,
+    "pid": 42,
+    "runID": "status-layout-fixture",
+    "seq": 13,
+    "timestamp": 1000.156004333403
+  }
+]

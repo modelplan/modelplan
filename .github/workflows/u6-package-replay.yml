@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: MIT
+name: U6 package replay
+on:
+  pull_request:
+    paths:
+      - cli/**
+      - desktop/native/verification/**
+      - schema/verification/**
+      - tools/u14/**
+      - scripts/test-consent-engine.py
+      - .github/workflows/u6-package-replay.yml
+  push:
+    branches: [main]
+    paths:
+      - cli/**
+      - desktop/native/verification/**
+      - schema/verification/**
+      - tools/u14/**
+      - scripts/test-consent-engine.py
+      - .github/workflows/u6-package-replay.yml
+permissions:
+  contents: read
+concurrency:
+  group: u6-package-replay-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  public-cli-to-final-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: cli/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build the public helper from this exact checkout
+        working-directory: cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/u6-public"
+          go build -trimpath -o "$RUNNER_TEMP/u6-public/modelplan" ./cmd/modelplan
+      - name: Replay the real first attempt through final evidence
+        env:
+          MODELPLAN_U6_TEST_CLI: ${{ runner.temp }}/u6-public/modelplan
+          MODELPLAN_U6_TEST_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 -B -m unittest discover -s desktop/native/verification -p test_u6_package_e2e.py -v
