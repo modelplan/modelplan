@@ -2,7 +2,7 @@
 """U6-only physical pointer plan and native arrival check for one admitted subject."""
 import argparse, json, math, sys
 from pathlib import Path
-from admission import load_and_admit
+from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup, identity, launcher_lost
 
 def rows(path):
@@ -30,7 +30,7 @@ def prefix(kind, purpose):
     return kind+'-pointer'+('-clear' if kind == 'status' and purpose == 'clear' else '')
 
 def make(config, kind, purpose='refresh'):
-    load_and_admit(config)
+    still_admitted(config)
     batch = Path(config['batch'])
     lease = config['expectedLease']
     reg = json.loads(Path(config['subjectPidPath']).read_text())
@@ -113,7 +113,7 @@ def main():
     elif a.mode == 'check': check(c,a.kind,a.purpose)
     else:
         if a.kind != 'dock': raise ValueError('only-owned-dock-window-can-be-captured')
-        load_and_admit(c)
+        still_admitted(c)
         plan=json.loads((Path(c['batch'])/'dock-pointer-plan.json').read_text())
         number=plan.get('u6OwnedWindowNumber')
         if type(number) is not int or number <= 0: raise ValueError('owned-window-missing')

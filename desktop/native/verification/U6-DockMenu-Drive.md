@@ -69,7 +69,7 @@ Review contract for U6-R2, revised after the C1 contract reviews (MACREV, MACREV
 | 10 | Evidence | `evidence-u6.py` final entry point | reads every receipt above itself, including `launch-cleanup.json`; caller booleans never stand in for a receipt; inventory written once, at the end | missing → NOT-RUN; contradiction → FAIL |
 
 ### 4. Time budget, quit and supervisors
-- `requiredSeconds` = the scenario's action phase only (steps 1–7). Admission requires remaining lease ≥ `requiredSeconds` + `quitGraceSeconds` + 25 s (`MIN_RESERVE`), as one sum.
+- `requiredSeconds` = the scenario's action phase only (steps 1–7). Launch admission requires remaining lease ≥ `requiredSeconds` + `quitGraceSeconds` + 25 s (`MIN_RESERVE`), as one sum, once. After launch, Drive and every action step use `still_admitted` instead: same lease identity and release, not revoked or stopped, fresh heartbeat, booking still started, and remaining ≥ `quitGraceSeconds` + 25 s (macrev-332-18).
 - After the stop file, the subject gets `quitGraceSeconds` (default 5, cap 10). Both supervisors end the grace at once on revocation, lease identity change, a stale guardian heartbeat (> 3 s), a signal to a supervisor, or when only 25 s remain before `expiresAt`; then TERM, then KILL.
 - The guardian beats at least every 0.5 s during the grace. Revocation, identity change and deadline outrank an existing stop file.
 - Qualification also requires the subject's start and the closure receipt inside the lease window; a late closure is a timing FAIL, reported without suppressing cleanup.
@@ -83,18 +83,25 @@ The kit's manifest pins the main executable, the bundled engine and the consent 
 ### 7. Ownership and orchestration
 - **M4:** the app rows in §1–3 (seq/mono, sessionID, `menu-private-title-visible`, `clear-initiated`, `menu-end` cause, `menu-scrubbed`, production-path refresh rows, `terminate-completed`), pointer_drive `mono`/`targetPID` echo and capture receipts, the helper wrapper, the action runner and `operator-finish.json`, `evidence-u6.py`, the named seed builder with its arguments and title hash, and the booking command with unit `U6` and scenario `U6-DockMenu-synthetic`.
 - **Coordinator (shared toolchain):** the additive admission sum, the 25 s reserve cut in launch.py as well, the lease-window qualification inputs, and `launch-cleanup/1` consistency.
-- **M1** runs one invocation: monitor (Drive) in the background, a bounded wait (≤ 15 s) for the native `started` row, the action runner under the same stop trap, then stop, waits, closure and finish only on a clean closure.
+- **M1** runs one invocation (the `SKILL.md` launch branch): the config builder before start, then the monitor (Drive) in the background, a bounded wait (≤ 15 s) for the native `started` row, the action runner under the same stop trap, then stop, waits, closure and finish only on a clean closure. A failed wait or action requests stop, still runs closure and does not finish.
 
 ### 8. Merge prerequisite
 #332 merges only after M1's U6-R2 run at the final head shows PASS for steps 1–6 and 8–10, or an explicit FAIL/NOT-RUN the owner accepts. Before M1 consumes the kit, an offline replay through the real final entry point must accept one complete valid trace and reject every negative trace named in the reviews.
 
 ## Evidence
 
-The scoped action runner drives only Launch's registered subject and writes one `operator-finish.json` on success or failure. It cannot finish the booking. M1 runs it after the shared prepare/Launch steps, with the same stop trap and guardian described in `SKILL.md`:
+The scoped action runner drives only Launch's registered subject and writes one `operator-finish.json` on success or failure. It cannot finish the booking. M1 does not run it by hand: the `SKILL.md` launch branch runs the whole attempt as one script, with these U6 inputs set before it (paths are this attempt's fresh run scratch and batch; `--lease`, `--release` and `--subject-pid` must not exist yet):
 
 ```sh
-python3 -B "$KIT/desktop/native/verification/U6/action_runner.py" --config "$RUN_CONFIG" --pointer-binary "$KIT/pointer_drive"
+RUN_CONFIG="$BATCH/run.json"; BUILD_SCENARIO=u6
+BUILD_ARGS=(--scratch "$SCRATCH" --batch "$BATCH" --ledger "$MODELPLAN_BOOKING_LEDGER" \
+  --lease "$SCRATCH/lease.json" --release "$SCRATCH/release.json" --subject-pid "$SCRATCH/subject.json" \
+  --locks "$LOCKS" --resource-root "$RESOURCE_ROOT" --binary "$CANDIDATE_BINARY" \
+  --package "$KIT/ModelPlan-U6-<current-head>.zip" --kit-manifest "$KIT/manifest.json" --head "$HEAD" --private-title Copilot)
+ACTION_ARGS=(--pointer-binary "$KIT/pointer_drive")
 ```
+
+The branch then runs, in order: `scenario.py build` (`U6/prepare_config.py`, before `book.py start`, so the lease path it records exists only after start), start and the `expectedLease` bind, guardian, release, `drive-u6.py prepare`, `launch.py --execute` and `drive-u6.py drive` in the background, the bounded `started` wait, `scenario.py actions` (which runs `U6/action_runner.py --pointer-binary "$KIT/pointer_drive" --config "$RUN_CONFIG"` under the same trap), then stop, the waits, `check_launch_cleanup.py` and `book.py finish` only on a clean closure. The runner and every action tool it calls check `admission.still_admitted` between steps, never the launch budget again.
 
 M1 waits for Drive, Launch and guardian, checks `launch-cleanup/1`, and finishes only a clean booking. Then it runs the raw-receipt final entry and inventory once, with the kit's pinned package and manifest:
 

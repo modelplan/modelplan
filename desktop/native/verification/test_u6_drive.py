@@ -56,7 +56,8 @@ class U6DriveAdmissionTests(unittest.TestCase):
         c['syntheticHomeSeed']=str(Path(c['scratch'])/'profile')
         with self.assertRaisesRegex(ValueError,'home-seed-path-mismatch'):drive.admit(c,110)
     def test_registry_entry_matches_this_driver(self):
-        self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True))
+        self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True,
+            config='../U6/prepare_config.py',observations='native-observations.jsonl',actions='../U6/action_runner.py'))
     def test_registration_scenario_and_prepared_receipt_paths_required(self):
         c=config(self.root,100);c['scenario']='other'
         with self.assertRaisesRegex(ValueError,'scenario-must-be-u6'):drive.admit(c,110)
@@ -142,7 +143,7 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         threading.Thread(target=watch,daemon=True).start()
     def run_drive(self,c=None,disk=DISK):
         c=c or self.c;path=Path(c['batch'])/'run.json';path.write_text(json.dumps(c))
-        with patch.object(drive,'load_and_admit',return_value={}),patch.object(drive,'REGISTER_SECONDS',.4),patch.object(drive,'CLOSE_SECONDS',1), \
+        with patch.object(drive,'still_admitted',return_value={}),patch.object(drive,'load_and_admit',side_effect=AssertionError('full admission after launch')),patch.object(drive,'REGISTER_SECONDS',.4),patch.object(drive,'CLOSE_SECONDS',1), \
              patch.object(drive.shutil,'disk_usage',return_value=disk),patch.object(subprocess,'Popen',no_spawn), \
              patch.object(os,'kill',main_thread_never_signals),patch.object(os,'killpg',main_thread_never_signals):
             status=drive.main(['drive','--config',str(path)])

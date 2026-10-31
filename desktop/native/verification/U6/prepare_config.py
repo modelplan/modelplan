@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: MIT
-"""Prepare one pinned U6 synthetic seed and run config after M1's real booking start."""
+"""Build one attempt's pinned U6 synthetic seed and run config BEFORE `book.py start` (SKILL.md launch branch,
+`scenario.py build`; macrev-332-16). It needs only the attempt's run ID/epoch and paths, never the lease: the run
+config names `leasePath`, which the sequence reads before start, and the sequence binds `expectedLease` to the
+started lease afterwards (refusing another run/epoch). Every attempt path must still be fresh."""
 import argparse,hashlib,json,sys
 from pathlib import Path
 
@@ -16,15 +19,16 @@ def absolute(value):
     if not path.is_absolute():raise ValueError('absolute-path-required')
     return path
 def prepare(args,make_home=Home):
-    names=('scratch','batch','ledger','lease','release','subject_pid','locks','resource_root','binary','package','kit_manifest')
+    names=('config','scratch','batch','ledger','lease','release','subject_pid','locks','resource_root','binary','package','kit_manifest')
     paths={name:absolute(getattr(args,name)) for name in names}
     scratch,batch,locks=paths['scratch'],paths['batch'],paths['locks']
     if not scratch.is_dir() or not batch.is_dir() or not locks.is_dir():raise ValueError('fresh-run-folders-required')
-    for path in (scratch/'home',scratch/'tmp',scratch/'home-seed',batch/'run.json',batch/'synthetic-seed.json',batch/'stop.json'):
+    if paths['config']!=batch/'run.json':raise ValueError('run-config-must-be-batch-run-json')
+    for path in (scratch/'home',scratch/'tmp',scratch/'home-seed',batch/'run.json',batch/'synthetic-seed.json',batch/'stop.json',
+                 paths['lease'],paths['release'],paths['subject_pid']): # the lease does not exist yet: start writes it
         if path.exists() or path.is_symlink():raise ValueError('run-path-not-fresh')
-    lease=json.loads(paths['lease'].read_text())
-    for key in ('runID','epoch','notBefore','expiresAt'):
-        if key not in lease:raise ValueError('started-lease-identity-missing')
+    run,epoch=args.run_id,args.epoch # the same values the sequence passes to book.py start
+    if any(not isinstance(x,str) or not x or len(x)>128 or not x.isprintable() for x in (run,epoch)):raise ValueError('run-identity-invalid')
     manifest=json.loads(paths['kit_manifest'].read_text())
     if (manifest.get('sourceHead')!=args.head or sha(paths['binary'])!=manifest.get('binarySHA256')
         or sha(paths['package'])!=manifest.get('packageSHA256')):
@@ -55,15 +59,15 @@ def prepare(args,make_home=Home):
         stopPath=str(batch/'stop.json'),subjectPidPath=str(paths['subject_pid']),
         preparedReceiptPath=str(batch/'prepared.json'),requiredSeconds=300,quitGraceSeconds=5,
         booking=dict(id=args.booking_id,lane='M1',unit='U6',scenario='U6-DockMenu-synthetic',ledger=str(paths['ledger'])),
-        expectedLease={key:lease[key] for key in ('runID','epoch','notBefore','expiresAt')})
-    seed_receipt=dict(schema='u6-seed/1',runID=lease['runID'],epoch=lease['epoch'],homeSeedSHA256=digest,
+        expectedLease=dict(runID=run,epoch=epoch)) # the sequence adds notBefore/expiresAt from the started lease
+    seed_receipt=dict(schema='u6-seed/1',runID=run,epoch=epoch,homeSeedSHA256=digest,
         titleSHA256=hashlib.sha256(title.encode()).hexdigest(),profileSHA256=sha(profile_path))
     with (batch/'synthetic-seed.json').open('x') as stream:json.dump(seed_receipt,stream,sort_keys=True);stream.write('\n')
     with (batch/'run.json').open('x') as stream:json.dump(config,stream,indent=2);stream.write('\n')
-    print(json.dumps(dict(runID=lease['runID'],epoch=lease['epoch'],head=args.head,seedSHA256=digest)))
+    print(json.dumps(dict(runID=run,epoch=epoch,head=args.head,seedSHA256=digest)))
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ('scratch','batch','ledger','booking-id','lease','release','subject-pid','locks','resource-root','binary','package','kit-manifest','head','private-title'):
+    for name in ('config','scratch','batch','ledger','booking-id','run-id','epoch','lease','release','subject-pid','locks','resource-root','binary','package','kit-manifest','head','private-title'):
         p.add_argument('--'+name,required=True)
     prepare(p.parse_args())

@@ -236,8 +236,10 @@ class LaunchModeHappyPath(M1Sequence):
         self.assertEqual(guardian_status, 0)
         report = self.json_lines(out, 2)[1]
         self.assertEqual(report['ownedPID'], subject['pid'])
-        self.assertEqual(self.read_json(guardian_out),
-                         dict(guardian='stopped', subjectClosed=True))
+        guardian_report = self.read_json(guardian_out)  # macrev-332-19: the quit-grace fields are part of the report
+        self.assertEqual((guardian_report['guardian'], guardian_report['subjectClosed']), ('stopped', True))
+        self.assertEqual(guardian_report['quitGraceUsed'], 5.0)  # a stop-file ending gives the default grace
+        self.assertIsInstance(guardian_report['exitedDuringGrace'], bool)  # launch.py's own TERM may land inside it
         self.assertFalse(alive(subject['pid']))  # no leftover subject process
 
         finish = self.finish(ident, 'run-launch', 'epoch-launch')
@@ -346,7 +348,10 @@ class CrashedSubject(M1Sequence):
         # clean stop, even though the crashed subject is confirmed gone. Waiting for that exit makes the
         # outcome deterministic instead of racing the guardian's next poll.
         self.assertEqual(guardian.wait(15), 3)
-        self.assertEqual(self.read_json(guardian_out), dict(guardian='launcher-lost', subjectClosed=True))
+        guardian_report = self.read_json(guardian_out)
+        self.assertEqual((guardian_report['guardian'], guardian_report['subjectClosed']), ('launcher-lost', True))
+        # No stop file ended this run, so no quit grace was given (macrev-332-19).
+        self.assertEqual((guardian_report['quitGraceUsed'], guardian_report['exitedDuringGrace']), (None, False))
         # No verified-cleanup batch exists for this run, so the closure gate fails ...
         gate_config = self.root / 'gate.json'
         gate_config.write_text(json.dumps(dict(batch=str(self.root / 'batch'),
@@ -367,7 +372,8 @@ class DriveModeSequence(M1Sequence):
         pid_file = self.root / 'subject.pid'
         locks = self.root / 'locks'
         locks.mkdir()
-        ident, lease = self.booking(minutes=12, run_id='run-drive', epoch='epoch-drive',
+        # 13 minutes: drive-scenario.py admits 690 s of actions + 5 s quit grace + 25 s reserve as one sum (C2.4 section 4)
+        ident, lease = self.booking(minutes=13, run_id='run-drive', epoch='epoch-drive',
                                     lease_path=lease_path)
         guardian, guardian_out = self.start_guardian(lease_path, stop_path, pid_file)
         self.release(ident, lease_path, release_path)

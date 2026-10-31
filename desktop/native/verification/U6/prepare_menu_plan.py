@@ -5,14 +5,14 @@ from pathlib import Path
 
 BIN=Path(__file__).resolve().parents[1]/'bin'
 sys.path.insert(0,str(BIN))
-from admission import load_and_admit
+from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup, identity, launcher_lost
 import importlib.util
 spec=importlib.util.spec_from_file_location('u6_pointer_plan', BIN/'u6-pointer-plan.py')
 pointer=importlib.util.module_from_spec(spec);spec.loader.exec_module(pointer)
 
 def prepare(config):
-    load_and_admit(config)
+    still_admitted(config)
     batch=Path(config['batch']);run=config['expectedLease']
     record=json.loads(Path(config['subjectPidPath']).read_text())
     pid=record.get('pid')

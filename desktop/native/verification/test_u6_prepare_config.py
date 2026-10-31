@@ -22,9 +22,9 @@ class U6PrepareConfigTests(unittest.TestCase):
                     'main':dict(path='Contents/MacOS/App',sha256=hashlib.sha256(b'app').hexdigest()),
                     'engine':dict(path='Contents/Helpers/modelplan',sha256=hashlib.sha256(b'helper').hexdigest()),
                     'consentHelper':dict(path='Contents/Helpers/modelplan',sha256=hashlib.sha256(b'helper').hexdigest())})))
-            lease=root/'lease.json';lease.write_text(json.dumps(dict(runID='run',epoch='epoch',notBefore=1,expiresAt=1201)))
-            args=types.SimpleNamespace(scratch=str(scratch),batch=str(batch),ledger=str(root/'ledger.jsonl'),
-                booking_id='booking',lease=str(lease),release=str(root/'release.json'),subject_pid=str(root/'subject.json'),
+            lease=root/'lease.json' # macrev-332-16: built before book.py start, so the lease does not exist yet
+            args=types.SimpleNamespace(config=str(batch/'run.json'),scratch=str(scratch),batch=str(batch),ledger=str(root/'ledger.jsonl'),
+                booking_id='booking',run_id='run',epoch='epoch',lease=str(lease),release=str(root/'release.json'),subject_pid=str(root/'subject.json'),
                 locks=str(locks),resource_root=str(root),binary=str(binary),package=str(package),kit_manifest=str(manifest),
                 head='a'*40,private_title='Copilot')
             class FakeHome:
@@ -40,7 +40,21 @@ class U6PrepareConfigTests(unittest.TestCase):
             self.assertEqual(config['packageSHA256'],hashlib.sha256(package.read_bytes()).hexdigest())
             self.assertEqual(seed['titleSHA256'],hashlib.sha256(b'Copilot').hexdigest())
             self.assertEqual(seed['homeSeedSHA256'],config['syntheticHomeSeedSHA256'])
+            self.assertEqual((seed['runID'],seed['epoch']),('run','epoch'))
+            self.assertEqual(config['expectedLease'],dict(runID='run',epoch='epoch')) # completed from the lease after start
+            self.assertEqual(config['leasePath'],str(lease));self.assertFalse(lease.exists())
             with self.assertRaisesRegex(ValueError,'run-path-not-fresh'):
                 prepare.prepare(args,make_home=FakeHome)
+            for name in ('run.json','synthetic-seed.json'):(batch/name).unlink()
+            import shutil;shutil.rmtree(scratch/'home-seed')
+            for key in ('lease','release','subject_pid'): # an attempt path that already exists refuses before seeding
+                Path(getattr(args,key)).write_text('{}')
+                with self.subTest(key=key),self.assertRaisesRegex(ValueError,'run-path-not-fresh'):
+                    prepare.prepare(args,make_home=FakeHome)
+                Path(getattr(args,key)).unlink();self.assertFalse((scratch/'home-seed').exists())
+            for change,error in [(dict(config=str(root/'elsewhere.json')),'run-config-must-be-batch-run-json'),
+                                 (dict(run_id=''),'run-identity-invalid'),(dict(epoch='e\n'),'run-identity-invalid')]:
+                with self.subTest(change=change),self.assertRaisesRegex(ValueError,error):
+                    prepare.prepare(types.SimpleNamespace(**vars(args)|change),make_home=FakeHome)
 
 if __name__=='__main__':unittest.main()

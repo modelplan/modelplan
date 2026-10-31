@@ -18,7 +18,7 @@ class U6PointerPlanTests(unittest.TestCase):
         self.config=dict(batch=str(self.root),expectedLease=self.lease,subjectPidPath=str(self.root/'subject.json'),
             leasePath=str(self.root/'lease.json'),stopPath=str(self.root/'stop.json'),argv=[str(self.root/'Test.app/Contents/MacOS/App')])
         (self.root/'subject.json').write_text(json.dumps(dict(pid=42,state='running')))
-        tool.load_and_admit=lambda _:True
+        tool.still_admitted=lambda _:True
         tool.identity=lambda _:dict(pid=42)
         tool.cleanup.matches=lambda *_:True
         tool.launcher_lost=lambda _:False
@@ -75,7 +75,7 @@ class U6PointerPlanTests(unittest.TestCase):
         tool.check(self.config,'status','clear')
     def test_refresh_plan_reuses_physically_opened_status_menu(self):
         self.write_rows([])
-        menu.load_and_admit=lambda _:True
+        menu.still_admitted=lambda _:True
         menu.identity=lambda _:dict(pid=42)
         menu.cleanup.matches=lambda *_:True
         menu.launcher_lost=lambda _:False

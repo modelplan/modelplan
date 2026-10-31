@@ -6,7 +6,7 @@ signals a process. Closing is the stop file, acted on by launch.py and bin/guard
 also requesting it when the disk floor is breached mid-run."""
 import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
-from admission import load_and_admit
+from admission import load_and_admit,still_admitted
 from guardian import cleanup,identity,launcher_lost,quit_grace
 import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
@@ -120,7 +120,7 @@ def drive(c,now,poll=.2,sleep=time.sleep):
     result=dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,launchedBy='launch.py')
     try:
         record=registered(pid_path) # first, so a refusal below is judged after launch.py registered or gave up
-        load_and_admit(c);bound(out/'native-observations.jsonl',run,epoch,record)
+        still_admitted(c);bound(out/'native-observations.jsonl',run,epoch,record) # after launch admission: never the full budget again (macrev-332-18)
         result['appStarted']=True;write(out/'launch.json',dict(runID=run,epoch=epoch,ownedPID=record['pid'],sourceHead=c['head'],registeredBy='launch.py'))
         breach=False
         while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:

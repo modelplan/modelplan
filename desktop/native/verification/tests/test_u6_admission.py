@@ -63,7 +63,8 @@ class U6AdmissionTests(unittest.TestCase):
                     while not Path(c['stopPath']).exists(): time.sleep(.05)
                     child.terminate(); child.wait()
                 threading.Thread(target=launch_py, daemon=True).start()
-                with patch.object(drive, 'load_and_admit', side_effect=ValueError('booking ended')) as gate, \
+                with patch.object(drive, 'still_admitted', side_effect=ValueError('booking ended')) as gate, \
+                     patch.object(drive, 'load_and_admit', side_effect=AssertionError('full admission after launch')), \
                      patch.object(subprocess, 'Popen') as spawn:
                     status = drive.main(['drive', '--config', str(config)])
             finally:
