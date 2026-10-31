@@ -25,12 +25,13 @@ def approved_images(config,batch):
         try:
             if receipt.stat().st_size>65536:continue
             value=json.loads(receipt.read_text())
-            if not isinstance(value,dict) or value.get('schema') not in ('u6-capture/1','u6-status-capture/1'):continue
+            if not isinstance(value,dict) or value.get('schema')!='u6-capture/1':continue
             name=value.get('file')
             if not isinstance(name,str) or Path(name).name!=name or name in ('.','..'):continue
             target=receipt.parent/name
+            if target!=batch/'dock-owned.png' or receipt!=batch/'dock-capture.json':continue
             if (value.get('runID'),value.get('epoch'),value.get('pid'))!=(run['runID'],run['epoch'],pid) or type(pid) is not int:continue
-            event='dock-surface-frame' if value['schema']=='u6-capture/1' else 'status-item-frame'
+            event='dock-surface-frame'
             if not any(isinstance(r,dict) and r.get('runID')==run['runID'] and r.get('epoch')==run['epoch'] and r.get('pid')==pid
                        and r.get('seq')==value.get('frameSeq') and r.get('event')==event for r in native):continue
             candidates.setdefault(target,[]).append(value.get('sha256'))

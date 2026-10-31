@@ -1,78 +1,41 @@
 # SPDX-License-Identifier: MIT
-"""Owned status-rectangle capture; all screen/process operations are fakes."""
-import hashlib,importlib.util,json,tempfile,types,unittest,subprocess
+"""Status capture is retired; retain cleanup/orphan and Python compatibility controls."""
+import hashlib,importlib.util,json,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('u6_status_capture',Path(__file__).parent/'U6/capture_status.py')
 capture=importlib.util.module_from_spec(spec);spec.loader.exec_module(capture)
 
-class StatusCaptureTests(unittest.TestCase):
-    def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)/'batch';self.root.mkdir()
-        self.scratch=Path(self.temp.name)/'scratch';self.scratch.mkdir()
-        self.config=dict(batch=str(self.root),scratch=str(self.scratch),subjectPidPath=str(self.root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
-        (self.root/'subject.json').write_text(json.dumps(dict(pid=42,state='running',runID='run',epoch='epoch')))
-        self.frame=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=7,mono=100,
-            checks=dict(x=1800,y=1418,cgX=1800,cgY=0,width=44,height=22,coordinateSpace='appkit-screen',
-                settled=True,visible=True,stableSinceMono=99,frameGeneration=2,windowNumber=1<<32,
-                displayBounds=[0,0,2560,1440],menuBarBand=[0,0,2560,22]))
-        self.write()
-        (self.root/'status-pointer-plan.json').write_text(json.dumps(dict(runID='run',epoch='epoch',subjectPID=42,
-            u6FrameSeq=7,u6StatusFrameGeneration=2,u6StatusWindowNumber=1<<32,statusWindowCheck='unavailable')))
-    def write(self):
-        (self.root/'native-observations.jsonl').write_text(json.dumps(self.frame)+'\n')
-    def run_capture(self,fake):
-        with patch.object(capture,'still_admitted'),patch.object(capture,'identity',return_value=dict(pid=42)), \
-             patch.object(capture.cleanup,'matches',return_value=True),patch.object(capture,'launcher_lost',return_value=False):
-            capture.capture(self.config,run_capture=fake,now=lambda:100.5)
-    def test_exact_owned_rectangle_and_receipt_before_input(self):
-        def fake(command,**_):
-            self.assertEqual(command[:4],['screencapture','-x','-R','1800,0,44,22'])
-            self.assertTrue(Path(command[-1]).is_relative_to(self.scratch))
-            Path(command[-1]).write_bytes(b'synthetic-owned-rectangle');return types.SimpleNamespace(returncode=0)
-        self.run_capture(fake);r=json.loads((self.root/'status-preclick/status-preclick-capture.json').read_text())
-        self.assertEqual((r['pid'],r['frameSeq'],r['frameGeneration']),(42,7,2))
-        self.assertEqual(r['sha256'],hashlib.sha256(b'synthetic-owned-rectangle').hexdigest())
-        self.assertEqual(r['statusWindowCheck'],'unavailable')
-        self.assertEqual(list(self.scratch.iterdir()),[])
-        self.assertFalse((self.root/'status-preclick.png').exists())
-        self.assertTrue((self.root/'status-preclick/status-preclick.png').is_file())
+class StatusCapturePolicyTests(unittest.TestCase):
+    def test_retired_entry_never_invokes_capture_or_creates_pixels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);config=dict(batch=directory,expectedLease=dict(runID='run',epoch='epoch'))
+            with self.assertRaisesRegex(ValueError,'disabled-by-policy'):
+                capture.capture(config,run_capture=lambda *_a,**_k:self.fail('capture invoked'))
+            self.assertEqual(list(root.rglob('*.png')),[])
+            self.assertEqual(json.loads((root/'status-capture-refusal.json').read_text())['reason'],'status-capture-disabled-by-policy')
+    def test_owned_temporaries_cleanup_in_finally_for_errors_and_timeouts(self):
+        for error in [ValueError('move'),subprocess.TimeoutExpired('unused',5),RuntimeError('unexpected')]:
+            with tempfile.TemporaryDirectory() as directory:
+                private=Path(directory)/'private';stage=Path(directory)/'.u6-status-publish-test'
+                for path in (private,stage):path.mkdir();(path/'partial.png').write_bytes(b'partial')
+                with self.assertRaises(type(error)):
+                    try:raise error
+                    finally:capture.cleanup_owned_temporaries(private,stage)
+                self.assertFalse(private.exists());self.assertFalse(stage.exists())
+    def test_stage_cleanup_is_attempted_even_if_private_cleanup_fails(self):
+        with patch.object(capture.shutil,'rmtree',side_effect=[OSError('io'),None]) as remove:
+            with self.assertRaises(OSError):capture.cleanup_owned_temporaries('private','stage')
+            self.assertEqual(remove.call_count,2)
+    def test_dock_capture_policy_does_not_require_new_hashlib_api(self):
         from capture_artifacts import approved_images
-        # The Mac lane also runs Python without hashlib.file_digest (3.11+).
-        with patch.object(hashlib,'file_digest',None,create=True):
-            allowed,problems=approved_images(self.config,self.root)
-        self.assertEqual(allowed,{'status-preclick/status-preclick.png'});self.assertEqual(problems,[])
-    def test_unsettled_or_oversized_never_invokes_capture(self):
-        for changes in [dict(settled=False),dict(height=44),dict(frameGeneration=3)]:
-            with self.subTest(changes=changes):
-                original=dict(self.frame['checks']);self.frame['checks'].update(changes);self.write()
-                with self.assertRaises(ValueError):self.run_capture(lambda *_a,**_k:self.fail('unowned capture invoked'))
-                self.frame['checks']=original
-    def test_movement_during_capture_cannot_create_visibility_receipt(self):
-        def fake(command,**_):
-            Path(command[-1]).write_bytes(b'synthetic');self.frame['checks']['frameGeneration']=3;self.write()
-            return types.SimpleNamespace(returncode=0)
-        with self.assertRaisesRegex(ValueError,'owned-frame-changed'):self.run_capture(fake)
-        self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
-        self.assertEqual(json.loads((self.root/'status-capture-refusal.json').read_text())['reason'],'owned-frame-changed')
-    def test_partial_error_timeout_and_exception_delete_private_pixels(self):
-        for failure in ('error','timeout','exception'):
-            with self.subTest(failure=failure):
-                self.setUp()
-                def fake(command,**_):
-                    Path(command[-1]).write_bytes(b'partial-unverified-pixels')
-                    if failure=='timeout':raise subprocess.TimeoutExpired('unused',5)
-                    if failure=='exception':raise RuntimeError('private-text-must-not-be-exported')
-                    return types.SimpleNamespace(returncode=1)
-                with self.assertRaises((ValueError,subprocess.TimeoutExpired,RuntimeError)):self.run_capture(fake)
-                self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
-                data=(self.root/'status-capture-refusal.json').read_text();self.assertNotIn('private-text',data)
-    def test_publish_error_cleans_staging_and_private_files(self):
-        def fake(command,**_):
-            Path(command[-1]).write_bytes(b'validated');return types.SimpleNamespace(returncode=0)
-        with patch.object(capture.os,'rename',side_effect=OSError('private-path')):
-            with self.assertRaises(OSError):self.run_capture(fake)
-        self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
-        self.assertFalse(any(p.name.startswith('.u6-status-publish-') for p in self.root.iterdir()))
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);image=root/'dock-owned.png';image.write_bytes(b'owned-dock')
+            (root/'subject.json').write_text(json.dumps(dict(pid=42)))
+            (root/'native-observations.jsonl').write_text(json.dumps(dict(runID='run',epoch='epoch',pid=42,seq=1,event='dock-surface-frame'))+'\n')
+            (root/'dock-capture.json').write_text(json.dumps(dict(schema='u6-capture/1',runID='run',epoch='epoch',pid=42,frameSeq=1,file=image.name,sha256=hashlib.sha256(image.read_bytes()).hexdigest())))
+            config=dict(subjectPidPath=str(root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
+            with patch.object(hashlib,'file_digest',None,create=True):allowed,problems=approved_images(config,root)
+            self.assertEqual(allowed,{'dock-owned.png'});self.assertEqual(problems,[])
 
 if __name__=='__main__':unittest.main()

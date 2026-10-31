@@ -47,6 +47,16 @@ class U6FinalManifestTests(unittest.TestCase):
         self.assertTrue(outcome['captureContradiction'])
         self.assertTrue(manifest['capturePrivacy']['contradiction'])
         self.assertNotIn('dock-owned.png',json.dumps(manifest))
+    def test_status_preclick_image_is_unexpected_even_with_matching_receipt(self):
+        pair=self.batch/'status-preclick';pair.mkdir();image=pair/'status-preclick.png';image.write_bytes(b'forbidden-status-image')
+        import hashlib
+        native=[json.loads(line) for line in (self.batch/'native-observations.jsonl').read_text().splitlines()]
+        frame=next(r for r in native if r.get('event')=='status-item-frame')
+        (pair/'status-preclick-capture.json').write_text(json.dumps(dict(schema='u6-status-capture/1',
+            runID=frame['runID'],epoch=frame['epoch'],pid=frame['pid'],frameSeq=frame['seq'],file=image.name,
+            sha256=hashlib.sha256(image.read_bytes()).hexdigest())))
+        outcome,manifest=self.final();self.assertEqual((outcome['outcome'],outcome['step']),('fail','capture-privacy'))
+        self.assertNotIn('status-preclick/status-preclick.png',json.dumps(manifest))
     def unavailable_receipts(self):
         native_path=self.batch/'native-observations.jsonl'
         native=[json.loads(line) for line in native_path.read_text().splitlines()]
