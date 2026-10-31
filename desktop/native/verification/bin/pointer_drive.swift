@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Build only for synthetic verification: swiftc -parse-as-library
-// -DMODELPLAN_TEST_ONLY_SPI pointer_drive.swift -o <owned-build>/pointer_drive
+// -DMODELPLAN_TEST_ONLY_SPI StatusMenu/Sources/ModelPlanMenuVerification/*.swift
+// bin/status_menu_drive.swift bin/pointer_drive.swift -o <owned-build>/pointer_drive
 #if MODELPLAN_TEST_ONLY_SPI
 import AppKit
 import ApplicationServices
@@ -155,6 +156,7 @@ final class ButtonGuard: @unchecked Sendable {
     static func entry() throws {
         let args = CommandLine.arguments
         if args.count == 2 && args[1] == "--self-test" {
+            try StatusMenuDrive.selfTest() // Decode/validate only; no AX query, I/O or input.
             func fixture(_ profile: String = "synthetic", _ seconds: Double = 1) -> PointerPlan {
                 PointerPlan(profile:profile,runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[.init(x:10,y:10,seconds:seconds,dwell:0.2)])
             }
@@ -215,6 +217,9 @@ final class ButtonGuard: @unchecked Sendable {
         }
         if args.count == 2 && args[1] == "--check" {
             let data = try JSONSerialization.data(withJSONObject:permission(),options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self));return
+        }
+        if args.count == 3 && args[1] == "--status-menu-plan" {
+            try StatusMenuDrive.entry(path:args[2]);return
         }
         guard args.count == 3 && args[1] == "--plan" else { throw DriveError.invalidPlan }
         let plan = try JSONDecoder().decode(PointerPlan.self,from:Data(contentsOf:URL(fileURLWithPath:args[2])))
