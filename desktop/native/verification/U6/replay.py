@@ -60,11 +60,12 @@ DETAILS = {
     'refresh-failed': None,  # failed carries the row's own bounded reason
     'refresh-deferred': None,  # C2.6 D: the reason follows the Copilot disposition (DEFERRED_REASONS)
     'refresh-abandoned-deadline': 'timeout', 'refresh-abandoned-stop': 'not-delivered',
-    'accepted-missing': 'not-delivered', 'accepted-stale': 'not-delivered', 'accepted-duplicate': 'unknown',
+    'accepted-missing': 'not-delivered', 'accepted-stale': 'not-delivered', 'accepted-other-engine-request': 'unknown',
+    'accepted-duplicate': 'unknown',
     'deferred-but-scheduled': 'unknown', 'copilot-not-scheduled': 'unknown', 'copilot-accounts-before': 'unknown',
     'projection-not-qualifying': 'unknown', 'runtime-calls-missing': 'not-delivered',
     'runtime-calls-malformed': 'unknown', 'runtime-calls-undigested': 'not-delivered',
-    'runtime-calls-foreign': 'wrong-subject', 'call-before-accepted': 'unknown', 'quota-call-missing': 'unknown',
+    'runtime-calls-foreign': 'wrong-subject', 'call-before-requested': 'unknown', 'quota-call-missing': 'unknown',
     'menu-a-not-ended': 'not-delivered', 'click-b-before-a-ended': 'out-of-window',
     'session-reused': 'wrong-subject',
     'title-missing': 'not-delivered', 'title-hash-mismatch': 'wrong-subject', 'title-wrong-menu': 'wrong-subject',
@@ -315,10 +316,11 @@ def step3(context, native, files, a):
     accepted = accepted[0] if accepted else None
     if accepted is None or not requested['seq'] < accepted['seq'] < terminal['seq']:
         return NOT_RUN('accepted-missing'), None, end  # a terminal without a matching accepted
-    if accepted['engineRequestID'] != requested['engineRequestID'] or (accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID']) or any(
-            r['engineRequestID'] == accepted['engineRequestID'] and r['requestId'] != request
-            for r in native.of('refresh', phase='accepted')):
-        return NOT_RUN('accepted-stale'), None, end  # another call's reply, not this call's
+    if accepted['engineRequestID'] != requested['engineRequestID']:
+        # C2.7 D FAIL: "`accepted` with another `engineRequestID`" (another call's or a cached reply).
+        return FAIL('accepted-other-engine-request'), None, end
+    if (accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID']):
+        return NOT_RUN('accepted-stale'), None, end  # another session's reply, not this call's
     disposition = accepted['dispositions'][COPILOT]
     if phase == 'deferred':
         if disposition == 'scheduled':
@@ -332,9 +334,10 @@ def step3(context, native, files, a):
     calls, problem = _runtime_calls(context, files)
     if problem:
         return NOT_RUN(problem), None, end
-    if any(c['method']=='account.getQuota' and c['mono'] < accepted['mono'] for c in calls):
-        return FAIL('call-before-accepted'), None, end
-    if not any(c['method'] == 'account.getQuota' and accepted['mono'] < c['mono'] < terminal['mono'] for c in calls):
+    # C2.7 D: production wakes the worker before returning the reply, so the call may precede accepted.
+    if any(c['method'] == 'account.getQuota' and c['mono'] < requested['mono'] for c in calls):
+        return FAIL('call-before-requested'), None, end
+    if not any(c['method'] == 'account.getQuota' and requested['mono'] < c['mono'] < terminal['mono'] for c in calls):
         return FAIL('quota-call-missing'), None, end
     return PASS(), terminal['mono'], end
 

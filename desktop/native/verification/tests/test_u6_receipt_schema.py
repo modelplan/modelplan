@@ -4,6 +4,7 @@
 Batches are written in the producers' current encoding (C2.6 F; schema/verification/fixtures/provenance.json says
 which files are producer captures); every negative trace states its expected outcome independently of the oracle."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,15 @@ FILE_SCHEMAS = {'dock-capture.json': 'capture-receipt.json', 'consent-reset.json
                 'context.json': 'replay-context.json'}
 LINE_SCHEMAS = {'runtime-calls.jsonl': 'runtime-calls.json'}  # per-line receipts besides native and pointer rows
 COMPLETED_ONLY = ('rowsSequenceAfter', 'copilotAccountsAfter', 'readingSHA256')
+# Fixed reading-digest vector for the Swift side (README, Reading digest): two windows out of id order, a
+# fractional percent, an ISO and a null reset.
+READING_VECTOR = ({'route': 'runtime', 'plan': {'id': 'copilot-pro'}, 'windows': [
+    {'id': 'premium_interactions', 'limitKey': 'premium_interactions', 'poolKey': 'copilot', 'remainingPercent': 62.5,
+     'resetsAt': '2099-01-01T00:00:00Z'},
+    {'id': 'chat', 'limitKey': 'chat', 'poolKey': 'copilot', 'remainingPercent': None, 'resetsAt': None}]},
+    '{"plan":"copilot-pro","route":"runtime","windows":[{"id":"chat","limitKey":"chat","poolKey":"copilot",'
+    '"remainingBp":null,"resetsAt":null},{"id":"premium_interactions","limitKey":"premium_interactions",'
+    '"poolKey":"copilot","remainingBp":6250,"resetsAt":4070908800}]}')
 POINTER_FILES = ('dock-pointer.jsonl', 'status-pointer.jsonl', 'status-pointer-clear.jsonl')
 CLOSURE = sb.closure()  # one real launch-cleanup/1 receipt shared by the traces that do not vary it
 
@@ -169,7 +179,8 @@ class SchemaShapeTests(unittest.TestCase):
         completed = trace.one('refresh', phase='completed')
         for key in COMPLETED_ONLY:
             self.assertTrue(errors({k: v for k, v in completed.items() if k != key}), key)
-        self.assertTrue(errors(dict(completed, readingSHA256='synthetic-copilot-account-1')))  # a hash, never the ID
+        self.assertTrue(errors(dict(completed, readingSHA256='synthetic reading')))  # a digest, never the reading
+        self.assertTrue(errors({k: v for k, v in requested.items() if k != 'engineRequestID'}))
         abandoned = {k: v for k, v in completed.items() if k not in COMPLETED_ONLY}
         self.assertEqual(errors(dict(abandoned, phase='abandoned', cause='stop')), [])
         self.assertTrue(errors(dict(abandoned, phase='abandoned', cause='other')))
@@ -355,15 +366,6 @@ def defer(t, disposition):
     set_mono(t, row, 21.2)
 
 
-def stale_accepted(t):
-    """An earlier request's reply carries the engineRequestID that R's accepted reuses (a cached snapshot)."""
-    earlier = dict(menuObjectID=sb.MENU, sessionID='6B1F0D2A-0000-4000-8000-0000000000E0',
-                   requestId='6B1F0D2A-0000-4000-8000-0000000000E1')
-    t.insert(t.row('refresh', 15.0, phase='requested', engineRequestID=sb.ENGINE_REQUEST, rowsSequenceBefore=1, copilotAccountsBefore=0, **earlier))
-    t.insert(t.row('refresh', 15.01, phase='accepted', engineRequestID=sb.ENGINE_REQUEST,
-                   dispositions=dict(sb.DISPOSITIONS), **earlier))
-
-
 def abandon(t, cause, offset):
     """The App watchdog's terminal instead of completed (C2.6 D)."""
     row = t.one('refresh', phase='completed')
@@ -532,8 +534,9 @@ CASES = [
      {3: ('not-run', 'not-delivered', 'refresh-abandoned-stop')}, 'not-run'),
     ('accepted-missing', 'C2.6 D (no per-call reply)', lambda t: t.remove('refresh', phase='accepted'), {}, (),
      {3: ('not-run', 'not-delivered', 'accepted-missing')}, 'not-run'),
-    ('accepted-stale-snapshot', 'C2.6 D (stale scheduled value: another call\'s engineRequestID)', stale_accepted, {}, (),
-     {3: ('not-run', 'not-delivered', 'accepted-stale')}, 'not-run'),
+    ('accepted-stale-snapshot', 'C2.7 D FAIL: "`accepted` with another `engineRequestID`" (a stale scheduled value)',
+     lambda t: t.one('refresh', phase='accepted').update(engineRequestID=16), {}, (),
+     {3: ('fail', 'unknown', 'accepted-other-engine-request')}, 'fail'),
     ('accepted-duplicate', 'C2.6 D, C2.6 F', lambda t: duplicate(t, 'refresh', 21.07, match=dict(phase='accepted')), {}, (),
      {3: ('fail', 'unknown', 'accepted-duplicate')}, 'fail'),
     ('copilot-accounts-before-nonzero', 'C2.6 D (not a first attempt)', lambda t: t.one('refresh', phase='requested').update(
@@ -541,8 +544,11 @@ CASES = [
     ('completed-on-unrelated-projection', 'C2.6 D (unrelated-only advance reported as completed)',
      lambda t: t.one('refresh', phase='completed').update(copilotAccountsAfter=0), {}, (),
      {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
-    ('completed-other-account', 'C2.6 D', lambda t: t.one('refresh', phase='completed').update(readingSHA256=R.sha('other')),
+    ('completed-other-reading', 'C2.6 D (readingSHA256 mismatch)', lambda t: t.one('refresh', phase='completed').update(
+        readingSHA256=sb.reading_sha256(dict(sb.SEED_READING_ACCOUNT, route='other'))),
      {}, (), {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
+    ('completed-two-accounts', 'C2.6 D (more than one Copilot account)', lambda t: t.one('refresh', phase='completed').update(
+        copilotAccountsAfter=2), {}, (), {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
     ('unrelated-then-valid', 'C2.6 D (earlier unrelated projections are ignored)',
      lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=6), {}, (), {}, 'pass'),
     ('copilot-not-scheduled-but-completed', 'C2.6 D, C2.6 F', lambda t: t.one('refresh', phase='accepted')['dispositions'].update(
@@ -551,22 +557,25 @@ CASES = [
      {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
     ('quota-call-after-completed', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 23.5)), {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
-    ('call-before-accepted', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
-        ['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
-     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+    ('quota-call-before-accepted', 'C2.7 D (the worker is woken before the reply returns)', lambda t: setattr(
+        t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
+     {}, 'pass'),
+    ('call-before-requested', 'C2.7 D', lambda t: setattr(t, 'runtime', sb.stub_calls(['account.getQuota'], 21.04)
+        + sb.stub_calls(['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=2)), {}, (),
+     {3: ('fail', 'unknown', 'call-before-requested')}, 'fail'),
+    ('connect-before-accepted', 'C2.6 D (connect before the reply)', lambda t: setattr(
+        t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus'], 21.051, step=0.002)
+        + sb.stub_calls(['account.getQuota'], 21.065, first_seq=3)), {}, (), {}, 'pass'),
     ('auth-before-accepted-is-legal', 'C2.6 coordinator clarification (only quota is ordered after accepted)',
      lambda t: setattr(t,'runtime',sb.stub_calls(['connect','auth.getStatus'],21.051,step=0.002)
                         +sb.stub_calls(['account.getQuota'],21.075,first_seq=3)), {}, (), {}, 'pass'),
-    ('accepted-other-engine-request', 'C2.6 coordinator clarification (pre-send ID must match own reply)',
+    ('accepted-other-engine-request', 'C2.7 D FAIL: "`accepted` with another `engineRequestID`"',
      lambda t:t.one('refresh',phase='accepted').update(engineRequestID=999), {}, (),
-     {3:('not-run','not-delivered','accepted-stale')}, 'not-run'),
-    ('completed-two-accounts', 'C2.6 reading fingerprint decision (exactly one account)',
-     lambda t:t.one('refresh',phase='completed').update(copilotAccountsAfter=2), {}, (),
-     {3:('fail','unknown','projection-not-qualifying')}, 'fail'),
+     {3:('fail','unknown','accepted-other-engine-request')}, 'fail'),
     ('runtime-calls-preseeded', 'C2.6 C-D (the log must be absent in the seed)', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 1.0) + sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=4)), {}, (),
-     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+     {3: ('fail', 'unknown', 'call-before-requested')}, 'fail'),
     ('runtime-calls-foreign', 'C2.6 D, C2.4 section 1', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, run='u6-run-0002')), {}, (),
      {3: ('not-run', 'wrong-subject', 'runtime-calls-foreign')}, 'not-run'),
@@ -659,6 +668,12 @@ class ReplayOracleTests(unittest.TestCase):
         delayed_clear(trace)
         self.assert_steps(replay_trace(trace), {6: ('fail', 'timeout', 'clear-late')}, 'fail')
 
+    def test_reading_digest_vector(self):
+        account, canonical = READING_VECTOR
+        self.assertEqual(sb.reading_sha256(account), hashlib.sha256(canonical.encode()).hexdigest())
+        self.assertEqual(sb._basis_points(12.345), 1235)  # half away from zero after scaling
+        self.assertEqual(sb._basis_points(0.005), 1)
+
     def test_fixture_receipts_are_the_shipped_writers_output(self):
         """The authored capture/reset/finish receipts equal what capture_owned, consent_reset and action_runner
         write for the same trace, so in-memory traces and committed fixtures agree with the shipped writers."""
@@ -710,7 +725,7 @@ def evidence_u6(ctx, files):
         return json.loads(run.stdout.strip().splitlines()[-1])
 
 
-# C2.6 G.3 asks for no expectedFailure; until M4 lands C2.6 in bin/evidence-u6.py, every trace on which it (at
+# C2.7 G.3 asks for no expectedFailure; until M4 lands C2.7 in bin/evidence-u6.py, every trace on which it (at
 # #332 6a063beb, unchanged since 8f857aa6) disagrees with the oracle on the overall outcome is listed here:
 # trace -> (oracle, evidence-u6, deciding contract text). Each is an expected failure; a fix in evidence-u6 shows
 # up as an unexpected success, and a new divergence fails a test, until this table and the README are updated.
@@ -719,7 +734,10 @@ _F_CONTRADICTION = 'C2.6 F: "Two valid receipts that contradict each other (incl
 _D_NOT_RUN = 'C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt"'
 _D_ACCEPTED = 'C2.6 D: accepted is "written from the completion of that refresh/request call (the per-call reply, never store.snapshot or any cached value)"'
 _D_FAIL_COMPLETED = 'C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call"'
-_D_FAIL_BEFORE = 'C2.6 D FAIL: "a call logged before accepted"'
+_D_FAIL_BEFORE = 'C2.7 D FAIL: an account.getQuota call before requested'
+_D_PASS_WINDOW = ('C2.7 D PASS: "account.getQuota with mono after requested and before completed (... the call may '
+                  'precede accepted)"')
+_D_FAIL_OTHER_REQUEST = 'C2.7 D FAIL: "`accepted` with another `engineRequestID`"'
 _E = 'C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout"'
 BASELINE_DISAGREEMENTS = {
     'closure-other-run': ('not-run', 'fail', _F_IGNORED),
@@ -733,15 +751,18 @@ BASELINE_DISAGREEMENTS = {
     'refresh-terminal-late': ('not-run', 'fail', 'C2.6 D: "Exactly one terminal row for R within 60 s"; NOT-RUN: "no terminal"'),
     'refresh-rows-unchanged': ('fail', 'not-run', _D_FAIL_COMPLETED),
     'accepted-missing': ('not-run', 'pass', _D_NOT_RUN),
-    'accepted-stale-snapshot': ('not-run', 'pass', _D_ACCEPTED),
+    'accepted-stale-snapshot': ('fail', 'pass', _D_FAIL_OTHER_REQUEST),
+    'accepted-other-engine-request': ('fail', 'not-run', _D_FAIL_OTHER_REQUEST),
     'accepted-duplicate': ('fail', 'pass', _F_CONTRADICTION),
     'copilot-accounts-before-nonzero': ('fail', 'pass', 'C2.6 D FAIL: "copilotAccountsBefore ≠ 0"'),
     'completed-on-unrelated-projection': ('fail', 'pass', _D_FAIL_COMPLETED),
-    'completed-other-account': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'completed-other-reading': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'completed-two-accounts': ('fail', 'pass', 'C2.6 D (binding decision): copilotAccountsAfter must be 1'),
     'copilot-not-scheduled-but-completed': ('fail', 'pass', 'C2.6 D PASS needs accepted "scheduled"; ' + _F_CONTRADICTION),
     'stub-call-missing': ('fail', 'pass', _D_FAIL_COMPLETED),
     'quota-call-after-completed': ('fail', 'pass', _D_FAIL_COMPLETED),
-    'call-before-accepted': ('fail', 'pass', _D_FAIL_BEFORE),
+    'call-before-requested': ('fail', 'pass', _D_FAIL_BEFORE),
+    'quota-call-before-accepted': ('pass', 'fail', _D_PASS_WINDOW),
     'runtime-calls-preseeded': ('fail', 'pass', _D_FAIL_BEFORE + '; C2.6 C: "The log is absent in the seed"'),
     'runtime-calls-foreign': ('not-run', 'pass', _D_NOT_RUN),
     'runtime-calls-missing': ('not-run', 'pass', _D_NOT_RUN),
@@ -752,9 +773,16 @@ BASELINE_DISAGREEMENTS = {
     'menu-scrubbed-late': ('fail', 'pass', _E),
 }
 
-# Every historical divergence remains a regression through the real final CLI.
-# The 93-trace differential run now agrees; no expected-failure decorator remains.
-DISAGREEMENTS = {}
+# Every historical divergence remains a regression through the real final CLI. The ones evidence-u6 (at #332
+# a1d746fc) still decides against C2.7 are expected failures: trace -> (C2.7 outcome, evidence-u6 now, contract).
+DISAGREEMENTS = {
+    # evidence-u6 change: an accepted whose engineRequestID differs from requested's is FAIL, not NOT-RUN.
+    'accepted-stale-snapshot': ('fail', 'not-run', _D_FAIL_OTHER_REQUEST),
+    'accepted-other-engine-request': ('fail', 'not-run', _D_FAIL_OTHER_REQUEST),
+    # evidence-u6 change: only an account.getQuota call before requested fails; one between requested and
+    # accepted counts towards PASS (window is requested < mono < completed).
+    'quota-call-before-accepted': ('pass', 'fail', _D_PASS_WINDOW),
+}
 
 
 class EvidenceU6CLITests(unittest.TestCase):
@@ -765,7 +793,7 @@ class EvidenceU6CLITests(unittest.TestCase):
     def compare(self, name, ctx, files):
         oracle = replay.replay(ctx, files)['outcome']
         evidence = evidence_u6(ctx, files)['outcome']
-        self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.6 oracle' % name)
+        self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.7 oracle' % name)
 
     def test_valid_batch(self):
         """Agrees (an expected failure at a98b25a3: legacy CLI and accepted-clear fields)."""
@@ -782,14 +810,19 @@ class EvidenceU6CLITests(unittest.TestCase):
     def test_disagreement_table_is_exact(self):
         """Outside the expected failures: each tabled trace exists and both sides give exactly the tabled outcome."""
         traces = {name: (ctx, files) for name, ctx, files in differential_traces()}
-        self.assertEqual(DISAGREEMENTS, {})
         self.assertLessEqual(set(BASELINE_DISAGREEMENTS), set(traces))
+        self.assertLessEqual(set(DISAGREEMENTS), set(BASELINE_DISAGREEMENTS))
         for name, (expected, old_evidence, quote) in BASELINE_DISAGREEMENTS.items():
             self.assertNotEqual(expected, old_evidence, name)
-            self.assertTrue(quote.startswith(('C2.6', 'C2.4')), name)
+            self.assertTrue(quote.startswith(('C2.7', 'C2.6', 'C2.4')), name)
             ctx, files = traces[name]
             self.assertEqual(replay.replay(ctx, files)['outcome'], expected, name + ': independent oracle')
-            self.assertEqual(evidence_u6(ctx, files)['outcome'], expected, name + ': real final CLI')
+            # A still-open divergence pins evidence-u6's current outcome; every other one is a regression.
+            current = DISAGREEMENTS[name][1] if name in DISAGREEMENTS else expected
+            self.assertEqual(evidence_u6(ctx, files)['outcome'], current, name + ': real final CLI')
+        for name, (oracle, evidence, quote) in DISAGREEMENTS.items():
+            self.assertEqual(oracle, BASELINE_DISAGREEMENTS[name][0], name)
+            self.assertNotEqual(oracle, evidence, name)
 
     def test_oracle_and_evidence_read_the_same_batch(self):
         """C2.6 F: the oracle reads the batch evidence-u6 reads, byte for byte (kit_batch adds run files only)."""
@@ -808,9 +841,9 @@ def _differential(name, ctx, files):
     def test(self):
         self.compare(name, ctx, files)
     entry = DISAGREEMENTS.get(name)
-    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'evidence-u6 change required by C2.6 (%s): %s'
+    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'evidence-u6 change required by C2.7 (%s): %s'
                                 % ('%s, not %s' % entry[:2], entry[2]))
-    return test
+    return test if entry is None else unittest.expectedFailure(test)
 
 
 for _name, _ctx, _files in differential_traces():

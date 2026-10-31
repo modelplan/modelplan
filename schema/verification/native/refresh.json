@@ -3,7 +3,7 @@
   "$id": "https://modelplan.ai/schema/verification/native/refresh.json",
   "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "refresh",
-  "description": "Production Refresh handler rows for one request R, written flat (C2.6 F): requested (before composition.refresh; copilotAccountsBefore must be 0), accepted (from that refresh/request call's own reply: engineRequestID, dispositions), then exactly one terminal: completed (the accepted rows projection showing the seed's Copilot account), deferred (Copilot not scheduled), abandoned (watchdog: deadline or stop) or failed (production refresh error) (C2.6 D).",
+  "description": "Production Refresh handler rows for one request R, written flat (C2.6 F): requested (before composition.refresh; copilotAccountsBefore must be 0; the engineRequestID it sends), accepted (from that refresh/request call's own reply: engineRequestID, dispositions), then exactly one terminal: completed (the accepted rows projection whose single Copilot account has the seed's readingSHA256), deferred (Copilot not scheduled), abandoned (watchdog: deadline or stop) or failed (production refresh error) (C2.6 D).",
   "type": "object",
   "required": [
     "runID",
@@ -79,7 +79,8 @@
           "type": "integer",
           "minimum": 0
         }
-      ]
+      ],
+      "description": "The client request ID of the one refresh/request call; requested and accepted carry the same value."
     },
     "dispositions": {
       "type": "object",
@@ -101,10 +102,12 @@
     },
     "copilotAccountsAfter": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "description": "Copilot accounts in the accepted projection; PASS needs exactly 1."
     },
     "readingSHA256": {
-      "$ref": "../common.json#/$defs/sha256"
+      "$ref": "../common.json#/$defs/sha256",
+      "description": "SHA-256 of the canonical reading of the single Copilot account (README, Reading digest)."
     },
     "reason": {
       "$ref": "../common.json#/$defs/scenarioReason"
