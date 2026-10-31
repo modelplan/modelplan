@@ -130,6 +130,51 @@ class ScenarioRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'no registered scenario'):
             scenario.command(self.config(), 'drive', plain)
 
+    def test_u6_registers_builder_observations_and_actions_inside_the_kit(self):  # macrev-332-16, -17
+        c = self.config(scenario='u6', argv=[str(self.binary), '--u6-drive-contract', 'x'])
+        path = self.root / 'u6.json'; path.write_text(json.dumps(c))
+        self.assertEqual(scenario.command(c, 'actions', path, extra=['--pointer-binary', 'p'])[1:],
+                         [str(BIN.parent / 'U6' / 'action_runner.py'), '--pointer-binary', 'p', '--config', str(path)])
+        self.assertEqual(scenario.script_command(DEMO['u6'], 'config', path)[1], str(BIN.parent / 'U6' / 'prepare_config.py'))
+        out = subprocess.run([sys.executable, '-B', str(BIN / 'scenario.py'), 'has-actions', '--config', str(path)],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, 'actions')
+        with self.assertRaisesRegex(ValueError, 'no actions step'):
+            scenario.script_command(DEMO['demo'], 'actions', path)
+        for script in ('../../outside.py', '/bin/sh'):
+            with self.subTest(script=script), self.assertRaisesRegex(ValueError, 'inside the verification kit'):
+                scenario.script_command(dict(DEMO['u6'], actions=script), 'actions', path)
+        with self.assertRaises(SystemExit):  # extra arguments only reach build/actions
+            scenario.main(['prepare', '--config', str(path), '--', '--x'], self.registry / 'scenarios.json')
+
+    def test_started_waits_boundedly_for_this_runs_registered_subject_row(self):
+        batch = self.root / 'batch'; batch.mkdir()
+        c = self.config(scenario='u6', argv=[str(self.binary), '--u6-drive-contract', 'x'], batch=str(batch), expectedLease=dict(runID='r', epoch='e'))
+        clock = iter(range(100)).__next__
+        def wait(): return scenario.started(c, clock=lambda: clock(), sleep=lambda _: None)
+        self.assertFalse(wait())  # nothing registered: gives up at the bound, never longer than 15 s
+        self.assertEqual(scenario.started.__defaults__[1], 15)
+        Path(c['subjectPidPath']).write_text(json.dumps(dict(state='running', pid=7, runID='r', epoch='e')))
+        rows = batch / 'native-observations.jsonl'
+        for row in (dict(event='started', runID='r', epoch='other', pid=7), dict(event='started', runID='r', epoch='e', pid=8)):
+            rows.write_text(json.dumps(row) + '\n')
+            clock = iter(range(100)).__next__; self.assertFalse(wait())
+        rows.write_text(json.dumps(dict(event='started', runID='r', epoch='e', pid=7)) + '\n')
+        clock = iter(range(100)).__next__; self.assertTrue(wait())
+
+    def test_build_creates_only_a_fresh_config_for_its_scenario(self):
+        target = self.root / 'built.json'
+        (self.registry / 'demo-build.py').write_text(
+            'import json,sys\nopen(sys.argv[-1],"w").write(json.dumps(dict(scenario=sys.argv[1], argv=["a", "--demo-contract"])))\n')
+        reg = self.registry / 'scenarios.json'
+        reg.write_text(json.dumps(dict(DEMO, demo=dict(DEMO['demo'], config='demo-build.py'))))
+        self.assertEqual(scenario.main(['build', '--scenario', 'demo', '--config', str(target), '--', 'demo'], reg), 0)
+        with self.assertRaisesRegex(ValueError, 'run config exists'):
+            scenario.main(['build', '--scenario', 'demo', '--config', str(target), '--', 'demo'], reg)
+        target.unlink()
+        with self.assertRaisesRegex(ValueError, "did not create this scenario"):
+            scenario.main(['build', '--scenario', 'demo', '--config', str(target), '--', 'u6'], reg)
+
 
 STUB = r"""
 python3() {
@@ -145,10 +190,28 @@ python3() {
     guardian.py) echo "guardian-stop $5" >> "$LOG"; echo "guardian-grace $8 $9" >> "$LOG"
                  while [ ! -e "$5" ]; do sleep 0.02; done; echo "guardian.py exit" >> "$LOG"; return "${GUARDIAN:-0}" ;;
     release.py) return "${RELEASE:-0}" ;;
-    scenario.py) case "$2" in name) echo "$NAME" ;; prepare) return "${PREPARE:-0}" ;; drive) return "${DRIVE:-0}" ;; esac ;;
-    launch.py|drive-scenario.py) while [ ! -e "$STOP_PATH" ]; do sleep 0.02; done
+    scenario.py) case "$2" in
+        name) echo "$NAME" ;;
+        build) echo "build-args $*" >> "$LOG"; [ "${BUILD:-0}" -eq 0 ] || return "$BUILD"
+               "$REAL_PY" -c 'import json,sys; c=json.load(open(sys.argv[1])); c["expectedLease"]=dict(runID=sys.argv[3] + sys.argv[5], epoch=sys.argv[4])
+json.dump(c, open(sys.argv[2], "w"))' "$TEMPLATE" "$6" "${11}" "${13}" "${WRONG_RUN:-}" ;;
+        prepare) return "${PREPARE:-0}" ;;
+        drive) if [ -n "$ACTIONS" ]; then  # the monitor: ends on the runner's hand-off or on the stop file
+                 while [ ! -e "$FINISH" ] && [ ! -e "$STOP_PATH" ]; do sleep 0.02; done
+                 if [ -e "$FINISH" ]; then echo "scenario.py drive saw-finish" >> "$LOG"; else echo "scenario.py drive saw-stop" >> "$LOG"; fi
+                 (set -C; echo '{"stop": true, "reason": "run-ended"}' > "$STOP_PATH") 2>/dev/null || true
+               fi; return "${DRIVE:-0}" ;;
+        has-actions) echo "$ACTIONS" ;;
+        started) n=0; while [ ! -e "$ROW" ] && [ $n -lt 250 ]; do sleep 0.02; n=$((n+1)); done
+                 [ "${STARTED:-0}" -eq 0 ] && [ -e "$ROW" ] || return "${STARTED:-3}"; echo "started-ok" >> "$LOG" ;;
+        actions) echo "action-args $*" >> "$LOG"; [ "${ACTION:-0}" -eq 0 ] || return "$ACTION"
+                 echo '{"schema": "u6-actions/1"}' > "$FINISH"; echo "actions-exit" >> "$LOG" ;;
+      esac ;;
+    launch.py|drive-scenario.py) [ -z "$ROW" ] || { sleep 0.2; : > "$ROW"; }  # the subject's native started row
+                                 while [ ! -e "$STOP_PATH" ]; do sleep 0.02; done
                                  echo "$s exit" >> "$LOG"; return "${CONTROLLER:-3}" ;;
-    check_launch_cleanup.py) echo "check-args $*" >> "$LOG"; return "${CHECK:-0}" ;;
+    check_launch_cleanup.py) echo "check-args $*" >> "$LOG"  # like the real check: a failed scenario never passes
+                             case "$*" in *"--scenario-status 0") return "${CHECK:-0}" ;; *) return 1 ;; esac ;;
     check_drive_cleanup.py) return "${CHECK:-0}" ;;
   esac
 }
@@ -162,21 +225,27 @@ class SkillLaunchBranchTests(unittest.TestCase):
         start = text.index('```sh\n', text.index('M1 uses this exact sequence')) + len('```sh\n')
         return text[start:text.index('```', start)]
 
-    def run_sequence(self, mode='launch', name='u6', existing=(), **env):
+    def run_sequence(self, mode='launch', name='u6', existing=(), build=False, prefix='', **env):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); log = root / 'calls'
             paths = dict(leasePath=root / 'lease.json', releasePath=root / 'release.json',
                          stopPath=root / 'batch' / 'stop.json', subjectPidPath=root / 'subject.pid')
             (root / 'batch').mkdir()
-            config = root / 'run.json'; config.write_text(json.dumps({k: str(v) for k, v in paths.items()}))
+            config = root / 'batch' / 'run.json'
+            # A built scenario's run config does not exist yet: `scenario.py build` makes it from the template.
+            (root / 'template.json' if build else config).write_text(json.dumps({k: str(v) for k, v in paths.items()}))
             for key in existing: paths[key].write_text('{}')
             values = dict(LOG=str(log), REAL_PY=sys.executable, NAME=name, CONTROLLER_MODE=mode, RUN_CONFIG=str(config),
-                          BOOKING_ID='b1', APPROVAL_URL='https://example.test/ok', PATH='/usr/bin:/bin')
+                          BOOKING_ID='b1', APPROVAL_URL='https://example.test/ok', PATH='/usr/bin:/bin',
+                          TEMPLATE=str(root / 'template.json'), FINISH=str(root / 'batch' / 'operator-finish.json'))
+            if build: values.update(BUILD_SCENARIO=name, ACTIONS='actions', ROW=str(root / 'batch' / 'started-row'))
             values.update({k: str(v) for k, v in env.items()})
-            result = subprocess.run(['bash', '-c', STUB + self.block()], env=values, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(['bash', '-c', STUB + prefix + self.block()], env=values, capture_output=True, text=True, timeout=60)
             calls = log.read_text().splitlines() if log.exists() else []
-            return dict(status=result.returncode, calls=calls, stderr=result.stderr, config=json.loads(config.read_text()),
-                        stop=paths['stopPath'].read_text() if paths['stopPath'].exists() else None, paths=paths)
+            return dict(status=result.returncode, calls=calls, stderr=result.stderr,
+                        config=json.loads(config.read_text()) if config.exists() else None,
+                        stop=paths['stopPath'].read_text() if paths['stopPath'].exists() else None, paths=paths,
+                        finish=(root / 'batch' / 'operator-finish.json').exists())
 
     def index(self, calls, prefix):
         return next(i for i, call in enumerate(calls) if call.startswith(prefix))
@@ -255,6 +324,78 @@ class SkillLaunchBranchTests(unittest.TestCase):
         self.assertEqual([c for c in r['calls'] if c.startswith(('scenario.py', 'launch.py --', 'check', 'book.py finish'))],
                          ['scenario.py name', 'launch.py --config', 'check_launch_cleanup.py --config', 'check-args ' + r['calls'][self.index(r['calls'], 'check-args')][11:], 'book.py finish'])
         self.assertIn('# ... in launch mode, drive the scenario against the launched subject here', self.block())
+
+    U6 = ('BUILD_ARGS=(--scratch /attempt/scratch --private-tool copilot)\n'
+          'ACTION_ARGS=(--pointer-binary /kit/pointer_drive)\n')
+
+    def u6(self, **env):
+        return self.run_sequence(build=True, prefix=self.U6, DRIVE=0, CONTROLLER=3, GUARDIAN=0, **env)
+
+    def test_u6_branch_builds_then_starts_then_monitors_actions_and_closes(self):  # macrev-332-16, -17
+        r = self.u6(); calls = r['calls']
+        self.assertEqual(r['status'], 0, r['stderr'])
+        # Foreground steps in strict order (the background guardian, launch.py and monitor log as they start).
+        order = ['book.py request', 'scenario.py build', 'book.py start', 'release.py --lane',
+                 'scenario.py name', 'scenario.py prepare', 'scenario.py has-actions', 'started-ok', 'action-args',
+                 'actions-exit', 'scenario.py drive saw-finish', 'check_launch_cleanup.py', 'book.py finish']
+        self.assertEqual([self.index(calls, x) for x in order], sorted(self.index(calls, x) for x in order), calls)
+        self.assertLess(self.index(calls, 'book.py start'), self.index(calls, 'guardian.py --lease'))
+        for background in ('launch.py --config', 'scenario.py drive'):  # running before the actions end
+            self.assertTrue(self.index(calls, 'scenario.py prepare') < self.index(calls, background)
+                            < self.index(calls, 'actions-exit'), calls)
+        # The monitor runs while the actions do: it ends only on the runner's exclusive hand-off ...
+        self.assertTrue(r['finish'])
+        # ... and both supervisors are reaped after the monitor and before the closure check.
+        for supervisor in ('launch.py exit', 'guardian.py exit'):
+            self.assertTrue(self.index(calls, 'scenario.py drive saw-finish') < self.index(calls, supervisor)
+                            < self.index(calls, 'check_launch_cleanup.py'))
+        block = self.block()
+        self.assertLess(block.index('scenario.py" build'), block.index('book.py" start'))
+        self.assertLess(block.index('launch.py" --config'), block.index('scenario.py" drive'))
+        self.assertLess(block.index('scenario.py" drive'), block.index('scenario.py" started'))
+        self.assertLess(block.index('scenario.py" actions'), block.index('wait "$SCENARIO_PID"'))
+        self.assertLess(block.index('wait "$SCENARIO_PID"'), block.index('wait "$CONTROLLER_PID"'))
+        # One run/epoch: the builder got the same RUN_ID/EPOCH that start used, and the bind kept it.
+        run = next(c for c in calls if c.startswith('run='))
+        build = calls[self.index(calls, 'build-args')]
+        lease = r['config']['expectedLease']
+        self.assertEqual(run, 'run=%s epoch=%s' % (lease['runID'], lease['epoch']))
+        self.assertIn('--scenario u6 --config %s -- --booking-id b1 --run-id %s --epoch %s --scratch /attempt/scratch'
+                      % (r['paths']['stopPath'].parent / 'run.json', lease['runID'], lease['epoch']), build)
+        self.assertIn('--pointer-binary /kit/pointer_drive', calls[self.index(calls, 'action-args')])
+        self.assertIn('--scenario-status 0', calls[self.index(calls, 'check-args')])
+
+    def test_u6_failing_action_still_stops_and_closes_but_never_finishes(self):
+        r = self.u6(ACTION=4); calls = r['calls']
+        self.assertNotIn('actions-exit', calls); self.assertFalse(r['finish'])  # no hand-off from anyone else
+        self.assertEqual(json.loads(r['stop'])['reason'], 'scenario-actions-failed')
+        self.assertIn('scenario.py drive saw-stop', calls)
+        for step in ('launch.py exit', 'guardian.py exit'):
+            self.assertLess(self.index(calls, step), self.index(calls, 'check_launch_cleanup.py'))
+        self.assertIn('--scenario-status 4', calls[self.index(calls, 'check-args')])
+        self.assertNotIn('book.py finish', calls)
+        self.assertIn('NEEDS-COORDINATOR', r['stderr']); self.assertIn('actions=4', r['stderr'])
+        self.assertNotIn('aborted', r['stderr'])  # a closure question, not an abort
+
+    def test_u6_missing_started_row_skips_actions_and_still_closes(self):
+        r = self.u6(STARTED=3); calls = r['calls']
+        self.assertNotIn('action-args', ' '.join(calls)); self.assertFalse(r['finish'])
+        self.assertEqual(json.loads(r['stop'])['reason'], 'scenario-actions-failed')
+        self.assertLess(self.index(calls, 'guardian.py exit'), self.index(calls, 'check_launch_cleanup.py'))
+        self.assertIn('--scenario-status 3', calls[self.index(calls, 'check-args')])
+        self.assertNotIn('book.py finish', calls)
+
+    def test_u6_builder_failure_stops_before_start(self):
+        r = self.u6(BUILD=2)
+        self.assertEqual((r['status'], r['calls'][:2]), (2, ['book.py request', 'scenario.py build']))
+        self.assertNotIn('book.py start', ' '.join(r['calls'])); self.assertIsNone(r['config'])
+        self.assertIsNone(r['stop']); self.assertNotIn('NEEDS-COORDINATOR', r['stderr'])  # nothing started: withdraw
+
+    def test_u6_built_config_for_another_run_is_refused_after_start(self):
+        r = self.u6(WRONG_RUN='-other')
+        self.assertEqual(r['status'], 3)
+        self.assertNotIn('guardian.py --lease', ' '.join(r['calls'])); self.assertNotIn('book.py finish', r['calls'])
+        self.assertIn('another run/epoch', r['stderr']); self.assertIn('NEEDS-COORDINATOR', r['stderr'])
 
     def test_drive_mode_uses_its_own_closure_check(self):
         r = self.run_sequence(mode='drive', name='', CONTROLLER=0)

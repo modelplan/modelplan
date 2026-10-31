@@ -11,7 +11,8 @@ Prints one JSON receipt (schema launch-cleanup/1) and writes the same receipt at
 - helpersGone:          the registered launcher identity (launch.py) is gone
 - controllerStatus:     launch.py exited 0, or 3 with a stop reason recorded in the stop file
 - guardianStatus:       bin/guardian.py exited 0 (it confirmed the subject closed)
-- scenarioStatus:       the scenario's drive step exited 0
+- scenarioStatus:       the scenario's drive step exited 0, and so did its started wait and action runner when it
+                        registers `actions` (SKILL.md folds a failed action into this status)
 - leaseClosable:        the lease matches the run config and the ledger's head booking is still started for
                         this run/epoch, so `book.py finish` can close it (replayed read-only, never locked)
 - locksReleased:        no lock listed in the prepared receipt, and no lock under `locks`, carries this

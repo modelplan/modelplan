@@ -31,6 +31,13 @@ final class DecodeTests: XCTestCase {
             .appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
     }
     private func data(_ name: String) throws -> Data { try Data(contentsOf: captures.appendingPathComponent(name)) }
+
+    func testRowsSubscribeBusyFixtureIsTypedRPCError() throws {
+        let failure = try WireDecoder.decode(WireFailure.self, from: data("rows-subscribe-busy.json"))
+        XCTAssertEqual(failure.error.code, -32013)
+        XCTAssertEqual(failure.error.message, "busy")
+        XCTAssertEqual(failure.error.data.sessionId, "s-synthetic")
+    }
     private func object(_ name: String) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data(name)) as? [String: Any])
     }

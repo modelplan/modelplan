@@ -11,6 +11,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/lineup"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -108,7 +109,12 @@ type MultiplierHorizon struct {
 	Selection string `json:"selection"`
 }
 type Digest struct {
-	Catalogue         *detect.Catalogue `json:"-"`
+	// Optional same-publication calendar supplement, not part of the client
+	// multiplier pack and never used for billing or recommendation calculations.
+	CalendarIntervals []MultiplierWindow `json:"-"`
+	CalendarFrom      time.Time          `json:"-"`
+	CalendarTo        time.Time          `json:"-"`
+	Catalogue         *detect.Catalogue  `json:"-"`
 	publication       publicationFields
 	CLIUpdate         json.RawMessage    `json:"cli,omitempty"` // optional verified update pin; decoded only by explicit update
 	PublicationID     string             `json:"publicationId"`

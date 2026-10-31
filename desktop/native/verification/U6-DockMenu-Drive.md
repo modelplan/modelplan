@@ -41,6 +41,63 @@ The named U6 seed uses `--private-tool copilot`, not a display-title argument. A
    The Refresh item closes menu session A. C2.3's action runner physically opens distinct session B, checks the seed's title hash, and invokes the run-bound synthetic reset wrapper while B remains tracked. It records every action outcome in one exclusive `operator-finish.json`; on missing input, title, helper result or scrub receipt it requests the run's normal stop and records NOT-RUN. The C2.3 table below is the acceptance rule.
 6. Quit the owned candidate. When Drive ends it requests the normal quit by writing the run config's `stopPath` (the same path the native contract names as `stop`): the test build's guard then calls `NSApplication.terminate` and appends its own stop row (`stop-or-lease-expired`) to the native observations. Drive records `quit` in `result.json`: `requested` (`native-contract-stop`, or `none-subject-already-exited` when the subject had already ended) and `appAcknowledged`/`appEvent` from that row only. The row proves the app began its normal terminate, not that it finished it: `launch.py` and the guardian give the subject the run config's `quitGraceSeconds` (default 5, capped at 10) to finish that quit by itself and TERM it only if it is still running afterwards; both record `quitGraceUsed`/`exitedDuringGrace`. Coordinator decision: this contract-stop quit counts as quitting through the owned application, so no Quit menu press is required; M4 adds a terminate-completed row from `applicationWillTerminate`. `launch.py` and the guardian close the subject. Drive waits for closure up to the quit grace plus 25 seconds and only observes that the registered identity is gone, and only then releases the locks carrying its prepared token and removes `home`/`tmp` (and `home-seed` when configured). While driving it keeps checking the disk floor. On a breach it writes the stop file (`resource-disk-floor`) and signals nothing. Otherwise it leaves them held and exits 3 (closure unconfirmed). After the sequence has waited for `launch.py` and the guardian, M1 runs the independent `bin/check_launch_cleanup.py --config "$RUN_CONFIG"` with the controller, guardian and scenario exit statuses (SKILL.md launch branch); it writes its `launch-cleanup/1` receipt to `<batch>/launch-cleanup.json` for `evidence-u6.py`; `book.py finish --cleaned` runs only when it exits 0, otherwise M1 posts the NEEDS-COORDINATOR line and the booking stays started. Announce window end + cleaned only after that receipt passes. Retain evidence according to the batch policy.
 
+## Contract revision C2.5 (coordinator, 2026-10-31)
+
+Answers MACREV's DESIGN REVIEW NEEDED at a98b25a3/8f857aa6/6a063beb and macrev-332-16/-17/-18/-21. C2.5 amends C2.4 below; where they differ, C2.5 wins. Everything in C2.4 not named here stays as written. No further U6 kit fix is reviewed against anything but C2.5.
+
+### A. One invocation, frozen order (macrev-332-16/-17)
+M1 runs the `SKILL.md` launch branch as one script per attempt, in this order and no other:
+1. `book.py request` → GO → fresh `RUN_ID`/`EPOCH`.
+2. **Build before start.** `scenario.py build --scenario u6 --config "$BATCH/run.json" -- --run-id "$RUN_ID" --epoch "$EPOCH" …` runs `U6/prepare_config.py`. It writes `run.json` and `synthetic-seed.json`, never reads a lease, and refuses if the config, lease, release, subject registration, seed or stop path already exists. Its `expectedLease` holds only runID and epoch. A build failure exits before start: the booking is withdrawn, nothing is stopped.
+3. Read attempt paths from the config; freshness check.
+4. `book.py start` (lease written to the config's `leasePath`); the stop trap is armed from here on.
+5. **Bind:** add the lease's `notBefore`/`expiresAt` to `expectedLease`; a different runID/epoch in the built config → stop, NEEDS-COORDINATOR.
+6. Guardian (background), `release.py`.
+7. `scenario.py name` must equal `u6`; `scenario.py prepare` (`drive-u6.py prepare`).
+8. `launch.py --execute` (background), then `scenario.py drive` (background; Drive is the monitor and never waits on M1).
+9. `scenario.py started` (≤ 15 s for the registered subject's `started` row, matched on runID/epoch/pid), then `scenario.py actions` (the action runner, background, waited on, inside the trap). Only the action runner writes `operator-finish.json`. A failed wait or action → `request_stop scenario-actions-failed`.
+10. Wait for Drive (it ends on `operator-finish.json` or the stop file, requests quit and observes closure). A failed action makes the scenario status non-zero even if Drive exits 0.
+11. `request_stop sequence-close`; wait for controller and guardian.
+12. `check_launch_cleanup.py` with the three statuses.
+13. `book.py finish --cleaned` only if 12 passes; otherwise NEEDS-COORDINATOR (with `actions=<status>`). Closure always runs.
+
+### B. Admission (macrev-332-18)
+- The full additive admission (C2.4 §4: remaining ≥ `requiredSeconds` + `quitGraceSeconds` + 25 s) runs only before the subject starts: in `drive-u6.py prepare` and in `launch.py`.
+- After launch, every U6 tool (Drive's bind check, the action runner before every command, `u6-pointer-plan.py`, `capture_owned.py`, `consent_reset.py`, `prepare_menu_plan.py`) calls `admission.still_admitted`, never `load_and_admit`. It requires: the lease `expectedLease` names, a matching release, guardian true, now inside the lease window, heartbeat age ≤ 2 s, no stop file, not owner-preempted, still exclusive, the booking still started and owned, and remaining ≥ `quitGraceSeconds` + 25 s. Any miss → the tool writes the stop file and the step is NOT-RUN.
+
+### C. Seed and normal-launch runtime (macrev2-332-4/-5, macrev-332-21)
+- **Runtime:** Launch gives the subject only PATH (`/usr/bin:/bin`), HOME, TMPDIR and LANG; the App's child-env allowlist drops every `MODELPLAN_*` variable. No pass-through is added. The helper finds the Copilot runtime by its production lookup, which checks `$HOME/.local/bin` and `$HOME/bin` before any system location.
+- **First-attempt seed.** The real seed contains the synthetic Copilot stub at `$HOME/bin/copilot` (no network; fixed synthetic quota) and the `copilot.runtime_usage` grant, and **no Copilot reading and no refresh/rate-limit state**. Step 3 is therefore the first Copilot attempt, which production rate limits allow. Editing stored next-refresh/attempt times is forbidden (it forges rate-limit state), and so is waiting out the cooldown inside the lease.
+- **Title:** a throwaway twin home, made by the same builder, runs the synthetic refresh and the released helper's catalogue to obtain the canonical row name (`GitHub Copilot`); only its SHA-256 goes into `synthetic-seed.json`. The twin is deleted before start and is never the launched HOME. There is no second title spelling anywhere.
+- **Seed integrity:** the stub's bytes are inside the seed tree digest (`syntheticHomeSeedSHA256`), so Launch's seed verification proves the stub is the runtime that will run. `seed_probe.py` runs the actual pinned helper with exactly the four variables against the copied seed and asserts: the stub resolves, the grant is present, no Copilot reading or cooldown state exists, and the catalogue title hash matches.
+
+### D. Step 3 Refresh (replaces C2.4 step 3's pass rule)
+- The production handler writes `refresh requested` (R, `rowsSequenceBefore` n) and copies the engine's per-scope `refresh/request` reply into the row as `dispositions` (`scope` → `scheduled` | `cooldown` | `read_only` | `offline` | `policy_pending`).
+- Exactly one terminal row for R within 60 s of `requested`:
+  - **PASS:** `completed`, `rowsSequenceAfter` > n, `dispositions["copilot.runtime_usage"] = "scheduled"`, `copilotRow` `absent → present`, and the stub's call log shows `account.getQuota` for this run. Before HOME is removed, Drive copies the stub log to `$BATCH/runtime-calls.json` and records its SHA-256; `evidence-u6.py` reads that copy.
+  - **NOT-RUN:** `deferred` (Copilot not `scheduled`; reason `cooldown`), no terminal, or a run that stopped before the terminal. The App's watchdog writes `abandoned` with `cause: "deadline"` (reason `timeout`) or `cause: "stop"` (reason `not-delivered`), never `failed`.
+  - **FAIL:** `failed` from the production result, or a sequence advance without the Copilot row/stub call (an unrelated change is never a refresh).
+- §5 gains the scenario reason `cooldown`.
+
+### E. Clear deadline (steps 5–6)
+`accepted-clear` and `menu-scrubbed` for B within 5 s of `clear-initiated` (`mono`). Late → FAIL `timeout` (private content stayed up after the reset); absent → NOT-RUN.
+
+### F. Receipt format and verdict rules
+- **Native rows keep the App's current envelope** (`{runID, epoch, pid, seq, mono, at, event, timestamp, checks:{…}}`, `refresh` as written today). `schema/verification` describes that envelope; no App row-shape change.
+- A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN (it is ignored, C2.4 §1). Two valid receipts that contradict each other (including a self-contradicting closure receipt, or descending/duplicate `seq`) → FAIL.
+- A step outcome reported by the action runner is NOT-RUN with its bounded reason; FAIL comes only from App/helper receipts or a contradiction.
+- An unknown native protocol version → NOT-RUN `unknown`.
+
+### G. Required regressions before the kit (package level)
+1. **Positive, producer → final entry (CI, Linux):** head-built public CLI as the helper → real `prepare_config` → `homeseed.copy_into` → normal app-server with exactly the Launch environment → `refresh/request` → later rows sequence within 60 s with `copilot.runtime_usage` scheduled and the stub call logged → that run's rows rendered as a native trace → real `evidence-u6.py` → PASS.
+2. **Negative:** the twin (refreshed) home in the same setup → Copilot `cooldown`, no advance at 61 s → NOT-RUN `cooldown`. Also: missing stub, unrelated sequence advance, watchdog stop.
+3. **Offline replay:** the oracle (`U6/replay.py`) and `evidence-u6.py` agree on every trace in `tests/test_u6_receipt_schema.py`, with no `expectedFailure` left.
+
+### H. Ownership
+- **Coordinator:** A and B are on `verification/shared-fixes-332` (pinned); the schema/oracle on `verification/u6-receipt-schema` (pinned, adapted to F). M4 merges both; nobody else pushes to #332.
+- **M4:** C (`prepare_config.py`, `seed_probe.py`), D (`U6DriveGuard.swift` dispositions/`copilotRow`/`deferred`/`abandoned`, Drive's stub-log copy), the six evidence-u6 disagreements the oracle lists and F's rules in `evidence-u6.py`, and G.1–G.2.
+- **Reviewers** review the whole chain against C2.5 at the final head (seam table: seed → Launch env → app-server → App rows → pointer/capture/helper receipts → action runner → closure → final entry).
+
 ## Evidence and timing contract (C2.4, coordinator, 2026-10-31)
 
 Review contract for U6-R2, revised after the C1 contract reviews (MACREV, MACREV2, an independent Codex end-to-end review) and M4's app-order findings. It replaces C1. Where the steps above and this section differ, this section wins. A step without its input, its receipts and its failure outcome is NOT-RUN, never PASS.
@@ -71,7 +128,7 @@ Review contract for U6-R2, revised after the C1 contract reviews (MACREV, MACREV
 | 10 | Evidence | `evidence-u6.py` final entry point | reads every receipt above itself, including `launch-cleanup.json`; caller booleans never stand in for a receipt; inventory written once, at the end | missing → NOT-RUN; contradiction → FAIL |
 
 ### 4. Time budget, quit and supervisors
-- `requiredSeconds` = the scenario's action phase only (steps 1–7). Admission requires remaining lease ≥ `requiredSeconds` + `quitGraceSeconds` + 25 s (`MIN_RESERVE`), as one sum.
+- `requiredSeconds` = the scenario's action phase only (steps 1–7). Launch admission requires remaining lease ≥ `requiredSeconds` + `quitGraceSeconds` + 25 s (`MIN_RESERVE`), as one sum, once. After launch, Drive and every action step use `still_admitted` instead: same lease identity and release, not revoked or stopped, fresh heartbeat, booking still started, and remaining ≥ `quitGraceSeconds` + 25 s (macrev-332-18).
 - After the stop file, the subject gets `quitGraceSeconds` (default 5, cap 10). Both supervisors end the grace at once on revocation, lease identity change, a stale guardian heartbeat (> 3 s), a signal to a supervisor, or when only 25 s remain before `expiresAt`; then TERM, then KILL.
 - The guardian beats at least every 0.5 s during the grace. Revocation, identity change and deadline outrank an existing stop file.
 - Qualification also requires the subject's start and the closure receipt inside the lease window; a late closure is a timing FAIL, reported without suppressing cleanup.
@@ -85,18 +142,25 @@ The kit's manifest pins the main executable, the bundled engine and the consent 
 ### 7. Ownership and orchestration
 - **M4:** the app rows in §1–3 (seq/mono, sessionID, `menu-private-title-visible`, `clear-initiated`, `menu-end` cause, `menu-scrubbed`, production-path refresh rows, `terminate-completed`), pointer_drive `mono`/`targetPID` echo and capture receipts, the helper wrapper, the action runner and `operator-finish.json`, `evidence-u6.py`, the named seed builder with its arguments and title hash, and the booking command with unit `U6` and scenario `U6-DockMenu-synthetic`.
 - **Coordinator (shared toolchain):** the additive admission sum, the 25 s reserve cut in launch.py as well, the lease-window qualification inputs, and `launch-cleanup/1` consistency.
-- **M1** runs one invocation: monitor (Drive) in the background, a bounded wait (≤ 15 s) for the native `started` row, the action runner under the same stop trap, then stop, waits, closure and finish only on a clean closure.
+- **M1** runs one invocation (the `SKILL.md` launch branch): the config builder before start, then the monitor (Drive) in the background, a bounded wait (≤ 15 s) for the native `started` row, the action runner under the same stop trap, then stop, waits, closure and finish only on a clean closure. A failed wait or action requests stop, still runs closure and does not finish.
 
 ### 8. Merge prerequisite
 #332 merges only after M1's U6-R2 run at the final head shows PASS for steps 1–6 and 8–10, or an explicit FAIL/NOT-RUN the owner accepts. Before M1 consumes the kit, an offline replay through the real final entry point must accept one complete valid trace and reject every negative trace named in the reviews.
 
 ## Evidence
 
-The scoped action runner drives only Launch's registered subject and writes one `operator-finish.json` on success or failure. It cannot finish the booking. M1 runs it after the shared prepare/Launch steps, with the same stop trap and guardian described in `SKILL.md`:
+The scoped action runner drives only Launch's registered subject and writes one `operator-finish.json` on success or failure. It cannot finish the booking. M1 does not run it by hand: the `SKILL.md` launch branch runs the whole attempt as one script, with these U6 inputs set before it (paths are this attempt's fresh run scratch and batch; `--lease`, `--release` and `--subject-pid` must not exist yet):
 
 ```sh
-python3 -B "$KIT/desktop/native/verification/U6/action_runner.py" --config "$RUN_CONFIG" --pointer-binary "$KIT/pointer_drive"
+RUN_CONFIG="$BATCH/run.json"; BUILD_SCENARIO=u6
+BUILD_ARGS=(--scratch "$SCRATCH" --batch "$BATCH" --ledger "$MODELPLAN_BOOKING_LEDGER" \
+  --lease "$SCRATCH/lease.json" --release "$SCRATCH/release.json" --subject-pid "$SCRATCH/subject.json" \
+  --locks "$LOCKS" --resource-root "$RESOURCE_ROOT" --binary "$CANDIDATE_BINARY" \
+  --package "$KIT/ModelPlan-U6-<current-head>.zip" --kit-manifest "$KIT/manifest.json" --head "$HEAD" --private-tool copilot)
+ACTION_ARGS=(--pointer-binary "$KIT/pointer_drive")
 ```
+
+The branch then runs, in order: `scenario.py build` (`U6/prepare_config.py`, before `book.py start`, so the lease path it records exists only after start), start and the `expectedLease` bind, guardian, release, `drive-u6.py prepare`, `launch.py --execute` and `drive-u6.py drive` in the background, the bounded `started` wait, `scenario.py actions` (which runs `U6/action_runner.py --pointer-binary "$KIT/pointer_drive" --config "$RUN_CONFIG"` under the same trap), then stop, the waits, `check_launch_cleanup.py` and `book.py finish` only on a clean closure. The runner and every action tool it calls check `admission.still_admitted` between steps, never the launch budget again.
 
 M1 waits for Drive, Launch and guardian, checks `launch-cleanup/1`, and finishes only a clean booking. Then it runs the raw-receipt final entry and inventory once, with the kit's pinned package and manifest:
 

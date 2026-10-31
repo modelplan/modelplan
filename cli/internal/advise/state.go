@@ -85,12 +85,24 @@ func Load(cache string) *State {
 	return s
 }
 
+// stateLockWait bounds how long Save waits for another process's save.
+const stateLockWait = time.Second
+
 // Save writes only when something changed, merging with what another process (the status
-// line and the hook run side by side) wrote in the meantime.
+// line and the hook run side by side) wrote in the meantime. The read, merge and rename hold
+// the state lock, so two writers keep each other's marks.
 func (s *State) Save(cache string, now time.Time) error {
 	if !s.changed {
 		return nil
 	}
+	if err := os.MkdirAll(filepath.Dir(path(cache)), 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockState(path(cache))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	disk := Load(cache)
 	for k, t := range disk.Seen {
 		if _, ok := s.Seen[k]; !ok {
@@ -118,12 +130,7 @@ func (s *State) Save(cache string, now time.Time) error {
 			local.Windows = map[string]QuotaMark{}
 		}
 		for window, mark := range q.Windows {
-			if own, exists := local.Windows[window]; !exists {
-				local.Windows[window] = mark
-			} else if mark.Recovered && !own.Recovered {
-				own.Recovered = true
-				local.Windows[window] = own
-			}
+			local.Windows[window] = mergeMark(local.Windows[window], mark)
 		}
 		if q.At.After(local.At) {
 			local.At = q.At
@@ -164,6 +171,13 @@ func (s *State) Save(cache string, now time.Time) error {
 
 func (s *State) prune(now time.Time) {
 	for k, t := range s.Seen {
+		// Monthly windows must not repeat a pace notice after the usual 8-day
+		// state retention. Its key ends with the exact window reset.
+		if strings.HasPrefix(k, WindowPace+"|") {
+			if reset, err := time.Parse(time.RFC3339, k[strings.LastIndex(k, "|")+1:]); err == nil && reset.After(now) {
+				continue
+			}
+		}
 		keep := seenFor
 		if strings.HasPrefix(k, "better|") || strings.HasPrefix(k, shownPrefix+"better|") {
 			keep = betterFor
@@ -479,6 +493,9 @@ func (s *State) firstNoted(key string) *time.Time {
 // NoteShown records that the status line showed a better-model hint, so it stops after
 // betterShown even when no hook tells it.
 func (s *State) NoteShown(e Event, now time.Time) {
+	if e.Type == WindowPace {
+		s.MarkSeen([]Event{e}, now)
+	}
 	if e.Type == BetterModel {
 		s.Once(shownPrefix+e.Key, now)
 	}
@@ -486,6 +503,23 @@ func (s *State) NoteShown(e Event, now time.Time) {
 
 // lasts: how long after its reset an armed window may still say "switch back".
 func (a Armed) lasts() time.Duration { return switchBackFor }
+
+// mergeMark: the later cycle's mark; within one cycle, everything either writer sent.
+func mergeMark(own, disk QuotaMark) QuotaMark {
+	own, disk = own.current(), disk.current()
+	switch {
+	case own.ResetAt.IsZero() || disk.ResetAt.After(own.ResetAt.Add(cycleJitter)):
+		return disk
+	case own.ResetAt.After(disk.ResetAt.Add(cycleJitter)):
+		return own
+	}
+	if disk.Level > 0 && (own.Level == 0 || disk.Level < own.Level) {
+		own.Level = disk.Level
+	}
+	own.Pace, own.Surplus = own.Pace || disk.Pace, own.Surplus || disk.Surplus
+	own.WasLow, own.Recovered = own.WasLow || disk.WasLow, own.Recovered || disk.Recovered
+	return own
+}
 
 func windowNow(a *quota.Account, kind string) *quota.Window {
 	for i := range a.Windows {

@@ -20,12 +20,16 @@ command, the receipt that proves it, and what happens when it fails:
 
 | Step | Receipt | On failure |
 | --- | --- | --- |
-| `book.py request` / `start` | booking ID; the start event, saved as the lease | before start: `withdraw`; no trap is armed yet |
+| `book.py request` | booking ID | before start: `withdraw`; no trap is armed yet |
+| `scenario.py build` (a scenario with a config builder, before start) | the run config and the builder's receipts (U6: `run.json`, `synthetic-seed.json`) bound to this attempt's `RUN_ID`/`EPOCH` | before start: `withdraw`; nothing was started |
+| `book.py start` | the start event, saved as the lease; the run config's `expectedLease` is bound to it | before start: `withdraw`; no trap is armed yet |
 | `guardian.py` (background) | `guardian: true` heartbeats in the lease; exit 0 = subject confirmed gone | admission refuses; the trap stops the attempt |
 | `release.py` | the release file (never overwritten) | the trap requests stop, reaps the guardian, prints NEEDS-COORDINATOR |
 | `scenario.py prepare` (registered scenario) | the prepared receipt (U6: `prepared.json` with the attempt token and locks) | prepare writes the stop file and no receipt; the trap closes the attempt |
 | `launch.py --execute` (background) | the subject registration in `subjectPidPath`, bound to this run/epoch | the drive step finds no registered subject; closure check decides |
-| `scenario.py drive` | its result (U6: `result.json` with `quit` and `cleanup`); exit 0 only after observed closure and released resources | `SCENARIO_STATUS` is non-zero, so the closure check fails |
+| `scenario.py drive` (background: the monitor) | its result (U6: `result.json` with `quit` and `cleanup`); exit 0 only after observed closure and released resources | `SCENARIO_STATUS` is non-zero, so the closure check fails |
+| `scenario.py started` (a scenario with `actions`) | the registered subject's native `started` row for this run/epoch, within 15 s | request stop; no actions; closure still runs; `SCENARIO_STATUS` non-zero, so no finish |
+| `scenario.py actions` (background, waited; same trap) | the action runner's exclusive hand-off (U6: `operator-finish.json`, written only by `U6/action_runner.py`) | the runner writes its failure hand-off and the stop file; the sequence requests stop too; closure still runs; `SCENARIO_STATUS` non-zero, so no finish |
 | normal quit (inside the drive step) | the app's own receipt (U6: `quit.appAcknowledged`, the app's stop row) | the supervisors stop the subject; still a closure question, not a pass |
 | stop, then `wait` for both supervisors | `CONTROLLER_STATUS`, `GUARDIAN_STATUS`; both print `quitGraceUsed`/`exitedDuringGrace` | a signal during the wait runs the trap |
 | `check_launch_cleanup.py` (launch) / `check_drive_cleanup.py` (drive) | launch: the `launch-cleanup/1` receipt, printed and written to `launch-cleanup.json` beside `stopPath` (U6: in the batch) | no finish; post the NEEDS-COORDINATOR line |
@@ -33,11 +37,32 @@ command, the receipt that proves it, and what happens when it fails:
 
 One attempt is one booking with its own attempt directory and run config: fresh `RUN_ID`/`EPOCH`, its own
 lease, release, guardian, stop path, subject registration, scratch and batch. Nothing is reused from an earlier
-attempt, and an existing lease/release/stop/registration path refuses the attempt. An aborted or unconfirmed
+attempt, and an existing run config (when a builder makes it) or lease/release/stop/registration path refuses the attempt. An aborted or unconfirmed
 attempt is never resumed or retried in place; the booking stays started until the coordinator verifies closure
 or the documented expiry recovery applies, and a new attempt books anew. The run config names every path
 (`leasePath`, `releasePath`, `stopPath`, `subjectPidPath`, …); the sequence reads them from it and binds the
 config's `expectedLease` to the lease this attempt started.
+
+Which step makes the run config (macrev-332-16): the config must exist before `book.py start`, because the
+sequence reads `leasePath` from it to write the lease, and admission later rereads that same `leasePath`.
+A scenario whose run config is built per attempt registers a `config` builder in `bin/scenarios.json` (U6:
+`U6/prepare_config.py`, which pins the kit and builds the synthetic seed). Set `BUILD_SCENARIO` to its name and
+`BUILD_ARGS` to the unit doc's builder arguments; `scenario.py build` runs it after GO and **before** `start`,
+with this attempt's `BOOKING_ID`, `RUN_ID` and `EPOCH`. The builder never needs the lease: it records the run/epoch
+(in the seed receipt and as `expectedLease.runID/epoch`), and the bind step after `start` adds the lease's
+`notBefore`/`expiresAt` and refuses a lease for another run/epoch. A builder failure happens before start, so the
+booking is withdrawn and nothing needs closing. Without `BUILD_SCENARIO`, `$RUN_CONFIG` is supplied ready-made.
+
+Actions (macrev-332-17): a registered scenario with an `actions` entry (U6: `U6/action_runner.py`;
+`ACTION_ARGS=(--pointer-binary "$KIT/pointer_drive")`) runs its drive step in the background as the monitor,
+waits at most 15 s for the subject's native `started` row (`scenario.py started`), then runs the action runner
+under the same trap. The runner alone writes the monitor's hand-off (U6: `operator-finish.json`); the monitor
+then requests the normal quit. Only after that does the sequence wait for the monitor and both supervisors. A
+failed wait or action requests stop, still runs the closure check, and counts as a scenario failure, so the booking
+is not finished. Admission during actions (macrev-332-18): the full additive budget is checked once, at launch
+admission (`launch.py`, and the scenario's `prepare` just before it); the monitor and every action step check only
+`admission.still_admitted` (same lease identity, release still matching, not revoked or stopped, heartbeat fresh,
+the booking still started, and at least quit grace + 25 s left so the run still closes inside the lease).
 
 ```sh
 set -e  # any failed step stops the sequence; once the booking has started, the EXIT trap closes the attempt
@@ -51,6 +76,10 @@ python3 -B "$V/book.py" request \
 # ... the coordinator grants GO for this booking (the queue head); set BOOKING_ID ...
 RUN_ID="m1-$(uuidgen | tr 'A-Z' 'a-z')"  # fresh per attempt; book.py: printable, at most 128 characters
 EPOCH=$(date -u +%Y%m%dT%H%M%SZ)
+if [ -n "${BUILD_SCENARIO:-}" ]; then  # before start: the builder creates $RUN_CONFIG without the lease
+  python3 -B "$V/scenario.py" build --scenario "$BUILD_SCENARIO" --config "$RUN_CONFIG" \
+    -- --booking-id "$BOOKING_ID" --run-id "$RUN_ID" --epoch "$EPOCH" "${BUILD_ARGS[@]}"
+fi  # a failure stops here, before start: withdraw the booking
 LEASE_PATH=$(cfg leasePath); RELEASE_PATH=$(cfg releasePath)
 STOP_PATH=$(cfg stopPath); SUBJECT_PID_PATH=$(cfg subjectPidPath)  # the one stop path, from the run config
 for f in "$LEASE_PATH" "$RELEASE_PATH" "$STOP_PATH" "$SUBJECT_PID_PATH"; do
@@ -58,7 +87,7 @@ for f in "$LEASE_PATH" "$RELEASE_PATH" "$STOP_PATH" "$SUBJECT_PID_PATH"; do
 done
 python3 -B "$V/book.py" start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
-GUARDIAN_PID=; CONTROLLER_PID=; SCENARIO_PID=
+GUARDIAN_PID=; CONTROLLER_PID=; SCENARIO_PID=; ACTIONS_PID=
 request_stop() { (set -C; printf '{"stop": true, "reason": "%s"}\n' "$1" > "$STOP_PATH") 2>/dev/null || true; }
 needs_coordinator() {
   echo "NEEDS-COORDINATOR: booking=$BOOKING_ID run=$RUN_ID epoch=$EPOCH $1; booking stays started, not finished" >&2
@@ -66,15 +95,16 @@ needs_coordinator() {
 abort() {  # any exit before the closure check: request stop, then stop and reap only this attempt's children
   status=$?; trap - EXIT INT TERM HUP; set +e
   request_stop sequence-aborted
-  for pid in $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do kill -TERM "$pid" 2>/dev/null; done
-  for pid in $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do wait "$pid" 2>/dev/null; done
+  for pid in $ACTIONS_PID $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do kill -TERM "$pid" 2>/dev/null; done
+  for pid in $ACTIONS_PID $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do wait "$pid" 2>/dev/null; done
   needs_coordinator "aborted (status $status) before the closure check"
   exit 3
 }
 trap abort EXIT INT TERM HUP
-python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2]))
+python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2])); e=c.get("expectedLease") or {}
+if any(k in e and e[k] != l.get(k) for k in ("runID", "epoch")): sys.exit("run config names another run/epoch")
 c["expectedLease"]={k: l[k] for k in ("runID", "epoch", "notBefore", "expiresAt")}; json.dump(c, open(sys.argv[1], "w"))' \
-  "$RUN_CONFIG" "$LEASE_PATH"  # bind the run config to this attempt's lease
+  "$RUN_CONFIG" "$LEASE_PATH"  # bind the run config to this attempt's lease (a built config already names its run/epoch)
 # Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
 python3 -B "$V/guardian.py" --lease "$LEASE_PATH" \
   --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" --quit-grace "$(cfg quitGraceSeconds 5)" &
@@ -94,6 +124,7 @@ python3 -B "$V/release.py" \
 SCENARIO=""
 case "$CONTROLLER_MODE" in
   launch) SCENARIO=$(python3 -B "$V/scenario.py" name --config "$RUN_CONFIG")
+          [ "$SCENARIO" = "${BUILD_SCENARIO:-$SCENARIO}" ] || { echo "run config is not the built scenario" >&2; exit 2; }
           [ -z "$SCENARIO" ] || python3 -B "$V/scenario.py" prepare --config "$RUN_CONFIG"
           python3 -B "$V/launch.py" --config "$RUN_CONFIG" --execute & ;;
   drive)  python3 -B "$V/drive-scenario.py" --config "$RUN_CONFIG" & ;;
@@ -101,12 +132,26 @@ case "$CONTROLLER_MODE" in
 esac
 CONTROLLER_PID=$!
 SCENARIO_STATUS=0  # a registered scenario's drive exits 0 only when it observed closure
+ACTION_STATUS=0    # its started wait and action runner, when it registers `actions`
 if [ -n "$SCENARIO" ]; then
-  # Normal quit is the drive step's last action: it asks the owned app to quit and records the app's own
-  # receipt (U6: drive-u6.py writes the stop path the native contract names; result.json `quit`).
+  # The drive step is the monitor. Normal quit is its last action: it asks the owned app to quit and records the
+  # app's own receipt (U6: drive-u6.py writes the stop path the native contract names; result.json `quit`).
   python3 -B "$V/scenario.py" drive --config "$RUN_CONFIG" &
   SCENARIO_PID=$!
+  if [ -n "$(python3 -B "$V/scenario.py" has-actions --config "$RUN_CONFIG")" ]; then
+    # At most 15 s for the native `started` row, then the action runner under this trap; it alone writes the
+    # monitor's hand-off (U6: operator-finish.json). Any failure requests stop; closure still runs below.
+    python3 -B "$V/scenario.py" started --config "$RUN_CONFIG" || ACTION_STATUS=$?
+    if [ "$ACTION_STATUS" -eq 0 ]; then
+      python3 -B "$V/scenario.py" actions --config "$RUN_CONFIG" -- "${ACTION_ARGS[@]}" &
+      ACTIONS_PID=$!
+      wait "$ACTIONS_PID" || ACTION_STATUS=$?
+      ACTIONS_PID=
+    fi
+    [ "$ACTION_STATUS" -eq 0 ] || request_stop scenario-actions-failed
+  fi
   wait "$SCENARIO_PID" || SCENARIO_STATUS=$?
+  [ "$SCENARIO_STATUS" -ne 0 ] || SCENARIO_STATUS=$ACTION_STATUS  # a failed action is a scenario failure
 else
   : # ... in launch mode, drive the scenario against the launched subject here, ending with its normal quit ...
 fi
@@ -131,7 +176,7 @@ if [ "$CLOSURE" -eq 0 ]; then
 else
   # The booking stays started (the Mac stays held) until the coordinator verifies closure or the
   # documented expiry recovery applies. Post this line with the closure receipt above.
-  needs_coordinator "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS scenario=$SCENARIO_STATUS"
+  needs_coordinator "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS scenario=$SCENARIO_STATUS actions=$ACTION_STATUS"
 fi
 ```
 

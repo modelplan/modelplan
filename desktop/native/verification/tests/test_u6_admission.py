@@ -63,7 +63,8 @@ class U6AdmissionTests(unittest.TestCase):
                     while not Path(c['stopPath']).exists(): time.sleep(.05)
                     child.terminate(); child.wait()
                 threading.Thread(target=launch_py, daemon=True).start()
-                with patch.object(drive, 'load_and_admit', side_effect=ValueError('booking ended')) as gate, \
+                with patch.object(drive, 'still_admitted', side_effect=ValueError('booking ended')) as gate, \
+                     patch.object(drive, 'load_and_admit', side_effect=AssertionError('full admission after launch')), \
                      patch.object(subprocess, 'Popen') as spawn:
                     status = drive.main(['drive', '--config', str(config)])
             finally:
@@ -72,7 +73,7 @@ class U6AdmissionTests(unittest.TestCase):
             self.assertEqual(gate.call_count, 1)
             spawn.assert_not_called()
             result = json.loads((root / 'batch' / 'result.json').read_text())
-            self.assertEqual((result['appStarted'], result['reason']), (False, 'ValueError'))
+            self.assertEqual((result['appStarted'], result['reason']), (False, 'unknown'))  # bounded scenario code (C2.4 section 5)
             self.assertFalse((root / 'batch' / 'launch.json').exists())
             self.assertTrue(result['cleanup']['ownedAppExited'])
             self.assertFalse(result['cleanup']['leaseReleased'])
