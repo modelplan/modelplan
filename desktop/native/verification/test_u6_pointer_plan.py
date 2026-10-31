@@ -46,6 +46,41 @@ class U6PointerPlanTests(unittest.TestCase):
             stream.write(json.dumps(dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=2,mono=102,
                 checks=dict(state='expanded')))+'\n')
         tool.check(self.config,'dock')
+    def dock_frame(self,seq,mono,state):
+        return dict(event='dock-surface-frame',runID='run',epoch='epoch',pid=42,seq=seq,mono=mono,
+            checks=dict(state=state,coordinateSpace='cg-screen',x=10,y=20,width=30,height=40,windowNumber=77))
+    def test_startup_reexpanded_dock_does_not_plan_from_old_sliver(self):
+        self.write_rows([self.dock_frame(6,100,'expanded'),self.dock_frame(10,100.2,'sliver'),self.dock_frame(13,100.5,'expanded')])
+        now=[100.6]
+        with self.assertRaisesRegex(ValueError,'dock-not-collapsed'):
+            tool.make(self.config,'dock',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+        self.assertAlmostEqual(now[0],110.6);self.assertFalse((self.root/'dock-pointer-plan.json').exists())
+        self.assertEqual(json.loads((self.root/'dock-plan-refusal.json').read_text())['reason'],'dock-not-collapsed')
+    def test_dock_waits_for_stable_latest_sliver_then_accepts_new_expansion(self):
+        self.write_rows([self.dock_frame(1,100,'expanded')]);now=[100.1];added=[False]
+        def sleep(seconds):
+            now[0]+=seconds
+            if now[0]>=101 and not added[0]:
+                added[0]=True
+                with (self.root/'native-observations.jsonl').open('a') as out:out.write(json.dumps(self.dock_frame(2,now[0],'sliver'))+'\n')
+        tool.make(self.config,'dock',clock=lambda:now[0],sleep=sleep)
+        plan=json.loads((self.root/'dock-pointer-plan.json').read_text())
+        self.assertGreaterEqual(now[0]-plan['u6DockSliverSinceMono'],.5);self.assertEqual(plan['u6FrameSeq'],2)
+        moved=now[0]+.1
+        (self.root/'dock-pointer.jsonl').write_text('\n'.join(json.dumps(r) for r in [
+            dict(event='mouse-moved-posted',kind='move',mono=moved,runID='run',epoch='epoch',targetPID=42),
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)])+'\n')
+        with (self.root/'native-observations.jsonl').open('a') as out:out.write(json.dumps(self.dock_frame(3,moved+.2,'expanded'))+'\n')
+        tool.check(self.config,'dock',clock=lambda:moved+.3)
+    def test_dock_reexpanded_between_plan_and_move_cannot_count_as_reveal(self):
+        self.write_rows([self.dock_frame(1,100,'sliver')]);tool.make(self.config,'dock',clock=lambda:101)
+        (self.root/'dock-pointer.jsonl').write_text('\n'.join(json.dumps(r) for r in [
+            dict(event='mouse-moved-posted',kind='move',mono=102,runID='run',epoch='epoch',targetPID=42),
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)])+'\n')
+        with (self.root/'native-observations.jsonl').open('a') as out:
+            out.write(json.dumps(self.dock_frame(2,101.5,'expanded'))+'\n')
+            out.write(json.dumps(self.dock_frame(3,102.2,'expanded'))+'\n')
+        with self.assertRaisesRegex(ValueError,'dock-not-collapsed'):tool.check(self.config,'dock',clock=lambda:103)
     def test_status_click_requires_owned_menu_begin(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=self.status_checks())])

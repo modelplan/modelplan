@@ -16,6 +16,14 @@ The named U6 seed uses `--private-tool copilot`, not a display-title argument. A
 
 ## Drive
 
+Before the Dock input, the planner waits at most 10 s under ongoing admission for the **latest** owned
+Dock frame to be sliver with unchanged state/geometry/window for at least 0.5 s. An older sliver cannot
+be selected past a newer expanded row. Otherwise it refuses `dock-not-collapsed` (recorded in the
+bounded dock-plan-refusal.json diagnostic); it sends no input. After the one move, check requires an
+expanded row strictly after the move's mono and with seq greater than the last pre-move sliver, within
+5 s. If the Dock had already re-expanded before the move, the reveal is not delivered. No forced hide,
+extra pointer input or lease extension is used to obtain a passing transition.
+
 During the lease the operator must not activate another application: no `open`, no focusing Terminal,
 Codex or another app. Activation intentionally triggers the existing owner-preempted stop. Prepare
 commands before start and let the one attached script run; do not disable or special-case that stop.

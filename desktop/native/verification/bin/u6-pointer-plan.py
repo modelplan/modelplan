@@ -62,6 +62,26 @@ def prefix(kind, purpose):
     if kind == 'dock' and purpose != 'refresh': raise ValueError('dock-purpose-invalid')
     return kind+'-pointer'+('-clear' if kind == 'status' and purpose == 'clear' else '')
 
+def collapsed_dock(observations,run,epoch,pid,now):
+    owned=[r for r in observations if r.get('event')=='dock-surface-frame' and r.get('runID')==run
+           and r.get('epoch')==epoch and r.get('pid')==pid]
+    if not owned:raise ValueError('dock-not-collapsed')
+    latest=owned[-1];c=latest.get('checks',{})
+    if c.get('state')!='sliver' or not valid_window(c.get('windowNumber')):raise ValueError('dock-not-collapsed')
+    try:row,rect=latest_frame([latest],'dock-surface-frame',run,epoch,pid)
+    except ValueError:raise ValueError('dock-not-collapsed') from None
+    if not math.isfinite(row['mono']) or not math.isfinite(now) or row['mono']>now:raise ValueError('dock-not-collapsed')
+    since=row['mono']
+    for prior in reversed(owned[:-1]):
+        pc=prior.get('checks',{})
+        if pc.get('state')!='sliver' or pc.get('windowNumber')!=c['windowNumber']:break
+        try:_,previous_rect=latest_frame([prior],'dock-surface-frame',run,epoch,pid)
+        except ValueError:break
+        if previous_rect!=rect or not math.isfinite(prior['mono']) or prior['mono']>since:break
+        since=prior['mono']
+    if now-since<.5:raise ValueError('dock-not-collapsed')
+    return row,rect,since
+
 def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     still_admitted(config)
     batch = Path(config['batch'])
@@ -71,17 +91,26 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     if type(pid) is not int or pid <= 0 or reg.get('state') != 'running' or not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
         raise ValueError('subject-registration-invalid')
     event = 'dock-surface-frame' if kind == 'dock' else 'status-item-frame'
-    deadline=clock()+5
+    deadline=clock()+(10 if kind=='dock' else 5)
     while True:
         still_admitted(config)
         if not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
             raise ValueError('subject-registration-invalid')
         try:
-            observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None,now=clock())
+            observations=rows(batch/'native-observations.jsonl')
+            if kind=='dock':observation,rect,sliver_since=collapsed_dock(observations,lease['runID'],lease['epoch'],pid,clock())
+            else:observation,rect=latest_frame(observations,event,lease['runID'],lease['epoch'],pid,now=clock())
             break
         except ValueError as error:
-            if kind!='status' or str(error)!='owned-frame-missing' or clock()>=deadline:raise
-            sleep(min(.05,deadline-clock()))
+            expected='dock-not-collapsed' if kind=='dock' else 'owned-frame-missing'
+            if str(error)!=expected or clock()>=deadline:
+                if kind=='dock' and str(error)==expected:
+                    try:
+                        with (batch/'dock-plan-refusal.json').open('x') as out:
+                            json.dump(dict(schema='u6-dock-plan-refusal/1',runID=lease['runID'],epoch=lease['epoch'],reason=expected,mono=clock()),out)
+                    except OSError:pass
+                raise
+            sleep(max(0,min(.05,deadline-clock())))
     x,y,w,h = rect
     window = observation['checks'].get('windowNumber') if kind == 'dock' else None
     if kind == 'dock' and not valid_window(window): raise ValueError('owned-window-missing')
@@ -91,6 +120,7 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
         output=str(batch/(stem+'.jsonl')),subjectPID=pid,subjectBundle=str(bundle),allowedRectangles=[[x,y,w,h]],
         steps=[dict(x=x+w/2,y=y+h/2,seconds=0,dwell=0.25,**({'action':'click'} if kind == 'status' else {}))],
         targetPID=pid,u6OwnedWindowNumber=window,u6FrameSeq=observation['seq'])
+    if kind=='dock':plan['u6DockSliverSinceMono']=sliver_since
     if kind=='status':
         plan.update(u6InputKind='status',u6Observations=str(batch/'native-observations.jsonl'),
                     u6StatusFrameGeneration=observation['checks']['frameGeneration'],
@@ -137,7 +167,12 @@ def check_once(config, kind, purpose='refresh'):
                 and r.get('epoch') == lease['epoch'] and r.get('pid')==plan['subjectPID']
                 and type(r.get('seq')) is int and type(r.get('mono')) in (int,float)
                 and math.isfinite(r['mono']) and anchor<=r['mono']<=upper]
-    if kind == 'dock': observed = [r for r in observed if r.get('checks',{}).get('state') == 'expanded']
+    if kind == 'dock':
+        prior=[r for r in native if type(r.get('mono')) in (int,float) and r['mono']<=anchor]
+        sliver,_,_=collapsed_dock(prior,lease['runID'],lease['epoch'],plan['subjectPID'],anchor)
+        if sliver['seq']<plan.get('u6FrameSeq',0):raise ValueError('dock-not-collapsed')
+        observed=[r for r in observed if r.get('checks',{}).get('state')=='expanded'
+                  and r['seq']>sliver['seq'] and r['mono']>anchor]
     else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status'
                       and r.get('checks',{}).get('subjectPID') == plan['subjectPID']]
     if kind=='status' and purpose=='clear':
