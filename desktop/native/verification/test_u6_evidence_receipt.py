@@ -17,8 +17,8 @@ class U6ReceiptTests(unittest.TestCase):
             (root/'subject.json').write_text(json.dumps(dict(pid=42)))
             (root/'prepared.json').write_text(json.dumps(dict(runID='run',epoch='epoch',homeSeedSHA256='d'*64)))
             rows=[dict(event='started',runID='run',epoch='epoch',timestamp=100),
-                dict(event='menu-begin',runID='run',epoch='epoch',timestamp=100.5,checks=dict(instanceID='m',surface='status',privateContent=True)),
-                dict(event='status-menu-action-arrived',runID='run',epoch='epoch',checks=dict(actionID='refresh',requestID=key,menuInstanceID='m',deliveryMethod='axpress-menu-item')),
+                dict(event='menu-begin',runID='run',epoch='epoch',timestamp=100.5,checks=dict(instanceID='m',surface='status',privateContent=True,subjectPID=42)),
+                dict(event='status-menu-action-arrived',runID='run',epoch='epoch',checks=dict(actionID='refresh',requestID=key,menuInstanceID='m',deliveryMethod='axpress-menu-item',subjectPID=42)),
                 dict(kind='refresh',phase='requested',runID='run',epoch='epoch',requestId=key,rowsSequenceBefore=1,at=101),
                 dict(kind='refresh',phase='completed',runID='run',epoch='epoch',requestId=key,rowsSequenceAfter=2,at=102),
                 dict(event='accepted-clear',runID='run',epoch='epoch',timestamp=103,checks=dict(priorPrivateContent=True,oldItemTitlesScrubbed=True,
@@ -29,7 +29,7 @@ class U6ReceiptTests(unittest.TestCase):
             (root/'launch.json').write_text(json.dumps(dict(runID='run',epoch='epoch',ownedPID=42,sourceHead=config['head'])))
             (root/'launch-cleanup.json').write_text(json.dumps(dict(schema='launch-cleanup/1',runID='run',epoch='epoch',ok=True,failures=[],at='1970-01-01T00:01:50Z')))
             (root/'menu-request.json').write_text(json.dumps(dict(requestID=key)))
-            (root/'menu-drive.jsonl').write_text(json.dumps(dict(event='status-menu-result',outcome='arrived',runID='run',epoch='epoch',requestID=key))+'\n')
+            (root/'menu-drive.jsonl').write_text(json.dumps(dict(event='status-menu-result',outcome='arrived',runID='run',epoch='epoch',requestID=key,subjectPID=42))+'\n')
             (root/'dock-owned.png').write_bytes(b'owned-image')
             tool.pointer.check=lambda *_:True
             tool.assemble(config,package)

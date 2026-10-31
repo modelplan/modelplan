@@ -7,8 +7,8 @@ class U6EvidenceTests(unittest.TestCase):
     def receipt(self): return dict(profile='synthetic',runID='run',epoch='epoch',headSHA='a'*40,binarySHA256='b'*64,packageSHA256='c'*64,profileSHA256='d'*64,durationSeconds=30,actionEvidenceFiles=['dock.png','menu.json'],**{key:True for key in u6.REQUIRED})
     def rows(self):
         key='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
-        return [dict(runID='run',epoch='epoch',event='menu-begin',checks=dict(privateContent=True,instanceID='menu-1',surface='status')),
-            dict(runID='run',epoch='epoch',event='status-menu-action-arrived',checks=dict(actionID='refresh',requestID=key,menuInstanceID='menu-1',deliveryMethod='axpress-menu-item')),
+        return [dict(runID='run',epoch='epoch',event='menu-begin',checks=dict(privateContent=True,instanceID='menu-1',surface='status',subjectPID=42)),
+            dict(runID='run',epoch='epoch',event='status-menu-action-arrived',checks=dict(actionID='refresh',requestID=key,menuInstanceID='menu-1',deliveryMethod='axpress-menu-item',subjectPID=42)),
             dict(runID='run',epoch='epoch',kind='refresh',phase='requested',requestId=key,rowsSequenceBefore=5,at=1),
             dict(runID='run',epoch='epoch',kind='refresh',phase='completed',requestId=key,rowsSequenceAfter=6,at=2),
             dict(runID='run',epoch='epoch',event='accepted-clear',checks=dict(priorPrivateContent=True,oldItemTitlesScrubbed=True,oldItemPrivateAttributesScrubbed=True,scrubbedInstanceIDs=['menu-1']))]
@@ -30,6 +30,8 @@ class U6EvidenceTests(unittest.TestCase):
         self.assertEqual(u6.qualify(self.receipt(),rows[:1],self.closure()),'not-run')
         no_arrival=rows[1:]
         self.assertEqual(u6.qualify(self.receipt(),no_arrival,self.closure()),'not-run')
+        wrong_pid=[dict(x) for x in rows];wrong_pid[1]=dict(wrong_pid[1],checks=dict(wrong_pid[1]['checks'],subjectPID=43))
+        self.assertEqual(u6.qualify(self.receipt(),wrong_pid,self.closure()),'not-run')
         stale=[dict(x) for x in rows]; stale[3]['rowsSequenceAfter']=5
         self.assertEqual(u6.qualify(self.receipt(),stale,self.closure()),'not-run')
         failed=[dict(x) for x in rows];failed[3]=dict(failed[3],phase='failed',reason='engine-not-ready')

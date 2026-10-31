@@ -58,6 +58,7 @@ import ModelPlanEngineClient
                         if self.statusMenuOwner?(menu) == true { self.activeStatusInstanceID = instanceID }
                         if self.hasPrivateContent() { self.retainedItems += menu.items; self.priorPrivateContent = true; self.privateMenuInstanceIDs.insert(instanceID) }
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
+                            "subjectPID":ProcessInfo.processInfo.processIdentifier,
                             "surface":self.statusMenuOwner?(menu) == true ? "status" : "dock"])
                     } else {
                         self.trackedMenus.remove(ObjectIdentifier(menu))

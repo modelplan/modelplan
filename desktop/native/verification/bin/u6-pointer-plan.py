@@ -65,7 +65,8 @@ def check(config, kind, purpose='refresh'):
     event = 'dock-surface-frame' if kind == 'dock' else 'menu-begin'
     observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and type(r.get('timestamp')) in (int,float) and r['timestamp'] >= at]
     if kind == 'dock': observed = [r for r in observed if r.get('checks',{}).get('state') == 'expanded']
-    else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status']
+    else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status'
+                      and r.get('checks',{}).get('subjectPID') == plan['subjectPID']]
     if not observed: raise ValueError('native-arrival-missing')
     print(json.dumps(dict(input=kind,outcome='arrived',runID=lease['runID'],epoch=lease['epoch'])))
 

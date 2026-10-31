@@ -55,7 +55,7 @@ class U6PointerPlanTests(unittest.TestCase):
             dict(event='pointer-result',outcome='posted')]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')
         with (self.root/'native-observations.jsonl').open('a') as stream:
-            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',timestamp=102,checks=dict(instanceID='owned',surface='status')))+'\n')
+            stream.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',timestamp=102,checks=dict(instanceID='owned',surface='status',subjectPID=42)))+'\n')
         tool.check(self.config,'status')
         tool.make(self.config,'status','clear')
         clear=json.loads((self.root/'status-pointer-clear-plan.json').read_text())

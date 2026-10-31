@@ -19,7 +19,7 @@ def native_outcomes(rows, run, epoch):
     requested = {}
     terminals = {}
     private_instances = set()
-    status_instances = set()
+    status_instances = {}
     clear = 'not-run'
     for index, row in enumerate(rows):
         if not isinstance(row, dict) or row.get('runID') != run or row.get('epoch') != epoch: continue
@@ -30,12 +30,16 @@ def native_outcomes(rows, run, epoch):
             if isinstance(key, str):
                 try: uuid.UUID(key)
                 except ValueError: continue
-                if checks.get('deliveryMethod') == 'axpress-menu-item' and checks.get('menuInstanceID') in status_instances:
+                if (checks.get('deliveryMethod') == 'axpress-menu-item'
+                    and checks.get('menuInstanceID') in status_instances
+                    and type(checks.get('subjectPID')) is int
+                    and checks['subjectPID'] == status_instances[checks['menuInstanceID']]):
                     delivered[key] = index
         elif event == 'menu-begin':
             key = checks.get('instanceID')
             if isinstance(key, str) and key:
-                if checks.get('surface') == 'status': status_instances.add(key)
+                if checks.get('surface') == 'status' and type(checks.get('subjectPID')) is int and checks['subjectPID'] > 0:
+                    status_instances[key] = checks['subjectPID']
                 if checks.get('privateContent') is True: private_instances.add(key)
             if clear == 'pass' and checks.get('privateContent') is True: clear = 'not-run'
         elif event == 'accepted-clear':

@@ -80,7 +80,8 @@ def assemble(config, package):
     request=json.loads((batch/'menu-request.json').read_text()) if (batch/'menu-request.json').is_file() else {}
     menu=safe_rows(batch/'menu-drive.jsonl')
     menu_arrived=any(r.get('event')=='status-menu-result' and r.get('outcome')=='arrived' and
-                     r.get('runID')==run_id and r.get('epoch')==epoch and r.get('requestID')==request.get('requestID')
+                     r.get('runID')==run_id and r.get('epoch')==epoch and r.get('subjectPID')==launched.get('ownedPID')
+                     and r.get('requestID')==request.get('requestID')
                      for r in menu)
     quit_proof=result.get('quit') if isinstance(result.get('quit'),dict) else {}
     terminate_completed=any(r.get('event')=='terminate-completed' and r.get('runID')==run_id and r.get('epoch')==epoch
