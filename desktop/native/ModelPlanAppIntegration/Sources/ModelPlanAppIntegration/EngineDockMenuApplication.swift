@@ -39,6 +39,11 @@ import ModelPlanMenuVerification
         self.contextSource = contextSource
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
         super.init()
+        #if MODELPLAN_U6_DRIVE
+        composition.provider.verificationWillClear = { [weak self] invalidation in
+            self?.driveGuard?.recordClearInitiated(invalidation)
+        }
+        #endif
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -82,7 +87,8 @@ import ModelPlanMenuVerification
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
-        }, actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
+        }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
+           actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
     }

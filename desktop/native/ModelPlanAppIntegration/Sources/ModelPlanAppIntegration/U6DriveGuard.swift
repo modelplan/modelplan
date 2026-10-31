@@ -17,14 +17,26 @@ import CryptoKit
     private var armed = false, ending = false
     private var menuObservers: [NSObjectProtocol] = []
     private var trackedMenus = Set<ObjectIdentifier>()
-    private var retainedItems: [NSMenuItem] = []
+    private final class WeakPrivateItem {
+        let id: String
+        weak var item: NSMenuItem?
+        init(_ item: NSMenuItem) { self.item=item; id=String(UInt(bitPattern:ObjectIdentifier(item))) }
+        var cleared: Bool { guard let item else { return true }; return item.title.isEmpty && item.attributedTitle == nil && item.toolTip == nil && item.representedObject == nil && (item.identifier?.rawValue ?? "").isEmpty }
+        var state: String { item == nil ? "deallocated" : cleared ? "cleared" : "private" }
+    }
+    private var privateBySession: [String: [WeakPrivateItem]] = [:]
+    private var privateTitleHashBySession: [String: String] = [:]
+    private var sessions: [ObjectIdentifier: String] = [:]
+    private var objectBySession: [String: String] = [:]
+    private var activeStatusSessionID: String?
+    private var currentStatusMenu: (() -> NSMenu?)?
+    private var activeClear: (id: String, floor: EngineConsentFloor, openSessions: [String])?
     private var priorPrivateContent = false
-    private var privateMenuInstanceIDs = Set<String>()
     private var statusMenuOwner: ((NSMenu) -> Bool)?
     private var activeStatusInstanceID: String?
-    private var arrivedRefreshRequestID: UUID?
+    private var arrivedRefreshContext: (requestID:UUID, objectID:String, sessionID:String)?
     private var observationSequence: UInt64 = 0
-    private var clearedTrackedInstances = Set<String>()
+    private var acceptedClearIDs = Set<String>()
     private weak var dockHost: StaticDockPreviewHost?
     private var lastDockFrameSignature: String?
     private let ownsMenu: (NSMenu) -> Bool
@@ -57,24 +69,39 @@ import CryptoKit
                 MainActor.assumeIsolated {
                     guard let self, let menu = note.object as? NSMenu, self.ownsMenu(menu) else { return }
                     if note.name == NSMenu.didBeginTrackingNotification {
-                        self.trackedMenus.insert(ObjectIdentifier(menu))
-                        let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
-                        if self.statusMenuOwner?(menu) == true { self.activeStatusInstanceID = instanceID }
-                        if self.hasPrivateContent() { self.retainedItems += menu.items; self.priorPrivateContent = true; self.privateMenuInstanceIDs.insert(instanceID) }
+                        let object=ObjectIdentifier(menu)
+                        self.trackedMenus.insert(object)
+                        let instanceID = String(UInt(bitPattern: object))
+                        let sessionID=UUID().uuidString
+                        self.sessions[object]=sessionID
+                        self.objectBySession[sessionID]=instanceID
+                        let status=self.statusMenuOwner?(menu) == true
+                        if status { self.activeStatusInstanceID = instanceID;self.activeStatusSessionID=sessionID }
+                        if self.hasPrivateContent() { self.priorPrivateContent = true }
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "subjectPID":ProcessInfo.processInfo.processIdentifier,
-                            "surface":self.statusMenuOwner?(menu) == true ? "status" : "dock"])
-                        if self.statusMenuOwner?(menu) == true, self.hasPrivateContent(),
+                            "surface":status ? "status" : "dock", "menuObjectID":instanceID,"sessionID":sessionID])
+                        if status, self.hasPrivateContent(),
                            let title = menu.items.first?.title, !title.isEmpty {
+                            let items=[WeakPrivateItem(menu.items[0])]
+                            self.privateBySession[sessionID]=items
                             let digest = SHA256.hash(data: Data(title.utf8)).map { String(format:"%02x",$0) }.joined()
-                            self.emitObject("menu-private-title-visible", fields:["instanceID":instanceID,"titleSHA256":digest])
+                            self.privateTitleHashBySession[sessionID]=digest
+                            self.emitObject("menu-private-title-visible", fields:["instanceID":instanceID,"menuObjectID":instanceID,
+                                "sessionID":sessionID,"titleSHA256":digest,"privateItemIDs":items.map(\.id)])
                         }
                     } else {
-                        self.trackedMenus.remove(ObjectIdentifier(menu))
-                        let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
-                        self.emitObject("menu-end", fields:["instanceID":instanceID,
-                            "cause":self.clearedTrackedInstances.remove(instanceID) != nil ? "clear" : "other"])
+                        let object=ObjectIdentifier(menu)
+                        self.trackedMenus.remove(object)
+                        let instanceID = String(UInt(bitPattern: object))
+                        let sessionID=self.sessions.removeValue(forKey:object) ?? ""
+                        let causedByClear=self.activeClear?.openSessions.contains(sessionID) == true
+                        var fields:[String:Any]=["instanceID":instanceID,"menuObjectID":instanceID,"sessionID":sessionID,
+                            "cause":causedByClear ? "clear" : "other"]
+                        if causedByClear,let clear=self.activeClear { fields["clearID"]=clear.id }
+                        self.emitObject("menu-end", fields:fields)
                         if self.activeStatusInstanceID == instanceID { self.activeStatusInstanceID = nil }
+                        if self.activeStatusSessionID == sessionID { self.activeStatusSessionID = nil }
                     }
                 }
             })
@@ -92,8 +119,10 @@ import CryptoKit
         tick()
     }
     func observeStatusMenu(ownsStatusMenu: @escaping (NSMenu) -> Bool,
+                           currentStatusMenu: @escaping () -> NSMenu?,
                            actionForItem: @escaping (NSMenuItem) -> StatusMenuAction?) {
         statusMenuOwner = ownsStatusMenu
+        self.currentStatusMenu = currentStatusMenu
         arrivalObserver = StatusMenuArrivalObserver(runID: runID, epoch: epoch,
             ownsStatusMenu: ownsStatusMenu, actionForItem: actionForItem,
             pendingRequest: { [weak self] in
@@ -104,53 +133,58 @@ import CryptoKit
                 guard let self, let instanceID = self.activeStatusInstanceID else { return }
                 var fields = receipt.fields
                 fields["menuInstanceID"] = instanceID
+                fields["menuObjectID"] = instanceID
+                fields["sessionID"] = self.activeStatusSessionID ?? ""
                 fields["deliveryMethod"] = "axpress-menu-item"
                 self.emitObject(receipt.event, fields: fields)
-                if receipt.request.action == .refresh { self.arrivedRefreshRequestID = receipt.request.requestID }
+                if receipt.request.action == .refresh,let sessionID=self.activeStatusSessionID {
+                    self.arrivedRefreshContext=(receipt.request.requestID,instanceID,sessionID)
+                }
             })
     }
     func beginProductRefresh(composition: EngineDockMenuComposition) -> (@MainActor (Result<Void, Error>) -> Void)? {
-        guard isLive(), let requestID = arrivedRefreshRequestID else { return nil }
-        arrivedRefreshRequestID = nil
+        guard isLive(), let context = arrivedRefreshContext else { return nil }
+        arrivedRefreshContext = nil
         let before = composition.store.snapshot.rows?.sequence ?? 0
-        let id = requestID.uuidString
+        let id = context.requestID.uuidString
         emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,
-                                      "rowsSequenceBefore":before, "at":Date().timeIntervalSince1970])
+                                      "rowsSequenceBefore":before,"menuObjectID":context.objectID,"sessionID":context.sessionID])
         return { [weak self, weak composition] result in
             guard let self, let composition else { return }
             switch result {
             case .failure(let error):
-                self.refreshTerminal("failed", requestID:id, fields:["reason":Self.refreshReason(error)])
+                self.refreshTerminal("failed", requestID:id, context:context,fields:["reason":Self.refreshReason(error)])
             case .success:
-                Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id) }
+                Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id,context:context) }
             }
         }
     }
-    private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String) async {
+    private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String,
+                                     context:(requestID:UUID,objectID:String,sessionID:String)) async {
         let deadline = min(expiry, Date().timeIntervalSince1970 + 60)
         while isLive() && Date().timeIntervalSince1970 < deadline {
             if let after = composition.store.snapshot.rows?.sequence, after > before {
-                refreshTerminal("completed", requestID:requestID, fields:["rowsSequenceAfter":after]); return
+                refreshTerminal("completed", requestID:requestID,context:context,fields:["rowsSequenceAfter":after]); return
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        refreshTerminal("failed", requestID:requestID, fields:["reason":"rows-timeout"])
+        refreshTerminal("failed", requestID:requestID,context:context,fields:["reason":"timeout"])
     }
-    private func refreshTerminal(_ phase: String, requestID: String, fields: [String: Any]) {
+    private func refreshTerminal(_ phase: String, requestID: String,
+                                 context:(requestID:UUID,objectID:String,sessionID:String), fields: [String: Any]) {
         emitObject("refresh", fields: fields.merging(["kind":"refresh", "phase":phase,
-            "requestId":requestID, "at":Date().timeIntervalSince1970]) { current, _ in current })
+            "requestId":requestID,"menuObjectID":context.objectID,"sessionID":context.sessionID]) { current, _ in current })
     }
     private static func refreshReason(_ error: Error) -> String {
         if let value = error as? EngineClientError {
             switch value {
-            case .notReady: return "engine-not-ready"
-            case .unsupportedCapability: return "refresh-disabled"
-            case .rpc(let code, _): return "engine-rpc-\(code)"
-            case .deadlineExceeded: return "engine-deadline"
-            default: return "engine-failure"
+            case .notReady, .unsupportedCapability: return "engine-disabled"
+            case .deadlineExceeded: return "timeout"
+            case .rpc: return "engine-error"
+            default: return "engine-error"
             }
         }
-        return "engine-failure"
+        return "unknown"
     }
     private func isLive() -> Bool {
         let now = Date().timeIntervalSince1970
@@ -204,7 +238,7 @@ import CryptoKit
         observationSequence &+= 1
         let now = Date().timeIntervalSince1970
         let base: [String: Any] = ["runID":runID,"epoch":epoch,"pid":ProcessInfo.processInfo.processIdentifier,
-                                   "seq":observationSequence,"at":now]
+                                   "seq":observationSequence,"mono":ProcessInfo.processInfo.systemUptime,"at":now]
         let object: [String: Any] = event == "refresh"
             ? fields.merging(base) { _, bound in bound }
             : base.merging(["event":event,"timestamp":now,"checks":fields]) { _, added in added }
@@ -213,15 +247,46 @@ import CryptoKit
         guard let handle = try? FileHandle(forWritingTo: observations) else { return }
         defer { try? handle.close() }; try? handle.seekToEnd(); try? handle.write(contentsOf:data + Data([10]))
     }
+    func recordClearInitiated(_ invalidation: EngineInvalidation) {
+        guard let floor=invalidation.nextFloor else { return }
+        let open=trackedMenus.compactMap { sessions[$0] }.sorted()
+        let clear=(id:UUID().uuidString,floor:floor,openSessions:open)
+        activeClear=clear
+        emitObject("clear-initiated",fields:["clearID":clear.id,"storeEpochAfter":floor.storeEpoch,
+            "generationAfter":floor.generation,"openSessionIDs":open])
+    }
     func recordClear() {
-        let scrubbed = !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty && $0.attributedTitle == nil && $0.toolTip == nil && $0.representedObject == nil }
-        if scrubbed { clearedTrackedInstances.formUnion(privateMenuInstanceIDs.filter { id in
-            trackedMenus.contains { String(UInt(bitPattern:$0)) == id }
-        }) }
-        emitObject("accepted-clear",fields:["priorPrivateContent":priorPrivateContent,"trackingClosed":trackedMenus.isEmpty,
-            "scrubbedInstanceIDs":scrubbed ? Array(privateMenuInstanceIDs).sorted() : [],
-            "oldItemTitlesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty },
-            "oldItemPrivateAttributesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.attributedTitle == nil && $0.toolTip == nil && $0.representedObject == nil }])
+        guard let clear=activeClear,!acceptedClearIDs.contains(clear.id) else { return }
+        acceptedClearIDs.insert(clear.id)
+        let scrubbed=clear.openSessions.filter { session in
+            guard let items=privateBySession[session],!items.isEmpty else { return false }
+            return items.allSatisfy(\.cleared)
+        }
+        emitObject("accepted-clear",fields:["clearID":clear.id,"storeEpochAfter":clear.floor.storeEpoch,
+            "generationAfter":clear.floor.generation,"scrubbedSessionIDs":scrubbed,
+            "priorPrivateContent":priorPrivateContent,"trackingClosed":trackedMenus.isEmpty])
+        for session in clear.openSessions {
+            guard let items=privateBySession[session],!items.isEmpty else { continue }
+            let hash=privateTitleHashBySession[session]
+            let current=currentStatusMenu?()?.items ?? []
+            func matchesPrivateHash(_ value:String?) -> Bool {
+                guard let value,let hash else { return false }
+                return SHA256.hash(data:Data(value.utf8)).map { String(format:"%02x",$0) }.joined() == hash
+            }
+            let titlePresent=current.contains { item in
+                matchesPrivateHash(item.title)
+            }
+            let privateAttributes=current.reduce(0) { count,item in
+                count + (matchesPrivateHash(item.attributedTitle?.string) ? 1 : 0)
+                    + (matchesPrivateHash(item.toolTip) ? 1 : 0)
+                    + (matchesPrivateHash(item.representedObject as? String) ? 1 : 0)
+                    + (matchesPrivateHash(item.identifier?.rawValue) ? 1 : 0)
+            }
+            emitObject("menu-scrubbed",fields:["clearID":clear.id,"sessionID":session,
+                "menuObjectID":objectBySession[session] ?? "","privateTitlePresent":titlePresent,
+                "privateAttributeCount":privateAttributes,
+                "itemStates":items.map { ["id":$0.id,"state":$0.state] }])
+        }
     }
     func recordTerminateCompleted() { emit("terminate-completed") }
     private func finish(_ reason: String) {
