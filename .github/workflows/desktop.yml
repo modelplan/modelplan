@@ -111,6 +111,9 @@ jobs:
           retention-days: 14
 
   app-smoke:
+    permissions:
+      contents: read
+      actions: read
     if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     # The actual universal Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
@@ -139,6 +142,10 @@ jobs:
           PYCODE
       - name: Check smoke assertions and release identity negative controls
         run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
+      - name: Fetch the approved prebuilt credential helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
       - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
       - name: Package the actual universal Community app with unverified consent identity
