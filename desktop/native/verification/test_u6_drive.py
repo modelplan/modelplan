@@ -16,7 +16,7 @@ def config(root,now=None,name=''):
                 expectedLease=dict(runID='run',epoch='epoch',notBefore=now-10,expiresAt=now+600),
                 syntheticHome=str(scratch/'home'),syntheticTmp=str(scratch/'tmp'),scratch=str(scratch),batch=str(batch),
                 locks=str(root/'locks'),resourceRoot=str(root),stopPath=str(batch/'stop.json'),preparedReceiptPath=str(batch/'prepared.json'),
-                leasePath=str(root/'lease'),releasePath=str(root/'release'),subjectPidPath=str(root/(name+'subject.pid')),requiredSeconds=30,booking={})
+                leasePath=str(root/'lease'),releasePath=str(root/'release'),subjectPidPath=str(root/(name+'subject.pid')),requiredSeconds=30,quitGraceSeconds=0,booking={})
 def prepare(c,disk=DISK,admission=None,binary=None):
     if binary is not None:Path(c['argv'][0]).write_bytes(binary)
     with patch.object(drive,'load_and_admit',side_effect=admission or (lambda c:{})),patch.object(drive.shutil,'disk_usage',return_value=disk),patch.object(subprocess,'Popen',no_spawn):

@@ -142,7 +142,7 @@ python3() {
         request) echo '{"id": "b1"}' ;;
         start) printf '{"runID": "%s", "epoch": "%s", "notBefore": 1, "expiresAt": 2}\n' "$8" "${10}"; echo "run=$8 epoch=${10}" >> "$LOG" ;;
       esac ;;
-    guardian.py) echo "guardian-stop $5" >> "$LOG"
+    guardian.py) echo "guardian-stop $5" >> "$LOG"; echo "guardian-grace $8 $9" >> "$LOG"
                  while [ ! -e "$5" ]; do sleep 0.02; done; echo "guardian.py exit" >> "$LOG"; return "${GUARDIAN:-0}" ;;
     release.py) return "${RELEASE:-0}" ;;
     scenario.py) case "$2" in name) echo "$NAME" ;; prepare) return "${PREPARE:-0}" ;; drive) return "${DRIVE:-0}" ;; esac ;;
@@ -185,9 +185,12 @@ class SkillLaunchBranchTests(unittest.TestCase):
         r = self.run_sequence(DRIVE=0, CONTROLLER=3, GUARDIAN=0)
         calls = r['calls']
         self.assertEqual(r['status'], 0, r['stderr'])
-        order = ['book.py request', 'book.py start', 'release.py --lane', 'scenario.py name',
-                 'scenario.py prepare', 'launch.py --config', 'scenario.py drive']
+        order = ['book.py request', 'book.py start', 'release.py --lane', 'scenario.py name', 'scenario.py prepare']
         self.assertEqual([self.index(calls, x) for x in order], sorted(self.index(calls, x) for x in order))
+        # launch.py and the drive step both run in the background after prepare; their log lines may interleave
+        prepare = self.index(calls, 'scenario.py prepare')
+        self.assertTrue(prepare < self.index(calls, 'launch.py --config') and prepare < self.index(calls, 'scenario.py drive'))
+        self.assertLess(self.block().index('launch.py" --config'), self.block().index('scenario.py" drive'))
         # the guardian runs in the background from before the release until the stop
         self.assertTrue(self.index(calls, 'book.py start') < self.index(calls, 'guardian.py --lease') < self.index(calls, 'guardian.py exit'))
         drive, check = self.index(calls, 'scenario.py drive'), self.index(calls, 'check_launch_cleanup.py')
@@ -208,6 +211,7 @@ class SkillLaunchBranchTests(unittest.TestCase):
     def test_one_stop_path_from_the_run_config(self):
         r = self.run_sequence()
         self.assertIn('guardian-stop ' + str(r['paths']['stopPath']), r['calls'])
+        self.assertIn('guardian-grace --quit-grace 5', r['calls'])  # run config default when quitGraceSeconds is absent
         block = self.block()
         self.assertEqual(re.findall(r'STOP_PATH=\S+', block), ['STOP_PATH=$(cfg'])
         self.assertIn('STOP_PATH=$(cfg stopPath)', block)

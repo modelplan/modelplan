@@ -7,11 +7,11 @@ also requesting it when the disk floor is breached mid-run."""
 import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
 from admission import load_and_admit
-from guardian import cleanup,identity,launcher_lost
+from guardian import cleanup,identity,launcher_lost,quit_grace
 import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
 DISK_RESERVE=2*3430940672;DISK_FLOOR=8589934592
-REGISTER_SECONDS=15;CLOSE_SECONDS=25 # launch.py TERM 10 s + KILL; guardian TERM 10 s + KILL 5 s
+REGISTER_SECONDS=15;CLOSE_SECONDS=25 # after the quit grace: launch.py TERM 10 s + KILL; guardian TERM 10 s + KILL 5 s
 QUIT_EVENTS=('stop-or-lease-expired','owner-preempted') # U6DriveGuard.finish rows: the app's own NSApplication.terminate
 def write(path,data):
     path=Path(path);temp=path.with_suffix(path.suffix+'.tmp');temp.write_text(json.dumps(data));temp.replace(path)
@@ -135,7 +135,7 @@ def drive(c,now,poll=.2,sleep=time.sleep):
     finally:
         running=result['appStarted'] and alive(record) # was there still a subject to ask to quit?
         request_stop(c,'run-ended') # launch.py and the guardian stop the registered subject on this file
-        deadline=time.monotonic()+CLOSE_SECONDS
+        deadline=time.monotonic()+CLOSE_SECONDS+quit_grace(c.get('quitGraceSeconds')) # the subject's own quit comes first
         while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
         gone=closed(pid_path);removed=[];r=prepared(c);prep=(r['locks'],r['attempt']) if r else None
         if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
