@@ -1,0 +1,20 @@
+{
+  "name": "@modelplan/cockpit-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "generate": "node generate-wire.mjs",
+    "check": "node generate-wire.mjs --check && tsc --noEmit",
+    "build": "node build.mjs",
+    "build:official": "node build.mjs --official",
+    "test": "node generate-wire.mjs --check && tsc && node --test ../tests/cockpit/unit/*.test.mjs",
+    "test:webkit": "node build.mjs --official && playwright test --config ../tests/cockpit/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "typescript": "5.9.2"
+  },
+  "engines": { "node": ">=18" }
+}

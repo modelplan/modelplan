@@ -109,8 +109,9 @@ for (const p of tracked) {
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
   if (!code.includes("official-visuals")) continue;
-  assert.equal(p, "desktop/build.mjs", "community build must not read the reserved visuals: " + p);
-  const branch = code.slice(code.indexOf("if (official) {"), code.indexOf("} else if (external) {"));
+  assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
+  const end = p === "desktop/cockpit/build.mjs" ? "} else {" : "} else if (external) {";
+  const branch = code.slice(code.indexOf("if (official) {"), code.indexOf(end));
   assert.ok(
     code.indexOf("if (official) {") >= 0 && code.split("official-visuals").length === branch.split("official-visuals").length,
     "community build must not read the reserved visuals outside the --official branch",
