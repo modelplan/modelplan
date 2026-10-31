@@ -199,7 +199,7 @@ func ForgetProductionHistory(cache, tool string) error {
 func ForgetProductionHistoryLocked(cache, tool string) error {
 	if tool == "claude" {
 		tool = projectionTool
-	} else if _, ok := historyDepths[tool]; !ok {
+	} else if _, ok := historyDepths[tool]; !ok && tool != "opencode" {
 		return nil
 	}
 	_, lockPath := historyGatePaths(cache, tool)
