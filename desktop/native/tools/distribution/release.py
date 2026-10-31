@@ -4,6 +4,7 @@
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,10 @@ SPARKLE = ('SPARKLE_ED25519_PRIVATE_KEY', 'SPARKLE_TOOLS_URL',
            'SPARKLE_TOOLS_SHA256', 'MACOS_UPDATE_URL')
 ADHOC_BETA = SPARKLE + ('MACOS_BETA_FEED_URL', 'MACOS_RELEASE_NOTES_URL', 'MACOS_BUNDLE_ID',
                         'MACOS_OFFICIAL_WORKFLOW_ID', 'CANDIDATE_RUN_ID')
+ROOT = Path(__file__).resolve().parents[4]
+CREDENTIAL_PIN_FILE = ROOT / 'desktop/native/credential-agent-artifact-pin.json'
+CREDENTIAL_HELPER = Path('Contents/Helpers/modelplan-credential-agent')
+CREDENTIAL_MANIFEST = Path('Contents/Resources/credential-agent.json')
 NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
 ET.register_namespace('sparkle', NS)
 
@@ -202,6 +207,33 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     return info
 
 
+def check_credential_pin(app):
+    if CREDENTIAL_PIN_FILE.is_symlink() or not CREDENTIAL_PIN_FILE.is_file() or CREDENTIAL_PIN_FILE.stat().st_size > 4096:
+        raise ValueError('Approved credential helper pin is missing or linked')
+    approved = json.loads(CREDENTIAL_PIN_FILE.read_text())
+    if not isinstance(approved, dict) or set(approved) != {'runID', 'artifactName', 'sha256'}:
+        raise ValueError('Invalid approved credential helper pin')
+    expected = approved.get('sha256')
+    checker_path = ROOT / 'desktop/native/ModelPlanCredentialAgent/tools/check_embedded_agent.py'
+    spec = importlib.util.spec_from_file_location('release_credential_checker', checker_path)
+    checker = importlib.util.module_from_spec(spec); spec.loader.exec_module(checker)
+    pin = json.loads(checker.regular_member(Path(app), CREDENTIAL_MANIFEST).read_text())
+    if not expected:
+        raise ValueError('Approved credential helper SHA is missing')
+    checker.require_expected_sha(pin, expected)
+    checker.check_pair(Path(app), Path(app), pin)
+
+
+def sign_nested(app, codesign):
+    pinned = app / CREDENTIAL_HELPER
+    for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+        if path != pinned and path.is_file() and not path.is_symlink() and b'Mach-O' in run('file', '-b', str(path)):
+            codesign(path)
+    for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+        if not path.is_symlink() and path.suffix in ('.framework', '.app', '.xpc', '.appex'):
+            codesign(path)
+
+
 def sign(app):
     env = os.environ
     validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], env['MACOS_TEAM_ID'])
@@ -223,16 +255,11 @@ def sign(app):
             def codesign(path):
                 run('codesign', '--force', '--sign', env['MACOS_SIGNING_IDENTITY'], '--keychain', str(keychain),
                     '--options', 'runtime', '--timestamp', '--entitlements', str(entitlements), str(path))
-            # Sign Mach-O leaves then nested containers, deepest first. Never use --deep for signing.
-            for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
-                if path.is_file() and not path.is_symlink() and b'Mach-O' in run('file', '-b', str(path)):
-                    codesign(path)
-            for path in sorted(app.rglob('*'), key=lambda p: len(p.parts), reverse=True):
-                if not path.is_symlink() and path.suffix in ('.framework', '.app', '.xpc', '.appex'):
-                    codesign(path)
+            sign_nested(app, codesign)
             refresh_helper_identity(app)
             codesign(app)
             run('codesign', '--verify', '--deep', '--strict', str(app))
+            check_credential_pin(app)
             result = subprocess.run(['codesign', '-d', '--verbose=4', str(app)], capture_output=True, check=True)
             if f'TeamIdentifier={env["MACOS_TEAM_ID"]}' not in result.stderr.decode():
                 raise ValueError('Signed team mismatch')
@@ -254,7 +281,7 @@ def notarize(app, output):
         if receipt.get('status') != 'Accepted':
             raise ValueError('Notarization was not accepted; no update candidate produced')
         run('xcrun', 'stapler', 'staple', str(app)); run('xcrun', 'stapler', 'validate', str(app))
-        run('codesign', '--verify', '--deep', '--strict', str(app)); run('spctl', '--assess', '--type', 'execute', str(app))
+        run('codesign', '--verify', '--deep', '--strict', str(app)); check_credential_pin(app); run('spctl', '--assess', '--type', 'execute', str(app))
         (output / 'notary-receipt.json').write_text(json.dumps({'id': receipt['id'], 'status': 'Accepted'}) + '\n')
         run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(output / 'ModelPlan-universal.zip'))
 
@@ -310,6 +337,7 @@ def appcast(app, output, tool):
     if env.get('MACOS_BETA_FEED_URL', '').strip():
         beta_feed_url(env)
     info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
+    check_credential_pin(app)
     signature = sign_archive(info, archive, tool)
     (output / 'appcast.xml').write_bytes(appcast_bytes(info, archive, signature, env['MACOS_UPDATE_URL'], env['MACOS_FEED_URL']))
     (output / 'SHA256SUMS').write_text(f'{sha256(archive)}  {archive.name}\n')
@@ -323,11 +351,12 @@ def adhoc_appcast(app, output, tool):
     info = validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], None, feed=feed)
     app = Path(app)
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
-    run('codesign', '--force', '--deep', '--sign', '-', str(app))
-    # Deep signing can change the helper bytes. Refresh its integrity record and reseal the app.
+    sign_nested(app, lambda path: run('codesign', '--force', '--sign', '-', str(path)))
+    # The CLI helper may be re-signed; update its own integrity record before the outer seal.
     refresh_helper_identity(app)
     run('codesign', '--force', '--sign', '-', str(app))
     run('codesign', '--verify', '--deep', '--strict', str(app))
+    check_credential_pin(app)
     archive = output / 'ModelPlan-beta-universal.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(archive))
     signature = sign_archive(info, archive, tool)

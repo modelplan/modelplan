@@ -146,6 +146,14 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.resources = self.app / 'Contents/Resources'; self.resources.mkdir(parents=True)
         self.helper = self.app / 'Contents/Helpers/modelplan'; self.helper.parent.mkdir()
         self.helper.write_bytes(b'synthetic universal helper')
+        self.credential = self.app / release.CREDENTIAL_HELPER
+        self.credential.write_bytes(b'synthetic pinned credential helper')
+        pin = {'schemaVersion': 1, 'sha256': release.sha256(self.credential), 'bytes': self.credential.stat().st_size,
+               'inputSHA256': 'b' * 64, 'bundleIdentifier': 'ai.modelplan.credential-agent'}
+        (self.resources / 'credential-agent.json').write_text(json.dumps(pin))
+        approval = self.root / 'approved.json'; approval.write_text(json.dumps({'runID': '123', 'artifactName': 'synthetic', 'sha256': pin['sha256']}))
+        pin_override = patch.object(release, 'CREDENTIAL_PIN_FILE', approval)
+        pin_override.start(); self.addCleanup(pin_override.stop)
         executable = self.app / 'Contents/MacOS/ModelPlan'; executable.parent.mkdir()
         executable.write_bytes(b'synthetic universal executable')
         self.output = self.root / 'payload'
@@ -188,15 +196,17 @@ class AdhocBetaCandidate(unittest.TestCase):
         return release.adhoc_appcast(self.app, self.output, '/fake/sign_update')
 
     def test_payload_signing_order_integrity_xml_and_draft_metadata(self):
+        original_credential = release.sha256(self.credential)
         with patch.object(release, 'run', side_effect=self.fake_run):
             self.prepare()
+        self.assertEqual(release.sha256(self.credential), original_credential)
         commands = [args for args, _ in self.calls]
-        sign = commands.index(('codesign', '--force', '--deep', '--sign', '-', str(self.app)))
         seal = commands.index(('codesign', '--force', '--sign', '-', str(self.app)))
         verify = commands.index(('codesign', '--verify', '--deep', '--strict', str(self.app)))
         archive = self.output / 'ModelPlan-beta-universal.zip'
         zip_index = commands.index(('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(self.app), str(archive)))
-        self.assertLess(sign, seal); self.assertLess(seal, verify); self.assertLess(verify, zip_index)
+        self.assertLess(seal, verify); self.assertLess(verify, zip_index)
+        self.assertFalse(any('--deep' in args and '--force' in args for args in commands if args[0] == 'codesign'))
         self.assertEqual((self.resources / 'modelplan.sha256').read_text().strip(), release.sha256(self.helper))
         self.assertIn(('/fake/sign_update', '--ed-key-file', '-', '--verify', str(archive), self.signature), commands)
         swift = next(args for args in commands if args[0] == 'swift')
@@ -223,6 +233,55 @@ class AdhocBetaCandidate(unittest.TestCase):
             self.assertEqual(checksum, release.sha256(self.output / name))
         self.assertEqual({path.name for path in self.output.iterdir()},
                          {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json'})
+
+    def test_adhoc_post_sign_mismatch_fails_before_archive(self):
+        def corrupt(*args, **kwargs):
+            value = self.fake_run(*args, **kwargs)
+            if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+                self.credential.write_bytes(b'changed after seal')
+            return value
+        with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+            self.prepare()
+        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
+
+    def test_signed_path_preserves_helper_and_detects_post_sign_tamper(self):
+        env = dict(self.env, MACOS_SIGNING_IDENTITY='Developer ID Application: Synthetic',
+                   MACOS_TEAM_ID='synthetic-team', MACOS_CERTIFICATE_P12_BASE64=base64.b64encode(b'synthetic').decode(),
+                   MACOS_CERTIFICATE_PASSWORD='synthetic')
+        original = release.sha256(self.credential)
+        def command(*args, **kwargs):
+            if args[:2] == ('file', '-b'):
+                return b'Mach-O synthetic' if Path(args[-1]) in (self.helper, self.credential, self.app / 'Contents/MacOS/ModelPlan') else b'text'
+            if args[0] == 'codesign' and '--force' in args:
+                Path(args[-1]).write_bytes(b'resigned') if Path(args[-1]).is_file() else None
+            return b''
+        display = type('Result', (), {'stderr': b'TeamIdentifier=synthetic-team'})()
+        with patch.dict(release.os.environ, env, clear=True), patch.object(release, 'validate_candidate'), \
+             patch.object(release, 'refresh_helper_identity'), patch.object(release, 'run', side_effect=command), \
+             patch.object(release.subprocess, 'run', return_value=display):
+            release.sign(self.app)
+            self.assertEqual(release.sha256(self.credential), original)
+            def tamper(*args, **kwargs):
+                value = command(*args, **kwargs)
+                if args[0] == 'codesign' and '--force' in args and args[-1] == str(self.app):
+                    self.credential.write_bytes(b'tampered')
+                return value
+            with patch.object(release, 'run', side_effect=tamper), self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+                release.sign(self.app)
+
+    def test_notary_staple_cannot_change_helper_before_archive(self):
+        env = dict(self.env, APPLE_NOTARY_KEY_P8_BASE64=base64.b64encode(b'synthetic').decode(),
+                   APPLE_NOTARY_KEY_ID='synthetic', APPLE_NOTARY_ISSUER_ID='synthetic')
+        def command(*args, **kwargs):
+            if args[:2] == ('xcrun', 'notarytool'):
+                return b'{"status":"Accepted","id":"synthetic"}'
+            if args[:3] == ('xcrun', 'stapler', 'staple'):
+                self.credential.write_bytes(b'tampered')
+            return self.fake_run(*args, **kwargs)
+        with patch.dict(release.os.environ, env, clear=True), patch.object(release, 'run', side_effect=command), \
+             self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+            release.notarize(self.app, self.output)
+        self.assertFalse((self.output / 'ModelPlan-universal.zip').exists())
 
     def test_invalid_candidate_is_refused_before_signing_or_output(self):
         # Exercise the real shared validation rather than replacing it with a successful stub.
