@@ -222,7 +222,11 @@ class AdhocBetaCandidate(unittest.TestCase):
             checksum, name = line.split('  ')
             self.assertEqual(checksum, release.sha256(self.output / name))
         self.assertEqual({path.name for path in self.output.iterdir()},
-                         {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json'})
+                         {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json',
+                          'RELEASE_NOTES.md', 'release-notes.html'})
+        self.assertIn('Gatekeeper', (self.output / 'RELEASE_NOTES.md').read_text())
+        self.assertIn('re-granting', (self.output / 'RELEASE_NOTES.md').read_text())
+        self.assertIn('0.1 &amp; beta', (self.output / 'release-notes.html').read_text())
 
     def test_invalid_candidate_is_refused_before_signing_or_output(self):
         # Exercise the real shared validation rather than replacing it with a successful stub.
