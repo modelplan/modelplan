@@ -4,6 +4,7 @@
 Batches are written in the producers' current encoding (C2.6 F; schema/verification/fixtures/provenance.json says
 which files are producer captures); every negative trace states its expected outcome independently of the oracle."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -29,7 +30,16 @@ FILE_SCHEMAS = {'dock-capture.json': 'capture-receipt.json', 'consent-reset.json
                 'operator-finish.json': 'u6-actions.json', 'launch-cleanup.json': 'launch-cleanup.json',
                 'context.json': 'replay-context.json'}
 LINE_SCHEMAS = {'runtime-calls.jsonl': 'runtime-calls.json'}  # per-line receipts besides native and pointer rows
-COMPLETED_ONLY = ('rowsSequenceAfter', 'copilotAccountsAfter', 'accountIDSHA256')
+COMPLETED_ONLY = ('rowsSequenceAfter', 'copilotAccountsAfter', 'readingSHA256')
+# Fixed reading-digest vector for the Swift side (README, Reading digest): two windows out of id order, a
+# fractional percent, an ISO and a null reset.
+READING_VECTOR = ({'route': 'runtime', 'plan': {'id': 'copilot-pro'}, 'windows': [
+    {'id': 'premium_interactions', 'limitKey': 'premium_interactions', 'poolKey': 'copilot', 'remainingPercent': 62.5,
+     'resetsAt': '2099-01-01T00:00:00Z'},
+    {'id': 'chat', 'limitKey': 'chat', 'poolKey': 'copilot', 'remainingPercent': None, 'resetsAt': None}]},
+    '{"plan":"copilot-pro","route":"runtime","windows":[{"id":"chat","limitKey":"chat","poolKey":"copilot",'
+    '"remainingBp":null,"resetsAt":null},{"id":"premium_interactions","limitKey":"premium_interactions",'
+    '"poolKey":"copilot","remainingBp":6250,"resetsAt":4070908800}]}')
 POINTER_FILES = ('dock-pointer.jsonl', 'status-pointer.jsonl', 'status-pointer-clear.jsonl')
 CLOSURE = sb.closure()  # one real launch-cleanup/1 receipt shared by the traces that do not vary it
 
@@ -169,7 +179,8 @@ class SchemaShapeTests(unittest.TestCase):
         completed = trace.one('refresh', phase='completed')
         for key in COMPLETED_ONLY:
             self.assertTrue(errors({k: v for k, v in completed.items() if k != key}), key)
-        self.assertTrue(errors(dict(completed, accountIDSHA256='synthetic-copilot-account-1')))  # a hash, never the ID
+        self.assertTrue(errors(dict(completed, readingSHA256='synthetic reading')))  # a digest, never the reading
+        self.assertTrue(errors({k: v for k, v in requested.items() if k != 'engineRequestID'}))
         abandoned = {k: v for k, v in completed.items() if k not in COMPLETED_ONLY}
         self.assertEqual(errors(dict(abandoned, phase='abandoned', cause='stop')), [])
         self.assertTrue(errors(dict(abandoned, phase='abandoned', cause='other')))
@@ -355,15 +366,6 @@ def defer(t, disposition):
     set_mono(t, row, 21.2)
 
 
-def stale_accepted(t):
-    """An earlier request's reply carries the engineRequestID that R's accepted reuses (a cached snapshot)."""
-    earlier = dict(menuObjectID=sb.MENU, sessionID='6B1F0D2A-0000-4000-8000-0000000000E0',
-                   requestId='6B1F0D2A-0000-4000-8000-0000000000E1')
-    t.insert(t.row('refresh', 15.0, phase='requested', rowsSequenceBefore=1, copilotAccountsBefore=0, **earlier))
-    t.insert(t.row('refresh', 15.01, phase='accepted', engineRequestID=sb.ENGINE_REQUEST,
-                   dispositions=dict(sb.DISPOSITIONS), **earlier))
-
-
 def abandon(t, cause, offset):
     """The App watchdog's terminal instead of completed (C2.6 D)."""
     row = t.one('refresh', phase='completed')
@@ -532,7 +534,8 @@ CASES = [
      {3: ('not-run', 'not-delivered', 'refresh-abandoned-stop')}, 'not-run'),
     ('accepted-missing', 'C2.6 D (no per-call reply)', lambda t: t.remove('refresh', phase='accepted'), {}, (),
      {3: ('not-run', 'not-delivered', 'accepted-missing')}, 'not-run'),
-    ('accepted-stale-snapshot', 'C2.6 D (stale scheduled value: another call\'s engineRequestID)', stale_accepted, {}, (),
+    ('accepted-stale-snapshot', 'C2.6 D (stale scheduled value: another call\'s engineRequestID)',
+     lambda t: t.one('refresh', phase='accepted').update(engineRequestID=16), {}, (),
      {3: ('not-run', 'not-delivered', 'accepted-stale')}, 'not-run'),
     ('accepted-duplicate', 'C2.6 D, C2.6 F', lambda t: duplicate(t, 'refresh', 21.07, match=dict(phase='accepted')), {}, (),
      {3: ('fail', 'unknown', 'accepted-duplicate')}, 'fail'),
@@ -541,8 +544,11 @@ CASES = [
     ('completed-on-unrelated-projection', 'C2.6 D (unrelated-only advance reported as completed)',
      lambda t: t.one('refresh', phase='completed').update(copilotAccountsAfter=0), {}, (),
      {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
-    ('completed-other-account', 'C2.6 D', lambda t: t.one('refresh', phase='completed').update(accountIDSHA256=R.sha('other')),
+    ('completed-other-reading', 'C2.6 D (readingSHA256 mismatch)', lambda t: t.one('refresh', phase='completed').update(
+        readingSHA256=sb.reading_sha256(dict(sb.SEED_READING_ACCOUNT, route='other'))),
      {}, (), {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
+    ('completed-two-accounts', 'C2.6 D (more than one Copilot account)', lambda t: t.one('refresh', phase='completed').update(
+        copilotAccountsAfter=2), {}, (), {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
     ('unrelated-then-valid', 'C2.6 D (earlier unrelated projections are ignored)',
      lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=6), {}, (), {}, 'pass'),
     ('copilot-not-scheduled-but-completed', 'C2.6 D, C2.6 F', lambda t: t.one('refresh', phase='accepted')['dispositions'].update(
@@ -554,6 +560,9 @@ CASES = [
     ('call-before-accepted', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
      {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+    ('connect-before-accepted', 'C2.6 D (only account.getQuota counts before accepted)', lambda t: setattr(
+        t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus'], 21.051, step=0.002)
+        + sb.stub_calls(['account.getQuota'], 21.065, first_seq=3)), {}, (), {}, 'pass'),
     ('runtime-calls-preseeded', 'C2.6 C-D (the log must be absent in the seed)', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 1.0) + sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=4)), {}, (),
@@ -650,6 +659,12 @@ class ReplayOracleTests(unittest.TestCase):
         delayed_clear(trace)
         self.assert_steps(replay_trace(trace), {6: ('fail', 'timeout', 'clear-late')}, 'fail')
 
+    def test_reading_digest_vector(self):
+        account, canonical = READING_VECTOR
+        self.assertEqual(sb.reading_sha256(account), hashlib.sha256(canonical.encode()).hexdigest())
+        self.assertEqual(sb._basis_points(12.345), 1235)  # half away from zero after scaling
+        self.assertEqual(sb._basis_points(0.005), 1)
+
     def test_fixture_receipts_are_the_shipped_writers_output(self):
         """The authored capture/reset/finish receipts equal what capture_owned, consent_reset and action_runner
         write for the same trace, so in-memory traces and committed fixtures agree with the shipped writers."""
@@ -728,7 +743,8 @@ DISAGREEMENTS = {
     'accepted-duplicate': ('fail', 'pass', _F_CONTRADICTION),
     'copilot-accounts-before-nonzero': ('fail', 'pass', 'C2.6 D FAIL: "copilotAccountsBefore ≠ 0"'),
     'completed-on-unrelated-projection': ('fail', 'pass', _D_FAIL_COMPLETED),
-    'completed-other-account': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'completed-other-reading': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'completed-two-accounts': ('fail', 'pass', 'C2.6 D (binding decision): copilotAccountsAfter must be 1'),
     'copilot-not-scheduled-but-completed': ('fail', 'pass', 'C2.6 D PASS needs accepted "scheduled"; ' + _F_CONTRADICTION),
     'stub-call-missing': ('fail', 'pass', _D_FAIL_COMPLETED),
     'quota-call-after-completed': ('fail', 'pass', _D_FAIL_COMPLETED),

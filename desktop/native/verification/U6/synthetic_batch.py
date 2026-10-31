@@ -20,6 +20,7 @@ import io
 import hashlib
 import importlib.util
 import json
+import math
 import struct
 import subprocess
 import sys
@@ -42,8 +43,43 @@ SESSION_A, SESSION_B = '6B1F0D2A-0000-4000-8000-00000000000A', '6B1F0D2A-0000-40
 REQUEST, CLEAR = '6B1F0D2A-0000-4000-8000-0000000000F1', '6B1F0D2A-0000-4000-8000-0000000000C1'
 STORE_EPOCH, GENERATION = '5e' * 16, 1
 SEED_TITLE = 'Synthetic private title 7'
-SEED_ACCOUNT = 'synthetic-copilot-account-1'  # synthetic-seed.json carries only its SHA-256 (C2.6 D)
 ENGINE_REQUEST, STUB_PID, ENGINE_PID = 17, 7300, 7200
+
+
+def _unix_seconds(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return int(datetime.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp())
+    return int(value)
+
+
+def _basis_points(percent):
+    """round(remainingPercent * 100), half away from zero like Swift's `rounded()`; null stays null."""
+    if percent is None:
+        return None
+    scaled = percent * 100
+    return int(math.floor(scaled + 0.5)) if scaled >= 0 else -int(math.floor(-scaled + 0.5))
+
+
+def reading_sha256(account):
+    """C2.6 D reading digest of one Copilot account of a rows projection: SHA-256 of the canonical JSON (sorted
+    keys, separators `,` and `:`, UTF-8) of {route, plan: plan.id, windows sorted by id: {id, limitKey, poolKey,
+    remainingBp, resetsAt}}."""
+    windows = sorted(account['windows'], key=lambda w: w['id'])
+    value = dict(route=account['route'], plan=account['plan']['id'],
+                 windows=[dict(id=w['id'], limitKey=w['limitKey'], poolKey=w['poolKey'],
+                               remainingBp=_basis_points(w.get('remainingPercent')),
+                               resetsAt=_unix_seconds(w.get('resetsAt'))) for w in windows])
+    canonical = json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return hashlib.sha256(canonical).hexdigest()
+
+
+# The seed's synthetic Copilot account as the accepted projection shows it (the stub's fixed synthetic quota).
+SEED_READING_ACCOUNT = {'route': 'runtime', 'plan': {'id': 'copilot-synthetic'}, 'windows': [
+    {'id': 'premium_interactions', 'limitKey': 'premium_interactions', 'poolKey': 'copilot', 'remainingPercent': 75,
+     'resetsAt': '2099-01-01T00:00:00Z'}]}
+SEED_READING = reading_sha256(SEED_READING_ACCOUNT)
 WINDOW, CAPTURE = 311, 'dock-owned.png'
 
 
@@ -71,7 +107,7 @@ def context(**changes):
     value = dict(schema='u6-replay-context/1', runID=RUN, epoch=EPOCH, subjectPID=PID, leaseNotBefore=T0,
                  leaseExpiresAt=T0 + LEASE_SECONDS, seedTitleSHA256=sha(SEED_TITLE),
                  homeSHA256=sha('<scratch>/home'), pins=dict(PINS), launchedPins=dict(PINS),
-                 seedAccountIDSHA256=sha(SEED_ACCOUNT))
+                 seedReadingSHA256=SEED_READING)
     value.update(changes)
     return value
 
@@ -222,11 +258,11 @@ def valid(variant='main', closure_receipt=None):
     t.add('status-menu-action-arrived', 21.0, menuObjectID=MENU, sessionID=SESSION_A, requestID=REQUEST,
           actionID='refresh', deliveryMethod='axpress-menu-item', source='NSMenu.didSendAction', scope='owned-status-menu')
     t.add('refresh', 21.05, phase='requested', requestId=REQUEST, rowsSequenceBefore=3, copilotAccountsBefore=0,
-          menuObjectID=MENU, sessionID=SESSION_A)
+          engineRequestID=ENGINE_REQUEST, menuObjectID=MENU, sessionID=SESSION_A)
     t.add('refresh', 21.06, phase='accepted', requestId=REQUEST, engineRequestID=ENGINE_REQUEST,
           dispositions=dict(DISPOSITIONS), menuObjectID=MENU, sessionID=SESSION_A)
     completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, copilotAccountsAfter=1,
-                     accountIDSHA256=sha(SEED_ACCOUNT), menuObjectID=MENU, sessionID=SESSION_A)
+                     readingSHA256=SEED_READING, menuObjectID=MENU, sessionID=SESSION_A)
     if alt:
         t.add('refresh', 21.08, **completed)
         t.add('menu-end', 21.2, menuObjectID=MENU, sessionID=SESSION_A, cause='other')
@@ -372,7 +408,7 @@ def kit_batch(ctx, files, root):
     put(batch / 'launch.json', dict(ownedPID=pid, runID=run, epoch=epoch, sourceHead=KIT_HEAD))
     put(batch / 'prepared.json', dict(prepared=True, runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED))
     put(batch / 'synthetic-seed.json', dict(schema='u6-seed/1', runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED,
-                                            titleSHA256=ctx['seedTitleSHA256'], accountIDSHA256=ctx['seedAccountIDSHA256'],
+                                            titleSHA256=ctx['seedTitleSHA256'], readingSHA256=ctx['seedReadingSHA256'],
                                             profileSHA256=sha('synthetic profile')))
     for stem in ('dock-pointer', 'status-pointer', 'status-pointer-clear'):
         put(batch / (stem + '-plan.json'), dict(profile='synthetic', runID=run, epoch=epoch, subjectPID=pid,

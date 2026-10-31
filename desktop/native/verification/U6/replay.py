@@ -315,10 +315,9 @@ def step3(context, native, files, a):
     accepted = accepted[0] if accepted else None
     if accepted is None or not requested['seq'] < accepted['seq'] < terminal['seq']:
         return NOT_RUN('accepted-missing'), None, end  # a terminal without a matching accepted
-    if (accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID']) or any(
-            r['engineRequestID'] == accepted['engineRequestID'] and r['requestId'] != request
-            for r in native.of('refresh', phase='accepted')):
-        return NOT_RUN('accepted-stale'), None, end  # another call's reply, not this call's
+    if ((accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID'])
+            or accepted['engineRequestID'] != requested['engineRequestID']):
+        return NOT_RUN('accepted-stale'), None, end  # another call's (or a cached) reply, not this call's
     disposition = accepted['dispositions'][COPILOT]
     if phase == 'deferred':
         if disposition == 'scheduled':
@@ -326,13 +325,13 @@ def step3(context, native, files, a):
         return NOT_RUN('refresh-deferred', DEFERRED_REASONS[disposition]), None, end
     if disposition != 'scheduled':  # completed although the call's reply did not schedule Copilot
         return FAIL('copilot-not-scheduled'), None, end
-    if (terminal['copilotAccountsAfter'] < 1 or terminal['accountIDSHA256'] != context['seedAccountIDSHA256']
+    if (terminal['copilotAccountsAfter'] != 1 or terminal['readingSHA256'] != context['seedReadingSHA256']
             or terminal['rowsSequenceAfter'] <= requested['rowsSequenceBefore']):
         return FAIL('projection-not-qualifying'), None, end
     calls, problem = _runtime_calls(context, files)
     if problem:
         return NOT_RUN(problem), None, end
-    if any(c['mono'] < accepted['mono'] for c in calls):
+    if any(c['method'] == 'account.getQuota' and c['mono'] < accepted['mono'] for c in calls):
         return FAIL('call-before-accepted'), None, end
     if not any(c['method'] == 'account.getQuota' and accepted['mono'] < c['mono'] < terminal['mono'] for c in calls):
         return FAIL('quota-call-missing'), None, end
