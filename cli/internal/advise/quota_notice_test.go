@@ -1,8 +1,10 @@
 package advise
 
 import (
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -291,5 +293,43 @@ func TestQuotaNoticeOldMarkIsNotRepeated(t *testing.T) {
 	a = claude("medium", 91, 2*time.Hour, 300)
 	if got := kinds(s.QuotaNotices("thread", &a, now)); got != "low:five_hour" {
 		t.Fatalf("10%% after an old mark: %q", got)
+	}
+}
+
+func TestQuotaMarksSurviveConcurrentWriters(t *testing.T) {
+	cache := t.TempDir()
+	r := now.Add(2 * time.Hour).UTC()
+	marks := []QuotaMark{{ResetAt: r, Level: 20, Pace: true}, {ResetAt: r, Level: 10, Surplus: true}}
+	// Every writer loads the same old state before any of them saves.
+	var states []*State
+	for i := 0; i < 10; i++ {
+		states = append(states, Load(cache))
+	}
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i, s := range states {
+		thread, mark := fmt.Sprintf("thread-%d", i), marks[0]
+		if i < 2 {
+			thread, mark = "shared", marks[i] // two writers, one thread and cycle, different marks
+		}
+		s.Quotas = map[string]QuotaSession{thread: {At: now, Windows: map[string]QuotaMark{"k": mark}}}
+		s.changed = true
+		wg.Add(1)
+		go func(s *State) {
+			defer wg.Done()
+			<-start
+			if err := s.Save(cache, now); err != nil {
+				t.Error(err)
+			}
+		}(s)
+	}
+	close(start)
+	wg.Wait()
+	got := Load(cache).Quotas
+	if len(got) != 9 {
+		t.Fatalf("threads kept: %d of 9", len(got))
+	}
+	if m := got["shared"].Windows["k"]; m != (QuotaMark{ResetAt: r, Level: 10, Pace: true, Surplus: true}) {
+		t.Fatalf("shared thread mark: %+v", m)
 	}
 }

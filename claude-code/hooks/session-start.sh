@@ -12,9 +12,12 @@ fi
 here=$(dirname "$0")
 . "$here/setup-lib.sh"
 input=$(cat)
-cli=$(sh "$here/find-cli.sh" "$min_cli") || exit 0
-cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 session_cli=0.5.51
+# Look for the higher of the two, so an old pinned copy does not hide a newer installed CLI.
+want=$session_cli
+at_least "$min_cli" "$session_cli" && want=$min_cli
+cli=$(sh "$here/find-cli.sh" "$want") || exit 0
+cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 [ -n "$cliv" ] && at_least "$cliv" "$min_cli" && at_least "$cliv" "$session_cli" || exit 0
 printf '%s' "$input" | "$cli" advise --hook claude-code 2>/dev/null
 exit 0

@@ -13,9 +13,12 @@ here=$(dirname "$0")
 min=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$here/../cli-pin.json" 2>/dev/null | head -1)
 at_least() { awk -v a="$1" -v b="$2" 'BEGIN { split(a, x, "."); split(b, y, "."); for (i = 1; i <= 3; i++) { if (x[i] + 0 > y[i] + 0) exit 0; if (x[i] + 0 < y[i] + 0) exit 1 } exit 0 }'; }
 input=$(cat)
-cli=$(sh "$here/find-cli.sh" "$min") || exit 0
-cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 session_cli=0.5.51
+# Look for the higher of the two, so an old pinned copy does not hide a newer installed CLI.
+want=$session_cli
+at_least "$min" "$session_cli" && want=$min
+cli=$(sh "$here/find-cli.sh" "$want") || exit 0
+cliv=$("$cli" version </dev/null 2>/dev/null | awk '{print $2}')
 [ -n "$cliv" ] && at_least "$cliv" "$min" && at_least "$cliv" "$session_cli" || exit 0
 printf '%s' "$input" | "$cli" advise --hook codex 2>/dev/null
 exit 0

@@ -255,7 +255,10 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   const sessionCli = (await readFile(join(root, 'hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1];
   await put(pinnedDir(h), script('0.5.50', 'echo bad'));
   assert.equal(start(), '', 'a CLI before SessionStart support is never asked, even when pinned');
-  await put(pinnedDir(h), script(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  // The old pinned copy does not hide an eligible CLI the user installed.
+  await put(join(h, '.local/bin'), script(sessionCli));
+  assert.deepEqual(JSON.parse(start()), { hints: 1 });
+  await put(join(h, '.cache/modelplan-cli', sessionCli), script(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
   assert.deepEqual(JSON.parse(start()), { resent: 1 });
   assert.equal(await readFile(join(h, 'input'), 'utf8'), input);
   assert.equal(await readFile(join(h, 'args'), 'utf8'), 'advise\n--hook\ncodex\n');

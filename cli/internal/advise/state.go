@@ -85,12 +85,24 @@ func Load(cache string) *State {
 	return s
 }
 
+// stateLockWait bounds how long Save waits for another process's save.
+const stateLockWait = time.Second
+
 // Save writes only when something changed, merging with what another process (the status
-// line and the hook run side by side) wrote in the meantime.
+// line and the hook run side by side) wrote in the meantime. The read, merge and rename hold
+// the state lock, so two writers keep each other's marks.
 func (s *State) Save(cache string, now time.Time) error {
 	if !s.changed {
 		return nil
 	}
+	if err := os.MkdirAll(filepath.Dir(path(cache)), 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockState(path(cache))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	disk := Load(cache)
 	for k, t := range disk.Seen {
 		if _, ok := s.Seen[k]; !ok {

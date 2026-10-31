@@ -181,7 +181,7 @@ test('setup lists the other plans read through CodexBar, as the CLI reports them
 });
 
 test('after compaction the pinned CLI gets the SessionStart input; nothing else runs or is recorded', async () => {
-  const { home, sh, state, pinned, install } = await setup();
+  const { home, sh, state, pinned, install, cliRoot } = await setup();
   const input = '{"session_id":"s","hook_event_name":"SessionStart","source":"compact"}';
   assert.equal(sh('session-start.sh', input), '', 'no CLI yet: silent');
   await install('0.0.1');
@@ -190,7 +190,12 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   assert.equal((await readFile(join(root, '../codex/hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1], sessionCli, 'both plugins need the same CLI');
   await pinned(cli('0.5.50', 'echo bad'));
   assert.equal(sh('session-start.sh', input), '', 'a CLI before SessionStart support is never asked, even when pinned');
-  await pinned(cli(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  // The old pinned copy does not hide an eligible CLI the user installed.
+  await install(sessionCli);
+  assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { hints: 1 });
+  await mkdir(join(cliRoot, sessionCli), { recursive: true });
+  await writeFile(join(cliRoot, sessionCli, 'modelplan'), cli(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  await chmod(join(cliRoot, sessionCli, 'modelplan'), 0o755);
   assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { resent: 1 });
   assert.equal(await readFile(join(home, 'input'), 'utf8'), input);
   assert.deepEqual((await readFile(join(home, 'args'), 'utf8')).trim().split('\n'), ['advise', '--hook', 'claude-code']);
