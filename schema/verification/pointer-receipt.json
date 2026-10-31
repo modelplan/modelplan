@@ -69,6 +69,12 @@
             "unavailable",
             "not-applicable"
           ]
+        },
+        "purpose": {
+          "enum": [
+            "park",
+            "drive"
+          ]
         }
       },
       "additionalProperties": false,
@@ -141,6 +147,12 @@
             "verified",
             "unavailable",
             "not-applicable"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "park",
+            "drive"
           ]
         }
       },
@@ -225,6 +237,12 @@
             "unavailable",
             "not-applicable"
           ]
+        },
+        "purpose": {
+          "enum": [
+            "park",
+            "drive"
+          ]
         }
       },
       "additionalProperties": false
@@ -274,6 +292,12 @@
             "verified",
             "unavailable",
             "not-applicable"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "park",
+            "drive"
           ]
         }
       },

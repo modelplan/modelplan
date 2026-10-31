@@ -59,6 +59,9 @@ def latest_frame(observations, event, run, epoch, pid, state=None,now=None):
     raise ValueError('owned-frame-missing')
 
 def prefix(kind, purpose):
+    if kind=='park':
+        if purpose not in ('start','end'):raise ValueError('park-purpose-invalid')
+        return 'park-pointer-'+purpose
     if kind == 'dock' and purpose != 'refresh': raise ValueError('dock-purpose-invalid')
     return kind+'-pointer'+('-clear' if kind == 'status' and purpose == 'clear' else '')
 
@@ -90,7 +93,7 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     pid = reg.get('pid')
     if type(pid) is not int or pid <= 0 or reg.get('state') != 'running' or not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
         raise ValueError('subject-registration-invalid')
-    event = 'dock-surface-frame' if kind == 'dock' else 'status-item-frame'
+    event = 'dock-surface-frame' if kind in ('dock','park') else 'status-item-frame'
     deadline=clock()+(10 if kind=='dock' else 5)
     while True:
         still_admitted(config)
@@ -98,11 +101,14 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
             raise ValueError('subject-registration-invalid')
         try:
             observations=rows(batch/'native-observations.jsonl')
-            if kind=='dock':observation,rect,sliver_since=collapsed_dock(observations,lease['runID'],lease['epoch'],pid,clock())
+            if kind=='park':
+                observation,display,exclusions=park_geometry(observations,lease['runID'],lease['epoch'],pid)
+                cx,cy=display[0]+display[2]/2,display[1]+display[3]/2;rect=(cx-1,cy-1,2,2)
+            elif kind=='dock':observation,rect,sliver_since=collapsed_dock(observations,lease['runID'],lease['epoch'],pid,clock())
             else:observation,rect=latest_frame(observations,event,lease['runID'],lease['epoch'],pid,now=clock())
             break
         except ValueError as error:
-            expected='dock-not-collapsed' if kind=='dock' else 'owned-frame-missing'
+            expected='dock-not-collapsed' if kind=='dock' else 'park-geometry-missing' if kind=='park' else 'owned-frame-missing'
             if str(error)!=expected or clock()>=deadline:
                 if kind=='dock' and str(error)==expected:
                     try:
@@ -121,6 +127,10 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
         steps=[dict(x=x+w/2,y=y+h/2,seconds=0,dwell=0.25,**({'action':'click'} if kind == 'status' else {}))],
         targetPID=pid,u6OwnedWindowNumber=window,u6FrameSeq=observation['seq'])
     if kind=='dock':plan['u6DockSliverSinceMono']=sliver_since
+    if kind=='park':
+        plan.update(purpose='park',parkPhase=purpose,u6InputKind='park',u6Observations=str(batch/'native-observations.jsonl'),
+                    parkDisplayBounds=display,parkExclusions=exclusions)
+        plan['steps'][0]['action']='move'
     if kind=='status':
         plan.update(u6InputKind='status',u6Observations=str(batch/'native-observations.jsonl'),
                     u6StatusFrameGeneration=observation['checks']['frameGeneration'],
@@ -129,6 +139,30 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     path = batch/(stem+'-plan.json')
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)
+
+def park_geometry(observations,run,epoch,pid):
+    owned=[r for r in observations if r.get('runID')==run and r.get('epoch')==epoch and r.get('pid')==pid]
+    docks=[r for r in owned if r.get('event')=='dock-surface-frame']
+    if not docks:raise ValueError('park-geometry-missing')
+    latest=docks[-1];display=rectangle(latest.get('checks',{}).get('displayBounds'))
+    if display is None:raise ValueError('park-geometry-missing')
+    statuses=[r for r in owned if r.get('event')=='status-item-frame']
+    if (not statuses or statuses[-1].get('checks',{}).get('settled') is not True or statuses[-1].get('checks',{}).get('visible') is not True
+        or rectangle([statuses[-1].get('checks',{}).get(k) for k in ('cgX','cgY','width','height')]) is None):
+        raise ValueError('park-geometry-missing')
+    point=(display[0]+display[2]/2,display[1]+display[3]/2);exclusions=[];kinds=set()
+    for row in owned:
+        event=row.get('event');c=row.get('checks',{})
+        if event not in ('dock-surface-frame','status-item-frame'):continue
+        rect=rectangle([c.get(k) for k in (('x','y','width','height') if event=='dock-surface-frame' else ('cgX','cgY','width','height'))])
+        if rect is None:continue
+        kinds.add(event);exclusions.append(rect)
+        dx=max(rect[0]-point[0],0,point[0]-rect[0]-rect[2]);dy=max(rect[1]-point[1],0,point[1]-rect[1]-rect[3])
+        if math.hypot(dx,dy)<200:raise ValueError('park-geometry-missing')
+    c=latest.get('checks',{});dock=rectangle([c.get(k) for k in ('x','y','width','height')])
+    if kinds!={'dock-surface-frame','status-item-frame'} or dock is None or not contains(display,(dock[0]+dock[2]/2,dock[1]+dock[3]/2)):
+        raise ValueError('park-geometry-missing')
+    return latest,display,exclusions
 
 class ArrivalMissing(ValueError):
     def __init__(self,deadline):
@@ -152,6 +186,12 @@ def check_once(config, kind, purpose='refresh'):
                r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
                and r.get('targetPID')==plan['subjectPID'] for r in pointer):
         raise ValueError('physical-input-not-delivered')
+    if kind=='park':
+        if (plan.get('purpose')!='park' or len(plan.get('steps',[]))!=1 or plan['steps'][0].get('action')!='move'
+            or len(moved)!=1 or any(r.get('event') in ('mouse-button-down-posted','mouse-button-up-posted') for r in pointer)
+            or moved[0].get('purpose')!='park' or not any(r.get('event')=='pointer-result' and r.get('purpose')=='park' and r.get('outcome')=='posted' for r in pointer)):
+            raise ValueError('park-input-invalid')
+        print(json.dumps(dict(input='park',purpose='park',outcome='posted',runID=lease['runID'],epoch=lease['epoch'])));return
     anchor=moved[0]['mono'] if kind=='dock' else down[0]['mono']
     native = rows(batch/'native-observations.jsonl')
     if kind=='status':
@@ -212,8 +252,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('mode',choices=('make','check','window'))
     p.add_argument('--config',type=Path,required=True)
-    p.add_argument('--kind',choices=('dock','status'),required=True)
-    p.add_argument('--purpose',choices=('refresh','clear'),default='refresh')
+    p.add_argument('--kind',choices=('dock','status','park'),required=True)
+    p.add_argument('--purpose',choices=('refresh','clear','start','end'),default='refresh')
     a=p.parse_args(); c=json.loads(a.config.read_text())
     if a.mode == 'make': make(c,a.kind,a.purpose)
     elif a.mode == 'check': check(c,a.kind,a.purpose)

@@ -81,6 +81,26 @@ class U6PointerPlanTests(unittest.TestCase):
             out.write(json.dumps(self.dock_frame(2,101.5,'expanded'))+'\n')
             out.write(json.dumps(self.dock_frame(3,102.2,'expanded'))+'\n')
         with self.assertRaisesRegex(ValueError,'dock-not-collapsed'):tool.check(self.config,'dock',clock=lambda:103)
+    def test_expanded_start_park_then_stable_sliver_reveal(self):
+        dock=self.dock_frame(1,100,'expanded');dock['checks'].update(x=2320,y=1080,width=240,height=88,displayBounds=[0,0,2560,1440])
+        status=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=2,mono=100,checks=self.status_checks())
+        self.write_rows([dock,status]);tool.make(self.config,'park','start',clock=lambda:100.1)
+        p=json.loads((self.root/'park-pointer-start-plan.json').read_text())
+        self.assertEqual(p['purpose'],'park');self.assertEqual(p['steps'],[dict(x=1280,y=720,seconds=0,dwell=.25,action='move')])
+        (self.root/'park-pointer-start.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
+            dict(event='mouse-moved-posted',kind='move',purpose='park',mono=101,runID='run',epoch='epoch',targetPID=42),
+            dict(event='pointer-result',outcome='posted',purpose='park',runID='run',epoch='epoch',targetPID=42)]))
+        tool.check(self.config,'park','start',clock=lambda:101)
+        sliver=self.dock_frame(3,101.1,'sliver');sliver['checks'].update(x=2556,y=1080,width=4,height=88,displayBounds=[0,0,2560,1440])
+        self.write_rows([dock,status,sliver]);tool.make(self.config,'dock',clock=lambda:101.7)
+        (self.root/'dock-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
+            dict(event='mouse-moved-posted',kind='move',mono=102,runID='run',epoch='epoch',targetPID=42),
+            dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
+        self.write_rows([dock,status,sliver,self.dock_frame(4,102.2,'expanded')]);tool.check(self.config,'dock',clock=lambda:103)
+    def test_park_neutral_point_must_be_far_from_frames(self):
+        dock=self.dock_frame(1,100,'expanded');dock['checks'].update(x=450,y=450,width=100,height=100,displayBounds=[0,0,1000,1000])
+        with self.assertRaisesRegex(ValueError,'park-geometry-missing'):
+            tool.park_geometry([dock], 'run','epoch',42)
     def test_status_click_requires_owned_menu_begin(self):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
             checks=self.status_checks())])

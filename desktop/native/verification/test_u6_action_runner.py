@@ -70,12 +70,12 @@ class ActionPhaseAdmissionTests(unittest.TestCase):
         self.path=root/'run.json';self.path.write_text(json.dumps(self.config))
         self.now=1020.0;self.checks=[];self.revoke_at=None
     def live(self,config):
-        """The real still_admitted on the run's files; each step takes 20 s and the guardian keeps beating."""
+        """The real still_admitted on the run's files; each command takes 10 s and the guardian keeps beating."""
         self.checks.append(self.now)
         revoked=self.revoke_at is not None and len(self.checks)>=self.revoke_at
         (self.root/'lease.json').write_text(json.dumps(self.lease|dict(guardianHeartbeatAt=self.now,ownerPreempted=revoked)))
         try:return admission.still_admitted(config,clock=lambda:self.now)
-        finally:self.now+=20
+        finally:self.now+=10
     def run_actions(self):
         delivered=types.SimpleNamespace(returncode=0,stdout='',stderr='')
         with patch.object(actions,'still_admitted',side_effect=self.live), \
@@ -89,19 +89,19 @@ class ActionPhaseAdmissionTests(unittest.TestCase):
         finish=json.loads((self.root/'operator-finish.json').read_text())
         self.assertEqual(finish['outcome'],'pass',finish);self.assertTrue(all(v=='pass' for v in finish['steps'].values()))
         self.assertEqual(len(self.checks),spawn.call_count+1) # before the first step and before every command
-        self.assertGreater(self.checks[-1]-self.checks[0],250) # far past the zero surplus the launch budget left
+        self.assertGreater(self.checks[-1]-self.checks[0],150) # far past the zero surplus the launch budget left
         self.assertFalse((self.root/'stop.json').exists())
     def test_closing_budget_cut_still_refuses_and_requests_stop(self):
-        self.now=1300.0 # 50 s left: two checks fit, the third leaves less than grace + 25 s
+        self.now=1300.0 # 50 s left: park checks reach the reserve cut; the guarded end park refuses too
         with self.assertRaises(SystemExit) as error:self.run_actions()
-        self.assertEqual(error.exception.code,3);self.assertEqual(len(self.checks),3)
+        self.assertEqual(error.exception.code,3);self.assertEqual(len(self.checks),5)
         finish=json.loads((self.root/'operator-finish.json').read_text())
         self.assertEqual((finish['outcome'],finish['steps']['dock']),('not-run','not-run'))
         self.assertIn(json.loads((self.root/'stop.json').read_text())['reason'],actions.BOUNDED_CODES)
     def test_revoked_lease_refuses_the_next_action(self):
         self.revoke_at=3
         with self.assertRaises(SystemExit):self.run_actions()
-        self.assertEqual(len(self.checks),3)
+        self.assertEqual(len(self.checks),4)
         self.assertIn(json.loads((self.root/'stop.json').read_text())['reason'],actions.BOUNDED_CODES)
         self.assertEqual(json.loads((self.root/'operator-finish.json').read_text())['outcome'],'not-run')
 

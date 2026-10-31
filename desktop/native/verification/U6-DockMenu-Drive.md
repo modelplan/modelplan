@@ -16,6 +16,15 @@ The named U6 seed uses `--private-tool copilot`, not a display-title argument. A
 
 ## Drive
 
+The action runner first parks the pointer at the centre of the active display holding the owned Dock,
+at least 200 CG-screen units from every recorded owned Dock/status rectangle. Park plans/receipts say
+`purpose: park`; the helper permits exactly one zero-duration move step, never a click/button event.
+Display membership, current own geometry and the 200-unit exclusion are rechecked before delivery.
+Only after park does the existing stable-sliver/reveal sequence run. A second park precedes the normal
+finish/stop; a failure path attempts it once only while the existing admission/stop guards permit input.
+No app activation, extra click or guard bypass is authorized. Park is cursor hygiene, not Dock delivery
+proof: the reveal still needs its separate post-input expanded row.
+
 Before the Dock input, the planner waits at most 10 s under ongoing admission for the **latest** owned
 Dock frame to be sliver with unchanged state/geometry/window for at least 0.5 s. An older sliver cannot
 be selected past a newer expanded row. Otherwise it refuses `dock-not-collapsed` (recorded in the

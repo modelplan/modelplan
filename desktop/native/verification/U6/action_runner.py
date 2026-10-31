@@ -25,7 +25,7 @@ def await_row(batch,run,epoch,pid,predicate,seconds):
         time.sleep(.05)
     raise ValueError('not-delivered')
 def pointer_diagnostic(config,label,status,stderr='',timed_out=False):
-    if label not in ('dock-pointer','status-pointer','status-pointer-clear','menu-refresh'):raise ValueError('unknown')
+    if label not in ('dock-pointer','status-pointer','status-pointer-clear','menu-refresh','park-start','park-end'):raise ValueError('unknown')
     raw=stderr if isinstance(stderr,bytes) else stderr.encode('utf-8',errors='replace')
     sample=raw[:4096];codes=[]
     if timed_out:codes.append('timeout')
@@ -70,11 +70,16 @@ def run(config_path,pointer_binary):
     steps={key:'not-run' for key in ('dock','menuA','refresh','menuB','privateTitle','trackedClear')}
     current='dock'
     def py(path,*args):return command([sys.executable,'-B',str(path),*map(str,args)],config)
+    def park(phase):
+        py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','park','--purpose',phase)
+        command([str(pointer_binary),'--plan',str(batch/('park-pointer-'+phase+'-plan.json'))],config,diagnostic='park-'+phase)
+        py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','park','--purpose',phase)
     try:
         still_admitted(config)
         reg=json.loads(Path(config['subjectPidPath']).read_text());pid=reg.get('pid')
         if type(pid) is not int or pid<=0 or reg.get('runID')!=run or reg.get('epoch')!=epoch:raise ValueError('registered-subject-invalid')
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='started',15)
+        park('start')
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','dock')
         command([str(pointer_binary),'--plan',str(batch/'dock-pointer-plan.json')],config,diagnostic='dock-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','dock')
@@ -116,9 +121,13 @@ def run(config_path,pointer_binary):
                         and b_session in r.get('checks',{}).get('scrubbedSessionIDs',[]),5)
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-scrubbed' and r.get('seq',0)>clear.get('seq',0)
                   and r.get('checks',{}).get('sessionID')==b_session,5)
-        steps['trackedClear']='pass';finish(batch,run,epoch,pid,steps,None)
+        steps['trackedClear']='pass';park('end');finish(batch,run,epoch,pid,steps,None)
     except (OSError,ValueError,subprocess.TimeoutExpired,KeyError) as error:
         reason=reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES)
+        # One end park only if the existing admission/stop guards still allow it.
+        if not (batch/'park-pointer-end-plan.json').exists():
+            try:park('end')
+            except (OSError,ValueError,subprocess.TimeoutExpired,KeyError):pass
         steps[current]='not-run';request_stop(config,reason)
         if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,reason)
         raise SystemExit(3) from error

@@ -267,14 +267,14 @@ import CryptoKit
     private func recordDockSurface() {
         guard let host = dockHost, let panel = host.nativePanel, panel.isVisible,
               let presentation = host.edgePresentation, let frame = presentation.paintedFrame,
-              let primary = NSScreen.screens.first, frame.width > 0, frame.height > 0 else { return }
+              let primary = NSScreen.screens.first, let screen=panel.screen, frame.width > 0, frame.height > 0 else { return }
         let state = String(describing: presentation.state)
-        let signature = "\(state):\(frame):\(panel.windowNumber)"
+        let signature = "\(state):\(frame):\(panel.windowNumber):\(screen.frame)"
         guard signature != lastDockFrameSignature else { return }
         lastDockFrameSignature = signature
         emitObject("dock-surface-frame", fields:["state":state,"windowNumber":panel.windowNumber,
             "x":frame.minX,"y":primary.frame.maxY-frame.maxY,"width":frame.width,"height":frame.height,
-            "coordinateSpace":"cg-screen"])
+            "coordinateSpace":"cg-screen","displayBounds":[screen.frame.minX,primary.frame.maxY-screen.frame.maxY,screen.frame.width,screen.frame.height]])
     }
     /// Binding never emits the render-time placeholder. Window notifications and
     /// the existing guard tick publish only a top-anchored, stable owned frame.
