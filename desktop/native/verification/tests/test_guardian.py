@@ -184,5 +184,42 @@ class OwnedSubjectTests(unittest.TestCase):
         self.assertEqual(json.loads(self.pid_file.read_text())['state'], 'launching')  # guardian: unconfirmed
 
 
+class RoundThreeTests(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+
+    def test_exec_gate_never_runs_subject_if_launch_dies_before_registration(self):
+        marker = self.dir / 'ran'
+        child = subprocess.Popen([sys.executable, '-I', '-c', launch.GATE, '/usr/bin/touch', str(marker)], stdin=subprocess.PIPE)
+        child.stdin.close()  # launch killed before releasing the gate
+        self.assertEqual(child.wait(5), 97)
+        self.assertFalse(marker.exists())
+
+    def test_exec_gate_runs_subject_with_same_pid_after_release(self):
+        marker = self.dir / 'ran'
+        child = subprocess.Popen([sys.executable, '-I', '-c', launch.GATE, '/usr/bin/touch', str(marker)], stdin=subprocess.PIPE)
+        child.stdin.write(b'g'); child.stdin.close()
+        self.assertEqual(child.wait(5), 0)
+        self.assertTrue(marker.exists())
+
+    def test_guardian_stops_subject_when_launcher_is_lost(self):
+        lease = self.dir / 'lease.json'; stop = self.dir / 'STOP'; pid_file = self.dir / 'subject.pid'
+        now = time.time()
+        lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=now - 5, expiresAt=now + 600, exclusive=True, ownerPreempted=False)))
+        dead = subprocess.Popen([sys.executable, '-c', 'pass']); launcher = guardian.identity(dead.pid); dead.wait()
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        guardian.register(pid_file, child.pid, launcher or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0))
+        outcome = guardian.run(lease, stop, pid_file=pid_file, sleep=lambda s: time.sleep(0.05))
+        self.assertEqual(outcome, ('launcher-lost', True))
+        self.assertIsNotNone(child.wait(5))
+
+    def test_reserve_must_cover_termination(self):
+        lease = self.dir / 'lease.json'
+        lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1.0, expiresAt=1000.0, exclusive=True, ownerPreempted=False)))
+        for reserve in (5.0, float('nan'), 2000.0):
+            with self.assertRaises(ValueError):
+                guardian.run(lease, self.dir / 'STOP', reserve=reserve, clock=Clock(10.0), sleep=lambda s: None, kill=no_kill)
+
+
 if __name__ == '__main__':
     unittest.main()

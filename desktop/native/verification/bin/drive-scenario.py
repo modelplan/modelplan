@@ -3,7 +3,7 @@
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
 from admission import load_and_admit
-from guardian import update_lease,Revoked
+from guardian import update_lease,Revoked,locked
 from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
@@ -20,18 +20,25 @@ def valid(c,now):
     return c.get('GO') is True and c.get('announcementID') and c['start']<=now<c['expiresAt'] and 0<c['expiresAt']-c['start']<=1200 and c['expiresAt']-now>=690
 
 def guardian(config):
+    """Self-contained mode only (no external lease): Drive's own watchdog for its own scratch lease."""
     c=read(config);lease=Path(c['lease']);stop=Path(c['stop'])
+    ident=[c['runID'],c['epoch'],c['start'],c['expiresAt']]
+    with locked(lease):
+        if lease.exists():raise SystemExit('drive-guardian: lease already exists; refusing to replace it')
+        write(lease,dict(runID=c['runID'],epoch=c['epoch'],exclusive=True,ownerPreempted=False,notBefore=c['start'],expiresAt=c['expiresAt'],guardianHeartbeatAt=time.time(),guardian=True))
     try:
         while time.time()<c['expiresAt'] and not stop.exists():
             try:os.kill(c['controllerPID'],0)
             except ProcessLookupError:break
-            if not lease.exists():write(lease,dict(runID=c['runID'],epoch=c['epoch'],exclusive=True,ownerPreempted=False,notBefore=c['start'],expiresAt=c['expiresAt'],guardianHeartbeatAt=time.time(),guardian=True))
-            else:update_lease(lease,lambda r:beat_record(r,c)) # Locked conditional update shared with bin/guardian.py.
+            update_lease(lease,lambda r:beat_record(r,c)) # Locked conditional update shared with bin/guardian.py.
             time.sleep(.25)
     except Revoked:pass
     finally:
-        try:update_lease(lease,lambda r:r|dict(exclusive=False,ownerPreempted=True,stage='revoked'))
-        except (OSError,ValueError):pass
+        def revoke(r):
+            if [r.get(k) for k in ('runID','epoch','notBefore','expiresAt')]!=ident:raise Revoked('not ours')
+            return r|dict(exclusive=False,ownerPreempted=True,stage='revoked')
+        try:update_lease(lease,revoke)
+        except (OSError,ValueError,Revoked):pass
 def beat_record(r,c):
     if [r.get(k) for k in ('runID','epoch','notBefore','expiresAt')]!=[c['runID'],c['epoch'],c['start'],c['expiresAt']]:raise Revoked('lease identity changed')
     if r.get('ownerPreempted') is not False or r.get('exclusive') is not True:raise Revoked('lease revoked')
@@ -56,7 +63,7 @@ class LocalServer(http.server.ThreadingHTTPServer):
 
 class Attempt:
     def __init__(self,c):
-        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.stop=self.out/'stop.json';self.lease=Path(c.get('leasePath',self.scratch/'lease.json'));self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
+        self.c=c;self.out=Path(c['batch']);self.scratch=Path(c['scratch']);self.children=[];self.rows=[];self.raw=None;self.external='leasePath' in c;self.stop=Path(c.get('stopPath',self.out/'stop.json'));self.lease=Path(c.get('leasePath',self.scratch/'lease.json'));self.control=self.scratch/'control.json';self.server=None;self.guard=None;self.topThread=None;self.topStop=threading.Event()
     def live(self):
         if self.stop.exists() or time.time()>=self.c['expiresAt']-90:raise RuntimeError('stop-or-expiry')
         g=read(self.lease)
@@ -155,8 +162,13 @@ class Attempt:
         build=sum(int(subprocess.check_output(['/usr/bin/du','-sk',p]).split()[0])*1024 for p in c['buildRoots'])
         if build>=3*1024**3:raise RuntimeError('build-quota')
         if __import__('shutil').disk_usage(c['resourceRoot']).free-2*(3*1024**3+200*1024**2)<8*1024**3:raise RuntimeError('resource-disk-floor')
-        gc=self.scratch/'guardian-config.json';write(gc,c|dict(controllerPID=os.getpid(),lease=str(self.lease),stop=str(self.stop)))
-        self.guard=subprocess.Popen([sys.executable,__file__,'--guardian',str(gc)])
+        if self.external:
+            # M1 flow: bin/guardian.py is the single authoritative watchdog. Drive never heartbeats this
+            # lease, so a lost guardian or its stop file makes live() fail and Drive closes its subjects.
+            self.guard=None
+        else:
+            gc=self.scratch/'guardian-config.json';write(gc,c|dict(controllerPID=os.getpid(),lease=str(self.lease),stop=str(self.stop)))
+            self.guard=subprocess.Popen([sys.executable,__file__,'--guardian',str(gc)])
         end=time.monotonic()+3
         while not self.lease.exists() and time.monotonic()<end:time.sleep(.1)
         self.server=LocalServer(('127.0.0.1',0),functools.partial(Files,directory=c['inputRoot']))

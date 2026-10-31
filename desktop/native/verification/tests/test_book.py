@@ -371,6 +371,23 @@ class Bookings(unittest.TestCase):
             popen.assert_not_called()
         self.assertFalse((self.root / 'home').exists())
 
+    def test_drive_external_mode_defers_to_guardian_and_fails_closed_on_its_loss(self):
+        # M1 flow: Drive must not heartbeat the external lease; a lost guardian or its stop file stops Drive.
+        c = self.active_contract()
+        lease_path = Path(c['leasePath']); stop_path = self.root / 'external-STOP'
+        cfg = dict(c, batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'), stopPath=str(stop_path))
+        attempt = drive.Attempt(cfg)
+        self.assertTrue(attempt.external); self.assertEqual(attempt.stop, stop_path)
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time())))
+        attempt.live()  # fresh heartbeat from the independent guardian
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time() - 5)))
+        with self.assertRaisesRegex(RuntimeError, 'guardian-not-live'):
+            attempt.live()  # guardian killed: Drive stops instead of keeping the heartbeat alive
+        lease_path.write_text(json.dumps(c['lease'] | dict(guardianHeartbeatAt=time.time())))
+        stop_path.write_text('{}')
+        with self.assertRaisesRegex(RuntimeError, 'stop-or-expiry'):
+            attempt.live()
+
     def test_launch_rechecks_booking_after_hash_work_before_spawn(self):
         c = self.active_contract()
         binary = self.root / 'synthetic-binary'; binary.write_bytes(b'synthetic')

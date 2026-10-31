@@ -19,6 +19,7 @@ https URL of the coordinator's OK comment; M1 verifies that comment before issui
 the receipt. Copy the returned booking ID into `BOOKING_ID` and the run config.
 
 ```sh
+set -e  # any failed step before launch stops the sequence (no release, no launch)
 python3 desktop/native/verification/bin/book.py request \
   --lane M1 --unit U11a --scenario cold --minutes 20
 python3 desktop/native/verification/bin/book.py start \
@@ -35,13 +36,21 @@ python3 desktop/native/verification/bin/release.py \
 python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute &
 LAUNCH_PID=$!
 # ... drive the scenario against the launched subject ...
-# Close: request stop, then wait for both supervisors. The guardian exits 0 only once the subject is
-# confirmed gone. Never record --cleaned unless both waits succeed and cleanup is verified.
+# Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
+# confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
+# finish at all and report the run as unconfirmed for coordinator follow-up.
 touch "$STOP_PATH"
+set +e
 wait "$LAUNCH_PID"; LAUNCH_STATUS=$?
-wait "$GUARDIAN_PID" && [ "$LAUNCH_STATUS" -le 3 ] && \
-python3 desktop/native/verification/bin/book.py finish \
-  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
+wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
+if [ "$GUARDIAN_STATUS" -eq 0 ] && { [ "$LAUNCH_STATUS" -eq 0 ] || [ "$LAUNCH_STATUS" -eq 3 ]; }; then
+  python3 desktop/native/verification/bin/book.py finish \
+    --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
+else
+  # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
+  # closure or the documented expiry recovery applies.
+  echo "closure unconfirmed: launch=$LAUNCH_STATUS guardian=$GUARDIAN_STATUS; report to the coordinator" >&2
+fi
 ```
 
 If the booking is abandoned **before start**, use this instead of start/release/launch:

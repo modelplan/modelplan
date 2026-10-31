@@ -28,6 +28,7 @@ _spec = importlib.util.spec_from_file_location('cleanup', Path(__file__).with_na
 cleanup = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(cleanup)
 
 IDENTITY = ('runID', 'epoch', 'notBefore', 'expiresAt')
+MIN_RESERVE = 25.0  # TERM grace 10 s + KILL wait 5 s + closure checks and a late wakeup
 
 
 class Revoked(Exception):
@@ -92,13 +93,33 @@ def identity(pid):
     return dict(pid=pid, startSeconds=int(fields[19]), startMicroseconds=0)
 
 
-def register(pid_file, pid):
-    """launch.py: record the owned subject. Raises if the identity cannot be established."""
+def mark_launching(pid_file):
+    """launch.py, before spawning: nothing can run yet (the subject waits behind an exec gate)."""
+    launcher = identity(os.getpid())
+    if launcher is None:
+        raise ValueError('launcher identity unavailable')
+    write_atomic(pid_file, dict(state='launching', launcher=launcher))
+    return launcher
+
+
+def register(pid_file, pid, launcher=None):
+    """launch.py: record the owned subject before releasing its exec gate. Raises if the identity is unknown."""
     ident = identity(pid)
     if ident is None:
         raise ValueError('subject identity unavailable')
-    write_atomic(pid_file, dict(state='running', **ident))
+    write_atomic(pid_file, dict(state='running', launcher=launcher, **ident))
     return ident
+
+
+def launcher_lost(pid_file, lookup=identity):
+    """True when a registered subject's launcher (its supervisor) has disappeared."""
+    try:
+        record = json.loads(pid_file.read_text())
+    except (OSError, ValueError, AttributeError, TypeError):
+        return False
+    launcher = record.get('launcher')
+    return (record.get('state') == 'running' and isinstance(launcher, dict)
+            and not cleanup.matches(lookup(launcher.get('pid')), launcher))
 
 
 def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.monotonic, sleep=time.sleep):
@@ -127,7 +148,7 @@ def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.mo
     return not cleanup.matches(lookup(record['pid']), record)
 
 
-def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
+def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
         clock=time.time, sleep=time.sleep, running=lambda: True, kill=terminate):
     outcome = 'error'
     try:
@@ -137,6 +158,8 @@ def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
             raise ValueError('lease is missing identity fields')
         if not 0 < interval <= 1:
             raise ValueError('interval must keep the heartbeat within admission tolerance')
+        if not (isinstance(reserve, (int, float)) and MIN_RESERVE <= reserve < lease['expiresAt'] - lease['notBefore']):
+            raise ValueError('cleanup reserve must cover TERM grace, KILL wait and closure checks')
         while True:
             now = clock()
             if not running():
@@ -145,6 +168,8 @@ def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
                 outcome = 'stopped'; break
             if now >= lease['expiresAt'] - reserve:
                 outcome = 'deadline'; break
+            if pid_file is not None and launcher_lost(pid_file):
+                outcome = 'launcher-lost'; break  # its supervisor died: stop the subject now
             beat(lease_path, identity, now)
             sleep(interval)
     except Revoked:
@@ -164,7 +189,7 @@ def main(argv=None):
     parser.add_argument('--stop', type=Path, required=True)
     parser.add_argument('--subject-pid-file', type=Path, required=True, help='written by launch.py; the subject is stopped on exit')
     parser.add_argument('--interval', type=float, default=1.0)
-    parser.add_argument('--reserve', type=float, default=15.0, help='seconds kept for cleanup before expiresAt')
+    parser.add_argument('--reserve', type=float, default=30.0, help='seconds kept for cleanup before expiresAt (at least 25)')
     args = parser.parse_args(argv)
     flag = {'run': True}
     for sig in (signal.SIGTERM, signal.SIGINT):
