@@ -15,7 +15,7 @@ permissions:
 jobs:
   native:
     if: ${{ inputs.task == 'native' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
     name: native (${{ inputs.os }})
     timeout-minutes: 10
     env:
@@ -137,7 +137,7 @@ jobs:
       run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   transport:
     if: ${{ inputs.task == 'transport' }}
-    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -213,7 +213,7 @@ jobs:
       run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   sequences:
     if: ${{ inputs.task == 'sequences' }}
-    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -256,7 +256,7 @@ jobs:
       run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   probe:
     if: ${{ inputs.task == 'probe' && github.event_name == 'workflow_dispatch' }}
-    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
     timeout-minutes: 5
     steps:
     - name: Validate native runner execution
@@ -267,3 +267,25 @@ jobs:
         test "$(uname -m)" = arm64
         xcrun swift --version
         echo "MAC_RUNNER_PROBE_OK"
+  gui-probe:
+    if: ${{ inputs.task == 'gui-probe' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    timeout-minutes: 5
+    steps:
+    - name: Validate a real graphical session
+      shell: bash
+      run: |
+        set -euo pipefail
+        cat > "$RUNNER_TEMP/mac-ci-gui-probe.swift" <<'SWIFT'
+        import AppKit
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 240, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.title = "CI graphical session probe"
+        window.orderFront(nil)
+        app.updateWindows()
+        window.orderOut(nil)
+        print("MAC_GUI_PROBE_OK")
+        SWIFT
+        swiftc "$RUNNER_TEMP/mac-ci-gui-probe.swift" -o "$RUNNER_TEMP/mac-ci-gui-probe"
+        "$RUNNER_TEMP/mac-ci-gui-probe"

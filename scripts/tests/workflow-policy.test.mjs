@@ -15,9 +15,10 @@ test("trusted Mac route is confined to the reviewed reusable workflow path", () 
 const GUARD = "vars.MAC_CI_RUNNER == 'self-hosted' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
 const ROUTED = "jobs:\n" + [...ALLOWED_ROUTES].map((r, i) => `  j${i}:\n    ${r}\n`).join("");
 
-test("accepts hosted runners, pull_request, and the guarded Mac route", () => {
+test("accepts hosted runners and ordinary pull_request triggers", () => {
   assert.deepEqual(workflowProblems("on: pull_request\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
-  assert.deepEqual(workflowProblems("on:\n  push:\n  pull_request:\n" + ROUTED), []);
+  assert.deepEqual(workflowProblems("on:\n  push:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n"), []);
+  assert.ok(workflowProblems(`runs-on: \${{ (${GUARD}) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || 'macos-latest' }}`).length > 0);
 });
 
 test("rejects pull_request_target in every YAML form", () => {

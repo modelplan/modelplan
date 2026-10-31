@@ -36,7 +36,16 @@ The public data directory remains an output mirror, not a competing editing sour
 
 Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, the reserved official visuals (one prefix, `LICENSE.md`, SPDX headers or listed hashes, no reads from the community build), agent instruction entry points and the public runner policy (`scripts/workflow-policy.mjs`). Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content (scoring, calibration, operations) into a convenient public folder.
 
-Public workflows run on standard hosted runners, with one exception: macOS jobs may route to the owner's dedicated Mac runner through exactly the two canonical `runs-on` lines in `scripts/workflow-policy.mjs`, and only when `MAC_CI_RUNNER` is `self-hosted`, the event is not `pull_request_target`, and a pull request comes from this repository, not a fork. The gate is an exact allow-list over every `.yml` and `.yaml` workflow, also applied to the text with YAML escapes decoded; no workflow may use `pull_request_target` or a private runner label. This check is defence in depth. The enforced boundary is runner-side: the dedicated Mac's owner-only pre-job gate, and private runners registered only to the private repository.
+Public workflows use hosted runners by default. The sole dedicated-Mac entry is
+`trusted-mac.yml` pinned to an immutable reviewed commit, with matching
+server-side runner-group restrictions and an owner-only pre-job gate. Callers
+must not select these runners directly. The path-scoped canonical expression in
+`scripts/workflow-policy.mjs` checks the actual owner and rerun actor, same
+repository and PR author, event type, draft status, OS and switches. The gate
+continues to reject `pull_request_target` and private publishing labels, including
+YAML-escaped spellings. It is defence in depth, not a substitute for the runner
+group's enforced reusable-workflow identity. See [the admission and graphical
+session contract](mac-ci.md).
 
 The gate also rejects literal `/mnt/` and `/home/` paths anywhere under
 `desktop/native/verification/` and `tools/`, including documentation and fixtures.
