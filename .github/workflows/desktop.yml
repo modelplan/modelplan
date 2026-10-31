@@ -67,7 +67,7 @@ jobs:
   macos:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
-    runs-on: macos-latest
+    runs-on: ${{ (vars.MAC_CI_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || 'macos-latest' }}
     defaults:
       run:
         working-directory: desktop
@@ -101,7 +101,7 @@ jobs:
   app-smoke:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # The actual universal Community bundle, with no secrets, live reader or displayed UI.
-    runs-on: macos-latest
+    runs-on: ${{ (vars.MAC_CI_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || 'macos-latest' }}
     timeout-minutes: 25
     continue-on-error: false
     env:
@@ -145,7 +145,7 @@ jobs:
     name: native (${{ matrix.os }})
     # Standard free hosted images, newest installed Xcode; no signing or secrets.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ (matrix.os == 'macos-latest' && vars.MAC_CI_RUNNER == 'self-hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false

@@ -139,10 +139,21 @@ for (const p of tracked.filter(
   (p) => p.startsWith(".github/workflows/") && p.endsWith(".yml"),
 )) {
   const s = (await read(p)).toString();
+  // Private runners (modelplans-ci / modelplans-publish) are never reachable from public workflows.
   assert.ok(
-    !s.includes("self-hosted") && !s.includes("modelplans-publish"),
+    !s.includes("modelplans-publish") && !s.includes("modelplans-ci"),
     "public workflow must not access private runners: " + p,
   );
+  // The only self-hosted runner allowed is the dedicated public Mac (label modelplan-mac), behind the
+  // MAC_CI_RUNNER switch and a same-repository guard so fork pull requests never reach it.
+  for (const line of s.split("\n").filter((l) => l.includes("self-hosted"))) {
+    assert.ok(
+      line.includes("modelplan-mac") &&
+        line.includes("vars.MAC_CI_RUNNER == 'self-hosted'") &&
+        line.includes("github.event.pull_request.head.repo.full_name == github.repository"),
+      "self-hosted use must target modelplan-mac behind the switch and fork guard: " + p,
+    );
+  }
 }
 assert.ok(
   !(await read("desktop/build.mjs"))
