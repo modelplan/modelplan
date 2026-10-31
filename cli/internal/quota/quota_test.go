@@ -435,3 +435,80 @@ func TestDeclaredPlanRegionPreserved(t *testing.T) {
 		t.Fatalf("region lost=%+v", got)
 	}
 }
+
+func TestClaudeCodeSessionsEachReadTheirOwnModelAndEffort(t *testing.T) {
+	isolateHome(t)
+	p := fixture(t)
+	b, _ := os.ReadFile("testdata/claude-code-statusline.json")
+	record := func(session, effort string, at time.Time) {
+		var in StatuslineInput
+		json.Unmarshal(b, &in)
+		in.SessionID, in.Effort.Level = session, effort
+		if err := RecordClaudeCode(p.Cache, in, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Session A switches to medium; session B, still on high, renders its status line later.
+	record("session-a", "medium", now.Add(-3*time.Minute))
+	record("session-b", "high", now.Add(-time.Minute))
+	read := func(session string) Harness {
+		p.ClaudeSession = session
+		for _, a := range Read(p, now).Accounts {
+			if a.Source == "claude-code" {
+				return *a.Harness
+			}
+		}
+		t.Fatal("no claude-code account")
+		return Harness{}
+	}
+	if h := read("session-a"); h.Effort != "medium" || h.Attribution != "current-thread" || h.ObservedAt == nil || !h.ObservedAt.Equal(now.Add(-3*time.Minute)) {
+		t.Fatalf("session A read %+v, want its own medium", h)
+	}
+	if h := read("session-b"); h.Effort != "high" || h.Attribution != "current-thread" {
+		t.Fatalf("session B read %+v", h)
+	}
+	if h := read("session-c"); h.Effort != "high" || h.Attribution != "recent-thread" {
+		t.Fatalf("an unknown session read %+v, want the latest writer as recent-thread", h)
+	}
+	if h := read(""); h.Effort != "high" || h.Attribution != "" {
+		t.Fatalf("no caller read %+v", h)
+	}
+	raw, _ := os.ReadFile(snapshotPath(p.Cache))
+	if strings.Contains(string(raw), "session-a") || strings.Contains(string(raw), "session-b") {
+		t.Fatal("snapshot holds a raw session id")
+	}
+}
+
+func TestClaudeCodeSessionsAreBoundedByCountAndAge(t *testing.T) {
+	isolateHome(t)
+	p := fixture(t)
+	b, _ := os.ReadFile("testdata/claude-code-statusline.json")
+	record := func(session string, at time.Time) {
+		var in StatuslineInput
+		json.Unmarshal(b, &in)
+		in.SessionID = session
+		if err := RecordClaudeCode(p.Cache, in, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record("old", now.Add(-25*time.Hour))
+	for i := 0; i < 10; i++ {
+		record(fmt.Sprintf("s%d", i), now.Add(time.Duration(i-10)*time.Minute))
+	}
+	var s ccSnapshot
+	raw, _ := os.ReadFile(snapshotPath(p.Cache))
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Sessions) != ccSessionsKept || s.Sessions[0].Key != SessionKey("s9") || s.Sessions[ccSessionsKept-1].Key != SessionKey("s2") {
+		t.Fatalf("sessions = %+v", s.Sessions)
+	}
+	// A day later only the new writer is left.
+	record("s9", now.Add(25*time.Hour))
+	raw, _ = os.ReadFile(snapshotPath(p.Cache))
+	s = ccSnapshot{}
+	json.Unmarshal(raw, &s)
+	if len(s.Sessions) != 1 || s.Sessions[0].Key != SessionKey("s9") {
+		t.Fatalf("stale sessions kept: %+v", s.Sessions)
+	}
+}

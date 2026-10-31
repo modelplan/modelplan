@@ -94,6 +94,22 @@ class ClaudeSession(unittest.TestCase):
     def test_attribution(self):
         self.assertEqual(["current-thread", "recent-thread", ""], [self.attribution(s) for s in ("secret-session", "another", "")])
 
+    def test_each_session_reads_its_own(self):
+        """Same case as cli/internal/quota TestClaudeCodeSessionsEachReadTheirOwnModelAndEffort."""
+        path = self.dir / "observed" / "claude-code.json"
+        snap = json.loads(path.read_text())
+        b = dict(snap["harness"], effort="high")
+        snap.update(sessionKey=quota.session_key("session-b"), harness=b, sessions=[
+            {"sessionKey": quota.session_key("session-b"), "observedAt": "2026-10-14T09:59:00Z", "harness": b},
+            {"sessionKey": quota.session_key("session-a"), "observedAt": "2026-10-14T09:57:00Z", "harness": dict(b, effort="medium")}])
+        path.write_text(json.dumps(snap))
+        got = {}
+        for s in ("session-a", "session-b", "session-c", ""):
+            h = quota.read_claude_code(str(self.dir), s)[0][0]["harness"]
+            got[s] = (h["effort"], h.get("attribution", ""))
+        self.assertEqual({"session-a": ("medium", "current-thread"), "session-b": ("high", "current-thread"),
+                          "session-c": ("high", "recent-thread"), "": ("high", "")}, got)
+
 
 class Threads(unittest.TestCase):
     """Same fixture and expectation as cli/internal/quota TestCodexThreadsKeepTheirOwnModel."""

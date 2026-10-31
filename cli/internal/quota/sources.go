@@ -69,6 +69,45 @@ type ccSnapshot struct {
 	// Identity: the subscription of the account Claude Code is signed in to (identity.go), with
 	// the size and time of the file it came from, so the file is read again only when it changes.
 	Identity *ccIdentity `json:"identity,omitempty"`
+	// Sessions: the latest model and effort of each recently rendered session, newest first, so
+	// a session reads its own when several are open (the top level is only the latest writer's).
+	Sessions []ccSession `json:"sessions,omitempty"`
+}
+
+type ccSession struct {
+	Key        string    `json:"sessionKey"`
+	ObservedAt time.Time `json:"observedAt"`
+	Harness    Harness   `json:"harness"`
+}
+
+// At most this many sessions, none older than a day, are kept.
+const (
+	ccSessionsKept = 8
+	ccSessionAge   = 24 * time.Hour
+)
+
+// keepSessions puts snap's own session first and keeps prev's other recent sessions.
+func keepSessions(prev *ccSnapshot, snap ccSnapshot) []ccSession {
+	var out []ccSession
+	if snap.SessionKey != "" {
+		out = append(out, ccSession{Key: snap.SessionKey, ObservedAt: snap.ObservedAt, Harness: snap.Harness})
+	}
+	if prev == nil {
+		return out
+	}
+	older := prev.Sessions
+	if len(older) == 0 && prev.SessionKey != "" {
+		older = []ccSession{{Key: prev.SessionKey, ObservedAt: prev.ObservedAt, Harness: prev.Harness}}
+	}
+	for _, x := range older {
+		if len(out) == ccSessionsKept {
+			break
+		}
+		if x.Key != "" && x.Key != snap.SessionKey && !x.ObservedAt.After(snap.ObservedAt) && snap.ObservedAt.Sub(x.ObservedAt) < ccSessionAge {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 type ccIdentity struct {
@@ -136,6 +175,7 @@ func RecordClaudeCode(cache string, in StatuslineInput, now time.Time) error {
 		}
 	}
 	snap.Identity = claudeIdentity(cache, prev, now)
+	snap.Sessions = keepSessions(prev, snap)
 	if prev != nil {
 		if now.Sub(prev.ObservedAt) < time.Minute && bytes.Equal(content(*prev), content(snap)) {
 			return nil
@@ -192,6 +232,10 @@ func keepRecent(prev ccSnapshot, ws []Window) map[string][]Sample {
 // content is the snapshot without its observation times and history.
 func content(s ccSnapshot) []byte {
 	s.ObservedAt, s.Recent = time.Time{}, nil
+	s.Sessions = append([]ccSession(nil), s.Sessions...)
+	for i := range s.Sessions {
+		s.Sessions[i].ObservedAt = time.Time{}
+	}
 	s.Windows = append([]Window(nil), s.Windows...)
 	for i := range s.Windows {
 		s.Windows[i].ObservedAt = time.Time{}
@@ -229,8 +273,19 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 		}
 	}
 	if session != "" && s.SessionKey != "" {
+		// The latest writer may be another session; then this session's own last reading, if
+		// kept, gives its model and effort.
+		key, own := SessionKey(session), false
+		for _, x := range s.Sessions {
+			if x.Key == key && key != s.SessionKey {
+				h, at := x.Harness, x.ObservedAt
+				h.ObservedAt = &at
+				a.Harness, own = &h, true
+				break
+			}
+		}
 		a.Harness.Attribution = "recent-thread"
-		if SessionKey(session) == s.SessionKey {
+		if own || key == s.SessionKey {
 			a.Harness.Attribution = "current-thread"
 		}
 	}

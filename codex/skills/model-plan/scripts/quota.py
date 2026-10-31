@@ -181,15 +181,25 @@ def read_claude_code(cache, session=""):
         assert isinstance(s, dict) and s.get("schemaVersion") == 1
         observed = parse_time(s.get("observedAt"))
         h = s.get("harness") if isinstance(s.get("harness"), dict) else {}
+        # Whose model and effort these are; the usage windows are the account's either way. The
+        # top level is the latest writer's; "sessions" keeps each recent session's own reading.
+        key = s.get("sessionKey") if isinstance(s.get("sessionKey"), str) else ""
+        own, own_at = False, None
+        if session and key and session_key(session) != key:
+            for x in s.get("sessions") or []:
+                if isinstance(x, dict) and x.get("sessionKey") == session_key(session) and isinstance(x.get("harness"), dict) \
+                        and parse_time(x.get("observedAt")):
+                    h, own, own_at = x["harness"], True, parse_time(x["observedAt"])
+                    break
         harness = {k: clip(h.get(k)) for k in ("model", "effort") if clip(h.get(k))}
         if isinstance(h.get("fastMode"), bool):
             harness["fastMode"] = h["fastMode"]
         if clip(h.get("version")):
             harness["version"] = clip(h["version"])
-        # Whose model and effort these are; the usage windows are the account's either way.
-        key = s.get("sessionKey") if isinstance(s.get("sessionKey"), str) else ""
+        if own_at:
+            harness["observedAt"] = own_at
         if session and key:
-            harness["attribution"] = "current-thread" if session_key(session) == key else "recent-thread"
+            harness["attribution"] = "current-thread" if own or session_key(session) == key else "recent-thread"
         windows = []
         for w in s.get("windows") or []:
             kind = w.get("kind") if w.get("kind") in ("five_hour", "weekly", "spend") else "unknown"
