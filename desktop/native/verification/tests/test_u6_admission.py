@@ -30,6 +30,7 @@ def run_config(root):
                 expectedLease=dict(runID='run', epoch='epoch', notBefore=now - 10, expiresAt=now + 290),
                 syntheticHome=str(scratch / 'home'), syntheticTmp=str(scratch / 'tmp'), scratch=str(scratch),
                 batch=str(batch), locks=str(root / 'locks'), resourceRoot=str(root), stopPath=str(batch / 'stop.json'),
+                preparedReceiptPath=str(batch / 'prepared.json'),
                 leasePath=str(root / 'lease'), releasePath=str(root / 'release'),
                 subjectPidPath=str(root / 'subject.pid'), requiredSeconds=30)
 
@@ -46,6 +47,8 @@ class U6AdmissionTests(unittest.TestCase):
             spawn.assert_not_called()
             self.assertFalse((root / 'locks').exists())
             self.assertFalse((root / 'scratch' / 'native-guard.json').exists())
+            self.assertFalse((root / 'batch' / 'prepared.json').exists())
+            self.assertTrue((root / 'batch' / 'stop.json').exists())
             self.assertEqual(gate.call_args.args[0]['expectedLease']['runID'], 'run')
             self.assertNotIn('release', gate.call_args.args[0])
 

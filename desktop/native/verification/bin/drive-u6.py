@@ -2,8 +2,9 @@
 """U6 Dock/menu scenario for CONTROLLER_MODE=launch; --config is the same run config launch.py executes.
 `prepare` (before launch.py): live admission, then slot/contention/disk-floor resources and the native contract.
 `drive` (after launch.py): drives only the subject launch.py registered with the guardian; it never starts or
-signals a process. Closing is the stop file, acted on by launch.py and bin/guardian.py; Drive only observes it."""
-import argparse,hashlib,json,shutil,sys,time
+signals a process. Closing is the stop file, acted on by launch.py and bin/guardian.py; Drive only observes it,
+also requesting it when the disk floor is breached mid-run."""
+import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
 from admission import load_and_admit
 from guardian import cleanup,identity,launcher_lost
@@ -28,41 +29,49 @@ def admit(c,now):
     argv=c.get('argv') # launch.py passes the U6 flag; Drive never builds its own argv
     if not isinstance(argv,list) or len(argv)!=3 or argv[1]!=FLAG or Path(argv[2]).resolve()!=native_contract(c):raise ValueError('u6-argv-mismatch')
     if Path(c['stopPath']).resolve()!=(Path(c['batch'])/'stop.json').resolve():raise ValueError('stop-path-mismatch')
+    if Path(c.get('preparedReceiptPath') or '').resolve()!=(Path(c['batch'])/'prepared.json').resolve():raise ValueError('prepared-receipt-required') # launch.py refuses without it
     if not isinstance(c.get('subjectPidPath'),str) or not c['subjectPidPath']:raise ValueError('subject-registration-required')
     return True
 def request_stop(c,reason):
     stop=Path(c['stopPath']);run,epoch,_,_=run_identity(c)
-    if not stop.exists():write(stop,dict(runID=run,epoch=epoch,stop=True,reason=reason))
-def owner(lock):
-    try:o=read(lock/'owner.json');return o.get('runID'),o.get('epoch')
-    except (OSError,ValueError,AttributeError):return None
-def release(c):
-    """Release only this run's locks; True when none of them remain."""
-    locks=Path(c['locks']);mine=run_identity(c)[:2]
-    for name in LOCKS:
-        lock=locks/name
-        if owner(lock)==mine:(lock/'owner.json').unlink();lock.rmdir()
-    return all(owner(locks/name)!=mine for name in LOCKS)
-def prepare(c,now):
-    """Before launch.py: every resource check happens here, so a refusal stops the sequence with no app."""
-    admit(c,now);run,epoch,start,end=run_identity(c)
-    out=Path(c['batch']);scratch=Path(c['scratch'])
-    if not out.is_dir() or not scratch.is_dir():raise ValueError('batch-or-scratch-missing')
-    load_and_admit(c) # Live lease/release/booking before any resource; launch.py rechecks before spawning.
-    if hashlib.sha256(Path(c['argv'][0]).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
-    observations=out/'native-observations.jsonl'
-    if observations.exists() or (out/'result.json').exists():raise ValueError('batch-not-fresh')
-    locks=Path(c['locks'])
     try:
+        if not stop.exists():write(stop,dict(runID=run,epoch=epoch,stop=True,reason=reason))
+    except OSError:pass # a missing batch has no launchable receipt either
+def low_disk(c):return shutil.disk_usage(c['resourceRoot']).free-DISK_RESERVE<DISK_FLOOR
+def owner(lock):
+    try:return read(lock/'owner.json').get('attempt')
+    except (OSError,ValueError,AttributeError):return None
+def release(locks,attempt):
+    """Release only locks holding this attempt's token; True when none of them remain."""
+    for lock in map(Path,locks):
+        if attempt and owner(lock)==attempt:(lock/'owner.json').unlink();lock.rmdir()
+    return not attempt or all(owner(Path(lock))!=attempt for lock in locks)
+def prepared(c):
+    """This attempt's receipt (token and locks), or None when preparation never succeeded."""
+    try:r=read(c['preparedReceiptPath'])
+    except (OSError,ValueError):return None
+    return r if isinstance(r,dict) and isinstance(r.get('attempt'),str) and isinstance(r.get('locks'),list) else None
+def prepare(c,now):
+    """Before launch.py: admission and every resource check; only success writes the receipt launch.py requires."""
+    admit(c,now);run,epoch,start,end=run_identity(c)
+    out=Path(c['batch']);scratch=Path(c['scratch']);locks=Path(c['locks']);observations=out/'native-observations.jsonl'
+    attempt=uuid.uuid4().hex;owned=[] # Attempts of one booking share run/epoch; locks are released by this token only.
+    try:
+        if not out.is_dir() or not scratch.is_dir():raise ValueError('batch-or-scratch-missing')
+        if any(x.exists() for x in (Path(c['preparedReceiptPath']),observations,out/'result.json')):raise ValueError('batch-not-fresh')
+        load_and_admit(c) # Live lease/release/booking before any resource; launch.py rechecks before spawning.
+        if hashlib.sha256(Path(c['argv'][0]).read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
-        for name in LOCKS:lock=locks/name;lock.mkdir();write(lock/'owner.json',dict(runID=run,epoch=epoch,role='U6-prepare'))
+        for name in LOCKS:lock=locks/name;lock.mkdir();owned.append(lock);write(lock/'owner.json',dict(runID=run,epoch=epoch,attempt=attempt,role='U6-prepare'))
         if sum((locks/f'slot{i}').exists() for i in (1,2))!=1:raise RuntimeError('resource-contention')
-        if shutil.disk_usage(c['resourceRoot']).free-DISK_RESERVE<DISK_FLOOR:raise RuntimeError('resource-disk-floor')
+        if low_disk(c):raise RuntimeError('resource-disk-floor')
         write(native_contract(c),dict(runID=run,epoch=epoch,start=start,expiresAt=end,lease=c['leasePath'],stop=c['stopPath'],observations=str(observations),menuRequest=str(out/'menu-request.json')))
+        write(c['preparedReceiptPath'],dict(prepared=True,runID=run,epoch=epoch,attempt=attempt,binarySHA256=c['binarySHA256'],locks=[str(x) for x in owned]))
     except Exception as e:
-        # One attempt, no retry: release this attempt's locks; the stop file makes launch.py's admission refuse.
-        release(c);request_stop(c,'u6-prepare-refused')
-        write(out/'result.json',dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,reason=failure(e)))
+        # One attempt, no retry: no receipt, this invocation's locks released, and the stop file also makes admission refuse.
+        release(owned,attempt);request_stop(c,'u6-prepare-refused')
+        if out.is_dir() and not (out/'result.json').exists():
+            write(out/'result.json',dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,reason=failure(e)))
         raise
     print(json.dumps(dict(runID=run,epoch=epoch,prepared=True)),flush=True)
 def alive(record):return cleanup.matches(identity(record['pid']),record)
@@ -102,8 +111,12 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         record=registered(pid_path) # first, so a refusal below is judged after launch.py registered or gave up
         load_and_admit(c);bound(out/'native-observations.jsonl',run,epoch,record)
         result['appStarted']=True;write(out/'launch.json',dict(runID=run,epoch=epoch,ownedPID=record['pid'],sourceHead=c['head'],registeredBy='launch.py'))
-        while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:sleep(poll)
-        if finish.exists():result['operatorReceipts']=read(finish);result['outcome']='operator-finished'
+        breach=False
+        while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:
+            if low_disk(c):breach=True;request_stop(c,'resource-disk-floor');break # closing stays with launch.py/guardian
+            sleep(poll)
+        if breach:result['reason']='resource-disk-floor'
+        elif finish.exists():result['operatorReceipts']=read(finish);result['outcome']='operator-finished'
         elif stop.exists():result['reason']='stop-hook'
         elif not alive(record):result['reason']='subject-exited'
         else:result['outcome']='timeout';result['reason']='absolute-deadline'
@@ -112,12 +125,12 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         request_stop(c,'run-ended') # launch.py and the guardian stop the registered subject on this file
         deadline=time.monotonic()+CLOSE_SECONDS
         while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
-        gone=closed(pid_path);removed=[]
+        gone=closed(pid_path);removed=[];r=prepared(c);prep=(r['locks'],r['attempt']) if r else None
         if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
             try:removed=cleanup.remove_scratch(scratch,['home','tmp'])
             except (OSError,ValueError):pass
         result['cleanup']=dict(ownedAppExited=gone,closedBy='launch.py+guardian',guardian='external-M1',
-                               resourcesReleased=gone and release(c),leaseReleased=False,scratchRemoved=removed)
+                               resourcesReleased=gone and release(*prep) if prep else gone,leaseReleased=False,scratchRemoved=removed)
         write(out/'result.json',result);print(json.dumps({'runID':run,'outcome':result['outcome'],'appStarted':result['appStarted'],'cleanup':result['cleanup']}),flush=True)
     return result
 def main(argv=None):

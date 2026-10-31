@@ -33,19 +33,23 @@ python3 desktop/native/verification/bin/release.py \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
 # Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
 # second one. Set CONTROLLER_MODE explicitly:
-#  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py);
-#          a scenario's resource step (slots, disk floor) runs before this case, in the foreground
-#          (set -e stops on refusal), e.g. `python3 desktop/native/verification/bin/drive-u6.py prepare --config "$RUN_CONFIG"`
+#  launch: launch.py starts the app and drive-u6.py drives the subject it registered. drive-u6.py prepare
+#          runs first in the foreground (admission, slots, disk floor); only its success writes the
+#          preparedReceiptPath receipt that launch.py requires, so a refusal leaves nothing launchable
 #  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); its cleanup result is read
 #          from the batch named in $RUN_CONFIG itself
 # Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
 case "$CONTROLLER_MODE" in
-  launch) python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
+  launch) python3 desktop/native/verification/bin/drive-u6.py prepare --config "$RUN_CONFIG"
+          python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
   drive)  python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
   *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
 esac
 CONTROLLER_PID=$!
-# ... in launch mode, drive the scenario against the registered subject here (e.g. drive-u6.py drive) ...
+SCENARIO_STATUS=0  # launch mode: drive the registered subject; exit 0 only when its closure was observed
+if [ "$CONTROLLER_MODE" = launch ]; then
+  python3 desktop/native/verification/bin/drive-u6.py drive --config "$RUN_CONFIG" || SCENARIO_STATUS=$?
+fi
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
 # confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
 # finish at all and report the run as unconfirmed for coordinator follow-up.
@@ -57,13 +61,13 @@ DRIVE_CLEAN=0
 if [ "$CONTROLLER_MODE" = drive ]; then
   python3 desktop/native/verification/bin/check_drive_cleanup.py "$RUN_CONFIG" || DRIVE_CLEAN=1
 fi
-if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
+if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && [ "$SCENARIO_STATUS" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
     --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 else
   # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
   # closure or the documented expiry recovery applies.
-  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS drive-cleanup=$DRIVE_CLEAN; report to the coordinator" >&2
+  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS drive-cleanup=$DRIVE_CLEAN scenario=$SCENARIO_STATUS; report to the coordinator" >&2
 fi
 ```
 

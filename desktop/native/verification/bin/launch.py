@@ -9,11 +9,13 @@ def main():
     c=json.loads(a.config.read_text())
     if not a.execute:validate(c,time.time());print('Run contract valid; no process launched');return
     c=load_and_admit(c) # Read external records before creating synthetic resources.
+    check_prepared(c)
     home=Path(c['syntheticHome']);tmp=Path(c['syntheticTmp'])
     home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if hashlib.sha256(binary.read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
+    check_prepared(c)
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
     launcher=mark_launching(pid_path) # Until registered, the guardian reports closure unconfirmed.
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
@@ -37,6 +39,19 @@ def main():
     reason=supervise(child,c)
     print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason}))
     raise SystemExit(0 if reason is None else 3)
+def check_prepared(c):
+    """Optional scenario preparation: a run config naming `preparedReceiptPath` launches only on that receipt
+    (same run/epoch and binary), while every lock it lists is still held by the receipt's attempt token."""
+    if 'preparedReceiptPath' not in c:return
+    try:r=json.loads(Path(c['preparedReceiptPath']).read_text())
+    except (OSError,ValueError,TypeError):raise ValueError('preparation receipt missing')
+    if not isinstance(r,dict) or r.get('prepared') is not True or r.get('runID')!=c['lease'].get('runID') or r.get('epoch')!=c['lease'].get('epoch') \
+            or r.get('binarySHA256')!=c['binarySHA256'] or not isinstance(r.get('attempt'),str) or not r['attempt'] or not isinstance(r.get('locks'),list) or not r['locks']:
+        raise ValueError('preparation receipt mismatch')
+    for lock in r['locks']:
+        try:o=json.loads((Path(lock)/'owner.json').read_text())
+        except (OSError,ValueError,TypeError):o=None
+        if not isinstance(o,dict) or (o.get('attempt'),o.get('runID'),o.get('epoch'))!=(r['attempt'],r['runID'],r['epoch']):raise ValueError('prepared resources not held')
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
 def stop_reason(c,now):
     if Path(c['stopPath']).exists():return 'stop-file'
