@@ -164,6 +164,20 @@ extension RealBinaryTests {
         let data = (try? Data(contentsOf: home.appendingPathComponent("proxy.trace"))) ?? Data()
         return String(decoding: data, as: UTF8.self).contains("\"method\":\"" + method + "\"")
     }
+    func testBusyBootstrapRowsAreRetriedWithoutChangingConsent() async throws {
+        let binary = try binary(); let home = try home(); let probe = EventProbe()
+        try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+        let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "rows-busy-once"), home: home), consumer: probe)
+        addTeardownBlock { await client.stop() }
+        let context = try await client.start()
+        try await eventually { await probe.rowCount() > 0 }
+        let observed = await client.context
+        XCTAssertEqual(observed, context)
+        XCTAssertTrue(client.isCurrent(context))
+        let trace = try String(contentsOf: home.appendingPathComponent("proxy.trace"), encoding: .utf8)
+        XCTAssertGreaterThanOrEqual(trace.components(separatedBy: "\"method\":\"rows/subscribe\"").count - 1, 2)
+    }
+
     func testRealExternalEpochResetUsesEqualityAndLowerGeneration() async throws {
         let binary = try binary(); let home = try home(); let probe = EventProbe()
         try cli(binary, home: home, arguments: ["consent", "init", "--json"])

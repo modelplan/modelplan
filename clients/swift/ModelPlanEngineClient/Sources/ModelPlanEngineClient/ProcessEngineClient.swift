@@ -84,6 +84,8 @@ public actor ProcessEngineClient: EngineClient {
     var deliveryTask: Task<Void, Never>?
     var deliveryTimer: Task<Void, Never>?
     var restartTask: Task<Void, Never>?
+    var rowsBootstrapRetry: Task<Void, Never>?
+    var rowsBootstrapBusyCount = 0
     var budget = RestartBudget()
     var facts: WireEnvelope<WireConsentFacts>?
     var intents: [String: CredentialIntent] = [:]
@@ -107,7 +109,7 @@ public actor ProcessEngineClient: EngineClient {
         self.credentialAgent = credentialAgent; self.consumer = consumer; self.runtime = runtime
     }
     deinit {
-        restartTask?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
+        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
         let current = child
         let abandoned = unreapedProcess
         if let current { Task { _ = await current.finish() } }
@@ -153,6 +155,7 @@ public actor ProcessEngineClient: EngineClient {
         deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
         stopped = true; stopping = true
+        rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
         let retiring = restartTask
         retiring?.cancel(); restartTask = nil
         let process = child ?? unreapedProcess
@@ -223,6 +226,7 @@ public actor ProcessEngineClient: EngineClient {
         guard let process = child, process.id == id else { return }
         deliveryAuthority.replace(with: nil)
         child = nil; handshaken = false; writerRunning = false
+        rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
         invalidate(protocolFault ? .protocolFault : .connectionLost, next: floor)
