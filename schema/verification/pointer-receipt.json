@@ -62,6 +62,13 @@
         },
         "timestamp": {
           "$ref": "common.json#/$defs/isoSecond"
+        },
+        "statusWindowCheck": {
+          "enum": [
+            "verified",
+            "unavailable",
+            "not-applicable"
+          ]
         }
       },
       "additionalProperties": false,
@@ -128,6 +135,13 @@
         },
         "timestamp": {
           "$ref": "common.json#/$defs/isoSecond"
+        },
+        "statusWindowCheck": {
+          "enum": [
+            "verified",
+            "unavailable",
+            "not-applicable"
+          ]
         }
       },
       "additionalProperties": false
@@ -204,6 +218,13 @@
         },
         "timestamp": {
           "$ref": "common.json#/$defs/isoSecond"
+        },
+        "statusWindowCheck": {
+          "enum": [
+            "verified",
+            "unavailable",
+            "not-applicable"
+          ]
         }
       },
       "additionalProperties": false
@@ -247,6 +268,13 @@
         },
         "event": {
           "const": "pointer-result"
+        },
+        "statusWindowCheck": {
+          "enum": [
+            "verified",
+            "unavailable",
+            "not-applicable"
+          ]
         }
       },
       "additionalProperties": false,

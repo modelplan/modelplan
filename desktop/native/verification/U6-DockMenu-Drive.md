@@ -33,6 +33,19 @@ deadline for both status opens (or move + 5 seconds for Dock); they never repost
 The hosted Mac test changes its own status-item title and checks the last emitted settled frame; it is
 restricted to a GitHub-hosted worker and performs no owner-device acceptance or booking.
 
+#### Coordinator amendment: status-window check availability
+
+This amendment takes precedence for C2.7 status opens (steps 2 and 4). A raw status-item window number
+is not necessarily a usable CGWindowID. With a value in 1…UInt32.max, the plan records
+`statusWindowCheck: required`; delivery keeps the exact CGWindowList subject-PID, onscreen and
+point-containment check, and its posted receipts record `verified`. With 0 or an out-of-range value,
+the plan and posted receipts record `statusWindowCheck: unavailable` and only that window-list
+lookup is skipped. The raw number still participates in current-generation binding; it is never truncated.
+In both modes the newest owned frame must be visible and settled, at most 2 s old, stable for at least
+0.5 s, current in generation, and contain the click within frame ∩ active display ∩ menu-bar band.
+Subject PID/registration/lease checks remain. Arrival remains the App's own matching `menu-begin`
+in [button-down, button-up +3 s]; a posted click without arrival is NOT-RUN in either mode.
+
 The owner subsequently chose Computer Use-first device acceptance on the pinned 00c1d4f candidate.
 This automated-frame repair remains wanted at normal priority; it does not gate or replace that acceptance.
 

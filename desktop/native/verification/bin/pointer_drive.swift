@@ -25,14 +25,16 @@ struct PointerPlan: Decodable {
     let u6InputKind: String?, u6Observations: String?
     let u6FrameSeq: UInt64?, u6StatusFrameGeneration: UInt64?
     let u6StatusWindowNumber: Int?
+    let statusWindowCheck: String?
     init(profile:String,runID:String,epoch:String,lease:String,stop:String,output:String,
          subjectPID:Int32,subjectBundle:String,allowedRectangles:[[Double]],steps:[PointerStep],
          u6InputKind:String? = nil,u6Observations:String? = nil,u6FrameSeq:UInt64? = nil,
-         u6StatusFrameGeneration:UInt64? = nil,u6StatusWindowNumber:Int? = nil) {
+         u6StatusFrameGeneration:UInt64? = nil,u6StatusWindowNumber:Int? = nil,statusWindowCheck:String? = nil) {
         self.profile=profile;self.runID=runID;self.epoch=epoch;self.lease=lease;self.stop=stop;self.output=output
         self.subjectPID=subjectPID;self.subjectBundle=subjectBundle;self.allowedRectangles=allowedRectangles;self.steps=steps
         self.u6InputKind=u6InputKind;self.u6Observations=u6Observations;self.u6FrameSeq=u6FrameSeq
         self.u6StatusFrameGeneration=u6StatusFrameGeneration;self.u6StatusWindowNumber=u6StatusWindowNumber
+        self.statusWindowCheck=statusWindowCheck
     }
 }
 enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnded, cannotCreateEvent }
@@ -89,12 +91,22 @@ final class ButtonGuard: @unchecked Sendable {
         guard number>0,let id=CGWindowID(exactly:number) else { throw DriveError.outsideScope }
         return id
     }
+    static func statusMode(_ p:PointerPlan) throws -> String {
+        guard let number=p.u6StatusWindowNumber else { throw DriveError.outsideScope }
+        let expected=number>0 && CGWindowID(exactly:number) != nil ? "required" : "unavailable"
+        guard p.statusWindowCheck==expected else { throw DriveError.outsideScope }
+        return expected
+    }
+    static func statusReceiptMode(_ p:PointerPlan) -> String {
+        p.statusWindowCheck=="required" ? "verified" : p.statusWindowCheck=="unavailable" ? "unavailable" : "not-applicable"
+    }
     static func currentStatusFrame(_ p:PointerPlan,now:Double=ProcessInfo.processInfo.systemUptime) throws {
         let bound=p.u6InputKind == "status" || p.u6FrameSeq != nil && p.steps.contains { $0.action == .click }
         guard bound else { return }
         guard let path=p.u6Observations,let generation=p.u6StatusFrameGeneration,generation>0,
-              let number=p.u6StatusWindowNumber,number>0,CGWindowID(exactly:number) != nil,
+              let number=p.u6StatusWindowNumber,
               let sequence=p.u6FrameSeq else { throw DriveError.outsideScope }
+        _=try statusMode(p)
         let url=URL(fileURLWithPath:path)
         guard (try url.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else { throw DriveError.outsideScope }
         let data=try Data(contentsOf:url);guard data.count<=8_000_000 else { throw DriveError.outsideScope }
@@ -123,6 +135,7 @@ final class ButtonGuard: @unchecked Sendable {
     /// image capture, title read or other-application geometry is used.
     static func currentStatusWindow(_ p:PointerPlan) throws {
         guard p.u6InputKind=="status" || p.u6FrameSeq != nil && p.steps.contains(where:{$0.action == .click}) else { return }
+        if try statusMode(p)=="unavailable" { return }
         guard let number=p.u6StatusWindowNumber else { throw DriveError.outsideScope }
         let id=try windowID(number)
         guard let entries=CGWindowListCopyWindowInfo(.optionIncludingWindow,id) as? [[String:Any]],
@@ -205,9 +218,9 @@ final class ButtonGuard: @unchecked Sendable {
         try validate(p,displays:activeDisplayBounds())
         try live(p)
         try currentStatusFrame(p);try currentStatusWindow(p)
-        let access = permission(); try append(access,to:file)
+        var access = permission();access["statusWindowCheck"]=statusReceiptMode(p);try append(access,to:file)
         guard access["postEvents"] as? Bool == true else {
-            try append(["event":"pointer-result","outcome":"not-run","reason":"postEvents-not-granted"],to:file);return
+            try append(["event":"pointer-result","outcome":"not-run","reason":"postEvents-not-granted","statusWindowCheck":statusReceiptMode(p)],to:file);return
         }
         var previous = CGPoint(x:p.steps[0].x,y:p.steps[0].y)
         for (index,step) in p.steps.enumerated() {
@@ -227,7 +240,7 @@ final class ButtonGuard: @unchecked Sendable {
                 try append(["event":"mouse-moved-posted","kind":"move","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,
                     "step":index,"x":point.x,"y":point.y,"uptimeSeconds":ProcessInfo.processInfo.systemUptime,
                     "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
-                    "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
+                    "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap","statusWindowCheck":statusReceiptMode(p)],to:file)
                 if step.seconds>0 { Thread.sleep(forTimeInterval:step.seconds/Double(count)) }
             }
             if step.action == .click {
@@ -238,7 +251,7 @@ final class ButtonGuard: @unchecked Sendable {
                         "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,"step":index,
                         "x":end.x,"y":end.y,"button":"left","clickCount":1,
                         "uptimeSeconds":mono,"mono":mono,"at":at,
-                        "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
+                        "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap","statusWindowCheck":statusReceiptMode(p)],to:file)
                 },beforePress: { try currentStatusFrame(p);try currentStatusWindow(p) })
             }
             let until = ProcessInfo.processInfo.systemUptime+step.dwell
@@ -247,7 +260,7 @@ final class ButtonGuard: @unchecked Sendable {
         }
         try append(["event":"pointer-result","outcome":"posted","runID":p.runID,"epoch":p.epoch,
             "targetPID":p.subjectPID,"mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
-            "arrivalProof":"requires-correlated-native-receipts"],to:file)
+            "arrivalProof":"requires-correlated-native-receipts","statusWindowCheck":statusReceiptMode(p)],to:file)
     }
     static func entry() throws {
         let args = CommandLine.arguments
@@ -289,21 +302,34 @@ final class ButtonGuard: @unchecked Sendable {
             // creation and delivery must post neither movement nor button input.
             let frameFile=FileManager.default.temporaryDirectory.appendingPathComponent("u6-frame-"+UUID().uuidString)
             defer { try? FileManager.default.removeItem(at:frameFile) }
-            let bound=PointerPlan(profile:"synthetic",runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",
+            func framePlan(_ number:Int,_ mode:String) -> PointerPlan { PointerPlan(profile:"synthetic",runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",
                 subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[clickStep],
-                u6InputKind:"status",u6Observations:frameFile.path,u6FrameSeq:1,u6StatusFrameGeneration:1,u6StatusWindowNumber:7)
+                u6InputKind:"status",u6Observations:frameFile.path,u6FrameSeq:1,u6StatusFrameGeneration:1,u6StatusWindowNumber:number,statusWindowCheck:mode) }
+            let bound=framePlan(7,"required")
             let ready:[String:Any] = ["settled":true,"visible":true,"frameGeneration":1,"windowNumber":7,
                 "stableSinceMono":99,"cgX":0,"cgY":0,"width":100,"height":50,
                 "displayBounds":[0,0,100,100],"menuBarBand":[0,0,100,28]]
-            func writeFrames(_ changes:[[String:Any]]) throws {
+            func writeFrames(_ changes:[[String:Any]],number:Int=7) throws {
                 var data=Data()
-                for (index,checks) in ([ready]+changes).enumerated() {
+                var first=ready;first["windowNumber"]=number
+                for (index,checks) in ([first]+changes).enumerated() {
                     data += try JSONSerialization.data(withJSONObject:["event":"status-item-frame","runID":"fixture","epoch":"epoch",
                         "pid":1,"seq":index+1,"mono":100+Double(index)*0.1,"checks":checks]) + Data([10])
                 }
                 try data.write(to:frameFile)
             }
             try writeFrames([]);try currentStatusFrame(bound,now:100.2)
+            for number in [0,-1,Int(UInt32.max)+1] {
+                try writeFrames([],number:number)
+                let unavailable=framePlan(number,"unavailable")
+                try currentStatusFrame(unavailable,now:100.2)
+                try currentStatusWindow(unavailable) // explicitly skips CG lookup, no host query
+                precondition(statusReceiptMode(unavailable)=="unavailable")
+                do { try currentStatusFrame(unavailable,now:103);preconditionFailure("stale mode-2 frame admitted") }
+                catch DriveError.outsideScope { }
+                do { try currentStatusFrame(framePlan(number,"required"),now:100.2);preconditionFailure("wrong mode admitted") }
+                catch DriveError.outsideScope { }
+            }
             for change:[String:Any] in [
                 ["settled":false,"visible":true,"frameGeneration":2,"windowNumber":7],
                 ["settled":false,"visible":false,"frameGeneration":2,"windowNumber":7],
@@ -379,7 +405,7 @@ final class ButtonGuard: @unchecked Sendable {
         do { try execute(plan,file:out) }
         catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended",
             "runID":plan.runID,"epoch":plan.epoch,"targetPID":plan.subjectPID,
-            "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970],to:out);throw error }
+            "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,"statusWindowCheck":statusReceiptMode(plan)],to:out);throw error }
     }
     static func main() {
         ButtonGuard.shared.installTerminationRelease()

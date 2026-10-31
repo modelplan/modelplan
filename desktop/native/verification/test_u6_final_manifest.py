@@ -33,5 +33,19 @@ class U6FinalManifestTests(unittest.TestCase):
         path=Path(self.args[7]);manifest=json.loads(path.read_text())
         manifest['bundleMembers']['engine']['sha256']='0'*64;path.write_text(json.dumps(manifest))
         outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
+    def unavailable_receipts(self):
+        for name in ('status-pointer.jsonl','status-pointer-clear.jsonl'):
+            path=self.batch/name;rows=[json.loads(line) for line in path.read_text().splitlines()]
+            for row in rows:
+                if row.get('event')!='pointer-host-permission':row['statusWindowCheck']='unavailable'
+            path.write_text(''.join(json.dumps(row)+'\n' for row in rows))
+    def test_unavailable_window_receipt_keeps_full_final_chain(self):
+        self.unavailable_receipts()
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'pass')
+    def test_unavailable_posted_input_without_menu_arrival_never_passes(self):
+        self.unavailable_receipts();path=self.batch/'native-observations.jsonl'
+        rows=[json.loads(line) for line in path.read_text().splitlines()]
+        path.write_text(''.join(json.dumps(row)+'\n' for row in rows if row.get('event')!='menu-begin'))
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
 
 if __name__=='__main__':unittest.main()

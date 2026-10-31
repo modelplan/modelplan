@@ -34,10 +34,9 @@ import CoreGraphics
         mutating func observe(_ value: Geometry?, windowNumber: Int, visible: Bool,
                               mono: Double, force: Bool = false) -> Publication? {
             guard mono.isFinite else { return nil }
-            // NSWindow may expose an unassigned/non-CG window value. Never
-            // publish that as a usable CGWindowID (nor truncate it to UInt32).
-            let number=windowNumber>0 && UInt32(exactly:windowNumber) != nil ? windowNumber : 0
-            let current=visible && number>0 ? value : nil
+            // Preserve the raw window identity for generation binding. An
+            // unusable CG ID does not invalidate independently settled geometry.
+            let number=windowNumber,current=visible ? value : nil
             if generation==0 || force || current != geometry || number != self.windowNumber || visible != self.visible {
                 generation &+= 1;geometry=current;since=mono;self.windowNumber=number;self.visible=visible
                 lastPublication=mono

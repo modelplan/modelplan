@@ -39,7 +39,7 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertEqual(plan['steps'],[dict(x=25,y=40,seconds=0,dwell=.25)])
         self.assertEqual(plan['u6OwnedWindowNumber'],77)
         (self.root/'dock-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
-            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=101),
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=101),
             dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'dock')
         with (self.root/'native-observations.jsonl').open('a') as stream:
@@ -53,9 +53,9 @@ class U6PointerPlanTests(unittest.TestCase):
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
         (self.root/'status-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
-            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100.8),
-            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.9),
-            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=101),
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=100.8),
+            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=100.9),
+            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=101),
             dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')
         with (self.root/'native-observations.jsonl').open('a') as stream:
@@ -66,9 +66,9 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertEqual(clear['steps'][0]['action'],'click')
         self.assertNotEqual(clear['output'],plan['output'])
         (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
-            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=103.8),
-            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104),
-            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=104.1),
+            dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=103.8),
+            dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=104),
+            dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=104.1),
             dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]))
         with self.assertRaisesRegex(ValueError,'first-menu-not-ended'):tool.check(self.config,'status','clear')
         with (self.root/'native-observations.jsonl').open('a') as stream:
@@ -113,22 +113,18 @@ class U6PointerPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
             tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
 
-    def test_uint32_window_range_and_check_refusal(self):
-        for number in [0,-1,1<<32,True]:
+    def test_unavailable_window_uses_geometry_but_still_requires_arrival(self):
+        for number in [0,-1,1<<32,7,(1<<32)-1]:
             with self.subTest(number=number):
                 self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
-                    checks=dict(self.status_checks(),windowNumber=number))]);now=[100.0]
-                with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
-                    tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
-        self.status_input()
-        path=self.root/'status-pointer-plan.json';plan=json.loads(path.read_text());plan['u6StatusWindowNumber']=1<<32
-        path.write_text(json.dumps(plan))
-        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):tool.check(self.config,'status')
-        plan['u6StatusWindowNumber']=7;path.write_text(json.dumps(plan))
-        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
-            checks=dict(self.status_checks(),windowNumber=1<<32))])
-        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):tool.check(self.config,'status')
-        self.assertTrue(tool.valid_window(1));self.assertTrue(tool.valid_window((1<<32)-1))
+                    checks=dict(self.status_checks(),windowNumber=number))])
+                tool.make(self.config,'status',clock=lambda:100)
+                path=self.root/'status-pointer-plan.json';plan=json.loads(path.read_text())
+                self.assertEqual(plan['statusWindowCheck'],'required' if tool.valid_window(number) else 'unavailable')
+                self.assertEqual((plan['steps'][0]['x'],plan['steps'][0]['y']),(1826,15))
+                path.unlink()
+        self.assertEqual(tool.window_mode(7),'required')
+        self.assertEqual(tool.window_mode(1<<32),'unavailable')
 
     @unittest.skipUnless(sys.platform=='darwin','Production sampler needs AppKit; pure planner regressions run on every platform')
     def test_production_sampler_invalidations_through_real_planner(self):
@@ -139,11 +135,12 @@ class U6PointerPlanTests(unittest.TestCase):
         subprocess.run(['swiftc','-parse-as-library','-module-cache-path',str(self.root/'swift-cache'),str(integration),str(harness),'-o',str(executable)],check=True,capture_output=True)
         traces=json.loads(subprocess.check_output([str(executable)]))
         invalid=traces['invalid-window-settled']
-        self.assertEqual(invalid[-1]['checks']['windowNumber'],0)
-        self.assertFalse(invalid[-1]['checks']['settled'])
+        self.assertEqual(invalid[-1]['checks']['windowNumber'],1<<32)
+        self.assertTrue(invalid[-1]['checks']['settled'])
         self.write_rows(invalid);now=[101.7]
-        with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
-            tool.make(self.config,'status',clock=lambda:now[0],sleep=lambda n:now.__setitem__(0,now[0]+n))
+        tool.make(self.config,'status',clock=lambda:now[0])
+        plan_path=self.root/'status-pointer-plan.json'
+        self.assertEqual(json.loads(plan_path.read_text())['statusWindowCheck'],'unavailable');plan_path.unlink()
         for change in ['move','hidden','replacement']:
             with self.subTest(change=change):
                 self.write_rows(traces[change]);now=[100.2]
@@ -155,15 +152,31 @@ class U6PointerPlanTests(unittest.TestCase):
                 self.assertEqual(plan['u6StatusWindowNumber'],8 if change=='replacement' else 7)
                 (self.root/'status-pointer-plan.json').unlink()
 
-    def status_input(self):
+    def status_input(self,number=7):
         self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=99,
-            checks=self.status_checks())])
+            checks=dict(self.status_checks(),windowNumber=number))])
         tool.make(self.config,'status',clock=lambda:100)
-        rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100),
-              dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100),
-              dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.1),
+        mode='verified' if tool.valid_window(number) else 'unavailable'
+        rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',mono=100),
+              dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck=mode,mono=100),
+              dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,statusWindowCheck=mode,mono=100.1),
               dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]
         path=self.root/'status-pointer.jsonl';path.write_text(''.join(json.dumps(r)+'\n' for r in rows));return path
+
+    def test_unavailable_posted_click_needs_same_pid_menu_arrival(self):
+        self.status_input(1<<32)
+        with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status',clock=lambda:104)
+        with (self.root/'native-observations.jsonl').open('a') as out:
+            out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=101,
+                checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
+        tool.check(self.config,'status',clock=lambda:104)
+
+    def test_unavailable_window_never_bypasses_settling_or_freshness(self):
+        for settled,now in [(False,100.0),(True,103.0)]:
+            self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=100,
+                checks=dict(self.status_checks(),windowNumber=1<<32,settled=settled))]);clock=[now]
+            with self.assertRaisesRegex(ValueError,'owned-frame-missing'):
+                tool.make(self.config,'status',clock=lambda:clock[0],sleep=lambda n:clock.__setitem__(0,clock[0]+n))
 
     def test_waits_for_owned_arrival_without_posting_another_input(self):
         path=self.status_input();before=path.read_bytes();now=[100.4];checks=[]
@@ -216,7 +229,7 @@ class U6PointerPlanTests(unittest.TestCase):
         tool.make(self.config,'status','clear',clock=lambda:100)
         rows=[dict(event='mouse-moved-posted',kind='move',mono=102),dict(event='mouse-button-down-posted',kind='click',mono=102),
               dict(event='mouse-button-up-posted',kind='click',mono=102.1),dict(event='pointer-result',outcome='posted')]
-        (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(dict(runID='run',epoch='epoch',targetPID=42,**r))+'\n' for r in rows))
+        (self.root/'status-pointer-clear.jsonl').write_text(''.join(json.dumps(dict(runID='run',epoch='epoch',targetPID=42,statusWindowCheck='verified',**r))+'\n' for r in rows))
         now=[102.4]
         def sleep(seconds):
             now[0]+=seconds

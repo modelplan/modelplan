@@ -95,9 +95,7 @@
           "minimum": 1
         },
         "windowNumber": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
+          "type": "integer"
         },
         "visible": {
           "type": "boolean"
@@ -181,9 +179,6 @@
             "properties": {
               "visible": {
                 "const": true
-              },
-              "windowNumber": {
-                "minimum": 1
               }
             }
           }

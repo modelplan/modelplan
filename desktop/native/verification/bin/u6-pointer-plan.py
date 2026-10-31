@@ -21,12 +21,15 @@ def contains(rect,point):
     x,y,w,h=rect;return x<=point[0]<x+w and y<=point[1]<y+h
 
 def valid_window(number):return type(number) is int and 1<=number<=0xffffffff
+def window_mode(number):
+    if type(number) is not int:raise ValueError('owned-frame-missing')
+    return 'required' if valid_window(number) else 'unavailable'
 
 def settled_status(row,rect,now):
     c=row.get('checks',{});since=c.get('stableSinceMono');display=rectangle(c.get('displayBounds'));band=rectangle(c.get('menuBarBand'))
     if (c.get('settled') is not True or c.get('visible') is not True
         or type(c.get('frameGeneration')) is not int or c['frameGeneration']<1
-        or not valid_window(c.get('windowNumber'))
+        or type(c.get('windowNumber')) is not int
         or type(since) not in (int,float) or not math.isfinite(since)
         or not math.isfinite(row['mono']) or row['mono']-since<.5 or display is None or band is None):return False
     if not math.isfinite(now) or not 0<=now-row['mono']<=2:return False
@@ -91,7 +94,8 @@ def make(config, kind, purpose='refresh',clock=system_uptime,sleep=time.sleep):
     if kind=='status':
         plan.update(u6InputKind='status',u6Observations=str(batch/'native-observations.jsonl'),
                     u6StatusFrameGeneration=observation['checks']['frameGeneration'],
-                    u6StatusWindowNumber=observation['checks']['windowNumber'])
+                    u6StatusWindowNumber=observation['checks']['windowNumber'],
+                    statusWindowCheck=window_mode(observation['checks']['windowNumber']))
     path = batch/(stem+'-plan.json')
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)
@@ -103,7 +107,7 @@ class ArrivalMissing(ValueError):
 def check_once(config, kind, purpose='refresh'):
     batch = Path(config['batch']); lease = config['expectedLease']
     plan = json.loads((batch/(prefix(kind,purpose)+'-plan.json')).read_text())
-    if kind=='status' and not valid_window(plan.get('u6StatusWindowNumber')):raise ValueError('owned-frame-missing')
+    if kind=='status' and plan.get('statusWindowCheck')!=window_mode(plan.get('u6StatusWindowNumber')):raise ValueError('owned-frame-missing')
     pointer = rows(plan['output'])
     def posting(row,event,kind):
         return (row.get('event')==event and row.get('kind')==kind and row.get('runID')==lease['runID']
@@ -124,7 +128,9 @@ def check_once(config, kind, purpose='refresh'):
         frame=next((r for r in native if r.get('event')=='status-item-frame' and r.get('runID')==lease['runID']
                     and r.get('epoch')==lease['epoch'] and r.get('pid')==plan['subjectPID'] and r.get('seq')==plan.get('u6FrameSeq')),None)
         number=(frame or {}).get('checks',{}).get('windowNumber')
-        if not valid_window(number) or number!=plan['u6StatusWindowNumber']:raise ValueError('owned-frame-missing')
+        if type(number) is not int or number!=plan['u6StatusWindowNumber']:raise ValueError('owned-frame-missing')
+        expected='verified' if plan['statusWindowCheck']=='required' else 'unavailable'
+        if any(r.get('statusWindowCheck')!=expected for r in down+up):raise ValueError('physical-input-not-delivered')
     event = 'dock-surface-frame' if kind == 'dock' else 'menu-begin'
     upper=anchor+5 if kind=='dock' else up[0]['mono']+3
     observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID']
