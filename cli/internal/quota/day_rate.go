@@ -13,6 +13,7 @@ const dayRateLook = 24 * time.Hour
 // LastDayRunout projects from a full day of this cycle's local readings, never
 // the short burst rate. Missing coverage, meter drops and stale readings abstain.
 // A boundary between nearby samples is interpolated in percentage points only.
+// Endpoint observations define the average; unobserved interior drops are unknown.
 func (w Window) LastDayRunout(now time.Time) *int {
 	if os.Getenv("MODELPLAN_HISTORY") == "off" || w.UsedPercent == nil || w.ResetsAt == nil ||
 		w.ElapsedPercent == nil || w.ResetsInMinutes == nil || w.ResetMode == "rolling" ||

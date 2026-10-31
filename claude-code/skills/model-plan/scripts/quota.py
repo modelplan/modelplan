@@ -200,8 +200,9 @@ def read_claude_code(cache, session=""):
                     x[k] = w[k]
             recent = s.get("recent") if isinstance(s.get("recent"), dict) else {}
             samples = recent.get(kind) if isinstance(recent.get(kind), list) else []
+            # Snapshots also retain a sparse day; keep the newest readings for the burst rate.
             x["_recent"] = [{"at": parse_time(r.get("at")), "used": finite(r.get("used"), 0, 1000), "resetsAt": parse_time(r.get("resetsAt"))}
-                            for r in samples[:64] if isinstance(r, dict) and parse_time(r.get("at")) and finite(r.get("used"), 0, 1000) is not None]
+                            for r in samples[-64:] if isinstance(r, dict) and parse_time(r.get("at")) and finite(r.get("used"), 0, 1000) is not None]
             windows.append(x)
     except (ValueError, AssertionError, AttributeError, TypeError):
         st["status"] = "invalid"

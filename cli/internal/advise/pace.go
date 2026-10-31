@@ -2,6 +2,7 @@
 package advise
 
 import (
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
@@ -23,7 +24,7 @@ func paceEvents(a *quota.Account, state *State, now time.Time) []Event {
 		}
 		key := windowKey(WindowPace, a, w)
 		if state != nil {
-			if _, seen := state.Seen[key]; seen {
+			if paceSeen(state, key, *w.ResetsAt) {
 				continue
 			}
 		}
@@ -33,4 +34,18 @@ func paceEvents(a *quota.Account, state *State, now time.Time) []Event {
 			InMinutes: minutesUntil(reset, now), RemainingPercent: w.RemainingPercent, RunsOutInMinutes: runout})
 	}
 	return out
+}
+
+func paceSeen(state *State, key string, reset time.Time) bool {
+	scope := key[:strings.LastIndex(key, "|")+1]
+	for seen := range state.Seen {
+		if !strings.HasPrefix(seen, scope) {
+			continue
+		}
+		previous, err := time.Parse(time.RFC3339, strings.TrimPrefix(seen, scope))
+		if delta := reset.Sub(previous); err == nil && delta > -2*time.Minute && delta < 2*time.Minute {
+			return true
+		}
+	}
+	return false
 }

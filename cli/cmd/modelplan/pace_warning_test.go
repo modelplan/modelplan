@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -190,5 +191,50 @@ func TestPaceWarningFullStatusline(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPaceWarningConcurrentHookStatuslineClaim(t *testing.T) {
+	at := time.Now().UTC().Truncate(time.Second)
+	st, report := paceWarningFixture(t, at, "claude-code")
+	style := render.Style{T: render.EN}
+	d := mustEffortDigest(t)
+	lock := filepath.Join(st.Dir, "observed", "pace-warning.lock")
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(lock) })
+	for _, busy := range []bool{true, false} {
+		if !busy {
+			if err := os.Remove(lock); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var hook bytes.Buffer
+		var hint string
+		var code int
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			code = adviseHookAt(strings.NewReader(`{"session_id":"pace-thread"}`), &hook, style, st, nil, common{offline: true}, "claude-code", "", "", at)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			hint = statuslineHint(style, st, d, report, at, true)
+		}()
+		close(start)
+		wg.Wait()
+		count := strings.Count(hook.String(), "last-24h rate") + strings.Count(hint, "last-24h rate")
+		want := 1
+		if busy {
+			want = 0
+		}
+		if code != 0 || count != want {
+			t.Fatalf("busy=%v notices=%d want=%d code=%d hook=%s hint=%s", busy, count, want, code, hook.String(), hint)
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -41,13 +42,26 @@ func ClaimPaceWarning(cache, key string, reset, now time.Time) bool {
 		}
 	}
 	for k, expiry := range state.Windows {
-		if !expiry.After(now) {
+		if !expiry.Add(2 * time.Minute).After(now) {
 			delete(state.Windows, k)
 		}
 	}
-	sum := sha256.Sum256([]byte(key))
+	// The reset supplied by a reader may jitter within the same cycle. Hash
+	// the tool/window scope and compare its last claimed reset using the same
+	// two-minute tolerance as quota history, rather than bucketing timestamps.
+	scope := key
+	if i := strings.LastIndex(key, "|"); i >= 0 {
+		if _, err := time.Parse(time.RFC3339, key[i+1:]); err == nil {
+			scope = key[:i]
+		}
+	}
+	sum := sha256.Sum256([]byte(scope))
 	id := hex.EncodeToString(sum[:])
-	if _, shown := state.Windows[id]; shown || len(state.Windows) >= 512 {
+	if previous, shown := state.Windows[id]; shown {
+		if delta := reset.Sub(previous); delta > -2*time.Minute && delta < 2*time.Minute {
+			return false
+		}
+	} else if len(state.Windows) >= 512 {
 		return false
 	}
 	state.Windows[id] = reset.UTC()

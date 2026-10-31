@@ -97,6 +97,12 @@ func TestPaceWarningOncePerToolWindowAcrossModels(t *testing.T) {
 	if len(derive(a)) != 0 {
 		t.Fatal("model change repeated window warning")
 	}
+	reset := a.Windows[0].ResetsAt.Add(time.Second)
+	a.Windows[0].ResetsAt = &reset
+	quota.Evaluate(&a, at)
+	if len(derive(a)) != 0 {
+		t.Fatal("reset jitter repeated the same window warning")
+	}
 	a.Source = "codex"
 	if len(derive(a)) != 1 {
 		t.Fatal("one tool consumed another tool's window")

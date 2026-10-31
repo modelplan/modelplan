@@ -81,7 +81,14 @@ func (s Style) Windows(w io.Writer, groups []advise.WindowGroup) {
 				changes = []advise.RatePoint{*series.Next}
 			}
 			for _, change := range changes {
-				fmt.Fprintf(w, " → %s %s", change.At.In(zone).Format("Mon 15:04 MST"), s.ratePoint(change))
+				layout := "Mon 15:04 MST"
+				if change.At.Sub(series.Now.At) >= 7*24*time.Hour {
+					layout = "Mon Jan 2 15:04 MST"
+					if change.At.In(zone).Year() != series.Now.At.In(zone).Year() {
+						layout = "Mon Jan 2 2006 15:04 MST"
+					}
+				}
+				fmt.Fprintf(w, " → %s %s", change.At.In(zone).Format(layout), s.ratePoint(change))
 			}
 			fmt.Fprintln(w)
 			printed = true

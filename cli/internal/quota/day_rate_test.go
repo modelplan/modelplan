@@ -68,6 +68,19 @@ func TestLastDayRateInterpolatesBoundary(t *testing.T) {
 	}
 }
 
+func TestLastDayRateEndpointAverageAcrossInteriorGap(t *testing.T) {
+	t.Setenv("MODELPLAN_HISTORY", "")
+	reset := now.Add(4 * 24 * time.Hour)
+	w := Window{Kind: "weekly", UsedPercent: dayFloat(60), ObservedAt: now, ResetsAt: &reset,
+		recent: []Sample{{At: now.Add(-24 * time.Hour), Used: 40, ResetsAt: &reset}}}
+	evalWindow(&w, now)
+	// Two endpoints define the observed daily average. An unobserved drop
+	// inside this gap cannot be detected and is not claimed to be excluded.
+	if out := w.LastDayRunout(now); out == nil || *out != 2880 {
+		t.Fatal("endpoint average changed", out)
+	}
+}
+
 func TestStatuslineKeepsSparseDayWithinSnapshotBudget(t *testing.T) {
 	isolateHome(t)
 	t.Setenv("MODELPLAN_HISTORY", "")
