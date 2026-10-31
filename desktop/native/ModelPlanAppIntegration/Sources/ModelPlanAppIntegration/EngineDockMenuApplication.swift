@@ -76,7 +76,7 @@ import ModelPlanMenuVerification
         }, hasPrivateContent: { [weak self] in
             guard let value = self?.composition.provider.dockContent else { return false }
             return !value.dockRows.isEmpty || !value.menuRows.isEmpty
-        }) } catch { NSApplication.shared.terminate(nil); return }
+        }, dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         #if MODELPLAN_U6_DRIVE
