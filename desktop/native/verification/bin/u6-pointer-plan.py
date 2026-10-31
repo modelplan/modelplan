@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """U6-only physical pointer plan and native arrival check for one admitted subject."""
-import argparse, datetime, json, math, sys
+import argparse, json, math, sys
 from pathlib import Path
 from admission import load_and_admit
 from guardian import cleanup, identity, launcher_lost
@@ -10,9 +10,10 @@ def rows(path):
     if len(data) > 8_000_000: raise ValueError('receipt-limit')
     return [json.loads(line) for line in data.splitlines() if line.strip()]
 
-def latest_frame(observations, event, run, epoch, state=None):
+def latest_frame(observations, event, run, epoch, pid, state=None):
     for row in reversed(observations):
-        if row.get('event') != event or row.get('runID') != run or row.get('epoch') != epoch: continue
+        if (row.get('event') != event or row.get('runID') != run or row.get('epoch') != epoch
+            or row.get('pid') != pid or type(row.get('seq')) is not int or type(row.get('mono')) not in (int,float)):continue
         checks = row.get('checks', {})
         if state is not None and checks.get('state') != state: continue
         x = checks.get('x' if event == 'dock-surface-frame' else 'cgX')
@@ -37,7 +38,7 @@ def make(config, kind, purpose='refresh'):
     if type(pid) is not int or pid <= 0 or reg.get('state') != 'running' or not cleanup.matches(identity(pid),reg) or launcher_lost(Path(config['subjectPidPath'])):
         raise ValueError('subject-registration-invalid')
     event = 'dock-surface-frame' if kind == 'dock' else 'status-item-frame'
-    observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],'sliver' if kind == 'dock' else None)
+    observation, rect = latest_frame(rows(batch/'native-observations.jsonl'),event,lease['runID'],lease['epoch'],pid,'sliver' if kind == 'dock' else None)
     x,y,w,h = rect
     window = observation['checks'].get('windowNumber') if kind == 'dock' else None
     if kind == 'dock' and (type(window) is not int or window <= 0): raise ValueError('owned-window-missing')
@@ -46,7 +47,7 @@ def make(config, kind, purpose='refresh'):
     plan = dict(profile='synthetic',runID=lease['runID'],epoch=lease['epoch'],lease=config['leasePath'],stop=config['stopPath'],
         output=str(batch/(stem+'.jsonl')),subjectPID=pid,subjectBundle=str(bundle),allowedRectangles=[[x,y,w,h]],
         steps=[dict(x=x+w/2,y=y+h/2,seconds=0,dwell=0.25,**({'action':'click'} if kind == 'status' else {}))],
-        u6OwnedWindowNumber=window)
+        targetPID=pid,u6OwnedWindowNumber=window,u6FrameSeq=observation['seq'])
     path = batch/(stem+'-plan.json')
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)
@@ -55,18 +56,49 @@ def check(config, kind, purpose='refresh'):
     batch = Path(config['batch']); lease = config['expectedLease']
     plan = json.loads((batch/(prefix(kind,purpose)+'-plan.json')).read_text())
     pointer = rows(plan['output'])
-    event = 'mouse-moved-posted' if kind == 'dock' else 'mouse-button-up-posted'
-    delivered = [r for r in pointer if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID']]
-    moved = [r for r in pointer if r.get('event') == 'mouse-moved-posted' and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID']]
-    pressed = kind == 'dock' or any(r.get('event') == 'mouse-button-down-posted' and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID'] for r in pointer)
-    if not delivered or not moved or not pressed or not any(r.get('event') == 'pointer-result' and r.get('outcome') == 'posted' for r in pointer): raise ValueError('physical-input-not-delivered')
-    at = datetime.datetime.fromisoformat(moved[0]['timestamp'].replace('Z','+00:00')).timestamp()
+    def posting(row,event,kind):
+        return (row.get('event')==event and row.get('kind')==kind and row.get('runID')==lease['runID']
+            and row.get('epoch')==lease['epoch'] and row.get('targetPID')==plan['subjectPID']
+            and type(row.get('mono')) in (int,float) and math.isfinite(row['mono']))
+    moved=[r for r in pointer if posting(r,'mouse-moved-posted','move')]
+    down=[r for r in pointer if posting(r,'mouse-button-down-posted','click')]
+    up=[r for r in pointer if posting(r,'mouse-button-up-posted','click')]
+    if not moved or (kind=='status' and (len(down)!=1 or len(up)!=1 or down[0]['mono']>up[0]['mono'])):
+        raise ValueError('physical-input-not-delivered')
+    if not any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' and
+               r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
+               and r.get('targetPID')==plan['subjectPID'] for r in pointer):
+        raise ValueError('physical-input-not-delivered')
+    anchor=moved[0]['mono'] if kind=='dock' else down[0]['mono']
     native = rows(batch/'native-observations.jsonl')
     event = 'dock-surface-frame' if kind == 'dock' else 'menu-begin'
-    observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and type(r.get('timestamp')) in (int,float) and r['timestamp'] >= at]
+    upper=anchor+5 if kind=='dock' else up[0]['mono']+3
+    observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID']
+                and r.get('epoch') == lease['epoch'] and r.get('pid')==plan['subjectPID']
+                and type(r.get('seq')) is int and type(r.get('mono')) in (int,float)
+                and math.isfinite(r['mono']) and anchor<=r['mono']<=upper]
     if kind == 'dock': observed = [r for r in observed if r.get('checks',{}).get('state') == 'expanded']
     else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status'
                       and r.get('checks',{}).get('subjectPID') == plan['subjectPID']]
+    if kind=='status' and purpose=='clear':
+        first=json.loads((batch/'status-pointer-plan.json').read_text())
+        original=rows(first['output'])
+        first_down=next((r for r in original if posting(r,'mouse-button-down-posted','click')),None)
+        first_up=next((r for r in original if posting(r,'mouse-button-up-posted','click')),None)
+        if first_down is None or first_up is None: raise ValueError('first-menu-input-missing')
+        a=next((r for r in native if r.get('event')=='menu-begin' and r.get('pid')==plan['subjectPID']
+            and r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
+            and r.get('checks',{}).get('surface')=='status' and type(r.get('mono')) in (int,float)
+            and first_down['mono']<=r['mono']<=first_up['mono']+3),None)
+        if a is None: raise ValueError('first-menu-arrival-missing')
+        a_id=a.get('checks',{}).get('sessionID');object_id=a.get('checks',{}).get('menuObjectID')
+        ended=any(r.get('event')=='menu-end' and r.get('pid')==plan['subjectPID']
+            and r.get('runID')==lease['runID'] and r.get('epoch')==lease['epoch']
+            and r.get('checks',{}).get('sessionID')==a_id and type(r.get('mono')) in (int,float)
+            and r['mono']<down[0]['mono'] for r in native)
+        if not ended: raise ValueError('first-menu-not-ended')
+        observed=[r for r in observed if r.get('checks',{}).get('sessionID') not in (None,a_id)
+                  and r.get('checks',{}).get('menuObjectID')==object_id]
     if not observed: raise ValueError('native-arrival-missing')
     print(json.dumps(dict(input=kind,outcome='arrived',runID=lease['runID'],epoch=lease['epoch'])))
 

@@ -1,54 +1,72 @@
 # SPDX-License-Identifier: MIT
-import importlib.util,unittest
+"""Replay complete and contradictory traces through the actual final U6 command."""
+import importlib.util,json,subprocess,sys,unittest
 from pathlib import Path
-spec=importlib.util.spec_from_file_location('u6_evidence',Path(__file__).parent/'bin/evidence-u6.py');u6=importlib.util.module_from_spec(spec);spec.loader.exec_module(u6)
-class U6EvidenceTests(unittest.TestCase):
-    def closure(self): return dict(schema='launch-cleanup/1',runID='run',epoch='epoch',ok=True,failures=[])
-    def receipt(self): return dict(profile='synthetic',runID='run',epoch='epoch',headSHA='a'*40,binarySHA256='b'*64,packageSHA256='c'*64,profileSHA256='d'*64,durationSeconds=30,actionEvidenceFiles=['dock.png','menu.json'],**{key:True for key in u6.REQUIRED})
-    def rows(self):
-        key='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
-        return [dict(runID='run',epoch='epoch',event='menu-begin',checks=dict(privateContent=True,instanceID='menu-1',surface='status',subjectPID=42)),
-            dict(runID='run',epoch='epoch',event='status-menu-action-arrived',checks=dict(actionID='refresh',requestID=key,menuInstanceID='menu-1',deliveryMethod='axpress-menu-item',subjectPID=42)),
-            dict(runID='run',epoch='epoch',kind='refresh',phase='requested',requestId=key,rowsSequenceBefore=5,at=1),
-            dict(runID='run',epoch='epoch',kind='refresh',phase='completed',requestId=key,rowsSequenceAfter=6,at=2),
-            dict(runID='run',epoch='epoch',event='accepted-clear',checks=dict(priorPrivateContent=True,oldItemTitlesScrubbed=True,oldItemPrivateAttributesScrubbed=True,scrubbedInstanceIDs=['menu-1']))]
-    def test_all_delivery_and_cleanup_receipts_required(self):
-        self.assertEqual(u6.qualify(self.receipt(),self.rows(),self.closure()),'pass')
-        for key in u6.REQUIRED:
-            value=self.receipt();value[key]=False;self.assertEqual(u6.qualify(value,self.rows(),self.closure()),'not-run',key)
-    def test_cleanup_schema_and_failure_list_are_independent_gates(self):
-        self.assertEqual(u6.qualify(self.receipt(),self.rows()),'not-run')
-        for change, expected in [(dict(schema='other'),['invalid-closure-receipt']),
-                                 (dict(epoch='other'),['invalid-closure-receipt']),
-                                 (dict(ok=False,failures=['helpersGone']),['helpersGone'])]:
-            value=dict(self.closure(),**change)
-            self.assertEqual(u6.cleanup_outcome(value,'run','epoch'),('not-run',expected))
-            self.assertEqual(u6.qualify(self.receipt(),self.rows(),value),'not-run')
-    def test_native_refresh_and_scrub_are_independent(self):
-        rows=self.rows()
-        self.assertEqual(u6.native_outcomes(rows,'run','epoch'),('pass','pass',None))
-        self.assertEqual(u6.qualify(self.receipt(),rows[:1],self.closure()),'not-run')
-        no_arrival=rows[1:]
-        self.assertEqual(u6.qualify(self.receipt(),no_arrival,self.closure()),'not-run')
-        wrong_pid=[dict(x) for x in rows];wrong_pid[1]=dict(wrong_pid[1],checks=dict(wrong_pid[1]['checks'],subjectPID=43))
-        self.assertEqual(u6.qualify(self.receipt(),wrong_pid,self.closure()),'not-run')
-        stale=[dict(x) for x in rows]; stale[3]['rowsSequenceAfter']=5
-        self.assertEqual(u6.qualify(self.receipt(),stale,self.closure()),'not-run')
-        failed=[dict(x) for x in rows];failed[3]=dict(failed[3],phase='failed',reason='engine-not-ready')
-        self.assertEqual(u6.native_outcomes(failed,'run','epoch'),('fail','pass','engine-not-ready'))
-        self.assertEqual(u6.qualify(self.receipt(),failed,self.closure()),'fail')
-        wrong=[dict(x) for x in rows];wrong[4]=dict(wrong[4],checks=dict(wrong[4]['checks'],scrubbedInstanceIDs=[]))
-        self.assertEqual(u6.qualify(self.receipt(),wrong,self.closure()),'not-run')
-    def test_missing_evidence_and_bad_duration_are_not_run(self):
-        for value in [None,0,-1,1201,float('inf'),True]:
-            receipt=self.receipt();receipt['durationSeconds']=value;self.assertEqual(u6.qualify(receipt),'not-run')
-        receipt=self.receipt();receipt['actionEvidenceFiles']=[];self.assertEqual(u6.qualify(receipt),'not-run')
-    def test_unsupported_timeout_and_stop_are_distinct(self):
-        for field,value,expected in [('inputCapability','unsupported','unsupported'),('timedOut',True,'timeout'),('stopped',True,'not-run')]:
-            receipt=self.receipt();receipt[field]=value;self.assertEqual(u6.qualify(receipt),expected)
-    def test_subject_pins_must_be_present(self):
-        for key in ('headSHA','binarySHA256','packageSHA256','profileSHA256'):
-            receipt=self.receipt();del receipt[key];self.assertEqual(u6.qualify(receipt),'not-run',key)
-    def test_real_profile_is_rejected(self):
-        receipt=self.receipt();receipt['profile']='owner'
-        with self.assertRaises(ValueError):u6.qualify(receipt)
+
+ROOT=Path(__file__).parent;BIN=ROOT/'bin'
+spec=importlib.util.spec_from_file_location('fixture',ROOT/'test_u6_evidence_chain.py')
+fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+
+class U6FinalEntryTests(unittest.TestCase):
+    def setUp(self):
+        self.case=fixture.U6ChainTests('test_complete_trace_passes');self.case.setUp()
+        self.root=self.case.root
+        (self.root/'run.json').write_text(json.dumps(self.case.config))
+        (self.root/'kit-manifest.json').write_text(json.dumps(self.case.manifest))
+    def tearDown(self):self.case.tearDown()
+    def final(self):
+        command=[sys.executable,'-B',str(BIN/'evidence-u6.py'),'--config',str(self.root/'run.json'),
+                 '--batch',str(self.root),'--package',str(self.case.package),
+                 '--kit-manifest',str(self.root/'kit-manifest.json')]
+        result=subprocess.run(command,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        return json.loads(result.stdout),json.loads((self.root/'manifest.json').read_text())
+    def test_complete_trace_is_pass_and_manifest_pins_subject(self):
+        outcome,manifest=self.final()
+        self.assertEqual(outcome['outcome'],'pass')
+        self.assertEqual(manifest['scenarios'][0]['outcome'],'pass')
+        self.assertEqual(manifest['subject']['helperSHA256'],self.case.config['helperSHA256'])
+    def test_missing_closure_cannot_be_overridden_by_caller_booleans(self):
+        (self.root/'launch-cleanup.json').unlink()
+        (self.root/'evidence-receipt.json').write_text(json.dumps(dict(ownedCleanupVerified=True,appStarted=True)))
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
+    def test_contradictory_closure_is_fail(self):
+        path=self.root/'launch-cleanup.json';value=json.loads(path.read_text())
+        value['checks']['subjectGone']=False;path.write_text(json.dumps(value))
+        outcome,_=self.final();self.assertEqual(outcome['outcome'],'fail')
+    def test_review_negative_matrix_through_final_command(self):
+        def change_file(name,modify):
+            path=self.root/name;value=json.loads(path.read_text());modify(value);path.write_text(json.dumps(value))
+        def preclose():
+            for row in self.case.native[11:]:row['seq']+=1
+            row=dict(self.case.native[12],seq=12,mono=112.8,at=112.8,checks=dict(sessionID='B',cause='other'))
+            self.case.native.insert(11,row);self.case.write_native()
+        changes=[
+            ('wrong-native-pid',lambda:self.case.native[5].update(pid=99)),
+            ('native-mono-regression',lambda:self.case.native[8].update(mono=90)),
+            ('wrong-bundle-member',lambda:change_file('kit-manifest.json',lambda x:x['bundleMembers']['engine'].update(sha256='0'*64))),
+            ('missing-dock-input',lambda:(self.root/'dock-pointer.jsonl').unlink()),
+            ('capture-wrong-frame',lambda:change_file('dock-capture.json',lambda x:x.update(frameSeq=2))),
+            ('menu-out-of-window',lambda:self.case.native[4].update(mono=110)),
+            ('refresh-unchanged',lambda:self.case.native[8].update(rowsSequenceAfter=1)),
+            ('duplicate-terminal',lambda:self.case.native.append(dict(self.case.native[8],seq=18,mono=117,at=117))),
+            ('ordinary-b-preclose',preclose),
+            ('missing-title',lambda:self.case.native.pop(10)),
+            ('wrong-reset-operation',lambda:change_file('consent-reset.json',lambda x:x.update(operation='grant'))),
+            ('wrong-store-epoch',lambda:change_file('consent-reset.json',lambda x:x.update(storeEpochAfter='other'))),
+            ('failed-reset',lambda:change_file('consent-reset.json',lambda x:x.update(exitCode=1,outcome='failed'))),
+            ('private-item-remains',lambda:self.case.native[14]['checks']['itemStates'][0].update(state='private')),
+            ('stale-title-after-clear',lambda:self.case.native.append(dict(self.case.native[10],seq=18,mono=117,at=117))),
+            ('missing-closure-checks',lambda:change_file('launch-cleanup.json',lambda x:x.pop('checks'))),
+            ('late-closure',lambda:change_file('launch-cleanup.json',lambda x:x.update(closedAt=181,closedWithinLease=False))),
+        ]
+        self.tearDown()
+        for label,mutation in changes:
+            with self.subTest(label=label):
+                self.setUp()
+                try:
+                    mutation();self.case.write_native()
+                    outcome,_=self.final();self.assertNotEqual(outcome['outcome'],'pass')
+                finally:self.tearDown()
+
+if __name__=='__main__':unittest.main()

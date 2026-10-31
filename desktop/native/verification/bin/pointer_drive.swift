@@ -101,15 +101,17 @@ final class ButtonGuard: @unchecked Sendable {
     // guard covers the remaining window: a SIGTERM/SIGINT from verification cleanup that
     // arrives while a button is held posts the matching up before the process exits.
     static func click(at point: CGPoint, post: (CGEvent) -> Void,
-                      record: (CGEventType) throws -> Void, guardState: ButtonGuard = .shared) throws {
+                      record: (CGEventType, Double, Double) throws -> Void, guardState: ButtonGuard = .shared) throws {
         guard let down = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:point,mouseButton:.left),
               let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
         down.setIntegerValueField(.mouseEventClickState,value:1)
         up.setIntegerValueField(.mouseEventClickState,value:1)
+        let downMono=ProcessInfo.processInfo.systemUptime, downAt=Date().timeIntervalSince1970
         guardState.press(down: down, up: up, post: post)
         guardState.release(post: post)
-        try record(.leftMouseDown)
-        try record(.leftMouseUp)
+        let upMono=ProcessInfo.processInfo.systemUptime, upAt=Date().timeIntervalSince1970
+        try record(.leftMouseDown,downMono,downAt)
+        try record(.leftMouseUp,upMono,upAt)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
         try validate(p)
@@ -131,19 +133,20 @@ final class ButtonGuard: @unchecked Sendable {
                 guard pointAllowed(point,p) else { throw DriveError.outsideScope }
                 guard let event = CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
                 event.post(tap:.cghidEventTap)
-                try append(["event":"mouse-moved-posted","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,
+                try append(["event":"mouse-moved-posted","kind":"move","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,
                     "step":index,"x":point.x,"y":point.y,"uptimeSeconds":ProcessInfo.processInfo.systemUptime,
+                    "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
                     "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
                 if step.seconds>0 { Thread.sleep(forTimeInterval:step.seconds/Double(count)) }
             }
             if step.action == .click {
                 try live(p)
                 guard AXIsProcessTrusted(),pointAllowed(end,p) else { throw DriveError.outsideScope }
-                try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type in
-                    try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted",
-                        "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"step":index,
+                try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type,mono,at in
+                    try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted","kind":"click",
+                        "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,"step":index,
                         "x":end.x,"y":end.y,"button":"left","clickCount":1,
-                        "uptimeSeconds":ProcessInfo.processInfo.systemUptime,
+                        "uptimeSeconds":mono,"mono":mono,"at":at,
                         "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
                 })
             }
@@ -151,7 +154,9 @@ final class ButtonGuard: @unchecked Sendable {
             while ProcessInfo.processInfo.systemUptime<until { try live(p);Thread.sleep(forTimeInterval:0.025) }
             previous = end
         }
-        try append(["event":"pointer-result","outcome":"posted","arrivalProof":"requires-correlated-native-receipts"],to:file)
+        try append(["event":"pointer-result","outcome":"posted","runID":p.runID,"epoch":p.epoch,
+            "targetPID":p.subjectPID,"mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
+            "arrivalProof":"requires-correlated-native-receipts"],to:file)
     }
     static func entry() throws {
         let args = CommandLine.arguments
@@ -176,7 +181,7 @@ final class ButtonGuard: @unchecked Sendable {
             } catch is DecodingError { }
             let target = CGPoint(x:42,y:24)
             var events: [CGEvent] = [], records: [CGEventType] = []
-            try click(at:target,post: { events.append($0) },record: { records.append($0) })
+            try click(at:target,post: { events.append($0) },record: { type,_,_ in records.append(type) })
             precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
             precondition(records == [.leftMouseDown,.leftMouseUp])
             precondition(events.allSatisfy { $0.location == target && $0.getIntegerValueField(.mouseEventButtonNumber) == 0 && $0.getIntegerValueField(.mouseEventClickState) == 1 })
@@ -184,7 +189,7 @@ final class ButtonGuard: @unchecked Sendable {
             for failAt in [CGEventType.leftMouseDown,.leftMouseUp] {
                 events = []
                 do {
-                    try click(at:target,post: { events.append($0) },record: { if $0 == failAt { throw ReceiptFailure.expected } })
+                    try click(at:target,post: { events.append($0) },record: { type,_,_ in if type == failAt { throw ReceiptFailure.expected } })
                     preconditionFailure("receipt failure swallowed")
                 } catch ReceiptFailure.expected { }
                 precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
@@ -193,7 +198,7 @@ final class ButtonGuard: @unchecked Sendable {
             // both events have already been posted.
             final class Posted { var types: [CGEventType] = [] }
             let posted = Posted()
-            try click(at:target,post: { posted.types.append($0.type) },record: { type in
+            try click(at:target,post: { posted.types.append($0.type) },record: { type,_,_ in
                 if type == .leftMouseDown { precondition(posted.types == [.leftMouseDown,.leftMouseUp]) }
             })
             // A termination while the button is held posts exactly one up, after the down.
@@ -228,7 +233,9 @@ final class ButtonGuard: @unchecked Sendable {
         guard FileManager.default.createFile(atPath:path.path,contents:nil,attributes:[.posixPermissions:0o600]) else { throw DriveError.invalidPlan }
         let out = try FileHandle(forWritingTo:path);defer { try? out.close() }
         do { try execute(plan,file:out) }
-        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended"],to:out);throw error }
+        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended",
+            "runID":plan.runID,"epoch":plan.epoch,"targetPID":plan.subjectPID,
+            "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970],to:out);throw error }
     }
     static func main() {
         ButtonGuard.shared.installTerminationRelease()

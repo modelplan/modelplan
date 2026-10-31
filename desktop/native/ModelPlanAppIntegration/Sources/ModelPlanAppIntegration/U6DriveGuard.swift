@@ -35,23 +35,28 @@ import CryptoKit
     private var statusMenuOwner: ((NSMenu) -> Bool)?
     private var activeStatusInstanceID: String?
     private var arrivedRefreshContext: (requestID:UUID, objectID:String, sessionID:String)?
+    private var terminalRefreshIDs = Set<String>()
     private var observationSequence: UInt64 = 0
     private var acceptedClearIDs = Set<String>()
     private weak var dockHost: StaticDockPreviewHost?
     private var lastDockFrameSignature: String?
     private let ownsMenu: (NSMenu) -> Bool
     private let hasPrivateContent: () -> Bool
+    private let privateTitle: () -> String?
     static func attach(ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool,
+                       privateTitle: @escaping () -> String?,
                        dockHost: StaticDockPreviewHost) throws -> U6DriveGuard? {
         let args = CommandLine.arguments
         guard let index = args.firstIndex(of: "--u6-drive-contract"), args.indices.contains(index + 1) else { return nil }
         let data = try Data(contentsOf: URL(fileURLWithPath: args[index + 1]))
         guard data.count <= 16_384, let c = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Failure.invalid }
-        let value = try U6DriveGuard(c, ownsMenu: ownsMenu, hasPrivateContent: hasPrivateContent, dockHost: dockHost); value.begin(); return value
+        let value = try U6DriveGuard(c, ownsMenu: ownsMenu, hasPrivateContent: hasPrivateContent,
+                                     privateTitle:privateTitle,dockHost: dockHost); value.begin(); return value
     }
     private init(_ c: [String: Any], ownsMenu: @escaping (NSMenu) -> Bool, hasPrivateContent: @escaping () -> Bool,
+                 privateTitle:@escaping () -> String?,
                  dockHost: StaticDockPreviewHost) throws {
-        self.ownsMenu = ownsMenu; self.hasPrivateContent = hasPrivateContent
+        self.ownsMenu = ownsMenu; self.hasPrivateContent = hasPrivateContent;self.privateTitle=privateTitle
         self.dockHost = dockHost
         guard let runID = c["runID"] as? String, let epoch = c["epoch"] as? String,
               let start = c["start"] as? Double, let expiry = c["expiresAt"] as? Double,
@@ -81,8 +86,8 @@ import CryptoKit
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "subjectPID":ProcessInfo.processInfo.processIdentifier,
                             "surface":status ? "status" : "dock", "menuObjectID":instanceID,"sessionID":sessionID])
-                        if status, self.hasPrivateContent(),
-                           let title = menu.items.first?.title, !title.isEmpty {
+                        if status, self.hasPrivateContent(),let title=self.privateTitle(),!title.isEmpty,
+                           menu.items.first?.title.contains(title)==true {
                             let items=[WeakPrivateItem(menu.items[0])]
                             self.privateBySession[sessionID]=items
                             let digest = SHA256.hash(data: Data(title.utf8)).map { String(format:"%02x",$0) }.joined()
@@ -147,22 +152,29 @@ import CryptoKit
         arrivedRefreshContext = nil
         let before = composition.store.snapshot.rows?.sequence ?? 0
         let id = context.requestID.uuidString
+        let requestedMono=ProcessInfo.processInfo.systemUptime
         emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,
                                       "rowsSequenceBefore":before,"menuObjectID":context.objectID,"sessionID":context.sessionID])
+        Task { [weak self] in
+            while let self,self.isLive(),ProcessInfo.processInfo.systemUptime<requestedMono+60 {
+                try? await Task.sleep(for:.milliseconds(100))
+            }
+            self?.refreshTerminal("failed",requestID:id,context:context,fields:["reason":"timeout"])
+        }
         return { [weak self, weak composition] result in
             guard let self, let composition else { return }
             switch result {
             case .failure(let error):
                 self.refreshTerminal("failed", requestID:id, context:context,fields:["reason":Self.refreshReason(error)])
             case .success:
-                Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id,context:context) }
+                Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id,
+                    requestedMono:requestedMono,context:context) }
             }
         }
     }
     private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String,
-                                     context:(requestID:UUID,objectID:String,sessionID:String)) async {
-        let deadline = min(expiry, Date().timeIntervalSince1970 + 60)
-        while isLive() && Date().timeIntervalSince1970 < deadline {
+                                     requestedMono:Double,context:(requestID:UUID,objectID:String,sessionID:String)) async {
+        while isLive() && ProcessInfo.processInfo.systemUptime<requestedMono+60 {
             if let after = composition.store.snapshot.rows?.sequence, after > before {
                 refreshTerminal("completed", requestID:requestID,context:context,fields:["rowsSequenceAfter":after]); return
             }
@@ -172,6 +184,7 @@ import CryptoKit
     }
     private func refreshTerminal(_ phase: String, requestID: String,
                                  context:(requestID:UUID,objectID:String,sessionID:String), fields: [String: Any]) {
+        guard terminalRefreshIDs.insert(requestID).inserted else { return }
         emitObject("refresh", fields: fields.merging(["kind":"refresh", "phase":phase,
             "requestId":requestID,"menuObjectID":context.objectID,"sessionID":context.sessionID]) { current, _ in current })
     }

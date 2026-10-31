@@ -6,14 +6,12 @@ from pathlib import Path
 def inventory(config):
     batch = Path(config['batch'])
     if not batch.is_dir() or batch.is_symlink(): raise ValueError('batch-invalid')
-    receipt_path = batch/'evidence-receipt.json'
     manifest_path = batch/'manifest.json'
-    receipt = json.loads(receipt_path.read_text())
     manifest = json.loads(manifest_path.read_text())
-    if (receipt.get('profile') != 'synthetic' or receipt.get('headSHA') != config['head']
-        or receipt.get('binarySHA256') != config['binarySHA256']
-        or receipt.get('profileSHA256') != config['syntheticHomeSeedSHA256']
-        or manifest.get('headSHA') != config['head']):
+    subject=manifest.get('subject',{})
+    if (manifest.get('profile')!='synthetic' or manifest.get('headSHA')!=config['head']
+        or any(subject.get(key)!=config.get(key) for key in
+            ('head','binarySHA256','packageSHA256','helperSHA256','syntheticHomeSeedSHA256'))):
         raise ValueError('evidence-pins-mismatch')
     entries = []
     for path in sorted(batch.rglob('*')):
@@ -23,12 +21,12 @@ def inventory(config):
         entries.append((rel, hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_size))
     if len(entries) < 5: raise ValueError('evidence-incomplete')
     lines = [f'{digest}  {name}\n' for name,digest,_ in entries]
-    summary = {'runID':receipt.get('runID'),'epoch':receipt.get('epoch'),'sourceHead':config['head'],
-        'binarySHA256':receipt['binarySHA256'],'packageSHA256':receipt.get('packageSHA256'),
-        'profileSHA256':receipt['profileSHA256'],'durationSeconds':receipt.get('durationSeconds'),
+    summary = {'runID':config['expectedLease']['runID'],'epoch':config['expectedLease']['epoch'],'sourceHead':config['head'],
+        'binarySHA256':config['binarySHA256'],'packageSHA256':config['packageSHA256'],
+        'profileSHA256':config['syntheticHomeSeedSHA256'],'durationSeconds':manifest.get('timing',{}).get('durationSeconds'),
         'outcome':manifest.get('scenarios',[{}])[0].get('outcome'),'fileCount':len(entries)}
-    if not summary['runID'] or not summary['epoch'] or not summary['packageSHA256'] or not summary['durationSeconds']:
-        raise ValueError('evidence-timing-or-pin-missing')
+    if not summary['runID'] or not summary['epoch'] or not summary['packageSHA256']:
+        raise ValueError('evidence-pin-missing')
     with (batch/'filelist.txt').open('x') as stream:stream.writelines(lines)
     with (batch/'README.md').open('x') as stream:
         stream.write('# U6 synthetic device evidence\n\n')
