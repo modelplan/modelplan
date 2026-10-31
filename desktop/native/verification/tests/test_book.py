@@ -271,7 +271,7 @@ class Bookings(unittest.TestCase):
         ident = self.request()
         self.ledger.start(ident, 'M2', 'run', 'epoch')
         lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1200,
-                     guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True)
+                     guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True, guardian=True)
         release = lease | dict(m1Released=True, approval='https://example.test/coordinator#issuecomment-1')
         lease_path = self.root / 'issued-lease.json'; lease_path.write_text(json.dumps(lease))
         release_path = self.root / 'release.json'; release_path.write_text(json.dumps(release))
@@ -388,9 +388,12 @@ class Bookings(unittest.TestCase):
         # The allowed path invokes a mock only, never an executable.
         c['syntheticHome'] += '-allowed'; c['syntheticTmp'] += '-allowed'
         config.write_text(json.dumps(c))
-        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=Mock(pid=123)) as popen:
-            launch.main()
+        child = Mock(pid=123, returncode=0); child.poll.return_value = 0  # the child exits by itself
+        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=child) as popen:
+            with self.assertRaises(SystemExit) as done:
+                launch.main()
             popen.assert_called_once()
+        self.assertEqual(done.exception.code, 0)
 
     def test_drive_refuses_missing_booking_before_any_resource_or_process(self):
         c = self.active_contract()

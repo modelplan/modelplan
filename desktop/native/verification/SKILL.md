@@ -23,16 +23,23 @@ python3 desktop/native/verification/bin/book.py request \
   --lane M1 --unit U11a --scenario cold --minutes 20
 python3 desktop/native/verification/bin/book.py start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
-# Keep the lease heartbeat fresh and enforce stop/deadline for the whole run (background):
-python3 desktop/native/verification/bin/guardian.py \
-  --lease "$LEASE_PATH" --stop "$STOP_PATH" &
+# Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
+python3 desktop/native/verification/bin/guardian.py --lease "$LEASE_PATH" \
+  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" &
 GUARDIAN_PID=$!
 python3 desktop/native/verification/bin/release.py \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
-python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute
-# After exit, Cleanup and independent closure verification:
-kill "$GUARDIAN_PID"  # writes the stop file and ends the heartbeat
+# Launch stays attached and stops its child on the stop file, a stale heartbeat, revocation or the deadline.
+# The run config sets subjectPidPath to $SUBJECT_PID_PATH.
+python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute &
+LAUNCH_PID=$!
+# ... drive the scenario against the launched subject ...
+# Close: request stop, then wait for both supervisors. The guardian exits 0 only once the subject is
+# confirmed gone. Never record --cleaned unless both waits succeed and cleanup is verified.
+touch "$STOP_PATH"
+wait "$LAUNCH_PID"; LAUNCH_STATUS=$?
+wait "$GUARDIAN_PID" && [ "$LAUNCH_STATUS" -le 3 ] && \
 python3 desktop/native/verification/bin/book.py finish \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 ```

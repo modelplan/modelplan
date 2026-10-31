@@ -1,13 +1,21 @@
 # SPDX-License-Identifier: MIT
-"""Lease guardian for one started booking: keeps the heartbeat fresh and enforces stop and deadline.
+"""Lease guardian for one started booking: heartbeat, stop/deadline, and supervision of the subject.
 
 Run it in the background right after `book.py start`, before `release.py` and `launch.py`.
-Every interval it rewrites only `guardianHeartbeatAt` in the lease (atomically; the identity fields
-that the release is bound to never change). It stops heartbeating, and writes the stop file, when the
-stop file appears, when the lease deadline minus the cleanup reserve is reached, or on SIGTERM/SIGINT.
-A stale heartbeat makes admission refuse any further launch, so a dead guardian fails closed.
+- Every interval it updates `guardianHeartbeatAt` (and marks `guardian: true`) under an exclusive
+  lock on `<lease>.lock`, re-reading the lease inside the lock. It never changes identity fields and
+  stops if anything revoked the lease (identity changed, `ownerPreempted` true, `exclusive` false).
+  Any other lease writer must take the same lock (use `update_lease`).
+- It stops on the stop file, the deadline minus the cleanup reserve, SIGTERM/SIGINT, or any error.
+  On every exit path it writes the stop file and, if `--subject-pid-file` names a live subject,
+  terminates it (TERM, then KILL) and waits for it to be gone. Exit status 0 means the subject is
+  confirmed gone (or never started); anything else means closure is NOT verified.
+- `launch.py --execute` independently stops its child when the heartbeat goes stale, so a killed
+  guardian still fails closed; admission refuses a launch until the guardian has taken over.
 """
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -18,6 +26,10 @@ import time
 IDENTITY = ('runID', 'epoch', 'notBefore', 'expiresAt')
 
 
+class Revoked(Exception):
+    pass
+
+
 def write_atomic(path, record):
     tmp = path.with_name(path.name + '.tmp')
     with tmp.open('w') as file:
@@ -26,12 +38,34 @@ def write_atomic(path, record):
     os.replace(tmp, path)
 
 
+@contextlib.contextmanager
+def locked(lease_path):
+    with lease_path.with_name(lease_path.name + '.lock').open('a') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def update_lease(lease_path, change):
+    """Read-modify-write of the lease under the shared lock. `change(record)` returns the new record."""
+    with locked(lease_path):
+        record = json.loads(lease_path.read_text())
+        new = change(dict(record))
+        write_atomic(lease_path, new)
+        return new
+
+
 def beat(lease_path, identity, now):
-    record = json.loads(lease_path.read_text())
-    if {k: record.get(k) for k in IDENTITY} != identity:
-        raise ValueError('lease identity changed under the guardian')
-    record['guardianHeartbeatAt'] = now
-    write_atomic(lease_path, record)
+    def change(record):
+        if {k: record.get(k) for k in IDENTITY} != identity:
+            raise Revoked('lease identity changed')
+        if record.get('ownerPreempted') is not False or record.get('exclusive') is not True:
+            raise Revoked('lease revoked or preempted')
+        record.update(guardianHeartbeatAt=now, guardian=True)
+        return record
+    update_lease(lease_path, change)
 
 
 def stop(stop_path, reason, now):
@@ -39,29 +73,65 @@ def stop(stop_path, reason, now):
         write_atomic(stop_path, dict(stop=True, reason=reason, at=now))
 
 
-def run(lease_path, stop_path, interval=1.0, reserve=15.0, clock=time.time, sleep=time.sleep, running=lambda: True):
-    lease = json.loads(lease_path.read_text())
-    identity = {k: lease.get(k) for k in IDENTITY}
-    if any(v in (None, '') for v in identity.values()):
-        raise ValueError('lease is missing identity fields')
-    if not 0 < interval <= 1:
-        raise ValueError('interval must keep the heartbeat within admission tolerance')
-    while True:
-        now = clock()
-        if not running():
-            stop(stop_path, 'guardian-signalled', now); return 'signalled'
-        if stop_path.exists():
-            return 'stopped'
-        if now >= lease['expiresAt'] - reserve:
-            stop(stop_path, 'deadline', now); return 'deadline'
-        beat(lease_path, identity, now)
-        sleep(interval)
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def terminate(pid_file, grace=10.0, clock=time.monotonic, sleep=time.sleep):
+    """Stop the owned subject and confirm it is gone. Returns True when closure is verified."""
+    if pid_file is None or not pid_file.exists():
+        return True
+    pid = int(json.loads(pid_file.read_text())['pid'])
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+        if not alive(pid):
+            return True
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(pid, sig)
+        end = clock() + wait
+        while clock() < end and alive(pid):
+            sleep(0.1)
+    return not alive(pid)
+
+
+def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
+        clock=time.time, sleep=time.sleep, running=lambda: True, kill=terminate):
+    outcome = 'error'
+    try:
+        lease = json.loads(lease_path.read_text())
+        identity = {k: lease.get(k) for k in IDENTITY}
+        if any(v in (None, '') for v in identity.values()):
+            raise ValueError('lease is missing identity fields')
+        if not 0 < interval <= 1:
+            raise ValueError('interval must keep the heartbeat within admission tolerance')
+        while True:
+            now = clock()
+            if not running():
+                outcome = 'signalled'; break
+            if stop_path.exists():
+                outcome = 'stopped'; break
+            if now >= lease['expiresAt'] - reserve:
+                outcome = 'deadline'; break
+            beat(lease_path, identity, now)
+            sleep(interval)
+    except Revoked:
+        outcome = 'revoked'
+    finally:
+        stop(stop_path, 'guardian-' + outcome, clock())
+        closed = kill(pid_file)
+    return outcome, closed
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lease', type=Path, required=True)
     parser.add_argument('--stop', type=Path, required=True)
+    parser.add_argument('--subject-pid-file', type=Path, help='written by launch.py; the subject is stopped on exit')
     parser.add_argument('--interval', type=float, default=1.0)
     parser.add_argument('--reserve', type=float, default=15.0, help='seconds kept for cleanup before expiresAt')
     args = parser.parse_args(argv)
@@ -69,12 +139,13 @@ def main(argv=None):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: flag.update(run=False))
     try:
-        outcome = run(args.lease, args.stop, args.interval, args.reserve, running=lambda: flag['run'])
-        print(json.dumps(dict(guardian=outcome)))
-        return 0
+        outcome, closed = run(args.lease, args.stop, args.interval, args.reserve, args.subject_pid_file,
+                              running=lambda: flag['run'])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(json.dumps(dict(error=type(error).__name__ if isinstance(error, OSError) else str(error))), file=sys.stderr)
         return 2
+    print(json.dumps(dict(guardian=outcome, subjectClosed=closed)))
+    return 0 if closed and outcome in ('stopped', 'signalled', 'deadline') else 3
 
 
 if __name__ == '__main__':
