@@ -5,6 +5,8 @@ Use the shared native-verification Launch, Doctor, guardian, Cleanup and Evidenc
 
 ## Prepare before the lease
 
+The named U6 seed uses `--private-tool copilot`, not a display-title argument. After the approved structural Home builder's synthetic refresh, `U6/prepare_config.py` relocates only its generated cache into the CLI's normal HOME-based cache (`Library/Caches/modelplan` on macOS). It then runs the actual pinned helper with only PATH/HOME/TMPDIR/LANG: offline quota must contain the seeded account, and read-only/offline rows must contain that account's tool row. The title hash comes from that helper's canonical row name (the same catalogue consumed by the App), never from a second spelling in the seed builder. `U6/seed_probe.py` is the standalone non-GUI check for this seam; no Launch environment pass-through is needed.
+
 1. Pin the source commit, test candidate binary/package hash and ordinary bundled engine hash. The candidate must contain the rows-backed normal entry. Synthetic HOME/TMPDIR contain no owner account, credential or Keychain data. Reuse the approved structural profile builder; do not copy a real profile or add a competing generator.
 2. Allocate a new approved exchange batch under the approved, operator-configured handoff root, with an independent run/epoch subdirectory, README and file list. If the approved directory is absent or any write is refused, stop without a fallback location. Do not overwrite a prior batch.
 3. Retain the exact start announcement on the unit's private task, matching GUI release/lease, absolute expiry of at most 1200 seconds, independent watchdog and stop-hook paths. The run's deadline includes launch, waits, action delivery and cleanup. No automatic renewal or retry.
@@ -97,7 +99,7 @@ RUN_CONFIG="$BATCH/run.json"; BUILD_SCENARIO=u6
 BUILD_ARGS=(--scratch "$SCRATCH" --batch "$BATCH" --ledger "$MODELPLAN_BOOKING_LEDGER" \
   --lease "$SCRATCH/lease.json" --release "$SCRATCH/release.json" --subject-pid "$SCRATCH/subject.json" \
   --locks "$LOCKS" --resource-root "$RESOURCE_ROOT" --binary "$CANDIDATE_BINARY" \
-  --package "$KIT/ModelPlan-U6-<current-head>.zip" --kit-manifest "$KIT/manifest.json" --head "$HEAD" --private-title Copilot)
+  --package "$KIT/ModelPlan-U6-<current-head>.zip" --kit-manifest "$KIT/manifest.json" --head "$HEAD" --private-tool copilot)
 ACTION_ARGS=(--pointer-binary "$KIT/pointer_drive")
 ```
 

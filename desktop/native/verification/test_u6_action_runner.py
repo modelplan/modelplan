@@ -16,14 +16,16 @@ class U6ActionRunnerTests(unittest.TestCase):
             root=Path(directory);config=dict(batch=str(root),stopPath=str(root/'stop.json'),
                 subjectPidPath=str(root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
             path=root/'run.json';path.write_text(json.dumps(config))
-            with patch.object(actions,'still_admitted',side_effect=ValueError('not-admitted')):
+            with patch.object(actions,'still_admitted',side_effect=ValueError('not-admitted')),patch.object(actions,'uptime',lambda:100.0):
                 with self.assertRaises(SystemExit) as error:actions.run(path,root/'unused-pointer')
                 self.assertEqual(error.exception.code,3)
             self.assertTrue((root/'stop.json').is_file())
+            self.assertEqual(json.loads((root/'stop.json').read_text())['reason'],'unknown')
             finish=json.loads((root/'operator-finish.json').read_text())
             self.assertEqual((finish['schema'],finish['runID'],finish['outcome']),('u6-actions/1','run','not-run'))
             self.assertTrue(all(x=='not-run' for x in finish['steps'].values()))
-            self.assertIsInstance(finish['mono'],float) # the runner's own clock helper (monotonic on Linux hosts)
+            self.assertEqual(finish['reason'],'unknown')
+            self.assertEqual(finish['mono'],100.0)
 
 class ActionPhaseAdmissionTests(unittest.TestCase):
     """macrev-332-18: a run admitted at exactly 330 s (300 actions + 5 grace + 25 reserve) keeps its action phase."""
@@ -77,12 +79,12 @@ class ActionPhaseAdmissionTests(unittest.TestCase):
         self.assertEqual(error.exception.code,3);self.assertEqual(len(self.checks),3)
         finish=json.loads((self.root/'operator-finish.json').read_text())
         self.assertEqual((finish['outcome'],finish['steps']['dock']),('not-run','not-run'))
-        self.assertEqual(json.loads((self.root/'stop.json').read_text())['reason'],'u6-action-refused')
+        self.assertIn(json.loads((self.root/'stop.json').read_text())['reason'],actions.BOUNDED_CODES)
     def test_revoked_lease_refuses_the_next_action(self):
         self.revoke_at=3
         with self.assertRaises(SystemExit):self.run_actions()
         self.assertEqual(len(self.checks),3)
-        self.assertEqual(json.loads((self.root/'stop.json').read_text())['reason'],'u6-action-refused')
+        self.assertIn(json.loads((self.root/'stop.json').read_text())['reason'],actions.BOUNDED_CODES)
         self.assertEqual(json.loads((self.root/'operator-finish.json').read_text())['outcome'],'not-run')
 
 if __name__=='__main__':unittest.main()

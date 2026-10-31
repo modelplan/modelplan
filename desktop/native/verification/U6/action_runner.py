@@ -6,20 +6,20 @@ from pathlib import Path
 BIN=Path(__file__).resolve().parents[1]/'bin'
 U6=Path(__file__).resolve().parent
 sys.path.insert(0,str(BIN))
+sys.path.insert(0,str(U6))
 from admission import still_admitted # launch admission checked the full budget once; every action rechecks this
+from guardian import reason_code,BOUNDED_CODES
+from u6_clock import system_uptime
 
-def uptime():
-    """ProcessInfo.systemUptime's clock on macOS (C2.4 §1 `mono`); Linux test hosts fall back to time.monotonic."""
-    clock=getattr(time,'CLOCK_UPTIME_RAW',None)
-    return time.clock_gettime(clock) if clock is not None else time.monotonic()
+uptime=system_uptime # ProcessInfo.systemUptime's clock on macOS; time.monotonic on Linux test hosts
 def native(batch,run,epoch,pid):
     try:
         return [r for line in (batch/'native-observations.jsonl').read_text().splitlines() if line.strip()
                 for r in [json.loads(line)] if r.get('runID')==run and r.get('epoch')==epoch and r.get('pid')==pid]
     except (OSError,ValueError,AttributeError):return []
 def await_row(batch,run,epoch,pid,predicate,seconds):
-    deadline=time.monotonic()+seconds
-    while time.monotonic()<deadline:
+    deadline=uptime()+seconds
+    while uptime()<deadline:
         found=next((r for r in native(batch,run,epoch,pid) if predicate(r)),None)
         if found:return found
         time.sleep(.05)
@@ -31,14 +31,15 @@ def command(args,config,timeout=20):
     if result.returncode:raise ValueError('not-delivered')
     return result
 def finish(batch,run,epoch,pid,steps,reason):
+    reason=None if reason is None else reason_code(reason,BOUNDED_CODES)
     receipt=dict(schema='u6-actions/1',runID=run,epoch=epoch,pid=pid,mono=uptime(),steps=steps,
                  outcome='pass' if reason is None else 'not-run',reason=reason)
     with (batch/'operator-finish.json').open('x') as stream:json.dump(receipt,stream,sort_keys=True);stream.write('\n')
-def request_stop(config):
+def request_stop(config,reason='not-delivered'):
     path=Path(config['stopPath'])
     try:
         with path.open('x') as stream:json.dump(dict(runID=config['expectedLease']['runID'],
-            epoch=config['expectedLease']['epoch'],stop=True,reason='u6-action-refused'),stream)
+            epoch=config['expectedLease']['epoch'],stop=True,reason=reason_code(reason,BOUNDED_CODES)),stream)
     except FileExistsError:pass
 def run(config_path,pointer_binary):
     config=json.loads(Path(config_path).read_text());batch=Path(config['batch']);lease=config['expectedLease']
@@ -89,8 +90,9 @@ def run(config_path,pointer_binary):
                   and r.get('checks',{}).get('sessionID')==b_session,5)
         steps['trackedClear']='pass';finish(batch,run,epoch,pid,steps,None)
     except (OSError,ValueError,subprocess.TimeoutExpired,KeyError) as error:
-        steps[current]='not-run';request_stop(config)
-        if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,'not-delivered')
+        reason=reason_code(str(error) if isinstance(error,ValueError) else 'unknown',BOUNDED_CODES)
+        steps[current]='not-run';request_stop(config,reason)
+        if not (batch/'operator-finish.json').exists():finish(batch,run,epoch,pid,steps,reason)
         raise SystemExit(3) from error
 
 if __name__=='__main__':

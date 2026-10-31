@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: MIT
 """M1-only capture of the admitted App's Dock panel, bound to its native frame row."""
-import argparse, hashlib, json, subprocess, sys, time
+import argparse, hashlib, json, subprocess, sys
 from pathlib import Path
 
 BIN=Path(__file__).resolve().parents[1]/'bin'
 sys.path.insert(0,str(BIN))
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup,identity,launcher_lost
-
-def system_uptime(): return time.clock_gettime(time.CLOCK_UPTIME_RAW)
+from u6_clock import system_uptime
 
 def capture(config, run_capture=subprocess.run, now=system_uptime):
     still_admitted(config)

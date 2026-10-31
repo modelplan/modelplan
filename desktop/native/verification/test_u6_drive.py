@@ -78,20 +78,20 @@ class U6PrepareTests(unittest.TestCase):
     def test_busy_slot_refusal_keeps_the_other_owner_and_launch_refuses(self):
         slot=Path(self.c['locks'])/'slot1';slot.mkdir();drive.write(slot/'owner.json',dict(runID='other',epoch='other',attempt='other'))
         with self.assertRaisesRegex(RuntimeError,'resource-busy-before-launch'):prepare(self.c)
-        self.assert_refused_and_unlaunchable('resource-busy-before-launch')
+        self.assert_refused_and_unlaunchable('not-delivered')
         self.assertEqual(locks_of(self.c),{'slot1':'other'})
     def test_low_disk_refusal_releases_own_locks_and_launch_refuses(self):
         with self.assertRaisesRegex(RuntimeError,'resource-disk-floor'):prepare(self.c,disk=LOW)
-        self.assert_refused_and_unlaunchable('resource-disk-floor')
+        self.assert_refused_and_unlaunchable('not-delivered')
         self.assertEqual(locks_of(self.c),{})
     def test_failed_admission_refusal_and_launch_refuses(self):
         def denied(c):raise ValueError('booking denied')
         with self.assertRaisesRegex(ValueError,'booking denied'):prepare(self.c,admission=denied)
-        self.assert_refused_and_unlaunchable('ValueError')
+        self.assert_refused_and_unlaunchable('unknown')
         self.assertEqual(locks_of(self.c),{})
     def test_bad_hash_refusal_and_launch_refuses(self):
         with self.assertRaisesRegex(ValueError,'binary identity changed'):prepare(self.c,binary=b'changed')
-        self.assert_refused_and_unlaunchable('ValueError')
+        self.assert_refused_and_unlaunchable('wrong-subject')
     def test_launch_requires_the_receipt_however_the_u6_config_is_edited(self):
         prepare(self.c) # a valid receipt exists, but each edited config must still refuse before HOME or spawn
         cases=[('absent',lambda c:c.pop('preparedReceiptPath'),'preparation receipt required'),
@@ -150,19 +150,19 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         return status,json.loads((Path(c['batch'])/'result.json').read_text())
     def test_refuses_when_no_subject_is_registered(self):
         status,result=self.run_drive()
-        self.assertEqual((result['appStarted'],result['reason']),(False,'no-registered-subject'))
+        self.assertEqual((result['appStarted'],result['reason']),(False,'not-delivered'))
         self.assertFalse(Path(self.c['batch'],'launch.json').exists())
         self.assertTrue(result['cleanup']['ownedAppExited']) # nothing was launched
         self.assertEqual(status,0)
     def test_refuses_identity_mismatch_and_never_signals_that_process(self):
         self.subject(mismatch=True)
         status,result=self.run_drive()
-        self.assertEqual((result['appStarted'],result['reason']),(False,'subject-identity-mismatch'))
+        self.assertEqual((result['appStarted'],result['reason']),(False,'wrong-subject'))
         self.assertIsNone(self.child.poll())
     def test_refuses_subject_without_this_runs_started_receipt(self):
         self.subject(started=False);self.launch_py_stops_on_stop_file()
         status,result=self.run_drive()
-        self.assertEqual((result['appStarted'],result['reason']),(False,'subject-run-receipt-missing'))
+        self.assertEqual((result['appStarted'],result['reason']),(False,'not-delivered'))
     def test_drives_registered_subject_and_leaves_closing_to_the_stop_file(self):
         self.subject();self.launch_py_stops_on_stop_file()
         Path(self.c['batch'],'operator-finish.json').write_text(json.dumps(dict(dockInputDelivered=True)))
@@ -214,9 +214,15 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         self.subject();self.launch_py_stops_on_stop_file()
         status,result=self.run_drive(disk=LOW)
         self.assertEqual(json.loads(Path(self.c['stopPath']).read_text())['reason'],'resource-disk-floor')
-        self.assertEqual((result['appStarted'],result['outcome'],result['reason']),(True,'not-run','resource-disk-floor'))
+        self.assertEqual((result['appStarted'],result['outcome'],result['reason']),(True,'not-run','not-delivered'))
         self.assertTrue(result['cleanup']['ownedAppExited'])
     def test_source_has_no_process_start_or_signal(self):
         source=(BASE/'drive-u6.py').read_text()
         for word in ('subprocess','Popen','killpg','os.kill','signal.'):self.assertNotIn(word,source)
+class U6ReasonTests(unittest.TestCase):
+    def test_unknown_exception_text_never_enters_receipts(self):
+        self.assertEqual(drive.failure(RuntimeError('/synthetic/private/path: arbitrary engine text')),'unknown')
+        self.assertEqual(drive.failure(RuntimeError('resource-busy-before-launch')),'not-delivered')
+        self.assertEqual(drive.scenario_reason('absolute-deadline'),'timeout')
+
 if __name__=='__main__':unittest.main()

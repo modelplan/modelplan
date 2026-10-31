@@ -7,6 +7,9 @@ spec=importlib.util.spec_from_file_location('u6_prepare',Path(__file__).parent/'
 prepare=importlib.util.module_from_spec(spec);spec.loader.exec_module(prepare)
 
 class U6PrepareConfigTests(unittest.TestCase):
+    def test_platform_cache_locations_match_normal_cli_home_resolution(self):
+        self.assertEqual(prepare.default_cache_dir(Path('/synthetic'),'darwin'),Path('/synthetic/Library/Caches/modelplan'))
+        self.assertEqual(prepare.default_cache_dir(Path('/synthetic'),'linux'),Path('/synthetic/.cache/modelplan'))
     def test_named_approved_title_and_bundle_pins_are_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);scratch=root/'scratch';scratch.mkdir();batch=root/'batch';batch.mkdir();locks=root/'locks';locks.mkdir()
@@ -26,35 +29,40 @@ class U6PrepareConfigTests(unittest.TestCase):
             args=types.SimpleNamespace(config=str(batch/'run.json'),scratch=str(scratch),batch=str(batch),ledger=str(root/'ledger.jsonl'),
                 booking_id='booking',run_id='run',epoch='epoch',lease=str(lease),release=str(root/'release.json'),subject_pid=str(root/'subject.json'),
                 locks=str(locks),resource_root=str(root),binary=str(binary),package=str(package),kit_manifest=str(manifest),
-                head='a'*40,private_title='Copilot')
+                head='a'*40,private_tool='copilot')
             class FakeHome:
                 def __init__(self,seed,*_):self.seed=seed
                 def allow(self):self.seed.mkdir();(self.seed/'synthetic.txt').write_text('synthetic')
                 def refresh(self):
-                    (self.seed/'runtime.txt').write_text('synthetic-runtime')
+                    (self.seed/'cache').mkdir();(self.seed/'cache/runtime.txt').write_text('synthetic-runtime')
                     return types.SimpleNamespace(returncode=0)
                 def calls(self):return 'account.getQuota'
-            prepare.prepare(args,make_home=FakeHome)
+            def probe(helper,home,tmp,tool):
+                self.assertEqual(tool,'copilot')
+                self.assertTrue((prepare.default_cache_dir(home)/'runtime.txt').is_file())
+                self.assertFalse((home/'cache').exists())
+                return 'GitHub Copilot'
+            prepare.prepare(args,make_home=FakeHome,probe=probe)
             config=json.loads((batch/'run.json').read_text());seed=json.loads((batch/'synthetic-seed.json').read_text())
             self.assertEqual(config['booking']['unit'],'U6')
             self.assertEqual(config['packageSHA256'],hashlib.sha256(package.read_bytes()).hexdigest())
-            self.assertEqual(seed['titleSHA256'],hashlib.sha256(b'Copilot').hexdigest())
+            self.assertEqual(seed['titleSHA256'],hashlib.sha256(b'GitHub Copilot').hexdigest())
             self.assertEqual(seed['homeSeedSHA256'],config['syntheticHomeSeedSHA256'])
             self.assertEqual((seed['runID'],seed['epoch']),('run','epoch'))
             self.assertEqual(config['expectedLease'],dict(runID='run',epoch='epoch')) # completed from the lease after start
             self.assertEqual(config['leasePath'],str(lease));self.assertFalse(lease.exists())
             with self.assertRaisesRegex(ValueError,'run-path-not-fresh'):
-                prepare.prepare(args,make_home=FakeHome)
+                prepare.prepare(args,make_home=FakeHome,probe=probe)
             for name in ('run.json','synthetic-seed.json'):(batch/name).unlink()
             import shutil;shutil.rmtree(scratch/'home-seed')
             for key in ('lease','release','subject_pid'): # an attempt path that already exists refuses before seeding
                 Path(getattr(args,key)).write_text('{}')
                 with self.subTest(key=key),self.assertRaisesRegex(ValueError,'run-path-not-fresh'):
-                    prepare.prepare(args,make_home=FakeHome)
+                    prepare.prepare(args,make_home=FakeHome,probe=probe)
                 Path(getattr(args,key)).unlink();self.assertFalse((scratch/'home-seed').exists())
             for change,error in [(dict(config=str(root/'elsewhere.json')),'run-config-must-be-batch-run-json'),
                                  (dict(run_id=''),'run-identity-invalid'),(dict(epoch='e\n'),'run-identity-invalid')]:
                 with self.subTest(change=change),self.assertRaisesRegex(ValueError,error):
-                    prepare.prepare(types.SimpleNamespace(**vars(args)|change),make_home=FakeHome)
+                    prepare.prepare(types.SimpleNamespace(**vars(args)|change),make_home=FakeHome,probe=probe)
 
 if __name__=='__main__':unittest.main()

@@ -73,7 +73,7 @@ class U6AdmissionTests(unittest.TestCase):
             self.assertEqual(gate.call_count, 1)
             spawn.assert_not_called()
             result = json.loads((root / 'batch' / 'result.json').read_text())
-            self.assertEqual((result['appStarted'], result['reason']), (False, 'ValueError'))
+            self.assertEqual((result['appStarted'], result['reason']), (False, 'unknown'))  # bounded scenario code (C2.4 section 5)
             self.assertFalse((root / 'batch' / 'launch.json').exists())
             self.assertTrue(result['cleanup']['ownedAppExited'])
             self.assertFalse(result['cleanup']['leaseReleased'])

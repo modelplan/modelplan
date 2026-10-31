@@ -325,7 +325,7 @@ class SkillLaunchBranchTests(unittest.TestCase):
                          ['scenario.py name', 'launch.py --config', 'check_launch_cleanup.py --config', 'check-args ' + r['calls'][self.index(r['calls'], 'check-args')][11:], 'book.py finish'])
         self.assertIn('# ... in launch mode, drive the scenario against the launched subject here', self.block())
 
-    U6 = ('BUILD_ARGS=(--scratch /attempt/scratch --private-title Copilot)\n'
+    U6 = ('BUILD_ARGS=(--scratch /attempt/scratch --private-tool copilot)\n'
           'ACTION_ARGS=(--pointer-binary /kit/pointer_drive)\n')
 
     def u6(self, **env):

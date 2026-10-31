@@ -7,7 +7,7 @@ also requesting it when the disk floor is breached mid-run."""
 import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
 from admission import load_and_admit,still_admitted
-from guardian import cleanup,identity,launcher_lost,quit_grace
+from guardian import cleanup,identity,launcher_lost,quit_grace,reason_code,BOUNDED_CODES
 import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
 DISK_RESERVE=2*3430940672;DISK_FLOOR=8589934592
@@ -18,7 +18,14 @@ def write(path,data):
 def read(path):return json.loads(Path(path).read_text())
 def run_identity(c):e=c['expectedLease'];return e['runID'],e['epoch'],e['notBefore'],e['expiresAt']
 def native_contract(c):return Path(c['scratch']).resolve()/'native-guard.json'
-def failure(e):return str(e) if isinstance(e,RuntimeError) else type(e).__name__ # OS messages can carry paths
+STOP_REASONS=frozenset(('u6-prepare-refused','resource-disk-floor','run-ended'))
+SCENARIO_REASONS={'resource-busy-before-launch':'not-delivered','resource-disk-floor':'not-delivered',
+    'binary identity changed':'wrong-subject',
+    'no-registered-subject':'not-delivered','subject-identity-mismatch':'wrong-subject',
+    'subject-run-receipt-missing':'not-delivered','subject-launcher-lost':'wrong-subject',
+    'absolute-deadline':'timeout','stop-hook':'not-delivered','subject-exited':'not-delivered'}
+def scenario_reason(value):return reason_code(SCENARIO_REASONS.get(value,value),BOUNDED_CODES)
+def failure(e):return scenario_reason(str(e) if isinstance(e,(RuntimeError,ValueError)) else 'unknown')
 def admit(c,now):
     if c.get('profile')!='synthetic':raise ValueError('synthetic-profile-required')
     if c.get('scenario')!='u6':raise ValueError('scenario-must-be-u6') # bin/scenarios.json entry
@@ -40,7 +47,7 @@ def scratch_names(c):return ['home','tmp']+(['home-seed'] if c.get('syntheticHom
 def request_stop(c,reason):
     stop=Path(c['stopPath']);run,epoch,_,_=run_identity(c)
     try:
-        if not stop.exists():write(stop,dict(runID=run,epoch=epoch,stop=True,reason=reason))
+        if not stop.exists():write(stop,dict(runID=run,epoch=epoch,stop=True,reason=reason_code(reason,STOP_REASONS)))
     except OSError:pass # a missing batch has no launchable receipt either
 def low_disk(c):return shutil.disk_usage(c['resourceRoot']).free-DISK_RESERVE<DISK_FLOOR
 def owner(lock):
@@ -126,11 +133,11 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:
             if low_disk(c):breach=True;request_stop(c,'resource-disk-floor');break # closing stays with launch.py/guardian
             sleep(poll)
-        if breach:result['reason']='resource-disk-floor'
+        if breach:result['reason']=scenario_reason('resource-disk-floor')
         elif finish.exists():result['operatorReceipts']=read(finish);result['outcome']='operator-finished'
-        elif stop.exists():result['reason']='stop-hook'
-        elif not alive(record):result['reason']='subject-exited'
-        else:result['outcome']='timeout';result['reason']='absolute-deadline'
+        elif stop.exists():result['reason']=scenario_reason('stop-hook')
+        elif not alive(record):result['reason']=scenario_reason('subject-exited')
+        else:result['outcome']='timeout';result['reason']=scenario_reason('absolute-deadline')
     except Exception as e:result['reason']=failure(e)
     finally:
         running=result['appStarted'] and alive(record) # was there still a subject to ask to quit?
