@@ -13,8 +13,8 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
 
 @MainActor private final class NativeSettingsWindowSurface: SettingsWindowSurface {
     private let controller: SettingsWindowController
-    init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment) {
-        controller = SettingsWindowController(editor: editor, environmentProvider: environment)
+    init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?) {
+        controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
     }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) {
@@ -30,6 +30,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
 /// The native lifecycle owner supplies canPresent; no service permission is granted.
 @MainActor public final class SettingsWindowHost: NSObject {
     public let application: SettingsApplicationCoordinator
+    let scopeConsentEntry: ScopeConsentEntry?
     private let canPresent: @MainActor () -> Bool
     private let activate: @MainActor () -> Void
     private let environment: @MainActor () -> SettingsEnvironment
@@ -41,6 +42,7 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
                 canPresent: @escaping @MainActor () -> Bool,
                 environment: (@MainActor () -> SettingsEnvironment)? = nil,
                 activate: @escaping @MainActor () -> Void = { NSApplication.shared.activate() },
+                scopeConsentEntry: ScopeConsentEntry? = nil,
                 makeSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) {
         let resolveEnvironment: @MainActor () -> SettingsEnvironment = environment ?? {
             // OS UI observations cannot replace app-owned fullscreen or entrance acceptance.
@@ -53,9 +55,9 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
             current.macOSMajor = observed.macOSMajor
             return current
         }
-        self.application = application; self.canPresent = canPresent; self.environment = resolveEnvironment
+        self.application = application; self.scopeConsentEntry = scopeConsentEntry; self.canPresent = canPresent; self.environment = resolveEnvironment
         self.activate = activate
-        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment) }
+        self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment, scopeConsentEntry: scopeConsentEntry) }
         super.init()
     }
 
