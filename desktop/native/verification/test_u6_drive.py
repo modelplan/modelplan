@@ -50,6 +50,11 @@ class U6DriveAdmissionTests(unittest.TestCase):
         for argv in [lambda c:c['argv'][:1],lambda c:[c['argv'][0],'--other',c['argv'][2]],lambda c:[c['argv'][0],drive.FLAG,str(self.root/'elsewhere.json')]]:
             c=config(self.root,100);c['argv']=argv(c)
             with self.assertRaisesRegex(ValueError,'u6-argv-mismatch'):drive.admit(c,110)
+    def test_home_seed_must_be_the_scratch_home_seed(self):
+        c=config(self.root,100);c['syntheticHomeSeed']=str(Path(c['scratch'])/'home-seed');self.assertTrue(drive.admit(c,110))
+        self.assertEqual(drive.scratch_names(c),['home','tmp','home-seed'])
+        c['syntheticHomeSeed']=str(Path(c['scratch'])/'profile')
+        with self.assertRaisesRegex(ValueError,'home-seed-path-mismatch'):drive.admit(c,110)
     def test_registry_entry_matches_this_driver(self):
         self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True))
     def test_registration_scenario_and_prepared_receipt_paths_required(self):
@@ -119,6 +124,12 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         if self.child and self.child.poll() is None:self.child.kill()
         if self.child:self.child.wait()
         self.dir.cleanup()
+    def app_stop_row(self,event='stop-or-lease-expired',run='run'):
+        """What U6DriveGuard.finish appends (test stand-in for the app's own writer) once it sees the stop file."""
+        def watch():
+            while not Path(self.c['stopPath']).exists():time.sleep(.02)
+            with Path(self.c['batch'],'native-observations.jsonl').open('a') as f:f.write(json.dumps(dict(runID=run,epoch='epoch',event=event))+'\n')
+        threading.Thread(target=watch,daemon=True).start()
     def subject(self,mismatch=False,started=True):
         self.child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)'])
         ident=drive.identity(self.child.pid);ident['startSeconds']+=mismatch
@@ -161,6 +172,25 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         self.assertEqual(result['cleanup'],dict(ownedAppExited=True,closedBy='launch.py+guardian',guardian='external-M1',resourcesReleased=True,leaseReleased=False,scratchRemoved=['home','tmp']))
         self.assertEqual(locks_of(self.c),{})
         self.assertEqual(status,0)
+    def test_quit_is_requested_through_the_contract_stop_and_receipted_only_by_the_app_row(self):
+        self.subject();self.app_stop_row();self.launch_py_stops_on_stop_file()
+        Path(self.c['batch'],'operator-finish.json').write_text('{}')
+        status,result=self.run_drive()
+        self.assertEqual(result['quit'],dict(requested='native-contract-stop',appAcknowledged=True,appEvent='stop-or-lease-expired'))
+        self.assertEqual(status,0)
+    def test_quit_without_the_apps_row_is_not_acknowledged(self):
+        self.subject();self.app_stop_row(run='other-run');self.launch_py_stops_on_stop_file()
+        Path(self.c['batch'],'operator-finish.json').write_text('{}')
+        status,result=self.run_drive()
+        self.assertEqual(result['quit'],dict(requested='native-contract-stop',appAcknowledged=False,appEvent=None))
+    def test_no_quit_record_when_nothing_was_driven(self):
+        status,result=self.run_drive()
+        self.assertNotIn('quit',result)
+    def test_seed_is_removed_with_home_and_tmp_after_closure(self):
+        seed=Path(self.c['scratch'],'home-seed');seed.mkdir();c=dict(self.c,syntheticHomeSeed=str(seed))
+        self.subject();self.launch_py_stops_on_stop_file();Path(self.c['batch'],'operator-finish.json').write_text('{}')
+        status,result=self.run_drive(c)
+        self.assertEqual((result['cleanup']['scratchRemoved'],seed.exists(),status),(['home','tmp','home-seed'],False,0))
     def test_unconfirmed_closure_keeps_resources_held(self):
         self.subject();Path(self.c['batch'],'operator-finish.json').write_text('{}')
         status,result=self.run_drive()

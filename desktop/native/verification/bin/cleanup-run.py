@@ -25,7 +25,7 @@ def remove_scratch(root,names):
     root=Path(root).resolve(strict=True);removed=[]
     for name in names:
         p=Path(name)
-        if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0] not in ('home','tmp'):raise ValueError('scratch allowlist rejected')
+        if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0] not in ('home','tmp','home-seed'):raise ValueError('scratch allowlist rejected') # home-seed: the launch-mode synthetic HOME seed
         if any((root/Path(*p.parts[:i])).is_symlink() for i in range(1,len(p.parts)+1)):raise ValueError('scratch symlink rejected')
         target=root/p
         if target.exists():shutil.rmtree(target) if target.is_dir() else target.unlink()
