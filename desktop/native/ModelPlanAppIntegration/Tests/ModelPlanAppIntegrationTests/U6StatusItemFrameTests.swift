@@ -4,6 +4,17 @@ import XCTest
 @testable import ModelPlanAppIntegration
 
 @MainActor final class U6StatusItemFrameTests: XCTestCase {
+    func testProductStatusImageFitsBarAndDoesNotResizeResource() throws {
+        let original=NSImage(size:NSSize(width:44,height:44)),button=NSButton(frame:.zero)
+        for thickness:CGFloat in [22,16] {
+            EngineDockMenuApplication.configureStatusButton(button,image:original,barThickness:thickness)
+            let image=try XCTUnwrap(button.image)
+            XCTAssertLessThanOrEqual(image.size.width,thickness);XCTAssertLessThanOrEqual(image.size.height,thickness)
+            XCTAssertLessThanOrEqual(image.size.width,18);XCTAssertEqual(button.imageScaling,.scaleProportionallyDown)
+            XCTAssertEqual(button.imagePosition,.imageLeading);XCTAssertTrue(image.isTemplate)
+            XCTAssertEqual(original.size,NSSize(width:44,height:44))
+        }
+    }
     func testUnplacedFramesAndHalfSecondStability() throws {
         let screen=CGRect(x:0,y:0,width:2560,height:1440)
         func geometry(_ frame:CGRect) -> U6StatusItemFrameSampler.Geometry? {
@@ -41,6 +52,7 @@ import XCTest
         let item=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
         defer { NSStatusBar.system.removeStatusItem(item);app.setActivationPolicy(policy) }
         let button=try XCTUnwrap(item.button);var emitted:[[String:Any]]=[]
+        EngineDockMenuApplication.configureStatusButton(button,image:NSImage(size:NSSize(width:44,height:44)),barThickness:NSStatusBar.system.thickness)
         let sampler=U6StatusItemFrameSampler { emitted.append($0) }
         button.title="U6 A";sampler.bind(button)
         let firstDeadline=ProcessInfo.processInfo.systemUptime+8
@@ -65,6 +77,7 @@ import XCTest
         XCTAssertGreaterThanOrEqual(ProcessInfo.processInfo.systemUptime-since,0.5)
         let x=try XCTUnwrap(last["cgX"] as? CGFloat),y=try XCTUnwrap(last["cgY"] as? CGFloat)
         let width=try XCTUnwrap(last["width"] as? CGFloat),height=try XCTUnwrap(last["height"] as? CGFloat)
+        XCTAssertLessThanOrEqual(height,24);XCTAssertGreaterThanOrEqual(y,0)
         let bounds=try XCTUnwrap(last["displayBounds"] as? [Double]),band=try XCTUnwrap(last["menuBarBand"] as? [Double])
         XCTAssertLessThanOrEqual(y,CGFloat(bounds[1])+1);XCTAssertGreaterThanOrEqual(y+height,CGFloat(bounds[1])-1)
         XCTAssertTrue(CGRect(x:band[0],y:band[1],width:band[2],height:band[3]).contains(CGPoint(x:x+width/2,y:y+height/2)))

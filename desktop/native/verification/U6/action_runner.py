@@ -82,6 +82,7 @@ def run(config_path,pointer_binary):
         steps['dock']='pass';current='menuA'
 
         py(BIN/'u6-pointer-plan.py','make','--config',config_path,'--kind','status')
+        py(U6/'capture_status.py','--config',config_path)
         command([str(pointer_binary),'--plan',str(batch/'status-pointer-plan.json')],config,diagnostic='status-pointer')
         py(BIN/'u6-pointer-plan.py','check','--config',config_path,'--kind','status')
         a=await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-begin' and r.get('checks',{}).get('surface')=='status',3)

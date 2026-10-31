@@ -87,6 +87,8 @@ import ModelPlanMenuVerification
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        status?.autosaveName = "ModelPlanCommunity.StatusItem"
+        status?.isVisible = true
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
@@ -109,14 +111,21 @@ import ModelPlanMenuVerification
         consoleItem.target = self
         menu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
-        let image = CommunityMenuBarResources.templateImage()
-        image?.isTemplate = true
-        status?.button?.image = image; status?.button?.contentTintColor = nil
+        if let button=status?.button {
+            Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness)
+            button.contentTintColor = nil
+        }
         status?.button?.title = composition.menuPresentation.title
         status?.button?.toolTip = composition.menuPresentation.detail
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
+    }
+    static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
+        let sized=image?.copy() as? NSImage
+        let side=min(18,max(0,barThickness.isFinite ? barThickness : 0))
+        sized?.size=NSSize(width:side,height:side);sized?.isTemplate=true
+        button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }
