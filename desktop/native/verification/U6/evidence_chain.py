@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """C2.3 U6 synthetic evidence chain. Reads receipts; never authors native proof."""
-import datetime,hashlib,json,math
+import hashlib,json,math,sys
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bin'))
+import check_launch_cleanup
 
 CODES={'engine-disabled','engine-error','consent-required','timeout','not-delivered','wrong-subject','out-of-window','unknown'}
 class Missing(Exception):pass
@@ -50,18 +52,11 @@ def click(rows):
     need(down['mono']<=up['mono'])
     return down,up
 def closure_ok(closure,run,epoch):
-    need(closure.get('schema')=='launch-cleanup/1' and closure.get('runID')==run and closure.get('epoch')==epoch)
-    fields=('subjectGone','helpersGone','leaseClosable','locksReleased','syntheticHomeRemoved','syntheticTmpRemoved','stopPathPresent')
-    status=('controllerStatus','guardianStatus','scenarioStatus')
-    c=closure.get('checks');need(isinstance(c,dict) and all(type(c.get(k)) is bool for k in fields)
-                                and all(type(c.get(k)) is int for k in status) and isinstance(closure.get('at'),str))
-    need(c['controllerStatus'] in (0,3) and c['guardianStatus']==0 and c['scenarioStatus']==0)
-    failures=[k for k in fields if not c[k]]
-    need(isinstance(closure.get('failures'),list) and all(isinstance(x,str) for x in closure['failures']))
-    reject(sorted(closure['failures'])!=sorted(failures) or closure.get('ok')!=(not failures))
-    need(closure.get('ok') is True)
-    try:return datetime.datetime.fromisoformat(closure['at'].replace('Z','+00:00')).timestamp()
-    except ValueError as e:raise Missing('out-of-window') from e
+    try:check_launch_cleanup.validate_receipt(closure,run,epoch)
+    except ValueError as error:raise Contradiction('unknown') from error
+    need(closure['ok'] is True)
+    reject(not check_launch_cleanup.lease_window_ok(closure),'out-of-window')
+    return closure['closedAt']
 
 def evaluate(config,batch,package,kit_manifest):
     """Return bounded outcome plus the first failed contract step; no caller assertion is trusted."""
