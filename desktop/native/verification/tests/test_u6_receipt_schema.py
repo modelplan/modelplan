@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-"""U6 receipt contract (C2.4): shape (schemas), meaning (replay oracle) and invocation (real CLIs).
+"""U6 receipt contract (C2.4 as amended by C2.5): shape (schemas), meaning (replay oracle) and invocation (real CLIs).
 
-Positive batches are authored to the C2.4 shapes (schema/verification/fixtures/provenance.json says which
-are producer captures); every negative trace states its expected outcome independently of the oracle."""
+Batches are written in the producers' current encoding (C2.5 F; schema/verification/fixtures/provenance.json says
+which files are producer captures); every negative trace states its expected outcome independently of the oracle."""
 import copy
 import json
 import os
@@ -24,10 +24,10 @@ import replay  # noqa: E402
 import synthetic_batch as sb  # noqa: E402
 
 REG = receipt_schema.registry()
-ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at', 'kind')
+ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
 FILE_SCHEMAS = {'dock-capture.json': 'capture-receipt.json', 'consent-reset.json': 'consent-reset.json',
                 'operator-finish.json': 'u6-actions.json', 'launch-cleanup.json': 'launch-cleanup.json',
-                'context.json': 'replay-context.json'}
+                'runtime-calls.json': 'runtime-calls.json', 'context.json': 'replay-context.json'}
 POINTER_FILES = ('dock-pointer.jsonl', 'status-pointer.jsonl', 'status-pointer-clear.jsonl')
 CLOSURE = sb.closure()  # one real launch-cleanup/1 receipt shared by the traces that do not vary it
 
@@ -67,11 +67,15 @@ class SchemaShapeTests(unittest.TestCase):
 
     def test_every_native_kind_schema_carries_the_envelope_and_its_own_kind(self):
         kinds = receipt_schema.native_kinds()
-        for kind, relative in kinds.items():
+        for kind, relative in kinds.items():  # C2.5 F: the App's envelope; refresh rows stay flat
             schema = REG.documents[REG.id_for(relative)]
-            self.assertTrue(set(ENVELOPE) <= set(schema['required']), kind)
+            name = 'kind' if kind == 'refresh' else 'event'
+            required = set(ENVELOPE) | ({'kind'} if kind == 'refresh' else {'event', 'timestamp', 'checks'})
+            self.assertTrue(required <= set(schema['required']), kind)
             self.assertIs(schema['additionalProperties'], False, kind)
-            declared = schema['properties']['kind']
+            if kind != 'refresh':
+                self.assertIs(schema['properties']['checks']['additionalProperties'], False, kind)
+            declared = schema['properties'][name]
             self.assertIn(kind, declared.get('enum', [declared.get('const')]), kind)
         self.assertEqual(set(kinds), {
             'started', 'doctor', 'dock-surface-frame', 'status-item-frame', 'menu-begin', 'menu-end',
@@ -83,12 +87,13 @@ class SchemaShapeTests(unittest.TestCase):
         for name in sb.BATCHES:
             directory = FIXTURES / 'batches' / name
             for row in rows_of((directory / 'native-observations.jsonl').read_bytes()):
-                self.assertEqual(receipt_schema.native_errors(row), [], (name, row['kind']))
-                kinds.add(row['kind'])
+                kind = receipt_schema.native_kind(row)
+                self.assertEqual(receipt_schema.native_errors(row), [], (name, kind))
+                kinds.add(kind)
             for file in POINTER_FILES:
                 for row in rows_of((directory / file).read_bytes()):
-                    self.assertEqual(REG.errors(row, 'pointer-receipt.json'), [], (name, file, row['kind']))
-                    kinds.add(row['kind'])
+                    self.assertEqual(REG.errors(row, 'pointer-receipt.json'), [], (name, file, row['event']))
+                    kinds.add(row['event'])
             for file, schema in FILE_SCHEMAS.items():
                 self.assertEqual(REG.errors(json.loads((directory / file).read_text()), schema), [], (name, file))
                 used.add(schema)
@@ -114,37 +119,59 @@ class SchemaShapeTests(unittest.TestCase):
         files = {p.relative_to(FIXTURES).as_posix() for p in FIXTURES.rglob('*') if p.is_file()} - {'provenance.json'}
         self.assertEqual(set(entries), files)
         for file, entry in entries.items():
-            if file.endswith('launch-cleanup.json'):
+            if file.endswith(('launch-cleanup.json', 'dock-capture.json', 'consent-reset.json', 'operator-finish.json')):
                 self.assertEqual((entry['generated'], entry['status']), (True, 'real-producer'), file)
             elif file.endswith(('native-observations.jsonl', '-pointer.jsonl', '-pointer-clear.jsonl',
-                                'dock-capture.json', 'consent-reset.json', 'operator-finish.json')):
+                                'runtime-calls.json')):
                 self.assertEqual((entry['generated'], entry['status']), (False, 'pending-producer-capture'), file)
                 self.assertTrue(entry['captureCommand'], file)
 
     def test_required_identity_clock_session_and_proof_fields_cannot_be_absent(self):
         trace = sb.valid(closure_receipt=CLOSURE)
-        for row in trace.native:
-            schema = REG.documents[REG.id_for(receipt_schema.native_kinds()[row['kind']])]
+        app, errors = sb.app_native_row, receipt_schema.native_errors
+        for flat in trace.native:
+            row = app(flat)
+            kind = flat['kind']
+            self.assertEqual(errors(row), [], kind)
+            schema = REG.documents[REG.id_for(receipt_schema.native_kinds()[kind])]
             for key in schema['required']:
-                broken = {k: v for k, v in row.items() if k != key}
-                self.assertTrue(receipt_schema.native_errors(broken), (row['kind'], key))
-            self.assertTrue(receipt_schema.native_errors(dict(row, extra=1)), row['kind'])
-            self.assertTrue(receipt_schema.native_errors(dict(row, seq=True)), row['kind'])  # bool is not an integer
-            self.assertTrue(receipt_schema.native_errors(dict(row, seq=0)), row['kind'])
+                self.assertTrue(errors({k: v for k, v in row.items() if k != key}), (kind, key))
+            for key in schema['properties'].get('checks', {}).get('required', []):
+                broken = dict(row, checks={k: v for k, v in row['checks'].items() if k != key})
+                self.assertTrue(errors(broken), (kind, 'checks.' + key))
+            self.assertTrue(errors(dict(row, extra=1)), kind)
+            if 'checks' in row:
+                self.assertTrue(errors(dict(row, checks=dict(row['checks'], extra=1))), kind)
+                self.assertTrue(errors(dict(row, kind=kind)), kind)  # one encoding per row
+            self.assertTrue(errors(dict(row, seq=True)), kind)  # bool is not an integer
+            self.assertTrue(errors(dict(row, seq=0)), kind)
+        self.assertTrue(errors(dict(trace.one('started'))), 'a flat C2.4 row is not the App envelope')
         end = trace.one('menu-end', sessionID=sb.SESSION_B)
-        self.assertTrue(receipt_schema.native_errors({k: v for k, v in end.items() if k != 'clearID'}))
-        self.assertTrue(receipt_schema.native_errors(dict(trace.one('menu-end', sessionID=sb.SESSION_A), clearID=sb.CLEAR)))
+        self.assertTrue(errors(app({k: v for k, v in end.items() if k != 'clearID'})))
+        self.assertTrue(errors(app(dict(trace.one('menu-end', sessionID=sb.SESSION_A), clearID=sb.CLEAR))))
         requested = trace.one('refresh', phase='requested')
-        self.assertTrue(receipt_schema.native_errors(dict(requested, rowsSequenceAfter=9)))
-        self.assertTrue(receipt_schema.native_errors(dict(requested, phase='failed', reason='engine-error')))
-        self.assertTrue(receipt_schema.native_errors(dict(requested, phase='failed', reason='free engine text',
-                                                          rowsSequenceBefore=None)))
+        self.assertTrue(errors(dict(requested, rowsSequenceAfter=9)))
+        self.assertTrue(errors(dict(requested, phase='failed', reason='engine-error')))
+        self.assertTrue(errors(dict(requested, phase='failed', reason='free engine text', rowsSequenceBefore=None)))
+        self.assertTrue(errors({k: v for k, v in requested.items() if k != 'dispositions'}))
+        self.assertTrue(errors(dict(requested, dispositions={'claude.account_usage.saved_login': 'scheduled'})))
+        self.assertTrue(errors(dict(requested, dispositions={'copilot.runtime_usage': 'later'})))
+        completed = trace.one('refresh', phase='completed')
+        self.assertTrue(errors({k: v for k, v in completed.items() if k != 'copilotRow'}))
+        abandoned = {k: v for k, v in completed.items() if k not in ('rowsSequenceAfter', 'copilotRow')}
+        self.assertEqual(errors(dict(abandoned, phase='abandoned', cause='stop')), [])
+        self.assertTrue(errors(dict(abandoned, phase='abandoned', cause='other')))
+        self.assertEqual(errors(dict(abandoned, phase='deferred')), [])
         title = trace.one('menu-private-title-visible', sessionID=sb.SESSION_B)
-        self.assertTrue(receipt_schema.native_errors(dict(title, privateItemIDs=[])))
-        self.assertTrue(receipt_schema.native_errors(dict(title, titleSHA256='SYNTHETIC')))
-        for row in trace.dock + trace.status:
+        self.assertTrue(errors(app(dict(title, privateItemIDs=[]))))
+        self.assertTrue(errors(app(dict(title, titleSHA256='SYNTHETIC'))))
+        for flat in trace.dock + trace.status:
+            row = sb.pointer_drive_row(flat)
+            self.assertEqual(REG.errors(row, 'pointer-receipt.json'), [], flat['kind'])
+            if flat['kind'] == 'pointer-host-permission':
+                continue  # written without run binding today; never bound evidence
             for key in ('runID', 'epoch', 'targetPID', 'mono', 'at'):
-                self.assertTrue(REG.errors({k: v for k, v in row.items() if k != key}, 'pointer-receipt.json'), (row['kind'], key))
+                self.assertTrue(REG.errors({k: v for k, v in row.items() if k != key}, 'pointer-receipt.json'), (flat['kind'], key))
         reset = trace.reset
         self.assertTrue(REG.errors(dict(reset, storeEpochAfter=None), 'consent-reset.json'))
         self.assertEqual(REG.errors(dict(reset, exitCode=1, storeEpochAfter=None, generationAfter=None), 'consent-reset.json'), [])
@@ -252,14 +279,6 @@ def set_mono(trace, row, offset):
     trace.insert(row)
 
 
-def legacy(row):
-    """The envelope the current U6DriveGuard.emitObject writes (event/timestamp/checks)."""
-    if row['kind'] == 'refresh':
-        return row
-    fields = {k: v for k, v in row.items() if k not in ENVELOPE}
-    return dict({k: row[k] for k in ENVELOPE[:-1]}, event=row['kind'], timestamp=row['at'], checks=fields)
-
-
 def clear_before_b(t):
     """Clear runs after menu A closed and before menu B is clicked (macrev-332-8)."""
     for kind in ('clear-initiated', 'accepted-clear', 'menu-scrubbed'):
@@ -305,13 +324,22 @@ def stale_title(t):
 
 
 def delayed_clear(t):
-    """codex-kit-3 open timing point: scrub 190 s after initiation. C2.4 sets no completion bound."""
+    """codex-kit-3: scrub 190 s after initiation; C2.5 E makes it FAIL timeout (bound 5 s)."""
     for kind, offset in (('menu-end', 225.3), ('accepted-clear', 225.35), ('menu-scrubbed', 225.36),
                          ('doctor', 226.0), ('stop-or-lease-expired', 240.5), ('terminate-completed', 240.7)):
         row = t.find(kind, **({'sessionID': sb.SESSION_B} if kind == 'menu-end' else {}))[-1]
         set_mono(t, row, offset)
     t.finish.update(mono=sb.m(240.0))
     t.closure = sb.closure(now_offset=260.0)
+
+
+def abandon(t, cause, offset):
+    """The App watchdog's terminal instead of completed (C2.5 D)."""
+    row = t.one('refresh', phase='completed')
+    for key in ('rowsSequenceAfter', 'copilotRow'):
+        row.pop(key)
+    row.update(phase='abandoned', cause=cause)
+    set_mono(t, row, offset)
 
 
 def duplicate(t, kind, offset, **changes):
@@ -389,15 +417,16 @@ CASES = [
         scrubbedInstanceIDs=[R.MENU], oldItemTitlesScrubbed=True, oldItemPrivateAttributesScrubbed=True), {}, (),
      {1: UNUSABLE, 2: UNUSABLE, 3: UNUSABLE, 4: UNUSABLE, 5: UNUSABLE, 6: UNUSABLE, 8: UNUSABLE,
       10: ('not-run', 'unknown', 'native-row-malformed')}, 'not-run'),
-    ('current-legacy-envelope', 'macrev-332-10, macrev-332-14, codex-kit-2', lambda t: setattr(t, 'native', [legacy(r) for r in t.native]),
+    ('flat-c2.4-rows', 'C2.5 F (the App envelope is the format)', lambda t: setattr(t, 'flat', True),
      {}, (), {1: UNUSABLE, 2: UNUSABLE, 3: UNUSABLE, 4: UNUSABLE, 5: UNUSABLE, 6: UNUSABLE, 8: UNUSABLE,
               10: ('not-run', 'unknown', 'native-row-malformed')}, 'not-run'),
     ('closure-observed-after-expiry', 'macrev-332-15, codex-kit-9', lambda t: setattr(t, 'closure', sb.closure(now_offset=R.LEASE_SECONDS + 5)),
      {}, (), {9: ('fail', 'out-of-window', 'closure-late')}, 'fail'),
     ('subject-started-before-lease', 'codex-kit-9', lambda t: setattr(t, 'closure', sb.closure(started_offset=-5)), {}, (),
      {9: ('fail', 'out-of-window', 'closure-late')}, 'fail'),
-    ('closure-other-lease-window', 'codex-kit-9', None, dict(leaseExpiresAt=R.T0 + 1200), (),
-     {9: ('fail', 'unknown', 'lease-window-mismatch')}, 'fail'),
+    ('closure-other-lease-window', 'codex-kit-9, C2.5 F', None, dict(leaseExpiresAt=R.T0 + 1200), (),
+     {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('not-run', 'wrong-subject', 'lease-window-mismatch')},
+     'not-run'),
     ('physical-receipts-missing-runner-says-pass', 'codex-kit-1', None, {}, ('dock-pointer.jsonl', 'dock-capture.json'),
      {1: ('not-run', 'not-delivered', 'dock-move-missing')}, 'not-run'),
     ('capture-file-name-only', 'codex-kit-5', None, {}, ('dock-capture.json',),
@@ -449,16 +478,44 @@ CASES = [
      {3: ('fail', 'unknown', 'arrival-duplicate')}, 'fail'),
     ('refresh-terminal-duplicate', 'codex-kit-4, codex-kit-12', lambda t: duplicate(
         t, 'refresh', 23.5, match=dict(phase='completed'), phase='failed', reason='engine-error', rowsSequenceAfter=None)
-     or t.find('refresh', phase='failed')[0].pop('rowsSequenceAfter'), {}, (),
+     or [t.find('refresh', phase='failed')[0].pop(k) for k in ('rowsSequenceAfter', 'copilotRow')], {}, (),
      {3: ('fail', 'unknown', 'terminal-duplicate')}, 'fail'),
     ('refresh-terminal-duplicate-outside-window', 'codex-kit-12', lambda t: duplicate(t, 'refresh', 39.0, match=dict(phase='completed'))
      or set_mono(t, t.find('refresh', phase='completed')[-1], 90.0), {}, (),
      {3: ('fail', 'unknown', 'terminal-duplicate')}, 'fail'),
     ('refresh-failed', 'C2.4 step 3', lambda t: t.one('refresh', phase='completed').update(phase='failed', reason='engine-error')
-     or t.one('refresh', phase='failed').pop('rowsSequenceAfter'), {}, (),
+     or [t.one('refresh', phase='failed').pop(k) for k in ('rowsSequenceAfter', 'copilotRow')], {}, (),
      {3: ('fail', 'engine-error', 'refresh-failed')}, 'fail'),
     ('refresh-rows-unchanged', 'C2.4 step 3 (unchanged empty state)', lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=3),
      {}, (), {3: ('not-run', 'unknown', 'rows-unchanged')}, 'not-run'),
+    ('refresh-deferred', 'C2.5 D (Copilot cooldown)', lambda t: (
+        t.one('refresh', phase='requested')['dispositions'].update({'copilot.runtime_usage': 'cooldown'}),
+        t.one('refresh', phase='completed').update(phase='deferred'),
+        [t.one('refresh', phase='deferred').pop(k) for k in ('rowsSequenceAfter', 'copilotRow')]), {}, (),
+     {3: ('not-run', 'cooldown', 'refresh-deferred')}, 'not-run'),
+    ('refresh-abandoned-deadline', 'C2.5 D (watchdog deadline)', lambda t: abandon(t, 'deadline', 81.05), {}, (),
+     {3: ('not-run', 'timeout', 'refresh-abandoned-deadline')}, 'not-run'),
+    ('refresh-abandoned-stop', 'C2.5 D (watchdog stop)', lambda t: abandon(t, 'stop', 23.0), {}, (),
+     {3: ('not-run', 'not-delivered', 'refresh-abandoned-stop')}, 'not-run'),
+    ('unrelated-sequence-advance', 'C2.5 D', lambda t: t.one('refresh', phase='completed').update(copilotRow='absent'), {}, (),
+     {3: ('fail', 'unknown', 'unrelated-advance')}, 'fail'),
+    ('stub-call-missing', 'C2.5 D', lambda t: setattr(t, 'runtime', sb.runtime_calls(['connect', 'auth.getStatus'])), {}, (),
+     {3: ('fail', 'unknown', 'unrelated-advance')}, 'fail'),
+    ('runtime-calls-missing', 'C2.5 D', None, {}, ('runtime-calls.json',),
+     {3: ('not-run', 'not-delivered', 'runtime-calls-missing')}, 'not-run'),
+    ('runtime-calls-other-run', 'C2.5 D, C2.4 section 1', lambda t: t.runtime.update(runID='u6-run-0002'), {}, (),
+     {3: ('not-run', 'wrong-subject', 'runtime-calls-unbound')}, 'not-run'),
+    ('copilot-not-scheduled-but-completed', 'C2.5 D', lambda t: t.one('refresh', phase='requested')['dispositions'].update(
+        {'copilot.runtime_usage': 'cooldown'}), {}, (), {3: ('fail', 'unknown', 'copilot-not-scheduled')}, 'fail'),
+    ('copilot-row-preexisting', 'C2.5 C-D (seed carries no Copilot reading)', lambda t: t.one('refresh', phase='requested').update(
+        copilotRow='present'), {}, (), {3: ('not-run', 'unknown', 'copilot-row-preexisting')}, 'not-run'),
+    ('accepted-clear-late', 'C2.5 E', lambda t: (set_mono(t, t.one('accepted-clear'), 40.31),
+                                                set_mono(t, t.one('menu-scrubbed'), 40.32), t.finish.update(mono=R.m(40.4))),
+     {}, (),
+     {6: ('fail', 'timeout', 'clear-late')}, 'fail'),
+    ('menu-scrubbed-late', 'C2.5 E', lambda t: (set_mono(t, t.one('menu-scrubbed'), 40.31), t.finish.update(mono=R.m(40.4))),
+     {}, (),
+     {6: ('fail', 'timeout', 'clear-late')}, 'fail'),
     ('menu-a-ended-before-arrival', 'codex-kit-12', lambda t: set_mono(t, t.one('menu-end', sessionID=R.SESSION_A), 20.5), {}, (),
      {3: ('fail', 'unknown', 'arrival-after-menu-end')}, 'fail'),
     ('menu-b-reuses-session-a', 'codex-kit-6', lambda t: t.one('menu-begin', sessionID=R.SESSION_B).update(sessionID=R.SESSION_A), {}, (),
@@ -473,7 +530,7 @@ CASES = [
      {7: ('not-run', 'not-delivered', 'finish-missing')}, 'not-run'),
     ('runner-reported-failure', 'codex-kit-7', lambda t: (t.finish['steps'].update(trackedClear='fail'),
                                                           t.finish.update(outcome='fail', reason='not-delivered')), {}, (),
-     {7: ('fail', 'not-delivered', 'runner-reported-fail')}, 'fail'),
+     {7: ('not-run', 'not-delivered', 'runner-reported-fail')}, 'not-run'),
     ('runner-reported-not-run', 'codex-kit-7 (what U6/action_runner.py writes on a failed action)',
      lambda t: (t.finish['steps'].update(trackedClear='not-run'), t.finish.update(outcome='not-run', reason='not-delivered')),
      {}, (), {7: ('not-run', 'not-delivered', 'runner-reported-not-run')}, 'not-run'),
@@ -529,12 +586,18 @@ class ReplayOracleTests(unittest.TestCase):
         trace.remove('menu-end', sessionID=sb.SESSION_B)
         self.assertEqual(replay_trace(trace)['outcome'], 'pass')
 
-    def test_contract_gap_delayed_clear_still_passes_under_c2_4(self):
-        """codex-kit-3 (KIT-REVIEW C2.2 amendment 1) asks for a clear-completion bound; C2.4 has none, so the
-        oracle follows C2.4. When the contract adds the bound, this case flips to FAIL tracked-clear."""
+    def test_delayed_clear_fails_under_c2_5_e(self):
+        """codex-kit-3: C2.5 E bounds accepted-clear and menu-scrubbed to 5 s after clear-initiated."""
         trace = sb.valid(closure_receipt=CLOSURE)
         delayed_clear(trace)
-        self.assert_steps(replay_trace(trace), {}, 'pass')
+        self.assert_steps(replay_trace(trace), {6: ('fail', 'timeout', 'clear-late')}, 'fail')
+
+    def test_fixture_receipts_are_the_shipped_writers_output(self):
+        """The authored capture/reset/finish receipts equal what capture_owned, consent_reset and action_runner
+        write for the same trace, so in-memory traces and committed fixtures agree with the shipped writers."""
+        for variant in ('main', 'interleaved'):
+            trace = sb.valid(variant, closure_receipt=CLOSURE)
+            self.assertEqual(sb.shipped_receipts(trace), (trace.capture, trace.reset, trace.finish), variant)
 
     def test_replay_rejects_an_invalid_context(self):
         with self.assertRaises(ValueError):
@@ -570,7 +633,7 @@ def differential_traces():
 
 
 def evidence_u6(ctx, files):
-    """The real final entry point on the trace rendered in the merged head's encoding (sb.kit_batch)."""
+    """The real final entry point on the same batch bytes plus the run files sb.kit_batch adds."""
     with tempfile.TemporaryDirectory() as directory:
         args = sb.kit_batch(ctx, files, directory)
         run = subprocess.run([sys.executable, '-B', str(VERIFICATION / 'bin' / 'evidence-u6.py'), *args],
@@ -580,87 +643,91 @@ def evidence_u6(ctx, files):
         return json.loads(run.stdout.strip().splitlines()[-1])
 
 
-# Every trace on which bin/evidence-u6.py (merged #332 head 8f857aa6) and the oracle disagree on the overall
-# outcome: trace -> (oracle, evidence-u6, who is right per C2.4, the deciding contract text). Traces on which
-# evidence-u6 is wrong are expected failures; the others assert the documented divergence exactly, so a change on
-# either side fails a test until this table and the README are updated.
+# C2.5 G.3 asks for no expectedFailure; until M4 lands C2.5 in bin/evidence-u6.py, every trace on which it (at
+# #332 6a063beb, unchanged since 8f857aa6) disagrees with the oracle on the overall outcome is listed here:
+# trace -> (oracle, evidence-u6, deciding contract text). Each is an expected failure; a fix in evidence-u6 shows
+# up as an unexpected success, and a new divergence fails a test, until this table and the README are updated.
+_F_IGNORED = 'C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN"'
+_F_CONTRADICTION = 'C2.5 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL"'
+_D_PASS = ('C2.5 D PASS: "completed, rowsSequenceAfter > n, dispositions[copilot.runtime_usage] = scheduled, '
+           'copilotRow absent → present, and the stub\'s call log shows account.getQuota"')
+_D_FAIL = 'C2.5 D FAIL: "a sequence advance without the Copilot row/stub call"'
+_E = 'C2.5 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout"'
 DISAGREEMENTS = {
-    'closure-other-run': ('not-run', 'fail', 'oracle',
-                          '§1 Binding: "every receipt must match this run\'s runID/epoch ... Others are ignored."'),
-    'closure-other-lease-window': ('fail', 'pass', 'oracle',
-                                   'step 9: "launch-cleanup.json, schema launch-cleanup/1, this run\'s ids" (the lease '
-                                   'identity is runID, epoch, notBefore, expiresAt); §4: "the closure receipt inside the '
-                                   'lease window"'),
-    'descending-seq': ('fail', 'not-run', 'oracle',
-                       '§1: "seq (integer, strictly increasing per process)"; step 10: "contradiction → FAIL"'),
-    'duplicate-seq': ('fail', 'not-run', 'oracle',
-                      '§1: "seq (integer, strictly increasing per process)"; step 10: "contradiction → FAIL"'),
-    'refresh-terminal-late': ('not-run', 'fail', 'oracle',
-                              'step 3: "exactly one terminal row for R within 60 s of the requested row\'s mono" / '
-                              '"no terminal → NOT-RUN"; §5 reason timeout'),
-    'menu-a-ended-before-arrival': ('fail', 'not-run', 'oracle',
-                                    'step 3: "menu-end for A ... must follow the action arrival"; step 10: '
-                                    '"contradiction → FAIL"'),
-    'old-accepted-clear-shape': ('not-run', 'pass', 'policy',
-                                 'C2.4 names required fields only; the extra legacy fields are rejected by the closed '
-                                 'schemas (README, Versioning), not by C2.4 text'),
-    'unsupported-native-protocol': ('not-run', 'pass', 'policy',
-                                    'C2.4 defines no protocol field; `started.protocol` is the schemas\' versioning '
-                                    'rule'),
-    'runner-reported-failure': ('fail', 'not-run', 'silent',
-                                'step 7: "any action failure → the runner writes the stop file and a finish record '
-                                'with the failure" assigns no outcome; the shipped runner never writes fail'),
+    'closure-other-run': ('not-run', 'fail', _F_IGNORED),
+    'closure-other-lease-window': ('not-run', 'pass', _F_IGNORED),
+    'old-accepted-clear-shape': ('not-run', 'pass', _F_IGNORED + ' (closed checks schema)'),
+    'unsupported-native-protocol': ('not-run', 'pass', 'C2.5 F: "An unknown native protocol version → NOT-RUN unknown"'),
+    'descending-seq': ('fail', 'not-run', _F_CONTRADICTION),
+    'duplicate-seq': ('fail', 'not-run', _F_CONTRADICTION),
+    'menu-a-ended-before-arrival': ('fail', 'not-run', 'C2.4 step 3: "menu-end for A ... must follow the action arrival"; '
+                                    'C2.4 step 10: "contradiction → FAIL"'),
+    'refresh-terminal-late': ('not-run', 'fail', 'C2.5 D NOT-RUN: "no terminal" within 60 s of requested'),
+    'unrelated-sequence-advance': ('fail', 'pass', _D_FAIL),
+    'stub-call-missing': ('fail', 'pass', _D_FAIL),
+    'copilot-not-scheduled-but-completed': ('fail', 'pass', _D_PASS + '; the completed advance contradicts cooldown'),
+    'copilot-row-preexisting': ('not-run', 'pass', _D_PASS + '; C2.5 C: the seed has no Copilot reading'),
+    'runtime-calls-missing': ('not-run', 'pass', _D_PASS + '; evidence-u6 reads $BATCH/runtime-calls.json'),
+    'runtime-calls-other-run': ('not-run', 'pass', _F_IGNORED),
+    'delayed-clear': ('fail', 'pass', _E),
+    'accepted-clear-late': ('fail', 'pass', _E),
+    'menu-scrubbed-late': ('fail', 'pass', _E),
 }
 
 
 class EvidenceU6CLITests(unittest.TestCase):
     """The real final entry point (bin/evidence-u6.py --config --batch --package --kit-manifest) on every oracle
-    trace. The trace is rendered in the head's encoding by sb.kit_batch (legacy native envelope, pointer
-    event/kind, run files, pinned package and manifest); the oracle reads the C2.4 encoding of the same trace."""
+    trace. Both read the same batch bytes (the producers' encoding, C2.5 F); sb.kit_batch adds only the run files,
+    the menu helper's result, a launched bundle, a pinned package and the kit manifest."""
 
     def compare(self, name, ctx, files):
         oracle = replay.replay(ctx, files)['outcome']
         evidence = evidence_u6(ctx, files)['outcome']
-        if name in DISAGREEMENTS and DISAGREEMENTS[name][2] != 'oracle':
-            self.assertEqual((oracle, evidence), DISAGREEMENTS[name][:2], name)
-        else:
-            self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.4 oracle' % name)
+        self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.5 oracle' % name)
 
     def test_valid_batch(self):
-        """Agrees since 8f857aa6 (was an expected failure at a98b25a3: legacy CLI and accepted-clear fields)."""
+        """Agrees (an expected failure at a98b25a3: legacy CLI and accepted-clear fields)."""
         self.compare('valid', sb.context(), sb.valid(closure_receipt=CLOSURE).files())
 
     def test_refresh_failed_batch(self):
-        """Agrees since 8f857aa6: FAIL engine-error (was an expected failure at a98b25a3)."""
+        """Agrees: FAIL engine-error (an expected failure at a98b25a3)."""
         self.compare('refresh-failed', *build(next(c for c in CASES if c[0] == 'refresh-failed')))
 
     def test_closure_missing_batch(self):
         """Agrees: both report not-run when launch-cleanup.json is absent (macrev-332-5)."""
         self.compare('closure-missing', *build(next(c for c in CASES if c[0] == 'closure-missing')))
 
-    def test_disagreement_table_names_real_traces(self):
-        names = {name for name, _, _ in differential_traces()}
-        self.assertLessEqual(set(DISAGREEMENTS), names)
-        for name, (oracle, evidence, right, quote) in DISAGREEMENTS.items():
+    def test_disagreement_table_is_exact(self):
+        """Outside the expected failures: each tabled trace exists and both sides give exactly the tabled outcome."""
+        traces = {name: (ctx, files) for name, ctx, files in differential_traces()}
+        self.assertLessEqual(set(DISAGREEMENTS), set(traces))
+        for name, (oracle, evidence, quote) in DISAGREEMENTS.items():
             self.assertNotEqual(oracle, evidence, name)
-            self.assertIn(right, ('oracle', 'policy', 'silent'), name)
-            self.assertTrue(quote, name)
+            self.assertTrue(quote.startswith(('C2.5', 'C2.4')), name)
+            ctx, files = traces[name]
+            self.assertEqual((replay.replay(ctx, files)['outcome'], evidence_u6(ctx, files)['outcome']),
+                             (oracle, evidence), name)
 
-    def test_oracle_refuses_the_head_native_encoding(self):
-        """Open producer change 1: the head still writes the legacy event/checks envelope, which the C2.4
-        schemas reject, so the oracle cannot judge a real head batch until the writer is flat."""
+    def test_oracle_and_evidence_read_the_same_batch(self):
+        """C2.5 F: the oracle reads the batch evidence-u6 reads, byte for byte (kit_batch adds run files only)."""
+        files = sb.valid(closure_receipt=CLOSURE).files()
         with tempfile.TemporaryDirectory() as directory:
-            sb.kit_batch(sb.context(), sb.valid(closure_receipt=CLOSURE).files(), directory)
-            result = replay.replay(sb.context(), replay.read_batch(Path(directory, 'batch')))
-        self.assertEqual(result['steps'][9]['detail'], 'native-row-malformed')
+            sb.kit_batch(sb.context(), files, directory)
+            batch = replay.read_batch(Path(directory, 'batch'))
+        for name, data in files.items():
+            if name != 'consent-reset.json':  # kit_batch rebases homeSHA256 to the real temporary HOME
+                self.assertEqual(batch[name], data, name)
+        batch['consent-reset.json'] = files['consent-reset.json']
+        self.assertEqual(replay.replay(sb.context(), batch)['outcome'], 'pass')
 
 
 def _differential(name, ctx, files):
     def test(self):
         self.compare(name, ctx, files)
     entry = DISAGREEMENTS.get(name)
-    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'DISAGREES (%s right): %s' % (entry[2], entry[3]))
-    return unittest.expectedFailure(test) if entry and entry[2] == 'oracle' else test
+    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'evidence-u6 change required by C2.5 (%s): %s'
+                                % ('%s, not %s' % entry[:2], entry[2]))
+    return test if entry is None else unittest.expectedFailure(test)
 
 
 for _name, _ctx, _files in differential_traces():

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-"""Offline C2.4 replay oracle for one U6 batch: receipts in, per-step outcomes out.
+"""Offline C2.4/C2.5 replay oracle for one U6 batch: receipts in, per-step outcomes out.
 
 Pure: no GUI, process, clock or network access, and no writes. It is an independent specification of
-`U6-DockMenu-Drive.md` section "Evidence and timing contract (C2.4)" and deliberately does not import or
+`U6-DockMenu-Drive.md` sections "Contract revision C2.5" and "Evidence and timing contract (C2.4)" and deliberately does not import or
 share code with `bin/evidence-u6.py`; the tests compare the two. Shapes come from `schema/verification/`
 (via `receipt_schema`), the closure receipt's meaning from `check_launch_cleanup.validate_receipt`.
 
@@ -32,8 +32,10 @@ NAMES = ('dock-reveal', 'menu-a', 'refresh', 'menu-b', 'private-title', 'tracked
          'closure', 'evidence')
 FILES = dict(native='native-observations.jsonl', dock='dock-pointer.jsonl', status='status-pointer.jsonl',
              clear='status-pointer-clear.jsonl', capture='dock-capture.json', reset='consent-reset.json',
-             finish='operator-finish.json', closure='launch-cleanup.json')
+             finish='operator-finish.json', closure='launch-cleanup.json', runtime='runtime-calls.json')
 DOCK_SECONDS, CLICK_SECONDS, REFRESH_SECONDS, CLEAR_SECONDS = 5, 3, 60, 5
+SCRUB_SECONDS = 5  # C2.5 E: accepted-clear and menu-scrubbed within 5 s of clear-initiated
+COPILOT = 'copilot.runtime_usage'
 
 # detail -> scenario reason (C2.4 section 5). Fixed list: nothing else is ever reported.
 DETAILS = {
@@ -54,6 +56,9 @@ DETAILS = {
     'terminal-missing': 'timeout', 'terminal-late': 'timeout', 'terminal-duplicate': 'unknown',
     'terminal-out-of-order': 'unknown', 'terminal-wrong-session': 'wrong-subject',
     'rows-unchanged': 'unknown', 'refresh-failed': None,  # failed carries the row's own bounded reason
+    'refresh-deferred': 'cooldown', 'refresh-abandoned-deadline': 'timeout', 'refresh-abandoned-stop': 'not-delivered',
+    'copilot-not-scheduled': 'unknown', 'copilot-row-preexisting': 'unknown', 'unrelated-advance': 'unknown', 'runtime-calls-missing': 'not-delivered',
+    'runtime-calls-unbound': 'wrong-subject',
     'menu-a-not-ended': 'not-delivered', 'click-b-before-a-ended': 'out-of-window',
     'session-reused': 'wrong-subject',
     'title-missing': 'not-delivered', 'title-hash-mismatch': 'wrong-subject', 'title-wrong-menu': 'wrong-subject',
@@ -62,19 +67,19 @@ DETAILS = {
     'clear-initiated-missing': 'not-delivered', 'clear-initiated-out-of-window': 'out-of-window',
     'pair-mismatch': 'wrong-subject', 'menu-b-not-open-at-clear': 'wrong-subject',
     'menu-b-ended-before-clear': 'unknown', 'menu-end-cause-mismatch': 'unknown',
-    'accepted-clear-missing': 'not-delivered', 'accepted-clear-duplicate': 'unknown',
+    'accepted-clear-missing': 'not-delivered', 'accepted-clear-duplicate': 'unknown', 'clear-late': 'timeout',
     'session-not-scrubbed': 'wrong-subject', 'menu-scrubbed-missing': 'not-delivered',
     'menu-scrubbed-duplicate': 'unknown', 'menu-scrubbed-wrong-menu': 'wrong-subject',
     'private-item-unreported': 'unknown', 'private-item-retained': 'unknown',
     'private-content-present': 'unknown', 'title-after-clear': 'unknown',
     'finish-missing': 'not-delivered', 'finish-malformed': 'unknown', 'finish-other-run': 'wrong-subject',
     'finish-before-receipts': 'out-of-window', 'finish-after-stop': 'out-of-window',
-    'runner-reported-fail': None, 'runner-reported-not-run': None,  # the runner's own bounded reason
+    'runner-reported-fail': None, 'runner-reported-not-run': None,  # the runner's own bounded reason (NOT-RUN, C2.5 F)
     'stop-missing': 'not-delivered', 'owner-preempted': 'unknown', 'terminate-missing': 'not-delivered',
     'subject-not-gone': 'not-delivered',
     'closure-missing': 'not-delivered', 'closure-malformed': 'unknown', 'closure-inconsistent': 'unknown',
     'closure-other-run': 'wrong-subject',
-    'closure-not-ok': 'unknown', 'lease-window-mismatch': 'unknown', 'closure-late': 'out-of-window',
+    'closure-not-ok': 'unknown', 'lease-window-mismatch': 'wrong-subject', 'closure-late': 'out-of-window',
 }
 # validate_receipt codes for a well-formed receipt that contradicts itself (C2.4 step 10: "contradiction → FAIL");
 # every other code is a shape problem (unusable receipt, NOT-RUN).
@@ -141,11 +146,13 @@ class Native:
         bound = (context['runID'], context['epoch'], context['subjectPID'])
         own = [r for r in rows if (r.get('runID'), r.get('epoch'), r.get('pid')) == bound]  # others are ignored
         for row in own:
-            if row.get('kind') == 'started' and row.get('protocol') != PROTOCOL:
-                self.problem = 'protocol-unsupported'
-                return
             if receipt_schema.native_errors(row):
                 self.problem = 'native-row-malformed'
+                return
+        own = [receipt_schema.flat_native(r) for r in own]
+        for row in own:  # the App writes no protocol today, which is u6-native/1 (C2.5 F)
+            if row['kind'] == 'started' and row.get('protocol', PROTOCOL) != PROTOCOL:
+                self.problem = 'protocol-unsupported'
                 return
         for before, after in zip(own, own[1:]):
             if after['seq'] <= before['seq'] or after['mono'] < before['mono']:
@@ -170,8 +177,9 @@ def _pointer(context, data):
         return None
     registry = receipt_schema.registry()
     bound = (context['runID'], context['epoch'], context['subjectPID'])
-    return [r for r in rows if (r.get('runID'), r.get('epoch'), r.get('targetPID')) == bound
-            and registry.valid(r, 'pointer-receipt.json')]
+    # pointer_drive names the row in `event` (its `kind` is move/click); decode to the row name.
+    return [dict({k: v for k, v in r.items() if k != 'event'}, kind=r['event']) for r in rows
+            if (r.get('runID'), r.get('epoch'), r.get('targetPID')) == bound and registry.valid(r, 'pointer-receipt.json')]
 
 
 def _click(rows):
@@ -233,7 +241,17 @@ def step2(context, native, files):
     return (NOT_RUN(problem), None) if begin is None else (PASS(), begin)
 
 
-def step3(native, a):
+def _runtime_calls(context, files):
+    """(calls, None) from Drive's copy of the stub log, or (None, detail)."""
+    value, problem = _json(files.get(FILES['runtime']))
+    if problem or not receipt_schema.registry().valid(value, 'runtime-calls.json'):
+        return None, 'runtime-calls-missing'
+    if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
+        return None, 'runtime-calls-unbound'
+    return value['calls'], None
+
+
+def step3(context, native, files, a):
     end = next(iter(native.of('menu-end', sessionID=a['sessionID'])), None)
     arrivals = [r for r in native.of('status-menu-action-arrived', sessionID=a['sessionID'], actionID='refresh',
                                      menuObjectID=a['menuObjectID']) if r['seq'] > a['seq']]
@@ -267,10 +285,27 @@ def step3(native, a):
         return FAIL('terminal-wrong-session'), None, end
     if not 0 <= terminal['mono'] - requested['mono'] <= REFRESH_SECONDS:
         return NOT_RUN('terminal-late'), None, end
-    if terminal['phase'] == 'failed':
+    phase = terminal['phase']
+    if phase == 'failed':
         return FAIL('refresh-failed', terminal['reason']), None, end
+    if phase == 'deferred':  # C2.5 D: Copilot not scheduled
+        return NOT_RUN('refresh-deferred'), None, end
+    if phase == 'abandoned':  # C2.5 D: the App's watchdog, never failed
+        return NOT_RUN('refresh-abandoned-' + terminal['cause']), None, end
     if terminal['rowsSequenceAfter'] <= requested['rowsSequenceBefore']:
         return NOT_RUN('rows-unchanged'), None, end
+    # C2.5 D PASS: the advance is the Copilot read (scheduled, absent -> present, stub call); otherwise FAIL.
+    if requested['copilotRow'] != 'absent':
+        return NOT_RUN('copilot-row-preexisting'), None, end
+    if requested['dispositions'][COPILOT] != 'scheduled':
+        return FAIL('copilot-not-scheduled'), None, end
+    if terminal['copilotRow'] != 'present':
+        return FAIL('unrelated-advance'), None, end
+    calls, problem = _runtime_calls(context, files)
+    if problem:
+        return NOT_RUN(problem), None, end
+    if 'account.getQuota' not in calls:
+        return FAIL('unrelated-advance'), None, end
     return PASS(), terminal['mono'], end
 
 
@@ -359,6 +394,8 @@ def step6(context, native, files, b, title):
         if any(r['titleSHA256'] == context['seedTitleSHA256'] and r['sessionID'] in later and r['seq'] > accepted['seq']
                for r in native.of('menu-private-title-visible')):
             return FAIL('title-after-clear'), None
+    if any(r is not None and r['mono'] - clear['mono'] > SCRUB_SECONDS for r in (accepted, scrubbed)):
+        return FAIL('clear-late'), None  # C2.5 E: private content stayed up after the reset
     reset, problem = _reset(context, files)
     if problem:
         return NOT_RUN(problem), None
@@ -390,8 +427,8 @@ def step7(context, files, receipts_mono, stop):
     if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
         return NOT_RUN('finish-other-run')
     claims = list(value['steps'].values()) + [value['outcome']]  # the runner's own claims, never proof
-    if 'fail' in claims:
-        return FAIL('runner-reported-fail', value['reason'])
+    if 'fail' in claims:  # C2.5 F: a runner outcome is NOT-RUN with its bounded reason
+        return NOT_RUN('runner-reported-fail', value['reason'])
     if 'not-run' in claims:
         return NOT_RUN('runner-reported-not-run', value['reason'])
     if receipts_mono is not None and value['mono'] < receipts_mono:
@@ -421,7 +458,7 @@ def _closure(context, files):
     if value['ok'] is not True:
         return value, NOT_RUN('closure-not-ok')
     if (value['leaseNotBefore'], value['leaseExpiresAt']) != (context['leaseNotBefore'], context['leaseExpiresAt']):
-        return value, FAIL('lease-window-mismatch')
+        return None, NOT_RUN('lease-window-mismatch')  # another lease's receipt is ignored (C2.5 F)
     if not check_launch_cleanup.lease_window_ok(value):
         return value, FAIL('closure-late')
     return value, PASS()
@@ -460,7 +497,7 @@ def replay(context, files):
         steps[3] = steps[4] = steps[5] = steps[6] = NOT_RUN('prerequisite-not-met')
         if a is not None:
             later.append(a['mono'])
-            steps[3], mono, end_a = step3(native, a); later.append(mono)
+            steps[3], mono, end_a = step3(context, native, files, a); later.append(mono)
             steps[4], b = step4(context, native, files, a, end_a)
             if b is not None:
                 later.append(b['mono'])

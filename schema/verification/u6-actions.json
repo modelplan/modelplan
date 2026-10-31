@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/u6-actions.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "u6-actions/1",
   "description": "Action runner hand-off: the runner's per-step action outcome for steps 1-6 (dock, menuA, refresh, menuB, privateTitle, trackedClear) plus its run outcome and bounded reason. It is a claim, never proof: a non-pass entry fails or skips step 7, a pass entry proves nothing.",
   "x-file": "operator-finish.json (action runner, exclusive create, once)",

@@ -1,95 +1,17 @@
 {
   "version": 1,
-  "contract": "U6-DockMenu-Drive.md C2.4",
-  "schemaRevision": "u6-native/1, u6-pointer/1, u6-capture/1, consent-reset/1, launch-cleanup/1, u6-actions/1",
+  "contract": "U6-DockMenu-Drive.md C2.4 as amended by C2.5",
+  "schemaRevision": "u6-native/1 (App envelope, C2.5 F), pointer_drive rows, u6-capture/1, consent-reset/1, launch-cleanup/1, u6-actions/1, u6-runtime-calls/1",
   "regenerate": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures",
-  "note": "Authored positive traces follow C2.4. Native and pointer rows use the flat C2.4 encoding, not the head's legacy envelope (README, Required producer changes 1-6, 9-10); capture, reset and finish mirror the shipped writers' field sets. Expected verdicts of negative traces live in the tests, never in these files.",
+  "note": "Native and pointer rows are authored in the producers' current encoding (C2.5 F): the App envelope and pointer_drive rows. Capture, consent-reset and finish receipts are the shipped writers' output on the trace (synthetic_batch.shipped_receipts). Expected verdicts of negative traces live in the tests, never in these files.",
   "entries": [
-    {
-      "file": "batches/valid/consent-reset.json",
-      "schema": "consent-reset.json",
-      "producer": "desktop/native/verification/U6/consent_reset.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<fixed uptime>) as in test_u6_consent_reset.py, on a flat-row native file once producer change 1 lands"
-    },
-    {
-      "file": "batches/valid/context.json",
-      "schema": "replay-context.json",
-      "producer": "replay input (authored)",
-      "generated": false,
-      "status": "authored-replay-input"
-    },
-    {
-      "file": "batches/valid/dock-capture.json",
-      "schema": "capture-receipt.json",
-      "producer": "desktop/native/verification/U6/capture_owned.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "capture.capture(config, run_capture=<fake screencapture>, now=<fixed uptime>) as in test_u6_capture_owned.py, on a flat-row native file once producer change 1 lands"
-    },
-    {
-      "file": "batches/valid/dock-owned.png",
-      "schema": null,
-      "producer": "synthetic 1x1 image standing in for screencapture -l",
-      "generated": false,
-      "status": "authored-synthetic"
-    },
-    {
-      "file": "batches/valid/dock-pointer.jsonl",
-      "schema": "pointer-receipt.json",
-      "producer": "pointer_drive --plan (Swift)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
-    },
-    {
-      "file": "batches/valid/launch-cleanup.json",
-      "schema": "launch-cleanup.json",
-      "producer": "bin/check_launch_cleanup.py check()",
-      "generated": true,
-      "status": "real-producer",
-      "generator": "U6/synthetic_batch.py closure(): the real check() on a synthetic closed run, fixed lease clock"
-    },
-    {
-      "file": "batches/valid/native-observations.jsonl",
-      "schema": "native-row.json",
-      "producer": "U6DriveGuard.emitObject (Swift)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "swift test --package-path desktop/native/ModelPlanAppIntegration --filter U6ReceiptFixtureCaptureTests (to add, M4): drives the shipped U6DriveGuard row serializer with injected uptime/clock/UUID/object IDs through the C2.4 sequence and writes native-observations.jsonl; then python3 -B desktop/native/verification/U6/synthetic_batch.py is retired for this file and the drift test compares the capture"
-    },
-    {
-      "file": "batches/valid/operator-finish.json",
-      "schema": "u6-actions.json",
-      "producer": "desktop/native/verification/U6/action_runner.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "action_runner.finish(batch, run, epoch, pid, steps, None) with a fixed uptime"
-    },
-    {
-      "file": "batches/valid/status-pointer-clear.jsonl",
-      "schema": "pointer-receipt.json",
-      "producer": "pointer_drive --plan (Swift)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
-    },
-    {
-      "file": "batches/valid/status-pointer.jsonl",
-      "schema": "pointer-receipt.json",
-      "producer": "pointer_drive --plan (Swift)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
-    },
     {
       "file": "batches/valid-interleaved/consent-reset.json",
       "schema": "consent-reset.json",
-      "producer": "desktop/native/verification/U6/consent_reset.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<fixed uptime>) as in test_u6_consent_reset.py, on a flat-row native file once producer change 1 lands"
+      "producer": "desktop/native/verification/U6/consent_reset.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<startMono, endMono>) on the native rows written before the reset; homeSHA256 rebased to the context HOME hash)"
     },
     {
       "file": "batches/valid-interleaved/context.json",
@@ -101,10 +23,10 @@
     {
       "file": "batches/valid-interleaved/dock-capture.json",
       "schema": "capture-receipt.json",
-      "producer": "desktop/native/verification/U6/capture_owned.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
-      "generated": false,
-      "status": "pending-producer-capture",
-      "captureCommand": "capture.capture(config, run_capture=<fake screencapture>, now=<fixed uptime>) as in test_u6_capture_owned.py, on a flat-row native file once producer change 1 lands"
+      "producer": "desktop/native/verification/U6/capture_owned.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: capture.capture(config, run_capture=<fake screencapture writing the synthetic PNG>, now=<capture mono>) on the native rows written before the capture)"
     },
     {
       "file": "batches/valid-interleaved/dock-owned.png",
@@ -140,10 +62,18 @@
     {
       "file": "batches/valid-interleaved/operator-finish.json",
       "schema": "u6-actions.json",
-      "producer": "desktop/native/verification/U6/action_runner.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
+      "producer": "desktop/native/verification/U6/action_runner.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: action_runner.finish(batch, run, epoch, pid, <all pass>, None) at the finish mono)"
+    },
+    {
+      "file": "batches/valid-interleaved/runtime-calls.json",
+      "schema": "runtime-calls.json",
+      "producer": "drive-u6.py copy of the stub log $HOME/runtime-calls (C2.5 D; M4, not yet in the kit)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "action_runner.finish(batch, run, epoch, pid, steps, None) with a fixed uptime"
+      "captureCommand": "drive-u6.py stub-log copy (to add, M4) on a HOME whose runtime-calls holds connect, auth.getStatus, account.getQuota"
     },
     {
       "file": "batches/valid-interleaved/status-pointer-clear.jsonl",
@@ -155,6 +85,92 @@
     },
     {
       "file": "batches/valid-interleaved/status-pointer.jsonl",
+      "schema": "pointer-receipt.json",
+      "producer": "pointer_drive --plan (Swift)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
+    },
+    {
+      "file": "batches/valid/consent-reset.json",
+      "schema": "consent-reset.json",
+      "producer": "desktop/native/verification/U6/consent_reset.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<startMono, endMono>) on the native rows written before the reset; homeSHA256 rebased to the context HOME hash)"
+    },
+    {
+      "file": "batches/valid/context.json",
+      "schema": "replay-context.json",
+      "producer": "replay input (authored)",
+      "generated": false,
+      "status": "authored-replay-input"
+    },
+    {
+      "file": "batches/valid/dock-capture.json",
+      "schema": "capture-receipt.json",
+      "producer": "desktop/native/verification/U6/capture_owned.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: capture.capture(config, run_capture=<fake screencapture writing the synthetic PNG>, now=<capture mono>) on the native rows written before the capture)"
+    },
+    {
+      "file": "batches/valid/dock-owned.png",
+      "schema": null,
+      "producer": "synthetic 1x1 image standing in for screencapture -l",
+      "generated": false,
+      "status": "authored-synthetic"
+    },
+    {
+      "file": "batches/valid/dock-pointer.jsonl",
+      "schema": "pointer-receipt.json",
+      "producer": "pointer_drive --plan (Swift)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
+    },
+    {
+      "file": "batches/valid/launch-cleanup.json",
+      "schema": "launch-cleanup.json",
+      "producer": "bin/check_launch_cleanup.py check()",
+      "generated": true,
+      "status": "real-producer",
+      "generator": "U6/synthetic_batch.py closure(): the real check() on a synthetic closed run, fixed lease clock"
+    },
+    {
+      "file": "batches/valid/native-observations.jsonl",
+      "schema": "native-row.json",
+      "producer": "U6DriveGuard.emitObject (Swift)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "swift test --package-path desktop/native/ModelPlanAppIntegration --filter U6ReceiptFixtureCaptureTests (to add, M4): drives the shipped U6DriveGuard row serializer with injected uptime/clock/UUID/object IDs through the C2.4 sequence and writes native-observations.jsonl; then python3 -B desktop/native/verification/U6/synthetic_batch.py is retired for this file and the drift test compares the capture"
+    },
+    {
+      "file": "batches/valid/operator-finish.json",
+      "schema": "u6-actions.json",
+      "producer": "desktop/native/verification/U6/action_runner.py",
+      "generated": true,
+      "status": "real-producer",
+      "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: action_runner.finish(batch, run, epoch, pid, <all pass>, None) at the finish mono)"
+    },
+    {
+      "file": "batches/valid/runtime-calls.json",
+      "schema": "runtime-calls.json",
+      "producer": "drive-u6.py copy of the stub log $HOME/runtime-calls (C2.5 D; M4, not yet in the kit)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "drive-u6.py stub-log copy (to add, M4) on a HOME whose runtime-calls holds connect, auth.getStatus, account.getQuota"
+    },
+    {
+      "file": "batches/valid/status-pointer-clear.jsonl",
+      "schema": "pointer-receipt.json",
+      "producer": "pointer_drive --plan (Swift)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "<owned-build>/pointer_drive --fixture-receipts <plan> (to add, M4): writes the rows of a plan through the shipped PointerDrive.append serialization with an injected uptime/clock, posting no event and querying no permission"
+    },
+    {
+      "file": "batches/valid/status-pointer.jsonl",
       "schema": "pointer-receipt.json",
       "producer": "pointer_drive --plan (Swift)",
       "generated": false,

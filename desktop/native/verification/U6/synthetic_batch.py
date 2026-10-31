@@ -1,19 +1,24 @@
 # SPDX-License-Identifier: MIT
-"""Authored synthetic C2.4 U6 batches for the offline replay and the receipt-schema fixtures.
+"""Synthetic C2.4/C2.5 U6 batches for the offline replay and the receipt-schema fixtures.
 
-The native, pointer, capture, reset and finish files are hand-authored to the C2.4 shapes (their real
-producers do not emit these shapes yet; see schema/verification/README.md, "Required producer changes").
-`launch-cleanup.json` is produced by the real `check_launch_cleanup.check()` against a synthetic run on a
-fixed clock. Expected verdicts are never derived from the oracle under test.
+A trace is edited as flat records and written in the encoding the producers use today (C2.5 F): native rows
+in the App's envelope (`app_native_row`), pointer rows as pointer_drive writes them (`pointer_drive_row`).
+Native and pointer rows are authored (Swift producers); `launch-cleanup.json` comes from the real
+`check_launch_cleanup.check()`, and the committed fixtures' capture, consent-reset and finish receipts from the
+shipped writers (`capture_owned`, `consent_reset`, `action_runner`) run on the trace with fakes for the screen,
+helper, clock and admission. Expected verdicts are never derived from the oracle under test.
 
-`kit_batch()` renders the same trace in the encoding the merged #332 head's producers write and
-`bin/evidence-u6.py` reads (legacy native envelope, pointer `event`/`kind`, the run files prepare and launch
-write, a pinned package and kit manifest), so the tests can run one trace through both the oracle and the real
-final entry point.
+`kit_batch()` adds what `bin/evidence-u6.py` needs beyond the batch (run files prepare and launch write, the
+menu helper's result, a launched bundle, a pinned package and kit manifest), so the tests run the same bytes
+through both the oracle and the real final entry point.
 
     synthetic_batch.py --write <schema/verification/fixtures>   regenerate the committed batches"""
 import argparse
+import contextlib
+import datetime
+import io
 import hashlib
+import importlib.util
 import json
 import struct
 import subprocess
@@ -89,8 +94,9 @@ class Trace:
 
     def __init__(self):
         self.native, self.dock, self.status, self.clear = [], [], [], []
-        self.capture = self.reset = self.finish = self.closure = None
+        self.capture = self.reset = self.finish = self.closure = self.runtime = None
         self.image = png()
+        self.flat = False  # True writes the flat C2.4 rows instead of the producers' encoding
 
     # native rows -------------------------------------------------------------------------------------
     def row(self, kind, offset, pid=PID, **fields):
@@ -128,11 +134,14 @@ class Trace:
 
     # files -------------------------------------------------------------------------------------------
     def files(self):
-        out = {'native-observations.jsonl': jsonl(self.native), 'dock-pointer.jsonl': jsonl(self.dock),
-               'status-pointer.jsonl': jsonl(self.status), 'status-pointer-clear.jsonl': jsonl(self.clear),
-               CAPTURE: self.image}
+        native, pointer = (dict, dict) if self.flat else (app_native_row, pointer_drive_row)
+        out = {'native-observations.jsonl': jsonl([native(r) for r in self.native]),
+               'dock-pointer.jsonl': jsonl([pointer(r) for r in self.dock]),
+               'status-pointer.jsonl': jsonl([pointer(r) for r in self.status]),
+               'status-pointer-clear.jsonl': jsonl([pointer(r) for r in self.clear]), CAPTURE: self.image}
         for name, value in (('dock-capture.json', self.capture), ('consent-reset.json', self.reset),
-                            ('operator-finish.json', self.finish), ('launch-cleanup.json', self.closure)):
+                            ('operator-finish.json', self.finish), ('launch-cleanup.json', self.closure),
+                            ('runtime-calls.json', self.runtime)):
             if value is not None:
                 out[name] = (json.dumps(value, sort_keys=True) + '\n').encode()
         return out
@@ -207,8 +216,9 @@ def valid(variant='main', closure_receipt=None):
     t.add('status-menu-action-arrived', 21.0, menuObjectID=MENU, sessionID=SESSION_A, requestID=REQUEST,
           actionID='refresh', deliveryMethod='axpress-menu-item', source='NSMenu.didSendAction', scope='owned-status-menu')
     t.add('refresh', 21.05, phase='requested', requestId=REQUEST, rowsSequenceBefore=3, menuObjectID=MENU,
-          sessionID=SESSION_A)
-    completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, menuObjectID=MENU, sessionID=SESSION_A)
+          sessionID=SESSION_A, dispositions=dict(DISPOSITIONS), copilotRow='absent')
+    completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, menuObjectID=MENU, sessionID=SESSION_A,
+                     copilotRow='present')
     if alt:
         t.add('refresh', 21.08, **completed)
         t.add('menu-end', 21.2, menuObjectID=MENU, sessionID=SESSION_A, cause='other')
@@ -251,25 +261,33 @@ def valid(variant='main', closure_receipt=None):
     t.finish = dict(schema='u6-actions/1', runID=RUN, epoch=EPOCH, pid=PID, mono=m(40.0),
                     steps={name: 'pass' for name in ACTION_STEPS}, outcome='pass', reason=None)
     t.closure = closure() if closure_receipt is None else closure_receipt
+    t.runtime = runtime_calls(['connect', 'auth.getStatus', 'account.getQuota'])
     return t
 
 
+def runtime_calls(calls):
+    """Drive's run-bound copy of the stub's `$HOME/runtime-calls` log (C2.5 D)."""
+    raw = ''.join(c + '\n' for c in calls)
+    return dict(schema='u6-runtime-calls/1', runID=RUN, epoch=EPOCH, sourceSHA256=sha(raw), calls=list(calls))
+
+
 BATCHES = ('valid', 'valid-interleaved')
+DISPOSITIONS = {'copilot.runtime_usage': 'scheduled', 'claude.account_usage.saved_login': 'read_only'}
 ACTION_STEPS = ('dock', 'menuA', 'refresh', 'menuB', 'privateTitle', 'trackedClear')
 
 
-# kit encoding (merged #332 head) ------------------------------------------------------------------------
+# producer encodings (C2.5 F) ---------------------------------------------------------------------------
 KIT_HEAD, KIT_APP, KIT_BINARY = 'a' * 40, 'ModelPlan.app', 'ModelPlanCommunityApp'
 KIT_SEED = sha('synthetic home seed tree')
 _ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
 _POINTER_ACTION = {'mouse-moved-posted': 'move', 'mouse-button-down-posted': 'click', 'mouse-button-up-posted': 'click'}
 
 
-def kit_native_row(row):
-    """A C2.4 row as the head's U6DriveGuard.emitObject writes it: `refresh` flat, every other kind as
-    {envelope, event, timestamp, checks: {fields}} plus the guard's extra identity fields. A row that already
-    carries `event` (the current-legacy-envelope trace) is written unchanged."""
-    if 'event' in row or row.get('kind') == 'refresh':
+def app_native_row(row):
+    """A flat row as U6DriveGuard.emitObject writes it: `refresh` flat, every other kind as {envelope, event,
+    timestamp, checks: {fields}} plus the guard's extra identity fields (instanceID, subjectPID, menuInstanceID,
+    nativeUptimeSeconds)."""
+    if row.get('kind') == 'refresh':
         return dict(row)
     kind = row.get('kind')
     fields = {k: v for k, v in row.items() if k not in _ENVELOPE + ('kind',)}
@@ -278,36 +296,34 @@ def kit_native_row(row):
     if kind == 'menu-begin':
         fields['subjectPID'] = row.get('pid')
     if kind == 'status-menu-action-arrived':  # MenuContract fields plus the guard's menuInstanceID
-        fields.update(subjectPID=row.get('pid'), menuInstanceID=fields.get('menuObjectID'))
+        fields.update(subjectPID=row.get('pid'), menuInstanceID=fields.get('menuObjectID'),
+                      nativeUptimeSeconds=row.get('mono'))
     out = {k: row[k] for k in _ENVELOPE if k in row}
     out.update(event=kind, timestamp=row.get('at'), checks=fields)
     return out
 
 
-def kit_pointer_row(row):
-    """A pointer row as the head's pointer_drive writes it: `event` names the row, `kind` is move/click."""
+def _iso(at):
+    return datetime.datetime.fromtimestamp(int(at), datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
+def pointer_drive_row(row):
+    """A flat pointer row as pointer_drive writes it: `event` names the row, `kind` is move/click, plus its
+    subjectPID, uptimeSeconds and ISO timestamp; the permission row carries no run binding."""
     out = {k: v for k, v in row.items() if k != 'kind'}
     out['event'] = row.get('kind')
     if row.get('kind') in _POINTER_ACTION:
-        out.update(kind=_POINTER_ACTION[row['kind']], subjectPID=row.get('targetPID'), uptimeSeconds=row.get('mono'))
+        out.update(kind=_POINTER_ACTION[row['kind']], subjectPID=row.get('targetPID'), uptimeSeconds=row.get('mono'),
+                   timestamp=_iso(row['at']))
+    elif row.get('kind') == 'pointer-host-permission':
+        out = dict(event=row['kind'], postEvents=row['postEvents'], helperPID=row['helperPID'],
+                   requestsPermission=row['requestsPermission'], timestamp=_iso(row['at']))
     return out
 
 
-def _encode_lines(data, encode):
-    """Re-encode each JSON line; a line that does not parse (truncation) is kept verbatim."""
-    out = []
-    for line in data.decode('utf-8', 'replace').split('\n'):
-        try:
-            value = json.loads(line) if line.strip() else None
-        except ValueError:
-            value = None
-        out.append(dump(encode(value)) if isinstance(value, dict) else line)
-    return '\n'.join(out).encode()
-
-
 def kit_batch(ctx, files, root):
-    """Write one oracle batch (`ctx`, `files`) under `root` in the head's encoding and return the
-    `evidence-u6.py` arguments. Run-level inputs the oracle takes from `ctx` become the files the head's
+    """Write one oracle batch (`ctx`, `files`, unchanged bytes) under `root` and return the `evidence-u6.py`
+    arguments. Run-level inputs the oracle takes from `ctx` become the files the head's
     prepare/launch write: subject registration, launch.json, prepared.json, synthetic-seed.json, the three
     pointer plans and run.json; the pins become a launched bundle, a pinned package and a kit manifest. Nothing
     here decides a verdict."""
@@ -354,8 +370,7 @@ def kit_batch(ctx, files, root):
                                                 targetPID=pid, output=str(batch / (stem + '.jsonl'))))
     arrivals = []
     for name, data in files.items():
-        if name == 'native-observations.jsonl':
-            data = _encode_lines(data, kit_native_row)
+        if name == 'native-observations.jsonl':  # the same bytes the oracle reads
             for line in data.decode('utf-8', 'replace').splitlines():
                 try:
                     row = json.loads(line)
@@ -365,8 +380,6 @@ def kit_batch(ctx, files, root):
                 if (row.get('event') == 'status-menu-action-arrived' and (row.get('runID'), row.get('epoch'),
                         row.get('pid')) == (run, epoch, pid) and checks.get('actionID') == 'refresh'):
                     arrivals.append(checks.get('requestID'))
-        elif name.endswith('.jsonl'):
-            data = _encode_lines(data, kit_pointer_row)
         elif name == 'consent-reset.json':
             try:
                 value = json.loads(data)
@@ -385,11 +398,73 @@ def kit_batch(ctx, files, root):
             '--kit-manifest', str(root / 'kit-manifest.json')]
 
 
+def _module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def shipped_receipts(trace):
+    """(capture, reset, finish) as the shipped writers produce them for `trace`: capture_owned.capture,
+    consent_reset.reset and action_runner.finish run on a batch holding the native rows written up to that
+    moment, with fakes only for admission/subject identity, screencapture, the helper process and the uptime
+    clock. The reset receipt's homeSHA256 (of the temporary HOME path) is rebased to the context's HOME hash."""
+    u6 = Path(__file__).resolve().parent
+    capture, reset, actions = (_module('u6_capture_fixture', u6 / 'capture_owned.py'),
+                               _module('u6_reset_fixture', u6 / 'consent_reset.py'),
+                               _module('u6_actions_fixture', u6 / 'action_runner.py'))
+    original = guardian.cleanup.matches
+    for module in (capture, reset):  # admission and subject identity are the launch's, not the writer's
+        module.load_and_admit = module.still_admitted = lambda *_: True
+        module.identity = lambda _: dict(pid=PID)
+        module.launcher_lost = lambda _: False
+    guardian.cleanup.matches = lambda *_: True
+    try:
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            batch, scratch = root / 'batch', root / 'scratch'
+            contents = root / 'Test.app' / 'Contents'
+            for d in (batch, scratch / 'home', scratch / 'tmp', contents / 'MacOS', contents / 'Helpers'):
+                d.mkdir(parents=True)
+            (contents / 'MacOS' / 'App').write_bytes(BLOBS[PINS['mainExecutable']])
+            (contents / 'Helpers' / 'modelplan').write_bytes(BLOBS[PINS['consentHelper']])
+            (root / 'subject.json').write_text(json.dumps(dict(pid=PID, runID=RUN, epoch=EPOCH, state='running')))
+            config = dict(batch=str(batch), scratch=str(scratch), syntheticHome=str(scratch / 'home'),
+                          syntheticTmp=str(scratch / 'tmp'), subjectPidPath=str(root / 'subject.json'),
+                          argv=[str(contents / 'MacOS' / 'App')], helperSHA256=PINS['consentHelper'],
+                          expectedLease=dict(runID=RUN, epoch=EPOCH))
+            native = batch / 'native-observations.jsonl'
+
+            def rows_until(mono):
+                native.write_bytes(jsonl([app_native_row(r) for r in trace.native if r['mono'] < mono]))
+
+            def screencapture(command, **_):
+                Path(command[4]).write_bytes(trace.image)
+                return type('Done', (), {'returncode': 0})()
+            rows_until(trace.capture['mono'])
+            capture.capture(config, run_capture=screencapture, now=lambda: trace.capture['mono'])
+            rows_until(trace.reset['startMono'])
+            ticks = iter((trace.reset['startMono'], trace.reset['endMono']))
+            helper_output = json.dumps(dict(storeEpoch=STORE_EPOCH, generation=GENERATION))
+            reset.reset(config, run_helper=lambda *_, **__: type('Done', (), {'returncode': 0, 'stdout': helper_output})(),
+                        now=lambda: next(ticks))
+            actions.uptime = lambda: trace.finish['mono']
+            actions.finish(batch, RUN, EPOCH, PID, {name: 'pass' for name in ACTION_STEPS}, None)
+            out = [json.loads((batch / name).read_text())
+                   for name in ('dock-capture.json', 'consent-reset.json', 'operator-finish.json')]
+    finally:
+        guardian.cleanup.matches = original
+    out[1]['homeSHA256'] = trace.reset['homeSHA256']
+    return tuple(out)
+
+
 def write(fixtures):
     """Write the committed positive batches (each with its replay context) under `fixtures/batches/`."""
     receipt = closure()
     for name in BATCHES:
         trace = valid('interleaved' if name == 'valid-interleaved' else 'main', closure_receipt=receipt)
+        trace.capture, trace.reset, trace.finish = shipped_receipts(trace)
         directory = Path(fixtures) / 'batches' / name
         directory.mkdir(parents=True, exist_ok=True)
         files = dict(trace.files(), **{'context.json': (json.dumps(context(), indent=2, sort_keys=True) + '\n').encode()})

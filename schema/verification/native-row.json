@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native-row.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "U6 native row envelope",
-  "description": "Every native row is one flat object: this envelope plus the fields of its kind schema (x-kinds). A row whose kind is not listed is validated by the envelope only and never satisfies a step.",
+  "description": "Every native row is the App's current envelope (C2.5 F): runID, epoch, pid, seq, mono, at plus event, timestamp and checks {the kind's fields}; refresh rows are written flat with kind \"refresh\". x-kinds names the schema of each event. A row whose event is not listed is validated by the envelope only and never satisfies a step.",
   "x-file": "native-observations.jsonl (one JSON object per line, written only by U6DriveGuard.emitObject)",
   "x-kinds": {
     "started": "native/started.json",
@@ -29,8 +29,7 @@
     "pid",
     "seq",
     "mono",
-    "at",
-    "kind"
+    "at"
   ],
   "properties": {
     "runID": {
@@ -51,10 +50,52 @@
     "at": {
       "$ref": "common.json#/$defs/at"
     },
-    "kind": {
+    "event": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "timestamp": {
+      "$ref": "common.json#/$defs/timestamp"
+    },
+    "checks": {
+      "type": "object"
+    },
+    "kind": {
+      "const": "refresh"
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "oneOf": [
+    {
+      "required": [
+        "event",
+        "timestamp",
+        "checks"
+      ],
+      "not": {
+        "required": [
+          "kind"
+        ]
+      }
+    },
+    {
+      "required": [
+        "kind"
+      ],
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "event"
+            ]
+          },
+          {
+            "required": [
+              "checks"
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

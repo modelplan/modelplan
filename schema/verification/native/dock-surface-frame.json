@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/dock-surface-frame.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "dock-surface-frame",
   "description": "Owned Dock panel painted frame in CG screen space; emitted on change. Step 1 needs state expanded.",
   "type": "object",
@@ -12,14 +12,9 @@
     "seq",
     "mono",
     "at",
-    "kind",
-    "state",
-    "windowNumber",
-    "x",
-    "y",
-    "width",
-    "height",
-    "coordinateSpace"
+    "event",
+    "timestamp",
+    "checks"
   ],
   "properties": {
     "runID": {
@@ -40,35 +35,53 @@
     "at": {
       "$ref": "../common.json#/$defs/at"
     },
-    "kind": {
+    "event": {
       "const": "dock-surface-frame"
     },
-    "state": {
-      "enum": [
-        "sliver",
-        "expanded"
-      ]
+    "timestamp": {
+      "$ref": "../common.json#/$defs/timestamp"
     },
-    "windowNumber": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "x": {
-      "type": "number"
-    },
-    "y": {
-      "type": "number"
-    },
-    "width": {
-      "type": "number",
-      "exclusiveMinimum": 0
-    },
-    "height": {
-      "type": "number",
-      "exclusiveMinimum": 0
-    },
-    "coordinateSpace": {
-      "const": "cg-screen"
+    "checks": {
+      "type": "object",
+      "required": [
+        "state",
+        "windowNumber",
+        "x",
+        "y",
+        "width",
+        "height",
+        "coordinateSpace"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "sliver",
+            "expanded"
+          ]
+        },
+        "windowNumber": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "coordinateSpace": {
+          "const": "cg-screen"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/launch-cleanup.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "launch-cleanup/1",
   "description": "Independent launch-mode closure receipt. Keys match check_launch_cleanup.KEYS exactly.",
   "x-file": "launch-cleanup.json (bin/check_launch_cleanup.py)",

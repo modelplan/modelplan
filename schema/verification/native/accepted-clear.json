@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/accepted-clear.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "accepted-clear",
   "description": "The app accepted the clear named by clearID; scrubbedSessionIDs lists sessions whose recorded private items are all deallocated or cleared.",
   "type": "object",
@@ -12,13 +12,9 @@
     "seq",
     "mono",
     "at",
-    "kind",
-    "clearID",
-    "storeEpochAfter",
-    "generationAfter",
-    "scrubbedSessionIDs",
-    "priorPrivateContent",
-    "trackingClosed"
+    "event",
+    "timestamp",
+    "checks"
   ],
   "properties": {
     "runID": {
@@ -39,30 +35,47 @@
     "at": {
       "$ref": "../common.json#/$defs/at"
     },
-    "kind": {
+    "event": {
       "const": "accepted-clear"
     },
-    "clearID": {
-      "$ref": "../common.json#/$defs/uuid"
+    "timestamp": {
+      "$ref": "../common.json#/$defs/timestamp"
     },
-    "storeEpochAfter": {
-      "$ref": "../common.json#/$defs/storeEpoch"
-    },
-    "generationAfter": {
-      "$ref": "../common.json#/$defs/generation"
-    },
-    "scrubbedSessionIDs": {
-      "type": "array",
-      "uniqueItems": true,
-      "items": {
-        "$ref": "../common.json#/$defs/uuid"
-      }
-    },
-    "priorPrivateContent": {
-      "type": "boolean"
-    },
-    "trackingClosed": {
-      "type": "boolean"
+    "checks": {
+      "type": "object",
+      "required": [
+        "clearID",
+        "storeEpochAfter",
+        "generationAfter",
+        "scrubbedSessionIDs",
+        "priorPrivateContent",
+        "trackingClosed"
+      ],
+      "properties": {
+        "clearID": {
+          "$ref": "../common.json#/$defs/uuid"
+        },
+        "storeEpochAfter": {
+          "$ref": "../common.json#/$defs/storeEpoch"
+        },
+        "generationAfter": {
+          "$ref": "../common.json#/$defs/generation"
+        },
+        "scrubbedSessionIDs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "../common.json#/$defs/uuid"
+          }
+        },
+        "priorPrivateContent": {
+          "type": "boolean"
+        },
+        "trackingClosed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -196,11 +196,25 @@ def native_kinds(reg=None):
     return dict(reg.documents[reg.id_for('native-row.json')]['x-kinds'])
 
 
+def native_kind(row):
+    """The row's kind in the App envelope: `event`, or `kind` for the flat refresh rows (C2.5 F)."""
+    return row.get('event', row.get('kind')) if isinstance(row, dict) else None
+
+
 def native_errors(row, reg=None):
     """Envelope errors, then the kind schema's errors. A kind outside `x-kinds` is checked by the envelope only."""
     reg = reg or registry()
     out = reg.errors(row, 'native-row.json')
     if out:
         return out
-    relative = native_kinds(reg).get(row['kind'])
+    relative = native_kinds(reg).get(native_kind(row))
     return [] if relative is None else reg.errors(row, relative)
+
+
+def flat_native(row):
+    """A schema-valid envelope row as one flat mapping {envelope, kind, **checks} (refresh rows are already flat)."""
+    if 'event' not in row:
+        return dict(row)
+    out = {k: v for k, v in row.items() if k not in ('event', 'timestamp', 'checks')}
+    out.update(row['checks'], kind=row['event'])
+    return out

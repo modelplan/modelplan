@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/status-item-frame.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "status-item-frame",
   "description": "Owned status item button frame (AppKit screen space plus cgX/cgY); the pointer plan clicks its centre.",
   "type": "object",
@@ -12,14 +12,9 @@
     "seq",
     "mono",
     "at",
-    "kind",
-    "x",
-    "y",
-    "width",
-    "height",
-    "coordinateSpace",
-    "cgX",
-    "cgY"
+    "event",
+    "timestamp",
+    "checks"
   ],
   "properties": {
     "runID": {
@@ -40,31 +35,49 @@
     "at": {
       "$ref": "../common.json#/$defs/at"
     },
-    "kind": {
+    "event": {
       "const": "status-item-frame"
     },
-    "x": {
-      "type": "number"
+    "timestamp": {
+      "$ref": "../common.json#/$defs/timestamp"
     },
-    "y": {
-      "type": "number"
-    },
-    "width": {
-      "type": "number",
-      "exclusiveMinimum": 0
-    },
-    "height": {
-      "type": "number",
-      "exclusiveMinimum": 0
-    },
-    "coordinateSpace": {
-      "const": "appkit-screen"
-    },
-    "cgX": {
-      "type": "number"
-    },
-    "cgY": {
-      "type": "number"
+    "checks": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height",
+        "coordinateSpace",
+        "cgX",
+        "cgY"
+      ],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "coordinateSpace": {
+          "const": "appkit-screen"
+        },
+        "cgX": {
+          "type": "number"
+        },
+        "cgY": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

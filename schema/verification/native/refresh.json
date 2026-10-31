@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/refresh.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
   "title": "refresh",
-  "description": "Production Refresh handler rows for one request: requested (written by the handler), then exactly one terminal (completed or failed).",
+  "description": "Production Refresh handler rows for one request, written flat (C2.5 F): requested (with the engine's per-scope dispositions and whether the Copilot row exists), then exactly one terminal: completed (copilotRow after), failed (production result), deferred (Copilot not scheduled) or abandoned (watchdog: deadline or stop) (C2.5 D).",
   "type": "object",
   "required": [
     "runID",
@@ -44,7 +44,9 @@
       "enum": [
         "requested",
         "completed",
-        "failed"
+        "failed",
+        "deferred",
+        "abandoned"
       ]
     },
     "requestId": {
@@ -66,6 +68,32 @@
     },
     "reason": {
       "$ref": "../common.json#/$defs/scenarioReason"
+    },
+    "dispositions": {
+      "type": "object",
+      "required": [
+        "copilot.runtime_usage"
+      ],
+      "properties": {
+        "copilot.runtime_usage": {
+          "$ref": "../common.json#/$defs/disposition"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "../common.json#/$defs/disposition"
+      }
+    },
+    "copilotRow": {
+      "enum": [
+        "absent",
+        "present"
+      ]
+    },
+    "cause": {
+      "enum": [
+        "deadline",
+        "stop"
+      ]
     }
   },
   "additionalProperties": false,
@@ -80,7 +108,9 @@
       },
       "then": {
         "required": [
-          "rowsSequenceBefore"
+          "rowsSequenceBefore",
+          "dispositions",
+          "copilotRow"
         ],
         "not": {
           "anyOf": [
@@ -92,6 +122,11 @@
             {
               "required": [
                 "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
               ]
             }
           ]
@@ -108,7 +143,8 @@
       },
       "then": {
         "required": [
-          "rowsSequenceAfter"
+          "rowsSequenceAfter",
+          "copilotRow"
         ],
         "not": {
           "anyOf": [
@@ -120,6 +156,16 @@
             {
               "required": [
                 "reason"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "cause"
               ]
             }
           ]
@@ -148,6 +194,110 @@
             {
               "required": [
                 "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "copilotRow"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "deferred"
+          }
+        }
+      },
+      "then": {
+        "required": [],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "copilotRow"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "abandoned"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "cause"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "copilotRow"
               ]
             }
           ]
