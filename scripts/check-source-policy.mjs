@@ -138,7 +138,7 @@ for (const p of ["AGENTS.md", "CLAUDE.md"])
   assert.match((await read(p)).toString(), /AGENTS\.md|source-policy/);
 for (const p of tracked.filter(isWorkflowFile)) {
   const s = (await read(p)).toString();
-  const problems = workflowProblems(s);
+  const problems = workflowProblems(s, p);
   assert.deepEqual(problems, [], "public workflow runner/trigger policy: " + p + " " + problems.join(", "));
 }
 assert.ok(

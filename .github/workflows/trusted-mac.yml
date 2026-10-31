@@ -1,0 +1,269 @@
+# SPDX-License-Identifier: MIT
+name: Trusted Mac checks
+'on':
+  workflow_call:
+    inputs:
+      task:
+        required: true
+        type: string
+      os:
+        required: false
+        type: string
+        default: macos-latest
+permissions:
+  contents: read
+jobs:
+  native:
+    if: ${{ inputs.task == 'native' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    name: native (${{ inputs.os }})
+    timeout-minutes: 10
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Select the newest installed Xcode
+      run: |
+        ls -d /Applications/Xcode*.app
+        python3 - <<'PYCODE'
+        import plistlib
+        import re
+        import os
+        from pathlib import Path
+
+        candidates = []
+        for app in Path("/Applications").glob("Xcode*.app"):
+            with (app / "Contents/Info.plist").open("rb") as metadata:
+                version = plistlib.load(metadata)["CFBundleShortVersionString"]
+            print(f"{app}: Xcode {version}", flush=True)
+            candidates.append((tuple(map(int, re.findall(r"\d+", version))), str(app)))
+        if not candidates:
+            raise SystemExit("No installed Xcode found")
+        selected = max(candidates)[1] + "/Contents/Developer"
+        with open(os.environ["GITHUB_ENV"], "a") as output:
+            output.write(f"DEVELOPER_DIR={selected}\n")
+        PYCODE
+    - name: Record OS and selected toolchain
+      run: |
+        sw_vers
+        xcode-select --print-path
+        xcodebuild -version
+        swift --version
+    - name: Verification Drive and Evidence pure checks
+      run: |
+        python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'
+        python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
+        node desktop/native/verification/test-animation-observer.mjs
+        node desktop/native/verification/test-stable-layer.mjs
+        swiftc desktop/native/verification/Observation.swift desktop/native/verification/ObservationSelfTests.swift -D MODELPLAN_TEST_ONLY_SPI -D MODELPLAN_OBSERVATION_SELF_TEST -o "$RUNNER_TEMP/observation-tests"
+        "$RUNNER_TEMP/observation-tests"
+        swiftc -parse-as-library desktop/native/verification/Observation.swift desktop/native/verification/U11aHost.swift -D MODELPLAN_TEST_ONLY_SPI -o "$RUNNER_TEMP/u11a-host"
+    - name: Build the neutral app and all native checks
+      run: swift build --package-path desktop/native --jobs 2
+    - name: Native lane XCTest suites (selection, instruments, cockpit shell and field)
+      run: swift test --package-path desktop/native --jobs 2 --skip GeneratedDecoderTests
+    - name: Settings models and offscreen AppKit tests (no system effects)
+      run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
+    - name: App settings application tests (no window or system effects)
+      run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --skip GeneratedConsentPortTests
+    - name: Build the integrated Community entry without launching or packaging
+      run: swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --product ModelPlanCommunityApp
+    - name: Field bridge protocol checks (synthetic page adapter)
+      run: node --test desktop/native/ModelPlanField/WebTests/field-bridge.test.mjs
+    - name: Dock native resource and instrument checks (neutral inputs)
+      if: ${{ !cancelled() }}
+      run: swift run --package-path desktop/native --skip-build ModelPlanDockInstrumentChecks "$RUNNER_TEMP/dock-instrument-checks"
+    - name: Archive offscreen Dock visual probes
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: dock-visual-${{ inputs.os }}
+        path: ${{ runner.temp }}/dock-instrument-checks/dock-visual/
+        if-no-files-found: warn
+        retention-days: 3
+    - name: Dock logic unit checks
+      run: swift run --package-path desktop/native --skip-build ModelPlanDockLogicChecks
+    - name: Window/input native contracts
+      run: swift run --package-path desktop/native --skip-build ModelPlanWindowProbe --checks
+    - name: Archive latest-Xcode binaries for macOS 14 runtime checks
+      if: inputs.os == 'macos-latest'
+      run: |
+        native_bin_dir=$(swift build --package-path desktop/native --show-bin-path)
+        native_artifact_dir="$RUNNER_TEMP/native-runtime"
+        mkdir -p "$native_artifact_dir"
+        for native_binary in ModelPlanCommunity ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks; do
+          cp "$native_bin_dir/$native_binary" "$native_artifact_dir/"
+          xcrun vtool -show-build "$native_bin_dir/$native_binary"
+          otool -L "$native_bin_dir/$native_binary"
+        done
+        integrated_bin_dir=$(swift build --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --show-bin-path)
+        cp "$integrated_bin_dir/ModelPlanCommunityApp" "$native_artifact_dir/"
+        cp -R "$integrated_bin_dir/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$native_artifact_dir/"
+        xcrun vtool -show-build "$integrated_bin_dir/ModelPlanCommunityApp"
+        otool -L "$integrated_bin_dir/ModelPlanCommunityApp"
+        cp -R "$native_bin_dir/ModelPlanNative_ModelPlanContractChecks.bundle" "$native_artifact_dir/"
+        cd "$native_artifact_dir"
+        shasum -a 256 ModelPlanCommunity ModelPlanCommunityApp ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanPrimitiveChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks > SHA256SUMS
+        # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
+        tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
+    - uses: actions/upload-artifact@v4
+      if: inputs.os == 'macos-latest'
+      with:
+        name: native-latest-xcode-macos14-runtime
+        path: ${{ runner.temp }}/native-runtime.tar.gz
+        if-no-files-found: error
+        retention-days: 3
+    - name: Native contract suite
+      run: swift run --package-path desktop/native --skip-build ModelPlanContractChecks
+    - name: Frozen CLI desktop contract v1 goldens
+      run: swift run --package-path desktop/native --skip-build ModelPlanContractV1Checks "$GITHUB_WORKSPACE/testdata/contract-v1"
+    - name: Common-run-loop deadline check
+      run: swift run --package-path desktop/native --skip-build ModelPlanRunLoopChecks
+    - name: AppKit lifecycle and neutral surface checks
+      run: swift run --package-path desktop/native --skip-build ModelPlanShellChecks
+    - name: B05 primitive contracts
+      run: swift run --package-path desktop/native --skip-build ModelPlanPrimitiveChecks
+    - name: Synthetic fixture integrity
+      run: python3 desktop/native/tools/check-fixture-manifests.py
+    - name: Acknowledge preserved evidence
+      if: ${{ success() }}
+      shell: bash
+      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  transport:
+    if: ${{ inputs.task == 'transport' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache-dependency-path: cli/go.sum
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Build ordinary engine and labeled test-only pipe proxy
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p .tmp
+        printf '*\n' > .tmp/.gitignore
+        {
+          git rev-parse HEAD
+          uname -srm
+          go version
+          swift --version
+        } > .tmp/source.txt
+        (cd cli && go test ./internal/swiftwire/... -run '^TestChildEnvironmentContractMatchesSupervisor$')
+        (cd cli && go build -trimpath -o ../.tmp/modelplan ./cmd/modelplan)
+        go build -trimpath -o .tmp/frame-proxy clients/swift/ModelPlanEngineClient/Tools/FrameProxy/main.go
+        shasum -a 256 .tmp/modelplan .tmp/frame-proxy > .tmp/binaries.sha256
+        swift --version
+    - name: Client tests against the real binary
+      shell: bash
+      env:
+        MODELPLAN_ENGINE_TEST_BINARY: ${{ github.workspace }}/.tmp/modelplan
+        MODELPLAN_ENGINE_TEST_PROXY: ${{ github.workspace }}/.tmp/frame-proxy
+        TMPDIR: ${{ github.workspace }}/.tmp
+      run: |
+        set -euo pipefail
+        swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --jobs 2 2>&1 | tee .tmp/tests.log
+    - name: Repeat credential result race regressions 20 times
+      shell: bash
+      env:
+        MODELPLAN_ENGINE_TEST_BINARY: ${{ github.workspace }}/.tmp/modelplan
+        MODELPLAN_ENGINE_TEST_PROXY: ${{ github.workspace }}/.tmp/frame-proxy
+        TMPDIR: ${{ github.workspace }}/.tmp
+      run: |
+        set -euo pipefail
+        for iteration in {1..20}; do
+          echo "Credential race iteration ${iteration}/20"
+          swift test --package-path clients/swift/ModelPlanEngineClient --scratch-path .tmp/swift-build --skip-build --jobs 2 --filter 'RealBinaryTests.testReal(DuplicateCredentialRequestCannotUseOperationTwice|CredentialResultCannotBeReadmittedBeforeWriteCompletion)'
+        done 2>&1 | tee .tmp/credential-repeat.log
+    - name: Public source policy
+      run: node scripts/check-source-policy.mjs
+    - name: Preserve bounded synthetic evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: u4b-${{ inputs.os }}-${{ github.sha }}
+        path: |
+          .tmp/source.txt
+          .tmp/binaries.sha256
+          .tmp/tests.log
+          .tmp/credential-repeat.log
+        retention-days: 14
+      id: evidence
+    - name: Remove this job's completed scratch
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      shell: bash
+      run: rm -rf -- .tmp
+    - name: Acknowledge preserved evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      shell: bash
+      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  sequences:
+    if: ${{ inputs.task == 'sequences' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - name: Prepare owned scratch and record subject
+      shell: bash
+      run: |
+        mkdir -p .tmp/tmp
+        printf '*\n' > .tmp/.gitignore
+        echo "TMPDIR=$GITHUB_WORKSPACE/.tmp/tmp" >> "$GITHUB_ENV"
+        { git rev-parse HEAD; uname -srm; swift --version; } > .tmp/subject.txt
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - name: Event sequence tables with real Go captures
+      shell: bash
+      run: |
+        set -o pipefail
+        swift test --package-path clients/swift/ModelPlanEngineStoreCore --scratch-path .tmp/swift-build --jobs 2 2>&1 | tee .tmp/sequences.log
+    - name: Source policy
+      run: node scripts/check-source-policy.mjs
+    - name: Preserve synthetic test evidence
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: u6-core-${{ inputs.os }}-${{ github.sha }}
+        path: |
+          .tmp/subject.txt
+          .tmp/sequences.log
+        retention-days: 14
+      id: evidence
+    - name: Remove owned scratch after evidence upload
+      if: always()
+      run: rm -rf -- .tmp
+    - name: Acknowledge preserved evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      shell: bash
+      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  probe:
+    if: ${{ inputs.task == 'probe' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ${{ (inputs.task != 'native' && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER == 'self-hosted' || (inputs.task == 'probe' && github.event_name == 'workflow_dispatch'))) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    timeout-minutes: 5
+    steps:
+    - name: Validate native runner execution
+      shell: bash
+      run: |
+        set -euo pipefail
+        test "$(id -u)" != 0
+        test "$(uname -m)" = arm64
+        xcrun swift --version
+        echo "MAC_RUNNER_PROBE_OK"
