@@ -1,0 +1,457 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/refresh.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "refresh",
+  "description": "Production Refresh handler rows for one request R, written flat (C2.6 F): requested (before composition.refresh; copilotAccountsBefore must be 0), accepted (from that refresh/request call's own reply: engineRequestID, dispositions), then exactly one terminal: completed (the accepted rows projection showing the seed's Copilot account), deferred (Copilot not scheduled), abandoned (watchdog: deadline or stop) or failed (production refresh error) (C2.6 D).",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "kind",
+    "phase",
+    "requestId",
+    "menuObjectID",
+    "sessionID"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "kind": {
+      "const": "refresh"
+    },
+    "phase": {
+      "enum": [
+        "requested",
+        "accepted",
+        "completed",
+        "failed",
+        "deferred",
+        "abandoned"
+      ]
+    },
+    "requestId": {
+      "$ref": "../common.json#/$defs/uuid"
+    },
+    "menuObjectID": {
+      "$ref": "../common.json#/$defs/objectID"
+    },
+    "sessionID": {
+      "$ref": "../common.json#/$defs/uuid"
+    },
+    "rowsSequenceBefore": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "copilotAccountsBefore": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "engineRequestID": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ]
+    },
+    "dispositions": {
+      "type": "object",
+      "required": [
+        "copilot.runtime_usage"
+      ],
+      "properties": {
+        "copilot.runtime_usage": {
+          "$ref": "../common.json#/$defs/disposition"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "../common.json#/$defs/disposition"
+      }
+    },
+    "rowsSequenceAfter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "copilotAccountsAfter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accountIDSHA256": {
+      "$ref": "../common.json#/$defs/sha256"
+    },
+    "reason": {
+      "$ref": "../common.json#/$defs/scenarioReason"
+    },
+    "cause": {
+      "enum": [
+        "deadline",
+        "stop"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "requested"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "rowsSequenceBefore",
+          "copilotAccountsBefore"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "accepted"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "engineRequestID",
+          "dispositions"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "rowsSequenceAfter",
+          "copilotAccountsAfter",
+          "accountIDSHA256"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "reason"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "deferred"
+          }
+        }
+      },
+      "then": {
+        "required": [],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "abandoned"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "cause"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

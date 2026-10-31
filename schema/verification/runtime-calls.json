@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/runtime-calls.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "runtime-calls/1",
+  "description": "One line of the synthetic Copilot stub's call log $HOME/.modelplan-stub/runtime-calls.jsonl (absent in the seed), copied by Drive to $BATCH/runtime-calls.jsonl before HOME is removed; Drive records the copy's SHA-256 in result.json (runtimeCallsSHA256). runID/epoch come from the stub's seeded binding (C2.6 C-D).",
+  "x-file": "runtime-calls.jsonl (one JSON object per line; stub writer and Drive copy pending, M4)",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "method",
+    "pid",
+    "ppid",
+    "mono",
+    "seq"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "common.json#/$defs/epoch"
+    },
+    "method": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._]{0,63}$"
+    },
+    "pid": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "ppid": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "mono": {
+      "$ref": "common.json#/$defs/mono"
+    },
+    "seq": {
+      "$ref": "common.json#/$defs/seq"
+    }
+  },
+  "additionalProperties": false
+}
