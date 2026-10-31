@@ -46,6 +46,8 @@ import time
 import book
 import guardian
 import scenario
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 IDENTITY = ('runID', 'epoch', 'notBefore', 'expiresAt')
 
@@ -159,7 +161,7 @@ def check_locks(c, run):
         return 'prepared-receipt-mismatch'
     if c.get('locks'):
         try:
-            candidates += [p for p in Path(c['locks']).iterdir()]
+            candidates += [p for p in Path(c['locks']).iterdir() if not is_appledouble(p)]
         except FileNotFoundError:
             pass
         except OSError:

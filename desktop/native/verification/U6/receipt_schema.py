@@ -8,8 +8,11 @@ integers or numbers, and numbers must be finite, matching the Python receipt rea
 import json
 import math
 import re
+import sys
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 ROOT = Path(__file__).resolve().parents[4] / 'schema' / 'verification'
 ANNOTATIONS = frozenset(('$schema', '$id', '$comment', '$defs', 'title', 'description', 'examples', 'default'))
@@ -62,6 +65,8 @@ class Registry:
         self.documents = {}
         self.paths = {}
         for path in sorted(self.root.rglob('*.json')):
+            if is_appledouble(path):
+                continue
             if 'fixtures' in path.relative_to(self.root).parts:
                 continue
             document = json.loads(path.read_text())

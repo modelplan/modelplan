@@ -34,6 +34,13 @@ class BundlePinGuardTests(unittest.TestCase):
             self.fixture(root)
             self.assertEqual([x['files'] for x in guard.validate(root)], [1, 1])
 
+    def test_ignores_appledouble_without_relaxing_the_real_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);self.fixture(root);baseline=guard.validate(root)
+            for edition in ('community','official'):
+                (root/'desktop/cockpit/.tmp'/edition/'._index.html').write_bytes(b'\x00\x05\x16\x07')
+            self.assertEqual(guard.validate(root),baseline)
+
     def test_rejects_wrong_native_pin_and_orphan_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

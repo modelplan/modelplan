@@ -23,6 +23,8 @@ import check_launch_cleanup as clc  # noqa: E402
 import receipt_schema  # noqa: E402
 import replay  # noqa: E402
 import synthetic_batch as sb  # noqa: E402
+sys.path.insert(0,str(VERIFICATION))
+from artifact_paths import is_appledouble
 
 REG = receipt_schema.registry()
 ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
@@ -124,15 +126,16 @@ class SchemaShapeTests(unittest.TestCase):
             sb.write(directory)
             for name in sb.BATCHES:
                 fresh, committed = Path(directory, 'batches', name), FIXTURES / 'batches' / name
-                self.assertEqual(sorted(p.name for p in fresh.iterdir()), sorted(p.name for p in committed.iterdir()))
+                self.assertEqual(sorted(p.name for p in fresh.iterdir() if not is_appledouble(p)), sorted(p.name for p in committed.iterdir() if not is_appledouble(p)))
                 for path in fresh.iterdir():
+                    if is_appledouble(path):continue
                     self.assertEqual(path.read_bytes(), (committed / path.name).read_bytes(),
                                      'fixture drift: regenerate with U6/synthetic_batch.py --write ' + path.name)
 
     def test_provenance_marks_authored_native_fixtures_pending_producer_capture(self):
         provenance = json.loads((FIXTURES / 'provenance.json').read_text())
         entries = {e['file']: e for e in provenance['entries']}
-        files = {p.relative_to(FIXTURES).as_posix() for p in FIXTURES.rglob('*') if p.is_file()} - {'provenance.json'}
+        files = {p.relative_to(FIXTURES).as_posix() for p in FIXTURES.rglob('*') if not is_appledouble(p) and p.is_file()} - {'provenance.json'}
         self.assertEqual(set(entries), files)
         for file, entry in entries.items():
             if file.endswith(('launch-cleanup.json', 'dock-capture.json', 'consent-reset.json', 'operator-finish.json')):

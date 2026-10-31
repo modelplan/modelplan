@@ -24,6 +24,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / 'bin'))
 import receipt_schema  # noqa: E402
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 import check_launch_cleanup  # noqa: E402
 
 SCHEMA = 'u6-replay/1'
@@ -551,7 +553,7 @@ def replay(context, files):
 def read_batch(batch):
     """{file name: bytes} for the regular files directly in `batch` (symlinks are not evidence)."""
     batch = Path(batch)
-    return {p.name: p.read_bytes() for p in sorted(batch.iterdir()) if p.is_file() and not p.is_symlink()}
+    return {p.name: p.read_bytes() for p in sorted(batch.iterdir()) if not is_appledouble(p) and p.is_file() and not p.is_symlink()}
 
 
 def main(argv=None):

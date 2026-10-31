@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """U6-only receipt qualification; shared Evidence remains the manifest/hash owner."""
-import argparse, importlib.util, json
+import argparse, importlib.util, json, sys
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',type=Path,required=True);parser.add_argument('--batch',type=Path,required=True)
@@ -13,8 +15,8 @@ def main(argv=None):
     verdict=chain.evaluate(config,args.batch,args.package,kit_manifest)
     spec = importlib.util.spec_from_file_location('shared_evidence',Path(__file__).with_name('evidence.py'))
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
-    files=sorted(p.relative_to(args.batch).as_posix() for p in args.batch.rglob('*') if p.is_file()
-                 and p.name not in ('manifest.json','filelist.txt','README.md') and not p.name.startswith('._'))
+    files=sorted(p.relative_to(args.batch).as_posix() for p in args.batch.rglob('*') if not is_appledouble(p) and p.is_file()
+                 and p.name not in ('manifest.json','filelist.txt','README.md'))
     report=dict(headSHA=config['head'],profile='synthetic',attributionMethod='c2.3-raw-run-bound-receipts',
         scenarios=[dict(id='U6-DockMenu-synthetic',outcome=verdict['outcome'],step=verdict['step'],reason=verdict['reason'])],files=files)
     result = shared.manifest(report,args.batch)

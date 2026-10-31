@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """Inventory one completed U6 synthetic evidence batch without rewriting receipts."""
-import argparse, hashlib, json
+import argparse, hashlib, json, sys
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 def inventory(config):
     batch = Path(config['batch'])
@@ -15,6 +17,7 @@ def inventory(config):
         raise ValueError('evidence-pins-mismatch')
     entries = []
     for path in sorted(batch.rglob('*')):
+        if is_appledouble(path): continue
         if path.is_symlink(): raise ValueError('symlink-in-evidence')
         if not path.is_file() or path.name in ('README.md','filelist.txt'): continue
         rel = path.relative_to(batch).as_posix()

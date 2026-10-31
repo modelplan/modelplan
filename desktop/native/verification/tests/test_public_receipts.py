@@ -3,13 +3,17 @@
 import json
 from pathlib import Path
 import re
+import sys
 import unittest
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 
 class PublicReceiptTests(unittest.TestCase):
     def test_public_receipts_use_relative_immutable_evidence_ids(self):
         root = Path(__file__).resolve().parents[1] / 'results'
         for path in root.glob('*.json'):
+            if is_appledouble(path):continue
             with self.subTest(receipt=path.name):
                 data = json.loads(path.read_text())
                 self.assertNotIn('fullEvidencePath', data)

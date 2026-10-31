@@ -34,6 +34,8 @@ sys.path.insert(0, str(BIN))
 import book  # noqa: E402
 import check_launch_cleanup  # noqa: E402
 import guardian  # noqa: E402
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 RUN, EPOCH, PID, FOREIGN_PID = 'u6-run-0001', 'u6-epoch-0001', 4242, 999
 T0, MONO0, LEASE_SECONDS = 1900000000.0, 86400.0, 600
@@ -514,6 +516,7 @@ def write(fixtures):
         directory.mkdir(parents=True, exist_ok=True)
         files = dict(trace.files(), **{'context.json': (json.dumps(context(), indent=2, sort_keys=True) + '\n').encode()})
         for stale in directory.iterdir():
+            if is_appledouble(stale):continue
             if stale.name not in files:
                 stale.unlink()
         for file, data in files.items():

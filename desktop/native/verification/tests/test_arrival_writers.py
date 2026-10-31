@@ -2,7 +2,10 @@
 """Verification tools must never author native arrival evidence (they only read it)."""
 from pathlib import Path
 import re
+import sys
 import unittest
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+from artifact_paths import is_appledouble
 
 BIN = Path(__file__).resolve().parents[1] / 'bin'
 WRITE = re.compile(r'forWritingTo|forWritingAtPath|forUpdating|createFile|\.write\(|FileManager\.default\.createFile|open\([^)]*[\'"](?:a|w|x|r\+)')
@@ -10,7 +13,7 @@ WRITE = re.compile(r'forWritingTo|forWritingAtPath|forUpdating|createFile|\.writ
 
 class ArrivalWriters(unittest.TestCase):
     def test_only_status_menu_drive_touches_arrivals_and_only_reads(self):
-        users = [p for p in sorted(BIN.iterdir()) if p.is_file() and p.suffix in ('.swift', '.py') and 'arrivals' in p.read_text()]
+        users = [p for p in sorted(BIN.iterdir()) if not is_appledouble(p) and p.is_file() and p.suffix in ('.swift', '.py') and 'arrivals' in p.read_text()]
         self.assertEqual([p.name for p in users], ['status_menu_drive.swift'])
         lines = users[0].read_text().splitlines()
         for i, line in enumerate(lines):
