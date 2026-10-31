@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: MIT
 """U6-only physical pointer plan and native arrival check for one admitted subject."""
-import argparse, json, math, sys
+import argparse, json, math, sys, time
 from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'U6'))
+from u6_clock import system_uptime
 from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup, identity, launcher_lost
 
@@ -52,7 +54,11 @@ def make(config, kind, purpose='refresh'):
     with path.open('x') as stream: json.dump(plan,stream,indent=2);stream.write('\n')
     print(path)
 
-def check(config, kind, purpose='refresh'):
+class ArrivalMissing(ValueError):
+    def __init__(self,deadline):
+        super().__init__('native-arrival-missing');self.deadline=deadline
+
+def check_once(config, kind, purpose='refresh'):
     batch = Path(config['batch']); lease = config['expectedLease']
     plan = json.loads((batch/(prefix(kind,purpose)+'-plan.json')).read_text())
     pointer = rows(plan['output'])
@@ -99,8 +105,19 @@ def check(config, kind, purpose='refresh'):
         if not ended: raise ValueError('first-menu-not-ended')
         observed=[r for r in observed if r.get('checks',{}).get('sessionID') not in (None,a_id)
                   and r.get('checks',{}).get('menuObjectID')==object_id]
-    if not observed: raise ValueError('native-arrival-missing')
+    if not observed: raise ArrivalMissing(upper)
     print(json.dumps(dict(input=kind,outcome='arrived',runID=lease['runID'],epoch=lease['epoch'])))
+
+def check(config,kind,purpose='refresh',clock=system_uptime,sleep=time.sleep):
+    # One input only. Wait for its owned receipt through the contract's existing
+    # event deadline; never repost input, renew admission or extend that deadline.
+    while True:
+        still_admitted(config)
+        try:return check_once(config,kind,purpose)
+        except ArrivalMissing as error:
+            remaining=error.deadline-clock()
+            if remaining<=0:raise
+            sleep(min(.05,remaining))
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)

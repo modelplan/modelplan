@@ -87,4 +87,33 @@ class U6PointerPlanTests(unittest.TestCase):
         self.assertFalse(plan['statusMenu']['openMenu'])
         self.assertEqual(plan['statusMenu']['request']['action'],'refresh')
 
+    def status_input(self):
+        self.write_rows([dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=1,mono=99,
+            checks=dict(coordinateSpace='appkit-screen',cgX=100,cgY=20,width=20,height=20))])
+        tool.make(self.config,'status')
+        rows=[dict(event='mouse-moved-posted',kind='move',runID='run',epoch='epoch',targetPID=42,mono=100),
+              dict(event='mouse-button-down-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100),
+              dict(event='mouse-button-up-posted',kind='click',runID='run',epoch='epoch',targetPID=42,mono=100.1),
+              dict(event='pointer-result',outcome='posted',runID='run',epoch='epoch',targetPID=42)]
+        path=self.root/'status-pointer.jsonl';path.write_text(''.join(json.dumps(r)+'\n' for r in rows));return path
+
+    def test_waits_for_owned_arrival_without_posting_another_input(self):
+        path=self.status_input();before=path.read_bytes();now=[100.4];checks=[]
+        tool.still_admitted=lambda _:checks.append(now[0])
+        def sleep(seconds):
+            now[0]+=seconds
+            if now[0]>=101:
+                with (self.root/'native-observations.jsonl').open('a') as out:
+                    out.write(json.dumps(dict(event='menu-begin',runID='run',epoch='epoch',pid=42,seq=2,mono=now[0],
+                        checks=dict(surface='status',subjectPID=42,menuObjectID='owned',sessionID='A')))+'\n')
+        tool.check(self.config,'status',clock=lambda:now[0],sleep=sleep)
+        self.assertGreater(now[0],100.4);self.assertGreater(len(checks),1);self.assertEqual(path.read_bytes(),before)
+
+    def test_wait_never_extends_the_posted_input_deadline(self):
+        path=self.status_input();before=path.read_bytes();now=[100.4]
+        def sleep(seconds):now[0]+=seconds
+        with self.assertRaisesRegex(ValueError,'native-arrival-missing'):
+            tool.check(self.config,'status',clock=lambda:now[0],sleep=sleep)
+        self.assertAlmostEqual(now[0],103.1);self.assertEqual(path.read_bytes(),before)
+
 if __name__=='__main__':unittest.main()
