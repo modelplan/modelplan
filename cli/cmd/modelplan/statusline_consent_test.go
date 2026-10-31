@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 	"io"
@@ -70,4 +71,50 @@ func TestQueuedReportWriteCannotRepopulateAfterForget(t *testing.T) {
 		t.Fatal(code, out, errOut)
 	}
 	reportWrite(old, func() error { t.Fatal("stale queued report was allowed to write after Forget"); return nil })
+}
+
+func TestStatuslineWaitsBrieflyForTheLockInsteadOfDroppingItsReading(t *testing.T) {
+	home := consentFixtureHome(t)
+	input := func(session, effort string) io.Reader {
+		return strings.NewReader(`{"session_id":"` + session + `","model":{"id":"claude-fixture"},"effort":{"level":"` + effort + `"},"rate_limits":{"five_hour":{"used_percentage":25,"resets_at":2000000000}}}`)
+	}
+	if code := run([]string{"statusline", "--record-only", "--offline"}, input("session-a", "medium"), io.Discard, io.Discard); code != 0 {
+		t.Fatal(code)
+	}
+	// Another writer (a status line or a hook) holds the lock while session B renders.
+	unlock, err := consent.ReaderLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"statusline", "--record-only", "--offline"}, input("session-b", "high"), io.Discard, io.Discard)
+	}()
+	time.Sleep(statuslineLockWait / 4)
+	unlock()
+	if code := <-done; code != 0 {
+		t.Fatal(code)
+	}
+	raw, _ := os.ReadFile(filepath.Join(home, "modelplan-cache/observed/claude-code.json"))
+	for _, s := range []string{"session-a", "session-b"} {
+		if !strings.Contains(string(raw), quota.SessionKey(s)) {
+			t.Fatalf("%s's reading lost under contention:\n%s", s, raw)
+		}
+	}
+	// A lock held past the wait still ends the render without a write, as before.
+	unlock, err = consent.ReaderLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	start := time.Now()
+	if code := run([]string{"statusline", "--record-only", "--offline"}, input("session-c", "low"), io.Discard, io.Discard); code != 0 {
+		t.Fatal(code)
+	}
+	if waited := time.Since(start); waited > 3*statuslineLockWait {
+		t.Fatalf("waited %s", waited)
+	}
+	if raw, _ := os.ReadFile(filepath.Join(home, "modelplan-cache/observed/claude-code.json")); strings.Contains(string(raw), quota.SessionKey("session-c")) {
+		t.Fatal("wrote without the lock")
+	}
 }

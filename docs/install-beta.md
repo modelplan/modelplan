@@ -62,3 +62,9 @@ The cache and configuration are shared with standalone CLI and plugin copies. Re
 6. Empty the Trash when you no longer need the deleted files.
 
 Removing the app also removes its bundled CLI. Separately installed ModelPlan plugins or standalone CLI copies remain installed and can recreate shared data if run again; uninstall those through the tool or package manager you used if you are removing all ModelPlan clients. After uninstalling all ModelPlan plugins, you can also remove their downloaded CLI cache at `~/.cache/modelplan-cli/`; it is separate from the app's bundled CLI and the shared data cache. Keep other tools' folders and Keychain sign-in items, such as Claude Code's or Codex's: they belong to those tools, not to ModelPlan.
+
+## Send beta feedback
+
+Open the [Mac beta feedback form](https://github.com/modelplan/modelplan/issues/new?template=beta-feedback.yml) to report what happened and what you expected. In the app, choose **Settings > About > Copy diagnostics**, review the output, and paste it into the form. Some fields may be empty or `unknown`; you can still send feedback if diagnostics are unavailable.
+
+Issues are public. Never paste tokens, account emails or raw provider responses, including in reproduction steps or diagnostics.

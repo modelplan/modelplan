@@ -667,6 +667,9 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 	return d, s, 0
 }
 
+// statuslineLockWait bounds how long a status line waits for the reader lock.
+var statuslineLockWait = 400 * time.Millisecond
+
 // statusline is cache-only: it may start a detached sync but never waits on the network.
 // For Claude Code it also records the usage windows the harness passes on stdin, so the
 // Skill and `modelplan quota` can read them later.
@@ -689,7 +692,11 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if preview {
 		return statuslineInput(in, stdout, style, st, c, harness, modelID, effort, true)
 	}
-	unlock, err := consent.ReaderLock()
+	// Another session's status line or a hook may hold the lock for a moment; wait briefly
+	// rather than drop this session's reading (each session keeps its own in the snapshot).
+	ctx, cancel := context.WithTimeout(context.Background(), statuslineLockWait)
+	unlock, err := consent.ReaderLockContext(ctx)
+	cancel()
 	if err != nil {
 		return 0
 	}
