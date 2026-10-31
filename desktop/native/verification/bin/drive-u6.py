@@ -3,6 +3,8 @@
 import argparse,hashlib,importlib.util,json,os,signal,subprocess,sys,time,shutil
 from pathlib import Path
 from admission import load_and_admit
+import book
+from release import IDENTITY_FIELDS, validate_release
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('shared_cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,data):
@@ -27,7 +29,13 @@ def main():
                   leasePath=str(lease),releasePath=c['releasePath'],stopPath=str(stop),
                   expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
                   requiredSeconds=30,booking=c.get('booking'))
-    load_and_admit(contract)
+    # Check booking and file-backed release before starting our heartbeat guardian.
+    # The shared admission loader then checks live heartbeat immediately before launch.
+    initial_lease=json.loads(lease.read_text())
+    if any(initial_lease.get(k)!=contract['expectedLease'].get(k) for k in IDENTITY_FIELDS):raise ValueError('run/lease identity mismatch')
+    if stop.exists():raise ValueError('stopped')
+    validate_release(initial_lease,json.loads(Path(c['releasePath']).read_text()))
+    book.admit(dict(booking=c.get('booking'),lease=initial_lease,requiredSeconds=30))
     result=dict(runID=c['runID'],epoch=c['epoch'],headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False)
     try:
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
@@ -38,9 +46,14 @@ def main():
         gc=scratch/'guardian.json';write(gc,c|dict(controllerPID=os.getpid(),lease=str(lease),stop=str(stop)))
         guardian=subprocess.Popen([sys.executable,str(BASE/'drive-scenario.py'),'--guardian',str(gc)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         deadline=time.monotonic()+3
-        while not lease.exists() and time.monotonic()<deadline:time.sleep(.1)
+        while time.monotonic()<deadline:
+            if guardian.poll() is not None:raise RuntimeError('guardian-exited-before-launch')
+            live=json.loads(lease.read_text())
+            if live.get('guardianHeartbeatAt',0)>initial_lease.get('guardianHeartbeatAt',0):break
+            time.sleep(.1)
+        else:raise RuntimeError('guardian-heartbeat-timeout')
         load_and_admit(contract)
-        native_contract=scratch/'native-guard.json';write(native_contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl')))
+        native_contract=scratch/'native-guard.json';write(native_contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl'),menuRequest=str(out/'menu-request.json')))
         with (scratch/'app-stdout.log').open('w') as stdout,(scratch/'app-stderr.log').open('w') as stderr:
             app=subprocess.Popen([str(binary),'--u6-drive-contract',str(native_contract)],env=c['environment'],stdout=stdout,stderr=stderr,start_new_session=True)
             identity=cleanup.identity(app.pid);assert identity is not None

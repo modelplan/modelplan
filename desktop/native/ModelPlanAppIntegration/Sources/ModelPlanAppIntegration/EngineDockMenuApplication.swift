@@ -3,6 +3,9 @@ import AppKit
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+#if MODELPLAN_U6_DRIVE
+import ModelPlanMenuVerification
+#endif
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -76,6 +79,11 @@ import ModelPlanSettings
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
+            guard let self else { return false }; return menu === self.status?.menu
+        }, actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
+        #endif
         Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
     }
     private func renderMenu() {

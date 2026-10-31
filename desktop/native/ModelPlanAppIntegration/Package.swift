@@ -11,6 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
+        .package(path: "../verification/StatusMenu"),
         .package(name: "ModelPlanSettings", path: "../ModelPlanSettings"),
         .package(path: "../ModelPlanEngineStore"),
         .package(path: "../../../clients/swift/ModelPlanEngineClient"),
@@ -18,6 +19,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
+            .product(name: "ModelPlanMenuVerification", package: "StatusMenu"),
             .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore"),
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
             .product(name: "ModelPlanWire", package: "ModelPlanWire"),

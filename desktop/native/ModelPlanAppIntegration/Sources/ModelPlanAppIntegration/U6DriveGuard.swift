@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 #if MODELPLAN_U6_DRIVE
 import AppKit
+import ModelPlanMenuVerification
 
 /// Test-build-only lease/owner stop hook. Emits only scoped booleans, never other-app identity.
 @MainActor final class U6DriveGuard {
     private let runID: String, epoch: String
     private let expiry: Double
     private let lease: URL, stop: URL, observations: URL
+    private let menuRequest: URL
+    private var arrivalObserver: StatusMenuArrivalObserver?
     private var timer: Timer?
     private var observer: NSObjectProtocol?
     private var armed = false, ending = false
@@ -29,9 +32,10 @@ import AppKit
               let start = c["start"] as? Double, let expiry = c["expiresAt"] as? Double,
               expiry.isFinite, start.isFinite, expiry > start, expiry-start <= 1200,
               Date().timeIntervalSince1970 < expiry, let lease = c["lease"] as? String,
-              let stop = c["stop"] as? String, let observations = c["observations"] as? String else { throw Failure.invalid }
+              let stop = c["stop"] as? String, let observations = c["observations"] as? String,
+              let menuRequest = c["menuRequest"] as? String else { throw Failure.invalid }
         self.runID=runID;self.epoch=epoch;self.expiry=expiry
-        self.lease=URL(fileURLWithPath:lease);self.stop=URL(fileURLWithPath:stop);self.observations=URL(fileURLWithPath:observations)
+        self.lease=URL(fileURLWithPath:lease);self.stop=URL(fileURLWithPath:stop);self.observations=URL(fileURLWithPath:observations);self.menuRequest=URL(fileURLWithPath:menuRequest)
     }
     private func begin() {
         emit("started")
@@ -58,6 +62,26 @@ import AppKit
         // Exactly one foreground request for the admitted synthetic run.
         NSApplication.shared.activate(); armed = NSApplication.shared.isActive
         tick()
+    }
+    func observeStatusMenu(ownsStatusMenu: @escaping (NSMenu) -> Bool,
+                           actionForItem: @escaping (NSMenuItem) -> StatusMenuAction?) {
+        arrivalObserver = StatusMenuArrivalObserver(runID: runID, epoch: epoch,
+            ownsStatusMenu: ownsStatusMenu, actionForItem: actionForItem,
+            pendingRequest: { [weak self] in
+                guard let self, let data = try? Data(contentsOf: self.menuRequest), data.count <= 4096 else { return nil }
+                return try? JSONDecoder().decode(StatusMenuActionRequest.self, from: data)
+            }, isLive: { [weak self] in self?.isLive() == true },
+            emit: { [weak self] receipt in self?.emitObject(receipt.event, fields: receipt.fields) })
+    }
+    private func isLive() -> Bool {
+        let now = Date().timeIntervalSince1970
+        guard !ending, now < expiry, !FileManager.default.fileExists(atPath: stop.path),
+              let bytes = try? Data(contentsOf: lease), bytes.count <= 16_384,
+              let c = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              c["runID"] as? String == runID, c["epoch"] as? String == epoch,
+              c["exclusive"] as? Bool == true, c["ownerPreempted"] as? Bool == false,
+              let heartbeat = c["guardianHeartbeatAt"] as? Double else { return false }
+        return now-heartbeat >= 0 && now-heartbeat <= 2
     }
     private func tick() {
         guard !ending else { return }
@@ -96,7 +120,7 @@ import AppKit
     }
     private func finish(_ reason: String) {
         guard !ending else { return }; ending = true
-        emit(reason); timer?.invalidate()
+        emit(reason); timer?.invalidate(); arrivalObserver?.stop(); arrivalObserver = nil
         if !FileManager.default.fileExists(atPath:stop.path), let data = try? JSONSerialization.data(withJSONObject:["runID":runID,"epoch":epoch,"stop":true,"reason":reason]) { try? data.write(to:stop,options:.atomic) }
         NSApplication.shared.terminate(nil)
     }

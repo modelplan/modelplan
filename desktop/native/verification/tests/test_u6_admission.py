@@ -29,16 +29,19 @@ class U6AdmissionTests(unittest.TestCase):
                      environment=dict(HOME=str(home), TMPDIR=str(tmp)), locks=str(root/'locks'),
                      stopPath=str(batch/'stop.json'), leasePath=str(root/'lease'),
                      releasePath=str(root/'release'), runID='run', epoch='epoch')
+            Path(c['leasePath']).write_text(json.dumps(dict(runID='run', epoch='epoch', notBefore=100, expiresAt=300)))
+            Path(c['releasePath']).write_text('{}')
             config = root / 'config.json'; config.write_text(json.dumps(c))
             with patch.object(sys, 'argv', ['drive-u6', '--config', str(config)]), \
                  patch.object(drive.time, 'time', return_value=110), \
-                 patch.object(drive, 'load_and_admit', side_effect=ValueError('booking denied')) as gate, \
+                 patch.object(drive, 'validate_release'), \
+                 patch.object(drive.book, 'admit', side_effect=ValueError('booking denied')) as gate, \
                  patch.object(drive.subprocess, 'Popen') as spawn:
                 with self.assertRaisesRegex(ValueError, 'booking denied'):
                     drive.main()
             spawn.assert_not_called()
             self.assertFalse((root/'locks').exists())
-            self.assertEqual(gate.call_args.args[0]['expectedLease']['runID'], 'run')
+            self.assertEqual(gate.call_args.args[0]['lease']['runID'], 'run')
             self.assertNotIn('release', gate.call_args.args[0])
 
 if __name__ == '__main__':
