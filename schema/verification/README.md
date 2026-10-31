@@ -3,7 +3,7 @@
 
 These Draft 2020-12 schemas describe only what the U6 Dock/menu drive emits and consumes, as specified by
 `desktop/native/verification/U6-DockMenu-Drive.md`: "Evidence and timing contract (C2.4)" as amended by
-"Contract revision C2.6" (C2.6 wins where they differ). They follow the [App–CLI contract](../app-cli/README.md)
+"Contract revision C2.6", with the C2.7 §D call window (C2.7 wins where they differ). They follow the [App–CLI contract](../app-cli/README.md)
 pattern: versioned schemas, fixtures with recorded provenance, a drift check, and contract tests. `common.json`
 holds the shared identity, clock and code definitions.
 
@@ -73,7 +73,7 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 2. **Meaning.** `U6/replay.py` is a pure offline oracle (no GUI, process, clock or writes) that reduces a batch
    through C2.4/C2.6 to per-step outcomes, independent of `bin/evidence-u6.py`. Each negative trace asserts its
    exact step outcomes, scenario reason and deciding assertion, and that every other step passes.
-3. **Invocation.** The replay CLI runs on the committed batches. Every one of the 95 traces the oracle judges
+3. **Invocation.** The replay CLI runs on the committed batches. Every one of the 96 traces the oracle judges
    also runs through the real `bin/evidence-u6.py --config --batch --package --kit-manifest` on the same batch
    bytes; `synthetic_batch.kit_batch()` adds only what the final entry reads beyond the batch (subject
    registration, `launch.json`, `prepared.json`, `synthetic-seed.json`, pointer plans, the menu helper's
@@ -98,9 +98,9 @@ exactly the keyword subset these schemas use and refuses any other keyword):
   `completed` passes only when `accepted` scheduled Copilot (else FAIL), the projection qualifies
   (`copilotAccountsAfter` = 1, `readingSHA256` = the seed's, `rowsSequenceAfter` > n; a mismatch or more than one
   account is FAIL), the runtime-call copy exists, matches `result.json`'s `runtimeCallsSHA256` and every line is
-  schema-valid and this run's (else NOT-RUN), no `account.getQuota` precedes `accepted` (else FAIL: a preseeded
-  log lands here too; other methods such as `connect` may) and an `account.getQuota` call lies strictly
-  between `accepted` and `completed` (else FAIL). Earlier unrelated projections leave no row and are ignored.
+  schema-valid and this run's (else NOT-RUN), no `account.getQuota` precedes `requested` (else FAIL: a preseeded
+  log lands here too) and an `account.getQuota` call lies strictly between `requested` and `completed` (else
+  FAIL); it may precede `accepted`, because production wakes the worker before returning the reply (C2.7 D). Earlier unrelated projections leave no row and are ignored.
 - Step 6: C2.4's explicit FAIL predicates (B ended before `clear-initiated`; a later end of B without
   `cause: clear` and the same `clearID`; a recorded private item missing from or still private in `menu-scrubbed`;
   private content in the current menu; a seed-hash title for B or a later session after `accepted-clear`) are
@@ -228,9 +228,10 @@ The traces' seed reading (`SEED_READING_ACCOUNT`, one window at 75 % resetting 2
 | `copilot-not-scheduled-but-completed` | C2.6 D, C2.6 F | 3 FAIL / unknown / `copilot-not-scheduled` | fail |
 | `stub-call-missing` | C2.6 D | 3 FAIL / unknown / `quota-call-missing` | fail |
 | `quota-call-after-completed` | C2.6 D | 3 FAIL / unknown / `quota-call-missing` | fail |
-| `call-before-accepted` | C2.6 D | 3 FAIL / unknown / `call-before-accepted` | fail |
-| `connect-before-accepted` | C2.6 D (only account.getQuota counts before accepted) | none | pass |
-| `runtime-calls-preseeded` | C2.6 C-D (the log must be absent in the seed) | 3 FAIL / unknown / `call-before-accepted` | fail |
+| `quota-call-before-accepted` | C2.7 D (the worker is woken before the reply returns) | none | pass |
+| `call-before-requested` | C2.7 D | 3 FAIL / unknown / `call-before-requested` | fail |
+| `connect-before-accepted` | C2.6 D (connect before the reply) | none | pass |
+| `runtime-calls-preseeded` | C2.6 C-D (the log must be absent in the seed) | 3 FAIL / unknown / `call-before-requested` | fail |
 | `runtime-calls-foreign` | C2.6 D, C2.4 section 1 | 3 NOT-RUN / wrong-subject / `runtime-calls-foreign` | not-run |
 | `runtime-calls-missing` | C2.6 D | 3 NOT-RUN / not-delivered / `runtime-calls-missing` | not-run |
 | `runtime-calls-digest-mismatch` | C2.6 D | 3 NOT-RUN / not-delivered / `runtime-calls-undigested` | not-run |
@@ -310,7 +311,7 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 ## evidence-u6 changes required by C2.6
 
 `bin/evidence-u6.py` / `U6/evidence_chain.py` at #332 6a063beb (unchanged since 8f857aa6) agree with the oracle on
-67 of 95 traces. The 28 below are `expectedFailure` in `EvidenceU6CLITests` (C2.6 G.3 asks for none);
+68 of 96 traces. The 28 below are `expectedFailure` in `EvidenceU6CLITests` (C2.6 G.3 asks for none);
 `test_disagreement_table_is_exact` pins both outcomes. Required changes, for M4:
 
 1. Closure of another run → NOT-RUN, not FAIL (`validate_receipt(closure, run, epoch)`'s `closure-other-run`
@@ -325,8 +326,8 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
    `deferred` (NOT-RUN by disposition: `cooldown`, `engine-disabled`, `consent-required`), `abandoned` (NOT-RUN
    `timeout` / `not-delivered`), the `engineRequestID` echo, the qualifying `completed` (`copilotAccountsAfter` = 1, `readingSHA256`,
    advance; else FAIL, including today's NOT-RUN for an unchanged sequence), and `$BATCH/runtime-calls.jsonl`
-   against `result.json`'s `runtimeCallsSHA256` and the run binding (else NOT-RUN), no `account.getQuota` before `accepted` and
-   `account.getQuota` between `accepted` and `completed` (else FAIL); add `cooldown` to `CODES`.
+   against `result.json`'s `runtimeCallsSHA256` and the run binding (else NOT-RUN), no `account.getQuota` before `requested` and
+   `account.getQuota` between `requested` and `completed` (else FAIL; C2.7 D); add `cooldown` to `CODES`.
 9. C2.6 E: `accepted-clear` and `menu-scrubbed` within 5 s of `clear-initiated`, late → FAIL `timeout`.
 
 | Trace | Oracle (C2.6) | evidence-u6 | Deciding text |
@@ -350,8 +351,8 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 | `copilot-not-scheduled-but-completed` | fail | pass | C2.6 D PASS needs accepted "scheduled"; C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
 | `stub-call-missing` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
 | `quota-call-after-completed` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
-| `call-before-accepted` | fail | pass | C2.6 D FAIL: "a call logged before accepted" |
-| `runtime-calls-preseeded` | fail | pass | C2.6 D FAIL: "a call logged before accepted"; C2.6 C: "The log is absent in the seed" |
+| `call-before-requested` | fail | pass | C2.7 D FAIL: an account.getQuota call before requested |
+| `runtime-calls-preseeded` | fail | pass | C2.7 D FAIL: an account.getQuota call before requested; C2.6 C: "The log is absent in the seed" |
 | `runtime-calls-foreign` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
 | `runtime-calls-missing` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
 | `runtime-calls-digest-mismatch` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |

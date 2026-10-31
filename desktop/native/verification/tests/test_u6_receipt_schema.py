@@ -557,16 +557,19 @@ CASES = [
      {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
     ('quota-call-after-completed', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 23.5)), {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
-    ('call-before-accepted', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
-        ['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
-     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
-    ('connect-before-accepted', 'C2.6 D (only account.getQuota counts before accepted)', lambda t: setattr(
+    ('quota-call-before-accepted', 'C2.7 D (the worker is woken before the reply returns)', lambda t: setattr(
+        t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
+     {}, 'pass'),
+    ('call-before-requested', 'C2.7 D', lambda t: setattr(t, 'runtime', sb.stub_calls(['account.getQuota'], 21.04)
+        + sb.stub_calls(['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=2)), {}, (),
+     {3: ('fail', 'unknown', 'call-before-requested')}, 'fail'),
+    ('connect-before-accepted', 'C2.6 D (connect before the reply)', lambda t: setattr(
         t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus'], 21.051, step=0.002)
         + sb.stub_calls(['account.getQuota'], 21.065, first_seq=3)), {}, (), {}, 'pass'),
     ('runtime-calls-preseeded', 'C2.6 C-D (the log must be absent in the seed)', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 1.0) + sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=4)), {}, (),
-     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+     {3: ('fail', 'unknown', 'call-before-requested')}, 'fail'),
     ('runtime-calls-foreign', 'C2.6 D, C2.4 section 1', lambda t: setattr(t, 'runtime', sb.stub_calls(
         ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, run='u6-run-0002')), {}, (),
      {3: ('not-run', 'wrong-subject', 'runtime-calls-foreign')}, 'not-run'),
@@ -725,7 +728,7 @@ _F_CONTRADICTION = 'C2.6 F: "Two valid receipts that contradict each other (incl
 _D_NOT_RUN = 'C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt"'
 _D_ACCEPTED = 'C2.6 D: accepted is "written from the completion of that refresh/request call (the per-call reply, never store.snapshot or any cached value)"'
 _D_FAIL_COMPLETED = 'C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call"'
-_D_FAIL_BEFORE = 'C2.6 D FAIL: "a call logged before accepted"'
+_D_FAIL_BEFORE = 'C2.7 D FAIL: an account.getQuota call before requested'
 _E = 'C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout"'
 DISAGREEMENTS = {
     'closure-other-run': ('not-run', 'fail', _F_IGNORED),
@@ -748,7 +751,7 @@ DISAGREEMENTS = {
     'copilot-not-scheduled-but-completed': ('fail', 'pass', 'C2.6 D PASS needs accepted "scheduled"; ' + _F_CONTRADICTION),
     'stub-call-missing': ('fail', 'pass', _D_FAIL_COMPLETED),
     'quota-call-after-completed': ('fail', 'pass', _D_FAIL_COMPLETED),
-    'call-before-accepted': ('fail', 'pass', _D_FAIL_BEFORE),
+    'call-before-requested': ('fail', 'pass', _D_FAIL_BEFORE),
     'runtime-calls-preseeded': ('fail', 'pass', _D_FAIL_BEFORE + '; C2.6 C: "The log is absent in the seed"'),
     'runtime-calls-foreign': ('not-run', 'pass', _D_NOT_RUN),
     'runtime-calls-missing': ('not-run', 'pass', _D_NOT_RUN),
@@ -788,7 +791,7 @@ class EvidenceU6CLITests(unittest.TestCase):
         self.assertLessEqual(set(DISAGREEMENTS), set(traces))
         for name, (oracle, evidence, quote) in DISAGREEMENTS.items():
             self.assertNotEqual(oracle, evidence, name)
-            self.assertTrue(quote.startswith(('C2.6', 'C2.4')), name)
+            self.assertTrue(quote.startswith(('C2.7', 'C2.6', 'C2.4')), name)
             ctx, files = traces[name]
             self.assertEqual((replay.replay(ctx, files)['outcome'], evidence_u6(ctx, files)['outcome']),
                              (oracle, evidence), name)

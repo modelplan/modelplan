@@ -64,7 +64,7 @@ DETAILS = {
     'deferred-but-scheduled': 'unknown', 'copilot-not-scheduled': 'unknown', 'copilot-accounts-before': 'unknown',
     'projection-not-qualifying': 'unknown', 'runtime-calls-missing': 'not-delivered',
     'runtime-calls-malformed': 'unknown', 'runtime-calls-undigested': 'not-delivered',
-    'runtime-calls-foreign': 'wrong-subject', 'call-before-accepted': 'unknown', 'quota-call-missing': 'unknown',
+    'runtime-calls-foreign': 'wrong-subject', 'call-before-requested': 'unknown', 'quota-call-missing': 'unknown',
     'menu-a-not-ended': 'not-delivered', 'click-b-before-a-ended': 'out-of-window',
     'session-reused': 'wrong-subject',
     'title-missing': 'not-delivered', 'title-hash-mismatch': 'wrong-subject', 'title-wrong-menu': 'wrong-subject',
@@ -331,9 +331,10 @@ def step3(context, native, files, a):
     calls, problem = _runtime_calls(context, files)
     if problem:
         return NOT_RUN(problem), None, end
-    if any(c['method'] == 'account.getQuota' and c['mono'] < accepted['mono'] for c in calls):
-        return FAIL('call-before-accepted'), None, end
-    if not any(c['method'] == 'account.getQuota' and accepted['mono'] < c['mono'] < terminal['mono'] for c in calls):
+    # C2.7 D: production wakes the worker before returning the reply, so the call may precede accepted.
+    if any(c['method'] == 'account.getQuota' and c['mono'] < requested['mono'] for c in calls):
+        return FAIL('call-before-requested'), None, end
+    if not any(c['method'] == 'account.getQuota' and requested['mono'] < c['mono'] < terminal['mono'] for c in calls):
         return FAIL('quota-call-missing'), None, end
     return PASS(), terminal['mono'], end
 
