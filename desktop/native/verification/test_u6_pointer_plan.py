@@ -13,6 +13,7 @@ menu=importlib.util.module_from_spec(menu_spec);menu_spec.loader.exec_module(men
 class U6PointerPlanTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
+        self.original_matches=tool.cleanup.matches
         self.lease=dict(runID='run',epoch='epoch')
         self.config=dict(batch=str(self.root),expectedLease=self.lease,subjectPidPath=str(self.root/'subject.json'),
             leasePath=str(self.root/'lease.json'),stopPath=str(self.root/'stop.json'),argv=[str(self.root/'Test.app/Contents/MacOS/App')])
@@ -21,7 +22,9 @@ class U6PointerPlanTests(unittest.TestCase):
         tool.identity=lambda _:dict(pid=42)
         tool.cleanup.matches=lambda *_:True
         tool.launcher_lost=lambda _:False
-    def tearDown(self):self.temp.cleanup()
+    def tearDown(self):
+        tool.cleanup.matches=self.original_matches
+        self.temp.cleanup()
     def write_rows(self, rows):
         (self.root/'native-observations.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in rows))
     def test_dock_move_requires_same_run_expansion_after_posted_input(self):
@@ -46,6 +49,8 @@ class U6PointerPlanTests(unittest.TestCase):
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
         (self.root/'status-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
+            dict(event='mouse-moved-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
+            dict(event='mouse-button-down-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
             dict(event='mouse-button-up-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
             dict(event='pointer-result',outcome='posted')]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')

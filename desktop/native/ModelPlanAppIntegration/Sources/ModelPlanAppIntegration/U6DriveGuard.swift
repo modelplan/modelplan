@@ -20,6 +20,7 @@ import ModelPlanEngineClient
     private var priorPrivateContent = false
     private var privateMenuInstanceIDs = Set<String>()
     private var statusMenuOwner: ((NSMenu) -> Bool)?
+    private var activeStatusInstanceID: String?
     private weak var dockHost: StaticDockPreviewHost?
     private var lastDockFrameSignature: String?
     private let ownsMenu: (NSMenu) -> Bool
@@ -54,10 +55,16 @@ import ModelPlanEngineClient
                     if note.name == NSMenu.didBeginTrackingNotification {
                         self.trackedMenus.insert(ObjectIdentifier(menu))
                         let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
+                        if self.statusMenuOwner?(menu) == true { self.activeStatusInstanceID = instanceID }
                         if self.hasPrivateContent() { self.retainedItems += menu.items; self.priorPrivateContent = true; self.privateMenuInstanceIDs.insert(instanceID) }
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "surface":self.statusMenuOwner?(menu) == true ? "status" : "dock"])
-                    } else { self.trackedMenus.remove(ObjectIdentifier(menu)); self.emitObject("menu-end", fields:["instanceID":String(UInt(bitPattern: ObjectIdentifier(menu)))]) }
+                    } else {
+                        self.trackedMenus.remove(ObjectIdentifier(menu))
+                        let instanceID = String(UInt(bitPattern: ObjectIdentifier(menu)))
+                        self.emitObject("menu-end", fields:["instanceID":instanceID])
+                        if self.activeStatusInstanceID == instanceID { self.activeStatusInstanceID = nil }
+                    }
                 }
             })
         }
@@ -83,8 +90,11 @@ import ModelPlanEngineClient
                 return try? JSONDecoder().decode(StatusMenuActionRequest.self, from: data)
             }, isLive: { [weak self] in self?.isLive() == true },
             emit: { [weak self, weak composition] receipt in
-                guard let self else { return }
-                self.emitObject(receipt.event, fields: receipt.fields)
+                guard let self, let instanceID = self.activeStatusInstanceID else { return }
+                var fields = receipt.fields
+                fields["menuInstanceID"] = instanceID
+                fields["deliveryMethod"] = "axpress-menu-item"
+                self.emitObject(receipt.event, fields: fields)
                 if receipt.request.action == .refresh, let composition {
                     self.beginRefresh(composition: composition, requestID: receipt.request.requestID)
                 }
