@@ -26,7 +26,7 @@ func effortTestCache(t *testing.T, at time.Time) *store.Store {
 	t.Helper()
 	isolateHome(t)
 	t.Setenv("MODELPLAN_HISTORY", "")
-	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+	t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
 	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off")
 	t.Setenv("MODELPLAN_CODEXBAR", "off")
 	st := &store.Store{Dir: t.TempDir()}
@@ -63,7 +63,7 @@ func effortTestCache(t *testing.T, at time.Time) *store.Store {
 	return st
 }
 
-func TestEffortSuggestionHookIsUserOnly(t *testing.T) {
+func TestEffortSuggestionHooksNeverExposeOrClaim(t *testing.T) {
 	for _, harness := range []string{"codex", "claude-code"} {
 		for _, brief := range []string{"", "off"} {
 			for _, lang := range []string{"en", "zh"} {
@@ -92,12 +92,18 @@ func TestEffortSuggestionHookIsUserOnly(t *testing.T) {
 						if strings.Contains(result.Hook.Context, needle) || strings.Contains(result.Hook.Context, "effortSuggestion") || strings.Contains(result.Hook.Context, "past 3 weeks") || strings.Contains(result.Hook.Context, "过去 3 周") {
 							t.Fatalf("personal suggestion leaked to model: %s", out.String())
 						}
-						if strings.Contains(result.System, needle) != (i == 0) {
-							t.Fatalf("wrong user notification/throttle: %s", out.String())
+						if strings.Contains(result.System, needle) {
+							t.Fatalf("personal suggestion leaked to plugin user message: %s", out.String())
 						}
 						if !strings.Contains(result.Hook.Context, "Synthetic public agent context.") {
 							t.Fatal("test must cover real agent context too")
 						}
+					}
+					if _, err := os.Stat(history.EffortSuggestionPath(st.Dir)); !os.IsNotExist(err) {
+						t.Fatal("hook consumed personal notice", err)
+					}
+					if history.NotifyEffortSuggestion(st.Dir, mustEffortDigest(t), at) == nil {
+						t.Fatal("hook suppressed later CLI notice")
 					}
 				})
 			}
@@ -119,20 +125,31 @@ func TestEffortSuggestionDesktopReadOnlyAndHistory(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ContractVersion != 1 || got.EffortSuggestion == nil || !strings.Contains(got.EffortSuggestion.Message, "past 3 weeks averaged 45%") {
-		t.Fatalf("desktop suggestion missing: %s", out.String())
+	if got.ContractVersion != 1 || got.EffortSuggestion != nil || strings.Contains(out.String(), "effortSuggestion") {
+		t.Fatalf("desktop exposed personal suggestion: %s", out.String())
 	}
 	if !reflect.DeepEqual(before, tree(t, st.Dir)) {
 		t.Fatal("read-only desktop wrote local state")
+	}
+	for _, args := range [][]string{
+		{"desktop", "--json", "--offline", "--lang", "en"},
+		{"history", "--json", "--offline"},
+		{"advise", "--json", "--offline"},
+		{"plan", "--json", "--offline"},
+	} {
+		out.Reset()
+		if code := run(args, nil, &out, &stderr); code != 0 || strings.Contains(out.String(), "effortSuggestion") || strings.Contains(out.String(), "past 3 weeks") || strings.Contains(out.String(), "过去 3 周") {
+			t.Fatal("machine-readable feed gained personal derived advice", args, code, out.String(), stderr.String())
+		}
+		if _, err := os.Stat(history.EffortSuggestionPath(st.Dir)); !os.IsNotExist(err) {
+			t.Fatal("machine-readable feed consumed personal notice", args, err)
+		}
 	}
 	out.Reset()
 	if code := run([]string{"history", "--offline", "--lang", "en"}, nil, &out, &stderr); code != 0 || !strings.Contains(out.String(), "Default effort suggestion (local only)") {
 		t.Fatal(code, out.String(), stderr.String())
 	}
-	out.Reset()
-	if code := run([]string{"history", "--json", "--offline"}, nil, &out, &stderr); code != 0 || strings.Contains(out.String(), "effortSuggestion") || strings.Contains(out.String(), "past 3 weeks") {
-		t.Fatal("plugin measurement feed gained private derived advice", code, out.String())
-	}
+
 	out.Reset()
 	if code := run([]string{"history", "--effort-suggestion", "off", "--json"}, nil, &out, &stderr); code != 0 {
 		t.Fatal(code, stderr.String())
@@ -189,7 +206,7 @@ func TestEffortSuggestionStatuslineSharesWeeklyNotice(t *testing.T) {
 		t.Fatal("history repeated status-line notice", code, out.String(), stderr.String())
 	}
 	if history.NotifyEffortSuggestion(st.Dir, d, at.Add(time.Hour)) != nil {
-		t.Fatal("hook repeated status-line notice")
+		t.Fatal("notification repeated status-line notice")
 	}
 }
 
@@ -204,12 +221,12 @@ func TestEffortSuggestionHistoryClaimsWeeklyNotice(t *testing.T) {
 		}
 	}
 	if history.NotifyEffortSuggestion(st.Dir, mustEffortDigest(t), at.Add(time.Hour)) != nil {
-		t.Fatal("hook repeated history notice")
+		t.Fatal("notification repeated history notice")
 	}
 }
 
 func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
-	for _, mode := range []string{"preview", "record-only", "no meter", "urgent", "unknown effort", "endpoint", "history off", "other plan", "no history"} {
+	for _, mode := range []string{"preview", "record-only", "no meter", "urgent", "unknown effort", "endpoint", "history off", "other plan", "no history", "default off", "suggestions off", "late after reset"} {
 		t.Run(mode, func(t *testing.T) {
 			at := time.Now()
 			st, report := claudeEffortFixture(t, at)
@@ -246,6 +263,12 @@ func TestEffortSuggestionStatuslineSilentPathsDoNotClaim(t *testing.T) {
 					report.Accounts[0].Harness.Endpoint = "https://example.test"
 				case "history off":
 					t.Setenv("MODELPLAN_HISTORY", "off")
+				case "default off":
+					t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+				case "suggestions off":
+					t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "off")
+				case "late after reset":
+					at = at.Add(24 * time.Hour)
 				case "other plan":
 					report.Accounts[0].Plan = "other"
 				case "no history":
@@ -371,5 +394,38 @@ func TestEffortSuggestionUnknownPlanMatchesOnlyUnlabelledCycles(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestEffortSuggestionHistoryDefaultAndOptOut(t *testing.T) {
+	for _, mode := range []string{"default", "history off", "suggestion off", "local on"} {
+		t.Run(mode, func(t *testing.T) {
+			st := effortTestCache(t, time.Now())
+			t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "")
+			switch mode {
+			case "history off":
+				t.Setenv("MODELPLAN_HISTORY", "off")
+				t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "on")
+			case "suggestion off":
+				t.Setenv("MODELPLAN_EFFORT_SUGGESTION", "off")
+			case "local on":
+				var out, stderr bytes.Buffer
+				if code := run([]string{"history", "--effort-suggestion", "on", "--offline"}, nil, &out, &stderr); code != 0 {
+					t.Fatal(code, stderr.String())
+				}
+			}
+			var out, stderr bytes.Buffer
+			if code := run([]string{"history", "--offline", "--lang", "en"}, nil, &out, &stderr); code != 0 {
+				t.Fatal(code, stderr.String())
+			}
+			if strings.Contains(out.String(), "Default effort suggestion") != (mode == "local on") {
+				t.Fatal("incorrect opt-in behavior", out.String())
+			}
+			if mode != "local on" {
+				if _, err := os.Stat(history.EffortSuggestionPath(st.Dir)); !os.IsNotExist(err) {
+					t.Fatal("suppressed history consumed notice", err)
+				}
+			}
+		})
 	}
 }

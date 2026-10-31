@@ -1,3 +1,4 @@
+import { isWorkflowFile, workflowProblems } from "./workflow-policy.mjs";
 import assert from "node:assert/strict";
 import { verifyPortholePack } from "./check-porthole-pack.mjs";
 import { readFile } from "node:fs/promises";
@@ -135,14 +136,10 @@ if (dataManifest.license.id === "CC-BY-SA-4.0") {
 }
 for (const p of ["AGENTS.md", "CLAUDE.md"])
   assert.match((await read(p)).toString(), /AGENTS\.md|source-policy/);
-for (const p of tracked.filter(
-  (p) => p.startsWith(".github/workflows/") && p.endsWith(".yml"),
-)) {
+for (const p of tracked.filter(isWorkflowFile)) {
   const s = (await read(p)).toString();
-  assert.ok(
-    !s.includes("self-hosted") && !s.includes("modelplans-publish"),
-    "public workflow must not access private runners: " + p,
-  );
+  const problems = workflowProblems(s, p);
+  assert.deepEqual(problems, [], "public workflow runner/trigger policy: " + p + " " + problems.join(", "));
 }
 assert.ok(
   !(await read("desktop/build.mjs"))
