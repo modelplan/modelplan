@@ -86,12 +86,20 @@ class ScenarioRegistryTests(unittest.TestCase):
                     self.execute(self.config(**extra))
                 self.assertFalse((self.root / 'home').exists())
 
-    def test_unreadable_registry_fails_closed_only_for_possible_scenarios(self):
-        broken = self.root / 'broken.json'; broken.write_text('{')
-        for c in (self.config(scenario='u6'), self.config(argv=[str(self.binary), '--u6-drive-contract'])):
+    def test_unreadable_registry_fails_closed_for_every_launch(self):
+        # A registry that cannot be read cannot prove a run is unregistered, so even a bare argv refuses.
+        good = (self.registry / 'scenarios.json').read_text()
+        for state in ('missing', 'malformed'):
+            path = self.registry / 'scenarios.json'
+            if state == 'missing': path.unlink()
+            else: path.write_text('{')
+            for c in (self.config(), self.config(scenario='u6'), self.config(argv=[str(self.binary), '--u6-drive-contract'])):
+                with self.assertRaisesRegex(ValueError, 'scenario registry unreadable'):
+                    scenario.resolve(c, path)
             with self.assertRaisesRegex(ValueError, 'scenario registry unreadable'):
-                scenario.resolve(c, broken)
-        self.assertIsNone(scenario.resolve(self.config(), broken))
+                self.execute(self.config())  # the real Launch entry, bare unlabelled argv
+            self.assertFalse((self.root / 'home').exists(), state)
+            path.write_text(good)
 
     def test_name_cli_and_step_commands(self):
         u6 = self.root / 'u6.json'; u6.write_text(json.dumps(self.config(scenario='u6', argv=[str(self.binary), '--u6-drive-contract', 'x'])))

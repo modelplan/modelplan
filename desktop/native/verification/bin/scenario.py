@@ -18,10 +18,7 @@ def resolve(c,path=None):
     Triggered by the config's `scenario` OR any registered argvFlag in argv; a disagreement refuses."""
     argv=c.get('argv') if isinstance(c.get('argv'),list) else []
     try:reg=load(path)
-    except (OSError,ValueError,TypeError):
-        # Without the registry no flag can be matched: refuse anything that could be a registered scenario.
-        if 'scenario' in c or any(isinstance(x,str) and x.startswith('--') for x in argv):raise ValueError('scenario registry unreadable')
-        return None
+    except (OSError,ValueError,TypeError):raise ValueError('scenario registry unreadable')  # cannot prove a run is unregistered
     flagged=[n for n,e in reg.items() if e.get('argvFlag') and any(isinstance(x,str) and (x==e['argvFlag'] or x.startswith(e['argvFlag']+'=')) for x in argv)]
     if 'scenario' not in c and not flagged:return None
     if 'scenario' in c and (not isinstance(c['scenario'],str) or c['scenario'] not in reg):raise ValueError('unknown scenario')
