@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/common.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "U6 receipt common definitions",
   "description": "Shared identity, clock and code definitions.",
   "$defs": {
@@ -75,7 +75,7 @@
         "out-of-window",
         "unknown"
       ],
-      "description": "C2.4 section 5 scenario reasons plus C2.5 D cooldown; free text never appears."
+      "description": "C2.4 section 5 scenario reasons plus C2.6 D cooldown; free text never appears."
     },
     "stepOutcome": {
       "enum": [
@@ -102,7 +102,7 @@
         "offline",
         "policy_pending"
       ],
-      "description": "Engine refresh/request reply per scope (C2.5 D)."
+      "description": "Engine refresh/request reply per scope, copied from that call (C2.6 D)."
     }
   }
 }

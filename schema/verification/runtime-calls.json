@@ -1,38 +1,42 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/runtime-calls.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
-  "title": "u6-runtime-calls/1",
-  "description": "Drive's copy of the synthetic Copilot stub's call log ($HOME/runtime-calls, one JSON-RPC method per line) taken before HOME is removed (C2.5 D), bound to the run, with the SHA-256 of the raw log.",
-  "x-file": "runtime-calls.json (drive-u6.py, exclusive create; producer pending, M4)",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "runtime-calls/1",
+  "description": "One line of the synthetic Copilot stub's call log $HOME/.modelplan-stub/runtime-calls.jsonl (absent in the seed), copied by Drive to $BATCH/runtime-calls.jsonl before HOME is removed; Drive records the copy's SHA-256 in result.json (runtimeCallsSHA256). runID/epoch come from the stub's seeded binding (C2.6 C-D).",
+  "x-file": "runtime-calls.jsonl (one JSON object per line; stub writer and Drive copy pending, M4)",
   "type": "object",
   "required": [
-    "schema",
     "runID",
     "epoch",
-    "sourceSHA256",
-    "calls"
+    "method",
+    "pid",
+    "ppid",
+    "mono",
+    "seq"
   ],
   "properties": {
-    "schema": {
-      "const": "u6-runtime-calls/1"
-    },
     "runID": {
       "$ref": "common.json#/$defs/runID"
     },
     "epoch": {
       "$ref": "common.json#/$defs/epoch"
     },
-    "sourceSHA256": {
-      "$ref": "common.json#/$defs/sha256"
+    "method": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9._]{0,63}$"
     },
-    "calls": {
-      "type": "array",
-      "maxItems": 4096,
-      "items": {
-        "type": "string",
-        "pattern": "^[A-Za-z][A-Za-z0-9._]{0,63}$"
-      }
+    "pid": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "ppid": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "mono": {
+      "$ref": "common.json#/$defs/mono"
+    },
+    "seq": {
+      "$ref": "common.json#/$defs/seq"
     }
   },
   "additionalProperties": false

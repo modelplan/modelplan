@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-"""U6 receipt contract (C2.4 as amended by C2.5): shape (schemas), meaning (replay oracle) and invocation (real CLIs).
+"""U6 receipt contract (C2.4 as amended by C2.6): shape (schemas), meaning (replay oracle) and invocation (real CLIs).
 
-Batches are written in the producers' current encoding (C2.5 F; schema/verification/fixtures/provenance.json says
+Batches are written in the producers' current encoding (C2.6 F; schema/verification/fixtures/provenance.json says
 which files are producer captures); every negative trace states its expected outcome independently of the oracle."""
 import copy
 import json
@@ -27,7 +27,9 @@ REG = receipt_schema.registry()
 ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
 FILE_SCHEMAS = {'dock-capture.json': 'capture-receipt.json', 'consent-reset.json': 'consent-reset.json',
                 'operator-finish.json': 'u6-actions.json', 'launch-cleanup.json': 'launch-cleanup.json',
-                'runtime-calls.json': 'runtime-calls.json', 'context.json': 'replay-context.json'}
+                'context.json': 'replay-context.json'}
+LINE_SCHEMAS = {'runtime-calls.jsonl': 'runtime-calls.json'}  # per-line receipts besides native and pointer rows
+COMPLETED_ONLY = ('rowsSequenceAfter', 'copilotAccountsAfter', 'accountIDSHA256')
 POINTER_FILES = ('dock-pointer.jsonl', 'status-pointer.jsonl', 'status-pointer-clear.jsonl')
 CLOSURE = sb.closure()  # one real launch-cleanup/1 receipt shared by the traces that do not vary it
 
@@ -67,7 +69,7 @@ class SchemaShapeTests(unittest.TestCase):
 
     def test_every_native_kind_schema_carries_the_envelope_and_its_own_kind(self):
         kinds = receipt_schema.native_kinds()
-        for kind, relative in kinds.items():  # C2.5 F: the App's envelope; refresh rows stay flat
+        for kind, relative in kinds.items():  # C2.6 F: the App's envelope; refresh rows stay flat
             schema = REG.documents[REG.id_for(relative)]
             name = 'kind' if kind == 'refresh' else 'event'
             required = set(ENVELOPE) | ({'kind'} if kind == 'refresh' else {'event', 'timestamp', 'checks'})
@@ -94,6 +96,10 @@ class SchemaShapeTests(unittest.TestCase):
                 for row in rows_of((directory / file).read_bytes()):
                     self.assertEqual(REG.errors(row, 'pointer-receipt.json'), [], (name, file, row['event']))
                     kinds.add(row['event'])
+            for file, schema in LINE_SCHEMAS.items():
+                for row in rows_of((directory / file).read_bytes()):
+                    self.assertEqual(REG.errors(row, schema), [], (name, file))
+                used.add(schema)
             for file, schema in FILE_SCHEMAS.items():
                 self.assertEqual(REG.errors(json.loads((directory / file).read_text()), schema), [], (name, file))
                 used.add(schema)
@@ -122,7 +128,7 @@ class SchemaShapeTests(unittest.TestCase):
             if file.endswith(('launch-cleanup.json', 'dock-capture.json', 'consent-reset.json', 'operator-finish.json')):
                 self.assertEqual((entry['generated'], entry['status']), (True, 'real-producer'), file)
             elif file.endswith(('native-observations.jsonl', '-pointer.jsonl', '-pointer-clear.jsonl',
-                                'runtime-calls.json')):
+                                'runtime-calls.jsonl', 'result.json')):
                 self.assertEqual((entry['generated'], entry['status']), (False, 'pending-producer-capture'), file)
                 self.assertTrue(entry['captureCommand'], file)
 
@@ -153,12 +159,18 @@ class SchemaShapeTests(unittest.TestCase):
         self.assertTrue(errors(dict(requested, rowsSequenceAfter=9)))
         self.assertTrue(errors(dict(requested, phase='failed', reason='engine-error')))
         self.assertTrue(errors(dict(requested, phase='failed', reason='free engine text', rowsSequenceBefore=None)))
-        self.assertTrue(errors({k: v for k, v in requested.items() if k != 'dispositions'}))
-        self.assertTrue(errors(dict(requested, dispositions={'claude.account_usage.saved_login': 'scheduled'})))
-        self.assertTrue(errors(dict(requested, dispositions={'copilot.runtime_usage': 'later'})))
+        self.assertTrue(errors({k: v for k, v in requested.items() if k != 'copilotAccountsBefore'}))
+        self.assertTrue(errors(dict(requested, dispositions=dict(sb.DISPOSITIONS))))  # the reply belongs to accepted
+        accepted = trace.one('refresh', phase='accepted')
+        for key in ('engineRequestID', 'dispositions'):
+            self.assertTrue(errors({k: v for k, v in accepted.items() if k != key}), key)
+        self.assertTrue(errors(dict(accepted, dispositions={'claude.account_usage.saved_login': 'scheduled'})))
+        self.assertTrue(errors(dict(accepted, dispositions={'copilot.runtime_usage': 'later'})))
         completed = trace.one('refresh', phase='completed')
-        self.assertTrue(errors({k: v for k, v in completed.items() if k != 'copilotRow'}))
-        abandoned = {k: v for k, v in completed.items() if k not in ('rowsSequenceAfter', 'copilotRow')}
+        for key in COMPLETED_ONLY:
+            self.assertTrue(errors({k: v for k, v in completed.items() if k != key}), key)
+        self.assertTrue(errors(dict(completed, accountIDSHA256='synthetic-copilot-account-1')))  # a hash, never the ID
+        abandoned = {k: v for k, v in completed.items() if k not in COMPLETED_ONLY}
         self.assertEqual(errors(dict(abandoned, phase='abandoned', cause='stop')), [])
         self.assertTrue(errors(dict(abandoned, phase='abandoned', cause='other')))
         self.assertEqual(errors(dict(abandoned, phase='deferred')), [])
@@ -324,7 +336,7 @@ def stale_title(t):
 
 
 def delayed_clear(t):
-    """codex-kit-3: scrub 190 s after initiation; C2.5 E makes it FAIL timeout (bound 5 s)."""
+    """codex-kit-3: scrub 190 s after initiation; C2.6 E makes it FAIL timeout (bound 5 s)."""
     for kind, offset in (('menu-end', 225.3), ('accepted-clear', 225.35), ('menu-scrubbed', 225.36),
                          ('doctor', 226.0), ('stop-or-lease-expired', 240.5), ('terminate-completed', 240.7)):
         row = t.find(kind, **({'sessionID': sb.SESSION_B} if kind == 'menu-end' else {}))[-1]
@@ -333,10 +345,29 @@ def delayed_clear(t):
     t.closure = sb.closure(now_offset=260.0)
 
 
-def abandon(t, cause, offset):
-    """The App watchdog's terminal instead of completed (C2.5 D)."""
+def defer(t, disposition):
+    """accepted shows Copilot not scheduled; the App writes deferred (C2.6 D)."""
+    t.one('refresh', phase='accepted')['dispositions']['copilot.runtime_usage'] = disposition
     row = t.one('refresh', phase='completed')
-    for key in ('rowsSequenceAfter', 'copilotRow'):
+    for key in COMPLETED_ONLY:
+        row.pop(key)
+    row['phase'] = 'deferred'
+    set_mono(t, row, 21.2)
+
+
+def stale_accepted(t):
+    """An earlier request's reply carries the engineRequestID that R's accepted reuses (a cached snapshot)."""
+    earlier = dict(menuObjectID=sb.MENU, sessionID='6B1F0D2A-0000-4000-8000-0000000000E0',
+                   requestId='6B1F0D2A-0000-4000-8000-0000000000E1')
+    t.insert(t.row('refresh', 15.0, phase='requested', rowsSequenceBefore=1, copilotAccountsBefore=0, **earlier))
+    t.insert(t.row('refresh', 15.01, phase='accepted', engineRequestID=sb.ENGINE_REQUEST,
+                   dispositions=dict(sb.DISPOSITIONS), **earlier))
+
+
+def abandon(t, cause, offset):
+    """The App watchdog's terminal instead of completed (C2.6 D)."""
+    row = t.one('refresh', phase='completed')
+    for key in COMPLETED_ONLY:
         row.pop(key)
     row.update(phase='abandoned', cause=cause)
     set_mono(t, row, offset)
@@ -417,14 +448,14 @@ CASES = [
         scrubbedInstanceIDs=[R.MENU], oldItemTitlesScrubbed=True, oldItemPrivateAttributesScrubbed=True), {}, (),
      {1: UNUSABLE, 2: UNUSABLE, 3: UNUSABLE, 4: UNUSABLE, 5: UNUSABLE, 6: UNUSABLE, 8: UNUSABLE,
       10: ('not-run', 'unknown', 'native-row-malformed')}, 'not-run'),
-    ('flat-c2.4-rows', 'C2.5 F (the App envelope is the format)', lambda t: setattr(t, 'flat', True),
+    ('flat-c2.4-rows', 'C2.6 F (the App envelope is the format)', lambda t: setattr(t, 'flat', True),
      {}, (), {1: UNUSABLE, 2: UNUSABLE, 3: UNUSABLE, 4: UNUSABLE, 5: UNUSABLE, 6: UNUSABLE, 8: UNUSABLE,
               10: ('not-run', 'unknown', 'native-row-malformed')}, 'not-run'),
     ('closure-observed-after-expiry', 'macrev-332-15, codex-kit-9', lambda t: setattr(t, 'closure', sb.closure(now_offset=R.LEASE_SECONDS + 5)),
      {}, (), {9: ('fail', 'out-of-window', 'closure-late')}, 'fail'),
     ('subject-started-before-lease', 'codex-kit-9', lambda t: setattr(t, 'closure', sb.closure(started_offset=-5)), {}, (),
      {9: ('fail', 'out-of-window', 'closure-late')}, 'fail'),
-    ('closure-other-lease-window', 'codex-kit-9, C2.5 F', None, dict(leaseExpiresAt=R.T0 + 1200), (),
+    ('closure-other-lease-window', 'codex-kit-9, C2.6 F', None, dict(leaseExpiresAt=R.T0 + 1200), (),
      {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('not-run', 'wrong-subject', 'lease-window-mismatch')},
      'not-run'),
     ('physical-receipts-missing-runner-says-pass', 'codex-kit-1', None, {}, ('dock-pointer.jsonl', 'dock-capture.json'),
@@ -478,42 +509,69 @@ CASES = [
      {3: ('fail', 'unknown', 'arrival-duplicate')}, 'fail'),
     ('refresh-terminal-duplicate', 'codex-kit-4, codex-kit-12', lambda t: duplicate(
         t, 'refresh', 23.5, match=dict(phase='completed'), phase='failed', reason='engine-error', rowsSequenceAfter=None)
-     or [t.find('refresh', phase='failed')[0].pop(k) for k in ('rowsSequenceAfter', 'copilotRow')], {}, (),
+     or [t.find('refresh', phase='failed')[0].pop(k) for k in COMPLETED_ONLY], {}, (),
      {3: ('fail', 'unknown', 'terminal-duplicate')}, 'fail'),
     ('refresh-terminal-duplicate-outside-window', 'codex-kit-12', lambda t: duplicate(t, 'refresh', 39.0, match=dict(phase='completed'))
      or set_mono(t, t.find('refresh', phase='completed')[-1], 90.0), {}, (),
      {3: ('fail', 'unknown', 'terminal-duplicate')}, 'fail'),
     ('refresh-failed', 'C2.4 step 3', lambda t: t.one('refresh', phase='completed').update(phase='failed', reason='engine-error')
-     or [t.one('refresh', phase='failed').pop(k) for k in ('rowsSequenceAfter', 'copilotRow')], {}, (),
+     or [t.one('refresh', phase='failed').pop(k) for k in COMPLETED_ONLY], {}, (),
      {3: ('fail', 'engine-error', 'refresh-failed')}, 'fail'),
-    ('refresh-rows-unchanged', 'C2.4 step 3 (unchanged empty state)', lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=3),
-     {}, (), {3: ('not-run', 'unknown', 'rows-unchanged')}, 'not-run'),
-    ('refresh-deferred', 'C2.5 D (Copilot cooldown)', lambda t: (
-        t.one('refresh', phase='requested')['dispositions'].update({'copilot.runtime_usage': 'cooldown'}),
-        t.one('refresh', phase='completed').update(phase='deferred'),
-        [t.one('refresh', phase='deferred').pop(k) for k in ('rowsSequenceAfter', 'copilotRow')]), {}, (),
-     {3: ('not-run', 'cooldown', 'refresh-deferred')}, 'not-run'),
-    ('refresh-abandoned-deadline', 'C2.5 D (watchdog deadline)', lambda t: abandon(t, 'deadline', 81.05), {}, (),
-     {3: ('not-run', 'timeout', 'refresh-abandoned-deadline')}, 'not-run'),
-    ('refresh-abandoned-stop', 'C2.5 D (watchdog stop)', lambda t: abandon(t, 'stop', 23.0), {}, (),
+    ('refresh-rows-unchanged', 'C2.4 step 3, C2.6 D (completed without the qualifying projection)',
+     lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=3), {}, (),
+     {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
+] + [(name, 'C2.6 D (deferred %s)' % disposition, (lambda d: lambda t: defer(t, d))(disposition), {}, (),
+      {3: ('not-run', reason, 'refresh-deferred')}, 'not-run')
+     for name, disposition, reason in (('deferred-cooldown', 'cooldown', 'cooldown'),
+                                       ('deferred-read-only', 'read_only', 'engine-disabled'),
+                                       ('deferred-offline', 'offline', 'engine-disabled'),
+                                       ('deferred-policy-pending', 'policy_pending', 'consent-required'))] + [
+    ('refresh-abandoned-deadline', 'C2.6 D (watchdog deadline; also the unrelated-only advance: no completed)',
+     lambda t: abandon(t, 'deadline', 81.05), {}, (), {3: ('not-run', 'timeout', 'refresh-abandoned-deadline')}, 'not-run'),
+    ('refresh-abandoned-stop', 'C2.6 D (watchdog stop)', lambda t: abandon(t, 'stop', 23.0), {}, (),
      {3: ('not-run', 'not-delivered', 'refresh-abandoned-stop')}, 'not-run'),
-    ('unrelated-sequence-advance', 'C2.5 D', lambda t: t.one('refresh', phase='completed').update(copilotRow='absent'), {}, (),
-     {3: ('fail', 'unknown', 'unrelated-advance')}, 'fail'),
-    ('stub-call-missing', 'C2.5 D', lambda t: setattr(t, 'runtime', sb.runtime_calls(['connect', 'auth.getStatus'])), {}, (),
-     {3: ('fail', 'unknown', 'unrelated-advance')}, 'fail'),
-    ('runtime-calls-missing', 'C2.5 D', None, {}, ('runtime-calls.json',),
-     {3: ('not-run', 'not-delivered', 'runtime-calls-missing')}, 'not-run'),
-    ('runtime-calls-other-run', 'C2.5 D, C2.4 section 1', lambda t: t.runtime.update(runID='u6-run-0002'), {}, (),
-     {3: ('not-run', 'wrong-subject', 'runtime-calls-unbound')}, 'not-run'),
-    ('copilot-not-scheduled-but-completed', 'C2.5 D', lambda t: t.one('refresh', phase='requested')['dispositions'].update(
+    ('accepted-missing', 'C2.6 D (no per-call reply)', lambda t: t.remove('refresh', phase='accepted'), {}, (),
+     {3: ('not-run', 'not-delivered', 'accepted-missing')}, 'not-run'),
+    ('accepted-stale-snapshot', 'C2.6 D (stale scheduled value: another call\'s engineRequestID)', stale_accepted, {}, (),
+     {3: ('not-run', 'not-delivered', 'accepted-stale')}, 'not-run'),
+    ('accepted-duplicate', 'C2.6 D, C2.6 F', lambda t: duplicate(t, 'refresh', 21.07, match=dict(phase='accepted')), {}, (),
+     {3: ('fail', 'unknown', 'accepted-duplicate')}, 'fail'),
+    ('copilot-accounts-before-nonzero', 'C2.6 D (not a first attempt)', lambda t: t.one('refresh', phase='requested').update(
+        copilotAccountsBefore=1), {}, (), {3: ('fail', 'unknown', 'copilot-accounts-before')}, 'fail'),
+    ('completed-on-unrelated-projection', 'C2.6 D (unrelated-only advance reported as completed)',
+     lambda t: t.one('refresh', phase='completed').update(copilotAccountsAfter=0), {}, (),
+     {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
+    ('completed-other-account', 'C2.6 D', lambda t: t.one('refresh', phase='completed').update(accountIDSHA256=R.sha('other')),
+     {}, (), {3: ('fail', 'unknown', 'projection-not-qualifying')}, 'fail'),
+    ('unrelated-then-valid', 'C2.6 D (earlier unrelated projections are ignored)',
+     lambda t: t.one('refresh', phase='completed').update(rowsSequenceAfter=6), {}, (), {}, 'pass'),
+    ('copilot-not-scheduled-but-completed', 'C2.6 D, C2.6 F', lambda t: t.one('refresh', phase='accepted')['dispositions'].update(
         {'copilot.runtime_usage': 'cooldown'}), {}, (), {3: ('fail', 'unknown', 'copilot-not-scheduled')}, 'fail'),
-    ('copilot-row-preexisting', 'C2.5 C-D (seed carries no Copilot reading)', lambda t: t.one('refresh', phase='requested').update(
-        copilotRow='present'), {}, (), {3: ('not-run', 'unknown', 'copilot-row-preexisting')}, 'not-run'),
-    ('accepted-clear-late', 'C2.5 E', lambda t: (set_mono(t, t.one('accepted-clear'), 40.31),
+    ('stub-call-missing', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(['connect', 'auth.getStatus'], 21.065)),
+     {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
+    ('quota-call-after-completed', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
+        ['connect', 'auth.getStatus', 'account.getQuota'], 23.5)), {}, (), {3: ('fail', 'unknown', 'quota-call-missing')}, 'fail'),
+    ('call-before-accepted', 'C2.6 D', lambda t: setattr(t, 'runtime', sb.stub_calls(
+        ['connect', 'auth.getStatus', 'account.getQuota'], 21.051, step=0.002)), {}, (),
+     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+    ('runtime-calls-preseeded', 'C2.6 C-D (the log must be absent in the seed)', lambda t: setattr(t, 'runtime', sb.stub_calls(
+        ['connect', 'auth.getStatus', 'account.getQuota'], 1.0) + sb.stub_calls(
+        ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, first_seq=4)), {}, (),
+     {3: ('fail', 'unknown', 'call-before-accepted')}, 'fail'),
+    ('runtime-calls-foreign', 'C2.6 D, C2.4 section 1', lambda t: setattr(t, 'runtime', sb.stub_calls(
+        ['connect', 'auth.getStatus', 'account.getQuota'], 21.065, run='u6-run-0002')), {}, (),
+     {3: ('not-run', 'wrong-subject', 'runtime-calls-foreign')}, 'not-run'),
+    ('runtime-calls-missing', 'C2.6 D', None, {}, ('runtime-calls.jsonl',),
+     {3: ('not-run', 'not-delivered', 'runtime-calls-missing')}, 'not-run'),
+    ('runtime-calls-digest-mismatch', 'C2.6 D', lambda t: setattr(t, 'digest', 'ab' * 32), {}, (),
+     {3: ('not-run', 'not-delivered', 'runtime-calls-undigested')}, 'not-run'),
+    ('runtime-calls-undigested', 'C2.6 D (result.json without the digest)', None, {}, ('result.json',),
+     {3: ('not-run', 'not-delivered', 'runtime-calls-undigested')}, 'not-run'),
+    ('accepted-clear-late', 'C2.6 E', lambda t: (set_mono(t, t.one('accepted-clear'), 40.31),
                                                 set_mono(t, t.one('menu-scrubbed'), 40.32), t.finish.update(mono=R.m(40.4))),
      {}, (),
      {6: ('fail', 'timeout', 'clear-late')}, 'fail'),
-    ('menu-scrubbed-late', 'C2.5 E', lambda t: (set_mono(t, t.one('menu-scrubbed'), 40.31), t.finish.update(mono=R.m(40.4))),
+    ('menu-scrubbed-late', 'C2.6 E', lambda t: (set_mono(t, t.one('menu-scrubbed'), 40.31), t.finish.update(mono=R.m(40.4))),
      {}, (),
      {6: ('fail', 'timeout', 'clear-late')}, 'fail'),
     ('menu-a-ended-before-arrival', 'codex-kit-12', lambda t: set_mono(t, t.one('menu-end', sessionID=R.SESSION_A), 20.5), {}, (),
@@ -586,8 +644,8 @@ class ReplayOracleTests(unittest.TestCase):
         trace.remove('menu-end', sessionID=sb.SESSION_B)
         self.assertEqual(replay_trace(trace)['outcome'], 'pass')
 
-    def test_delayed_clear_fails_under_c2_5_e(self):
-        """codex-kit-3: C2.5 E bounds accepted-clear and menu-scrubbed to 5 s after clear-initiated."""
+    def test_delayed_clear_fails_under_c2_6_e(self):
+        """codex-kit-3: C2.6 E bounds accepted-clear and menu-scrubbed to 5 s after clear-initiated."""
         trace = sb.valid(closure_receipt=CLOSURE)
         delayed_clear(trace)
         self.assert_steps(replay_trace(trace), {6: ('fail', 'timeout', 'clear-late')}, 'fail')
@@ -643,32 +701,43 @@ def evidence_u6(ctx, files):
         return json.loads(run.stdout.strip().splitlines()[-1])
 
 
-# C2.5 G.3 asks for no expectedFailure; until M4 lands C2.5 in bin/evidence-u6.py, every trace on which it (at
+# C2.6 G.3 asks for no expectedFailure; until M4 lands C2.6 in bin/evidence-u6.py, every trace on which it (at
 # #332 6a063beb, unchanged since 8f857aa6) disagrees with the oracle on the overall outcome is listed here:
 # trace -> (oracle, evidence-u6, deciding contract text). Each is an expected failure; a fix in evidence-u6 shows
 # up as an unexpected success, and a new divergence fails a test, until this table and the README are updated.
-_F_IGNORED = 'C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN"'
-_F_CONTRADICTION = 'C2.5 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL"'
-_D_PASS = ('C2.5 D PASS: "completed, rowsSequenceAfter > n, dispositions[copilot.runtime_usage] = scheduled, '
-           'copilotRow absent → present, and the stub\'s call log shows account.getQuota"')
-_D_FAIL = 'C2.5 D FAIL: "a sequence advance without the Copilot row/stub call"'
-_E = 'C2.5 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout"'
+_F_IGNORED = 'C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN"'
+_F_CONTRADICTION = 'C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL"'
+_D_NOT_RUN = 'C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt"'
+_D_ACCEPTED = 'C2.6 D: accepted is "written from the completion of that refresh/request call (the per-call reply, never store.snapshot or any cached value)"'
+_D_FAIL_COMPLETED = 'C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call"'
+_D_FAIL_BEFORE = 'C2.6 D FAIL: "a call logged before accepted"'
+_E = 'C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout"'
 DISAGREEMENTS = {
     'closure-other-run': ('not-run', 'fail', _F_IGNORED),
     'closure-other-lease-window': ('not-run', 'pass', _F_IGNORED),
     'old-accepted-clear-shape': ('not-run', 'pass', _F_IGNORED + ' (closed checks schema)'),
-    'unsupported-native-protocol': ('not-run', 'pass', 'C2.5 F: "An unknown native protocol version → NOT-RUN unknown"'),
+    'unsupported-native-protocol': ('not-run', 'pass', 'C2.6 F: "An unknown native protocol version → NOT-RUN unknown"'),
     'descending-seq': ('fail', 'not-run', _F_CONTRADICTION),
     'duplicate-seq': ('fail', 'not-run', _F_CONTRADICTION),
     'menu-a-ended-before-arrival': ('fail', 'not-run', 'C2.4 step 3: "menu-end for A ... must follow the action arrival"; '
                                     'C2.4 step 10: "contradiction → FAIL"'),
-    'refresh-terminal-late': ('not-run', 'fail', 'C2.5 D NOT-RUN: "no terminal" within 60 s of requested'),
-    'unrelated-sequence-advance': ('fail', 'pass', _D_FAIL),
-    'stub-call-missing': ('fail', 'pass', _D_FAIL),
-    'copilot-not-scheduled-but-completed': ('fail', 'pass', _D_PASS + '; the completed advance contradicts cooldown'),
-    'copilot-row-preexisting': ('not-run', 'pass', _D_PASS + '; C2.5 C: the seed has no Copilot reading'),
-    'runtime-calls-missing': ('not-run', 'pass', _D_PASS + '; evidence-u6 reads $BATCH/runtime-calls.json'),
-    'runtime-calls-other-run': ('not-run', 'pass', _F_IGNORED),
+    'refresh-terminal-late': ('not-run', 'fail', 'C2.6 D: "Exactly one terminal row for R within 60 s"; NOT-RUN: "no terminal"'),
+    'refresh-rows-unchanged': ('fail', 'not-run', _D_FAIL_COMPLETED),
+    'accepted-missing': ('not-run', 'pass', _D_NOT_RUN),
+    'accepted-stale-snapshot': ('not-run', 'pass', _D_ACCEPTED),
+    'accepted-duplicate': ('fail', 'pass', _F_CONTRADICTION),
+    'copilot-accounts-before-nonzero': ('fail', 'pass', 'C2.6 D FAIL: "copilotAccountsBefore ≠ 0"'),
+    'completed-on-unrelated-projection': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'completed-other-account': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'copilot-not-scheduled-but-completed': ('fail', 'pass', 'C2.6 D PASS needs accepted "scheduled"; ' + _F_CONTRADICTION),
+    'stub-call-missing': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'quota-call-after-completed': ('fail', 'pass', _D_FAIL_COMPLETED),
+    'call-before-accepted': ('fail', 'pass', _D_FAIL_BEFORE),
+    'runtime-calls-preseeded': ('fail', 'pass', _D_FAIL_BEFORE + '; C2.6 C: "The log is absent in the seed"'),
+    'runtime-calls-foreign': ('not-run', 'pass', _D_NOT_RUN),
+    'runtime-calls-missing': ('not-run', 'pass', _D_NOT_RUN),
+    'runtime-calls-digest-mismatch': ('not-run', 'pass', _D_NOT_RUN),
+    'runtime-calls-undigested': ('not-run', 'pass', _D_NOT_RUN),
     'delayed-clear': ('fail', 'pass', _E),
     'accepted-clear-late': ('fail', 'pass', _E),
     'menu-scrubbed-late': ('fail', 'pass', _E),
@@ -677,13 +746,13 @@ DISAGREEMENTS = {
 
 class EvidenceU6CLITests(unittest.TestCase):
     """The real final entry point (bin/evidence-u6.py --config --batch --package --kit-manifest) on every oracle
-    trace. Both read the same batch bytes (the producers' encoding, C2.5 F); sb.kit_batch adds only the run files,
+    trace. Both read the same batch bytes (the producers' encoding, C2.6 F); sb.kit_batch adds only the run files,
     the menu helper's result, a launched bundle, a pinned package and the kit manifest."""
 
     def compare(self, name, ctx, files):
         oracle = replay.replay(ctx, files)['outcome']
         evidence = evidence_u6(ctx, files)['outcome']
-        self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.5 oracle' % name)
+        self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.6 oracle' % name)
 
     def test_valid_batch(self):
         """Agrees (an expected failure at a98b25a3: legacy CLI and accepted-clear fields)."""
@@ -703,13 +772,13 @@ class EvidenceU6CLITests(unittest.TestCase):
         self.assertLessEqual(set(DISAGREEMENTS), set(traces))
         for name, (oracle, evidence, quote) in DISAGREEMENTS.items():
             self.assertNotEqual(oracle, evidence, name)
-            self.assertTrue(quote.startswith(('C2.5', 'C2.4')), name)
+            self.assertTrue(quote.startswith(('C2.6', 'C2.4')), name)
             ctx, files = traces[name]
             self.assertEqual((replay.replay(ctx, files)['outcome'], evidence_u6(ctx, files)['outcome']),
                              (oracle, evidence), name)
 
     def test_oracle_and_evidence_read_the_same_batch(self):
-        """C2.5 F: the oracle reads the batch evidence-u6 reads, byte for byte (kit_batch adds run files only)."""
+        """C2.6 F: the oracle reads the batch evidence-u6 reads, byte for byte (kit_batch adds run files only)."""
         files = sb.valid(closure_receipt=CLOSURE).files()
         with tempfile.TemporaryDirectory() as directory:
             sb.kit_batch(sb.context(), files, directory)
@@ -725,7 +794,7 @@ def _differential(name, ctx, files):
     def test(self):
         self.compare(name, ctx, files)
     entry = DISAGREEMENTS.get(name)
-    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'evidence-u6 change required by C2.5 (%s): %s'
+    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'evidence-u6 change required by C2.6 (%s): %s'
                                 % ('%s, not %s' % entry[:2], entry[2]))
     return test if entry is None else unittest.expectedFailure(test)
 

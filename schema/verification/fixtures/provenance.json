@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "contract": "U6-DockMenu-Drive.md C2.4 as amended by C2.5",
-  "schemaRevision": "u6-native/1 (App envelope, C2.5 F), pointer_drive rows, u6-capture/1, consent-reset/1, launch-cleanup/1, u6-actions/1, u6-runtime-calls/1",
+  "contract": "U6-DockMenu-Drive.md C2.4 as amended by C2.6",
+  "schemaRevision": "u6-native/1 (App envelope, C2.6 F), pointer_drive rows, u6-capture/1, consent-reset/1, launch-cleanup/1, u6-actions/1, runtime-calls/1",
   "regenerate": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures",
-  "note": "Native and pointer rows are authored in the producers' current encoding (C2.5 F): the App envelope and pointer_drive rows. Capture, consent-reset and finish receipts are the shipped writers' output on the trace (synthetic_batch.shipped_receipts). Expected verdicts of negative traces live in the tests, never in these files.",
+  "note": "Native and pointer rows are authored in the producers' current encoding (C2.6 F): the App envelope and pointer_drive rows. Capture, consent-reset and finish receipts are the shipped writers' output on the trace (synthetic_batch.shipped_receipts). Expected verdicts of negative traces live in the tests, never in these files.",
   "entries": [
     {
       "file": "batches/valid-interleaved/consent-reset.json",
@@ -68,12 +68,20 @@
       "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: action_runner.finish(batch, run, epoch, pid, <all pass>, None) at the finish mono)"
     },
     {
-      "file": "batches/valid-interleaved/runtime-calls.json",
-      "schema": "runtime-calls.json",
-      "producer": "drive-u6.py copy of the stub log $HOME/runtime-calls (C2.5 D; M4, not yet in the kit)",
+      "file": "batches/valid-interleaved/result.json",
+      "schema": null,
+      "producer": "drive-u6.py result.json, only its runtimeCallsSHA256 key (C2.6 D; M4, not yet written)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "drive-u6.py stub-log copy (to add, M4) on a HOME whose runtime-calls holds connect, auth.getStatus, account.getQuota"
+      "captureCommand": "drive-u6.py result writer after the stub-log copy (to add, M4)"
+    },
+    {
+      "file": "batches/valid-interleaved/runtime-calls.jsonl",
+      "schema": "runtime-calls.json",
+      "producer": "seeded Copilot stub writer ($HOME/.modelplan-stub/runtime-calls.jsonl), copied by drive-u6.py (C2.6 C-D; M4, not yet in the kit)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "the stub run under a fixed uptime with a seeded run binding, then Drive's copy (to add, M4)"
     },
     {
       "file": "batches/valid-interleaved/status-pointer-clear.jsonl",
@@ -154,12 +162,20 @@
       "captureCommand": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures (shipped_receipts: action_runner.finish(batch, run, epoch, pid, <all pass>, None) at the finish mono)"
     },
     {
-      "file": "batches/valid/runtime-calls.json",
-      "schema": "runtime-calls.json",
-      "producer": "drive-u6.py copy of the stub log $HOME/runtime-calls (C2.5 D; M4, not yet in the kit)",
+      "file": "batches/valid/result.json",
+      "schema": null,
+      "producer": "drive-u6.py result.json, only its runtimeCallsSHA256 key (C2.6 D; M4, not yet written)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "drive-u6.py stub-log copy (to add, M4) on a HOME whose runtime-calls holds connect, auth.getStatus, account.getQuota"
+      "captureCommand": "drive-u6.py result writer after the stub-log copy (to add, M4)"
+    },
+    {
+      "file": "batches/valid/runtime-calls.jsonl",
+      "schema": "runtime-calls.json",
+      "producer": "seeded Copilot stub writer ($HOME/.modelplan-stub/runtime-calls.jsonl), copied by drive-u6.py (C2.6 C-D; M4, not yet in the kit)",
+      "generated": false,
+      "status": "pending-producer-capture",
+      "captureCommand": "the stub run under a fixed uptime with a seeded run binding, then Drive's copy (to add, M4)"
     },
     {
       "file": "batches/valid/status-pointer-clear.jsonl",

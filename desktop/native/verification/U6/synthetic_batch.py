@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
-"""Synthetic C2.4/C2.5 U6 batches for the offline replay and the receipt-schema fixtures.
+"""Synthetic C2.4/C2.6 U6 batches for the offline replay and the receipt-schema fixtures.
 
-A trace is edited as flat records and written in the encoding the producers use today (C2.5 F): native rows
+A trace is edited as flat records and written in the encoding the producers use today (C2.6 F): native rows
 in the App's envelope (`app_native_row`), pointer rows as pointer_drive writes them (`pointer_drive_row`).
 Native and pointer rows are authored (Swift producers); `launch-cleanup.json` comes from the real
 `check_launch_cleanup.check()`, and the committed fixtures' capture, consent-reset and finish receipts from the
@@ -42,6 +42,8 @@ SESSION_A, SESSION_B = '6B1F0D2A-0000-4000-8000-00000000000A', '6B1F0D2A-0000-40
 REQUEST, CLEAR = '6B1F0D2A-0000-4000-8000-0000000000F1', '6B1F0D2A-0000-4000-8000-0000000000C1'
 STORE_EPOCH, GENERATION = '5e' * 16, 1
 SEED_TITLE = 'Synthetic private title 7'
+SEED_ACCOUNT = 'synthetic-copilot-account-1'  # synthetic-seed.json carries only its SHA-256 (C2.6 D)
+ENGINE_REQUEST, STUB_PID, ENGINE_PID = 17, 7300, 7200
 WINDOW, CAPTURE = 311, 'dock-owned.png'
 
 
@@ -68,7 +70,8 @@ def png():
 def context(**changes):
     value = dict(schema='u6-replay-context/1', runID=RUN, epoch=EPOCH, subjectPID=PID, leaseNotBefore=T0,
                  leaseExpiresAt=T0 + LEASE_SECONDS, seedTitleSHA256=sha(SEED_TITLE),
-                 homeSHA256=sha('<scratch>/home'), pins=dict(PINS), launchedPins=dict(PINS))
+                 homeSHA256=sha('<scratch>/home'), pins=dict(PINS), launchedPins=dict(PINS),
+                 seedAccountIDSHA256=sha(SEED_ACCOUNT))
     value.update(changes)
     return value
 
@@ -94,7 +97,7 @@ class Trace:
 
     def __init__(self):
         self.native, self.dock, self.status, self.clear = [], [], [], []
-        self.capture = self.reset = self.finish = self.closure = self.runtime = None
+        self.capture = self.reset = self.finish = self.closure = self.runtime = self.digest = None
         self.image = png()
         self.flat = False  # True writes the flat C2.4 rows instead of the producers' encoding
 
@@ -139,9 +142,12 @@ class Trace:
                'dock-pointer.jsonl': jsonl([pointer(r) for r in self.dock]),
                'status-pointer.jsonl': jsonl([pointer(r) for r in self.status]),
                'status-pointer-clear.jsonl': jsonl([pointer(r) for r in self.clear]), CAPTURE: self.image}
+        if self.runtime is not None:  # the stub log as Drive copies it, and the digest Drive records
+            out['runtime-calls.jsonl'] = jsonl(self.runtime)
+            out['result.json'] = (json.dumps(dict(runtimeCallsSHA256=self.digest or sha(out['runtime-calls.jsonl'])),
+                                             sort_keys=True) + '\n').encode()
         for name, value in (('dock-capture.json', self.capture), ('consent-reset.json', self.reset),
-                            ('operator-finish.json', self.finish), ('launch-cleanup.json', self.closure),
-                            ('runtime-calls.json', self.runtime)):
+                            ('operator-finish.json', self.finish), ('launch-cleanup.json', self.closure)):
             if value is not None:
                 out[name] = (json.dumps(value, sort_keys=True) + '\n').encode()
         return out
@@ -215,10 +221,12 @@ def valid(variant='main', closure_receipt=None):
           titleSHA256=sha(SEED_TITLE), privateItemIDs=[ITEM_A])
     t.add('status-menu-action-arrived', 21.0, menuObjectID=MENU, sessionID=SESSION_A, requestID=REQUEST,
           actionID='refresh', deliveryMethod='axpress-menu-item', source='NSMenu.didSendAction', scope='owned-status-menu')
-    t.add('refresh', 21.05, phase='requested', requestId=REQUEST, rowsSequenceBefore=3, menuObjectID=MENU,
-          sessionID=SESSION_A, dispositions=dict(DISPOSITIONS), copilotRow='absent')
-    completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, menuObjectID=MENU, sessionID=SESSION_A,
-                     copilotRow='present')
+    t.add('refresh', 21.05, phase='requested', requestId=REQUEST, rowsSequenceBefore=3, copilotAccountsBefore=0,
+          menuObjectID=MENU, sessionID=SESSION_A)
+    t.add('refresh', 21.06, phase='accepted', requestId=REQUEST, engineRequestID=ENGINE_REQUEST,
+          dispositions=dict(DISPOSITIONS), menuObjectID=MENU, sessionID=SESSION_A)
+    completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, copilotAccountsAfter=1,
+                     accountIDSHA256=sha(SEED_ACCOUNT), menuObjectID=MENU, sessionID=SESSION_A)
     if alt:
         t.add('refresh', 21.08, **completed)
         t.add('menu-end', 21.2, menuObjectID=MENU, sessionID=SESSION_A, cause='other')
@@ -261,14 +269,14 @@ def valid(variant='main', closure_receipt=None):
     t.finish = dict(schema='u6-actions/1', runID=RUN, epoch=EPOCH, pid=PID, mono=m(40.0),
                     steps={name: 'pass' for name in ACTION_STEPS}, outcome='pass', reason=None)
     t.closure = closure() if closure_receipt is None else closure_receipt
-    t.runtime = runtime_calls(['connect', 'auth.getStatus', 'account.getQuota'])
+    t.runtime = stub_calls(['connect', 'auth.getStatus', 'account.getQuota'], 21.065)
     return t
 
 
-def runtime_calls(calls):
-    """Drive's run-bound copy of the stub's `$HOME/runtime-calls` log (C2.5 D)."""
-    raw = ''.join(c + '\n' for c in calls)
-    return dict(schema='u6-runtime-calls/1', runID=RUN, epoch=EPOCH, sourceSHA256=sha(raw), calls=list(calls))
+def stub_calls(methods, start, step=0.005, run=RUN, epoch=EPOCH, first_seq=1):
+    """runtime-calls/1 lines the seeded stub appends to `$HOME/.modelplan-stub/runtime-calls.jsonl` (C2.6 D)."""
+    return [dict(runID=run, epoch=epoch, method=method, pid=STUB_PID, ppid=ENGINE_PID, mono=m(start + i * step),
+                 seq=first_seq + i) for i, method in enumerate(methods)]
 
 
 BATCHES = ('valid', 'valid-interleaved')
@@ -276,7 +284,7 @@ DISPOSITIONS = {'copilot.runtime_usage': 'scheduled', 'claude.account_usage.save
 ACTION_STEPS = ('dock', 'menuA', 'refresh', 'menuB', 'privateTitle', 'trackedClear')
 
 
-# producer encodings (C2.5 F) ---------------------------------------------------------------------------
+# producer encodings (C2.6 F) ---------------------------------------------------------------------------
 KIT_HEAD, KIT_APP, KIT_BINARY = 'a' * 40, 'ModelPlan.app', 'ModelPlanCommunityApp'
 KIT_SEED = sha('synthetic home seed tree')
 _ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
@@ -364,7 +372,8 @@ def kit_batch(ctx, files, root):
     put(batch / 'launch.json', dict(ownedPID=pid, runID=run, epoch=epoch, sourceHead=KIT_HEAD))
     put(batch / 'prepared.json', dict(prepared=True, runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED))
     put(batch / 'synthetic-seed.json', dict(schema='u6-seed/1', runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED,
-                                            titleSHA256=ctx['seedTitleSHA256'], profileSHA256=sha('synthetic profile')))
+                                            titleSHA256=ctx['seedTitleSHA256'], accountIDSHA256=ctx['seedAccountIDSHA256'],
+                                            profileSHA256=sha('synthetic profile')))
     for stem in ('dock-pointer', 'status-pointer', 'status-pointer-clear'):
         put(batch / (stem + '-plan.json'), dict(profile='synthetic', runID=run, epoch=epoch, subjectPID=pid,
                                                 targetPID=pid, output=str(batch / (stem + '.jsonl'))))

@@ -3,14 +3,14 @@
 
 These Draft 2020-12 schemas describe only what the U6 Dock/menu drive emits and consumes, as specified by
 `desktop/native/verification/U6-DockMenu-Drive.md`: "Evidence and timing contract (C2.4)" as amended by
-"Contract revision C2.5" (C2.5 wins where they differ). They follow the [App–CLI contract](../app-cli/README.md)
+"Contract revision C2.6" (C2.6 wins where they differ). They follow the [App–CLI contract](../app-cli/README.md)
 pattern: versioned schemas, fixtures with recorded provenance, a drift check, and contract tests. `common.json`
 holds the shared identity, clock and code definitions.
 
-C2.5 F keeps the producers' current receipt shapes, so the schemas describe the App's native envelope and
-pointer_drive's rows as written today. Where a producer still has to change for C2.5, it is listed under
-[Producer changes required by C2.5](#producer-changes-required-by-c25); where `bin/evidence-u6.py` must change, under
-[evidence-u6 changes required by C2.5](#evidence-u6-changes-required-by-c25). Nothing here changes a producer.
+C2.6 F keeps the producers' current receipt shapes, so the schemas describe the App's native envelope and
+pointer_drive's rows as written today. Where a producer still has to change for C2.6, it is listed under
+[Producer changes required by C2.6](#producer-changes-required-by-c26); where `bin/evidence-u6.py` must change, under
+[evidence-u6 changes required by C2.6](#evidence-u6-changes-required-by-c26). Nothing here changes a producer.
 
 | Schema | Batch file | Producer | Consumers |
 | --- | --- | --- | --- |
@@ -19,42 +19,46 @@ pointer_drive's rows as written today. Where a producer still has to change for 
 | [capture-receipt.json](capture-receipt.json) (`u6-capture/1`) | `dock-capture.json` | `U6/capture_owned.py` | evidence-u6, replay |
 | [consent-reset.json](consent-reset.json) (`consent-reset/1`) | `consent-reset.json` | `U6/consent_reset.py` | evidence-u6, replay |
 | [u6-actions.json](u6-actions.json) (`u6-actions/1`) | `operator-finish.json` | `U6/action_runner.py` | drive-u6, evidence-u6, replay |
-| [runtime-calls.json](runtime-calls.json) (`u6-runtime-calls/1`) | `runtime-calls.json` | Drive's copy of the stub log (C2.5 D; pending, M4) | evidence-u6, replay |
+| [runtime-calls.json](runtime-calls.json) (`runtime-calls/1`, per line) | `runtime-calls.jsonl` (+ `runtimeCallsSHA256` in `result.json`) | the seeded Copilot stub, copied by Drive (C2.6 C-D; pending, M4) | evidence-u6, replay |
 | [launch-cleanup.json](launch-cleanup.json) (`launch-cleanup/1`) | `launch-cleanup.json` | `bin/check_launch_cleanup.py` | evidence-u6, replay |
 | [replay-context.json](replay-context.json) (`u6-replay-context/1`) | replay input only | derived from the run files (subject, lease, seed title hash, HOME hash, manifest and launched pins) | replay |
 
 Native kinds (`event`): `started`, `doctor` (guard tick, not a step input), `dock-surface-frame`,
 `status-item-frame`, `menu-begin`, `menu-end` (`cause` with `clearID` iff `clear`), `menu-private-title-visible`
 (`titleSHA256`, `privateItemIDs`), `status-menu-action-arrived`, `refresh` (flat; `requested` | `completed` |
-`failed` | `deferred` | `abandoned`), `clear-initiated`, `accepted-clear`, `menu-scrubbed` (per session, per
+`accepted` | `failed` | `deferred` | `abandoned`), `clear-initiated`, `accepted-clear`, `menu-scrubbed` (per session, per
 recorded item), `stop-or-lease-expired` / `owner-preempted` (one schema; only the first satisfies step 8) and
 `terminate-completed`.
 
 ## Encoding, versioning and compatibility
 
-- **Native rows (C2.5 F)** are the App's envelope: `runID`, `epoch`, `pid`, `seq` (integer ≥ 1, strictly
+- **Native rows (C2.6 F)** are the App's envelope: `runID`, `epoch`, `pid`, `seq` (integer ≥ 1, strictly
   increasing per process), `mono` (fractional `ProcessInfo.systemUptime`), `at` (UNIX seconds, informational),
   `event`, `timestamp` (= `at`, informational) and `checks` {the kind's fields}. `refresh` rows are flat with
   `kind: "refresh"`. The App's extra identity fields (`instanceID`, `subjectPID`, `menuInstanceID`,
   `nativeUptimeSeconds`) are allowed and never decide. A row carries exactly one of the two encodings.
-- **Refresh (C2.5 D):** `requested` carries `rowsSequenceBefore`, `dispositions` (scope → `scheduled` |
-  `cooldown` | `read_only` | `offline` | `policy_pending`; `copilot.runtime_usage` required) and `copilotRow`
-  (`absent` | `present`, before); `completed` carries `rowsSequenceAfter` and `copilotRow` (after); `failed` a §5
-  `reason`; `deferred` nothing more; `abandoned` a `cause` (`deadline` | `stop`). The encoding of "copilotRow absent →
-  present" as a before/after pair is this schema's choice; M4 implements it or proposes another in the same change.
+- **Refresh (C2.6 D):** `requested` carries `rowsSequenceBefore` and `copilotAccountsBefore`; `accepted` carries
+  `engineRequestID` and `dispositions` (scope → `scheduled` | `cooldown` | `read_only` | `offline` |
+  `policy_pending`; `copilot.runtime_usage` required), copied from that call's own reply; `completed` carries
+  `rowsSequenceAfter`, `copilotAccountsAfter` and `accountIDSHA256` (never the ID); `failed` a §5 `reason`;
+  `deferred` nothing more; `abandoned` a `cause` (`deadline` | `stop`). Every phase carries R, A's `sessionID` and
+  `menuObjectID`.
+- **Runtime calls (C2.6 D):** one `runtime-calls/1` object per line (`runID`, `epoch` from the stub's seeded
+  binding, `method`, `pid`, `ppid`, `mono`, `seq`). The digest key in Drive's `result.json` is named
+  `runtimeCallsSHA256` here (C2.6 does not name it; M4 confirms or renames it in the same change).
 - **Pointer rows** are pointer_drive's: `event` names the row, posted rows carry `kind` (`move` | `click`), the
   C2.4 binding (`runID`, `epoch`, `targetPID`, numeric `mono`, `at`) and its `subjectPID`, `uptimeSeconds`, ISO
   `timestamp`. The permission row is written without run binding and is never evidence.
-- **Protocol (C2.5 F).** `started.checks.protocol` is optional; absent (the App today) means `u6-native/1`. Any other
+- **Protocol (C2.6 F).** `started.checks.protocol` is optional; absent (the App today) means `u6-native/1`. Any other
   version makes the native stream unusable: NOT-RUN `unknown`.
 - **Frozen meanings.** Identity (run/epoch/PID binding, `menuObjectID` vs `sessionID`, `requestId`, `clearID`),
   clocks and ordering (`seq` within the app, `mono` across processes, `at`/`timestamp` never), the reset
   correlation pair, the retained-item proof and every outcome/reason vocabulary are frozen for a protocol version;
   changing one needs a new version with producer, schema, fixtures and consumers in one reviewed change.
 - **Closed objects.** Every object (including `checks`) is `additionalProperties: false`; a new field lands in the
-  schema and fixtures with the producer. A schema-invalid receipt is NOT-RUN (C2.5 F).
+  schema and fixtures with the producer. A schema-invalid receipt is NOT-RUN (C2.6 F).
 - Free engine/exception text never appears; reasons use `common.json#/$defs/scenarioReason` (C2.4 §5 plus
-  C2.5 D `cooldown`).
+  C2.6 D `cooldown`).
 
 ## Three checks
 
@@ -67,9 +71,9 @@ exactly the keyword subset these schemas use and refuses any other keyword):
    `launch-cleanup/1` the schema's keys equal `check_launch_cleanup.KEYS`/`CHECKS`/`TIMING`, receipts from the real
    `check()` satisfy both the schema and `validate_receipt`, and over a mutation matrix the two agree on shape.
 2. **Meaning.** `U6/replay.py` is a pure offline oracle (no GUI, process, clock or writes) that reduces a batch
-   through C2.4/C2.5 to per-step outcomes, independent of `bin/evidence-u6.py`. Each negative trace asserts its
+   through C2.4/C2.6 to per-step outcomes, independent of `bin/evidence-u6.py`. Each negative trace asserts its
    exact step outcomes, scenario reason and deciding assertion, and that every other step passes.
-3. **Invocation.** The replay CLI runs on the committed batches. Every one of the 80 traces the oracle judges
+3. **Invocation.** The replay CLI runs on the committed batches. Every one of the 93 traces the oracle judges
    also runs through the real `bin/evidence-u6.py --config --batch --package --kit-manifest` on the same batch
    bytes; `synthetic_batch.kit_batch()` adds only what the final entry reads beyond the batch (subject
    registration, `launch.json`, `prepared.json`, `synthetic-seed.json`, pointer plans, the menu helper's
@@ -80,30 +84,38 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 
 - Rows bind on (`runID`, `epoch`, `pid`) of the registered subject; others are ignored. Among the subject's rows,
   a schema-invalid row, a missing first `started` row, an unsupported protocol, an unparsable or truncated line
-  makes the native stream unusable (NOT-RUN; C2.5 F): steps 1–6 and 8 are NOT-RUN and step 10 reports the cause. A
-  non-increasing `seq` or decreasing `mono` is a contradiction: step 10 FAIL (C2.5 F).
+  makes the native stream unusable (NOT-RUN; C2.6 F): steps 1–6 and 8 are NOT-RUN and step 10 reports the cause. A
+  non-increasing `seq` or decreasing `mono` is a contradiction: step 10 FAIL (C2.6 F).
 - Duplicates are contradictions (FAIL): a second Refresh arrival in A, a second `requested` for R, a second
   terminal for R anywhere in the log (codex-kit-12), a second `accepted-clear` or `menu-scrubbed` for the clear.
-- Step 3 (C2.5 D): an arrival after `menu-end(A)` is FAIL; a terminal outside 60 s of `requested` is NOT-RUN
-  `timeout`; `failed` is FAIL with its reason; `deferred` is NOT-RUN `cooldown`; `abandoned` is NOT-RUN `timeout`
-  (deadline) or `not-delivered` (stop); `completed` without an advance is NOT-RUN `rows-unchanged`. An advance
-  passes only with `copilotRow` absent → present, Copilot `scheduled` and `account.getQuota` in this run's
-  `runtime-calls.json`. Otherwise: the row already present before → NOT-RUN `copilot-row-preexisting` (the seed
-  broke C2.5 C, so the step proves nothing); Copilot not scheduled → FAIL `copilot-not-scheduled` (the advance
-  contradicts the disposition); no Copilot row or no stub call → FAIL `unrelated-advance`; the call log missing,
-  schema-invalid or of another run → NOT-RUN. The log must come from this run's fresh HOME: a seed that already
-  holds `runtime-calls` would let a stale `account.getQuota` count (C2.5 C keeps it out of the seed).
+- Step 3 (C2.6 D): an arrival after `menu-end(A)` is FAIL; `copilotAccountsBefore` ≠ 0 is FAIL; a second
+  `accepted` or terminal for R is FAIL; a terminal outside 60 s of `requested` is NOT-RUN `timeout`; `failed` is
+  FAIL with its reason; `abandoned` is NOT-RUN `timeout` (deadline) or `not-delivered` (stop). `deferred` and
+  `completed` need one `accepted` between `requested` and the terminal (else NOT-RUN `accepted-missing`) whose
+  `engineRequestID` no other request's `accepted` carries (else NOT-RUN `accepted-stale`: a cached reply).
+  `deferred` is NOT-RUN with the reason of the Copilot disposition (`cooldown` → `cooldown`; `read_only`,
+  `offline` → `engine-disabled`; `policy_pending` → `consent-required`; `scheduled` would contradict it: FAIL).
+  `completed` passes only when `accepted` scheduled Copilot (else FAIL), the projection qualifies
+  (`copilotAccountsAfter` ≥ 1, the seed's `accountIDSHA256`, `rowsSequenceAfter` > n; else FAIL), the runtime-call
+  copy exists, matches `result.json`'s digest and every line is schema-valid and this run's (else NOT-RUN), no
+  call precedes `accepted` (else FAIL: a preseeded log lands here too) and an `account.getQuota` call lies strictly
+  between `accepted` and `completed` (else FAIL). Earlier unrelated projections leave no row and are ignored.
+- **engineRequestID binding (gap).** C2.6 gives the oracle nothing to compare `engineRequestID` against, so the
+  oracle detects only a reply reused from another request. Recording the ID the handler sends in `requested`
+  (and requiring `accepted` to echo it) would let both readers prove the per-call link.
+- **"A call logged before accepted"** is read literally: any stub method, not only `account.getQuota`. If the
+  engine may `connect` the runtime before the reply, C2.6 should say `account.getQuota` instead.
 - Step 6: C2.4's explicit FAIL predicates (B ended before `clear-initiated`; a later end of B without
   `cause: clear` and the same `clearID`; a recorded private item missing from or still private in `menu-scrubbed`;
   private content in the current menu; a seed-hash title for B or a later session after `accepted-clear`) are
-  evaluated first and dominate. Then C2.5 E: `accepted-clear` or `menu-scrubbed` more than 5 s after
+  evaluated first and dominate. Then C2.6 E: `accepted-clear` or `menu-scrubbed` more than 5 s after
   `clear-initiated` is FAIL `timeout` (`clear-late`). Missing or unbound receipts are NOT-RUN, including B not in
   `openSessionIDs` or `scrubbedSessionIDs` (macrev-332-8). The clear is the first `clear-initiated` after B's title.
-- Step 7 (C2.5 F): any non-pass claim of the runner (`steps` or `outcome`) is NOT-RUN with the runner's bounded
+- Step 7 (C2.6 F): any non-pass claim of the runner (`steps` or `outcome`) is NOT-RUN with the runner's bounded
   `reason`; a claim never proves PASS. The finish record must follow the step 1–6 receipts and precede the stop row.
 - Step 9: missing, schema-invalid, other-run or other-lease-window receipts are NOT-RUN and ignored (step 8 then
   lacks `subjectGone`); `ok: false` is NOT-RUN (macrev-332-5); a well-formed receipt that contradicts itself
-  (`closure-failures-`, `-ok-`, `-time-`, `-window-inconsistent`) is FAIL `closure-inconsistent` (C2.5 F); a late
+  (`closure-failures-`, `-ok-`, `-time-`, `-window-inconsistent`) is FAIL `closure-inconsistent` (C2.6 F); a late
   closure or a start before the lease (`lease_window_ok` false) is FAIL `out-of-window` (C2.4 §4).
 - Step 10: manifest pins different from the launched pins is FAIL (C2.4 §6).
 - Overall: FAIL if any step fails, else NOT-RUN if any step is not run, else PASS.
@@ -113,9 +125,9 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 
 | Trace | Source | Non-PASS steps (outcome / reason / detail) | Overall |
 |---|---|---|---|
-| `valid` | C2.4/C2.5 | none | pass |
+| `valid` | C2.4/C2.6 | none | pass |
 | `valid-interleaved` (begin during press, terminal before end(A), no optional end(B), item deallocated, foreign-PID rows) | codex-kit-5, -12; macrev-332-10 | none | pass |
-| `delayed-clear` (scrub 190 s after initiation) | codex-kit-3, C2.5 E | 6 FAIL / timeout / `clear-late` | fail |
+| `delayed-clear` (scrub 190 s after initiation) | codex-kit-3, C2.6 E | 6 FAIL / timeout / `clear-late` | fail |
 | `production-handler-bypassed` | macrev-332-4, codex-kit-4 | 3 NOT-RUN / not-delivered / `requested-missing` | not-run |
 | `separate-client-request` | macrev-332-4 | 3 FAIL / unknown / `requested-duplicate` | fail |
 | `closure-missing` | macrev-332-5, codex-kit-1 | 8 NOT-RUN / not-delivered / `subject-not-gone`; 9 NOT-RUN / not-delivered / `closure-missing` | not-run |
@@ -144,10 +156,10 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 | `accepted-clear-other-pair` | codex-kit-8 | 6 NOT-RUN / wrong-subject / `pair-mismatch` | not-run |
 | `clear-initiated-outside-reset-window` | codex-kit-8 | 6 NOT-RUN / out-of-window / `clear-initiated-out-of-window` | not-run |
 | `old-accepted-clear-shape` | macrev-332-14 | 10 NOT-RUN / unknown / `native-row-malformed`; 1,2,3,4,5,6,8 NOT-RUN `native-unusable` | not-run |
-| `flat-c2.4-rows` | C2.5 F (the App envelope is the format) | 10 NOT-RUN / unknown / `native-row-malformed`; 1,2,3,4,5,6,8 NOT-RUN `native-unusable` | not-run |
+| `flat-c2.4-rows` | C2.6 F (the App envelope is the format) | 10 NOT-RUN / unknown / `native-row-malformed`; 1,2,3,4,5,6,8 NOT-RUN `native-unusable` | not-run |
 | `closure-observed-after-expiry` | macrev-332-15, codex-kit-9 | 9 FAIL / out-of-window / `closure-late` | fail |
 | `subject-started-before-lease` | codex-kit-9 | 9 FAIL / out-of-window / `closure-late` | fail |
-| `closure-other-lease-window` | codex-kit-9, C2.5 F | 8 NOT-RUN / not-delivered / `subject-not-gone`; 9 NOT-RUN / wrong-subject / `lease-window-mismatch` | not-run |
+| `closure-other-lease-window` | codex-kit-9, C2.6 F | 8 NOT-RUN / not-delivered / `subject-not-gone`; 9 NOT-RUN / wrong-subject / `lease-window-mismatch` | not-run |
 | `physical-receipts-missing-runner-says-pass` | codex-kit-1 | 1 NOT-RUN / not-delivered / `dock-move-missing` | not-run |
 | `capture-file-name-only` | codex-kit-5 | 1 NOT-RUN / not-delivered / `capture-missing` | not-run |
 | `capture-bound-to-other-frame` | codex-kit-5 | 1 NOT-RUN / wrong-subject / `capture-unbound` | not-run |
@@ -171,18 +183,31 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 | `refresh-terminal-duplicate` | codex-kit-4, codex-kit-12 | 3 FAIL / unknown / `terminal-duplicate` | fail |
 | `refresh-terminal-duplicate-outside-window` | codex-kit-12 | 3 FAIL / unknown / `terminal-duplicate` | fail |
 | `refresh-failed` | C2.4 step 3 | 3 FAIL / engine-error / `refresh-failed` | fail |
-| `refresh-rows-unchanged` | C2.4 step 3 (unchanged empty state) | 3 NOT-RUN / unknown / `rows-unchanged` | not-run |
-| `refresh-deferred` | C2.5 D (Copilot cooldown) | 3 NOT-RUN / cooldown / `refresh-deferred` | not-run |
-| `refresh-abandoned-deadline` | C2.5 D (watchdog deadline) | 3 NOT-RUN / timeout / `refresh-abandoned-deadline` | not-run |
-| `refresh-abandoned-stop` | C2.5 D (watchdog stop) | 3 NOT-RUN / not-delivered / `refresh-abandoned-stop` | not-run |
-| `unrelated-sequence-advance` | C2.5 D | 3 FAIL / unknown / `unrelated-advance` | fail |
-| `stub-call-missing` | C2.5 D | 3 FAIL / unknown / `unrelated-advance` | fail |
-| `runtime-calls-missing` | C2.5 D | 3 NOT-RUN / not-delivered / `runtime-calls-missing` | not-run |
-| `runtime-calls-other-run` | C2.5 D, C2.4 section 1 | 3 NOT-RUN / wrong-subject / `runtime-calls-unbound` | not-run |
-| `copilot-not-scheduled-but-completed` | C2.5 D | 3 FAIL / unknown / `copilot-not-scheduled` | fail |
-| `copilot-row-preexisting` | C2.5 C-D (seed carries no Copilot reading) | 3 NOT-RUN / unknown / `copilot-row-preexisting` | not-run |
-| `accepted-clear-late` | C2.5 E | 6 FAIL / timeout / `clear-late` | fail |
-| `menu-scrubbed-late` | C2.5 E | 6 FAIL / timeout / `clear-late` | fail |
+| `refresh-rows-unchanged` | C2.4 step 3, C2.6 D (completed without the qualifying projection) | 3 FAIL / unknown / `projection-not-qualifying` | fail |
+| `deferred-cooldown` | C2.6 D (deferred cooldown) | 3 NOT-RUN / cooldown / `refresh-deferred` | not-run |
+| `deferred-read-only` | C2.6 D (deferred read_only) | 3 NOT-RUN / engine-disabled / `refresh-deferred` | not-run |
+| `deferred-offline` | C2.6 D (deferred offline) | 3 NOT-RUN / engine-disabled / `refresh-deferred` | not-run |
+| `deferred-policy-pending` | C2.6 D (deferred policy_pending) | 3 NOT-RUN / consent-required / `refresh-deferred` | not-run |
+| `refresh-abandoned-deadline` | C2.6 D (watchdog deadline; also the unrelated-only advance: no completed) | 3 NOT-RUN / timeout / `refresh-abandoned-deadline` | not-run |
+| `refresh-abandoned-stop` | C2.6 D (watchdog stop) | 3 NOT-RUN / not-delivered / `refresh-abandoned-stop` | not-run |
+| `accepted-missing` | C2.6 D (no per-call reply) | 3 NOT-RUN / not-delivered / `accepted-missing` | not-run |
+| `accepted-stale-snapshot` | C2.6 D (stale scheduled value: another call's engineRequestID) | 3 NOT-RUN / not-delivered / `accepted-stale` | not-run |
+| `accepted-duplicate` | C2.6 D, C2.6 F | 3 FAIL / unknown / `accepted-duplicate` | fail |
+| `copilot-accounts-before-nonzero` | C2.6 D (not a first attempt) | 3 FAIL / unknown / `copilot-accounts-before` | fail |
+| `completed-on-unrelated-projection` | C2.6 D (unrelated-only advance reported as completed) | 3 FAIL / unknown / `projection-not-qualifying` | fail |
+| `completed-other-account` | C2.6 D | 3 FAIL / unknown / `projection-not-qualifying` | fail |
+| `unrelated-then-valid` | C2.6 D (earlier unrelated projections are ignored) | none | pass |
+| `copilot-not-scheduled-but-completed` | C2.6 D, C2.6 F | 3 FAIL / unknown / `copilot-not-scheduled` | fail |
+| `stub-call-missing` | C2.6 D | 3 FAIL / unknown / `quota-call-missing` | fail |
+| `quota-call-after-completed` | C2.6 D | 3 FAIL / unknown / `quota-call-missing` | fail |
+| `call-before-accepted` | C2.6 D | 3 FAIL / unknown / `call-before-accepted` | fail |
+| `runtime-calls-preseeded` | C2.6 C-D (the log must be absent in the seed) | 3 FAIL / unknown / `call-before-accepted` | fail |
+| `runtime-calls-foreign` | C2.6 D, C2.4 section 1 | 3 NOT-RUN / wrong-subject / `runtime-calls-foreign` | not-run |
+| `runtime-calls-missing` | C2.6 D | 3 NOT-RUN / not-delivered / `runtime-calls-missing` | not-run |
+| `runtime-calls-digest-mismatch` | C2.6 D | 3 NOT-RUN / not-delivered / `runtime-calls-undigested` | not-run |
+| `runtime-calls-undigested` | C2.6 D (result.json without the digest) | 3 NOT-RUN / not-delivered / `runtime-calls-undigested` | not-run |
+| `accepted-clear-late` | C2.6 E | 6 FAIL / timeout / `clear-late` | fail |
+| `menu-scrubbed-late` | C2.6 E | 6 FAIL / timeout / `clear-late` | fail |
 | `menu-a-ended-before-arrival` | codex-kit-12 | 3 FAIL / unknown / `arrival-after-menu-end` | fail |
 | `menu-b-reuses-session-a` | codex-kit-6 | 4 NOT-RUN / wrong-subject / `session-reused`; 5,6 NOT-RUN `prerequisite-not-met` | not-run |
 | `click-b-before-a-ended` | C2.4 step 4 | 4 NOT-RUN / out-of-window / `click-b-before-a-ended`; 5,6 NOT-RUN `prerequisite-not-met` | not-run |
@@ -199,13 +224,13 @@ exactly the keyword subset these schemas use and refuses any other keyword):
 `fixtures/batches/valid` and `fixtures/batches/valid-interleaved` are complete batches with their
 `context.json`; [fixtures/provenance.json](fixtures/provenance.json) records each file's schema, producer and
 status. Real producers (`generated: true`): `launch-cleanup.json` (the real `check_launch_cleanup.check()` on a
-synthetic closed run with a fixed lease clock) and, since C2.5 F, `dock-capture.json`, `consent-reset.json` and
+synthetic closed run with a fixed lease clock) and, since C2.6 F, `dock-capture.json`, `consent-reset.json` and
 `operator-finish.json`, written by `U6/capture_owned.py`, `U6/consent_reset.py` and `U6/action_runner.py` on the
 trace's native rows up to that moment, with fakes only for admission/subject identity, `screencapture`, the
 helper process and the uptime clock (`synthetic_batch.shipped_receipts`; the reset's `homeSHA256` of the temporary
 HOME path is rebased to the context's). `test_fixture_receipts_are_the_shipped_writers_output` keeps the in-memory
 traces equal to them. Authored (`pending-producer-capture`): native rows (Swift App), pointer rows (Swift
-pointer_drive) and `runtime-calls.json` (Drive's stub-log copy, not written yet). Negative traces are mutations in
+pointer_drive), `runtime-calls.jsonl` and `result.json` (stub writer and Drive copy, not written yet). Negative traces are mutations in
 the test file with independently stated expectations.
 
 Regenerate (the drift test compares byte for byte):
@@ -219,42 +244,44 @@ Swift captures still to add (then flip those entries to `generated: true`): nati
 `emitObject` serializer with injected uptime, clock and IDs) and pointer rows via `pointer_drive
 --fixture-receipts <plan>` (`PointerDrive.append` with an injected clock, posting nothing).
 
-## Producer changes required by C2.5
+## Producer changes required by C2.6
 
 Against #332 6a063beb (`U6DriveGuard.swift`, `pointer_drive.swift` unchanged since 8f857aa6; line numbers there).
 
-Closed by C2.5 F (the schemas adopt the current shapes): the former items 1–4, 6, 9, 10 and 12 (envelope, no
+Closed by C2.6 F (the schemas adopt the current shapes): the former items 1–4, 6, 9, 10 and 12 (envelope, no
 `protocol`, `instanceID`/`subjectPID`/`menuInstanceID`/`nativeUptimeSeconds`, pointer `event`/`kind`, ISO
 `timestamp`, unbound permission and `postEvents-not-granted` rows). Done earlier: 7 (deadline anchored at
 `requested` `mono`) and 11 (click `mono` sampled at the posts).
 
 App (`desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/U6DriveGuard.swift`):
 
-1. **C2.5 D, `requested`** (`:156-157`): add `dispositions` (the engine's per-scope `refresh/request` reply,
-   `copilot.runtime_usage` included) and `copilotRow` (`absent` | `present` before the request).
-2. **C2.5 D, `completed`** (`:179`): add `copilotRow` after; write `deferred` (no advance; Copilot not
-   `scheduled`) instead of waiting for an advance that cannot come.
-3. **C2.5 D, watchdog** (`:158-163`, `:183`, the former item 13): on the 60 s deadline write `abandoned` with
-   `cause: "deadline"`, on `isLive()` turning false write `abandoned` with `cause: "stop"`; never `failed`/`timeout`.
-   `failed` stays for the production result only (`:168`).
+1. **C2.6 D, `requested`** (`:156-157`): add `copilotAccountsBefore` (Copilot accounts in the last accepted
+   projection with sequence ≤ n).
+2. **C2.6 D, `accepted`**: new row from the completion of that `refresh/request` call (`engineRequestID`,
+   `dispositions` from the per-call reply), before any terminal.
+3. **C2.6 D, terminals** (`:158-189`): `completed` only for an accepted projection with sequence > n showing the
+   seed's Copilot account (`copilotAccountsAfter`, `accountIDSHA256`, its `rowsSequenceAfter`), ignoring other
+   advances; `deferred` when `accepted` does not schedule Copilot; the watchdog writes `abandoned` (`deadline` /
+   `stop`, the former item 13), never `failed`/`timeout`; `failed` only for a production error (`:168`).
 4. **Former item 5** (`:102`, `:142`, `:299`): an untracked end, arrival or scrub writes `sessionID: ""` /
    `menuObjectID: ""`, which fails the schema and makes the whole native stream NOT-RUN. Skip the row instead.
 5. **Former item 8** (`:91`): `privateItemIDs` lists only `menu.items[0]`; C2.4 step 5 asks for every item object
    showing private content.
 
-Drive (`desktop/native/verification/bin/drive-u6.py`, C2.5 D):
+Seed and Drive (C2.6 C-D):
 
-6. Before removing HOME, copy `$HOME/runtime-calls` to `$BATCH/runtime-calls.json` as `u6-runtime-calls/1`
-   (`runID`, `epoch`, `sourceSHA256` of the raw log, `calls` = its lines), exclusive create, and record the SHA-256
-   in `result.json`.
+6. The seeded stub appends `runtime-calls/1` lines to `$HOME/.modelplan-stub/runtime-calls.jsonl` with its seeded
+   run binding; the log is absent in the seed (`prepare_config.py`, stub).
+7. `drive-u6.py`: before removing HOME, copy it to `$BATCH/runtime-calls.jsonl` and record its SHA-256 in
+   `result.json` (`runtimeCallsSHA256`).
 
 Observation, outside the schema: with the guard attached, `EngineDockMenuApplication.swift:126-133` skips
 `composition.refresh` when no arrival context is seen within 0.5 s (no `requested` → NOT-RUN).
 
-## evidence-u6 changes required by C2.5
+## evidence-u6 changes required by C2.6
 
 `bin/evidence-u6.py` / `U6/evidence_chain.py` at #332 6a063beb (unchanged since 8f857aa6) agree with the oracle on
-63 of 80 traces. The 17 below are `expectedFailure` in `EvidenceU6CLITests` (C2.5 G.3 asks for none);
+66 of 93 traces. The 27 below are `expectedFailure` in `EvidenceU6CLITests` (C2.6 G.3 asks for none);
 `test_disagreement_table_is_exact` pins both outcomes. Required changes, for M4:
 
 1. Closure of another run → NOT-RUN, not FAIL (`validate_receipt(closure, run, epoch)`'s `closure-other-run`
@@ -265,31 +292,43 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 5. Non-increasing `seq` / decreasing `mono` → FAIL (`native_rows` raises Missing today).
 6. Refresh arrival after A's `menu-end` → FAIL (today NOT-RUN: `end_a` lookup requires `seq` > arrival).
 7. Terminal beyond 60 s → NOT-RUN `timeout` (today FAIL `out-of-window`).
-8. C2.5 D: read `dispositions`, `copilotRow`, `deferred` (NOT-RUN `cooldown`), `abandoned` (NOT-RUN `timeout` /
-   `not-delivered`) and `$BATCH/runtime-calls.json`; PASS only with Copilot `scheduled`, absent → present and
-   `account.getQuota`; an unrelated advance or a missing call → FAIL; a missing or other-run call log → NOT-RUN;
-   add `cooldown` to `CODES`.
-9. C2.5 E: `accepted-clear` and `menu-scrubbed` within 5 s of `clear-initiated`, late → FAIL `timeout`.
+8. C2.6 D: read `accepted` (one, between `requested` and the terminal, not reused), `copilotAccountsBefore` = 0,
+   `deferred` (NOT-RUN by disposition: `cooldown`, `engine-disabled`, `consent-required`), `abandoned` (NOT-RUN
+   `timeout` / `not-delivered`), the qualifying `completed` (`copilotAccountsAfter` ≥ 1, `accountIDSHA256`,
+   advance; else FAIL, including today's NOT-RUN for an unchanged sequence), and `$BATCH/runtime-calls.jsonl`
+   against `result.json`'s digest and the run binding (else NOT-RUN), no call before `accepted` and
+   `account.getQuota` between `accepted` and `completed` (else FAIL); add `cooldown` to `CODES`.
+9. C2.6 E: `accepted-clear` and `menu-scrubbed` within 5 s of `clear-initiated`, late → FAIL `timeout`.
 
-| Trace | Oracle (C2.5) | evidence-u6 | Deciding text |
+| Trace | Oracle (C2.6) | evidence-u6 | Deciding text |
 | --- | --- | --- | --- |
-| `closure-other-run` | not-run | fail | C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
-| `closure-other-lease-window` | not-run | pass | C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
-| `old-accepted-clear-shape` | not-run | pass | C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" (closed checks schema) |
-| `unsupported-native-protocol` | not-run | pass | C2.5 F: "An unknown native protocol version → NOT-RUN unknown" |
-| `descending-seq` | fail | not-run | C2.5 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
-| `duplicate-seq` | fail | not-run | C2.5 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
+| `closure-other-run` | not-run | fail | C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
+| `closure-other-lease-window` | not-run | pass | C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
+| `old-accepted-clear-shape` | not-run | pass | C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" (closed checks schema) |
+| `unsupported-native-protocol` | not-run | pass | C2.6 F: "An unknown native protocol version → NOT-RUN unknown" |
+| `descending-seq` | fail | not-run | C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
+| `duplicate-seq` | fail | not-run | C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
 | `menu-a-ended-before-arrival` | fail | not-run | C2.4 step 3: "menu-end for A ... must follow the action arrival"; C2.4 step 10: "contradiction → FAIL" |
-| `refresh-terminal-late` | not-run | fail | C2.5 D NOT-RUN: "no terminal" within 60 s of requested |
-| `unrelated-sequence-advance` | fail | pass | C2.5 D FAIL: "a sequence advance without the Copilot row/stub call" |
-| `stub-call-missing` | fail | pass | C2.5 D FAIL: "a sequence advance without the Copilot row/stub call" |
-| `copilot-not-scheduled-but-completed` | fail | pass | C2.5 D PASS: "completed, rowsSequenceAfter > n, dispositions[copilot.runtime_usage] = scheduled, copilotRow absent → present, and the stub's call log shows account.getQuota"; the completed advance contradicts cooldown |
-| `copilot-row-preexisting` | not-run | pass | C2.5 D PASS: "completed, rowsSequenceAfter > n, dispositions[copilot.runtime_usage] = scheduled, copilotRow absent → present, and the stub's call log shows account.getQuota"; C2.5 C: the seed has no Copilot reading |
-| `runtime-calls-missing` | not-run | pass | C2.5 D PASS: "completed, rowsSequenceAfter > n, dispositions[copilot.runtime_usage] = scheduled, copilotRow absent → present, and the stub's call log shows account.getQuota"; evidence-u6 reads $BATCH/runtime-calls.json |
-| `runtime-calls-other-run` | not-run | pass | C2.5 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
-| `delayed-clear` | fail | pass | C2.5 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
-| `accepted-clear-late` | fail | pass | C2.5 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
-| `menu-scrubbed-late` | fail | pass | C2.5 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
+| `refresh-terminal-late` | not-run | fail | C2.6 D: "Exactly one terminal row for R within 60 s"; NOT-RUN: "no terminal" |
+| `refresh-rows-unchanged` | fail | not-run | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
+| `accepted-missing` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
+| `accepted-stale-snapshot` | not-run | pass | C2.6 D: accepted is "written from the completion of that refresh/request call (the per-call reply, never store.snapshot or any cached value)" |
+| `accepted-duplicate` | fail | pass | C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
+| `copilot-accounts-before-nonzero` | fail | pass | C2.6 D FAIL: "copilotAccountsBefore ≠ 0" |
+| `completed-on-unrelated-projection` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
+| `completed-other-account` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
+| `copilot-not-scheduled-but-completed` | fail | pass | C2.6 D PASS needs accepted "scheduled"; C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
+| `stub-call-missing` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
+| `quota-call-after-completed` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
+| `call-before-accepted` | fail | pass | C2.6 D FAIL: "a call logged before accepted" |
+| `runtime-calls-preseeded` | fail | pass | C2.6 D FAIL: "a call logged before accepted"; C2.6 C: "The log is absent in the seed" |
+| `runtime-calls-foreign` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
+| `runtime-calls-missing` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
+| `runtime-calls-digest-mismatch` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
+| `runtime-calls-undigested` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
+| `delayed-clear` | fail | pass | C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
+| `accepted-clear-late` | fail | pass | C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
+| `menu-scrubbed-late` | fail | pass | C2.6 E: "accepted-clear and menu-scrubbed for B within 5 s of clear-initiated. Late → FAIL timeout" |
 
 The oracle also differs on reasons and on which step it names (evidence-u6 reports the first failing step only);
 only overall outcomes are compared.

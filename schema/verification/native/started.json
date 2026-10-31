@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/started.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "started",
   "description": "First row of the subject; declares the native protocol version. Drive waits for it (bounded) before actions.",
   "type": "object",
@@ -48,7 +48,7 @@
         "protocol": {
           "type": "string",
           "pattern": "^u6-native/[1-9][0-9]*$",
-          "description": "Absent in the App today, which means u6-native/1; any other version is unsupported (C2.5 F: NOT-RUN unknown)."
+          "description": "Absent in the App today, which means u6-native/1; any other version is unsupported (C2.6 F: NOT-RUN unknown)."
         }
       },
       "additionalProperties": false

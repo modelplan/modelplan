@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/native/refresh.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "refresh",
-  "description": "Production Refresh handler rows for one request, written flat (C2.5 F): requested (with the engine's per-scope dispositions and whether the Copilot row exists), then exactly one terminal: completed (copilotRow after), failed (production result), deferred (Copilot not scheduled) or abandoned (watchdog: deadline or stop) (C2.5 D).",
+  "description": "Production Refresh handler rows for one request R, written flat (C2.6 F): requested (before composition.refresh; copilotAccountsBefore must be 0), accepted (from that refresh/request call's own reply: engineRequestID, dispositions), then exactly one terminal: completed (the accepted rows projection showing the seed's Copilot account), deferred (Copilot not scheduled), abandoned (watchdog: deadline or stop) or failed (production refresh error) (C2.6 D).",
   "type": "object",
   "required": [
     "runID",
@@ -43,6 +43,7 @@
     "phase": {
       "enum": [
         "requested",
+        "accepted",
         "completed",
         "failed",
         "deferred",
@@ -62,12 +63,23 @@
       "type": "integer",
       "minimum": 0
     },
-    "rowsSequenceAfter": {
+    "copilotAccountsBefore": {
       "type": "integer",
       "minimum": 0
     },
-    "reason": {
-      "$ref": "../common.json#/$defs/scenarioReason"
+    "engineRequestID": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ]
     },
     "dispositions": {
       "type": "object",
@@ -83,11 +95,19 @@
         "$ref": "../common.json#/$defs/disposition"
       }
     },
-    "copilotRow": {
-      "enum": [
-        "absent",
-        "present"
-      ]
+    "rowsSequenceAfter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "copilotAccountsAfter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "accountIDSHA256": {
+      "$ref": "../common.json#/$defs/sha256"
+    },
+    "reason": {
+      "$ref": "../common.json#/$defs/scenarioReason"
     },
     "cause": {
       "enum": [
@@ -109,14 +129,87 @@
       "then": {
         "required": [
           "rowsSequenceBefore",
-          "dispositions",
-          "copilotRow"
+          "copilotAccountsBefore"
         ],
         "not": {
           "anyOf": [
             {
               "required": [
+                "engineRequestID"
+              ]
+            },
+            {
+              "required": [
+                "dispositions"
+              ]
+            },
+            {
+              "required": [
                 "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "required": [
+                "cause"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "phase": {
+            "const": "accepted"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "engineRequestID",
+          "dispositions"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "rowsSequenceBefore"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
               ]
             },
             {
@@ -144,7 +237,8 @@
       "then": {
         "required": [
           "rowsSequenceAfter",
-          "copilotRow"
+          "copilotAccountsAfter",
+          "accountIDSHA256"
         ],
         "not": {
           "anyOf": [
@@ -155,12 +249,22 @@
             },
             {
               "required": [
-                "reason"
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
               ]
             },
             {
               "required": [
                 "dispositions"
+              ]
+            },
+            {
+              "required": [
+                "reason"
               ]
             },
             {
@@ -193,7 +297,12 @@
             },
             {
               "required": [
-                "rowsSequenceAfter"
+                "copilotAccountsBefore"
+              ]
+            },
+            {
+              "required": [
+                "engineRequestID"
               ]
             },
             {
@@ -203,7 +312,17 @@
             },
             {
               "required": [
-                "copilotRow"
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
               ]
             },
             {
@@ -234,12 +353,12 @@
             },
             {
               "required": [
-                "rowsSequenceAfter"
+                "copilotAccountsBefore"
               ]
             },
             {
               "required": [
-                "reason"
+                "engineRequestID"
               ]
             },
             {
@@ -249,7 +368,22 @@
             },
             {
               "required": [
-                "copilotRow"
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
               ]
             },
             {
@@ -282,12 +416,12 @@
             },
             {
               "required": [
-                "rowsSequenceAfter"
+                "copilotAccountsBefore"
               ]
             },
             {
               "required": [
-                "reason"
+                "engineRequestID"
               ]
             },
             {
@@ -297,7 +431,22 @@
             },
             {
               "required": [
-                "copilotRow"
+                "rowsSequenceAfter"
+              ]
+            },
+            {
+              "required": [
+                "copilotAccountsAfter"
+              ]
+            },
+            {
+              "required": [
+                "accountIDSHA256"
+              ]
+            },
+            {
+              "required": [
+                "reason"
               ]
             }
           ]

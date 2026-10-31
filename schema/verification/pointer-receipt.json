@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/pointer-receipt.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "U6 pointer receipt row",
-  "description": "One row of a pointer_drive output file as it writes it today (C2.5 F keeps current receipt shapes): event names the row; posted-event rows carry kind move/click, the C2.4 binding (runID, epoch, targetPID, mono, at) and pointer_drive's subjectPID, uptimeSeconds and ISO timestamp. Posted rows prove only that an event was posted; arrival is proved by the correlated native row.",
+  "description": "One row of a pointer_drive output file as it writes it today (C2.6 F keeps current receipt shapes): event names the row; posted-event rows carry kind move/click, the C2.4 binding (runID, epoch, targetPID, mono, at) and pointer_drive's subjectPID, uptimeSeconds and ISO timestamp. Posted rows prove only that an event was posted; arrival is proved by the correlated native row.",
   "x-file": "dock-pointer.jsonl, status-pointer.jsonl, status-pointer-clear.jsonl (one file per plan)",
   "oneOf": [
     {

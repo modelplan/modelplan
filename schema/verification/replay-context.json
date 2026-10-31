@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://modelplan.ai/schema/verification/replay-context.json",
-  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.5); see README.md.",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
   "title": "U6 replay context",
   "description": "Run-derived inputs of the offline oracle: registered subject, lease window, seed title hash, synthetic HOME hash, kit manifest pins and the pins prepare verified in the launched bundle.",
   "x-file": "context.json (replay input only; the final entry point derives it from the run files)",
@@ -16,7 +16,8 @@
     "seedTitleSHA256",
     "homeSHA256",
     "pins",
-    "launchedPins"
+    "launchedPins",
+    "seedAccountIDSHA256"
   ],
   "properties": {
     "schema": {
@@ -48,6 +49,10 @@
     },
     "launchedPins": {
       "$ref": "#/$defs/pins"
+    },
+    "seedAccountIDSHA256": {
+      "$ref": "common.json#/$defs/sha256",
+      "description": "synthetic-seed.json accountIDSHA256 (C2.6 D)."
     }
   },
   "additionalProperties": false,

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
-"""Offline C2.4/C2.5 replay oracle for one U6 batch: receipts in, per-step outcomes out.
+"""Offline C2.4/C2.6 replay oracle for one U6 batch: receipts in, per-step outcomes out.
 
 Pure: no GUI, process, clock or network access, and no writes. It is an independent specification of
-`U6-DockMenu-Drive.md` sections "Contract revision C2.5" and "Evidence and timing contract (C2.4)" and deliberately does not import or
+`U6-DockMenu-Drive.md` sections "Contract revision C2.6" and "Evidence and timing contract (C2.4)" and deliberately does not import or
 share code with `bin/evidence-u6.py`; the tests compare the two. Shapes come from `schema/verification/`
 (via `receipt_schema`), the closure receipt's meaning from `check_launch_cleanup.validate_receipt`.
 
@@ -32,10 +32,12 @@ NAMES = ('dock-reveal', 'menu-a', 'refresh', 'menu-b', 'private-title', 'tracked
          'closure', 'evidence')
 FILES = dict(native='native-observations.jsonl', dock='dock-pointer.jsonl', status='status-pointer.jsonl',
              clear='status-pointer-clear.jsonl', capture='dock-capture.json', reset='consent-reset.json',
-             finish='operator-finish.json', closure='launch-cleanup.json', runtime='runtime-calls.json')
+             finish='operator-finish.json', closure='launch-cleanup.json', runtime='runtime-calls.jsonl', result='result.json')
 DOCK_SECONDS, CLICK_SECONDS, REFRESH_SECONDS, CLEAR_SECONDS = 5, 3, 60, 5
-SCRUB_SECONDS = 5  # C2.5 E: accepted-clear and menu-scrubbed within 5 s of clear-initiated
+SCRUB_SECONDS = 5  # C2.6 E: accepted-clear and menu-scrubbed within 5 s of clear-initiated
 COPILOT = 'copilot.runtime_usage'
+DEFERRED_REASONS = {'cooldown': 'cooldown', 'read_only': 'engine-disabled', 'offline': 'engine-disabled',
+                    'policy_pending': 'consent-required'}  # C2.6 D
 
 # detail -> scenario reason (C2.4 section 5). Fixed list: nothing else is ever reported.
 DETAILS = {
@@ -55,10 +57,14 @@ DETAILS = {
     'requested-out-of-order': 'unknown', 'requested-wrong-session': 'wrong-subject',
     'terminal-missing': 'timeout', 'terminal-late': 'timeout', 'terminal-duplicate': 'unknown',
     'terminal-out-of-order': 'unknown', 'terminal-wrong-session': 'wrong-subject',
-    'rows-unchanged': 'unknown', 'refresh-failed': None,  # failed carries the row's own bounded reason
-    'refresh-deferred': 'cooldown', 'refresh-abandoned-deadline': 'timeout', 'refresh-abandoned-stop': 'not-delivered',
-    'copilot-not-scheduled': 'unknown', 'copilot-row-preexisting': 'unknown', 'unrelated-advance': 'unknown', 'runtime-calls-missing': 'not-delivered',
-    'runtime-calls-unbound': 'wrong-subject',
+    'refresh-failed': None,  # failed carries the row's own bounded reason
+    'refresh-deferred': None,  # C2.6 D: the reason follows the Copilot disposition (DEFERRED_REASONS)
+    'refresh-abandoned-deadline': 'timeout', 'refresh-abandoned-stop': 'not-delivered',
+    'accepted-missing': 'not-delivered', 'accepted-stale': 'not-delivered', 'accepted-duplicate': 'unknown',
+    'deferred-but-scheduled': 'unknown', 'copilot-not-scheduled': 'unknown', 'copilot-accounts-before': 'unknown',
+    'projection-not-qualifying': 'unknown', 'runtime-calls-missing': 'not-delivered',
+    'runtime-calls-malformed': 'unknown', 'runtime-calls-undigested': 'not-delivered',
+    'runtime-calls-foreign': 'wrong-subject', 'call-before-accepted': 'unknown', 'quota-call-missing': 'unknown',
     'menu-a-not-ended': 'not-delivered', 'click-b-before-a-ended': 'out-of-window',
     'session-reused': 'wrong-subject',
     'title-missing': 'not-delivered', 'title-hash-mismatch': 'wrong-subject', 'title-wrong-menu': 'wrong-subject',
@@ -74,7 +80,7 @@ DETAILS = {
     'private-content-present': 'unknown', 'title-after-clear': 'unknown',
     'finish-missing': 'not-delivered', 'finish-malformed': 'unknown', 'finish-other-run': 'wrong-subject',
     'finish-before-receipts': 'out-of-window', 'finish-after-stop': 'out-of-window',
-    'runner-reported-fail': None, 'runner-reported-not-run': None,  # the runner's own bounded reason (NOT-RUN, C2.5 F)
+    'runner-reported-fail': None, 'runner-reported-not-run': None,  # the runner's own bounded reason (NOT-RUN, C2.6 F)
     'stop-missing': 'not-delivered', 'owner-preempted': 'unknown', 'terminate-missing': 'not-delivered',
     'subject-not-gone': 'not-delivered',
     'closure-missing': 'not-delivered', 'closure-malformed': 'unknown', 'closure-inconsistent': 'unknown',
@@ -150,7 +156,7 @@ class Native:
                 self.problem = 'native-row-malformed'
                 return
         own = [receipt_schema.flat_native(r) for r in own]
-        for row in own:  # the App writes no protocol today, which is u6-native/1 (C2.5 F)
+        for row in own:  # the App writes no protocol today, which is u6-native/1 (C2.6 F)
             if row['kind'] == 'started' and row.get('protocol', PROTOCOL) != PROTOCOL:
                 self.problem = 'protocol-unsupported'
                 return
@@ -242,16 +248,26 @@ def step2(context, native, files):
 
 
 def _runtime_calls(context, files):
-    """(calls, None) from Drive's copy of the stub log, or (None, detail)."""
-    value, problem = _json(files.get(FILES['runtime']))
-    if problem or not receipt_schema.registry().valid(value, 'runtime-calls.json'):
+    """(calls, None) from Drive's copy of the stub log, or (None, detail): the copy must match the digest Drive
+    recorded in result.json, every line must be schema-valid and bound to this run (C2.6 D)."""
+    data = files.get(FILES['runtime'])
+    rows, problem = _jsonl(data)
+    if problem == 'missing':
         return None, 'runtime-calls-missing'
-    if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
-        return None, 'runtime-calls-unbound'
-    return value['calls'], None
+    result, _ = _json(files.get(FILES['result']))
+    digest = result.get('runtimeCallsSHA256') if isinstance(result, dict) else None
+    if digest != hashlib.sha256(data).hexdigest():
+        return None, 'runtime-calls-undigested'
+    registry = receipt_schema.registry()
+    if problem or not all(registry.valid(r, 'runtime-calls.json') for r in rows):
+        return None, 'runtime-calls-malformed'
+    if any((r['runID'], r['epoch']) != (context['runID'], context['epoch']) for r in rows):
+        return None, 'runtime-calls-foreign'
+    return rows, None
 
 
 def step3(context, native, files, a):
+    """C2.6 D: requested, accepted (the call's own reply), one terminal; the qualifying stub call between them."""
     end = next(iter(native.of('menu-end', sessionID=a['sessionID'])), None)
     arrivals = [r for r in native.of('status-menu-action-arrived', sessionID=a['sessionID'], actionID='refresh',
                                      menuObjectID=a['menuObjectID']) if r['seq'] > a['seq']]
@@ -263,8 +279,10 @@ def step3(context, native, files, a):
     if end is not None and end['seq'] < arrival['seq']:
         return FAIL('arrival-after-menu-end'), None, end
     request = arrival['requestID']
-    requested = native.of('refresh', phase='requested', requestId=request)
-    terminals = [r for r in native.of('refresh', requestId=request) if r['phase'] != 'requested']
+    rows = native.of('refresh', requestId=request)
+    requested = [r for r in rows if r['phase'] == 'requested']
+    accepted = [r for r in rows if r['phase'] == 'accepted']
+    terminals = [r for r in rows if r['phase'] not in ('requested', 'accepted')]
     if not requested:
         return NOT_RUN('requested-missing'), None, end
     if len(requested) > 1:
@@ -274,6 +292,10 @@ def step3(context, native, files, a):
         return FAIL('requested-out-of-order'), None, end
     if (requested['sessionID'], requested['menuObjectID']) != (a['sessionID'], a['menuObjectID']):
         return FAIL('requested-wrong-session'), None, end
+    if requested['copilotAccountsBefore'] != 0:  # the seed was not a first attempt
+        return FAIL('copilot-accounts-before'), None, end
+    if len(accepted) > 1:
+        return FAIL('accepted-duplicate'), None, end
     if len(terminals) > 1:  # anywhere in the subject log, even outside the window
         return FAIL('terminal-duplicate'), None, end
     if not terminals:
@@ -286,26 +308,34 @@ def step3(context, native, files, a):
     if not 0 <= terminal['mono'] - requested['mono'] <= REFRESH_SECONDS:
         return NOT_RUN('terminal-late'), None, end
     phase = terminal['phase']
-    if phase == 'failed':
+    if phase == 'failed':  # only from a production refresh error, which may precede any reply
         return FAIL('refresh-failed', terminal['reason']), None, end
-    if phase == 'deferred':  # C2.5 D: Copilot not scheduled
-        return NOT_RUN('refresh-deferred'), None, end
-    if phase == 'abandoned':  # C2.5 D: the App's watchdog, never failed
+    if phase == 'abandoned':  # the App's watchdog, never failed
         return NOT_RUN('refresh-abandoned-' + terminal['cause']), None, end
-    if terminal['rowsSequenceAfter'] <= requested['rowsSequenceBefore']:
-        return NOT_RUN('rows-unchanged'), None, end
-    # C2.5 D PASS: the advance is the Copilot read (scheduled, absent -> present, stub call); otherwise FAIL.
-    if requested['copilotRow'] != 'absent':
-        return NOT_RUN('copilot-row-preexisting'), None, end
-    if requested['dispositions'][COPILOT] != 'scheduled':
+    accepted = accepted[0] if accepted else None
+    if accepted is None or not requested['seq'] < accepted['seq'] < terminal['seq']:
+        return NOT_RUN('accepted-missing'), None, end  # a terminal without a matching accepted
+    if (accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID']) or any(
+            r['engineRequestID'] == accepted['engineRequestID'] and r['requestId'] != request
+            for r in native.of('refresh', phase='accepted')):
+        return NOT_RUN('accepted-stale'), None, end  # another call's reply, not this call's
+    disposition = accepted['dispositions'][COPILOT]
+    if phase == 'deferred':
+        if disposition == 'scheduled':
+            return FAIL('deferred-but-scheduled'), None, end
+        return NOT_RUN('refresh-deferred', DEFERRED_REASONS[disposition]), None, end
+    if disposition != 'scheduled':  # completed although the call's reply did not schedule Copilot
         return FAIL('copilot-not-scheduled'), None, end
-    if terminal['copilotRow'] != 'present':
-        return FAIL('unrelated-advance'), None, end
+    if (terminal['copilotAccountsAfter'] < 1 or terminal['accountIDSHA256'] != context['seedAccountIDSHA256']
+            or terminal['rowsSequenceAfter'] <= requested['rowsSequenceBefore']):
+        return FAIL('projection-not-qualifying'), None, end
     calls, problem = _runtime_calls(context, files)
     if problem:
         return NOT_RUN(problem), None, end
-    if 'account.getQuota' not in calls:
-        return FAIL('unrelated-advance'), None, end
+    if any(c['mono'] < accepted['mono'] for c in calls):
+        return FAIL('call-before-accepted'), None, end
+    if not any(c['method'] == 'account.getQuota' and accepted['mono'] < c['mono'] < terminal['mono'] for c in calls):
+        return FAIL('quota-call-missing'), None, end
     return PASS(), terminal['mono'], end
 
 
@@ -395,7 +425,7 @@ def step6(context, native, files, b, title):
                for r in native.of('menu-private-title-visible')):
             return FAIL('title-after-clear'), None
     if any(r is not None and r['mono'] - clear['mono'] > SCRUB_SECONDS for r in (accepted, scrubbed)):
-        return FAIL('clear-late'), None  # C2.5 E: private content stayed up after the reset
+        return FAIL('clear-late'), None  # C2.6 E: private content stayed up after the reset
     reset, problem = _reset(context, files)
     if problem:
         return NOT_RUN(problem), None
@@ -427,7 +457,7 @@ def step7(context, files, receipts_mono, stop):
     if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
         return NOT_RUN('finish-other-run')
     claims = list(value['steps'].values()) + [value['outcome']]  # the runner's own claims, never proof
-    if 'fail' in claims:  # C2.5 F: a runner outcome is NOT-RUN with its bounded reason
+    if 'fail' in claims:  # C2.6 F: a runner outcome is NOT-RUN with its bounded reason
         return NOT_RUN('runner-reported-fail', value['reason'])
     if 'not-run' in claims:
         return NOT_RUN('runner-reported-not-run', value['reason'])
@@ -458,7 +488,7 @@ def _closure(context, files):
     if value['ok'] is not True:
         return value, NOT_RUN('closure-not-ok')
     if (value['leaseNotBefore'], value['leaseExpiresAt']) != (context['leaseNotBefore'], context['leaseExpiresAt']):
-        return None, NOT_RUN('lease-window-mismatch')  # another lease's receipt is ignored (C2.5 F)
+        return None, NOT_RUN('lease-window-mismatch')  # another lease's receipt is ignored (C2.6 F)
     if not check_launch_cleanup.lease_window_ok(value):
         return value, FAIL('closure-late')
     return value, PASS()

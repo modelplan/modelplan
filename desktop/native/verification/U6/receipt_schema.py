@@ -197,7 +197,7 @@ def native_kinds(reg=None):
 
 
 def native_kind(row):
-    """The row's kind in the App envelope: `event`, or `kind` for the flat refresh rows (C2.5 F)."""
+    """The row's kind in the App envelope: `event`, or `kind` for the flat refresh rows (C2.6 F)."""
     return row.get('event', row.get('kind')) if isinstance(row, dict) else None
 
 
