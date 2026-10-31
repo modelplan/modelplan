@@ -15,14 +15,15 @@ M1 uses this exact sequence, run as one bash script per attempt (details and coo
 [`bin/BOOKINGS.md`](bin/BOOKINGS.md)). Configure `MODELPLAN_BOOKING_LEDGER` with
 the shared ledger path supplied by the coordinator; there is no default. `APPROVAL_URL` must be the
 https URL of the coordinator's OK comment; M1 verifies that comment before issuing
-the receipt. Copy the returned booking ID into `BOOKING_ID` and the run config. Every step names its
+the receipt. The sequence reads the returned booking ID into `BOOKING_ID` (a builder writes it into the run config;
+otherwise the supplied run config must name it). Every step names its
 command, the receipt that proves it, and what happens when it fails:
 
 | Step | Receipt | On failure |
 | --- | --- | --- |
-| `book.py request` | booking ID | before start: `withdraw`; no trap is armed yet |
-| `scenario.py build` (a scenario with a config builder, before start) | the run config and the builder's receipts (U6: `run.json`, `synthetic-seed.json`) bound to this attempt's `RUN_ID`/`EPOCH` | before start: `withdraw`; nothing was started |
-| `book.py start` | the start event, saved as the lease; the run config's `expectedLease` is bound to it | before start: `withdraw`; no trap is armed yet |
+| `book.py request` (unit/scenario from the registry entry for `BUILD_SCENARIO`; U6: `U6`, `U6-DockMenu-synthetic`) | booking ID; the pre-start trap is armed | any later failure before start runs `book.py withdraw` for it; a failed withdraw prints NEEDS-COORDINATOR and claims no closure |
+| `scenario.py build` (a scenario with a config builder, before start) | the run config and the builder's receipts (U6: `run.json`, `synthetic-seed.json`) bound to this attempt's `RUN_ID`/`EPOCH` | the pre-start trap withdraws the booking; nothing was started |
+| `book.py start` | the start event, saved as the lease; the stop trap replaces the pre-start trap; the run config's `expectedLease` is bound to it | a failed start is still before start: the pre-start trap withdraws |
 | `guardian.py` (background) | `guardian: true` heartbeats in the lease; exit 0 = subject confirmed gone | admission refuses; the trap stops the attempt |
 | `release.py` | the release file (never overwritten) | the trap requests stop, reaps the guardian, prints NEEDS-COORDINATOR |
 | `scenario.py prepare` (registered scenario) | the prepared receipt (U6: `prepared.json` with the attempt token and locks) | prepare writes the stop file and no receipt; the trap closes the attempt |
@@ -71,23 +72,36 @@ V=desktop/native/verification/bin
 cfg() {  # cfg KEY [DEFAULT]: one run-config field
   python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); print(c[sys.argv[2]] if len(sys.argv) < 4 else c.get(sys.argv[2], sys.argv[3]))' "$RUN_CONFIG" "$@"
 }
-python3 -B "$V/book.py" request \
-  --lane M1 --unit U11a --scenario cold --minutes 20
-# ... the coordinator grants GO for this booking (the queue head); set BOOKING_ID ...
+if [ -n "${BUILD_SCENARIO:-}" ]; then  # a built scenario books the unit/scenario its registry entry names
+  BOOK_UNIT=$(python3 -B "$V/scenario.py" booking-unit --scenario "$BUILD_SCENARIO")
+  BOOK_SCENARIO=$(python3 -B "$V/scenario.py" booking-scenario --scenario "$BUILD_SCENARIO")
+fi  # otherwise the unit doc sets them, e.g. BOOK_UNIT=U11a BOOK_SCENARIO=cold
+REQUEST=$(python3 -B "$V/book.py" request \
+  --lane M1 --unit "${BOOK_UNIT:?}" --scenario "${BOOK_SCENARIO:?}" --minutes 20)
+BOOKING_ID=$(printf '%s' "$REQUEST" | python3 -B -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+RUN_ID=; EPOCH=; GUARDIAN_PID=; CONTROLLER_PID=; SCENARIO_PID=; ACTIONS_PID=
+withdraw_before_start() {  # any exit before start: withdraw this queued booking so the next one can start
+  status=$?; trap - EXIT INT TERM HUP; set +e
+  if python3 -B "$V/book.py" withdraw --id "$BOOKING_ID" --lane M1 --reason "attempt ended before start (status $status)" >/dev/null; then
+    echo "WITHDRAWN: booking=$BOOKING_ID before start (status $status); nothing was started" >&2
+  else
+    echo "NEEDS-COORDINATOR: booking=$BOOKING_ID withdraw failed before start (status $status); no closure claimed" >&2
+  fi
+  exit "$status"
+}
+trap withdraw_before_start EXIT INT TERM HUP
+# ... the coordinator grants GO for this booking (the queue head) ...
 RUN_ID="m1-$(uuidgen | tr 'A-Z' 'a-z')"  # fresh per attempt; book.py: printable, at most 128 characters
 EPOCH=$(date -u +%Y%m%dT%H%M%SZ)
 if [ -n "${BUILD_SCENARIO:-}" ]; then  # before start: the builder creates $RUN_CONFIG without the lease
   python3 -B "$V/scenario.py" build --scenario "$BUILD_SCENARIO" --config "$RUN_CONFIG" \
     -- --booking-id "$BOOKING_ID" --run-id "$RUN_ID" --epoch "$EPOCH" "${BUILD_ARGS[@]}"
-fi  # a failure stops here, before start: withdraw the booking
+fi  # a failure here runs the pre-start trap: the booking is withdrawn
 LEASE_PATH=$(cfg leasePath); RELEASE_PATH=$(cfg releasePath)
 STOP_PATH=$(cfg stopPath); SUBJECT_PID_PATH=$(cfg subjectPidPath)  # the one stop path, from the run config
 for f in "$LEASE_PATH" "$RELEASE_PATH" "$STOP_PATH" "$SUBJECT_PID_PATH"; do
   [ ! -e "$f" ] || { echo "attempt not fresh: use a new attempt directory and run config" >&2; exit 2; }
 done
-python3 -B "$V/book.py" start \
-  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
-GUARDIAN_PID=; CONTROLLER_PID=; SCENARIO_PID=; ACTIONS_PID=
 request_stop() { (set -C; printf '{"stop": true, "reason": "%s"}\n' "$1" > "$STOP_PATH") 2>/dev/null || true; }
 needs_coordinator() {
   echo "NEEDS-COORDINATOR: booking=$BOOKING_ID run=$RUN_ID epoch=$EPOCH $1; booking stays started, not finished" >&2
@@ -100,7 +114,9 @@ abort() {  # any exit before the closure check: request stop, then stop and reap
   needs_coordinator "aborted (status $status) before the closure check"
   exit 3
 }
-trap abort EXIT INT TERM HUP
+python3 -B "$V/book.py" start \
+  --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
+trap abort EXIT INT TERM HUP  # started: the stop trap replaces the pre-start trap
 python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2])); e=c.get("expectedLease") or {}
 if any(k in e and e[k] != l.get(k) for k in ("runID", "epoch")): sys.exit("run config names another run/epoch")
 c["expectedLease"]={k: l[k] for k in ("runID", "epoch", "notBefore", "expiresAt")}; json.dump(c, open(sys.argv[1], "w"))' \

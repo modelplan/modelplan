@@ -184,7 +184,8 @@ python3() {
   s=${1##*/}; echo "$s $2" >> "$LOG"
   case "$s" in
     book.py) case "$2" in
-        request) echo '{"id": "b1"}' ;;
+        request) echo "request-args $*" >> "$LOG"; echo '{"id": "b1"}' ;;
+        withdraw) echo "withdraw-args $*" >> "$LOG"; return "${WITHDRAW:-0}" ;;
         start) printf '{"runID": "%s", "epoch": "%s", "notBefore": 1, "expiresAt": 2}\n' "$8" "${10}"; echo "run=$8 epoch=${10}" >> "$LOG" ;;
       esac ;;
     guardian.py) echo "guardian-stop $5" >> "$LOG"; echo "guardian-grace $8 $9" >> "$LOG"
@@ -192,6 +193,7 @@ python3() {
     release.py) return "${RELEASE:-0}" ;;
     scenario.py) case "$2" in
         name) echo "$NAME" ;;
+        booking-unit|booking-scenario) "$REAL_PY" -B "$REAL_BIN/scenario.py" "${@:2}" ;;  # the real registry
         build) echo "build-args $*" >> "$LOG"; [ "${BUILD:-0}" -eq 0 ] || return "$BUILD"
                "$REAL_PY" -c 'import json,sys; c=json.load(open(sys.argv[1])); c["expectedLease"]=dict(runID=sys.argv[3] + sys.argv[5], epoch=sys.argv[4])
 json.dump(c, open(sys.argv[2], "w"))' "$TEMPLATE" "$6" "${11}" "${13}" "${WRONG_RUN:-}" ;;
@@ -237,8 +239,10 @@ class SkillLaunchBranchTests(unittest.TestCase):
             for key in existing: paths[key].write_text('{}')
             values = dict(LOG=str(log), REAL_PY=sys.executable, NAME=name, CONTROLLER_MODE=mode, RUN_CONFIG=str(config),
                           BOOKING_ID='b1', APPROVAL_URL='https://example.test/ok', PATH='/usr/bin:/bin',
-                          TEMPLATE=str(root / 'template.json'), FINISH=str(root / 'batch' / 'operator-finish.json'))
+                          TEMPLATE=str(root / 'template.json'), FINISH=str(root / 'batch' / 'operator-finish.json'),
+                          REAL_BIN=str(BIN))
             if build: values.update(BUILD_SCENARIO=name, ACTIONS='actions', ROW=str(root / 'batch' / 'started-row'))
+            else: values.update(BOOK_UNIT='U11a', BOOK_SCENARIO='cold')
             values.update({k: str(v) for k, v in env.items()})
             result = subprocess.run(['bash', '-c', STUB + prefix + self.block()], env=values, capture_output=True, text=True, timeout=60)
             calls = log.read_text().splitlines() if log.exists() else []
@@ -304,7 +308,9 @@ class SkillLaunchBranchTests(unittest.TestCase):
         for key in ('leasePath', 'releasePath', 'stopPath', 'subjectPidPath'):
             with self.subTest(key):
                 r = self.run_sequence(existing=[key])
-                self.assertEqual((r['status'], r['calls']), (2, ['book.py request']))
+                self.assertEqual((r['status'], r['calls'][0], r['calls'][2]), (2, 'book.py request', 'book.py withdraw'))
+                self.assertNotIn('book.py start', ' '.join(r['calls']))
+                self.assertIn('WITHDRAWN: booking=b1 before start (status 2)', r['stderr'])
 
     def test_refused_prepare_stops_reaps_and_reports_without_launch(self):
         r = self.run_sequence(PREPARE=2)
@@ -387,9 +393,25 @@ class SkillLaunchBranchTests(unittest.TestCase):
 
     def test_u6_builder_failure_stops_before_start(self):
         r = self.u6(BUILD=2)
-        self.assertEqual((r['status'], r['calls'][:2]), (2, ['book.py request', 'scenario.py build']))
+        self.assertEqual(r['status'], 2)
+        self.assertLess(self.index(r['calls'], 'scenario.py build'), self.index(r['calls'], 'book.py withdraw'))
+        self.assertIn('--id b1 --lane M1', r['calls'][self.index(r['calls'], 'withdraw-args')])
         self.assertNotIn('book.py start', ' '.join(r['calls'])); self.assertIsNone(r['config'])
-        self.assertIsNone(r['stop']); self.assertNotIn('NEEDS-COORDINATOR', r['stderr'])  # nothing started: withdraw
+        self.assertIsNone(r['stop']); self.assertNotIn('NEEDS-COORDINATOR', r['stderr'])  # nothing started: withdrawn
+        self.assertIn('WITHDRAWN: booking=b1', r['stderr'])
+
+    def test_u6_requests_the_registry_unit_and_scenario(self):  # macrev-332-27
+        r = self.u6()
+        self.assertIn('--lane M1 --unit U6 --scenario U6-DockMenu-synthetic --minutes 20',
+                      r['calls'][self.index(r['calls'], 'request-args')])
+        self.assertNotIn('book.py withdraw', r['calls'])  # started: the stop trap replaced the pre-start trap
+
+    def test_pre_start_withdraw_failure_claims_no_closure(self):  # macrev-332-28
+        r = self.u6(BUILD=2, WITHDRAW=1)
+        self.assertEqual(r['status'], 2)
+        self.assertIn('NEEDS-COORDINATOR: booking=b1 withdraw failed before start (status 2); no closure claimed', r['stderr'])
+        self.assertNotIn('WITHDRAWN', r['stderr']); self.assertNotIn('stays started', r['stderr'])
+        self.assertNotIn('book.py finish', r['calls'])
 
     def test_u6_built_config_for_another_run_is_refused_after_start(self):
         r = self.u6(WRONG_RUN='-other')
@@ -404,6 +426,110 @@ class SkillLaunchBranchTests(unittest.TestCase):
         self.assertNotIn('scenario.py name', calls); self.assertNotIn('check_launch_cleanup.py --config', calls)
         self.assertLess(self.index(calls, 'check_drive_cleanup.py'), self.index(calls, 'book.py finish'))
         self.assertNotIn('book.py finish', self.run_sequence(mode='drive', name='', CHECK=1)['calls'])
+
+
+# Real book.py, guardian.py, release.py, scenario.py (booking-*, name, build) and admission on a disposable ledger;
+# only the builder (a fake writing what U6/prepare_config.py writes), Launch, the monitor and the closure check are
+# stand-ins. `prepare` runs the real admission.load_and_admit that drive-u6.py prepare runs.
+REAL_STUB = r"""
+python3() {
+  if [ "$1" != -B ]; then echo "NO-B $*" >> "$LOG"; return 99; fi; shift
+  if [ "$1" = -c ]; then "$REAL_PY" -B "$@"; return; fi
+  s=${1##*/}; echo "$s $2" >> "$LOG"
+  case "$s" in
+    book.py|guardian.py|release.py) "$REAL_PY" -B "$REAL_BIN/$s" "${@:2}" ;;
+    scenario.py) case "$2" in
+        build) "$REAL_PY" -B -c 'import sys; sys.path.insert(0, sys.argv[1]); import scenario; from pathlib import Path
+sys.exit(scenario.main(sys.argv[3:], Path(sys.argv[2])))' "$REAL_BIN" "$KIT_REGISTRY" "${@:2}" ;;
+        prepare) "$REAL_PY" -B -c 'import json,sys,time; sys.path.insert(0, sys.argv[1]); import admission; from pathlib import Path
+c = json.load(open(sys.argv[2])); end = time.monotonic() + 3
+while json.loads(Path(c["leasePath"]).read_text()).get("guardian") is not True and time.monotonic() < end: time.sleep(.05)
+a = admission.load_and_admit(c); print("admitted", a["booking"]["unit"], a["booking"]["scenario"])' "$REAL_BIN" "$RUN_CONFIG" >> "$LOG" ;;
+        drive|started|actions) return 0 ;;
+        *) "$REAL_PY" -B "$REAL_BIN/scenario.py" "${@:2}" ;;
+      esac ;;
+    launch.py) while [ ! -e "$STOP_PATH" ]; do sleep 0.02; done; return 3 ;;
+    check_launch_cleanup.py) return 0 ;;
+  esac
+}
+"""
+
+FAKE_BUILDER = r"""import json, os, subprocess, sys
+a = dict(zip(sys.argv[1::2], sys.argv[2::2])); ledger = os.environ['MODELPLAN_BOOKING_LEDGER']
+book = [sys.executable, '-B', os.environ['REAL_BIN'] + '/book.py']
+if os.environ.get('QUEUE_NEXT'):  # another lane queues behind this booking
+    subprocess.run(book + ['request', '--lane', 'M2', '--unit', 'U6', '--scenario', 'next'], check=True, capture_output=True)
+if os.environ.get('WITHDRAW_FIRST'):  # someone else already withdrew it: the sequence's own withdraw must fail
+    subprocess.run(book + ['withdraw', '--id', a['--booking-id'], '--coordinator', '--reason', 'test'], check=True, capture_output=True)
+if os.environ.get('FAIL_BUILD'): sys.exit(2)
+root = os.environ['ATTEMPT']
+json.dump(dict(scenario='u6', profile='synthetic', binarySHA256='a' * 64, argv=['/bin/true', '--u6-drive-contract', 'x'],
+               requiredSeconds=300, quitGraceSeconds=5, leasePath=root + '/lease.json', releasePath=root + '/release.json',
+               stopPath=root + '/batch/stop.json', subjectPidPath=root + '/subject.json',
+               booking=dict(id=a['--booking-id'], lane='M1', unit=os.environ.get('FAKE_UNIT', 'U6'),
+                            scenario='U6-DockMenu-synthetic', ledger=ledger),
+               expectedLease=dict(runID=a['--run-id'], epoch=a['--epoch'])), open(a['--config'], 'x'))
+"""
+
+
+class SkillRealLedgerTests(unittest.TestCase):
+    """macrev-332-27/-28: the documented shell against a real disposable book.Ledger."""
+    block = SkillLaunchBranchTests.block
+
+    def run_real(self, **env):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); (root / 'batch').mkdir(); kit = root / 'kit'; (kit / 'bin').mkdir(parents=True)
+            (kit / 'fake_builder.py').write_text(FAKE_BUILDER)
+            entry = dict(json.loads((BIN / 'scenarios.json').read_text())['u6'], config='../fake_builder.py')
+            (kit / 'bin' / 'scenarios.json').write_text(json.dumps(dict(u6=entry)))
+            ledger = root / 'ledger.jsonl'; log = root / 'calls'
+            values = dict(LOG=str(log), REAL_PY=sys.executable, REAL_BIN=str(BIN), KIT_REGISTRY=str(kit / 'bin' / 'scenarios.json'),
+                          ATTEMPT=str(root), MODELPLAN_BOOKING_LEDGER=str(ledger), CONTROLLER_MODE='launch',
+                          RUN_CONFIG=str(root / 'batch' / 'run.json'), BUILD_SCENARIO='u6',
+                          APPROVAL_URL='https://example.test/coordinator#issuecomment-1', PATH='/usr/bin:/bin')
+            values.update({k: str(v) for k, v in env.items()})
+            result = subprocess.run(['bash', '-c', REAL_STUB + self.block()], env=values, capture_output=True, text=True, timeout=90)
+            state = json.loads(subprocess.run([sys.executable, '-B', str(BIN / 'book.py'), '--ledger', str(ledger), 'status'],
+                                              capture_output=True, text=True, check=True).stdout)
+            next_start = None
+            if env.get('QUEUE_NEXT'):
+                next_id = next(b['id'] for b in state['queue'] if b['lane'] == 'M2')
+                next_start = subprocess.run([sys.executable, '-B', str(BIN / 'book.py'), '--ledger', str(ledger), 'start',
+                                             '--id', next_id, '--lane', 'M2', '--run-id', 'next', '--epoch', 'next'],
+                                            capture_output=True, text=True)
+            return dict(status=result.returncode, stderr=result.stderr, state=state, next_start=next_start,
+                        calls=log.read_text().splitlines() if log.exists() else [])
+
+    def mine(self, state):
+        return next(b for b in state['queue'] + state['history'] if b['lane'] == 'M1')
+
+    def test_registry_booking_is_admitted_through_build_start_prepare_and_finish(self):  # macrev-332-27
+        r = self.run_real()
+        self.assertEqual(r['status'], 0, r['stderr'])
+        self.assertIn('admitted U6 U6-DockMenu-synthetic', r['calls'])  # real admission matched the real ledger head
+        booking = self.mine(r['state'])
+        self.assertEqual((booking['unit'], booking['scenarios'], booking['state']), ('U6', ['U6-DockMenu-synthetic'], 'finished'))
+
+    def test_a_different_built_unit_is_refused_and_withdrawn(self):
+        r = self.run_real(FAKE_UNIT='U7')
+        self.assertNotEqual(r['status'], 0)
+        self.assertIn('books another unit/scenario', r['stderr'])
+        self.assertNotIn('book.py start', ' '.join(r['calls']))
+        self.assertEqual(self.mine(r['state'])['state'], 'withdrawn')
+
+    def test_builder_failure_withdraws_so_the_next_booking_can_start(self):  # macrev-332-28
+        r = self.run_real(FAIL_BUILD=1, QUEUE_NEXT=1)
+        self.assertEqual(r['status'], 2)
+        self.assertEqual(self.mine(r['state'])['state'], 'withdrawn')
+        self.assertEqual(r['state']['head']['lane'], 'M2')
+        self.assertEqual(r['next_start'].returncode, 0, r['next_start'].stderr)
+        self.assertIn('WITHDRAWN: booking=', r['stderr']); self.assertNotIn('NEEDS-COORDINATOR', r['stderr'])
+
+    def test_failed_withdraw_needs_the_coordinator_and_claims_no_closure(self):
+        r = self.run_real(FAIL_BUILD=1, WITHDRAW_FIRST=1)
+        self.assertEqual(r['status'], 2)
+        self.assertRegex(r['stderr'], r'NEEDS-COORDINATOR: booking=\S+ withdraw failed before start \(status 2\); no closure claimed')
+        self.assertNotIn('WITHDRAWN', r['stderr']); self.assertNotIn('book.py start', ' '.join(r['calls']))
 
 
 if __name__ == '__main__':
