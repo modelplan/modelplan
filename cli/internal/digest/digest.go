@@ -33,6 +33,10 @@ type Effort struct {
 	TimeEstimated bool       `json:"timeEstimated"`
 	TimeBasis     *TimeBasis `json:"timeBasis"`
 	CostBasisID   string     `json:"costBasisId"`
+	// Provisional: the ability rests on evidence outside the range its cross-source link was
+	// fitted on. Published only when true; show it within the model's own ladder, never compare
+	// it across models.
+	Provisional bool `json:"provisional,omitempty"`
 }
 
 type HarnessEvidence struct {
