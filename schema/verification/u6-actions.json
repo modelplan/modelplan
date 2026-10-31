@@ -3,7 +3,7 @@
   "$id": "https://modelplan.ai/schema/verification/u6-actions.json",
   "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4); see README.md.",
   "title": "u6-actions/1",
-  "description": "Action runner hand-off: the runner's per-step action outcome for steps 1-6. It is a claim, never proof: a non-pass entry fails step 7, a pass entry proves nothing.",
+  "description": "Action runner hand-off: the runner's per-step action outcome for steps 1-6 (dock, menuA, refresh, menuB, privateTitle, trackedClear) plus its run outcome and bounded reason. It is a claim, never proof: a non-pass entry fails or skips step 7, a pass entry proves nothing.",
   "x-file": "operator-finish.json (action runner, exclusive create, once)",
   "type": "object",
   "required": [
@@ -11,8 +11,9 @@
     "runID",
     "epoch",
     "mono",
-    "at",
-    "steps"
+    "steps",
+    "outcome",
+    "reason"
   ],
   "properties": {
     "schema": {
@@ -24,6 +25,9 @@
     "epoch": {
       "$ref": "common.json#/$defs/epoch"
     },
+    "pid": {
+      "$ref": "common.json#/$defs/pid"
+    },
     "mono": {
       "$ref": "common.json#/$defs/mono"
     },
@@ -31,175 +35,51 @@
       "$ref": "common.json#/$defs/at"
     },
     "steps": {
-      "type": "array",
-      "minItems": 6,
-      "maxItems": 6,
-      "prefixItems": [
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 1
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 2
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 3
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 4
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 5
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "step",
-            "outcome",
-            "reason"
-          ],
-          "properties": {
-            "step": {
-              "const": 6
-            },
-            "outcome": {
-              "$ref": "common.json#/$defs/stepOutcome"
-            },
-            "reason": {
-              "anyOf": [
-                {
-                  "$ref": "common.json#/$defs/scenarioReason"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "additionalProperties": false
-        }
+      "type": "object",
+      "required": [
+        "dock",
+        "menuA",
+        "refresh",
+        "menuB",
+        "privateTitle",
+        "trackedClear"
       ],
-      "items": false
+      "properties": {
+        "dock": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        },
+        "menuA": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        },
+        "refresh": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        },
+        "menuB": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        },
+        "privateTitle": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        },
+        "trackedClear": {
+          "$ref": "common.json#/$defs/stepOutcome"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "$ref": "common.json#/$defs/stepOutcome"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "$ref": "common.json#/$defs/scenarioReason"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "x-producer": "desktop/native/verification/U6/action_runner.py"
 }

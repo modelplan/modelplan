@@ -14,7 +14,6 @@
     "windowNumber",
     "frameSeq",
     "mono",
-    "at",
     "file",
     "sha256"
   ],
@@ -52,5 +51,6 @@
       "$ref": "common.json#/$defs/sha256"
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "x-producer": "desktop/native/verification/U6/capture_owned.py (writes no at)"
 }

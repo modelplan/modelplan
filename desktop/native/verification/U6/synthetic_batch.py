@@ -6,6 +6,11 @@ producers do not emit these shapes yet; see schema/verification/README.md, "Requ
 `launch-cleanup.json` is produced by the real `check_launch_cleanup.check()` against a synthetic run on a
 fixed clock. Expected verdicts are never derived from the oracle under test.
 
+`kit_batch()` renders the same trace in the encoding the merged #332 head's producers write and
+`bin/evidence-u6.py` reads (legacy native envelope, pointer `event`/`kind`, the run files prepare and launch
+write, a pinned package and kit manifest), so the tests can run one trace through both the oracle and the real
+final entry point.
+
     synthetic_batch.py --write <schema/verification/fixtures>   regenerate the committed batches"""
 import argparse
 import hashlib
@@ -14,6 +19,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 import zlib
 from pathlib import Path
 
@@ -38,8 +44,12 @@ def sha(data):
     return hashlib.sha256(data if isinstance(data, bytes) else data.encode()).hexdigest()
 
 
-PINS = dict(mainExecutable=sha('synthetic main executable'), engine=sha('synthetic bundled engine'),
-            consentHelper=sha('synthetic consent helper'))
+# The kit ships one `Contents/Helpers/modelplan` as both the bundled engine and the consent helper
+# (U6/prepare_config.py, U6/evidence_chain.verify_bundle_members), so both pins name the same bytes.
+BLOBS = {sha(text): text.encode() for text in ('synthetic main executable', 'synthetic bundled helper',
+                                                'changed engine', 'changed main executable')}
+PINS = dict(mainExecutable=sha('synthetic main executable'), engine=sha('synthetic bundled helper'),
+            consentHelper=sha('synthetic bundled helper'))
 
 
 def png():
@@ -231,18 +241,148 @@ def valid(variant='main', closure_receipt=None):
     t.dock = pointer_rows(10.0, False, 1.5, 540.0)
     t.status = pointer_rows(20.0, True, 1212.0, 12.5)
     t.clear = pointer_rows(30.0, True, 1212.0, 12.5)
+    # Field sets of the shipped writers: U6/capture_owned.py, U6/consent_reset.py, U6/action_runner.py.
     t.capture = dict(schema='u6-capture/1', runID=RUN, epoch=EPOCH, pid=PID, windowNumber=WINDOW,
-                     frameSeq=expanded['seq'], mono=m(11.0), at=at(m(11.0)), file=CAPTURE, sha256=sha(t.image))
-    t.reset = dict(schema='consent-reset/1', runID=RUN, epoch=EPOCH, homeSHA256=sha('<scratch>/home'),
+                     frameSeq=expanded['seq'], mono=m(11.0), file=CAPTURE, sha256=sha(t.image))
+    t.reset = dict(schema='consent-reset/1', runID=RUN, epoch=EPOCH, targetPID=PID, menuObjectID=MENU,
+                   sessionID=SESSION_B, operation='consent-reset-confirmed', homeSHA256=sha('<scratch>/home'),
                    helperSHA256=PINS['consentHelper'], startMono=m(35.0), endMono=m(35.6), exitCode=0,
-                   storeEpochAfter=STORE_EPOCH, generationAfter=GENERATION)
-    t.finish = dict(schema='u6-actions/1', runID=RUN, epoch=EPOCH, mono=m(40.0), at=at(m(40.0)),
-                    steps=[dict(step=n, outcome='pass', reason=None) for n in range(1, 7)])
+                   storeEpochAfter=STORE_EPOCH, generationAfter=GENERATION, outcome='success', reason=None)
+    t.finish = dict(schema='u6-actions/1', runID=RUN, epoch=EPOCH, pid=PID, mono=m(40.0),
+                    steps={name: 'pass' for name in ACTION_STEPS}, outcome='pass', reason=None)
     t.closure = closure() if closure_receipt is None else closure_receipt
     return t
 
 
 BATCHES = ('valid', 'valid-interleaved')
+ACTION_STEPS = ('dock', 'menuA', 'refresh', 'menuB', 'privateTitle', 'trackedClear')
+
+
+# kit encoding (merged #332 head) ------------------------------------------------------------------------
+KIT_HEAD, KIT_APP, KIT_BINARY = 'a' * 40, 'ModelPlan.app', 'ModelPlanCommunityApp'
+KIT_SEED = sha('synthetic home seed tree')
+_ENVELOPE = ('runID', 'epoch', 'pid', 'seq', 'mono', 'at')
+_POINTER_ACTION = {'mouse-moved-posted': 'move', 'mouse-button-down-posted': 'click', 'mouse-button-up-posted': 'click'}
+
+
+def kit_native_row(row):
+    """A C2.4 row as the head's U6DriveGuard.emitObject writes it: `refresh` flat, every other kind as
+    {envelope, event, timestamp, checks: {fields}} plus the guard's extra identity fields. A row that already
+    carries `event` (the current-legacy-envelope trace) is written unchanged."""
+    if 'event' in row or row.get('kind') == 'refresh':
+        return dict(row)
+    kind = row.get('kind')
+    fields = {k: v for k, v in row.items() if k not in _ENVELOPE + ('kind',)}
+    if kind in ('menu-begin', 'menu-end', 'menu-private-title-visible') and 'menuObjectID' in fields:
+        fields['instanceID'] = fields['menuObjectID']
+    if kind == 'menu-begin':
+        fields['subjectPID'] = row.get('pid')
+    if kind == 'status-menu-action-arrived':  # MenuContract fields plus the guard's menuInstanceID
+        fields.update(subjectPID=row.get('pid'), menuInstanceID=fields.get('menuObjectID'))
+    out = {k: row[k] for k in _ENVELOPE if k in row}
+    out.update(event=kind, timestamp=row.get('at'), checks=fields)
+    return out
+
+
+def kit_pointer_row(row):
+    """A pointer row as the head's pointer_drive writes it: `event` names the row, `kind` is move/click."""
+    out = {k: v for k, v in row.items() if k != 'kind'}
+    out['event'] = row.get('kind')
+    if row.get('kind') in _POINTER_ACTION:
+        out.update(kind=_POINTER_ACTION[row['kind']], subjectPID=row.get('targetPID'), uptimeSeconds=row.get('mono'))
+    return out
+
+
+def _encode_lines(data, encode):
+    """Re-encode each JSON line; a line that does not parse (truncation) is kept verbatim."""
+    out = []
+    for line in data.decode('utf-8', 'replace').split('\n'):
+        try:
+            value = json.loads(line) if line.strip() else None
+        except ValueError:
+            value = None
+        out.append(dump(encode(value)) if isinstance(value, dict) else line)
+    return '\n'.join(out).encode()
+
+
+def kit_batch(ctx, files, root):
+    """Write one oracle batch (`ctx`, `files`) under `root` in the head's encoding and return the
+    `evidence-u6.py` arguments. Run-level inputs the oracle takes from `ctx` become the files the head's
+    prepare/launch write: subject registration, launch.json, prepared.json, synthetic-seed.json, the three
+    pointer plans and run.json; the pins become a launched bundle, a pinned package and a kit manifest. Nothing
+    here decides a verdict."""
+    root = Path(root)
+    pins, launched = ctx['pins'], ctx['launchedPins']
+    assert pins['engine'] == pins['consentHelper'], 'one bundled helper in the kit'
+    run, epoch, pid = ctx['runID'], ctx['epoch'], ctx['subjectPID']
+    batch, scratch = root / 'batch', root / 'scratch'
+    contents = root / 'launched' / KIT_APP / 'Contents'
+    binary, helper = contents / 'MacOS' / KIT_BINARY, contents / 'Helpers' / 'modelplan'
+    for directory in (batch, scratch / 'home', binary.parent, helper.parent, root / 'kit'):
+        directory.mkdir(parents=True)
+    binary.write_bytes(BLOBS[launched['mainExecutable']])
+    helper.write_bytes(BLOBS[launched['engine'] if launched['engine'] != pins['engine'] else launched['consentHelper']])
+    package = root / 'kit' / 'ModelPlan-U6.zip'
+    with zipfile.ZipFile(package, 'w') as archive:
+        archive.writestr(KIT_APP + '/Contents/MacOS/' + KIT_BINARY, BLOBS[pins['mainExecutable']])
+        archive.writestr(KIT_APP + '/Contents/Helpers/modelplan', BLOBS[pins['consentHelper']])
+    package_sha = sha(package.read_bytes())
+    members = dict(main=('Contents/MacOS/' + KIT_BINARY, pins['mainExecutable']),
+                   engine=('Contents/Helpers/modelplan', pins['engine']),
+                   consentHelper=('Contents/Helpers/modelplan', pins['consentHelper']))
+    manifest = dict(sourceHead=KIT_HEAD, binarySHA256=pins['mainExecutable'], helperSHA256=pins['consentHelper'],
+                    packageSHA256=package_sha,
+                    bundleMembers={k: dict(path=path, sha256=digest) for k, (path, digest) in members.items()})
+    home = scratch / 'home'
+    config = dict(scenario='u6', profile='synthetic', head=KIT_HEAD, batch=str(batch), scratch=str(scratch),
+                  argv=[str(binary), '--u6-drive-contract', str(scratch / 'native-guard.json')],
+                  binarySHA256=pins['mainExecutable'], helperSHA256=pins['consentHelper'], packageSHA256=package_sha,
+                  syntheticHome=str(home), syntheticTmp=str(scratch / 'tmp'), syntheticHomeSeedSHA256=KIT_SEED,
+                  subjectPidPath=str(root / 'subject.json'), stopPath=str(batch / 'stop.json'),
+                  expectedLease=dict(runID=run, epoch=epoch, notBefore=ctx['leaseNotBefore'],
+                                     expiresAt=ctx['leaseExpiresAt']))
+    put = lambda path, value: Path(path).write_text(json.dumps(value, sort_keys=True) + '\n')  # noqa: E731
+    put(root / 'run.json', config)
+    put(root / 'kit-manifest.json', manifest)
+    put(config['subjectPidPath'], dict(pid=pid, runID=run, epoch=epoch, state='running'))
+    put(batch / 'launch.json', dict(ownedPID=pid, runID=run, epoch=epoch, sourceHead=KIT_HEAD))
+    put(batch / 'prepared.json', dict(prepared=True, runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED))
+    put(batch / 'synthetic-seed.json', dict(schema='u6-seed/1', runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED,
+                                            titleSHA256=ctx['seedTitleSHA256'], profileSHA256=sha('synthetic profile')))
+    for stem in ('dock-pointer', 'status-pointer', 'status-pointer-clear'):
+        put(batch / (stem + '-plan.json'), dict(profile='synthetic', runID=run, epoch=epoch, subjectPID=pid,
+                                                targetPID=pid, output=str(batch / (stem + '.jsonl'))))
+    arrivals = []
+    for name, data in files.items():
+        if name == 'native-observations.jsonl':
+            data = _encode_lines(data, kit_native_row)
+            for line in data.decode('utf-8', 'replace').splitlines():
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                checks = row.get('checks') if isinstance(row.get('checks'), dict) else {}
+                if (row.get('event') == 'status-menu-action-arrived' and (row.get('runID'), row.get('epoch'),
+                        row.get('pid')) == (run, epoch, pid) and checks.get('actionID') == 'refresh'):
+                    arrivals.append(checks.get('requestID'))
+        elif name.endswith('.jsonl'):
+            data = _encode_lines(data, kit_pointer_row)
+        elif name == 'consent-reset.json':
+            try:
+                value = json.loads(data)
+            except ValueError:
+                value = None
+            if isinstance(value, dict) and value.get('homeSHA256') == ctx['homeSHA256']:
+                value['homeSHA256'] = sha(str(home.resolve()))  # the head hashes the resolved HOME path
+                data = (json.dumps(value, sort_keys=True) + '\n').encode()
+        (batch / name).write_bytes(data)
+    # status_menu_drive's arrival result for the first native Refresh arrival it observed
+    (batch / 'menu-drive.jsonl').write_bytes(jsonl(
+        [dict(event='status-menu-result', outcome='arrived', runID=run, epoch=epoch, subjectPID=pid,
+              requestID=arrivals[0], actionID='refresh', arrivalProof='native-NSMenu.didSendAction')]
+        if arrivals else []))
+    return ['--config', str(root / 'run.json'), '--batch', str(batch), '--package', str(package),
+            '--kit-manifest', str(root / 'kit-manifest.json')]
 
 
 def write(fixtures):

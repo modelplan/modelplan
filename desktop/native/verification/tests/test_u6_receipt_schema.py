@@ -310,7 +310,7 @@ def delayed_clear(t):
                          ('doctor', 226.0), ('stop-or-lease-expired', 240.5), ('terminate-completed', 240.7)):
         row = t.find(kind, **({'sessionID': sb.SESSION_B} if kind == 'menu-end' else {}))[-1]
         set_mono(t, row, offset)
-    t.finish.update(mono=sb.m(240.0), at=sb.at(sb.m(240.0)))
+    t.finish.update(mono=sb.m(240.0))
     t.closure = sb.closure(now_offset=260.0)
 
 
@@ -340,7 +340,7 @@ CASES = [
     ('closure-other-run', 'macrev-332-5', lambda t: setattr(t, 'closure', dict(CLOSURE, runID='u6-run-0002')), {}, (),
      {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('not-run', 'wrong-subject', 'closure-other-run')}, 'not-run'),
     ('closure-inconsistent', 'macrev-332-5, SKILLS-CONSULT 7', lambda t: setattr(t, 'closure', dict(CLOSURE, failures=['helpersGone'])),
-     {}, (), {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('not-run', 'unknown', 'closure-malformed')}, 'not-run'),
+     {}, (), {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('fail', 'unknown', 'closure-inconsistent')}, 'fail'),
     ('closure-truncated', 'macrev-332-5', 'closure-truncated', {}, (),
      {8: ('not-run', 'not-delivered', 'subject-not-gone'), 9: ('not-run', 'unknown', 'closure-malformed')}, 'not-run'),
     ('clear-click-after-clear', 'macrev-332-8', clear_before_b, {}, (),
@@ -366,7 +366,8 @@ CASES = [
      {6: ('fail', 'unknown', 'private-content-present')}, 'fail'),
     ('reset-receipt-missing', 'macrev-332-12, codex-kit-8', None, {}, ('consent-reset.json',),
      {6: ('not-run', 'not-delivered', 'reset-missing')}, 'not-run'),
-    ('reset-failed', 'macrev-332-12, codex-kit-8', lambda t: t.reset.update(exitCode=1, storeEpochAfter=None, generationAfter=None),
+    ('reset-failed', 'macrev-332-12, codex-kit-8', lambda t: t.reset.update(exitCode=1, storeEpochAfter=None, generationAfter=None,
+                                                                             outcome='failed', reason='engine-error'),
      {}, (), {6: ('not-run', 'unknown', 'reset-failed')}, 'not-run'),
     ('reset-other-run', 'macrev-332-12', lambda t: t.reset.update(epoch='u6-epoch-0002'), {}, (),
      {6: ('not-run', 'wrong-subject', 'reset-other-run')}, 'not-run'),
@@ -470,8 +471,12 @@ CASES = [
      {5: ('not-run', 'not-delivered', 'title-missing'), 6: PRE}, 'not-run'),
     ('finish-missing', 'codex-kit-7', None, {}, ('operator-finish.json',),
      {7: ('not-run', 'not-delivered', 'finish-missing')}, 'not-run'),
-    ('runner-reported-failure', 'codex-kit-7', lambda t: t.finish['steps'][5].update(outcome='fail', reason='not-delivered'), {}, (),
+    ('runner-reported-failure', 'codex-kit-7', lambda t: (t.finish['steps'].update(trackedClear='fail'),
+                                                          t.finish.update(outcome='fail', reason='not-delivered')), {}, (),
      {7: ('fail', 'not-delivered', 'runner-reported-fail')}, 'fail'),
+    ('runner-reported-not-run', 'codex-kit-7 (what U6/action_runner.py writes on a failed action)',
+     lambda t: (t.finish['steps'].update(trackedClear='not-run'), t.finish.update(outcome='not-run', reason='not-delivered')),
+     {}, (), {7: ('not-run', 'not-delivered', 'runner-reported-not-run')}, 'not-run'),
     ('finish-before-receipts', 'codex-kit-7', lambda t: t.finish.update(mono=R.m(30.0)), {}, (),
      {7: ('not-run', 'out-of-window', 'finish-before-receipts')}, 'not-run'),
     ('engine-pin-changed', 'codex-kit-10', None, dict(launchedPins=dict(R.PINS, engine=R.sha('changed engine'))), (),
@@ -552,52 +557,114 @@ for _case in CASES:
     setattr(ReplayOracleTests, 'test_negative_' + _case[0].replace('-', '_'), _negative(_case))
 
 
+def differential_traces():
+    """Every trace the oracle judges, as (name, context, files): the positive batches, the open-timing trace and
+    each negative case."""
+    yield 'valid', sb.context(), sb.valid(closure_receipt=CLOSURE).files()
+    yield 'valid-interleaved', sb.context(), sb.valid('interleaved', closure_receipt=CLOSURE).files()
+    trace = sb.valid(closure_receipt=CLOSURE)
+    delayed_clear(trace)
+    yield 'delayed-clear', sb.context(), trace.files()
+    for case in CASES:
+        yield (case[0],) + build(case)
+
+
+def evidence_u6(ctx, files):
+    """The real final entry point on the trace rendered in the merged head's encoding (sb.kit_batch)."""
+    with tempfile.TemporaryDirectory() as directory:
+        args = sb.kit_batch(ctx, files, directory)
+        run = subprocess.run([sys.executable, '-B', str(VERIFICATION / 'bin' / 'evidence-u6.py'), *args],
+                             capture_output=True, text=True, timeout=60, env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
+        if run.returncode != 0:
+            raise AssertionError(run.stderr)
+        return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+# Every trace on which bin/evidence-u6.py (merged #332 head 8f857aa6) and the oracle disagree on the overall
+# outcome: trace -> (oracle, evidence-u6, who is right per C2.4, the deciding contract text). Traces on which
+# evidence-u6 is wrong are expected failures; the others assert the documented divergence exactly, so a change on
+# either side fails a test until this table and the README are updated.
+DISAGREEMENTS = {
+    'closure-other-run': ('not-run', 'fail', 'oracle',
+                          '§1 Binding: "every receipt must match this run\'s runID/epoch ... Others are ignored."'),
+    'closure-other-lease-window': ('fail', 'pass', 'oracle',
+                                   'step 9: "launch-cleanup.json, schema launch-cleanup/1, this run\'s ids" (the lease '
+                                   'identity is runID, epoch, notBefore, expiresAt); §4: "the closure receipt inside the '
+                                   'lease window"'),
+    'descending-seq': ('fail', 'not-run', 'oracle',
+                       '§1: "seq (integer, strictly increasing per process)"; step 10: "contradiction → FAIL"'),
+    'duplicate-seq': ('fail', 'not-run', 'oracle',
+                      '§1: "seq (integer, strictly increasing per process)"; step 10: "contradiction → FAIL"'),
+    'refresh-terminal-late': ('not-run', 'fail', 'oracle',
+                              'step 3: "exactly one terminal row for R within 60 s of the requested row\'s mono" / '
+                              '"no terminal → NOT-RUN"; §5 reason timeout'),
+    'menu-a-ended-before-arrival': ('fail', 'not-run', 'oracle',
+                                    'step 3: "menu-end for A ... must follow the action arrival"; step 10: '
+                                    '"contradiction → FAIL"'),
+    'old-accepted-clear-shape': ('not-run', 'pass', 'policy',
+                                 'C2.4 names required fields only; the extra legacy fields are rejected by the closed '
+                                 'schemas (README, Versioning), not by C2.4 text'),
+    'unsupported-native-protocol': ('not-run', 'pass', 'policy',
+                                    'C2.4 defines no protocol field; `started.protocol` is the schemas\' versioning '
+                                    'rule'),
+    'runner-reported-failure': ('fail', 'not-run', 'silent',
+                                'step 7: "any action failure → the runner writes the stop file and a finish record '
+                                'with the failure" assigns no outcome; the shipped runner never writes fail'),
+}
+
+
 class EvidenceU6CLITests(unittest.TestCase):
-    """The real final entry point (bin/evidence-u6.py) on the same batches. Disagreements with the oracle are
-    expected failures: M4's integration checklist (README, "evidence-u6 disagreements")."""
+    """The real final entry point (bin/evidence-u6.py --config --batch --package --kit-manifest) on every oracle
+    trace. The trace is rendered in the head's encoding by sb.kit_batch (legacy native envelope, pointer
+    event/kind, run files, pinned package and manifest); the oracle reads the C2.4 encoding of the same trace."""
 
-    def evidence(self, ctx, files):
-        with tempfile.TemporaryDirectory() as directory:
-            batch = Path(directory, 'batch')
-            batch.mkdir()
-            for name, data in files.items():
-                (batch / name).write_bytes(data)
-            receipt = dict(profile='synthetic', runID=ctx['runID'], epoch=ctx['epoch'], headSHA='a' * 40,
-                           binarySHA256=ctx['pins']['mainExecutable'], packageSHA256=sb.sha('kit package'),
-                           profileSHA256=sb.sha('seed tree'), durationSeconds=48.5,
-                           actionEvidenceFiles=sorted(n for n in files if n != 'launch-cleanup.json'),
-                           **{key: True for key in ('appStarted', 'dockInputDelivered', 'dockRowsOrReasonVisible',
-                                                    'menuInputDelivered', 'menuStateVisible', 'quitDelivered',
-                                                    'ownedCleanupVerified', 'privateTitleObservedBeforeClear',
-                                                    'trackedMenuClearObserved')})
-            path = Path(directory, 'evidence-receipt.json')
-            path.write_text(json.dumps(receipt))
-            run = subprocess.run([sys.executable, '-B', str(VERIFICATION / 'bin' / 'evidence-u6.py'), '--receipts',
-                                  str(path), '--batch', str(batch)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
-            self.assertEqual(run.returncode, 0, run.stderr)
-            return json.loads(run.stdout.strip().splitlines()[-1])['outcome']
-
-    def compare(self, ctx, files):
+    def compare(self, name, ctx, files):
         oracle = replay.replay(ctx, files)['outcome']
-        self.assertEqual(self.evidence(ctx, files), oracle,
-                         'evidence-u6.py disagrees with the C2.4 oracle (expected %s)' % oracle)
+        evidence = evidence_u6(ctx, files)['outcome']
+        if name in DISAGREEMENTS and DISAGREEMENTS[name][2] != 'oracle':
+            self.assertEqual((oracle, evidence), DISAGREEMENTS[name][:2], name)
+        else:
+            self.assertEqual(evidence, oracle, '%s: evidence-u6.py disagrees with the C2.4 oracle' % name)
 
-    @unittest.expectedFailure
     def test_valid_batch(self):
-        """DISAGREES: evidence-u6 reads the legacy event/checks envelope and old accepted-clear fields, so a
-        complete C2.4 batch yields not-run instead of pass."""
-        self.compare(sb.context(), sb.valid(closure_receipt=CLOSURE).files())
+        """Agrees since 8f857aa6 (was an expected failure at a98b25a3: legacy CLI and accepted-clear fields)."""
+        self.compare('valid', sb.context(), sb.valid(closure_receipt=CLOSURE).files())
 
-    @unittest.expectedFailure
     def test_refresh_failed_batch(self):
-        """DISAGREES: the oracle reports FAIL (step 3, engine-error); evidence-u6 cannot correlate the flat
-        status-menu-action-arrived row, so it reports not-run."""
-        self.compare(*build(next(c for c in CASES if c[0] == 'refresh-failed')))
+        """Agrees since 8f857aa6: FAIL engine-error (was an expected failure at a98b25a3)."""
+        self.compare('refresh-failed', *build(next(c for c in CASES if c[0] == 'refresh-failed')))
 
     def test_closure_missing_batch(self):
         """Agrees: both report not-run when launch-cleanup.json is absent (macrev-332-5)."""
-        self.compare(*build(next(c for c in CASES if c[0] == 'closure-missing')))
+        self.compare('closure-missing', *build(next(c for c in CASES if c[0] == 'closure-missing')))
+
+    def test_disagreement_table_names_real_traces(self):
+        names = {name for name, _, _ in differential_traces()}
+        self.assertLessEqual(set(DISAGREEMENTS), names)
+        for name, (oracle, evidence, right, quote) in DISAGREEMENTS.items():
+            self.assertNotEqual(oracle, evidence, name)
+            self.assertIn(right, ('oracle', 'policy', 'silent'), name)
+            self.assertTrue(quote, name)
+
+    def test_oracle_refuses_the_head_native_encoding(self):
+        """Open producer change 1: the head still writes the legacy event/checks envelope, which the C2.4
+        schemas reject, so the oracle cannot judge a real head batch until the writer is flat."""
+        with tempfile.TemporaryDirectory() as directory:
+            sb.kit_batch(sb.context(), sb.valid(closure_receipt=CLOSURE).files(), directory)
+            result = replay.replay(sb.context(), replay.read_batch(Path(directory, 'batch')))
+        self.assertEqual(result['steps'][9]['detail'], 'native-row-malformed')
+
+
+def _differential(name, ctx, files):
+    def test(self):
+        self.compare(name, ctx, files)
+    entry = DISAGREEMENTS.get(name)
+    test.__doc__ = '%s: %s' % (name, 'agrees' if entry is None else 'DISAGREES (%s right): %s' % (entry[2], entry[3]))
+    return unittest.expectedFailure(test) if entry and entry[2] == 'oracle' else test
+
+
+for _name, _ctx, _files in differential_traces():
+    setattr(EvidenceU6CLITests, 'test_differential_' + _name.replace('-', '_'), _differential(_name, _ctx, _files))
 
 
 if __name__ == '__main__':

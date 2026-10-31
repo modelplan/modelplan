@@ -3,15 +3,15 @@
   "contract": "U6-DockMenu-Drive.md C2.4",
   "schemaRevision": "u6-native/1, u6-pointer/1, u6-capture/1, consent-reset/1, launch-cleanup/1, u6-actions/1",
   "regenerate": "python3 -B desktop/native/verification/U6/synthetic_batch.py --write schema/verification/fixtures",
-  "note": "Authored positive traces follow C2.4, not the current producers. Expected verdicts of negative traces live in the tests, never in these files.",
+  "note": "Authored positive traces follow C2.4. Native and pointer rows use the flat C2.4 encoding, not the head's legacy envelope (README, Required producer changes 1-6, 9-10); capture, reset and finish mirror the shipped writers' field sets. Expected verdicts of negative traces live in the tests, never in these files.",
   "entries": [
     {
       "file": "batches/valid/consent-reset.json",
       "schema": "consent-reset.json",
-      "producer": "consent helper wrapper (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/consent_reset.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/consent_reset.py --fixture (to add, M4): the shipped wrapper around a fake helper that prints the real `consent reset confirmed --json` shape ({storeEpoch, generation})"
+      "captureCommand": "reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<fixed uptime>) as in test_u6_consent_reset.py, on a flat-row native file once producer change 1 lands"
     },
     {
       "file": "batches/valid/context.json",
@@ -23,10 +23,10 @@
     {
       "file": "batches/valid/dock-capture.json",
       "schema": "capture-receipt.json",
-      "producer": "capture receipt writer (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/capture_owned.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/capture_receipt.py --fixture (to add, M4): the shipped writer on a synthetic frame row and image"
+      "captureCommand": "capture.capture(config, run_capture=<fake screencapture>, now=<fixed uptime>) as in test_u6_capture_owned.py, on a flat-row native file once producer change 1 lands"
     },
     {
       "file": "batches/valid/dock-owned.png",
@@ -62,10 +62,10 @@
     {
       "file": "batches/valid/operator-finish.json",
       "schema": "u6-actions.json",
-      "producer": "action runner finish record (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/action_runner.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/action_runner.py finish --fixture (to add, M4): the shipped exclusive finish writer"
+      "captureCommand": "action_runner.finish(batch, run, epoch, pid, steps, None) with a fixed uptime"
     },
     {
       "file": "batches/valid/status-pointer-clear.jsonl",
@@ -86,10 +86,10 @@
     {
       "file": "batches/valid-interleaved/consent-reset.json",
       "schema": "consent-reset.json",
-      "producer": "consent helper wrapper (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/consent_reset.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/consent_reset.py --fixture (to add, M4): the shipped wrapper around a fake helper that prints the real `consent reset confirmed --json` shape ({storeEpoch, generation})"
+      "captureCommand": "reset.reset(config, run_helper=<fake helper printing {storeEpoch, generation}>, now=<fixed uptime>) as in test_u6_consent_reset.py, on a flat-row native file once producer change 1 lands"
     },
     {
       "file": "batches/valid-interleaved/context.json",
@@ -101,10 +101,10 @@
     {
       "file": "batches/valid-interleaved/dock-capture.json",
       "schema": "capture-receipt.json",
-      "producer": "capture receipt writer (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/capture_owned.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/capture_receipt.py --fixture (to add, M4): the shipped writer on a synthetic frame row and image"
+      "captureCommand": "capture.capture(config, run_capture=<fake screencapture>, now=<fixed uptime>) as in test_u6_capture_owned.py, on a flat-row native file once producer change 1 lands"
     },
     {
       "file": "batches/valid-interleaved/dock-owned.png",
@@ -140,10 +140,10 @@
     {
       "file": "batches/valid-interleaved/operator-finish.json",
       "schema": "u6-actions.json",
-      "producer": "action runner finish record (M4, not yet in the kit)",
+      "producer": "desktop/native/verification/U6/action_runner.py (shipped at #332 8f857aa6; field set mirrored, not captured)",
       "generated": false,
       "status": "pending-producer-capture",
-      "captureCommand": "python3 -B <kit>/U6/action_runner.py finish --fixture (to add, M4): the shipped exclusive finish writer"
+      "captureCommand": "action_runner.finish(batch, run, epoch, pid, steps, None) with a fixed uptime"
     },
     {
       "file": "batches/valid-interleaved/status-pointer-clear.jsonl",

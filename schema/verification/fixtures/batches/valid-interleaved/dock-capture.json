@@ -1,1 +1,1 @@
-{"at": 1900000011.0, "epoch": "u6-epoch-0001", "file": "dock-owned.png", "frameSeq": 6, "mono": 86411.0, "pid": 4242, "runID": "u6-run-0001", "schema": "u6-capture/1", "sha256": "e124007e0371a272f11e7fbc2414aff5a1095f3a46ad29771ea1bf3f8a5b07ca", "windowNumber": 311}
+{"epoch": "u6-epoch-0001", "file": "dock-owned.png", "frameSeq": 6, "mono": 86411.0, "pid": 4242, "runID": "u6-run-0001", "schema": "u6-capture/1", "sha256": "e124007e0371a272f11e7fbc2414aff5a1095f3a46ad29771ea1bf3f8a5b07ca", "windowNumber": 311}

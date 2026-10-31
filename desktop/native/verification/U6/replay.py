@@ -72,9 +72,14 @@ DETAILS = {
     'runner-reported-fail': None, 'runner-reported-not-run': None,  # the runner's own bounded reason
     'stop-missing': 'not-delivered', 'owner-preempted': 'unknown', 'terminate-missing': 'not-delivered',
     'subject-not-gone': 'not-delivered',
-    'closure-missing': 'not-delivered', 'closure-malformed': 'unknown', 'closure-other-run': 'wrong-subject',
+    'closure-missing': 'not-delivered', 'closure-malformed': 'unknown', 'closure-inconsistent': 'unknown',
+    'closure-other-run': 'wrong-subject',
     'closure-not-ok': 'unknown', 'lease-window-mismatch': 'unknown', 'closure-late': 'out-of-window',
 }
+# validate_receipt codes for a well-formed receipt that contradicts itself (C2.4 step 10: "contradiction → FAIL");
+# every other code is a shape problem (unusable receipt, NOT-RUN).
+CLOSURE_CONTRADICTIONS = frozenset(('closure-failures-inconsistent', 'closure-ok-inconsistent',
+                                    'closure-time-inconsistent', 'closure-window-inconsistent'))
 SCENARIO_REASONS = frozenset(receipt_schema.registry().documents[
     receipt_schema.registry().id_for('common.json')]['$defs']['scenarioReason']['enum'])
 
@@ -384,13 +389,11 @@ def step7(context, files, receipts_mono, stop):
         return NOT_RUN('finish-malformed')
     if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
         return NOT_RUN('finish-other-run')
-    claims = value['steps']
-    failed = next((c for c in claims if c['outcome'] == 'fail'), None)
-    if failed:
-        return FAIL('runner-reported-fail', failed['reason'])
-    skipped = next((c for c in claims if c['outcome'] == 'not-run'), None)
-    if skipped:
-        return NOT_RUN('runner-reported-not-run', skipped['reason'])
+    claims = list(value['steps'].values()) + [value['outcome']]  # the runner's own claims, never proof
+    if 'fail' in claims:
+        return FAIL('runner-reported-fail', value['reason'])
+    if 'not-run' in claims:
+        return NOT_RUN('runner-reported-not-run', value['reason'])
     if receipts_mono is not None and value['mono'] < receipts_mono:
         return NOT_RUN('finish-before-receipts')
     if stop is not None and value['mono'] > stop['mono']:
@@ -407,7 +410,11 @@ def _closure(context, files):
         if problem or not receipt_schema.registry().valid(value, 'launch-cleanup.json'):
             raise ValueError('closure-shape')
         check_launch_cleanup.validate_receipt(value)
-    except ValueError:
+    except ValueError as error:
+        if str(error) in CLOSURE_CONTRADICTIONS:  # well-formed, so its run binding is readable
+            if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
+                return None, NOT_RUN('closure-other-run')  # another run's receipt is ignored (section 1)
+            return None, FAIL('closure-inconsistent')
         return None, NOT_RUN('closure-malformed')
     if (value['runID'], value['epoch']) != (context['runID'], context['epoch']):
         return None, NOT_RUN('closure-other-run')
