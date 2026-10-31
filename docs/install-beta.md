@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Install the unnotarized Mac beta
 
-The beta requires macOS 14 or later. The first-launch steps below cover macOS 14 Sonoma and macOS 15 Sequoia. The app archive is universal; Apple silicon is tested, while Intel remains untested and 3D may stutter.
+The beta requires macOS 14 or later. macOS 14 is not tested in CI and not guaranteed (2026-11-02). The first-launch steps below cover macOS 14 Sonoma and macOS 15 Sequoia. The app archive is universal; Apple silicon is tested, while Intel remains untested and 3D may stutter.
 
 ## Download
 
