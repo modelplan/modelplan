@@ -195,7 +195,7 @@ private actor RowsEntryClient: EngineClient {
         let info: [String: Any] = ["CFBundleShortVersionString": "3.2.1", "ModelPlanPublicSource": String(repeating: "a", count: 40),
             "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version,
             "ModelPlanBundledHelperSHA256": hash,
-            "ModelPlanSourceHelperSHA256": try XCTUnwrap(CommunityConsentBundleIdentity.sourceSHA256ByArchitecture.values.first)]
+            "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
         try Data("Synthetic MIT notice".utf8).write(to: resources.appendingPathComponent("LICENSE.txt"))
         try Data("Synthetic dependency notices".utf8).write(to: resources.appendingPathComponent("CLI-THIRD-PARTY-NOTICES.md"))
