@@ -51,6 +51,7 @@ def assemble(config, package):
     closure=json.loads(closure_path.read_text()) if closure_path.is_file() and not closure_path.is_symlink() else {}
     closed=(closure.get('schema')=='launch-cleanup/1' and closure.get('runID')==run_id and closure.get('epoch')==epoch
             and closure.get('ok') is True and closure.get('failures')==[])
+    _,cleanup_failures=evidence.cleanup_outcome(closure,run_id,epoch)
     ended=None
     if closed:
         try:ended=datetime.datetime.fromisoformat(closure['at'].replace('Z','+00:00')).timestamp()
@@ -93,9 +94,10 @@ def assemble(config, package):
         dockRowsOrReasonVisible=observed and visual.get('dockReadingOrReasonVisible') is True and (batch/'dock-owned.png').is_file(),
         menuInputDelivered=status and menu_arrived,menuStateVisible=status and observed and visual.get('privateTitleVisibleBeforeClear') is True,
         quitDelivered=quit_proof.get('requested')=='native-contract-stop' and quit_proof.get('appAcknowledged') is True and terminate_completed,
-        ownedCleanupVerified=closed,privateTitleObservedBeforeClear=observed and visual.get('privateTitleVisibleBeforeClear') is True,
+        ownedCleanupVerified=closed,cleanupFailures=cleanup_failures,
+        privateTitleObservedBeforeClear=observed and visual.get('privateTitleVisibleBeforeClear') is True,
         trackedMenuClearObserved=clear=='pass' and clear_input,refreshCompleted=refresh)
-    outcome=evidence.qualify(receipt,native)
+    outcome=evidence.qualify(receipt,native,closure)
     with (batch/'evidence-receipt.json').open('x') as stream:json.dump(receipt,stream,indent=2);stream.write('\n')
     print(json.dumps(dict(outcome=outcome,refreshCompleted=refresh,trackedClear=clear,durationSeconds=duration)))
 
