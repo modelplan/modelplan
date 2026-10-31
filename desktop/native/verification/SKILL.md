@@ -31,25 +31,32 @@ GUARDIAN_PID=$!
 python3 desktop/native/verification/bin/release.py \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
-# Launch stays attached and stops its child on the stop file, a stale heartbeat, revocation or the deadline.
-# The run config sets subjectPidPath to $SUBJECT_PID_PATH.
-python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute &
-LAUNCH_PID=$!
+# Exactly ONE controller per booking starts subjects (the guardian's registration refuses a second
+# while a registered subject or another controller's handoff is still live). Either:
+#  (a) launch.py, when the scenario drives an app it did not start (e.g. drive-u6.py), or
+#  (b) drive-scenario.py, which starts its own subjects; then do NOT run launch.py.
+# Both stay attached and set subjectPidPath to $SUBJECT_PID_PATH in the run config.
+python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute &   # (a)
+CONTROLLER_PID=$!
 # ... drive the scenario against the launched subject ...
+# (b) instead: python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & CONTROLLER_PID=$!
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
 # confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
 # finish at all and report the run as unconfirmed for coordinator follow-up.
 touch "$STOP_PATH"
 set +e
-wait "$LAUNCH_PID"; LAUNCH_STATUS=$?
+wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
 wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
-if [ "$GUARDIAN_STATUS" -eq 0 ] && { [ "$LAUNCH_STATUS" -eq 0 ] || [ "$LAUNCH_STATUS" -eq 3 ]; }; then
+# (b) only: Drive's own cleanup must be complete (children exited, observer joined, scratch removed, locks released).
+DRIVE_CLEAN=0
+[ -n "${DRIVE_BATCH:-}" ] && { python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["cleanup"]; sys.exit(0 if c and all(v is True for v in c.values() if isinstance(v,bool)) else 1)' "$DRIVE_BATCH/result.json" || DRIVE_CLEAN=1; }
+if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
     --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 else
   # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
   # closure or the documented expiry recovery applies.
-  echo "closure unconfirmed: launch=$LAUNCH_STATUS guardian=$GUARDIAN_STATUS; report to the coordinator" >&2
+  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS drive-cleanup=$DRIVE_CLEAN; report to the coordinator" >&2
 fi
 ```
 

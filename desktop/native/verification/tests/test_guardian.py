@@ -221,5 +221,30 @@ class RoundThreeTests(unittest.TestCase):
                 guardian.run(lease, self.dir / 'STOP', reserve=reserve, clock=Clock(10.0), sleep=lambda s: None, kill=no_kill)
 
 
+class OneControllerTests(unittest.TestCase):
+    def test_second_controller_refused_while_first_subject_alive(self):
+        d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'
+        first = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        try:
+            guardian.register(pid_file, first.pid, guardian.identity(os.getpid()))
+            with self.assertRaisesRegex(ValueError, 'one controller per booking'):
+                guardian.mark_launching(pid_file)
+            self.assertEqual(json.loads(pid_file.read_text())['pid'], first.pid)  # registration not replaced
+        finally:
+            first.kill(); first.wait()
+        guardian.mark_launching(pid_file)  # the first subject has exited: the next subject may register
+        self.assertEqual(json.loads(pid_file.read_text())['state'], 'launching')
+
+    def test_other_live_controller_mid_handoff_is_refused(self):
+        d = Path(tempfile.mkdtemp()); pid_file = d / 'subject.pid'
+        other = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+        try:
+            pid_file.write_text(json.dumps(dict(state='launching', launcher=guardian.identity(other.pid))))
+            with self.assertRaisesRegex(ValueError, 'another controller is launching'):
+                guardian.mark_launching(pid_file)
+        finally:
+            other.kill(); other.wait()
+
+
 if __name__ == '__main__':
     unittest.main()

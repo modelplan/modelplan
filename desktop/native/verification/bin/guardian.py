@@ -93,9 +93,26 @@ def identity(pid):
     return dict(pid=pid, startSeconds=int(fields[19]), startMicroseconds=0)
 
 
-def mark_launching(pid_file):
-    """launch.py, before spawning: nothing can run yet (the subject waits behind an exec gate)."""
-    launcher = identity(os.getpid())
+def mark_launching(pid_file, lookup=None):
+    """A controller (launch.py or Drive), before spawning: nothing can run yet (exec gate).
+
+    One controller per booking: refuse while a registered subject is still alive, or while another
+    controller is mid-handoff, so a second registration can never hide a running subject.
+    """
+    lookup = lookup or identity
+    if pid_file.exists():
+        try:
+            prior = json.loads(pid_file.read_text())
+        except (OSError, ValueError):
+            raise ValueError('subject registration unreadable; resolve before launching')
+        me = lookup(os.getpid())
+        if prior.get('state') == 'running' and cleanup.matches(lookup(prior.get('pid')), prior):
+            raise ValueError('another owned subject is still running; one controller per booking')
+        launcher = prior.get('launcher')
+        if (prior.get('state') == 'launching' and isinstance(launcher, dict)
+                and not cleanup.matches(me, launcher) and cleanup.matches(lookup(launcher.get('pid')), launcher)):
+            raise ValueError('another controller is launching; one controller per booking')
+    launcher = lookup(os.getpid())
     if launcher is None:
         raise ValueError('launcher identity unavailable')
     write_atomic(pid_file, dict(state='launching', launcher=launcher))
