@@ -37,6 +37,9 @@
     },
     "seq": {
       "$ref": "common.json#/$defs/seq"
+    },
+    "schema": {
+      "const": "runtime-calls/1"
     }
   },
   "additionalProperties": false

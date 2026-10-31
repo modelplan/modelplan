@@ -4,6 +4,8 @@ import hashlib,json,math,sys,zipfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bin'))
 import check_launch_cleanup
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+import receipt_schema
 
 CODES={'engine-disabled','engine-error','consent-required','timeout','not-delivered','wrong-subject','out-of-window','cooldown','unknown'}
 class Missing(Exception):pass
@@ -29,6 +31,8 @@ def native_rows(batch,run,epoch,pid):
     need(rows)
     previous=0;previous_mono=-math.inf
     for row in rows:
+        need(not receipt_schema.native_errors(row),'unknown')
+        if row.get('event')=='started':need(checks(row).get('protocol','u6-native/1')=='u6-native/1','unknown')
         need(type(row.get('seq')) is int and row['seq']>0 and number(row.get('mono')) and number(row.get('at')))
         reject(row['seq']<=previous or row['mono']<previous_mono,'unknown')
         previous=row['seq'];previous_mono=row['mono']
@@ -40,6 +44,7 @@ def posted(batch,stem,run,epoch,pid):
     rows=lines(batch/(stem+'.jsonl'))
     filtered=[r for r in rows if isinstance(r,dict) and r.get('runID')==run and r.get('epoch')==epoch
               and r.get('targetPID')==pid and number(r.get('mono')) and number(r.get('at'))]
+    need(all(receipt_schema.registry().valid(r,'pointer-receipt.json') for r in filtered),'unknown')
     need(any(r.get('event')=='pointer-result' and r.get('outcome')=='posted' and r.get('runID')==run
              and r.get('epoch')==epoch and r.get('targetPID')==pid for r in rows))
     return plan,filtered
@@ -111,6 +116,7 @@ def evaluate(config,batch,package,kit_manifest):
         expanded=one(native,lambda r:r.get('event')=='dock-surface-frame' and checks(r).get('state')=='expanded'
                      and 0<=r['mono']-move['mono']<=5)
         capture=read(batch/'dock-capture.json');image=batch/capture.get('file','')
+        need(receipt_schema.registry().valid(capture,'capture-receipt.json'),'unknown')
         need(capture.get('schema')=='u6-capture/1' and capture.get('runID')==run and capture.get('epoch')==epoch
              and capture.get('pid')==pid and capture.get('frameSeq')==expanded['seq']
              and capture.get('windowNumber')==checks(expanded).get('windowNumber')
@@ -131,6 +137,8 @@ def evaluate(config,batch,package,kit_manifest):
                     and checks(r).get('menuObjectID')==object_id and checks(r).get('subjectPID')==pid
                     and checks(r).get('deliveryMethod')=='axpress-menu-item')
         request_id=checks(arrival).get('requestID');need(isinstance(request_id,str) and request_id)
+        end_candidates=[r for r in events(native,'menu-end') if checks(r).get('sessionID')==a_session]
+        reject(any(r['seq']<arrival['seq'] for r in end_candidates),'unknown')
         menu_drive=lines(batch/'menu-drive.jsonl')
         need(any(r.get('event')=='status-menu-result' and r.get('outcome')=='arrived' and r.get('runID')==run
                  and r.get('epoch')==epoch and r.get('subjectPID')==pid and r.get('requestID')==request_id for r in menu_drive))
@@ -138,36 +146,39 @@ def evaluate(config,batch,package,kit_manifest):
                       and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>arrival['seq'])
         before=requested.get('rowsSequenceBefore');need(type(before) is int and before>=0)
         reject(requested.get('copilotAccountsBefore')!=0,'unknown')
-        accepted_reply=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
-                           and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>requested['seq'])
-        dispositions=accepted_reply.get('dispositions');need(isinstance(dispositions,dict))
-        need(type(accepted_reply.get('engineRequestID')) in (str,int))
-        disposition=dispositions.get('copilot.runtime_usage')
         terminal=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                      and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>requested['seq'])
-        need(terminal['seq']>accepted_reply['seq'])
-        reject(not 0<=terminal['mono']-requested['mono']<=60,'out-of-window')
+        need(0<=terminal['mono']-requested['mono']<=60,'timeout')
+        if terminal['phase']=='failed':
+            reason=terminal.get('reason');raise Contradiction(reason if reason in CODES else 'unknown')
         if terminal['phase']=='abandoned':
             raise Missing('timeout' if terminal.get('cause')=='deadline' else 'not-delivered')
+        accepted_reply=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
+                           and r.get('requestId')==request_id)
+        need(requested['seq']<accepted_reply['seq']<terminal['seq'])
+        need(accepted_reply.get('sessionID')==a_session and accepted_reply.get('menuObjectID')==object_id)
+        need(not any(r.get('kind')=='refresh' and r.get('phase')=='accepted'
+                     and r.get('requestId')!=request_id and r.get('engineRequestID')==accepted_reply.get('engineRequestID') for r in native))
+        dispositions=accepted_reply.get('dispositions');need(isinstance(dispositions,dict))
+        need(type(accepted_reply.get('engineRequestID')) in (str,int) and accepted_reply['engineRequestID']==requested['engineRequestID'])
+        disposition=dispositions.get('copilot.runtime_usage')
         if terminal['phase']=='deferred':
             reject(disposition=='scheduled','unknown')
             raise Missing('cooldown' if disposition=='cooldown' else 'consent-required' if disposition=='policy_pending' else 'engine-disabled')
-        if terminal['phase']=='failed':
-            reason=terminal.get('reason');raise Contradiction(reason if reason in CODES else 'unknown')
         seed=read(batch/'synthetic-seed.json')
         reject(disposition!='scheduled' or type(terminal.get('copilotAccountsAfter')) is not int
-               or terminal['copilotAccountsAfter']<1 or terminal.get('accountIDSHA256')!=seed.get('accountIDSHA256')
-               or not isinstance(seed.get('accountIDSHA256'),str),'unknown')
+               or terminal['copilotAccountsAfter']!=1 or terminal.get('readingSHA256')!=seed.get('readingSHA256')
+               or not isinstance(seed.get('readingSHA256'),str),'unknown')
         reject(type(terminal.get('rowsSequenceAfter')) is not int or terminal['rowsSequenceAfter']<=before,'unknown')
         runtime=batch/'runtime-calls.jsonl';result=read(batch/'result.json')
-        need(runtime.is_file() and not runtime.is_symlink() and result.get('runID')==run and result.get('epoch')==epoch
+        need(runtime.is_file() and not runtime.is_symlink()
              and result.get('runtimeCallsSHA256')==hashlib.sha256(runtime.read_bytes()).hexdigest())
         calls=lines(runtime)
-        own=[r for r in calls if r.get('schema')=='runtime-calls/1' and r.get('runID')==run and r.get('epoch')==epoch
+        need(all(receipt_schema.registry().valid(r,'runtime-calls.json') and r.get('runID')==run and r.get('epoch')==epoch for r in calls))
+        own=[r for r in calls if r.get('runID')==run and r.get('epoch')==epoch
              and r.get('method')=='account.getQuota' and number(r.get('mono'))]
-        need(own)
         reject(any(r['mono']<accepted_reply['mono'] for r in own),'unknown')
-        reject(not any(accepted_reply['mono']<=r['mono']<=terminal['mono'] for r in own),'unknown')
+        reject(not any(accepted_reply['mono']<r['mono']<terminal['mono'] for r in own),'unknown')
         end_a=one(native,lambda r:r.get('event')=='menu-end' and checks(r).get('sessionID')==a_session
                   and checks(r).get('menuObjectID')==object_id and r['seq']>arrival['seq'])
 
@@ -191,6 +202,7 @@ def evaluate(config,batch,package,kit_manifest):
 
         step='tracked-clear'
         reset=read(batch/'consent-reset.json')
+        need(receipt_schema.registry().valid(reset,'consent-reset.json'),'unknown')
         need(reset.get('schema')=='consent-reset/1' and reset.get('runID')==run and reset.get('epoch')==epoch
              and reset.get('targetPID')==pid and reset.get('sessionID')==b_session
              and reset.get('operation')=='consent-reset-confirmed' and reset.get('exitCode')==0
@@ -229,6 +241,7 @@ def evaluate(config,batch,package,kit_manifest):
         action=read(batch/'operator-finish.json');need(action.get('schema')=='u6-actions/1'
              and action.get('runID')==run and action.get('epoch')==epoch and number(action.get('mono'))
              and action['mono']>=scrubbed['mono'])
+        need(receipt_schema.registry().valid(action,'u6-actions.json'),'unknown')
         outcomes=action.get('steps');need(isinstance(outcomes,dict) and all(outcomes.get(x)=='pass' for x in
             ('dock','menuA','refresh','menuB','privateTitle','trackedClear')))
 
@@ -238,7 +251,10 @@ def evaluate(config,batch,package,kit_manifest):
         terminated=one(native,lambda r:r.get('event')=='terminate-completed' and r['seq']>stopped['seq'])
 
         step='closure'
-        closure=read(batch/'launch-cleanup.json');ended=closure_ok(closure,run,epoch)
+        closure=read(batch/'launch-cleanup.json')
+        need(receipt_schema.registry().valid(closure,'launch-cleanup.json'),'unknown')
+        need(closure.get('leaseNotBefore')==start_window and closure.get('leaseExpiresAt')==end_window,'wrong-subject')
+        ended=closure_ok(closure,run,epoch)
         reject(not start_window<=ended<=end_window or ended<started['at'],'out-of-window')
 
         return dict(outcome='pass',step='complete',reason=None,durationSeconds=ended-started['at'],

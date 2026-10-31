@@ -72,7 +72,7 @@ def prepare(args,make_home=Home,probe=probe_seed):
             raise ValueError('twin-reading-missing')
         relocate_cache(twin)
         identity=probe(helper,twin,probe_tmp,tool,mode='refreshed',expected_stub_hash=twin_stub_hash,details=True)
-        title=identity['title'];account_hash=identity['accountIDSHA256']
+        title=identity['title'];account_hash=identity['readingSHA256']
         title_hash=hashlib.sha256(title.encode()).hexdigest()
         probe(helper,seed,probe_tmp,tool,mode='first',expected_title_hash=title_hash,expected_stub_hash=stub_hash)
     finally:
@@ -90,7 +90,7 @@ def prepare(args,make_home=Home,probe=probe_seed):
         booking=dict(id=args.booking_id,lane='M1',unit='U6',scenario='U6-DockMenu-synthetic',ledger=str(paths['ledger'])),
         expectedLease=dict(runID=run,epoch=epoch)) # the sequence adds notBefore/expiresAt from the started lease
     seed_receipt=dict(schema='u6-seed/1',runID=run,epoch=epoch,homeSeedSHA256=digest,
-        toolID=tool,titleSHA256=title_hash,accountIDSHA256=account_hash,stubSHA256=stub_hash,profileSHA256=sha(profile_path),firstAttempt=True)
+        toolID=tool,titleSHA256=title_hash,readingSHA256=account_hash,stubSHA256=stub_hash,profileSHA256=sha(profile_path),firstAttempt=True)
     with (batch/'synthetic-seed.json').open('x') as stream:json.dump(seed_receipt,stream,sort_keys=True);stream.write('\n')
     with (batch/'run.json').open('x') as stream:json.dump(config,stream,indent=2);stream.write('\n')
     print(json.dumps(dict(runID=run,epoch=epoch,head=args.head,seedSHA256=digest)))

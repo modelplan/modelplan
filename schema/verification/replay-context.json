@@ -17,7 +17,7 @@
     "homeSHA256",
     "pins",
     "launchedPins",
-    "seedAccountIDSHA256"
+    "seedReadingSHA256"
   ],
   "properties": {
     "schema": {
@@ -50,9 +50,9 @@
     "launchedPins": {
       "$ref": "#/$defs/pins"
     },
-    "seedAccountIDSHA256": {
+    "seedReadingSHA256": {
       "$ref": "common.json#/$defs/sha256",
-      "description": "synthetic-seed.json accountIDSHA256 (C2.6 D)."
+      "description": "synthetic-seed.json readingSHA256 (C2.6 D)."
     }
   },
   "additionalProperties": false,

@@ -280,6 +280,22 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 
 ## evidence-u6 changes required by C2.6
 
+Current integration is **incomplete; no runnable kit or GO**. The independent 205-test
+schema/replay suite passes (93 differential traces, no expected-failure decorators), but
+four legacy C2.3 fixture tests still fail. Their migration is blocked by automatic approval
+review. Producer fixture capture and the head-built package-level regression are also pending.
+The divergence table below records the historical baseline; the tests retain those exact
+expected outcomes as regressions against both the independent oracle and the final CLI.
+
+Coordinator clarifications applied after the pinned oracle branch: requested and accepted
+must share the pre-send engineRequestID; only account.getQuota before accepted fails;
+the result digest key is runtimeCallsSHA256. readingSHA256 replaces accountIDSHA256 and
+fingerprints exactly one accepted Copilot account's route, plan.id and windows sorted by id.
+Each window contributes id, limitKey, poolKey, remainingBp (integer, nearest with ties away
+from zero) and resetsAt (integer UNIX seconds), preserving nulls. Sorted-key compact UTF-8
+JSON is hashed. Read-time fields are excluded. The Python/Swift fixed vector is
+92c7f08d9a030f3b6d3409c7698da1b5d0454f773983308d20c7908eb3841a4e.
+
 `bin/evidence-u6.py` / `U6/evidence_chain.py` at #332 6a063beb (unchanged since 8f857aa6) agree with the oracle on
 66 of 93 traces. The 27 below are `expectedFailure` in `EvidenceU6CLITests` (C2.6 G.3 asks for none);
 `test_disagreement_table_is_exact` pins both outcomes. Required changes, for M4:

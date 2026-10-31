@@ -9,6 +9,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from engine_process import EngineProcess
 from engine_runner import fresh_rows
 from stub_runtime import verify_selection
+from reading_fingerprint import reading_sha256
 
 def probe_seed(helper,home,tmp,tool='copilot',mode='first',expected_title_hash=None,expected_stub_hash=None,details=False):
     home=Path(home).resolve()
@@ -40,9 +41,7 @@ def probe_seed(helper,home,tmp,tool='copilot',mode='first',expected_title_hash=N
         if expected_title_hash is not None and hashlib.sha256(title.encode()).hexdigest()!=expected_title_hash:
             raise ValueError('catalogue-title-hash-mismatch')
         if details:
-            locator=(row.get('accounts') or [{}])[0].get('accountLocator')
-            if not isinstance(locator,str) or not locator:raise ValueError('synthetic-account-identity-missing')
-            return dict(title=title,accountIDSHA256=hashlib.sha256(locator.encode()).hexdigest())
+            return dict(title=title,readingSHA256=reading_sha256(row['accounts']))
         return title
 
 if __name__=='__main__':

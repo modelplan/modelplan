@@ -66,9 +66,15 @@ def run(config_path,pointer_binary):
         a_session=a['checks']['sessionID'];steps['menuA']='pass';current='refresh'
         py(U6/'prepare_menu_plan.py','--config',config_path)
         command([str(pointer_binary),'--status-menu-plan',str(batch/'menu-plan.json')],config,timeout=10)
-        refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed')
+        refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                           and r.get('sessionID')==a_session,60)
-        if refresh.get('phase')!='completed':raise ValueError('engine-error')
+        if refresh.get('phase')=='deferred':
+            reply=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
+                            and r.get('requestId')==refresh.get('requestId'),1)
+            disposition=reply.get('dispositions',{}).get('copilot.runtime_usage')
+            raise ValueError('cooldown' if disposition=='cooldown' else 'consent-required' if disposition=='policy_pending' else 'engine-disabled')
+        if refresh.get('phase')=='abandoned':raise ValueError('timeout' if refresh.get('cause')=='deadline' else 'not-delivered')
+        if refresh.get('phase')=='failed':raise ValueError(reason_code(refresh.get('reason'),BOUNDED_CODES))
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-end' and r.get('checks',{}).get('sessionID')==a_session,5)
         steps['refresh']='pass';current='menuB'
 

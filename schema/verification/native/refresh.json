@@ -103,7 +103,7 @@
       "type": "integer",
       "minimum": 0
     },
-    "accountIDSHA256": {
+    "readingSHA256": {
       "$ref": "../common.json#/$defs/sha256"
     },
     "reason": {
@@ -129,15 +129,11 @@
       "then": {
         "required": [
           "rowsSequenceBefore",
-          "copilotAccountsBefore"
+          "copilotAccountsBefore",
+          "engineRequestID"
         ],
         "not": {
           "anyOf": [
-            {
-              "required": [
-                "engineRequestID"
-              ]
-            },
             {
               "required": [
                 "dispositions"
@@ -155,7 +151,7 @@
             },
             {
               "required": [
-                "accountIDSHA256"
+                "readingSHA256"
               ]
             },
             {
@@ -209,7 +205,7 @@
             },
             {
               "required": [
-                "accountIDSHA256"
+                "readingSHA256"
               ]
             },
             {
@@ -238,7 +234,7 @@
         "required": [
           "rowsSequenceAfter",
           "copilotAccountsAfter",
-          "accountIDSHA256"
+          "readingSHA256"
         ],
         "not": {
           "anyOf": [
@@ -322,7 +318,7 @@
             },
             {
               "required": [
-                "accountIDSHA256"
+                "readingSHA256"
               ]
             },
             {
@@ -378,7 +374,7 @@
             },
             {
               "required": [
-                "accountIDSHA256"
+                "readingSHA256"
               ]
             },
             {
@@ -441,7 +437,7 @@
             },
             {
               "required": [
-                "accountIDSHA256"
+                "readingSHA256"
               ]
             },
             {

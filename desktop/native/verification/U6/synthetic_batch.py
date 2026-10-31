@@ -71,7 +71,7 @@ def context(**changes):
     value = dict(schema='u6-replay-context/1', runID=RUN, epoch=EPOCH, subjectPID=PID, leaseNotBefore=T0,
                  leaseExpiresAt=T0 + LEASE_SECONDS, seedTitleSHA256=sha(SEED_TITLE),
                  homeSHA256=sha('<scratch>/home'), pins=dict(PINS), launchedPins=dict(PINS),
-                 seedAccountIDSHA256=sha(SEED_ACCOUNT))
+                 seedReadingSHA256=sha(SEED_ACCOUNT))
     value.update(changes)
     return value
 
@@ -221,12 +221,12 @@ def valid(variant='main', closure_receipt=None):
           titleSHA256=sha(SEED_TITLE), privateItemIDs=[ITEM_A])
     t.add('status-menu-action-arrived', 21.0, menuObjectID=MENU, sessionID=SESSION_A, requestID=REQUEST,
           actionID='refresh', deliveryMethod='axpress-menu-item', source='NSMenu.didSendAction', scope='owned-status-menu')
-    t.add('refresh', 21.05, phase='requested', requestId=REQUEST, rowsSequenceBefore=3, copilotAccountsBefore=0,
+    t.add('refresh', 21.05, phase='requested', requestId=REQUEST, engineRequestID=ENGINE_REQUEST, rowsSequenceBefore=3, copilotAccountsBefore=0,
           menuObjectID=MENU, sessionID=SESSION_A)
     t.add('refresh', 21.06, phase='accepted', requestId=REQUEST, engineRequestID=ENGINE_REQUEST,
           dispositions=dict(DISPOSITIONS), menuObjectID=MENU, sessionID=SESSION_A)
     completed = dict(phase='completed', requestId=REQUEST, rowsSequenceAfter=4, copilotAccountsAfter=1,
-                     accountIDSHA256=sha(SEED_ACCOUNT), menuObjectID=MENU, sessionID=SESSION_A)
+                     readingSHA256=sha(SEED_ACCOUNT), menuObjectID=MENU, sessionID=SESSION_A)
     if alt:
         t.add('refresh', 21.08, **completed)
         t.add('menu-end', 21.2, menuObjectID=MENU, sessionID=SESSION_A, cause='other')
@@ -372,7 +372,7 @@ def kit_batch(ctx, files, root):
     put(batch / 'launch.json', dict(ownedPID=pid, runID=run, epoch=epoch, sourceHead=KIT_HEAD))
     put(batch / 'prepared.json', dict(prepared=True, runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED))
     put(batch / 'synthetic-seed.json', dict(schema='u6-seed/1', runID=run, epoch=epoch, homeSeedSHA256=KIT_SEED,
-                                            titleSHA256=ctx['seedTitleSHA256'], accountIDSHA256=ctx['seedAccountIDSHA256'],
+                                            titleSHA256=ctx['seedTitleSHA256'], readingSHA256=ctx['seedReadingSHA256'],
                                             profileSHA256=sha('synthetic profile')))
     for stem in ('dock-pointer', 'status-pointer', 'status-pointer-clear'):
         put(batch / (stem + '-plan.json'), dict(profile='synthetic', runID=run, epoch=epoch, subjectPID=pid,

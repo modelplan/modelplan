@@ -3,6 +3,7 @@
 import AppKit
 import ModelPlanMenuVerification
 import ModelPlanEngineClient
+import ModelPlanWire
 import CryptoKit
 
 /// Test-build-only lease/owner stop hook. Emits only scoped booleans, never other-app identity.
@@ -86,9 +87,10 @@ import CryptoKit
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "subjectPID":ProcessInfo.processInfo.processIdentifier,
                             "surface":status ? "status" : "dock", "menuObjectID":instanceID,"sessionID":sessionID])
-                        if status, self.hasPrivateContent(),let title=self.privateTitle(),!title.isEmpty,
-                           menu.items.first?.title.contains(title)==true {
-                            let items=[WeakPrivateItem(menu.items[0])]
+                        if status, self.hasPrivateContent(),let title=self.privateTitle(),!title.isEmpty {
+                            let items=menu.items.filter { $0.title.contains(title) || $0.attributedTitle?.string.contains(title)==true
+                                || $0.toolTip?.contains(title)==true }.map(WeakPrivateItem.init)
+                            guard !items.isEmpty else { return }
                             self.privateBySession[sessionID]=items
                             let digest = SHA256.hash(data: Data(title.utf8)).map { String(format:"%02x",$0) }.joined()
                             self.privateTitleHashBySession[sessionID]=digest
@@ -147,14 +149,22 @@ import CryptoKit
                 }
             })
     }
-    func beginProductRefresh(composition: EngineDockMenuComposition) -> (@MainActor (Result<EngineMenuRefreshResult, Error>) -> Void)? {
+    struct RefreshObservation {
+        let prepared: @MainActor @Sendable (WireRequestID) -> Void
+        let result: @MainActor (Result<EngineMenuRefreshResult,Error>) -> Void
+    }
+    func beginProductRefresh(composition: EngineDockMenuComposition) -> RefreshObservation? {
         guard isLive(), let context = arrivedRefreshContext else { return nil }
         arrivedRefreshContext = nil
         let before = composition.store.snapshot.rows?.sequence ?? 0
         let accountsBefore=composition.store.snapshot.rows?.projection.rows.first(where: { $0.id=="copilot" })?.accounts.count ?? 0
         let id = context.requestID.uuidString
-        let requestedMono=ProcessInfo.processInfo.systemUptime
-        emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,
+        var requestedMono=ProcessInfo.processInfo.systemUptime
+        let prepared: @MainActor @Sendable (WireRequestID) -> Void = { [weak self] engineID in
+        guard let self else { return }
+        requestedMono=ProcessInfo.processInfo.systemUptime
+        let encoded=(try? JSONEncoder().encode(engineID)).flatMap { try? JSONSerialization.jsonObject(with:$0,options:.fragmentsAllowed) } ?? "unknown"
+        self.emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,"engineRequestID":encoded,
                                       "rowsSequenceBefore":before,"copilotAccountsBefore":accountsBefore,
                                       "menuObjectID":context.objectID,"sessionID":context.sessionID])
         Task { [weak self] in
@@ -164,10 +174,11 @@ import CryptoKit
             if let self {
                 let deadline=ProcessInfo.processInfo.systemUptime>=requestedMono+60 || Date().timeIntervalSince1970>=self.expiry
                 self.refreshTerminal("abandoned",requestID:id,context:context,
-                    fields:["cause":deadline ? "deadline" : "stop","reason":deadline ? "timeout" : "not-delivered"])
+                    fields:["cause":deadline ? "deadline" : "stop"])
             }
         }
-        return { [weak self, weak composition] result in
+        }
+        return RefreshObservation(prepared:prepared,result: { [weak self, weak composition] result in
             guard let self, let composition,!self.terminalRefreshIDs.contains(id) else { return }
             switch result {
             case .failure(let error):
@@ -178,30 +189,27 @@ import CryptoKit
                 self.emitObject("refresh",fields:["kind":"refresh","phase":"accepted","requestId":id,
                     "engineRequestID":encoded,"dispositions":dispositions,"menuObjectID":context.objectID,"sessionID":context.sessionID])
                 if dispositions["copilot.runtime_usage"] != "scheduled" {
-                    let code=dispositions["copilot.runtime_usage"] ?? "unknown"
-                    let reason=code=="cooldown" ? "cooldown" : code=="policy_pending" ? "consent-required" : "engine-disabled"
-                    self.refreshTerminal("deferred",requestID:id,context:context,fields:["reason":reason]);return
+                    self.refreshTerminal("deferred",requestID:id,context:context,fields:[:]);return
                 }
                 Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id,
                     requestedMono:requestedMono,context:context) }
             }
-        }
+        })
     }
     private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String,
                                      requestedMono:Double,context:(requestID:UUID,objectID:String,sessionID:String)) async {
         while isLive() && ProcessInfo.processInfo.systemUptime<requestedMono+60 {
             if let projection=composition.store.snapshot.rows,projection.sequence>before,
                let row=projection.projection.rows.first(where: { $0.id=="copilot" }),!row.accounts.isEmpty,
-               let account=row.accounts.first?.accountLocator,!account.isEmpty {
-                let digest=SHA256.hash(data:Data(account.utf8)).map { String(format:"%02x",$0) }.joined()
+               let digest=try? U6ReadingFingerprint.sha256(row.accounts) {
                 refreshTerminal("completed", requestID:requestID,context:context,
-                    fields:["rowsSequenceAfter":projection.sequence,"copilotAccountsAfter":row.accounts.count,"accountIDSHA256":digest]); return
+                    fields:["rowsSequenceAfter":projection.sequence,"copilotAccountsAfter":row.accounts.count,"readingSHA256":digest]); return
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
         let deadline=ProcessInfo.processInfo.systemUptime>=requestedMono+60 || Date().timeIntervalSince1970>=expiry
         refreshTerminal("abandoned",requestID:requestID,context:context,
-            fields:["cause":deadline ? "deadline" : "stop","reason":deadline ? "timeout" : "not-delivered"])
+            fields:["cause":deadline ? "deadline" : "stop"])
     }
     private func refreshTerminal(_ phase: String, requestID: String,
                                  context:(requestID:UUID,objectID:String,sessionID:String), fields: [String: Any]) {
@@ -271,15 +279,12 @@ import CryptoKit
     private func emitObject(_ event: String, fields: [String: Any]) {
         observationSequence &+= 1
         let now = Date().timeIntervalSince1970
-        let base: [String: Any] = ["runID":runID,"epoch":epoch,"pid":ProcessInfo.processInfo.processIdentifier,
-                                   "seq":observationSequence,"mono":ProcessInfo.processInfo.systemUptime,"at":now]
-        let object: [String: Any] = event == "refresh"
-            ? fields.merging(base) { _, bound in bound }
-            : base.merging(["event":event,"timestamp":now,"checks":fields]) { _, added in added }
-        guard let data = try? JSONSerialization.data(withJSONObject:object,options:[.sortedKeys]) else { return }
+        guard let data = try? U6NativeReceiptSerializer.encode(event:event,fields:fields,runID:runID,epoch:epoch,
+            pid:ProcessInfo.processInfo.processIdentifier,seq:observationSequence,
+            mono:ProcessInfo.processInfo.systemUptime,at:now) else { return }
         if !FileManager.default.fileExists(atPath:observations.path) { FileManager.default.createFile(atPath:observations.path,contents:nil) }
         guard let handle = try? FileHandle(forWritingTo: observations) else { return }
-        defer { try? handle.close() }; try? handle.seekToEnd(); try? handle.write(contentsOf:data + Data([10]))
+        defer { try? handle.close() }; _ = try? handle.seekToEnd(); try? handle.write(contentsOf:data)
     }
     func recordClearInitiated(_ invalidation: EngineInvalidation) {
         guard let floor=invalidation.nextFloor else { return }

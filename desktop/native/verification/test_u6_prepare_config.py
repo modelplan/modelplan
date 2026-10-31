@@ -47,7 +47,7 @@ class U6PrepareConfigTests(unittest.TestCase):
                 modes.append(mode)
                 self.assertEqual(hashlib.sha256((home/'bin/copilot').read_bytes()).hexdigest(),expected_stub_hash)
                 if expected_title_hash:self.assertEqual(expected_title_hash,hashlib.sha256(b'GitHub Copilot').hexdigest())
-                return dict(title='GitHub Copilot',accountIDSHA256='e'*64) if details else 'GitHub Copilot'
+                return dict(title='GitHub Copilot',readingSHA256='e'*64) if details else 'GitHub Copilot'
             prepare.prepare(args,make_home=FakeHome,probe=probe)
             config=json.loads((batch/'run.json').read_text());seed=json.loads((batch/'synthetic-seed.json').read_text())
             self.assertEqual(config['booking']['unit'],'U6')
