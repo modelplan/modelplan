@@ -160,7 +160,8 @@ def evaluate(config,batch,package,kit_manifest):
         need(not any(r.get('kind')=='refresh' and r.get('phase')=='accepted'
                      and r.get('requestId')!=request_id and r.get('engineRequestID')==accepted_reply.get('engineRequestID') for r in native))
         dispositions=accepted_reply.get('dispositions');need(isinstance(dispositions,dict))
-        need(type(accepted_reply.get('engineRequestID')) in (str,int) and accepted_reply['engineRequestID']==requested['engineRequestID'])
+        need(type(accepted_reply.get('engineRequestID')) in (str,int))
+        reject(accepted_reply['engineRequestID']!=requested['engineRequestID'],'unknown')
         disposition=dispositions.get('copilot.runtime_usage')
         if terminal['phase']=='deferred':
             reject(disposition=='scheduled','unknown')

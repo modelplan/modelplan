@@ -180,6 +180,11 @@ import CryptoKit
         }
         return RefreshObservation(prepared:prepared,result: { [weak self, weak composition] result in
             guard let self, let composition,!self.terminalRefreshIDs.contains(id) else { return }
+            if !self.isLive() {
+                let deadline=ProcessInfo.processInfo.systemUptime>=requestedMono+60 || Date().timeIntervalSince1970>=self.expiry
+                self.refreshTerminal("abandoned",requestID:id,context:context,fields:["cause":deadline ? "deadline" : "stop"])
+                return
+            }
             switch result {
             case .failure(let error):
                 self.refreshTerminal("failed", requestID:id, context:context,fields:["reason":Self.refreshReason(error)])
