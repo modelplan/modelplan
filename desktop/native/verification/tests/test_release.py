@@ -84,6 +84,7 @@ class Releases(unittest.TestCase):
 
     def test_shared_loader_ignores_inline_approval_and_enforces_live_files(self):
         self.issue()
+        self.lease = self.lease | dict(guardian=True)  # bin/guardian.py has taken over
         lease_path = self.root / 'lease.json'; lease_path.write_text(json.dumps(self.lease))
         c = dict(profile='synthetic', binarySHA256='a' * 64, argv=['synthetic-app'], requiredSeconds=60,
                  leasePath=str(lease_path), releasePath=str(self.output), stopPath=str(self.root / 'stop'),
@@ -100,6 +101,8 @@ class Releases(unittest.TestCase):
         for fields in (dict(guardianHeartbeatAt=self.now - 3), dict(ownerPreempted=True), dict(exclusive=False)):
             lease_path.write_text(json.dumps(self.lease | fields))
             with self.assertRaises(ValueError):admission.load_and_admit(c)
+        lease_path.write_text(json.dumps({k: v for k, v in self.lease.items() if k != 'guardian'}))
+        with self.assertRaisesRegex(ValueError, 'guardian not running'):admission.load_and_admit(c)
         lease_path.write_text(json.dumps(self.lease))
         self.ledger.finish(self.ident, 'M2', 'run', 'epoch', cleaned=True)
         with self.assertRaisesRegex(ValueError, 'head booking'):admission.load_and_admit(c)
