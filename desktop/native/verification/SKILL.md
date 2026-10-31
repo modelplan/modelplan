@@ -27,7 +27,7 @@ command, the receipt that proves it, and what happens when it fails:
 | `launch.py --execute` (background) | the subject registration in `subjectPidPath`, bound to this run/epoch | the drive step finds no registered subject; closure check decides |
 | `scenario.py drive` | its result (U6: `result.json` with `quit` and `cleanup`); exit 0 only after observed closure and released resources | `SCENARIO_STATUS` is non-zero, so the closure check fails |
 | normal quit (inside the drive step) | the app's own receipt (U6: `quit.appAcknowledged`, the app's stop row) | the supervisors stop the subject; still a closure question, not a pass |
-| stop, then `wait` for both supervisors | `CONTROLLER_STATUS`, `GUARDIAN_STATUS` | a signal during the wait runs the trap |
+| stop, then `wait` for both supervisors | `CONTROLLER_STATUS`, `GUARDIAN_STATUS`; both print `quitGraceUsed`/`exitedDuringGrace` | a signal during the wait runs the trap |
 | `check_launch_cleanup.py` (launch) / `check_drive_cleanup.py` (drive) | launch: the `launch-cleanup/1` receipt, printed and written to `launch-cleanup.json` beside `stopPath` (U6: in the batch) | no finish; post the NEEDS-COORDINATOR line |
 | `book.py finish --cleaned` | the finish event | only reached when the closure check passed |
 
@@ -43,7 +43,9 @@ config's `expectedLease` to the lease this attempt started.
 set -e  # any failed step stops the sequence; once the booking has started, the EXIT trap closes the attempt
 export PYTHONDONTWRITEBYTECODE=1  # with python3 -B on every call: nothing writes __pycache__ into the kit
 V=desktop/native/verification/bin
-cfg() { python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$RUN_CONFIG" "$1"; }
+cfg() {  # cfg KEY [DEFAULT]: one run-config field
+  python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); print(c[sys.argv[2]] if len(sys.argv) < 4 else c.get(sys.argv[2], sys.argv[3]))' "$RUN_CONFIG" "$@"
+}
 python3 -B "$V/book.py" request \
   --lane M1 --unit U11a --scenario cold --minutes 20
 # ... the coordinator grants GO for this booking (the queue head); set BOOKING_ID ...
@@ -75,7 +77,7 @@ c["expectedLease"]={k: l[k] for k in ("runID", "epoch", "notBefore", "expiresAt"
   "$RUN_CONFIG" "$LEASE_PATH"  # bind the run config to this attempt's lease
 # Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
 python3 -B "$V/guardian.py" --lease "$LEASE_PATH" \
-  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" &
+  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" --quit-grace "$(cfg quitGraceSeconds 5)" &
 GUARDIAN_PID=$!
 python3 -B "$V/release.py" \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
@@ -166,6 +168,13 @@ over: the run config pins its head and binary hash and the coordinator's OK comm
 admission (U6: slot locks and disk floor) runs in that attempt's `prepare`; input permissions (for
 `pointer_drive`) are granted out of band by the owner for that exact binary. No tool prompts for a permission,
 and a missing permission is unsupported or not-run, never a pass.
+
+Quit grace: when the stop file appears, `launch.py` and the guardian first give the registered subject up to the run
+config's `quitGraceSeconds` (default 5, capped at 10) to quit by itself (for U6, the guard's `NSApplication.terminate`
+on the native contract's stop path), polling its identity, and only then send TERM, then KILL, as before. Both record
+`quitGraceUsed` and `exitedDuringGrace` in their output. Other stop reasons (deadline, stale heartbeat, revocation,
+signals) get no grace. The guardian's cleanup reserve stays at least 25 seconds, and admission refuses a lease whose
+remaining time cannot cover the quit grace plus that reserve.
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
 `bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 30-second cleanup reserve (at least 25), and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs

@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 import book
+from guardian import MIN_RESERVE, quit_grace
 from release import IDENTITY_FIELDS, validate_release
 
 
@@ -33,6 +34,8 @@ def validate(config, now):
         raise ValueError('stopped/not exclusive')
     if config['requiredSeconds'] <= 0 or lease['expiresAt'] - now < config['requiredSeconds']:
         raise ValueError('insufficient phase+cleanup time')
+    if lease['expiresAt'] - now < quit_grace(config.get('quitGraceSeconds')) + MIN_RESERVE:
+        raise ValueError('insufficient time for quit grace plus cleanup reserve')
     if not config.get('argv') or not all(isinstance(x, str) and x for x in config['argv']):
         raise ValueError('explicit executable arguments required')
     return True

@@ -3,7 +3,7 @@
 import argparse,hashlib,json,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
-from guardian import register,mark_launching
+from guardian import register,mark_launching,quit_grace
 from scenario import resolve
 import homeseed
 def main():
@@ -41,8 +41,9 @@ def main():
     print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid}),flush=True)
     # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
     # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
-    reason=supervise(child,c)
-    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason}))
+    report={'quitGraceUsed':None,'exitedDuringGrace':False}
+    reason=supervise(child,c,report=report)
+    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,**report}))
     raise SystemExit(0 if reason is None else 3)
 def check_prepared(c):
     """Scenario preparation. A registered receipt scenario (bin/scenarios.json, named by `scenario` or by its argv
@@ -71,10 +72,18 @@ def stop_reason(c,now):
     if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
     if now>=lease['expiresAt']:return 'deadline'
     return None
-def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep):
+def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,report=None,monotonic=time.monotonic):
+    """Stop the child on any stop reason. After the stop file it first waits up to quitGraceSeconds (default 5,
+    capped at 10) for the child to quit by itself; it signals (TERM, then KILL) only a child still running then."""
+    grace=quit_grace(c.get('quitGraceSeconds'))
     while child.poll() is None:
         reason=stop_reason(c,clock())
         if reason:
+            if reason=='stop-file' and grace>0:
+                end=monotonic()+grace
+                while child.poll() is None and monotonic()<end:sleep(min(.1,poll))
+                if report is not None:report.update(quitGraceUsed=grace,exitedDuringGrace=child.poll() is not None)
+                if child.poll() is not None:return reason
             child.terminate()
             try:child.wait(10)
             except subprocess.TimeoutExpired:child.kill();child.wait()
