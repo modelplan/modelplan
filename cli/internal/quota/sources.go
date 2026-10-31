@@ -103,7 +103,8 @@ func keepSessions(prev *ccSnapshot, snap ccSnapshot) []ccSession {
 		if len(out) == ccSessionsKept {
 			break
 		}
-		if x.Key != "" && x.Key != snap.SessionKey && !x.ObservedAt.After(snap.ObservedAt) && snap.ObservedAt.Sub(x.ObservedAt) < ccSessionAge {
+		// A clock step back keeps an entry; only age and the count drop one.
+		if x.Key != "" && x.Key != snap.SessionKey && !x.ObservedAt.IsZero() && snap.ObservedAt.Sub(x.ObservedAt) < ccSessionAge {
 			out = append(out, x)
 		}
 	}
@@ -277,7 +278,7 @@ func readClaudeCode(cache, session string) ([]Account, SourceStatus) {
 		// kept, gives its model and effort.
 		key, own := SessionKey(session), false
 		for _, x := range s.Sessions {
-			if x.Key == key && key != s.SessionKey {
+			if x.Key == key && key != s.SessionKey && !x.ObservedAt.IsZero() {
 				h, at := x.Harness, x.ObservedAt
 				h.ObservedAt = &at
 				a.Harness, own = &h, true

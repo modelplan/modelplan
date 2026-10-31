@@ -477,6 +477,11 @@ func TestClaudeCodeSessionsEachReadTheirOwnModelAndEffort(t *testing.T) {
 	if strings.Contains(string(raw), "session-a") || strings.Contains(string(raw), "session-b") {
 		t.Fatal("snapshot holds a raw session id")
 	}
+	// A clock step back does not drop session A's reading.
+	record("session-c", "low", now.Add(-5*time.Minute))
+	if h := read("session-a"); h.Effort != "medium" || h.Attribution != "current-thread" {
+		t.Fatalf("after a clock step back, session A read %+v", h)
+	}
 }
 
 func TestClaudeCodeSessionsAreBoundedByCountAndAge(t *testing.T) {
