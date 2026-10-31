@@ -81,7 +81,9 @@ import ModelPlanMenuVerification
         }, hasPrivateContent: { [weak self] in
             guard let value = self?.composition.provider.dockContent else { return false }
             return !value.dockRows.isEmpty || !value.menuRows.isEmpty
-        }, privateTitle: { [weak self] in self?.composition.provider.dockContent.menuRows.first?.name.en },
+        }, privateTitle: { [weak self] in
+            self?.composition.provider.dockContent.menuRows.first(where: { !$0.accounts.isEmpty })?.name.en
+        },
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)

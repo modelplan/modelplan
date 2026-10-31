@@ -5,8 +5,10 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[4]
 sys.path[:0]=[str(ROOT/'tools/u14/engine_drive'),str(ROOT/'desktop/native/verification/bin')]
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from scenarios import Home
 from homeseed import tree_sha256
+from evidence_chain import verify_bundle_members,Missing,Contradiction
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def absolute(value):
@@ -29,13 +31,20 @@ def prepare(args,make_home=Home):
         raise ValueError('candidate-pin-mismatch')
     helper=paths['binary'].parent.parent/'Helpers/modelplan'
     if helper.is_symlink() or sha(helper)!=manifest.get('helperSHA256'):raise ValueError('helper-pin-mismatch')
+    try:verify_bundle_members(dict(argv=[str(paths['binary'])],binarySHA256=manifest['binarySHA256'],
+        helperSHA256=manifest['helperSHA256'],packageSHA256=manifest['packageSHA256']),manifest,paths['package'])
+    except (Missing,Contradiction) as error:raise ValueError('bundle-member-pin-mismatch') from error
     profile_path=ROOT/'tools/u14/engine_drive/profile.json';profile=json.loads(profile_path.read_text())
     title=args.private_title
     if (not isinstance(title,str) or not title or len(title)>128 or
-        title.lower() not in profile.get('tools',[]) or any(ord(c)<32 or ord(c)==127 for c in title)):
+        title.lower()!='copilot' or title.lower() not in profile.get('tools',[])
+        or any(ord(c)<32 or ord(c)==127 for c in title)):
         raise ValueError('private-title-not-in-approved-profile')
     seed=scratch/'home-seed'
-    make_home(seed,helper,'http://127.0.0.1:1',profile).allow()
+    synthetic=make_home(seed,helper,'http://127.0.0.1:1',profile)
+    synthetic.allow();refresh=synthetic.refresh() # the approved Copilot runtime row is part of the seed
+    if refresh.returncode!=0 or 'account.getQuota' not in synthetic.calls():
+        raise ValueError('synthetic-private-reading-not-seeded')
     digest=tree_sha256(seed)
     config=dict(scenario='u6',profile='synthetic',head=args.head,binarySHA256=manifest['binarySHA256'],
         packageSHA256=manifest['packageSHA256'],helperSHA256=manifest['helperSHA256'],

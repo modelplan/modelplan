@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Complete offline C2.3 trace and negative mutations; no GUI or helper runs."""
-import hashlib,importlib.util,json,tempfile,unittest
+import hashlib,importlib.util,json,tempfile,unittest,zipfile
 from pathlib import Path
 
 spec=importlib.util.spec_from_file_location('u6_chain',Path(__file__).parent/'U6/evidence_chain.py')
@@ -12,14 +12,21 @@ class U6ChainTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
         app=self.root/'Test.app/Contents';self.binary=app/'MacOS/App';self.binary.parent.mkdir(parents=True);self.binary.write_bytes(b'app')
         helper=app/'Helpers/modelplan';helper.parent.mkdir();helper.write_bytes(b'helper')
-        self.package=self.root/'candidate.zip';self.package.write_bytes(b'package')
+        self.package=self.root/'candidate.zip'
+        with zipfile.ZipFile(self.package,'w') as archive:
+            archive.writestr('Test.app/Contents/MacOS/App',b'app')
+            archive.writestr('Test.app/Contents/Helpers/modelplan',b'helper')
         self.config=dict(batch=str(self.root),argv=[str(self.binary)],head='a'*40,
             binarySHA256=hashlib.sha256(b'app').hexdigest(),helperSHA256=hashlib.sha256(b'helper').hexdigest(),
-            packageSHA256=hashlib.sha256(b'package').hexdigest(),syntheticHomeSeedSHA256='d'*64,
+            packageSHA256=hashlib.sha256(self.package.read_bytes()).hexdigest(),syntheticHomeSeedSHA256='d'*64,
             syntheticHome=str(self.root/'scratch/home'),subjectPidPath=str(self.root/'subject.json'),
             expectedLease=dict(runID=RUN,epoch=EPOCH,notBefore=90,expiresAt=180))
         self.manifest=dict(sourceHead=self.config['head'],binarySHA256=self.config['binarySHA256'],
-                           helperSHA256=self.config['helperSHA256'],packageSHA256=self.config['packageSHA256'])
+                           helperSHA256=self.config['helperSHA256'],packageSHA256=self.config['packageSHA256'],
+                           bundleMembers={role:dict(path=path,sha256=digest) for role,path,digest in [
+                               ('main','Contents/MacOS/App',self.config['binarySHA256']),
+                               ('engine','Contents/Helpers/modelplan',self.config['helperSHA256']),
+                               ('consentHelper','Contents/Helpers/modelplan',self.config['helperSHA256'])]})
         self.put('subject.json',dict(pid=PID,runID=RUN,epoch=EPOCH,state='running'))
         self.put('launch.json',dict(ownedPID=PID,runID=RUN,epoch=EPOCH,sourceHead=self.config['head']))
         self.put('prepared.json',dict(runID=RUN,epoch=EPOCH,homeSeedSHA256='d'*64))
@@ -63,7 +70,9 @@ class U6ChainTests(unittest.TestCase):
         self.put('operator-finish.json',dict(schema='u6-actions/1',runID=RUN,epoch=EPOCH,mono=114.5,
             steps={key:'pass' for key in ('dock','menuA','refresh','menuB','privateTitle','trackedClear')}))
         self.put('launch-cleanup.json',dict(schema='launch-cleanup/1',runID=RUN,epoch=EPOCH,ok=True,failures=[],
-            at='1970-01-01T00:02:00Z',checks=dict(subjectGone=True,helpersGone=True,leaseClosable=True,locksReleased=True,
+            at='1970-01-01T00:02:00Z',leaseNotBefore=90,leaseExpiresAt=180,subjectStartedAt=100,closedAt=120,
+            closedWithinLease=True,stopReasonRecorded=True,
+            checks=dict(subjectGone=True,helpersGone=True,leaseClosable=True,locksReleased=True,
                 syntheticHomeRemoved=True,syntheticTmpRemoved=True,stopPathPresent=True,
                 controllerStatus=0,guardianStatus=0,scenarioStatus=0)))
     def tearDown(self):self.temp.cleanup()
@@ -78,13 +87,15 @@ class U6ChainTests(unittest.TestCase):
             self.native.insert(11,dict(self.native[12],seq=12,mono=112.8,at=112.8,
                 checks=dict(sessionID='B',cause='other')))
         changes=[('wrong-pid',lambda:self.native[5].update(pid=99)),
+            ('wrong-bundle-member',lambda:self.manifest['bundleMembers']['engine'].update(sha256='0'*64)),
             ('duplicate-terminal',lambda:self.native.append(dict(self.native[8],seq=18,mono=117,at=117))),
             ('stale-rows',lambda:self.native[8].update(rowsSequenceAfter=1)),
             ('preclose-b',preclose),
             ('wrong-epoch',lambda:self.native[11]['checks'].update(storeEpochAfter='other')),
             ('stale-title',lambda:self.native.append(dict(self.native[10],seq=18,mono=117,at=117))),
             ('private-item',lambda:self.native[14]['checks']['itemStates'][0].update(state='private')),
-            ('late-closure',lambda:self.put('launch-cleanup.json',dict(chain.read(self.root/'launch-cleanup.json'),at='1970-01-01T00:03:01Z'))),
+            ('late-closure',lambda:self.put('launch-cleanup.json',dict(chain.read(self.root/'launch-cleanup.json'),
+                closedAt=181,closedWithinLease=False))),
             ('false-closure',lambda:self.put('launch-cleanup.json',dict(chain.read(self.root/'launch-cleanup.json'),checks=dict(chain.read(self.root/'launch-cleanup.json')['checks'],subjectGone=False))))]
         self.tearDown()
         for label,mutate in changes:

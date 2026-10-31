@@ -43,6 +43,8 @@ class U6FinalEntryTests(unittest.TestCase):
             self.case.native.insert(11,row);self.case.write_native()
         changes=[
             ('wrong-native-pid',lambda:self.case.native[5].update(pid=99)),
+            ('native-mono-regression',lambda:self.case.native[8].update(mono=90)),
+            ('wrong-bundle-member',lambda:change_file('kit-manifest.json',lambda x:x['bundleMembers']['engine'].update(sha256='0'*64))),
             ('missing-dock-input',lambda:(self.root/'dock-pointer.jsonl').unlink()),
             ('capture-wrong-frame',lambda:change_file('dock-capture.json',lambda x:x.update(frameSeq=2))),
             ('menu-out-of-window',lambda:self.case.native[4].update(mono=110)),
@@ -56,7 +58,7 @@ class U6FinalEntryTests(unittest.TestCase):
             ('private-item-remains',lambda:self.case.native[14]['checks']['itemStates'][0].update(state='private')),
             ('stale-title-after-clear',lambda:self.case.native.append(dict(self.case.native[10],seq=18,mono=117,at=117))),
             ('missing-closure-checks',lambda:change_file('launch-cleanup.json',lambda x:x.pop('checks'))),
-            ('late-closure',lambda:change_file('launch-cleanup.json',lambda x:x.update(at='1970-01-01T00:03:01Z'))),
+            ('late-closure',lambda:change_file('launch-cleanup.json',lambda x:x.update(closedAt=181,closedWithinLease=False))),
         ]
         self.tearDown()
         for label,mutation in changes:

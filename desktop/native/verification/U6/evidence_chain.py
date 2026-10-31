@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """C2.3 U6 synthetic evidence chain. Reads receipts; never authors native proof."""
-import hashlib,json,math,sys
+import hashlib,json,math,sys,zipfile
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'bin'))
 import check_launch_cleanup
@@ -27,10 +27,11 @@ def matching(row,run,epoch,pid):
 def native_rows(batch,run,epoch,pid):
     rows=[r for r in lines(batch/'native-observations.jsonl') if isinstance(r,dict) and matching(r,run,epoch,pid)]
     need(rows)
-    previous=0
+    previous=0;previous_mono=-math.inf
     for row in rows:
         need(type(row.get('seq')) is int and row['seq']>previous and number(row.get('mono')) and number(row.get('at')))
-        previous=row['seq']
+        need(row['mono']>=previous_mono)
+        previous=row['seq'];previous_mono=row['mono']
     return rows
 def events(rows,name):return [r for r in rows if r.get('event')==name]
 def checks(row):return row.get('checks') if isinstance(row.get('checks'),dict) else {}
@@ -58,6 +59,25 @@ def closure_ok(closure,run,epoch):
     reject(not check_launch_cleanup.lease_window_ok(closure),'out-of-window')
     return closure['closedAt']
 
+def verify_bundle_members(config,kit_manifest,package):
+    binary=Path(config['argv'][0]);helper=binary.parent.parent/'Helpers/modelplan';app=binary.parent.parent.parent
+    need(binary.is_file() and helper.is_file() and Path(package).is_file())
+    reject(hashlib.sha256(binary.read_bytes()).hexdigest()!=config['binarySHA256'] or
+           hashlib.sha256(helper.read_bytes()).hexdigest()!=config['helperSHA256'] or
+           hashlib.sha256(Path(package).read_bytes()).hexdigest()!=config['packageSHA256'],'wrong-subject')
+    members=kit_manifest.get('bundleMembers');need(isinstance(members,dict))
+    expected={'main':(binary,'Contents/MacOS/'+binary.name,config['binarySHA256']),
+              'engine':(helper,'Contents/Helpers/modelplan',config['helperSHA256']),
+              'consentHelper':(helper,'Contents/Helpers/modelplan',config['helperSHA256'])}
+    try:
+        with zipfile.ZipFile(package) as archive:
+            for role,(path,relative,digest) in expected.items():
+                entry=members.get(role)
+                need(isinstance(entry,dict) and entry.get('path')==relative and entry.get('sha256')==digest)
+                reject(hashlib.sha256(path.read_bytes()).hexdigest()!=digest,'wrong-subject')
+                reject(hashlib.sha256(archive.read(app.name+'/'+relative)).hexdigest()!=digest,'wrong-subject')
+    except (OSError,zipfile.BadZipFile,KeyError) as error:raise Missing('wrong-subject') from error
+
 def evaluate(config,batch,package,kit_manifest):
     """Return bounded outcome plus the first failed contract step; no caller assertion is trusted."""
     step='pins'
@@ -77,11 +97,7 @@ def evaluate(config,batch,package,kit_manifest):
              kit_manifest.get('binarySHA256')==config['binarySHA256'] and
              kit_manifest.get('packageSHA256')==config['packageSHA256'] and
              kit_manifest.get('helperSHA256')==config['helperSHA256'])
-        binary=Path(config['argv'][0]);helper=binary.parent.parent/'Helpers/modelplan'
-        need(binary.is_file() and helper.is_file() and package.is_file())
-        reject(hashlib.sha256(binary.read_bytes()).hexdigest()!=config['binarySHA256'] or
-               hashlib.sha256(helper.read_bytes()).hexdigest()!=config['helperSHA256'] or
-               hashlib.sha256(package.read_bytes()).hexdigest()!=config['packageSHA256'],'wrong-subject')
+        verify_bundle_members(config,kit_manifest,package)
         native=native_rows(batch,run,epoch,pid)
         started=one(native,lambda r:r.get('event')=='started')
         reject(not start_window<=started['at']<=end_window,'out-of-window')
