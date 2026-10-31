@@ -101,6 +101,24 @@ class ScenarioRegistryTests(unittest.TestCase):
             self.assertFalse((self.root / 'home').exists(), state)
             path.write_text(good)
 
+    def test_stopping_the_recorded_step_pid_reaches_the_step_itself(self):
+        # The sequence's trap TERMs the scenario.py PID it recorded; the step under it must not be orphaned.
+        marker = self.root / 'step-terminated'
+        (self.registry / 'demo-drive.py').write_text(
+            'import signal,sys,time\n'
+            f'signal.signal(signal.SIGTERM, lambda *_: (open({str(marker)!r}, "w").close(), sys.exit(143)))\n'
+            f'open({str(marker)!r} + ".ready", "w").close()\ntime.sleep(30)\n')
+        c = self.config(scenario='demo', argv=[str(self.binary), '--demo-contract', 'x'])
+        path = self.root / 'demo.json'; path.write_text(json.dumps(c))
+        code = ('import sys; sys.path.insert(0, sys.argv[1]); import scenario; from pathlib import Path\n'
+                'sys.exit(scenario.main(["drive", "--config", sys.argv[2]], Path(sys.argv[3])))')
+        proc = subprocess.Popen([sys.executable, '-B', '-c', code, str(BIN), str(path), str(self.registry / 'scenarios.json')])
+        deadline = time.monotonic() + 10
+        while not Path(str(marker) + '.ready').exists() and time.monotonic() < deadline: time.sleep(.02)
+        proc.terminate()
+        self.assertEqual(proc.wait(10), 143)
+        self.assertTrue(marker.exists())
+
     def test_name_cli_and_step_commands(self):
         u6 = self.root / 'u6.json'; u6.write_text(json.dumps(self.config(scenario='u6', argv=[str(self.binary), '--u6-drive-contract', 'x'])))
         plain = self.root / 'plain.json'; plain.write_text(json.dumps(self.config()))
@@ -113,37 +131,134 @@ class ScenarioRegistryTests(unittest.TestCase):
             scenario.command(self.config(), 'drive', plain)
 
 
+STUB = r"""
+python3() {
+  if [ "$1" != -B ]; then echo "NO-B $*" >> "$LOG"; return 99; fi; shift
+  if [ "$1" = -c ]; then "$REAL_PY" "$@"; return; fi
+  [ "$PYTHONDONTWRITEBYTECODE" = 1 ] || echo "BYTECODE-UNSET" >> "$LOG"
+  s=${1##*/}; echo "$s $2" >> "$LOG"
+  case "$s" in
+    book.py) case "$2" in
+        request) echo '{"id": "b1"}' ;;
+        start) printf '{"runID": "%s", "epoch": "%s", "notBefore": 1, "expiresAt": 2}\n' "$8" "${10}"; echo "run=$8 epoch=${10}" >> "$LOG" ;;
+      esac ;;
+    guardian.py) echo "guardian-stop $5" >> "$LOG"
+                 while [ ! -e "$5" ]; do sleep 0.02; done; echo "guardian.py exit" >> "$LOG"; return "${GUARDIAN:-0}" ;;
+    release.py) return "${RELEASE:-0}" ;;
+    scenario.py) case "$2" in name) echo "$NAME" ;; prepare) return "${PREPARE:-0}" ;; drive) return "${DRIVE:-0}" ;; esac ;;
+    launch.py|drive-scenario.py) while [ ! -e "$STOP_PATH" ]; do sleep 0.02; done
+                                 echo "$s exit" >> "$LOG"; return "${CONTROLLER:-3}" ;;
+    check_launch_cleanup.py) echo "check-args $*" >> "$LOG"; return "${CHECK:-0}" ;;
+    check_drive_cleanup.py) return "${CHECK:-0}" ;;
+  esac
+}
+"""
+
+
 class SkillLaunchBranchTests(unittest.TestCase):
-    """Run SKILL.md's controller section with a stub python3 that logs calls."""
-    def section(self):
+    """Run SKILL.md's whole M1 sequence with a stub python3 that logs calls (bash, real uuidgen/date)."""
+    def block(self):
         text = SKILL.read_text()
-        return text[text.index('SCENARIO=""\ncase "$CONTROLLER_MODE" in'):text.index('# Close: request stop')]
+        start = text.index('```sh\n', text.index('M1 uses this exact sequence')) + len('```sh\n')
+        return text[start:text.index('```', start)]
 
-    def run_section(self, name, prepare_status=0, mode='launch'):
+    def run_sequence(self, mode='launch', name='u6', existing=(), **env):
         with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory) / 'calls'
-            stub = ('python3() { echo "${1##*/} $2" >> "$LOG"; case "$1 $2" in\n'
-                    '  *scenario.py\\ name) echo "$NAME" ;;\n  *scenario.py\\ prepare) return "$PREPARE" ;;\nesac; }\n')
-            script = 'set -e\n' + stub + self.section() + 'wait\n'
-            result = subprocess.run(['bash', '-c', script], env=dict(LOG=str(log), NAME=name, PREPARE=str(prepare_status),
-                                    CONTROLLER_MODE=mode, RUN_CONFIG='run.json', PATH='/usr/bin:/bin'))
-            return result.returncode, log.read_text().split('\n')[:-1] if log.exists() else []
+            root = Path(directory); log = root / 'calls'
+            paths = dict(leasePath=root / 'lease.json', releasePath=root / 'release.json',
+                         stopPath=root / 'batch' / 'stop.json', subjectPidPath=root / 'subject.pid')
+            (root / 'batch').mkdir()
+            config = root / 'run.json'; config.write_text(json.dumps({k: str(v) for k, v in paths.items()}))
+            for key in existing: paths[key].write_text('{}')
+            values = dict(LOG=str(log), REAL_PY=sys.executable, NAME=name, CONTROLLER_MODE=mode, RUN_CONFIG=str(config),
+                          BOOKING_ID='b1', APPROVAL_URL='https://example.test/ok', PATH='/usr/bin:/bin')
+            values.update({k: str(v) for k, v in env.items()})
+            result = subprocess.run(['bash', '-c', STUB + self.block()], env=values, capture_output=True, text=True, timeout=60)
+            calls = log.read_text().splitlines() if log.exists() else []
+            return dict(status=result.returncode, calls=calls, stderr=result.stderr, config=json.loads(config.read_text()),
+                        stop=paths['stopPath'].read_text() if paths['stopPath'].exists() else None, paths=paths)
 
-    def test_launch_branch_dispatches_through_the_registry_and_keeps_the_general_flow(self):
-        branch = re.search(r'\n  launch\)(.*?);;', self.section(), re.S).group(1)
-        self.assertIn('scenario.py name', branch); self.assertIn('scenario.py prepare', branch)
-        self.assertIn('launch.py --config "$RUN_CONFIG" --execute &', branch)
-        self.assertNotIn('drive-u6', self.section())
-        self.assertIn('# ... in launch mode, drive the scenario against the launched subject here ...', self.section())
-        self.assertEqual(self.run_section(''), (0, ['scenario.py name', 'launch.py --config']))
-        status, calls = self.run_section('u6')
-        self.assertEqual((status, calls[:2], sorted(calls[2:])), (0, ['scenario.py name', 'scenario.py prepare'], ['launch.py --config', 'scenario.py drive']))
+    def index(self, calls, prefix):
+        return next(i for i, call in enumerate(calls) if call.startswith(prefix))
 
-    def test_refused_prepare_stops_before_launch(self):
-        self.assertEqual(self.run_section('demo', prepare_status=2), (2, ['scenario.py name', 'scenario.py prepare']))
+    def test_launch_order_prepare_launch_drive_stop_wait_check_finish(self):
+        r = self.run_sequence(DRIVE=0, CONTROLLER=3, GUARDIAN=0)
+        calls = r['calls']
+        self.assertEqual(r['status'], 0, r['stderr'])
+        order = ['book.py request', 'book.py start', 'release.py --lane', 'scenario.py name',
+                 'scenario.py prepare', 'launch.py --config', 'scenario.py drive']
+        self.assertEqual([self.index(calls, x) for x in order], sorted(self.index(calls, x) for x in order))
+        # the guardian runs in the background from before the release until the stop
+        self.assertTrue(self.index(calls, 'book.py start') < self.index(calls, 'guardian.py --lease') < self.index(calls, 'guardian.py exit'))
+        drive, check = self.index(calls, 'scenario.py drive'), self.index(calls, 'check_launch_cleanup.py')
+        # stop is requested after the drive step returns; both supervisors are reaped before the check runs
+        self.assertTrue(drive < self.index(calls, 'launch.py exit') < check)
+        self.assertTrue(self.index(calls, 'guardian.py exit') < check < self.index(calls, 'book.py finish'))
+        self.assertIn('--controller-status 3 --guardian-status 0 --scenario-status 0', calls[self.index(calls, 'check-args')])
+        self.assertNotIn('check_drive_cleanup.py', ' '.join(calls))
+        self.assertNotIn('BYTECODE-UNSET', calls); self.assertFalse([c for c in calls if c.startswith('NO-B')])
+        self.assertEqual(json.loads(r['stop'])['reason'], 'sequence-close')
 
-    def test_drive_mode_is_unchanged(self):
-        self.assertEqual(self.run_section('', mode='drive'), (0, ['drive-scenario.py --config']))
+    def test_failed_closure_check_never_finishes(self):
+        r = self.run_sequence(DRIVE=3, CHECK=1)
+        self.assertIn('--scenario-status 3', r['calls'][self.index(r['calls'], 'check-args')])
+        self.assertNotIn('book.py finish', r['calls'])
+        self.assertIn('NEEDS-COORDINATOR: booking=b1', r['stderr']); self.assertIn('closure unconfirmed', r['stderr'])
+
+    def test_one_stop_path_from_the_run_config(self):
+        r = self.run_sequence()
+        self.assertIn('guardian-stop ' + str(r['paths']['stopPath']), r['calls'])
+        block = self.block()
+        self.assertEqual(re.findall(r'STOP_PATH=\S+', block), ['STOP_PATH=$(cfg'])
+        self.assertIn('STOP_PATH=$(cfg stopPath)', block)
+        self.assertNotIn('touch', block)
+        self.assertEqual(re.findall(r'--stop\s+(\S+)', block), ['"$STOP_PATH"'])
+
+    def test_bytecode_is_never_written(self):
+        block = self.block()
+        self.assertLess(block.index('export PYTHONDONTWRITEBYTECODE=1'), block.index('python3'))
+        self.assertEqual(re.findall(r'python3(?! -B)', block), [])
+
+    def test_fresh_run_identity_per_attempt_bound_into_the_config(self):
+        first, second = self.run_sequence(), self.run_sequence()
+        runs = [next(c for c in r['calls'] if c.startswith('run=')) for r in (first, second)]
+        self.assertNotEqual(runs[0], runs[1])
+        self.assertRegex(runs[0], r'^run=m1-[0-9a-f-]{36} epoch=\d{8}T\d{6}Z$')
+        lease = first['config']['expectedLease']
+        self.assertEqual('run=%s epoch=%s' % (lease['runID'], lease['epoch']), runs[0])
+
+    def test_existing_attempt_paths_refuse_before_start(self):
+        for key in ('leasePath', 'releasePath', 'stopPath', 'subjectPidPath'):
+            with self.subTest(key):
+                r = self.run_sequence(existing=[key])
+                self.assertEqual((r['status'], r['calls']), (2, ['book.py request']))
+
+    def test_refused_prepare_stops_reaps_and_reports_without_launch(self):
+        r = self.run_sequence(PREPARE=2)
+        self.assertEqual(r['status'], 3)
+        self.assertNotIn('launch.py --config', r['calls']); self.assertNotIn('book.py finish', r['calls'])
+        self.assertEqual(json.loads(r['stop'])['reason'], 'sequence-aborted')
+        self.assertIn('NEEDS-COORDINATOR', r['stderr']); self.assertIn('aborted (status 2)', r['stderr'])
+
+    def test_failed_release_stops_the_guardian_it_started(self):
+        r = self.run_sequence(RELEASE=2)
+        self.assertEqual(r['status'], 3)
+        self.assertNotIn('scenario.py name', r['calls']); self.assertNotIn('book.py finish', r['calls'])
+        self.assertIn('NEEDS-COORDINATOR', r['stderr'])
+
+    def test_unregistered_launch_keeps_the_general_flow(self):
+        r = self.run_sequence(name='')
+        self.assertEqual([c for c in r['calls'] if c.startswith(('scenario.py', 'launch.py --', 'check', 'book.py finish'))],
+                         ['scenario.py name', 'launch.py --config', 'check_launch_cleanup.py --config', 'check-args ' + r['calls'][self.index(r['calls'], 'check-args')][11:], 'book.py finish'])
+        self.assertIn('# ... in launch mode, drive the scenario against the launched subject here', self.block())
+
+    def test_drive_mode_uses_its_own_closure_check(self):
+        r = self.run_sequence(mode='drive', name='', CONTROLLER=0)
+        calls = r['calls']
+        self.assertIn('drive-scenario.py --config', calls); self.assertNotIn('launch.py --config', calls)
+        self.assertNotIn('scenario.py name', calls); self.assertNotIn('check_launch_cleanup.py --config', calls)
+        self.assertLess(self.index(calls, 'check_drive_cleanup.py'), self.index(calls, 'book.py finish'))
+        self.assertNotIn('book.py finish', self.run_sequence(mode='drive', name='', CHECK=1)['calls'])
 
 
 if __name__ == '__main__':

@@ -104,11 +104,12 @@ def registration(pid_file):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def mark_launching(pid_file, lookup=None):
+def mark_launching(pid_file, lookup=None, run=None):
     """A controller (launch.py or Drive), before spawning: reserve the registration (exec gate).
 
     One controller per booking: under the registration lock, refuse while a registered subject is
-    still alive or another live controller holds the reservation.
+    still alive or another live controller holds the reservation. `run` (runID/epoch) binds the
+    registration to one run, so a closure check can tell this run's subject from a stale record.
     """
     lookup = lookup or identity
     with registration(pid_file):
@@ -126,11 +127,20 @@ def mark_launching(pid_file, lookup=None):
             if (prior.get('state') == 'launching' and isinstance(launcher, dict)
                     and not cleanup.matches(me, launcher) and cleanup.matches(lookup(launcher.get('pid')), launcher)):
                 raise ValueError('another controller is launching; one controller per booking')
-        write_atomic(pid_file, dict(state='launching', launcher=me))
+        write_atomic(pid_file, dict(state='launching', launcher=me, **run_fields(run)))
         return me
 
 
-def register(pid_file, pid, launcher=None, lookup=None):
+def run_fields(run):
+    """runID/epoch of the run a registration belongs to (empty when the controller supplies none)."""
+    if run is None:
+        return {}
+    if not isinstance(run, dict) or not all(isinstance(run.get(k), str) and run[k] for k in ('runID', 'epoch')):
+        raise ValueError('registration run identity invalid')
+    return dict(runID=run['runID'], epoch=run['epoch'])
+
+
+def register(pid_file, pid, launcher=None, lookup=None, run=None):
     """The reserving controller records its subject before releasing the exec gate."""
     lookup = lookup or identity
     with registration(pid_file):
@@ -140,10 +150,13 @@ def register(pid_file, pid, launcher=None, lookup=None):
             raise ValueError('reservation missing')
         if current.get('state') != 'launching' or not cleanup.matches(launcher, current.get('launcher') or {}):
             raise ValueError('reservation not held by this controller')
+        bound = run_fields(run)
+        if any(current.get(k) != v for k, v in bound.items()):
+            raise ValueError('reservation belongs to another run')
         ident = lookup(pid)
         if ident is None:
             raise ValueError('subject identity unavailable')
-        write_atomic(pid_file, dict(state='running', launcher=launcher, **ident))
+        write_atomic(pid_file, dict(state='running', launcher=launcher, **bound, **ident))
         return ident
 
 

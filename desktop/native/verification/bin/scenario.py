@@ -3,7 +3,7 @@
 `name` prints the run config's registered scenario, or nothing for an unregistered launch. `prepare`/`drive`
 run that scenario's step (a script beside the registry) with `--config` and exit with its status.
 launch.py uses `resolve` to require a scenario's preparation receipt; any ambiguity refuses."""
-import argparse,json,shlex,subprocess,sys
+import argparse,json,shlex,signal,subprocess,sys
 from pathlib import Path
 REGISTRY=Path(__file__).resolve().with_name('scenarios.json')
 def load(path=None):
@@ -31,9 +31,16 @@ def command(c,step,config,path=None):
     script,*args=shlex.split(found[1][step]);base=Path(path or REGISTRY).resolve().parent
     if Path(script).name!=script or not (base/script).is_file():raise ValueError('scenario step must be a script beside the registry')
     return [sys.executable,str(base/script),*args,'--config',str(config)]
+def run_step(cmd):
+    """Run the step and pass TERM/INT/HUP on to it, so stopping this recorded PID never orphans the step."""
+    child=subprocess.Popen(cmd);signals=(signal.SIGTERM,signal.SIGINT,signal.SIGHUP)
+    prior=[signal.signal(s,lambda sig,_:child.send_signal(sig)) for s in signals]
+    try:return child.wait()
+    finally:
+        for s,h in zip(signals,prior):signal.signal(s,h)
 def main(argv=None,path=None):
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('step',choices=('name','prepare','drive'));p.add_argument('--config',type=Path,required=True);a=p.parse_args(argv)
     c=json.loads(a.config.read_text())
     if a.step=='name':found=resolve(c,path);print(found[0] if found else '');return 0
-    return subprocess.run(command(c,a.step,a.config,path)).returncode
+    return run_step(command(c,a.step,a.config,path))
 if __name__=='__main__':sys.exit(main())

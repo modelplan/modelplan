@@ -21,7 +21,8 @@ def main():
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
     check_prepared(c)
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
-    launcher=mark_launching(pid_path) # Until registered, the guardian reports closure unconfirmed.
+    run=dict(runID=c['lease']['runID'],epoch=c['lease']['epoch']) # the registration names this run (check_launch_cleanup.py)
+    launcher=mark_launching(pid_path,run=run) # Until registered, the guardian reports closure unconfirmed.
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*c['argv']]
@@ -33,7 +34,7 @@ def main():
         raise SystemExit(3)
     for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
     try:
-        register(pid_path,child.pid,launcher)
+        register(pid_path,child.pid,launcher,run=run)
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
         stop_child() # Never leave an unregistered child running.

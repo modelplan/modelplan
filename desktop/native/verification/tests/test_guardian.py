@@ -301,5 +301,32 @@ class DriveCleanupGateTests(unittest.TestCase):
             self.assertFalse(self.check(bad), bad)
 
 
+class RunBoundRegistrationTests(unittest.TestCase):
+    """The registration names its run, so check_launch_cleanup.py can tell this run's subject from a stale one."""
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory(); self.pid_file = Path(self.dir.name) / 'subject.pid'
+        self.child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+
+    def tearDown(self):
+        self.child.kill(); self.child.wait(); self.dir.cleanup()
+
+    def test_register_records_the_run_and_refuses_another_runs_reservation(self):
+        run = dict(runID='r1', epoch='e1')
+        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file, run=run), run=run)
+        record = json.loads(self.pid_file.read_text())
+        self.assertEqual((record['state'], record['runID'], record['epoch'], record['pid']), ('running', 'r1', 'e1', self.child.pid))
+        self.pid_file.unlink()
+        launcher = guardian.mark_launching(self.pid_file, run=run)
+        with self.assertRaisesRegex(ValueError, 'another run'):
+            guardian.register(self.pid_file, self.child.pid, launcher, run=dict(runID='r1', epoch='e2'))
+        for bad in (dict(runID='r1'), dict(runID='', epoch='e1'), 'r1'):
+            with self.assertRaisesRegex(ValueError, 'run identity invalid'):
+                guardian.mark_launching(self.pid_file, run=bad)
+
+    def test_unbound_registration_is_unchanged(self):
+        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file))
+        self.assertNotIn('runID', json.loads(self.pid_file.read_text()))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -12,6 +12,7 @@ import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
 DISK_RESERVE=2*3430940672;DISK_FLOOR=8589934592
 REGISTER_SECONDS=15;CLOSE_SECONDS=25 # launch.py TERM 10 s + KILL; guardian TERM 10 s + KILL 5 s
+QUIT_EVENTS=('stop-or-lease-expired','owner-preempted') # U6DriveGuard.finish rows: the app's own NSApplication.terminate
 def write(path,data):
     path=Path(path);temp=path.with_suffix(path.suffix+'.tmp');temp.write_text(json.dumps(data));temp.replace(path)
 def read(path):return json.loads(Path(path).read_text())
@@ -33,7 +34,9 @@ def admit(c,now):
     if Path(c['stopPath']).resolve()!=(Path(c['batch'])/'stop.json').resolve():raise ValueError('stop-path-mismatch')
     if Path(c.get('preparedReceiptPath') or '').resolve()!=(Path(c['batch'])/'prepared.json').resolve():raise ValueError('prepared-receipt-required') # launch.py refuses without it
     if not isinstance(c.get('subjectPidPath'),str) or not c['subjectPidPath']:raise ValueError('subject-registration-required')
+    if c.get('syntheticHomeSeed') is not None and Path(c['syntheticHomeSeed']).resolve()!=scratch/'home-seed':raise ValueError('home-seed-path-mismatch') # removed after closure
     return True
+def scratch_names(c):return ['home','tmp']+(['home-seed'] if c.get('syntheticHomeSeed') is not None else []) # removed only after closure
 def request_stop(c,reason):
     stop=Path(c['stopPath']);run,epoch,_,_=run_identity(c)
     try:
@@ -100,6 +103,11 @@ def bound(observations,run,epoch,record,wait=None,clock=time.monotonic,sleep=tim
         if clock()>=end:break
         sleep(.2)
     raise RuntimeError('subject-run-receipt-missing')
+def quit_receipt(observations,run,epoch):
+    """Read only: the app's own row that it began its normal terminate on the native contract's stop path."""
+    try:rows=[json.loads(x) for x in Path(observations).read_text().splitlines() if x.strip()]
+    except (OSError,ValueError):rows=[]
+    return next((r['event'] for r in rows if isinstance(r,dict) and r.get('runID')==run and r.get('epoch')==epoch and r.get('event') in QUIT_EVENTS),None)
 def closed(pid_path):
     """Observed only: no registration means nothing launched; a registered subject must be gone."""
     try:record=read(pid_path)
@@ -125,21 +133,24 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         else:result['outcome']='timeout';result['reason']='absolute-deadline'
     except Exception as e:result['reason']=failure(e)
     finally:
+        running=result['appStarted'] and alive(record) # was there still a subject to ask to quit?
         request_stop(c,'run-ended') # launch.py and the guardian stop the registered subject on this file
         deadline=time.monotonic()+CLOSE_SECONDS
         while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
         gone=closed(pid_path);removed=[];r=prepared(c);prep=(r['locks'],r['attempt']) if r else None
         if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
-            try:removed=cleanup.remove_scratch(scratch,['home','tmp'])
+            try:removed=cleanup.remove_scratch(scratch,scratch_names(c))
             except (OSError,ValueError):pass
+        if result['appStarted']: # normal quit: requested through the contract's stop path, acknowledged only by the app's own row
+            event=quit_receipt(out/'native-observations.jsonl',run,epoch);result['quit']=dict(requested='native-contract-stop' if running else 'none-subject-already-exited',appAcknowledged=event is not None,appEvent=event)
         result['cleanup']=dict(ownedAppExited=gone,closedBy='launch.py+guardian',guardian='external-M1',
                                resourcesReleased=gone and release(*prep) if prep else gone,leaseReleased=False,scratchRemoved=removed)
-        write(out/'result.json',result);print(json.dumps({'runID':run,'outcome':result['outcome'],'appStarted':result['appStarted'],'cleanup':result['cleanup']}),flush=True)
+        write(out/'result.json',result);print(json.dumps({'runID':run,'outcome':result['outcome'],'appStarted':result['appStarted'],'quit':result.get('quit'),'cleanup':result['cleanup']}),flush=True)
     return result
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('step',choices=('prepare','drive'));parser.add_argument('--config',type=Path,required=True)
     a=parser.parse_args(argv);c=json.loads(a.config.read_text())
     if a.step=='prepare':prepare(c,time.time());return 0
     k=drive(c,time.time())['cleanup'] # 0 only when closure was observed and this run's resources are released
-    return 0 if k['ownedAppExited'] and k['resourcesReleased'] and {'home','tmp'}<=set(k['scratchRemoved']) else 3
+    return 0 if k['ownedAppExited'] and k['resourcesReleased'] and set(scratch_names(c))<=set(k['scratchRemoved']) else 3
 if __name__=='__main__':sys.exit(main())

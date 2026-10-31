@@ -11,24 +11,73 @@ Run from the checkout root. This skill is draft until a verification run at its 
 
 Use `bin/check_inputs.py <root> <entry>` to catch missing relative modules before an attempt; this is a local link check, not a release-asset manifest gate. Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. The coordinator grants the epoch and GO; M1 posts window start/end and runs `bin/guardian.py` as the independent watchdog. Owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
 
-M1 uses this exact sequence (details and coordinator withdrawal are in
+M1 uses this exact sequence, run as one bash script per attempt (details and coordinator withdrawal are in
 [`bin/BOOKINGS.md`](bin/BOOKINGS.md)). Configure `MODELPLAN_BOOKING_LEDGER` with
-the shared ledger path supplied by the coordinator; there is no default. Use the
-agreed synthetic file paths and run/epoch values below. `APPROVAL_URL` must be the
+the shared ledger path supplied by the coordinator; there is no default. `APPROVAL_URL` must be the
 https URL of the coordinator's OK comment; M1 verifies that comment before issuing
-the receipt. Copy the returned booking ID into `BOOKING_ID` and the run config.
+the receipt. Copy the returned booking ID into `BOOKING_ID` and the run config. Every step names its
+command, the receipt that proves it, and what happens when it fails:
+
+| Step | Receipt | On failure |
+| --- | --- | --- |
+| `book.py request` / `start` | booking ID; the start event, saved as the lease | before start: `withdraw`; no trap is armed yet |
+| `guardian.py` (background) | `guardian: true` heartbeats in the lease; exit 0 = subject confirmed gone | admission refuses; the trap stops the attempt |
+| `release.py` | the release file (never overwritten) | the trap requests stop, reaps the guardian, prints NEEDS-COORDINATOR |
+| `scenario.py prepare` (registered scenario) | the prepared receipt (U6: `prepared.json` with the attempt token and locks) | prepare writes the stop file and no receipt; the trap closes the attempt |
+| `launch.py --execute` (background) | the subject registration in `subjectPidPath`, bound to this run/epoch | the drive step finds no registered subject; closure check decides |
+| `scenario.py drive` | its result (U6: `result.json` with `quit` and `cleanup`); exit 0 only after observed closure and released resources | `SCENARIO_STATUS` is non-zero, so the closure check fails |
+| normal quit (inside the drive step) | the app's own receipt (U6: `quit.appAcknowledged`, the app's stop row) | the supervisors stop the subject; still a closure question, not a pass |
+| stop, then `wait` for both supervisors | `CONTROLLER_STATUS`, `GUARDIAN_STATUS` | a signal during the wait runs the trap |
+| `check_launch_cleanup.py` (launch) / `check_drive_cleanup.py` (drive) | launch: the `launch-cleanup/1` receipt, printed and written to `launch-cleanup.json` beside `stopPath` (U6: in the batch) | no finish; post the NEEDS-COORDINATOR line |
+| `book.py finish --cleaned` | the finish event | only reached when the closure check passed |
+
+One attempt is one booking with its own attempt directory and run config: fresh `RUN_ID`/`EPOCH`, its own
+lease, release, guardian, stop path, subject registration, scratch and batch. Nothing is reused from an earlier
+attempt, and an existing lease/release/stop/registration path refuses the attempt. An aborted or unconfirmed
+attempt is never resumed or retried in place; the booking stays started until the coordinator verifies closure
+or the documented expiry recovery applies, and a new attempt books anew. The run config names every path
+(`leasePath`, `releasePath`, `stopPath`, `subjectPidPath`, …); the sequence reads them from it and binds the
+config's `expectedLease` to the lease this attempt started.
 
 ```sh
-set -e  # any failed step before launch stops the sequence (no release, no launch)
-python3 desktop/native/verification/bin/book.py request \
+set -e  # any failed step stops the sequence; once the booking has started, the EXIT trap closes the attempt
+export PYTHONDONTWRITEBYTECODE=1  # with python3 -B on every call: nothing writes __pycache__ into the kit
+V=desktop/native/verification/bin
+cfg() { python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$RUN_CONFIG" "$1"; }
+python3 -B "$V/book.py" request \
   --lane M1 --unit U11a --scenario cold --minutes 20
-python3 desktop/native/verification/bin/book.py start \
+# ... the coordinator grants GO for this booking (the queue head); set BOOKING_ID ...
+RUN_ID="m1-$(uuidgen | tr 'A-Z' 'a-z')"  # fresh per attempt; book.py: printable, at most 128 characters
+EPOCH=$(date -u +%Y%m%dT%H%M%SZ)
+LEASE_PATH=$(cfg leasePath); RELEASE_PATH=$(cfg releasePath)
+STOP_PATH=$(cfg stopPath); SUBJECT_PID_PATH=$(cfg subjectPidPath)  # the one stop path, from the run config
+for f in "$LEASE_PATH" "$RELEASE_PATH" "$STOP_PATH" "$SUBJECT_PID_PATH"; do
+  [ ! -e "$f" ] || { echo "attempt not fresh: use a new attempt directory and run config" >&2; exit 2; }
+done
+python3 -B "$V/book.py" start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
+GUARDIAN_PID=; CONTROLLER_PID=; SCENARIO_PID=
+request_stop() { (set -C; printf '{"stop": true, "reason": "%s"}\n' "$1" > "$STOP_PATH") 2>/dev/null || true; }
+needs_coordinator() {
+  echo "NEEDS-COORDINATOR: booking=$BOOKING_ID run=$RUN_ID epoch=$EPOCH $1; booking stays started, not finished" >&2
+}
+abort() {  # any exit before the closure check: request stop, then stop and reap only this attempt's children
+  status=$?; trap - EXIT INT TERM HUP; set +e
+  request_stop sequence-aborted
+  for pid in $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do kill -TERM "$pid" 2>/dev/null; done
+  for pid in $SCENARIO_PID $CONTROLLER_PID $GUARDIAN_PID; do wait "$pid" 2>/dev/null; done
+  needs_coordinator "aborted (status $status) before the closure check"
+  exit 3
+}
+trap abort EXIT INT TERM HUP
+python3 -B -c 'import json,sys; c=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2]))
+c["expectedLease"]={k: l[k] for k in ("runID", "epoch", "notBefore", "expiresAt")}; json.dump(c, open(sys.argv[1], "w"))' \
+  "$RUN_CONFIG" "$LEASE_PATH"  # bind the run config to this attempt's lease
 # Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
-python3 desktop/native/verification/bin/guardian.py --lease "$LEASE_PATH" \
+python3 -B "$V/guardian.py" --lease "$LEASE_PATH" \
   --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" &
 GUARDIAN_PID=$!
-python3 desktop/native/verification/bin/release.py \
+python3 -B "$V/release.py" \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
 # Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
@@ -42,48 +91,81 @@ python3 desktop/native/verification/bin/release.py \
 # Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
 SCENARIO=""
 case "$CONTROLLER_MODE" in
-  launch) SCENARIO=$(python3 desktop/native/verification/bin/scenario.py name --config "$RUN_CONFIG")
-          [ -z "$SCENARIO" ] || python3 desktop/native/verification/bin/scenario.py prepare --config "$RUN_CONFIG"
-          python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
-  drive)  python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
+  launch) SCENARIO=$(python3 -B "$V/scenario.py" name --config "$RUN_CONFIG")
+          [ -z "$SCENARIO" ] || python3 -B "$V/scenario.py" prepare --config "$RUN_CONFIG"
+          python3 -B "$V/launch.py" --config "$RUN_CONFIG" --execute & ;;
+  drive)  python3 -B "$V/drive-scenario.py" --config "$RUN_CONFIG" & ;;
   *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
 esac
 CONTROLLER_PID=$!
 SCENARIO_STATUS=0  # a registered scenario's drive exits 0 only when it observed closure
 if [ -n "$SCENARIO" ]; then
-  python3 desktop/native/verification/bin/scenario.py drive --config "$RUN_CONFIG" || SCENARIO_STATUS=$?
+  # Normal quit is the drive step's last action: it asks the owned app to quit and records the app's own
+  # receipt (U6: drive-u6.py writes the stop path the native contract names; result.json `quit`).
+  python3 -B "$V/scenario.py" drive --config "$RUN_CONFIG" &
+  SCENARIO_PID=$!
+  wait "$SCENARIO_PID" || SCENARIO_STATUS=$?
 else
-  : # ... in launch mode, drive the scenario against the launched subject here ...
+  : # ... in launch mode, drive the scenario against the launched subject here, ending with its normal quit ...
 fi
-# Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
-# confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
-# finish at all and report the run as unconfirmed for coordinator follow-up.
-touch "$STOP_PATH"
+# Close: request stop (kept when the drive step already wrote it), then wait for both supervisors.
+request_stop sequence-close
 set +e
 wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
 wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
-DRIVE_CLEAN=0
-if [ "$CONTROLLER_MODE" = drive ]; then
-  python3 desktop/native/verification/bin/check_drive_cleanup.py "$RUN_CONFIG" || DRIVE_CLEAN=1
+trap - EXIT INT TERM HUP  # every child of this attempt has been reaped
+# Record --cleaned ONLY when the independent closure check passes; otherwise do not finish at all.
+CLOSURE=1
+if [ "$CONTROLLER_MODE" = launch ]; then
+  python3 -B "$V/check_launch_cleanup.py" --config "$RUN_CONFIG" --controller-status "$CONTROLLER_STATUS" \
+    --guardian-status "$GUARDIAN_STATUS" --scenario-status "$SCENARIO_STATUS" && CLOSURE=0
+elif python3 -B "$V/check_drive_cleanup.py" "$RUN_CONFIG" && [ "$GUARDIAN_STATUS" -eq 0 ] \
+    && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
+  CLOSURE=0
 fi
-if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && [ "$SCENARIO_STATUS" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
-  python3 desktop/native/verification/bin/book.py finish \
+if [ "$CLOSURE" -eq 0 ]; then
+  python3 -B "$V/book.py" finish \
     --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 else
-  # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
-  # closure or the documented expiry recovery applies.
-  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS drive-cleanup=$DRIVE_CLEAN scenario=$SCENARIO_STATUS; report to the coordinator" >&2
+  # The booking stays started (the Mac stays held) until the coordinator verifies closure or the
+  # documented expiry recovery applies. Post this line with the closure receipt above.
+  needs_coordinator "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS scenario=$SCENARIO_STATUS"
 fi
 ```
+
+`check_launch_cleanup.py` signals and removes nothing. It prints the `launch-cleanup/1` receipt (`runID`, `epoch`, `ok`,
+`checks`, `failures`, `at`) and writes it atomically to `launch-cleanup.json` in the directory of `stopPath`
+(U6: `<batch>/launch-cleanup.json`, read by the evidence builder); a receipt it cannot write fails the check.
+`ok` holds only when: the registration names this run/epoch and its
+subject and launcher identities are gone; launch.py exited 0, or 3 with a stop reason in the stop file; the
+guardian and the scenario exited 0; the ledger's head booking is still started for this run/epoch (replayed
+without locking or writing); no lock from the prepared receipt or under `locks` still carries this attempt's
+token; `syntheticHome`, `syntheticTmp` and any `syntheticHomeSeed` are gone; the stop file exists at `stopPath`.
+In launch mode, releasing locks and removing HOME/TMP/seed after observed closure is the scenario drive step's
+job (U6: `drive-u6.py`); an unregistered launch has no such step, so its check fails on scratch and goes to the
+coordinator.
 
 If the booking is abandoned **before start**, use this instead of start/release/launch:
 
 ```sh
-python3 desktop/native/verification/bin/book.py withdraw \
+python3 -B desktop/native/verification/bin/book.py withdraw \
   --id "$BOOKING_ID" --lane M1 --reason "unit no longer ready"
 ```
 
-Keep `LEASE_PATH`, `STOP_PATH` and `SUBJECT_PID_PATH` on the test Mac's local disk (run scratch), never on DevShared: lease writers coordinate with `flock` on `<lease>.lock`, which is only reliable locally. Every lease writer (the guardian, Drive's own guardian, any revocation) goes through `guardian.update_lease`.
+Where writes go: the lease and the subject registration are written under `flock` (`<lease>.lock`,
+`<registration>.lock`), which is only reliable on a local disk, so `leasePath` and `subjectPidPath` stay on the
+test Mac's local run scratch, never on DevShared. The stop file takes no lock (its writers create it once and
+readers only test that it exists), so it lives exactly where the run config's `stopPath` says (U6:
+`<batch>/stop.json`); every component and this sequence use that one path. HOME/TMP/seed and lock directories
+are in the run scratch; receipts, observations and results are in the batch; nothing is written into the kit
+(`PYTHONDONTWRITEBYTECODE=1`, `python3 -B`). Every lease writer (the guardian, Drive's own guardian, any
+revocation) goes through `guardian.update_lease`.
+
+A new kit (another head, candidate binary or verification checkout) is admitted per attempt, never carried
+over: the run config pins its head and binary hash and the coordinator's OK comment names them; resource
+admission (U6: slot locks and disk floor) runs in that attempt's `prepare`; input permissions (for
+`pointer_drive`) are granted out of band by the owner for that exact binary. No tool prompts for a permission,
+and a missing permission is unsupported or not-run, never a pass.
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
 `bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 30-second cleanup reserve (at least 25), and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs
@@ -122,7 +204,7 @@ The approved open budget is average App + WebContent + GPU <=10% of one core. Mi
 
 ## 5. Cleanup
 
-M2 owns `bin/cleanup-run.py` and its tests. It quits owned processes, verifies closure, releases only this run's lease/resources and deletes only approved scratch. Retain evidence until its cleanup policy permits deletion. M2 posts start and end+cleaned receipts for the granted run; M1 checks closure independently. No automatic renewal or retry after interruption. A granted test run may request foreground activation once when needed; record the actual call, then stop on subsequent loss of activation rather than continuously reclaiming focus.
+M2 owns `bin/cleanup-run.py` and its tests. It quits owned processes, verifies closure, releases only this run's lease/resources and deletes only approved scratch. Retain evidence until its cleanup policy permits deletion. M2 posts start and end+cleaned receipts for the granted run; M1 checks closure independently (`bin/check_launch_cleanup.py` in launch mode, `bin/check_drive_cleanup.py` in drive mode). No automatic renewal or retry after interruption. A granted test run may request foreground activation once when needed; record the actual call, then stop on subsequent loss of activation rather than continuously reclaiming focus.
 
 ## 6. Helpers
 
