@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: MIT
 """M1-only run-bound synthetic consent reset; emits a bounded result receipt."""
-import argparse,hashlib,json,os,subprocess,sys,time
+import argparse,hashlib,json,os,subprocess,sys
 from pathlib import Path
 
 BIN=Path(__file__).resolve().parents[1]/'bin';sys.path.insert(0,str(BIN))
+sys.path.insert(0,str(Path(__file__).resolve().parent))
 from admission import load_and_admit
 from guardian import cleanup,identity,launcher_lost
+from u6_clock import system_uptime
 
-def uptime():return time.clock_gettime(time.CLOCK_UPTIME_RAW)
+uptime=system_uptime
 
 def open_status_session(batch,run,epoch,pid):
     path=batch/'native-observations.jsonl'

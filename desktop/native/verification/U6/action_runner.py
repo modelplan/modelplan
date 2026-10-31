@@ -6,18 +6,20 @@ from pathlib import Path
 BIN=Path(__file__).resolve().parents[1]/'bin'
 U6=Path(__file__).resolve().parent
 sys.path.insert(0,str(BIN))
+sys.path.insert(0,str(U6))
 from admission import load_and_admit
 from guardian import reason_code,BOUNDED_CODES
+from u6_clock import system_uptime
 
-def uptime():return time.clock_gettime(time.CLOCK_UPTIME_RAW)
+uptime=system_uptime
 def native(batch,run,epoch,pid):
     try:
         return [r for line in (batch/'native-observations.jsonl').read_text().splitlines() if line.strip()
                 for r in [json.loads(line)] if r.get('runID')==run and r.get('epoch')==epoch and r.get('pid')==pid]
     except (OSError,ValueError,AttributeError):return []
 def await_row(batch,run,epoch,pid,predicate,seconds):
-    deadline=time.monotonic()+seconds
-    while time.monotonic()<deadline:
+    deadline=uptime()+seconds
+    while uptime()<deadline:
         found=next((r for r in native(batch,run,epoch,pid) if predicate(r)),None)
         if found:return found
         time.sleep(.05)
