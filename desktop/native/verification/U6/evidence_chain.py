@@ -137,12 +137,37 @@ def evaluate(config,batch,package,kit_manifest):
         requested=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase')=='requested'
                       and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>arrival['seq'])
         before=requested.get('rowsSequenceBefore');need(type(before) is int and before>=0)
-        terminal=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed')
+        reject(requested.get('copilotAccountsBefore')!=0,'unknown')
+        accepted_reply=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
+                           and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>requested['seq'])
+        dispositions=accepted_reply.get('dispositions');need(isinstance(dispositions,dict))
+        need(type(accepted_reply.get('engineRequestID')) in (str,int))
+        disposition=dispositions.get('copilot.runtime_usage')
+        terminal=one(native,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                      and r.get('requestId')==request_id and r.get('sessionID')==a_session and r['seq']>requested['seq'])
+        need(terminal['seq']>accepted_reply['seq'])
         reject(not 0<=terminal['mono']-requested['mono']<=60,'out-of-window')
+        if terminal['phase']=='abandoned':
+            raise Missing('timeout' if terminal.get('cause')=='deadline' else 'not-delivered')
+        if terminal['phase']=='deferred':
+            reject(disposition=='scheduled','unknown')
+            raise Missing('cooldown' if disposition=='cooldown' else 'consent-required' if disposition=='policy_pending' else 'engine-disabled')
         if terminal['phase']=='failed':
             reason=terminal.get('reason');raise Contradiction(reason if reason in CODES else 'unknown')
-        need(type(terminal.get('rowsSequenceAfter')) is int and terminal['rowsSequenceAfter']>before)
+        seed=read(batch/'synthetic-seed.json')
+        reject(disposition!='scheduled' or type(terminal.get('copilotAccountsAfter')) is not int
+               or terminal['copilotAccountsAfter']<1 or terminal.get('accountIDSHA256')!=seed.get('accountIDSHA256')
+               or not isinstance(seed.get('accountIDSHA256'),str),'unknown')
+        reject(type(terminal.get('rowsSequenceAfter')) is not int or terminal['rowsSequenceAfter']<=before,'unknown')
+        runtime=batch/'runtime-calls.jsonl';result=read(batch/'result.json')
+        need(runtime.is_file() and not runtime.is_symlink() and result.get('runID')==run and result.get('epoch')==epoch
+             and result.get('runtimeCallsSHA256')==hashlib.sha256(runtime.read_bytes()).hexdigest())
+        calls=lines(runtime)
+        own=[r for r in calls if r.get('schema')=='runtime-calls/1' and r.get('runID')==run and r.get('epoch')==epoch
+             and r.get('method')=='account.getQuota' and number(r.get('mono'))]
+        need(own)
+        reject(any(r['mono']<accepted_reply['mono'] for r in own),'unknown')
+        reject(not any(accepted_reply['mono']<=r['mono']<=terminal['mono'] for r in own),'unknown')
         end_a=one(native,lambda r:r.get('event')=='menu-end' and checks(r).get('sessionID')==a_session
                   and checks(r).get('menuObjectID')==object_id and r['seq']>arrival['seq'])
 
