@@ -2,7 +2,7 @@
 """U6-specific operator Drive controller using the unchanged shared lease/cleanup helpers."""
 import argparse,hashlib,importlib.util,json,os,signal,subprocess,sys,time,shutil
 from pathlib import Path
-from launch import validate
+from admission import load_and_admit
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('shared_cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,data):
@@ -21,7 +21,7 @@ def main():
     out=Path(c['batch']);scratch=Path(c['scratch']);assert out.is_dir() and scratch.is_dir()
     binary=Path(c['binary']);assert hashlib.sha256(binary.read_bytes()).hexdigest()==c['binarySHA256']
     locks=Path(c['locks']);owned=[];app=None;guardian=None;identity=None
-    stop=out/'stop.json';lease=scratch/'lease.json';finish=out/'operator-finish.json'
+    stop=out/'stop.json';lease=Path(c.get('leasePath',scratch/'lease.json'));finish=out/'operator-finish.json'
     result=dict(runID=c['runID'],epoch=c['epoch'],headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False)
     try:
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
@@ -33,9 +33,10 @@ def main():
         guardian=subprocess.Popen([sys.executable,str(BASE/'drive-scenario.py'),'--guardian',str(gc)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         deadline=time.monotonic()+3
         while not lease.exists() and time.monotonic()<deadline:time.sleep(.1)
-        release=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt'],guardianGO=True,m0DirectedAnnouncementConfirmed=True)
-        launch=dict(profile='synthetic',binarySHA256=c['binarySHA256'],lease=json.loads(lease.read_text()),release=release,requiredSeconds=30,stop=stop.exists(),argv=[str(binary)])
-        validate(launch,time.time())
+        load_and_admit(dict(profile='synthetic',binarySHA256=c['binarySHA256'],argv=[str(binary)],
+                            leasePath=str(lease),releasePath=c['releasePath'],stopPath=str(stop),
+                            expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
+                            requiredSeconds=30,booking=c.get('booking')))
         contract=scratch/'native-guard.json';write(contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl')))
         with (scratch/'app-stdout.log').open('w') as stdout,(scratch/'app-stderr.log').open('w') as stderr:
             app=subprocess.Popen([str(binary),'--u6-drive-contract',str(contract)],env=c['environment'],stdout=stdout,stderr=stderr,start_new_session=True)

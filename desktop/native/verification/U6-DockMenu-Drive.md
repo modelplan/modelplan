@@ -6,7 +6,7 @@ Use the shared native-verification Launch, Doctor, guardian, Cleanup and Evidenc
 ## Prepare before the lease
 
 1. Pin the source commit, test candidate binary/package hash and ordinary bundled engine hash. The candidate must contain the rows-backed normal entry. Synthetic HOME/TMPDIR contain no owner account, credential or Keychain data. Reuse the approved structural profile builder; do not copy a real profile or add a competing generator.
-2. Allocate a new approved exchange batch under `/mnt/shared/modelplan/handoffs/20261030-u6/`, with an independent run/epoch subdirectory, README and file list. If the approved directory is absent or any write is refused, stop without a fallback location. Do not overwrite a prior batch.
+2. Allocate a new approved exchange batch under the operator-configured approved exchange root, with an independent run/epoch subdirectory, README and file list. If the approved directory is absent or any write is refused, stop without a fallback location. Do not overwrite a prior batch.
 3. Retain the exact start announcement on the unit's private task, matching GUI release/lease, absolute expiry of at most 1200 seconds, independent watchdog and stop-hook paths. The run's deadline includes launch, waits, action delivery and cleanup. No automatic renewal or retry.
 4. Use shared `launch.py` to validate the existing run contract. Its execute route requires the matching release, fresh guardian heartbeat, exact executable hash and synthetic profile. A validation/dry run is not an App launch or Drive result.
 

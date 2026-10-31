@@ -18,7 +18,7 @@ class PublicReceiptTests(unittest.TestCase):
                 def walk(value):
                     if isinstance(value, str):
                         self.assertFalse(value.startswith(('/', '\\\\')) or re.match(r'^[A-Za-z]:[\\/]', value), 'absolute machine path in public receipt')
-                        self.assertNotIn('/mnt/shared/', value)
+                        self.assertNotRegex(value, r'/(?:mnt|home)/')
                         self.assertNotIn('DevShared', value)
                     elif isinstance(value, dict):
                         for item in value.values():

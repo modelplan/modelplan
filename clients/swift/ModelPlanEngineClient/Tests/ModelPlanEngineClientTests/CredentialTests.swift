@@ -29,6 +29,48 @@ actor SyntheticAgent: CredentialAgent {
     func latest() -> EngineCredentialOperation? { calls.last }
 }
 
+extension ProcessEngineClient {
+    func credentialResultsSettled() -> Bool {
+        !seenCredentialOperations.isEmpty && credentialRequests.isEmpty && credentialWorkers.isEmpty &&
+            !pending.values.contains { $0.purpose == .credentialResult }
+    }
+
+    // Test-only scheduling control: stop the writer only after its real queue
+    // drains, then exercise ingress before either writer admission or completion.
+    func holdIdleCredentialWriter() -> Bool {
+        guard !writerRunning, pending.isEmpty else { return false }
+        writerRunning = true
+        return true
+    }
+    func credentialResultIsQueued() -> Bool {
+        credentialWorkers.isEmpty && pending.values.contains { $0.purpose == .credentialResult }
+    }
+    func replayCredentialBeforeWriteCompletes(admitWrite: Bool, expire: Bool) async throws -> Int {
+        guard writerRunning, let process = child, let waiting = credentialRequests["claude"], let facts,
+              case .object(var fields) = try wireJSON(facts) else { throw TestFailure.childFailed }
+        // Dequeue without completing the write to force the second vulnerable
+        // interval as well as the interval before nextWrite.
+        let admitted = admitWrite ? nextWrite(process.id) : nil
+        if admitWrite && admitted?.credentialOperation != waiting.request.operationId { throw TestFailure.childFailed }
+        fields["data"] = try wireJSON(waiting.request)
+        let duplicate = WireJSONValue.object(["jsonrpc": .string("2.0"), "method": .string("credentials/request"), "params": .object(fields)])
+        let changed = WireJSONValue.object(["jsonrpc": .string("2.0"), "method": .string("consent/changed"), "params": try wireJSON(facts)])
+        receive(process.id, bytes: try JSONEncoder().encode(duplicate))
+        receive(process.id, bytes: try JSONEncoder().encode(changed))
+        // Expiry must retire admission metadata without appending a timeout
+        // after a result is queued. An admitted write can already be in flight.
+        if expire { credentialExpired("claude", operation: waiting.request.operationId) }
+        let results = pending.values.filter { $0.purpose == .credentialResult }.count
+        if let admitted {
+            try await process.send(admitted.data)
+            writeCompleted(admitted, child: process.id)
+        }
+        writerRunning = false
+        pumpWriter()
+        return results
+    }
+}
+
 extension RealBinaryTests {
     func credentialHome() throws -> URL {
         let root = try home()
@@ -168,11 +210,45 @@ extension RealBinaryTests {
         let initial = try await client.start()
         let params = try grantParams(initial.floor, allow: [credentialScope], keychain: [credentialScope: WireKeychainChoice(rawValue: "allow")])
         _ = try await client.grant(params, userAction: EngineUserAction(id: UUID()))
-        try await eventually { self.resultCount(home) > 0 }
-        try await Task.sleep(for: .milliseconds(100))
+        // Join the result's RPC acknowledgement and the proxy's late replay.
+        // The following round trip fences ingress after both duplicate copies.
+        try await eventually {
+            let settled = await client.credentialResultsSettled()
+            return settled && self.traceContains(home, method: "duplicate-credential-replayed")
+        }
+        _ = try await client.diagnostics()
+        await client.stop() // Join the child so the final trace cannot grow later.
         let count = await agent.count(); XCTAssertEqual(count, 1)
         XCTAssertEqual(resultCount(home), 1, "duplicate operation displaced or repeated the valid result")
+        let trace = try String(contentsOf: home.appendingPathComponent("proxy.trace"), encoding: .utf8)
+        XCTAssertTrue(trace.contains("\"tokenInCredentialResult\":true"), "the sole result must be the legitimate agent result")
         try await assertNoCanary(home, probe: probe)
+    }
+    func testRealCredentialResultCannotBeReadmittedBeforeWriteCompletion() async throws {
+        for (admitWrite, expire) in [(false, false), (true, true), (false, true)] {
+            let binary = try binary(); let home = try credentialHome(); let probe = EventProbe(); let agent = SyntheticAgent(.blocked)
+            try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+            let client = ProcessEngineClient(configuration: configuration(try proxy(home, binary: binary, mode: "duplicate-credential"), home: home), credentialAgent: agent, consumer: probe)
+            addTeardownBlock { await agent.release(); await client.stop() }
+            let initial = try await client.start()
+            let params = try grantParams(initial.floor, allow: [credentialScope], keychain: [credentialScope: WireKeychainChoice(rawValue: "allow")])
+            _ = try await client.grant(params, userAction: EngineUserAction(id: UUID()))
+            try await eventually { await agent.count() == 1 }
+            try await eventually { await client.holdIdleCredentialWriter() }
+            await agent.release()
+            try await eventually { await client.credentialResultIsQueued() }
+            let queued = try await client.replayCredentialBeforeWriteCompletes(admitWrite: admitWrite, expire: expire)
+            XCTAssertEqual(queued, 1, "facts, duplicate ingress and an expired timer must not queue another result (admitted: \(admitWrite))")
+            try await eventually { await client.credentialResultsSettled() }
+            _ = try await client.diagnostics()
+            await client.stop()
+            let calls = await agent.count(); XCTAssertEqual(calls, 1)
+            let expectedResults = !admitWrite && expire ? 0 : 1
+            XCTAssertEqual(resultCount(home), expectedResults, "each operation must write at most one result; expiry before admission must discard it (admitted: \(admitWrite), expired: \(expire))")
+            let trace = try String(contentsOf: home.appendingPathComponent("proxy.trace"), encoding: .utf8)
+            XCTAssertEqual(trace.contains("\"tokenInCredentialResult\":true"), expectedResults == 1, "only the original, unexpired result may reach the writer")
+            try await assertNoCanary(home, probe: probe)
+        }
     }
     func testRealBackgroundAgentHasNoActionAndNoPromptAdmission() async throws {
         let binary = try binary(); let home = try credentialHome(); let probe = EventProbe(); let agent = SyntheticAgent(.success)

@@ -36,6 +36,14 @@ The public data directory remains an output mirror, not a competing editing sour
 
 Run `node scripts/check-source-policy.mjs`. It checks the public-reader integrity/license manifest, the private-path exclusions, frozen legacy visual assets, the reserved official visuals (one prefix, `LICENSE.md`, SPDX headers or listed hashes, no reads from the community build), agent instruction entry points and standard hosted runner policy. Update a manifest only after auditing the actual change; do not turn off the gate to ship. A broken rule is a review item, not permission to move private content (scoring, calibration, operations) into a convenient public folder.
 
+The gate also rejects literal `/mnt/` and `/home/` paths anywhere under
+`desktop/native/verification/` and `tools/`, including documentation and fixtures.
+Use caller/coordinator configuration and synthetic fixture paths instead of
+embedding owner-specific mount or home locations in public development tools.
+The same directories may name release approval fields only in the M1 release
+writer (`desktop/native/verification/bin/release.py`) and tests; execution tools
+must load the external receipt through the shared admission helper.
+
 The same gate verifies the separate third-party font pack: manifest and file
 hashes, the four approved families/used weights, complete OFL notices, NOTICE rows
 and local CSS bindings, with no extra files or symlinks. The root MIT and reserved

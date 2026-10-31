@@ -4,7 +4,9 @@ import errno
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -77,6 +79,101 @@ class Bookings(unittest.TestCase):
         self.ledger.start(first, 'M2', 'run', 'epoch')
         with self.assertRaises(ValueError):
             self.ledger.start(second, 'M3', 'other', 'epoch')
+
+    def test_requesting_lane_withdraws_queued_head_or_non_head(self):
+        first, second, third = self.request(), self.request('M3'), self.request('M4')
+        self.ledger.withdraw(second, 'M3', reason='unit no longer ready')
+        self.assertEqual(self.ledger.status()['head']['id'], first)
+        self.ledger.withdraw(first, 'M2', reason='session abandoned')
+        state = self.ledger.status()
+        self.assertEqual(state['head']['id'], third)
+        self.assertEqual([b['state'] for b in state['history']], ['withdrawn', 'withdrawn'])
+        self.assertEqual(state['history'][0]['withdrawnBy'], 'M2')
+        self.assertNotIn('cleaned', state['history'][0])
+        self.ledger.start(third, 'M4', 'run', 'epoch')
+
+    def test_coordinator_withdraws_abandoned_head_with_reason(self):
+        first, second = self.request(), self.request('M3')
+        event = self.ledger.withdraw(first, coordinator=True, reason='requesting lane unavailable')
+        self.assertEqual(event['event'], 'withdraw')
+        state = self.ledger.status()
+        self.assertEqual(state['head']['id'], second)
+        self.assertEqual(state['history'][0]['withdrawnBy'], 'coordinator')
+        self.assertEqual(state['history'][0]['reason'], event['reason'])
+
+    def test_withdraw_refuses_wrong_actor_missing_reason_and_started_or_terminal_booking(self):
+        ident = self.request()
+        for fields in (dict(lane='M3'), dict(), dict(lane='M2', coordinator=True),
+                       dict(coordinator=1), dict(coordinator=True, reason='')):
+            with self.assertRaises(ValueError):
+                self.ledger.withdraw(ident, **(dict(reason='cancel') | fields))
+        self.assertEqual(self.ledger.status()['events'], 1)
+        self.ledger.start(ident, 'M2', 'run', 'epoch')
+        for fields in (dict(lane='M2'), dict(coordinator=True)):
+            with self.assertRaises(ValueError):
+                self.ledger.withdraw(ident, reason='cancel', **fields)
+        self.ledger.finish(ident, 'M2', 'run', 'epoch', cleaned=True)
+        with self.assertRaises(ValueError):
+            self.ledger.withdraw(ident, coordinator=True, reason='already finished')
+        with self.assertRaises(ValueError):
+            self.ledger.withdraw('unknown', coordinator=True, reason='unknown')
+        self.assertEqual(self.ledger.status()['events'], 3)
+
+    def test_replay_validates_withdraw_actor_reason_and_state(self):
+        ident = self.request()
+        request = json.loads(self.path.read_text())
+        event = dict(version=1, seq=2, at=self.now, event='withdraw', id=ident,
+                     lane='M2', coordinator=False, reason='cancel')
+        self.assertEqual(book.Ledger.replay([request, event])[ident]['state'], 'withdrawn')
+        coordinator = event | dict(lane=None, coordinator=True)
+        self.assertEqual(book.Ledger.replay([request, coordinator])[ident]['withdrawnBy'], 'coordinator')
+        for fields in (dict(lane='M3'), dict(lane=None), dict(coordinator=True),
+                       dict(coordinator=1), dict(reason=''), dict(reason=None), dict(reason='bad\nline')):
+            with self.assertRaises(ValueError):
+                book.Ledger.replay([request, event | fields])
+        with self.assertRaises(ValueError):
+            book.Ledger.replay([request, event, event | dict(seq=3)])
+        started = dict(version=1, seq=2, at=self.now, event='start', id=ident, runID='run', epoch='epoch')
+        with self.assertRaises(ValueError):
+            book.Ledger.replay([request, started, coordinator | dict(seq=3)])
+
+    def test_withdraw_cli_and_replay_after_restart(self):
+        first, second = self.request(), self.request('M3')
+        result = subprocess.run(self.cli('withdraw', '--id', first, '--coordinator',
+                                         '--reason', 'lane unavailable'), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['event'], 'withdraw')
+        result = subprocess.run(self.cli('withdraw', '--id', second, '--lane', 'M3',
+                                         '--reason', 'unit withdrawn'), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(book.Ledger(self.path).status()['head'])
+
+    def test_ledger_requires_configuration_and_explicit_path_overrides_environment(self):
+        env_path = self.root / 'env-ledger.jsonl'
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'MODELPLAN_BOOKING_LEDGER'):
+                book.Ledger()
+            with self.assertRaisesRegex(ValueError, 'shared ledger required'):
+                book.Ledger(' ')
+            with patch.dict(os.environ, dict(MODELPLAN_BOOKING_LEDGER=' ')):
+                with self.assertRaisesRegex(ValueError, 'shared ledger required'):
+                    book.Ledger()
+            result = subprocess.run([sys.executable, str(BIN / 'book.py'), 'status'],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('shared ledger required', json.loads(result.stderr)['error'])
+            with patch.dict(os.environ, dict(MODELPLAN_BOOKING_LEDGER=str(env_path))):
+                book.Ledger().status()
+                book.Ledger(self.path).status()
+                result = subprocess.run([sys.executable, str(BIN / 'book.py'), 'status'],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                explicit = self.root / 'explicit.jsonl'
+                result = subprocess.run([sys.executable, str(BIN / 'book.py'), '--ledger',
+                                         str(explicit), 'status'], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(explicit.exists())
+        self.assertTrue(env_path.exists()); self.assertTrue(self.path.exists())
 
     def test_finish_requires_owner_and_explicit_cleanup(self):
         first, second = self.request(), self.request('M3')
@@ -173,10 +270,14 @@ class Bookings(unittest.TestCase):
         self.now = time.time() - 1
         ident = self.request()
         self.ledger.start(ident, 'M2', 'run', 'epoch')
-        lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1000,
+        lease = dict(runID='run', epoch='epoch', notBefore=self.now, expiresAt=self.now + 1200,
                      guardianHeartbeatAt=time.time(), ownerPreempted=False, exclusive=True)
-        return dict(profile='synthetic', lease=lease,
-                    release=lease | dict(guardianGO=True, m0DirectedAnnouncementConfirmed=True),
+        release = lease | dict(m1Released=True, approval='https://example.test/coordinator#issuecomment-1')
+        lease_path = self.root / 'issued-lease.json'; lease_path.write_text(json.dumps(lease))
+        release_path = self.root / 'release.json'; release_path.write_text(json.dumps(release))
+        return dict(profile='synthetic', lease=lease, release=release,
+                    runID='run', epoch='epoch', start=self.now, expiresAt=lease['expiresAt'],
+                    leasePath=str(lease_path), releasePath=str(release_path),
                     requiredSeconds=690, stop=False, argv=['unused'], binarySHA256='a' * 64,
                     booking=dict(id=ident, lane='M2', unit='U11a', scenario='cold', ledger=str(self.path)))
 
@@ -197,6 +298,63 @@ class Bookings(unittest.TestCase):
         self.now += book.MAX_SECONDS
         with self.assertRaises(ValueError):
             self.ledger.admit(c['booking'], c['lease'], 1)
+
+    def test_live_admission_requires_explicit_ledger_or_environment(self):
+        c = self.active_contract()
+        del c['booking']['ledger']
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, 'shared ledger required'):
+                book.admit(c)
+            with patch.dict(os.environ, dict(MODELPLAN_BOOKING_LEDGER=str(self.path))):
+                self.assertEqual(book.admit(c)['id'], c['booking']['id'])
+
+    def test_drive_refuses_invalid_external_release_before_any_child_or_resource(self):
+        c = self.active_contract()
+        release = self.root / 'release.json'
+        binary = self.root / 'synthetic-binary'; binary.write_bytes(b'synthetic')
+        inputs = self.root / 'inputs'; inputs.mkdir(); (inputs / 'index.html').write_text('synthetic')
+        locks = self.root / 'locks'; locks.mkdir()
+        cfg = c | dict(runID='run', epoch='epoch', GO=True, announcementID='synthetic',
+                       start=c['lease']['notBefore'], expiresAt=c['lease']['expiresAt'],
+                       batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
+                       releasePath=str(release), binary=str(binary),
+                       binarySHA256=hashlib.sha256(b'synthetic').hexdigest(), head='synthetic',
+                       inputRoot=str(inputs), entry='index.html', locks=str(locks),
+                       buildRoots=[], resourceRoot=str(self.root), scripts=[])
+        records = [None, False, c['release'] | dict(m1Released=False, guardianGO=True),
+                   c['release'] | dict(approval='http://example.test/coordinator')]
+        records += [c['release'] | {k: v} for k, v in
+                    (('runID', 'other'), ('epoch', 'old'), ('notBefore', 1), ('expiresAt', 2))]
+        for record in records:
+            with self.subTest(record=record):
+                release.unlink(missing_ok=True)
+                if record is not None:
+                    release.write_text(json.dumps(record))
+                attempt = drive.Attempt(cfg)
+                with patch.object(drive.subprocess, 'Popen', side_effect=AssertionError('child launched without release')) as popen, \
+                        patch.object(shutil, 'disk_usage', return_value=Mock(free=100 * 1024**3)):
+                    with self.assertRaises((OSError, ValueError)):
+                        attempt.run()
+                    popen.assert_not_called()
+                self.assertFalse(attempt.out.exists()); self.assertFalse(attempt.scratch.exists())
+                self.assertEqual(list(locks.iterdir()), [])
+
+    def test_drive_rereads_release_before_each_subject_launch(self):
+        c = self.active_contract()
+        release = self.root / 'release.json'; release.write_text(json.dumps(c['release']))
+        c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
+                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(release))
+        attempt = drive.Attempt(c)
+        attempt.out.mkdir(); attempt.scratch.mkdir()
+        attempt.lease.write_text(json.dumps(c['lease'])); attempt.entry = 'http://127.0.0.1/synthetic'
+        with patch.object(drive.subprocess, 'Popen', return_value=Mock(pid=123)) as popen, \
+                patch.object(drive.cleanup, 'identity', return_value=dict(pid=123)):
+            attempt.launch('preflight')
+            popen.assert_called_once()
+            release.write_text(json.dumps(c['release'] | dict(epoch='revoked')))
+            with self.assertRaisesRegex(ValueError, 'lease/release identity mismatch'):
+                attempt.launch('measure')
+            popen.assert_called_once()
 
     def test_launch_execute_refuses_without_booking_before_home_or_process(self):
         c = self.active_contract()
@@ -223,7 +381,7 @@ class Bookings(unittest.TestCase):
         Path(c['releasePath']).write_text(json.dumps(c['release']))
         config = self.root / 'run.json'; config.write_text(json.dumps(c))
         with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=Mock(pid=123)) as popen:
-            with patch.object(launch, 'admit', side_effect=[True, ValueError('booking finished')]):
+            with patch.object(launch, 'load_and_admit', side_effect=[c, ValueError('booking finished')]):
                 with self.assertRaisesRegex(ValueError, 'booking finished'):
                     launch.main()
                 popen.assert_not_called()
@@ -235,10 +393,10 @@ class Bookings(unittest.TestCase):
             popen.assert_called_once()
 
     def test_drive_refuses_missing_booking_before_any_resource_or_process(self):
-        now = time.time()
-        attempt = drive.Attempt(dict(runID='run', epoch='epoch', GO=True, announcementID='synthetic',
-                                     start=now - 1, expiresAt=now + 900, batch=str(self.root / 'batch'),
-                                     scratch=str(self.root / 'scratch')))
+        c = self.active_contract()
+        del c['booking']
+        attempt = drive.Attempt(c | dict(GO=True, announcementID='synthetic', binary='unused',
+                                        batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch')))
         with patch.object(drive.subprocess, 'Popen') as popen:
             with self.assertRaisesRegex(ValueError, 'head booking'):
                 attempt.run()
@@ -248,7 +406,8 @@ class Bookings(unittest.TestCase):
     def test_drive_rechecks_ended_booking_before_subject_launch(self):
         c = self.active_contract()
         c.update(runID='run', epoch='epoch', batch=str(self.root / 'batch'), scratch=str(self.root / 'scratch'),
-                 binary='unused', scripts=[], resourceRoot=str(self.root))
+                 binary='unused', scripts=[], resourceRoot=str(self.root), releasePath=str(self.root / 'release.json'))
+        Path(c['releasePath']).write_text(json.dumps(c['release']))
         attempt = drive.Attempt(c)
         attempt.out.mkdir(); attempt.scratch.mkdir()
         (attempt.scratch / 'home').mkdir(); (attempt.scratch / 'tmp').mkdir()
@@ -270,7 +429,9 @@ class Bookings(unittest.TestCase):
                    expiresAt=c['lease']['expiresAt'], booking=c['booking'], head='synthetic',
                    binary=str(binary), binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
                    inputRoot=str(inputs), entry='index.html', batch=str(self.root / 'batch'),
-                   scratch=str(self.root / 'scratch'), locks=str(locks))
+                   scratch=str(self.root / 'scratch'), locks=str(locks), releasePath=str(self.root / 'release.json'),
+                   leasePath=c['leasePath'])
+        Path(cfg['releasePath']).write_text(json.dumps(c['release']))
         config = self.root / 'drive.json'; config.write_text(json.dumps(cfg))
         with patch.object(sys, 'argv', ['drive', '--config', str(config)]), patch.object(drive.time, 'sleep') as sleep, patch.object(drive.subprocess, 'Popen') as popen:
             with self.assertRaisesRegex(RuntimeError, 'resource-busy'):

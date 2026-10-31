@@ -1,0 +1,103 @@
+name: U7 prebuilt universal helper
+on:
+  pull_request:
+    paths:
+      - desktop/native/ModelPlanCredentialAgent/Helper/**
+      - desktop/native/ModelPlanCredentialAgent/tools/**
+      - clients/swift/ModelPlanWire/**
+      - .github/workflows/u7-helper-producer.yml
+  push:
+    branches: [main]
+    paths:
+      - desktop/native/ModelPlanCredentialAgent/Helper/**
+      - desktop/native/ModelPlanCredentialAgent/tools/**
+      - clients/swift/ModelPlanWire/**
+      - .github/workflows/u7-helper-producer.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: u7-helper-producer-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  universal-helper:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Reject a manual producer run outside main
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: exit 1
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build two clean universal helpers and prove byte identity
+        run: python3 -B desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --universal --output "$RUNNER_TEMP/u7-prebuilt-helper"
+      - name: Exercise unchanged packaging validators and real denial protocol
+        env:
+          U7_TEST_HELPER_BINARY: ${{ runner.temp }}/u7-prebuilt-helper/modelplan-credential-agent
+        run: python3 -B -m unittest discover -s desktop/native/ModelPlanCredentialAgent/tools/tests -v
+      - name: Verify the helper hash and record checksums
+        id: pin
+        env:
+          ARTIFACT_DIR: ${{ runner.temp }}/u7-prebuilt-helper
+        run: |
+          python3 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import sys
+          sys.path.insert(0, 'desktop/native/ModelPlanCredentialAgent/tools')
+          from build_fixed_helper import digest
+          from check_embedded_agent import require_expected_sha
+          root = Path(os.environ['ARTIFACT_DIR'])
+          pin = json.loads((root / 'credential-agent.json').read_text())
+          helper_sha = digest(root / 'modelplan-credential-agent')
+          require_expected_sha(pin, helper_sha)
+          shutil.copyfile('LICENSE', root / 'LICENSE.txt')
+          files = ['modelplan-credential-agent', 'credential-agent.json', 'proof.json', 'LICENSE.txt']
+          (root / 'SHA256SUMS').write_text(''.join(digest(root / name) + '  ' + name + '\n' for name in files))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('helper_sha256=' + helper_sha + '\n')
+              output.write('input_sha256=' + pin['inputSHA256'] + '\n')
+          PY
+      - name: Publish a main-only immutable candidate artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: u7-credential-helper-universal-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/u7-prebuilt-helper/modelplan-credential-agent
+            ${{ runner.temp }}/u7-prebuilt-helper/credential-agent.json
+            ${{ runner.temp }}/u7-prebuilt-helper/proof.json
+            ${{ runner.temp }}/u7-prebuilt-helper/SHA256SUMS
+            ${{ runner.temp }}/u7-prebuilt-helper/LICENSE.txt
+      - name: Summarize the unapproved candidate identity
+        env:
+          HELPER_SHA: ${{ steps.pin.outputs.helper_sha256 }}
+          INPUT_SHA: ${{ steps.pin.outputs.input_sha256 }}
+          ARCHIVE_SHA: ${{ steps.artifact.outputs.artifact-digest }}
+          MAIN_CANDIDATE: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+          ARTIFACT_NAME: u7-credential-helper-universal-${{ github.run_attempt }}
+        run: |
+          python3 -B - <<'PY'
+          import os
+          eligible = os.environ['MAIN_CANDIDATE'] == 'true'
+          lines = ['## U7 helper candidate — approval required',
+                   'This build does not approve itself. Production callers require the coordinator-approved exact triple.',
+                   'Run ID: ' + os.environ['GITHUB_RUN_ID'],
+                   'Source commit: ' + os.environ['GITHUB_SHA'],
+                   'Artifact: ' + (os.environ['ARTIFACT_NAME'] if eligible else 'none — PR validation only'),
+                   'Helper binary SHA-256: ' + os.environ['HELPER_SHA'],
+                   'Input SHA-256: ' + os.environ['INPUT_SHA'],
+                   'Artifact archive SHA-256: ' + (os.environ['ARCHIVE_SHA'] or 'not published'),
+                   'R2 default-deny; no app wiring, Keychain/identity/trust/local GUI action or foreign-slice execution.']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n\n'.join(lines) + '\n')
+          PY
