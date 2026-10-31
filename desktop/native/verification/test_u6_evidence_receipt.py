@@ -22,7 +22,8 @@ class U6ReceiptTests(unittest.TestCase):
                 dict(kind='refresh',phase='requested',runID='run',epoch='epoch',requestId=key,rowsSequenceBefore=1,at=101),
                 dict(kind='refresh',phase='completed',runID='run',epoch='epoch',requestId=key,rowsSequenceAfter=2,at=102),
                 dict(event='accepted-clear',runID='run',epoch='epoch',timestamp=103,checks=dict(priorPrivateContent=True,oldItemTitlesScrubbed=True,
-                    oldItemPrivateAttributesScrubbed=True,scrubbedInstanceIDs=['m']))]
+                    oldItemPrivateAttributesScrubbed=True,scrubbedInstanceIDs=['m'])),
+                dict(event='terminate-completed',runID='run',epoch='epoch',timestamp=109)]
             (root/'native-observations.jsonl').write_text(''.join(json.dumps(x)+'\n' for x in rows))
             (root/'result.json').write_text(json.dumps(dict(runID='run',epoch='epoch',appStarted=True,quit=dict(requested='native-contract-stop',appAcknowledged=True))))
             (root/'launch.json').write_text(json.dumps(dict(runID='run',epoch='epoch',ownedPID=42,sourceHead=config['head'])))

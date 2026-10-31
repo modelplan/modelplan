@@ -124,4 +124,9 @@ import ModelPlanMenuVerification
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
+    public func applicationWillTerminate(_ notification: Notification) {
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.recordTerminateCompleted()
+        #endif
+    }
 }

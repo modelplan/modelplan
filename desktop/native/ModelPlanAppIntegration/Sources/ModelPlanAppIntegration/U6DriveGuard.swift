@@ -204,6 +204,7 @@ import ModelPlanEngineClient
             "oldItemTitlesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.title.isEmpty },
             "oldItemPrivateAttributesScrubbed": !retainedItems.isEmpty && retainedItems.allSatisfy { $0.attributedTitle == nil && $0.toolTip == nil && $0.representedObject == nil }])
     }
+    func recordTerminateCompleted() { emit("terminate-completed") }
     private func finish(_ reason: String) {
         guard !ending else { return }; ending = true
         emit(reason); timer?.invalidate(); arrivalObserver?.stop(); arrivalObserver = nil

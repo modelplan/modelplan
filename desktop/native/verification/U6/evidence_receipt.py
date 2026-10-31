@@ -82,6 +82,8 @@ def assemble(config, package):
                      r.get('runID')==run_id and r.get('epoch')==epoch and r.get('requestID')==request.get('requestID')
                      for r in menu)
     quit_proof=result.get('quit') if isinstance(result.get('quit'),dict) else {}
+    terminate_completed=any(r.get('event')=='terminate-completed' and r.get('runID')==run_id and r.get('epoch')==epoch
+                            for r in native)
     refs=[name for name in REQUIRED if (batch/name).is_file() and not (batch/name).is_symlink()]
     if (batch/'operator-observations.json').is_file():refs.append('operator-observations.json')
     receipt=dict(profile='synthetic',runID=run_id,epoch=epoch,headSHA=config['head'],
@@ -90,7 +92,7 @@ def assemble(config, package):
         appStarted=app_started,dockInputDelivered=dock,
         dockRowsOrReasonVisible=observed and visual.get('dockReadingOrReasonVisible') is True and (batch/'dock-owned.png').is_file(),
         menuInputDelivered=status and menu_arrived,menuStateVisible=status and observed and visual.get('privateTitleVisibleBeforeClear') is True,
-        quitDelivered=quit_proof.get('requested')=='native-contract-stop' and quit_proof.get('appAcknowledged') is True,
+        quitDelivered=quit_proof.get('requested')=='native-contract-stop' and quit_proof.get('appAcknowledged') is True and terminate_completed,
         ownedCleanupVerified=closed,privateTitleObservedBeforeClear=observed and visual.get('privateTitleVisibleBeforeClear') is True,
         trackedMenuClearObserved=clear=='pass' and clear_input,refreshCompleted=refresh)
     outcome=evidence.qualify(receipt,native)
