@@ -108,4 +108,9 @@ func TestAdviceSaveFailureFallsBackToFixedCode(t *testing.T) {
 	if got := fallback.String(); got != adviceStateSaveFailed+"\n" {
 		t.Fatalf("fallback exposed non-code details: %q", got)
 	}
+	fallback.Reset()
+	reportAdviceSaveError(cache, "untrusted-error-details", &fallback)
+	if got := fallback.String(); got != adviceStateSaveFailed+"\n" {
+		t.Fatalf("fallback accepted an unknown code: %q", got)
+	}
 }

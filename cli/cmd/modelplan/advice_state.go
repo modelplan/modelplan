@@ -35,6 +35,9 @@ func saveAdviceState(state *advise.State, cache string, now time.Time) {
 }
 
 func reportAdviceSaveError(cache, code string, fallback io.Writer) {
+	if code != adviceStateBusy && code != adviceStateSaveFailed {
+		code = adviceStateSaveFailed
+	}
 	if recordAdviceSaveError(cache, code) != nil {
 		fmt.Fprintln(fallback, code)
 	}
