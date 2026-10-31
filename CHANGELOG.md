@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Accept the optional published `provisional: true` on a model's effort in the CLI, the public reader and the Codex plugin. `modelplan effort` marks that ability as provisional (`暂定`), `--json` carries the flag only when set, and quota hints never offer a provisional configuration as another model's alternative, nor compare a provisional current configuration across models. Other unknown effort fields are still rejected.
+  CLI、公开读取器和 Codex 插件接受发布数据中档位的可选字段 `provisional: true`。`modelplan effort` 会把该档能力标为「暂定」，`--json` 仅在设置时带上该字段；额度提示不会把暂定档位当作其他模型的替代，也不会拿暂定的当前档位跨模型比较。其他未知档位字段仍会被拒绝。
+
 - Add the pure CLI rows projection core: stable tool membership, contextual reason mapping, per-profile value states, conservative clocks, and field-specific privacy checks. Missing or retired allowed tools take priority over no-reader guidance. Production desktop integration follows the reader/consent adapters; quota output is unchanged.
   新增纯 CLI 行投影核心：稳定工具成员、按上下文映射原因、按资料区分读数状态、保守时钟与逐字段隐私校验。已授权但缺失或退休的工具优先于无读取器提示；生产桌面接线随后与读取/授权适配器集成，额度输出不变。
 

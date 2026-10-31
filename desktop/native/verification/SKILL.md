@@ -83,6 +83,8 @@ M2 owns `bin/cleanup-run.py` and its tests. It quits owned processes, verifies c
 
 M2 owns the whole verification skill, including Drive/Cleanup and integration; M1 independently checks post-run closure. M0 reviews and merges. Stable commands live in `bin/`; do not rewrite them in each lane.
 
+For named status-menu actions and native arrival correlation, follow [StatusMenu/README.md](StatusMenu/README.md) before driving the item.
+
 Non-GUI qualification:
 
 ```
