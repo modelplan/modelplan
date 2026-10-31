@@ -90,6 +90,29 @@ class GuardianGraceTests(unittest.TestCase):
         guardian.run(lease, stop, pid_file=self.pid_file, clock=Clock(1000.0), kill=kill, quit_grace=5.0, running=lambda: False)
         self.assertEqual([c.get('quit_grace') for c in calls], [5.0, None, None])
 
+    def guardian_urgent(self, start, expires=1100.0):
+        lease = Path(self.dir.name) / 'lease.json'; stop = Path(self.dir.name) / 'STOP'
+        lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1000.0, expiresAt=expires, exclusive=True,
+                                         ownerPreempted=False, guardianHeartbeatAt=start)))
+        stop.write_text('{}'); seen = {}; clock = Clock(start)
+        def kill(pid_file, **kw): seen.update(kw); return True
+        guardian.run(lease, stop, pid_file=self.pid_file, clock=clock, kill=kill, quit_grace=10.0, report={})
+        return seen['urgent'], clock, lease
+
+    def test_grace_ends_while_the_minimum_reserve_remains(self):  # macrev-332-7
+        urgent, clock, _ = self.guardian_urgent(start=1069.0)  # 31 s left, 10 s grace allowed by config
+        clock.t = 1074.9; self.assertFalse(urgent())  # 25.1 s left
+        clock.t = 1075.0; self.assertTrue(urgent())   # exactly MIN_RESERVE (25 s) left: grace over
+
+    def test_guardian_keeps_beating_during_the_grace(self):  # macrev-332-9
+        urgent, clock, lease = self.guardian_urgent(start=1000.0)
+        c = dict(lease=json.loads(lease.read_text()), leasePath=str(lease), stopPath=str(Path(self.dir.name) / 'STOP'))
+        for _ in range(60):  # 6 s of grace with wall time advancing for both supervisors
+            clock.t += 0.1
+            self.assertFalse(urgent())
+            self.assertIsNone(launch.urgent_reason(c, clock.t), f'launch saw a stale guardian at +{clock.t - 1000.0:.1f}s')
+        self.assertGreaterEqual(json.loads(lease.read_text())['guardianHeartbeatAt'], 1005.4)
+
     def test_grace_defaults_to_5_and_is_capped_at_10(self):
         self.assertEqual((guardian.quit_grace(None), guardian.quit_grace(0), guardian.quit_grace(7), guardian.quit_grace(30)),
                          (5.0, 0.0, 7.0, 10.0))

@@ -253,14 +253,22 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
         except OSError:
             pass  # still stop the subject; launch.py also stops on a stale heartbeat
         if outcome == 'stopped' and quit_grace > 0:  # only a stop-file ending gives the subject its own quit first
+            last_beat = [float('-inf')]
             def urgent():
-                if not running() or clock() >= lease['expiresAt'] - (reserve - quit_grace):
-                    return True  # keep the TERM/KILL budget inside the reserve
+                # The grace ends while at least MIN_RESERVE seconds remain for TERM/KILL/closure (macrev-332-7), and the
+                # guardian keeps beating during it so launch.py does not read a deliberate pause as a dead guardian
+                # (macrev-332-9). beat() raises Revoked on revocation or an identity change.
+                if not running() or clock() >= lease['expiresAt'] - MIN_RESERVE:
+                    return True
                 try:
-                    cur = json.loads(lease_path.read_text())
+                    now = clock()
+                    if now - last_beat[0] >= 0.5:  # throttled: launch.py treats > 3 s without a beat as a dead guardian
+                        beat(lease_path, identity, now); last_beat[0] = now
+                except Revoked:
+                    return True
                 except (OSError, ValueError):
                     return True
-                return cur.get('ownerPreempted') is not False or cur.get('exclusive') is not True
+                return False
             closed = kill(pid_file, quit_grace=quit_grace, report=report, urgent=urgent)
         else:
             closed = kill(pid_file)
