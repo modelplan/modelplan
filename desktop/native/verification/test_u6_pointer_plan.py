@@ -46,6 +46,8 @@ class U6PointerPlanTests(unittest.TestCase):
         plan=json.loads((self.root/'status-pointer-plan.json').read_text())
         self.assertEqual(plan['steps'][0]['action'],'click')
         (self.root/'status-pointer.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in [
+            dict(event='mouse-moved-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
+            dict(event='mouse-button-down-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
             dict(event='mouse-button-up-posted',runID='run',epoch='epoch',subjectPID=42,timestamp='1970-01-01T00:01:41Z'),
             dict(event='pointer-result',outcome='posted')]))
         with self.assertRaisesRegex(ValueError,'native-arrival-missing'):tool.check(self.config,'status')

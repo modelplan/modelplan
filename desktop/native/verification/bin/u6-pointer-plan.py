@@ -52,11 +52,13 @@ def check(config, kind):
     pointer = rows(plan['output'])
     event = 'mouse-moved-posted' if kind == 'dock' else 'mouse-button-up-posted'
     delivered = [r for r in pointer if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID']]
-    if not delivered or not any(r.get('event') == 'pointer-result' and r.get('outcome') == 'posted' for r in pointer): raise ValueError('physical-input-not-delivered')
-    at = datetime.datetime.fromisoformat(delivered[0]['timestamp'].replace('Z','+00:00')).timestamp()
+    moved = [r for r in pointer if r.get('event') == 'mouse-moved-posted' and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID']]
+    pressed = kind == 'dock' or any(r.get('event') == 'mouse-button-down-posted' and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and r.get('subjectPID') == plan['subjectPID'] for r in pointer)
+    if not delivered or not moved or not pressed or not any(r.get('event') == 'pointer-result' and r.get('outcome') == 'posted' for r in pointer): raise ValueError('physical-input-not-delivered')
+    at = datetime.datetime.fromisoformat(moved[0]['timestamp'].replace('Z','+00:00')).timestamp()
     native = rows(batch/'native-observations.jsonl')
     event = 'dock-surface-frame' if kind == 'dock' else 'menu-begin'
-    observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and type(r.get('timestamp')) in (int,float) and r['timestamp'] >= at - 0.5]
+    observed = [r for r in native if r.get('event') == event and r.get('runID') == lease['runID'] and r.get('epoch') == lease['epoch'] and type(r.get('timestamp')) in (int,float) and r['timestamp'] >= at]
     if kind == 'dock': observed = [r for r in observed if r.get('checks',{}).get('state') == 'expanded']
     else: observed = [r for r in observed if r.get('checks',{}).get('surface') == 'status']
     if not observed: raise ValueError('native-arrival-missing')
