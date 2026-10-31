@@ -25,7 +25,7 @@ guardian's confirmed exit. Both are asserted accordingly.
 
 Run (the repo uses unittest; the CI suites discover only verification/ and
 verification/tests/, not this directory):
-    python3 -m unittest discover -s desktop/native/verification/bin -p 'test_*.py'
+    python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
 """
 import hashlib
 import json
@@ -328,7 +328,7 @@ class CrashedSubject(M1Sequence):
         pid_file = self.root / 'subject.pid'
         ident, _ = self.booking(minutes=2, run_id='run-crash', epoch='epoch-crash',
                                 lease_path=lease_path)
-        guardian, _ = self.start_guardian(lease_path, stop_path, pid_file)
+        guardian, guardian_out = self.start_guardian(lease_path, stop_path, pid_file)
         self.release(ident, lease_path, release_path)
         config = self.launch_config(ident, lease_path, release_path, stop_path, pid_file,
                                     self.root / 'home', self.root / 'tmp', [self.app, 'crash'])
@@ -342,6 +342,11 @@ class CrashedSubject(M1Sequence):
         self.assertEqual(subject['state'], 'running')
         self.assertFalse(alive(subject['pid']))
 
+        # The launcher is gone, so the guardian ends the run itself as launcher-lost (exit 3), not as a
+        # clean stop, even though the crashed subject is confirmed gone. Waiting for that exit makes the
+        # outcome deterministic instead of racing the guardian's next poll.
+        self.assertEqual(guardian.wait(15), 3)
+        self.assertEqual(self.read_json(guardian_out), dict(guardian='launcher-lost', subjectClosed=True))
         # No verified-cleanup batch exists for this run, so the closure gate fails ...
         gate_config = self.root / 'gate.json'
         gate_config.write_text(json.dumps(dict(batch=str(self.root / 'batch'),
@@ -350,11 +355,6 @@ class CrashedSubject(M1Sequence):
         # ... the sequence must not finish, and the booking (the lease) stays held.
         state = self.status()
         self.assertEqual((state['head']['id'], state['head']['state']), (ident, 'started'))
-        self.assertTrue(self.beating(lease_path))  # the run is still open
-
-        guardian.terminate()  # teardown: the already-dead subject is confirmed gone
-        self.assertEqual(guardian.wait(15), 0)
-        self.assertTrue(stop_path.exists())
 
 
 @unittest.skipUnless(sys.platform.startswith('linux'),

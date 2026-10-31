@@ -24,8 +24,9 @@ never through script internals. Runtime is about 8 seconds on Linux.
   booking stays started.
 - **Crashed subject**: the subject registers and then exits by itself; `launch.py` ends
   normally (exit 0, `stoppedBy: null`), but `check_drive_cleanup.py` fails (no verified
-  cleanup batch), so the sequence does not finish — the run stays open (guardian still
-  heartbeating) and the booking keeps holding the lease.
+  cleanup batch), so the sequence does not finish and the booking keeps holding the lease.
+  With the launcher gone, the guardian ends as `launcher-lost` with `subjectClosed: true`
+  (exit 3); the test waits for that exit instead of racing the guardian's next poll.
 - **Drive-mode leg (expected-fail, see gap 1)**: booking, guardian heartbeat and release all
   admit; the attempt is recorded `not-run` with reason `OSError-errno-*`; the gated child is
   killed before running and never registered; drive removes its scratch and locks and writes
@@ -71,17 +72,8 @@ The test lives in `desktop/native/verification/tests/`, which `desktop.yml` ("Ve
 
 ## Output
 
-`python3 -m unittest discover -s desktop/native/verification/bin -p 'test_*.py'` at this head
-(Linux, python 3.12):
-
 ```
-.....
-----------------------------------------------------------------------
-Ran 5 tests in 7.886s
-
+$ python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'
+Ran 82 tests in 11.526s
 OK
 ```
-
-Existing suites at the same head: `python3 -m unittest discover -s desktop/native/verification -p 'test_*.py'`
-→ `Ran 17 tests ... OK`; `python3 -m unittest discover -s desktop/native/verification/tests -p 'test_*.py'`
-→ `Ran 77 tests ... OK`; `node scripts/check-source-policy.mjs` → verified.
