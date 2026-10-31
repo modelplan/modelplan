@@ -270,18 +270,22 @@ class OneControllerTests(unittest.TestCase):
 
 
 class DriveCleanupGateTests(unittest.TestCase):
-    def check(self, content):
+    def check(self, content, run_id='r1', epoch='e1'):
         d = Path(tempfile.mkdtemp()); f = d / 'result.json'
         if content is not None: f.write_text(content if isinstance(content, str) else json.dumps(content))
-        return check_drive_cleanup.complete(f)
+        return check_drive_cleanup.complete(f, run_id, epoch)
 
-    def test_only_a_complete_successful_cleanup_passes(self):
-        good = dict(cleanup=dict(ownedExited=True, guardianExited=True, topObserverJoined=True, leaseReleased=True, scratchRemoved=['home', 'tmp']))
+    def test_only_this_runs_complete_cleanup_passes(self):
+        ok = dict(ownedExited=True, guardianExited=True, topObserverJoined=True, leaseReleased=True, scratchRemoved=['home', 'tmp'])
+        good = dict(runID='r1', epoch='e1', cleanup=ok)
         self.assertTrue(self.check(good))
-        for bad in (None, '{broken', dict(), dict(cleanup={}), dict(cleanup=dict(scratchRemoved=[])),
-                    dict(cleanup=good['cleanup'] | dict(ownedExited=False)),
-                    dict(cleanup={k: v for k, v in good['cleanup'].items() if k != 'leaseReleased'}),
-                    dict(cleanup=good['cleanup'] | dict(scratchRemoved=None))):
+        for bad in (None, '{broken', dict(), dict(runID='r1', epoch='e1', cleanup={}),
+                    good | dict(cleanup=ok | dict(ownedExited=False)),
+                    good | dict(cleanup={k: v for k, v in ok.items() if k != 'leaseReleased'}),
+                    good | dict(cleanup=ok | dict(scratchRemoved=None)),
+                    good | dict(cleanup=ok | dict(scratchRemoved=[])),
+                    good | dict(cleanup=ok | dict(scratchRemoved=['home'])),
+                    good | dict(runID='other'), good | dict(epoch='older')):
             self.assertFalse(self.check(bad), bad)
 
 

@@ -53,7 +53,7 @@ wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
 wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
 DRIVE_CLEAN=0
 if [ "$CONTROLLER_MODE" = drive ]; then
-  python3 desktop/native/verification/bin/check_drive_cleanup.py "$DRIVE_BATCH/result.json" || DRIVE_CLEAN=1
+  python3 desktop/native/verification/bin/check_drive_cleanup.py "$DRIVE_BATCH/result.json" "$RUN_ID" "$EPOCH" || DRIVE_CLEAN=1
 fi
 if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
