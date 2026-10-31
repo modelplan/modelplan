@@ -114,6 +114,30 @@ final class BridgeTests: XCTestCase {
     _ = try state.clear(adopting: state.context)
     XCTAssertNil(state.queryTicket)
   }
+  func testLongLivedPageAcceptsMoreThan1024ActionsAndStillRejectsReplays() throws {
+    let state = CockpitBridgeState(context: try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible: true, occluded: false, key: true))
+    let display = try state.display(fixture(), ticket: XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display, "rendered", 2), source: source)
+    var first = ""
+    var last = ""
+    for index in 0..<2048 {
+      let name = ["openSettings", "chooseSetup", "openHistory"][index % 3]
+      var extra: [String: Any] = ["requestId": UUID().uuidString, "action": name]
+      if name == "openHistory" { extra["tool"] = "codex" }
+      let raw = try reply(load, "action", index + 3, extra: extra)
+      let expected: CockpitIntent =
+        name == "openSettings"
+        ? .openSettings : name == "chooseSetup" ? .chooseSetup : .openHistory("codex")
+      XCTAssertEqual(try state.accept(raw, source: source), .action(expected))
+      if index == 0 { first = raw }
+      last = raw
+    }
+    XCTAssertThrowsError(try state.accept(first, source: source))
+    XCTAssertThrowsError(try state.accept(last, source: source))
+  }
+
   @MainActor func testContextMapsActualEngineSessionWithoutInventingOne() throws {
     let id = UUID()
     let delivery = EngineDeliveryContext(
