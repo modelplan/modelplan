@@ -2,13 +2,13 @@
 """U6-specific operator Drive controller using the unchanged shared lease/cleanup helpers."""
 import argparse,hashlib,importlib.util,json,os,signal,subprocess,sys,time,shutil
 from pathlib import Path
-from launch import validate
+from admission import load_and_admit
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('shared_cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,data):
     path=Path(path);temp=path.with_suffix(path.suffix+'.tmp');temp.write_text(json.dumps(data));temp.replace(path)
 def admit(c,now):
-    if c.get('profile')!='synthetic' or c.get('GO') is not True or not c.get('announcementID'):raise ValueError('unannounced-or-unapproved')
+    if c.get('profile')!='synthetic':raise ValueError('synthetic-profile-required')
     if not c['start']<=now<c['expiresAt'] or not 0<c['expiresAt']-c['start']<=1200:raise ValueError('invalid-window')
     for name,n in [('head',40),('binarySHA256',64)]:
         value=c.get(name,'')
@@ -21,7 +21,13 @@ def main():
     out=Path(c['batch']);scratch=Path(c['scratch']);assert out.is_dir() and scratch.is_dir()
     binary=Path(c['binary']);assert hashlib.sha256(binary.read_bytes()).hexdigest()==c['binarySHA256']
     locks=Path(c['locks']);owned=[];app=None;guardian=None;identity=None
-    stop=out/'stop.json';lease=scratch/'lease.json';finish=out/'operator-finish.json'
+    stop=Path(c['stopPath']);lease=Path(c['leasePath']);finish=out/'operator-finish.json'
+    if stop.resolve()!=(out/'stop.json').resolve():raise ValueError('stop-path-mismatch')
+    contract=dict(profile='synthetic',binarySHA256=c['binarySHA256'],argv=[str(binary)],
+                  leasePath=str(lease),releasePath=c['releasePath'],stopPath=str(stop),
+                  expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
+                  requiredSeconds=30,booking=c.get('booking'))
+    load_and_admit(contract)
     result=dict(runID=c['runID'],epoch=c['epoch'],headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False)
     try:
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
@@ -33,12 +39,10 @@ def main():
         guardian=subprocess.Popen([sys.executable,str(BASE/'drive-scenario.py'),'--guardian',str(gc)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         deadline=time.monotonic()+3
         while not lease.exists() and time.monotonic()<deadline:time.sleep(.1)
-        release=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt'],guardianGO=True,m0DirectedAnnouncementConfirmed=True)
-        launch=dict(profile='synthetic',binarySHA256=c['binarySHA256'],lease=json.loads(lease.read_text()),release=release,requiredSeconds=30,stop=stop.exists(),argv=[str(binary)])
-        validate(launch,time.time())
-        contract=scratch/'native-guard.json';write(contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl')))
+        load_and_admit(contract)
+        native_contract=scratch/'native-guard.json';write(native_contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl')))
         with (scratch/'app-stdout.log').open('w') as stdout,(scratch/'app-stderr.log').open('w') as stderr:
-            app=subprocess.Popen([str(binary),'--u6-drive-contract',str(contract)],env=c['environment'],stdout=stdout,stderr=stderr,start_new_session=True)
+            app=subprocess.Popen([str(binary),'--u6-drive-contract',str(native_contract)],env=c['environment'],stdout=stdout,stderr=stderr,start_new_session=True)
             identity=cleanup.identity(app.pid);assert identity is not None
             result['appStarted']=True;write(out/'launch.json',dict(runID=c['runID'],epoch=c['epoch'],ownedPID=app.pid,sourceHead=c['head']))
             while app.poll() is None and not stop.exists() and not finish.exists() and time.time()<c['expiresAt']:
