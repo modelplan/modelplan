@@ -275,6 +275,18 @@ class DriveCleanupGateTests(unittest.TestCase):
         if content is not None: f.write_text(content if isinstance(content, str) else json.dumps(content))
         return check_drive_cleanup.complete(f, run_id, epoch)
 
+    def test_gate_reads_the_batch_from_the_exact_run_config(self):
+        # Same run/epoch, two scenario batches: an old successful batch must not certify a failed current one.
+        d = Path(tempfile.mkdtemp())
+        ok = dict(ownedExited=True, guardianExited=True, topObserverJoined=True, leaseReleased=True, scratchRemoved=['home', 'tmp'])
+        old, cur = d / 'old', d / 'cur'; old.mkdir(); cur.mkdir()
+        (old / 'result.json').write_text(json.dumps(dict(runID='r1', epoch='e1', cleanup=ok)))
+        (cur / 'result.json').write_text(json.dumps(dict(runID='r1', epoch='e1', cleanup=ok | dict(ownedExited=False))))
+        cfg = d / 'run.json'; cfg.write_text(json.dumps(dict(batch=str(cur), runID='r1', epoch='e1')))
+        self.assertFalse(check_drive_cleanup.from_config(cfg))
+        (cur / 'result.json').write_text(json.dumps(dict(runID='r1', epoch='e1', cleanup=ok)))
+        self.assertTrue(check_drive_cleanup.from_config(cfg))
+
     def test_only_this_runs_complete_cleanup_passes(self):
         ok = dict(ownedExited=True, guardianExited=True, topObserverJoined=True, leaseReleased=True, scratchRemoved=['home', 'tmp'])
         good = dict(runID='r1', epoch='e1', cleanup=ok)

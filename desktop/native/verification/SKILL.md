@@ -34,12 +34,12 @@ python3 desktop/native/verification/bin/release.py \
 # Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
 # second one. Set CONTROLLER_MODE explicitly:
 #  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py)
-#  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); set DRIVE_BATCH to its batch dir
+#  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); its cleanup result is read
+#          from the batch named in $RUN_CONFIG itself
 # Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
 case "$CONTROLLER_MODE" in
   launch) python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
-  drive)  : "${DRIVE_BATCH:?DRIVE_BATCH is required in drive mode}"
-          python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
+  drive)  python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
   *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
 esac
 CONTROLLER_PID=$!
@@ -53,7 +53,7 @@ wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
 wait "$GUARDIAN_PID"; GUARDIAN_STATUS=$?
 DRIVE_CLEAN=0
 if [ "$CONTROLLER_MODE" = drive ]; then
-  python3 desktop/native/verification/bin/check_drive_cleanup.py "$DRIVE_BATCH/result.json" "$RUN_ID" "$EPOCH" || DRIVE_CLEAN=1
+  python3 desktop/native/verification/bin/check_drive_cleanup.py "$RUN_CONFIG" || DRIVE_CLEAN=1
 fi
 if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
   python3 desktop/native/verification/bin/book.py finish \

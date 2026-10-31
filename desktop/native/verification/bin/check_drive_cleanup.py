@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
-"""Usage: check_drive_cleanup.py <result.json> <run-id> <epoch>. Exit 0 only if that run's result proves complete cleanup."""
+"""Usage: check_drive_cleanup.py <run-config.json>. Exit 0 only if the result in that exact config's batch
+proves complete cleanup for that config's run and epoch (no separately supplied batch path)."""
 import json
 from pathlib import Path
 import sys
@@ -23,5 +24,13 @@ def complete(path, run_id, epoch):
     return isinstance(removed, list) and {'home', 'tmp'} <= set(removed)  # both requested removals happened
 
 
+def from_config(config_path):
+    try:
+        c = json.loads(Path(config_path).read_text())
+        return complete(Path(c['batch']) / 'result.json', c['runID'], c['epoch'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
 if __name__ == '__main__':
-    sys.exit(0 if len(sys.argv) == 4 and complete(sys.argv[1], sys.argv[2], sys.argv[3]) else 1)
+    sys.exit(0 if len(sys.argv) == 2 and from_config(sys.argv[1]) else 1)
