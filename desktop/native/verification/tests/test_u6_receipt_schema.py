@@ -775,14 +775,7 @@ BASELINE_DISAGREEMENTS = {
 
 # Every historical divergence remains a regression through the real final CLI. The ones evidence-u6 (at #332
 # a1d746fc) still decides against C2.7 are expected failures: trace -> (C2.7 outcome, evidence-u6 now, contract).
-DISAGREEMENTS = {
-    # evidence-u6 change: an accepted whose engineRequestID differs from requested's is FAIL, not NOT-RUN.
-    'accepted-stale-snapshot': ('fail', 'not-run', _D_FAIL_OTHER_REQUEST),
-    'accepted-other-engine-request': ('fail', 'not-run', _D_FAIL_OTHER_REQUEST),
-    # evidence-u6 change: only an account.getQuota call before requested fails; one between requested and
-    # accepted counts towards PASS (window is requested < mono < completed).
-    'quota-call-before-accepted': ('pass', 'fail', _D_PASS_WINDOW),
-}
+DISAGREEMENTS = {} # All three fixes passed through the real CLI; baseline assertions remain below.
 
 
 class EvidenceU6CLITests(unittest.TestCase):

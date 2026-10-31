@@ -73,12 +73,15 @@ class U6PackageTests(unittest.TestCase):
                 self.assertEqual(reply['id'],wire_id)
                 dispositions={r['scope']:r.get('disabledReason') or 'scheduled' for r in reply['result']['data']}
                 self.assertEqual(dispositions['copilot.runtime_usage'],'scheduled')
-                deadline=time.monotonic()+60
-                while True:
-                    after=rows(engine);copilot=next(r for r in after['projection']['rows'] if r['id']=='copilot')
-                    if after['sequence']>before['sequence'] and copilot['accounts']:break
-                    self.assertLess(time.monotonic(),deadline,'first refresh did not publish its reading')
-                    time.sleep(.01)
+                def qualifying(message):
+                    if message.get('method')!='rows/changed':return False
+                    snapshot=message.get('params',{}).get('data',{})
+                    return snapshot.get('sequence',0)>before['sequence'] and any(
+                        r['id']=='copilot' and r.get('accounts') for r in snapshot.get('projection',{}).get('rows',[]))
+                # Consume the normal subscription, as the App does. Repeated subscribe
+                # requests obscure notification ordering and exhaust the harness bound.
+                notification=engine._find(qualifying,timeout=60)
+                after=notification['params']['data'];copilot=next(r for r in after['projection']['rows'] if r['id']=='copilot')
                 completed_mono=system_uptime()
                 reading=reading_sha256(copilot['accounts']);self.assertEqual(reading,seed['readingSHA256'])
                 # Observe the real cooldown without waiting it out or altering rate state.

@@ -313,17 +313,18 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 
 ## evidence-u6 changes required by C2.7
 
-Current integration is **incomplete; no runnable kit or GO**. Four legacy C2.3 fixture tests still fail;
-producer fixture capture and the head-built package-level regression are also pending. The divergence table
+Current integration is **incomplete; no runnable kit or GO**. The legacy C2.3 fixtures are retired with
+replacement coverage as explained below. Producer fixture capture, head-built package-level CI proof and
+the complete cooldown regression are still pending. The divergence table
 below records the historical baseline (6a063beb); `test_disagreement_table_is_exact` keeps each expected outcome
 as a regression against both the independent oracle and the final CLI.
 
-**Still open at #332 a1d746fc** (`DISAGREEMENTS`, the only `expectedFailure` traces; C2.7 G.3 asks for none):
+**Closed since #332 a1d746fc** (`DISAGREEMENTS` is empty; every trace still runs through the real CLI):
 
 - `accepted-stale-snapshot`, `accepted-other-engine-request`: `accepted.engineRequestID` ≠ `requested`'s →
-  FAIL (evidence-u6 says NOT-RUN). C2.7 D FAIL: "`accepted` with another `engineRequestID`".
+  FAIL. C2.7 D FAIL: "`accepted` with another `engineRequestID`".
 - `quota-call-before-accepted`: an `account.getQuota` call between `requested` and `accepted` is legal → PASS
-  (evidence-u6 FAILs every quota call before `accepted`). C2.7 D PASS: "`account.getQuota` with `mono` after
+  C2.7 D PASS: "`account.getQuota` with `mono` after
   `requested` and before `completed` (... the call may precede `accepted`)"; FAIL only "an `account.getQuota`
   call logged before `requested`".
 
@@ -338,7 +339,7 @@ the [Reading digest](#reading-digest) vector (c0ee46c2…) and the traces' seed 
 
 `bin/evidence-u6.py` / `U6/evidence_chain.py` at #332 6a063beb (unchanged since 8f857aa6) agree with the oracle on
 68 of 96 traces; the 28 below (plus `quota-call-before-accepted` and M4's `accepted-other-engine-request`) were
-the baseline. Required changes, for M4 (all but the three above are done at a1d746fc):
+the historical baseline. All listed evaluator changes now have passing exact-outcome regressions:
 
 1. Closure of another run → NOT-RUN, not FAIL (`validate_receipt(closure, run, epoch)`'s `closure-other-run`
    is raised as a contradiction).
@@ -393,6 +394,20 @@ The oracle also differs on reasons and on which step it names (evidence-u6 repor
 only overall outcomes are compared.
 
 ## Run
+
+### Retired C2.3 fixture tests
+
+The coordinator explicitly allowed making the four legacy failures pass or retiring them with a reason.
+`verification/test_u6_evidence_chain.py` and `verification/test_u6_evidence.py` are retired: their C2.3
+positive fixture has no C2.7 requested/accepted correlation or reading/stub proof, and its abbreviated
+native rows fail the closed schema before their intended corruption is evaluated. Their non-PASS-only
+mutation checks are superseded by the complete C2.7 matrix in `tests/test_u6_receipt_schema.py`, which
+requires the exact independently specified PASS/FAIL/NOT-RUN for every trace through the real final CLI.
+This includes the legacy closure contradictions, late clear, unchanged rows, wrong PID, missing input,
+wrong frame, duplicate terminal, wrong reset correlation, private retained item and stale-title cases.
+`test_u6_final_manifest.py` retains the final-manifest pins, wrong bundle member and caller-boolean tests.
+Retirement is not a passing result for the old tests, and no expected outcome in the replacement matrix
+is weakened.
 
 ```sh
 python3 -B -m unittest discover -s desktop/native/verification/tests -p 'test_u6_receipt_schema.py'

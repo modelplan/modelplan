@@ -8,6 +8,11 @@ VECTOR=[dict(route='runtime_rpc',plan=dict(id='copilot_pro'),windows=[dict(id='p
     poolKey='copilot',remainingPercent=75.25,resetsAt='2099-01-01T00:00:00Z')])]
 
 class ReadingFingerprintTests(unittest.TestCase):
+    def test_frozen_readme_vector(self):
+        account=dict(route='runtime',plan=dict(id='copilot-pro'),windows=[
+            dict(id='premium_interactions',limitKey='premium_interactions',poolKey='copilot',remainingPercent=62.5,resetsAt='2099-01-01T00:00:00Z'),
+            dict(id='chat',limitKey='chat',poolKey='copilot',remainingPercent=None,resetsAt=None)])
+        self.assertEqual(reading_sha256([account]),'c0ee46c2388e4722f519508dc441af086db96fe31cd3c4597d2392e9410589e4')
     def test_shared_swift_vector(self):
         self.assertEqual(reading_sha256(VECTOR),'92c7f08d9a030f3b6d3409c7698da1b5d0454f773983308d20c7908eb3841a4e')
     def test_changed_remaining_is_not_the_same_reading(self):
