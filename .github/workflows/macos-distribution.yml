@@ -1,4 +1,4 @@
-name: macOS distribution scaffold
+name: macOS distribution
 on:
   push:
     branches: [main]
@@ -12,11 +12,15 @@ on:
         type: boolean
         default: false
       prepare_adhoc_beta:
-        description: Prepare an ad-hoc beta draft payload (no publication)
+        description: Sign an ad-hoc beta and create a draft prerelease
+        type: boolean
+        default: false
+      bootstrap_beta_feed:
+        description: First beta only; allow an HTTP 404 for the beta feed
         type: boolean
         default: false
       candidate_run_id:
-        description: Successful exact-main official assembly run ID (empty skips preparation)
+        description: Successful exact-main official assembly run ID (required for preparation)
         type: string
         default: ""
 permissions:
@@ -95,8 +99,8 @@ jobs:
           retention-days: 7
 
   release-candidate:
-    # Cannot run on pull_request, tags, forks, or an arbitrary branch.
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan' && inputs.prepare_signed_candidate
+    # Switched-off Developer ID/notarization placeholder. Owner enables this later.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan' && inputs.prepare_signed_candidate && vars.MACOS_DEVELOPER_ID_ENABLED == 'true'
     needs: neutral-build
     runs-on: macos-latest
     timeout-minutes: 30
@@ -123,6 +127,7 @@ jobs:
           python-version: "3.12"
       - name: Plan optional stages (presence only; never print secret values)
         id: gates
+        shell: bash
         env:
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -196,7 +201,7 @@ jobs:
           path: ${{ runner.temp }}/release-output/
           if-no-files-found: error
           retention-days: 7
-      # No gh release, Pages push, feed replacement or deployment in R7.
+      # Developer ID candidates are not published by this workflow.
 
   adhoc-beta-candidate:
     # Same protected handoff as Developer ID; no Apple credentials are exposed here.
@@ -224,11 +229,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Plan optional stages (presence only; never print secret values)
+      - name: Require beta signing secret and settings (fail closed)
         id: gates
+        shell: bash
         env:
           SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
         run: python3 desktop/native/tools/distribution/release.py plan | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Read the separate beta feed history
+        env:
+          BOOTSTRAP_BETA_FEED: ${{ inputs.bootstrap_beta_feed }}
+        shell: bash
+        run: |
+          args=()
+          if [[ "$BOOTSTRAP_BETA_FEED" == true ]]; then args+=(--bootstrap); fi
+          python3 desktop/native/tools/distribution/release.py fetch-beta-history --output "$RUNNER_TEMP/previous-beta.xml" "${args[@]}"
       - name: Verify trusted official assembly run
         if: steps.gates.outputs.adhoc_appcast == 'true'
         env:
@@ -265,7 +279,7 @@ jobs:
         if: steps.gates.outputs.adhoc_appcast == 'true'
         env:
           SPARKLE_ED25519_PRIVATE_KEY: ${{ secrets.SPARKLE_ED25519_PRIVATE_KEY }}
-        run: python3 desktop/native/tools/distribution/release.py adhoc_appcast --app "$RUNNER_TEMP/official-app/ModelPlan.app" --output "$RUNNER_TEMP/adhoc-beta-output" --tool "$RUNNER_TEMP/sparkle-tools/sign_update"
+        run: python3 desktop/native/tools/distribution/release.py adhoc_appcast --app "$RUNNER_TEMP/official-app/ModelPlan.app" --output "$RUNNER_TEMP/adhoc-beta-output" --tool "$RUNNER_TEMP/sparkle-tools/sign_update" --previous-appcast "$RUNNER_TEMP/previous-beta.xml"
       - uses: actions/upload-artifact@v4
         if: success() && steps.gates.outputs.adhoc_appcast == 'true'
         with:
@@ -273,4 +287,25 @@ jobs:
           path: ${{ runner.temp }}/adhoc-beta-output/
           if-no-files-found: error
           retention-days: 7
-      # Publishing requires a separate explicit coordinator action after owner approval.
+
+  publish-beta-draft:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan' && inputs.prepare_adhoc_beta
+    needs: adhoc-beta-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: macos-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: modelplan-macos-adhoc-beta-DRAFT-NOT-PUBLISHED
+          path: ${{ runner.temp }}/adhoc-beta-output
+      - name: Create a draft prerelease only (never latest; no live feed replacement)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 desktop/native/tools/distribution/release.py publish-beta --output "$RUNNER_TEMP/adhoc-beta-output"

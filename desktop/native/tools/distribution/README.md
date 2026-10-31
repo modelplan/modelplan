@@ -1,89 +1,75 @@
-# R7: macOS distribution scaffold
+# macOS beta distribution
 
-This is release plumbing, not a distribution candidate or a B26 pass. It changes no CLI interface, schema, contract fixture, app appearance, permission, login item or updater runtime. Do not install credentials merely to exercise this scaffold.
+The public `.github/workflows/macos-distribution.yml` prepares Sparkle updates without an Apple Developer account. It validates an approved official assembly, ad-hoc signs the app, signs its update ZIP with the owner's EdDSA key, generates a separate beta appcast and release notes, and creates a **draft prerelease**. PR builds use standard hosted runners without secrets. Developer ID and notarization remain disabled placeholders.
 
-## Automatic build
+## Owner setup, once
 
-`.github/workflows/macos-distribution.yml` builds the public neutral Swift app for arm64 and x86_64 with a macOS 14 floor. It downloads only the two public CLI archives selected by `desktop/native/consent-cli-pin.json`, checks their pinned SHA256 values, and uses the existing community packager. The app/helper are ad-hoc signed with Hardened Runtime and no App Sandbox entitlement. The uploaded ZIP is labelled **unsigned** in the distribution sense: it is neither Developer ID signed nor notarized, and is never an update candidate. Intel is compiled, untested, and may stutter in 3D. This scaffold does not claim native UI acceptance.
-
-Public PR builds receive no secrets or protected environment. Outputs are short-lived Actions artifacts, not GitHub Releases. The existing CLI tag-release workflow is unchanged.
-
-## Optional official candidate preparation
-
-The second job runs only for a manual dispatch on `main` in the canonical repository, with `prepare_signed_candidate=true`. It references the **macos-release** protected GitHub environment. Before enabling this job for real credentials, the owner must configure required reviewers and restrict that environment to main. R7 does not create or modify that environment, any secret, an Apple account, team/bundle identity, or an update host.
-
-The job first prints only stage decisions and missing **variable names**. Missing signing material skips signing and all dependent stages. Missing notarization material permits signing but skips notarization and appcast. Missing Sparkle material permits notarization but skips appcast. Malformed supplied material, a failed command, identity/hash mismatch or notarization rejection fails the job; it never becomes a successful unsigned update.
-
-GitHub encrypted environment secret names (placeholders only; no values are stored here):
-
-| Secret name | Purpose |
-| --- | --- |
-| `MACOS_CERTIFICATE_P12_BASE64` | Developer ID Application certificate with private key, base64 P12 |
-| `MACOS_CERTIFICATE_PASSWORD` | P12 import password |
-| `APPLE_NOTARY_KEY_P8_BASE64` | App Store Connect notarization API key, base64 P8 |
-| `APPLE_NOTARY_KEY_ID` | Notarization API key ID |
-| `APPLE_NOTARY_ISSUER_ID` | Notarization API issuer ID |
-| `SPARKLE_ED25519_PRIVATE_KEY` | Sparkle-exported base64 key, passed only through stdin |
-
-Nonsecret, owner-reviewed environment variable names:
-
-| Variable | Purpose |
-| --- | --- |
-| `MACOS_OFFICIAL_WORKFLOW_ID` | Numeric ID of the future trusted official assembly workflow |
-| `MACOS_SIGNING_IDENTITY` | Exact Developer ID Application identity; no guessed identity |
-| `MACOS_TEAM_ID`, `MACOS_BUNDLE_ID` | Owner's stable Apple team and official bundle ID |
-| `MACOS_FEED_URL`, `MACOS_UPDATE_URL` | Credential-free HTTPS official-channel feed and versioned archive URL |
-| `SPARKLE_TOOLS_URL`, `SPARKLE_TOOLS_SHA256` | Reviewed immutable Sparkle release tar.xz URL and SHA256 |
-
-The CLI pin remains read-only. Sparkle version selection is deferred to B26; there is no `latest` download or automatically selected dependency here. A reviewed Sparkle tool must support `--ed-key-file -` and `-p`.
-
-### Official assembly handoff (not implemented by R7)
-
-`candidate_run_id` identifies a successful push/manual official assembly run on **the exact current main commit**, in this repository, from the approved workflow ID. PR/fork/tag runs and other commits are rejected. That workflow must upload an artifact named `modelplan-macos-official-candidate` containing `ModelPlan.app.zip`. The community build above deliberately does not supply it or masquerade as official.
-
-The ZIP must contain `ModelPlan.app/` (internal framework symlinks allowed; no outside paths). The app must have:
-
-- Approved bundle ID, numeric build version, macOS 14 minimum, universal app and CLI executable slices.
-- `Contents/Resources/build-edition.json` with `edition: "official"` and `release-provenance.json` with `sourceCommit` matching the exact approved main SHA.
-- The MIT, CLI third-party and official visual license notices. Official visual sources remain private; only an authorized assembled binary may enter this handoff.
-- `Contents/Helpers/modelplan` and its current `Contents/Resources/modelplan.sha256` integrity record.
-- The approved `SUFeedURL` and `SUPublicEDKey` in Info.plist. Actual Sparkle embedding, XPC entitlements, updater UI/preferences and channel/key-rotation behavior are B26 integration work; those are not supplied by this scaffold.
-
-Signing imports the supplied certificate into a new temporary keychain without invoking default-keychain or replacing the keychain search list. It signs Mach-O leaves and nested containers inside-out with secure timestamps and Hardened Runtime, refreshes the bundled CLI hash **after helper signing**, signs the outer app, and verifies the team and bundle. This initial template has no sandbox/debug entitlement exceptions; any required per-component updater entitlements need explicit B26 review. Temporary credential files/keychain are removed in `finally`; GitHub also discards the hosted VM after termination. No key, keychain, raw credential-tool output or notarization diagnostic archive is uploaded.
-
-Notarization uses `notarytool --wait`, requires Accepted, staples and validates the app ticket, assesses Gatekeeper, and only then creates a symlink-preserving update ZIP with `ditto`. Sparkle archive signing uses stdin; subprocess errors are withheld because upstream tools can echo malformed key input. The signature is verified both by Sparkle and independently with CryptoKit against the **public key embedded in that app** before creating `appcast.xml`.
-
-The XML is a single-version **feed candidate**, includes build/display versions and minimum macOS, and requires a nonempty signed archive. It is not an in-place updater for an existing feed. R7 uploads only a candidate artifact and never pushes a feed, writes Pages, creates a release or deploys anything. Preserving old items, monotonically increasing versions, matching the final download URL/archive bytes, N→N+1/invalid-signature/interruption tests, clean-Mac offline Gatekeeper checks and owner release approval remain B26 gates.
-
-## Ad-hoc beta channel
-
-Before an Apple Developer account is available, dispatch this workflow on canonical `main` with `prepare_adhoc_beta=true` and a trusted `candidate_run_id`. The **macos-release** environment must require owner review for every run and restrict branches to main. The beta job verifies the same successful, exact-main official assembly run and validates the same official edition, source provenance, bundle ID, universal executables, helper hash and notices as the Developer ID path. No Apple certificate, team ID or notarization key is required; the existing signed/notarized stages retain their requirements.
-
-On the owner's Mac, use the reviewed Sparkle distribution's `bin/generate_keys` to make a key pair. Export the private key with `bin/generate_keys -x <private-key-file>` and store its contents as the **macos-release** environment secret `SPARKLE_ED25519_PRIVATE_KEY`; keep the key safe on the owner's Mac. Give M0 the public key for the app's `SUPublicEDKey`. The workflow sends the private key to `sign_update` over stdin and verifies the result against that embedded public key. [Sparkle key setup](https://sparkle-project.org/documentation/#eddsa-ed25519-signatures).
+Configure the protected **macos-release** GitHub environment with required reviewers and main-only deployment branches. The owner creates the Sparkle key pair later, outside CI, with the reviewed Sparkle distribution's `generate_keys`. Store the exported private key only as the encrypted environment secret **`SPARKLE_ED25519_PRIVATE_KEY`** (the existing repository name). Give the app packager the matching public key for `SUPublicEDKey`. Never put a private key in the checkout, an Actions variable, a command argument, an artifact, or a release. The workflow never creates keys or searches a local Keychain; it passes the secret to `sign_update` through stdin. [Sparkle key setup](https://sparkle-project.org/documentation/#eddsa-ed25519-signatures), [stdin signing](https://sparkle-project.org/documentation/security-and-reliability/).
 
 Set these nonsecret environment variables:
 
-- `MACOS_BUNDLE_ID` and `MACOS_OFFICIAL_WORKFLOW_ID`: the approved bundle identity and trusted assembly workflow, as above.
-- `SPARKLE_TOOLS_URL` / `SPARKLE_TOOLS_SHA256`: the reviewed immutable tools archive and its checksum, as above.
-- `MACOS_BETA_FEED_URL`: a dedicated credential-free HTTPS beta feed file; the candidate's `SUFeedURL` must match exactly.
-- `MACOS_UPDATE_URL`: the final, versioned HTTPS download URL for `ModelPlan-beta-universal.zip`.
-- `MACOS_RELEASE_NOTES_URL`: the HTTPS release notes URL included in the beta appcast.
-- `MACOS_FEED_URL`: reserve the future notarized feed at a different file when known. It is optional for beta preparation; when both feeds are configured, preparation rejects the same host/port/path, including case/default-port, escaped-path, dot-segment and query-string aliases. Redirects and hosting aliases remain the owner's responsibility; never map the two feed URLs to one file.
+| Variable | Purpose |
+| --- | --- |
+| `MACOS_BUNDLE_ID` | Approved stable official bundle identity; no Apple account is required |
+| `MACOS_OFFICIAL_WORKFLOW_ID` | Numeric ID of the trusted official assembly workflow |
+| `SPARKLE_TOOLS_URL`, `SPARKLE_TOOLS_SHA256` | Reviewed immutable Sparkle release tar.xz and checksum; no latest download |
+| `MACOS_BETA_FEED_URL` | Dedicated credential-free HTTPS beta appcast file, matching the app's `SUFeedURL` |
+| `MACOS_FEED_URL` | Future stable feed, when known; must be a separate file |
+| `MACOS_UPDATE_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/ModelPlan-beta-universal.zip` |
+| `MACOS_RELEASE_NOTES_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/release-notes.html` |
 
-The job deep ad-hoc signs the app, refreshes the helper integrity record, reseals it and runs `codesign --verify --deep --strict` before making a symlink-preserving `ditto` ZIP. Its artifact `modelplan-macos-adhoc-beta-DRAFT-NOT-PUBLISHED` contains `ModelPlan-beta-universal.zip`, `appcast-beta.xml`, `SHA256SUMS` (ZIP and appcast hashes), and `draft-release.json` (`draft: true`, `prerelease: true`). The beta XML includes `sparkle:channel` = `beta`, minimum macOS 14.0 (`14.0.0` in Sparkle's three-part XML format), release notes and the archive's EdDSA signature. No GitHub Release is created. The coordinator separately reviews and publishes the payload and beta feed only after explicit owner approval, keeping the final archive bytes and URL unchanged.
+Replace `BUILD` with the candidate's numeric `CFBundleVersion` before dispatch. Publication checks that both URLs match the resulting release assets. Feed separation rejects same-host/port/path aliases, including query-only differences, escaped paths and dot segments. Hosting redirects and aliases must also keep beta and stable files separate.
 
-M0 owns the app integration: embed Sparkle, set `SUPublicEDKey` to the owner's base64 public key and beta `SUFeedURL` to `MACOS_BETA_FEED_URL`, and allow `beta` through `SPUUpdaterDelegate.allowedChannels(for:)`. Without that delegate setting Sparkle ignores beta items even in a dedicated feed. This PR edits no app sources. [Sparkle channels](https://sparkle-project.org/documentation/publishing/#channels).
+Missing or whitespace-only signing secrets or settings **fail the explicitly requested beta job**, with a diagnostic listing setting names only. There is no unsigned fallback. The automatic neutral build still needs no secrets or private checkout.
 
-Known limits: first open requires a Gatekeeper override for the non-notarized app; Accessibility and Screen Recording (TCC) grants may need re-granting after an update because the ad-hoc signature changes. Once the Apple account exists, enable the existing Developer ID/notarization configuration. With the same bundle identity and Sparkle key and a higher build number, the notarized build can arrive as a normal Sparkle update: the coordinator must publish a notarized transition item to the existing, separate beta feed, and M0's notarized app uses the official `SUFeedURL` afterward. This transition is not automatic feed publication or a claim of tested update behavior; the existing B26 live-update and clean-Mac checks still apply.
+## Assembly handoff
+
+Dispatch on canonical `main` with `prepare_adhoc_beta=true` and `candidate_run_id` identifying a successful push/manual official assembly on the **exact current main SHA**, in this repository, from `MACOS_OFFICIAL_WORKFLOW_ID`. PR, fork, tag, other-branch and other-commit inputs are rejected. The assembly must upload `modelplan-macos-official-candidate` containing `ModelPlan.app.zip`. The automatic community build cannot supply the official handoff.
+
+The candidate must have the approved bundle ID, numeric build version, macOS 14 minimum, universal app/helper executables, exact source provenance, official edition marker, helper integrity record, and MIT/CLI third-party/official visual notices. ZIP traversal and escaping symlinks are rejected. `SUFeedURL` must match the beta feed and `SUPublicEDKey` must contain the owner's public key.
+
+App integration remains the packager's responsibility: embed the reviewed Sparkle runtime and permit `beta` through `SPUUpdaterDelegate.allowedChannels(for:)`. Otherwise Sparkle ignores beta items even in a dedicated feed. This pipeline does not add runtime updater code. Verify the actual Sparkle assembly's component entitlements/runtime flags after signing and exercise a real update before releasing a candidate; synthetic tests cannot establish that packaging behavior. [Sparkle channels](https://sparkle-project.org/documentation/publishing/#channels), [component signing](https://sparkle-project.org/documentation/sandboxing/#code-signing).
+
+## Feed generation and publication
+
+The job downloads the **beta** feed history over HTTPS and retains its existing items and signatures. Malformed, unavailable, unsigned, duplicate-version or non-beta history fails closed. For the very first beta only, set `bootstrap_beta_feed=true`: this permits a confirmed HTTP 404 to initialize the feed. It does not permit authentication errors, timeouts or server errors to erase history. Subsequent releases must read the current hosted beta feed; retain the last published appcast there before the next dispatch.
+
+New build numbers must exceed every retained version. One-, two- and three-component numeric versions compare numerically with zero padding (`10` = `10.0.0`, and `10` > `9`). The appcast lists items newest first and rejects stable items. The current archive signature is verified by Sparkle and independently with CryptoKit against the public key embedded in the candidate. [Sparkle publishing and version fields](https://sparkle-project.org/documentation/publishing/).
+
+After ad-hoc signing, helper-hash refresh, app resealing and strict signature verification, the job creates a symlink-preserving ZIP with `ditto`. It uploads:
+
+- `ModelPlan-beta-universal.zip` and `appcast-beta.xml` with beta channel, EdDSA signature, archive length, build/display versions and macOS 14.0.0 minimum.
+- `RELEASE_NOTES.md` and escaped `release-notes.html`, identifying the build/source and explaining first-open and permission limits.
+- `SHA256SUMS` covering those four files, plus `draft-release.json` with `draft: true` and `prerelease: true`.
+
+A separate protected job with repository write permission, **without signing secrets**, checks the payload and creates `macos-beta-BUILD` using `gh release create --draft --prerelease --latest=false`. It first requires a confirmed HTTP 404 for that tag; an existing tag or inconclusive lookup fails before release creation. It never edits an existing release, changes the stable feed, or promotes anything to a normal/latest release. Reusing a tag fails rather than replacing previously reviewed assets. A failed publication can leave a partial draft; inspect/remove that draft explicitly before retrying.
+
+Draft assets are not anonymously downloadable and do not activate auto-updates. After reviewing the exact bytes, the coordinator can publish the draft **as a prerelease only** and place its `appcast-beta.xml` at `MACOS_BETA_FEED_URL`, preserving the ZIP/notes URLs and bytes. This workflow prepares that reviewable release; it never replaces a live hosted feed. Test N→N+1, invalid-signature and interruption behavior on the actual app before beta rollout.
+
+## Limits users see
+
+This beta is ad-hoc signed and **not notarized**. Gatekeeper can block first open. After trying to open the app, a user who trusts the release may need System Settings → Privacy & Security → **Open Anyway**, then confirmation of the first-open prompt. [Apple's first-open guidance](https://support.apple.com/en-us/102445).
+
+Accessibility and Screen Recording (TCC) grants may need re-granting after updates because the ad-hoc signature changes. Generated release notes repeat both limits. Intel is compiled but execution is untested; 3D may stutter. Local tests and CI do not establish clean-Mac Gatekeeper/TCC behavior, real updates, minimum-OS launch, or visual acceptance.
+
+## Later: Developer ID and notarization
+
+The existing `release-candidate` job requires both `prepare_signed_candidate=true` and the explicit repository variable **`MACOS_DEVELOPER_ID_ENABLED=true`**. With the variable unset it stays off, even if Apple credentials appear. It does not publish releases. Enable it only when the owner is ready to configure the Apple account and validate that path.
+
+Its environment secrets remain `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_NOTARY_KEY_P8_BASE64`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID`, and the Sparkle secret above. Additional variables are `MACOS_SIGNING_IDENTITY` (exact Developer ID Application identity) and `MACOS_TEAM_ID`, plus the existing bundle/feed/tool settings. Missing dependencies skip optional signed stages; malformed material, identity mismatch and notarization rejection fail. Temporary keychains/credential files are removed and raw credential-tool diagnostics are never uploaded.
+
+The preserved path signs inside-out, refreshes helper identity, verifies team/bundle, waits for notarization acceptance, staples, assesses Gatekeeper, then archives/signs the update. Later migration needs the same bundle identity and Sparkle key with a higher build number: publish a notarized transition item to the existing beta feed, then point the notarized app at the separate stable feed. That transition requires real update validation.
 
 ## Local checks
 
-```
+```sh
 python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
 node scripts/check-source-policy.mjs
 ```
 
-These tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering (including all beta-setting combinations), trusted-trigger denial, archive traversal/link rejection, community/official separation, distinct feed files, beta signing order/helper hash refresh and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
+The release-gate tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering (including all beta-setting combinations), trusted-trigger denial, archive traversal/link rejection, community/official separation, distinct feed files, beta signing order/helper hash refresh and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
+
+The beta-pipeline tests generate and discard a throwaway Ed25519 key inside the test (CryptoKit on macOS; OpenSSL on Linux). They verify serialized enclosure signatures, numeric ordering, beta isolation, history bootstrap refusal, missing-key failure, draft-only publication guards, candidate validation and signing/hash order. No owner key, account, credential discovery or real release is used.
 
 References: [Sparkle publishing](https://sparkle-project.org/documentation/publishing/) (archive preservation, signed enclosure and version fields), [Sparkle security](https://sparkle-project.org/documentation/security-and-reliability/) (stdin key handling), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 

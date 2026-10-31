@@ -262,3 +262,26 @@ func TestFeatureRootsAndPublicationRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestRowsSubscribeBusyFixture(t *testing.T) {
+	_, file, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(file), "../../../../schema/app-cli/captures/rows-subscribe-busy.json")
+	data, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema(t, "Response").Validate(doc); err != nil {
+		t.Fatal(err)
+	}
+	var failure wire.Failure
+	if err := json.Unmarshal(data, &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Error.Code != wire.CodeBusy || failure.Error.Message != wire.ErrorName(wire.CodeBusy) {
+		t.Fatalf("wrong busy response: %+v", failure.Error)
+	}
+}
