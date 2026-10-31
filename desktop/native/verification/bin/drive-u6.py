@@ -8,6 +8,7 @@ import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
 from admission import load_and_admit
 from guardian import cleanup,identity,launcher_lost
+import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
 DISK_RESERVE=2*3430940672;DISK_FLOOR=8589934592
 REGISTER_SECONDS=15;CLOSE_SECONDS=25 # launch.py TERM 10 s + KILL; guardian TERM 10 s + KILL 5 s
@@ -67,7 +68,8 @@ def prepare(c,now):
         if sum((locks/f'slot{i}').exists() for i in (1,2))!=1:raise RuntimeError('resource-contention')
         if low_disk(c):raise RuntimeError('resource-disk-floor')
         write(native_contract(c),dict(runID=run,epoch=epoch,start=start,expiresAt=end,lease=c['leasePath'],stop=c['stopPath'],observations=str(observations),menuRequest=str(out/'menu-request.json')))
-        write(c['preparedReceiptPath'],dict(prepared=True,runID=run,epoch=epoch,attempt=attempt,binarySHA256=c['binarySHA256'],locks=[str(x) for x in owned]))
+        homeseed.check(c) # the synthetic profile seed (if any) is pinned into the receipt
+        write(c['preparedReceiptPath'],dict(prepared=True,runID=run,epoch=epoch,attempt=attempt,binarySHA256=c['binarySHA256'],homeSeedSHA256=c.get('syntheticHomeSeedSHA256'),locks=[str(x) for x in owned]))
     except Exception as e:
         # One attempt, no retry: no receipt, this invocation's locks released, and the stop file also makes admission refuse.
         release(owned,attempt);request_stop(c,'u6-prepare-refused')

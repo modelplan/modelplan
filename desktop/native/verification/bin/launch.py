@@ -5,6 +5,7 @@ from pathlib import Path
 from admission import validate,load_and_admit
 from guardian import register,mark_launching
 from scenario import resolve
+import homeseed
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
     c=json.loads(a.config.read_text())
@@ -12,7 +13,9 @@ def main():
     c=load_and_admit(c) # Read external records before creating synthetic resources.
     check_prepared(c)
     home=Path(c['syntheticHome']);tmp=Path(c['syntheticTmp'])
+    homeseed.check(c) # A pinned seed is verified before any resource exists.
     home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
+    homeseed.copy_into(c,home) # Fresh HOME, then the verified synthetic profile seed (if any).
     binary=Path(c['argv'][0]).resolve(strict=True)
     if hashlib.sha256(binary.read_bytes()).hexdigest()!=c['binarySHA256']:raise ValueError('binary identity changed')
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
@@ -52,6 +55,7 @@ def check_prepared(c):
     if not isinstance(r,dict) or r.get('prepared') is not True or r.get('runID')!=c['lease'].get('runID') or r.get('epoch')!=c['lease'].get('epoch') \
             or r.get('binarySHA256')!=c['binarySHA256'] or not isinstance(r.get('attempt'),str) or not r['attempt'] or not isinstance(r.get('locks'),list) or not r['locks']:
         raise ValueError('preparation receipt mismatch')
+    if r.get('homeSeedSHA256')!=c.get('syntheticHomeSeedSHA256'):raise ValueError('preparation receipt mismatch')
     for lock in r['locks']:
         try:o=json.loads((Path(lock)/'owner.json').read_text())
         except (OSError,ValueError,TypeError):o=None
