@@ -84,6 +84,8 @@ public actor ProcessEngineClient: EngineClient {
     var deliveryTask: Task<Void, Never>?
     var deliveryTimer: Task<Void, Never>?
     var restartTask: Task<Void, Never>?
+    var rowsBootstrapRetry: Task<Void, Never>?
+    var rowsBootstrapBusyCount = 0
     var budget = RestartBudget()
     var facts: WireEnvelope<WireConsentFacts>?
     var intents: [String: CredentialIntent] = [:]
@@ -107,7 +109,7 @@ public actor ProcessEngineClient: EngineClient {
         self.credentialAgent = credentialAgent; self.consumer = consumer; self.runtime = runtime
     }
     deinit {
-        restartTask?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
+        restartTask?.cancel(); rowsBootstrapRetry?.cancel(); deliveryTask?.cancel(); deliveryTimer?.cancel()
         let current = child
         let abandoned = unreapedProcess
         if let current { Task { _ = await current.finish() } }
@@ -153,6 +155,7 @@ public actor ProcessEngineClient: EngineClient {
         deliveryAuthority.replace(with: nil)
         if let stoppingTask { await stoppingTask.value; return }
         stopped = true; stopping = true
+        rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
         let retiring = restartTask
         retiring?.cancel(); restartTask = nil
         let process = child ?? unreapedProcess
@@ -223,6 +226,7 @@ public actor ProcessEngineClient: EngineClient {
         guard let process = child, process.id == id else { return }
         deliveryAuthority.replace(with: nil)
         child = nil; handshaken = false; writerRunning = false
+        rowsBootstrapRetry?.cancel(); rowsBootstrapRetry = nil; rowsBootstrapBusyCount = 0
         writes.removeAll(); controlWrites.removeAll(); epochProbe = nil
         failRequests(.interrupted(.connectionLost)); failStarts(.interrupted(.connectionLost))
         invalidate(protocolFault ? .protocolFault : .connectionLost, next: floor)
@@ -281,6 +285,7 @@ public actor ProcessEngineClient: EngineClient {
     @discardableResult
     func enqueue(_ method: String, params: WireJSONValue, purpose: ClientPending.Purpose,
                  grant: WireConsentGrantParams? = nil, pluginTool: WirePluginTool? = nil, timeout: Duration,
+                 reservedID: WireRequestID? = nil,
                  continuation: CheckedContinuation<EngineRequestCompletion, Error>? = nil) throws -> String {
         guard child != nil else { throw EngineClientError.notReady }
         let control = isControl(method)
@@ -293,7 +298,7 @@ public actor ProcessEngineClient: EngineClient {
             let reserved = pending.values.filter { ["rows/subscribe", "history/query", "cockpit/query", "publication/get", "plugin/install"].contains($0.method) }.count * WireProtocol.maxFrameBytes
             guard reserved + deliveries.reduce(0, { $0 + $1.bytes }) + WireProtocol.maxFrameBytes <= 32 << 20 else { throw EngineClientError.localBusy }
         }
-        let id = try nextID(); let key = requestKey(id)
+        let id = try reservedID ?? nextID(); let key = requestKey(id)
         let data = try encodedRequest(method, id: id, params: params)
         let current = control ? controlWrites : writes
         guard current.count < (control ? 256 : 64), current.reduce(0, { $0 + $1.data.count }) + data.count <= (control ? 4 << 20 : 32 << 20) else { throw EngineClientError.localBusy }
@@ -389,7 +394,7 @@ public actor ProcessEngineClient: EngineClient {
         }
     }
 
-    func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil) async throws -> EngineRequestCompletion {
+    func request<T: Encodable & Sendable>(_ method: String, _ params: T, timeout: Duration?, grant: WireConsentGrantParams? = nil, userAction: EngineUserAction? = nil, pluginTool: WirePluginTool? = nil, prepared: (@Sendable (WireRequestID) async -> Void)? = nil) async throws -> EngineRequestCompletion {
         guard handshaken, child != nil, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
         if let capability = ["rows/subscribe": "rows", "consent/get": "consent", "consent/grant": "consent", "history/query": "history", "cockpit/query": "cockpit", "publication/get": "publication", "plugin/install": "plugin_install", "refresh/request": "refresh", "diagnostics/get": "diagnostics"][method], !capabilities.contains(capability) { throw EngineClientError.unsupportedCapability }
         if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
@@ -399,10 +404,19 @@ public actor ProcessEngineClient: EngineClient {
         let parameters = try wireJSON(params)
         if let grant, let userAction { try registerIntent(grant, action: userAction) }
         let cancellation = RequestCancellation()
+        let reservedID: WireRequestID?
+        if let prepared {
+            let processID = child!.id
+            let id = try nextID()
+            reservedID = id
+            await prepared(id)
+            guard handshaken, child?.id == processID, epochProbe == nil, !epochUncertain else { throw EngineClientError.notReady }
+            if Task.isCancelled { throw EngineClientError.interrupted(.notSent) }
+        } else { reservedID = nil }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 do {
-                    let key = try enqueue(method, params: parameters, purpose: .request, grant: grant, pluginTool: pluginTool, timeout: bound, continuation: continuation)
+                    let key = try enqueue(method, params: parameters, purpose: .request, grant: grant, pluginTool: pluginTool, timeout: bound, reservedID: reservedID, continuation: continuation)
                     cancellation.install { [weak self] in Task { await self?.cancelRequest(key) } }
                 } catch {
                     if let grant { retireIntent(requestID: grant.requestId, unlessCommitted: false) }
@@ -415,6 +429,10 @@ public actor ProcessEngineClient: EngineClient {
     public func consent(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/get", WireEmpty(), timeout: timeout) }
     public func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction? = nil, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("consent/grant", value, timeout: timeout, grant: value, userAction: userAction) }
     public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("refresh/request", value, timeout: timeout) }
+    public func refresh(_ value: WireRefreshRequestParams, timeout: Duration? = nil,
+                        prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
+        try await request("refresh/request", value, timeout: timeout, prepared: prepared)
+    }
     public func history(_ value: WireHistoryQueryParams, timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("history/query", value, timeout: timeout) }
     public func diagnostics(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("diagnostics/get", WireEmpty(), timeout: timeout) }
     public func cockpit(timeout: Duration? = nil) async throws -> EngineRequestCompletion { try await request("cockpit/query", WireEmpty(), timeout: timeout) }

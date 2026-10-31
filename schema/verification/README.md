@@ -92,7 +92,8 @@ exactly the keyword subset these schemas use and refuses any other keyword):
   `accepted` or terminal for R is FAIL; a terminal outside 60 s of `requested` is NOT-RUN `timeout`; `failed` is
   FAIL with its reason; `abandoned` is NOT-RUN `timeout` (deadline) or `not-delivered` (stop). `deferred` and
   `completed` need one `accepted` between `requested` and the terminal (else NOT-RUN `accepted-missing`) whose
-  `engineRequestID` equals `requested`'s (else NOT-RUN `accepted-stale`: another call's or a cached reply).
+  `engineRequestID` equals `requested`'s (else FAIL `accepted-other-engine-request`, C2.7 D: another call's or a
+  cached reply; an `accepted` for another session is NOT-RUN `accepted-stale`).
   `deferred` is NOT-RUN with the reason of the Copilot disposition (`cooldown` → `cooldown`; `read_only`,
   `offline` → `engine-disabled`; `policy_pending` → `consent-required`; `scheduled` would contradict it: FAIL).
   `completed` passes only when `accepted` scheduled Copilot (else FAIL), the projection qualifies
@@ -218,7 +219,7 @@ The traces' seed reading (`SEED_READING_ACCOUNT`, one window at 75 % resetting 2
 | `refresh-abandoned-deadline` | C2.6 D (watchdog deadline; also the unrelated-only advance: no completed) | 3 NOT-RUN / timeout / `refresh-abandoned-deadline` | not-run |
 | `refresh-abandoned-stop` | C2.6 D (watchdog stop) | 3 NOT-RUN / not-delivered / `refresh-abandoned-stop` | not-run |
 | `accepted-missing` | C2.6 D (no per-call reply) | 3 NOT-RUN / not-delivered / `accepted-missing` | not-run |
-| `accepted-stale-snapshot` | C2.6 D (stale scheduled value: another call's engineRequestID) | 3 NOT-RUN / not-delivered / `accepted-stale` | not-run |
+| `accepted-stale-snapshot` | C2.7 D FAIL: "`accepted` with another `engineRequestID`" (a stale scheduled value) | 3 FAIL / unknown / `accepted-other-engine-request` | fail |
 | `accepted-duplicate` | C2.6 D, C2.6 F | 3 FAIL / unknown / `accepted-duplicate` | fail |
 | `copilot-accounts-before-nonzero` | C2.6 D (not a first attempt) | 3 FAIL / unknown / `copilot-accounts-before` | fail |
 | `completed-on-unrelated-projection` | C2.6 D (unrelated-only advance reported as completed) | 3 FAIL / unknown / `projection-not-qualifying` | fail |
@@ -231,6 +232,8 @@ The traces' seed reading (`SEED_READING_ACCOUNT`, one window at 75 % resetting 2
 | `quota-call-before-accepted` | C2.7 D (the worker is woken before the reply returns) | none | pass |
 | `call-before-requested` | C2.7 D | 3 FAIL / unknown / `call-before-requested` | fail |
 | `connect-before-accepted` | C2.6 D (connect before the reply) | none | pass |
+| `auth-before-accepted-is-legal` | C2.6 coordinator clarification (only quota is ordered after accepted) | none | pass |
+| `accepted-other-engine-request` | C2.7 D FAIL: "`accepted` with another `engineRequestID`" | 3 FAIL / unknown / `accepted-other-engine-request` | fail |
 | `runtime-calls-preseeded` | C2.6 C-D (the log must be absent in the seed) | 3 FAIL / unknown / `call-before-requested` | fail |
 | `runtime-calls-foreign` | C2.6 D, C2.4 section 1 | 3 NOT-RUN / wrong-subject / `runtime-calls-foreign` | not-run |
 | `runtime-calls-missing` | C2.6 D | 3 NOT-RUN / not-delivered / `runtime-calls-missing` | not-run |
@@ -308,11 +311,34 @@ Seed and Drive (C2.6 C-D):
 Observation, outside the schema: with the guard attached, `EngineDockMenuApplication.swift:126-133` skips
 `composition.refresh` when no arrival context is seen within 0.5 s (no `requested` → NOT-RUN).
 
-## evidence-u6 changes required by C2.6
+## evidence-u6 changes required by C2.7
+
+Current integration is **incomplete; no runnable kit or GO**. Four legacy C2.3 fixture tests still fail;
+producer fixture capture and the head-built package-level regression are also pending. The divergence table
+below records the historical baseline (6a063beb); `test_disagreement_table_is_exact` keeps each expected outcome
+as a regression against both the independent oracle and the final CLI.
+
+**Still open at #332 a1d746fc** (`DISAGREEMENTS`, the only `expectedFailure` traces; C2.7 G.3 asks for none):
+
+- `accepted-stale-snapshot`, `accepted-other-engine-request`: `accepted.engineRequestID` ≠ `requested`'s →
+  FAIL (evidence-u6 says NOT-RUN). C2.7 D FAIL: "`accepted` with another `engineRequestID`".
+- `quota-call-before-accepted`: an `account.getQuota` call between `requested` and `accepted` is legal → PASS
+  (evidence-u6 FAILs every quota call before `accepted`). C2.7 D PASS: "`account.getQuota` with `mono` after
+  `requested` and before `completed` (... the call may precede `accepted`)"; FAIL only "an `account.getQuota`
+  call logged before `requested`".
+
+Coordinator clarifications applied after the pinned oracle branch (C2.6; C2.7 supersedes the call window):
+requested and accepted must share the pre-send engineRequestID; the result digest key is runtimeCallsSHA256. readingSHA256 replaces accountIDSHA256 and
+fingerprints exactly one accepted Copilot account's route, plan.id and windows sorted by id.
+Each window contributes id, limitKey, poolKey, remainingBp (integer, nearest with ties away
+from zero) and resetsAt (integer UNIX seconds), preserving nulls. Sorted-key compact UTF-8
+JSON is hashed. Read-time fields are excluded. The Python/Swift fixed vector is
+92c7f08d9a030f3b6d3409c7698da1b5d0454f773983308d20c7908eb3841a4e. `U6/reading_fingerprint.py` also reproduces
+the [Reading digest](#reading-digest) vector (c0ee46c2…) and the traces' seed reading (803ad776…).
 
 `bin/evidence-u6.py` / `U6/evidence_chain.py` at #332 6a063beb (unchanged since 8f857aa6) agree with the oracle on
-68 of 96 traces. The 28 below are `expectedFailure` in `EvidenceU6CLITests` (C2.6 G.3 asks for none);
-`test_disagreement_table_is_exact` pins both outcomes. Required changes, for M4:
+68 of 96 traces; the 28 below (plus `quota-call-before-accepted` and M4's `accepted-other-engine-request`) were
+the baseline. Required changes, for M4 (all but the three above are done at a1d746fc):
 
 1. Closure of another run → NOT-RUN, not FAIL (`validate_receipt(closure, run, epoch)`'s `closure-other-run`
    is raised as a contradiction).
@@ -324,13 +350,13 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 7. Terminal beyond 60 s → NOT-RUN `timeout` (today FAIL `out-of-window`).
 8. C2.6 D: read `accepted` (one, between `requested` and the terminal, not reused), `copilotAccountsBefore` = 0,
    `deferred` (NOT-RUN by disposition: `cooldown`, `engine-disabled`, `consent-required`), `abandoned` (NOT-RUN
-   `timeout` / `not-delivered`), the `engineRequestID` echo, the qualifying `completed` (`copilotAccountsAfter` = 1, `readingSHA256`,
+   `timeout` / `not-delivered`), the `engineRequestID` echo (a mismatch is FAIL, C2.7 D), the qualifying `completed` (`copilotAccountsAfter` = 1, `readingSHA256`,
    advance; else FAIL, including today's NOT-RUN for an unchanged sequence), and `$BATCH/runtime-calls.jsonl`
    against `result.json`'s `runtimeCallsSHA256` and the run binding (else NOT-RUN), no `account.getQuota` before `requested` and
    `account.getQuota` between `requested` and `completed` (else FAIL; C2.7 D); add `cooldown` to `CODES`.
 9. C2.6 E: `accepted-clear` and `menu-scrubbed` within 5 s of `clear-initiated`, late → FAIL `timeout`.
 
-| Trace | Oracle (C2.6) | evidence-u6 | Deciding text |
+| Trace | Oracle (C2.7) | evidence-u6 | Deciding text |
 | --- | --- | --- | --- |
 | `closure-other-run` | not-run | fail | C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
 | `closure-other-lease-window` | not-run | pass | C2.6 F: "A receipt that fails its schema, names another run/epoch/PID or lease window → NOT-RUN" |
@@ -342,7 +368,8 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 | `refresh-terminal-late` | not-run | fail | C2.6 D: "Exactly one terminal row for R within 60 s"; NOT-RUN: "no terminal" |
 | `refresh-rows-unchanged` | fail | not-run | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
 | `accepted-missing` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
-| `accepted-stale-snapshot` | not-run | pass | C2.6 D: accepted is "written from the completion of that refresh/request call (the per-call reply, never store.snapshot or any cached value)" |
+| `accepted-stale-snapshot` | fail | pass | C2.7 D FAIL: "`accepted` with another `engineRequestID`" |
+| `accepted-other-engine-request` | fail | not-run | C2.7 D FAIL: "`accepted` with another `engineRequestID`" |
 | `accepted-duplicate` | fail | pass | C2.6 F: "Two valid receipts that contradict each other (including ... descending/duplicate seq) → FAIL" |
 | `copilot-accounts-before-nonzero` | fail | pass | C2.6 D FAIL: "copilotAccountsBefore ≠ 0" |
 | `completed-on-unrelated-projection` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
@@ -352,6 +379,7 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 | `stub-call-missing` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
 | `quota-call-after-completed` | fail | pass | C2.6 D FAIL: "completed without the qualifying projection or without a matching account.getQuota call" |
 | `call-before-requested` | fail | pass | C2.7 D FAIL: an account.getQuota call before requested |
+| `quota-call-before-accepted` | pass | fail | C2.7 D PASS: "account.getQuota with mono after requested and before completed (... the call may precede accepted)" |
 | `runtime-calls-preseeded` | fail | pass | C2.7 D FAIL: an account.getQuota call before requested; C2.6 C: "The log is absent in the seed" |
 | `runtime-calls-foreign` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |
 | `runtime-calls-missing` | not-run | pass | C2.6 D NOT-RUN: "no accepted, or a missing/foreign/undigested runtime-call receipt" |

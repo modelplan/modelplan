@@ -60,7 +60,8 @@ DETAILS = {
     'refresh-failed': None,  # failed carries the row's own bounded reason
     'refresh-deferred': None,  # C2.6 D: the reason follows the Copilot disposition (DEFERRED_REASONS)
     'refresh-abandoned-deadline': 'timeout', 'refresh-abandoned-stop': 'not-delivered',
-    'accepted-missing': 'not-delivered', 'accepted-stale': 'not-delivered', 'accepted-duplicate': 'unknown',
+    'accepted-missing': 'not-delivered', 'accepted-stale': 'not-delivered', 'accepted-other-engine-request': 'unknown',
+    'accepted-duplicate': 'unknown',
     'deferred-but-scheduled': 'unknown', 'copilot-not-scheduled': 'unknown', 'copilot-accounts-before': 'unknown',
     'projection-not-qualifying': 'unknown', 'runtime-calls-missing': 'not-delivered',
     'runtime-calls-malformed': 'unknown', 'runtime-calls-undigested': 'not-delivered',
@@ -315,9 +316,11 @@ def step3(context, native, files, a):
     accepted = accepted[0] if accepted else None
     if accepted is None or not requested['seq'] < accepted['seq'] < terminal['seq']:
         return NOT_RUN('accepted-missing'), None, end  # a terminal without a matching accepted
-    if ((accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID'])
-            or accepted['engineRequestID'] != requested['engineRequestID']):
-        return NOT_RUN('accepted-stale'), None, end  # another call's (or a cached) reply, not this call's
+    if accepted['engineRequestID'] != requested['engineRequestID']:
+        # C2.7 D FAIL: "`accepted` with another `engineRequestID`" (another call's or a cached reply).
+        return FAIL('accepted-other-engine-request'), None, end
+    if (accepted['sessionID'], accepted['menuObjectID']) != (a['sessionID'], a['menuObjectID']):
+        return NOT_RUN('accepted-stale'), None, end  # another session's reply, not this call's
     disposition = accepted['dispositions'][COPILOT]
     if phase == 'deferred':
         if disposition == 'scheduled':

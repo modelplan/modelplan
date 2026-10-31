@@ -6,7 +6,7 @@ signals a process. Closing is the stop file, acted on by launch.py and bin/guard
 also requesting it when the disk floor is breached mid-run."""
 import argparse,hashlib,json,shutil,sys,time,uuid
 from pathlib import Path
-from admission import load_and_admit
+from admission import load_and_admit,still_admitted
 from guardian import cleanup,identity,launcher_lost,quit_grace,reason_code,BOUNDED_CODES
 import homeseed
 FLAG='--u6-drive-contract';LOCKS=('M1-candidate-gui','slot1')
@@ -121,13 +121,29 @@ def closed(pid_path):
     except FileNotFoundError:return True
     except (OSError,ValueError):return False
     return isinstance(record,dict) and record.get('state')=='running' and type(record.get('pid')) is int and not alive(record)
+def preserve_runtime_calls(c,run,epoch,pid):
+    source=Path(c['syntheticHome'])/'.modelplan-stub/runtime-calls.jsonl';target=Path(c['batch'])/'runtime-calls.jsonl'
+    if target.exists():raise ValueError('runtime-log-not-fresh')
+    if not source.exists():return None
+    if source.is_symlink() or not source.is_file() or source.stat().st_size>65536:raise ValueError('runtime-log-invalid')
+    counters={}
+    for line in source.read_text().splitlines():
+        value=json.loads(line)
+        if (value.get('schema')!='runtime-calls/1' or value.get('runID')!=run or value.get('epoch')!=epoch
+            or value.get('method') not in ('connect','auth.getStatus','account.getQuota')
+            or any(type(value.get(k)) is not int or value[k]<=0 for k in ('pid','ppid','seq'))
+            or type(value.get('mono')) not in (int,float) or value['mono']<0
+            or value['seq']<=counters.get(value['pid'],0)):raise ValueError('runtime-log-invalid')
+        counters[value['pid']]=value['seq']
+    with target.open('xb') as stream:stream.write(source.read_bytes())
+    return hashlib.sha256(target.read_bytes()).hexdigest()
 def drive(c,now,poll=.2,sleep=time.sleep):
     admit(c,now);run,epoch,_,end=run_identity(c)
     out=Path(c['batch']);scratch=Path(c['scratch']);stop=Path(c['stopPath']);finish=out/'operator-finish.json';pid_path=Path(c['subjectPidPath'])
     result=dict(runID=run,epoch=epoch,headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False,launchedBy='launch.py')
     try:
         record=registered(pid_path) # first, so a refusal below is judged after launch.py registered or gave up
-        load_and_admit(c);bound(out/'native-observations.jsonl',run,epoch,record)
+        still_admitted(c);bound(out/'native-observations.jsonl',run,epoch,record) # after launch admission: never the full budget again (macrev-332-18)
         result['appStarted']=True;write(out/'launch.json',dict(runID=run,epoch=epoch,ownedPID=record['pid'],sourceHead=c['head'],registeredBy='launch.py'))
         breach=False
         while alive(record) and not stop.exists() and not finish.exists() and time.time()<end:
@@ -145,6 +161,9 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         deadline=time.monotonic()+CLOSE_SECONDS+quit_grace(c.get('quitGraceSeconds')) # the subject's own quit comes first
         while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
         gone=closed(pid_path);removed=[];r=prepared(c);prep=(r['locks'],r['attempt']) if r else None
+        if gone: # preserve the synthetic stub proof before any HOME removal
+            try:result['runtimeCallsSHA256']=preserve_runtime_calls(c,run,epoch,record['pid'] if result['appStarted'] else 0)
+            except (OSError,ValueError):result['runtimeCallsReason']='unknown'
         if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
             try:removed=cleanup.remove_scratch(scratch,scratch_names(c))
             except (OSError,ValueError):pass

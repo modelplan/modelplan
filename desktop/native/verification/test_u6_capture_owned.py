@@ -16,7 +16,7 @@ class U6CaptureTests(unittest.TestCase):
             (root/'native-observations.jsonl').write_text(json.dumps(frame)+'\n')
             config=dict(batch=str(root),subjectPidPath=str(root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
             original=capture.cleanup.matches
-            capture.load_and_admit=lambda _:True
+            capture.still_admitted=lambda _:True
             capture.identity=lambda _:dict(pid=42)
             capture.cleanup.matches=lambda *_:True
             capture.launcher_lost=lambda _:False

@@ -6,12 +6,12 @@ from pathlib import Path
 BIN=Path(__file__).resolve().parents[1]/'bin'
 sys.path.insert(0,str(BIN))
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from admission import load_and_admit
+from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup,identity,launcher_lost
 from u6_clock import system_uptime
 
 def capture(config, run_capture=subprocess.run, now=system_uptime):
-    load_and_admit(config)
+    still_admitted(config)
     batch=Path(config['batch']);lease=config['expectedLease']
     reg=json.loads(Path(config['subjectPidPath']).read_text())
     pid=reg.get('pid')

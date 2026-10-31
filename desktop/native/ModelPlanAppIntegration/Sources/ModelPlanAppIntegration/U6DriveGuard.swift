@@ -3,6 +3,7 @@
 import AppKit
 import ModelPlanMenuVerification
 import ModelPlanEngineClient
+import ModelPlanWire
 import CryptoKit
 
 /// Test-build-only lease/owner stop hook. Emits only scoped booleans, never other-app identity.
@@ -86,9 +87,10 @@ import CryptoKit
                         self.emitObject("menu-begin", fields:["privateContent":self.hasPrivateContent(), "instanceID":instanceID,
                             "subjectPID":ProcessInfo.processInfo.processIdentifier,
                             "surface":status ? "status" : "dock", "menuObjectID":instanceID,"sessionID":sessionID])
-                        if status, self.hasPrivateContent(),let title=self.privateTitle(),!title.isEmpty,
-                           menu.items.first?.title.contains(title)==true {
-                            let items=[WeakPrivateItem(menu.items[0])]
+                        if status, self.hasPrivateContent(),let title=self.privateTitle(),!title.isEmpty {
+                            let items=menu.items.filter { $0.title.contains(title) || $0.attributedTitle?.string.contains(title)==true
+                                || $0.toolTip?.contains(title)==true }.map(WeakPrivateItem.init)
+                            guard !items.isEmpty else { return }
                             self.privateBySession[sessionID]=items
                             let digest = SHA256.hash(data: Data(title.utf8)).map { String(format:"%02x",$0) }.joined()
                             self.privateTitleHashBySession[sessionID]=digest
@@ -99,7 +101,7 @@ import CryptoKit
                         let object=ObjectIdentifier(menu)
                         self.trackedMenus.remove(object)
                         let instanceID = String(UInt(bitPattern: object))
-                        let sessionID=self.sessions.removeValue(forKey:object) ?? ""
+                        guard let sessionID=self.sessions.removeValue(forKey:object) else { return }
                         let causedByClear=self.activeClear?.openSessions.contains(sessionID) == true
                         var fields:[String:Any]=["instanceID":instanceID,"menuObjectID":instanceID,"sessionID":sessionID,
                             "cause":causedByClear ? "clear" : "other"]
@@ -135,11 +137,11 @@ import CryptoKit
                 return try? JSONDecoder().decode(StatusMenuActionRequest.self, from: data)
             }, isLive: { [weak self] in self?.isLive() == true },
             emit: { [weak self] receipt in
-                guard let self, let instanceID = self.activeStatusInstanceID else { return }
+                guard let self, let instanceID = self.activeStatusInstanceID,let sessionID=self.activeStatusSessionID else { return }
                 var fields = receipt.fields
                 fields["menuInstanceID"] = instanceID
                 fields["menuObjectID"] = instanceID
-                fields["sessionID"] = self.activeStatusSessionID ?? ""
+                fields["sessionID"] = sessionID
                 fields["deliveryMethod"] = "axpress-menu-item"
                 self.emitObject(receipt.event, fields: fields)
                 if receipt.request.action == .refresh,let sessionID=self.activeStatusSessionID {
@@ -147,40 +149,67 @@ import CryptoKit
                 }
             })
     }
-    func beginProductRefresh(composition: EngineDockMenuComposition) -> (@MainActor (Result<Void, Error>) -> Void)? {
+    struct RefreshObservation {
+        let prepared: @MainActor @Sendable (WireRequestID) -> Void
+        let result: @MainActor (Result<EngineMenuRefreshResult,Error>) -> Void
+    }
+    func beginProductRefresh(composition: EngineDockMenuComposition) -> RefreshObservation? {
         guard isLive(), let context = arrivedRefreshContext else { return nil }
         arrivedRefreshContext = nil
         let before = composition.store.snapshot.rows?.sequence ?? 0
+        let accountsBefore=composition.store.snapshot.rows?.projection.rows.first(where: { $0.id=="copilot" })?.accounts.count ?? 0
         let id = context.requestID.uuidString
-        let requestedMono=ProcessInfo.processInfo.systemUptime
-        emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,
-                                      "rowsSequenceBefore":before,"menuObjectID":context.objectID,"sessionID":context.sessionID])
+        var requestedMono=ProcessInfo.processInfo.systemUptime
+        let prepared: @MainActor @Sendable (WireRequestID) -> Void = { [weak self] engineID in
+        guard let self else { return }
+        requestedMono=ProcessInfo.processInfo.systemUptime
+        let encoded=(try? JSONEncoder().encode(engineID)).flatMap { try? JSONSerialization.jsonObject(with:$0,options:.fragmentsAllowed) } ?? "unknown"
+        self.emitObject("refresh", fields:["kind":"refresh", "phase":"requested", "requestId":id,"engineRequestID":encoded,
+                                      "rowsSequenceBefore":before,"copilotAccountsBefore":accountsBefore,
+                                      "menuObjectID":context.objectID,"sessionID":context.sessionID])
         Task { [weak self] in
             while let self,self.isLive(),ProcessInfo.processInfo.systemUptime<requestedMono+60 {
                 try? await Task.sleep(for:.milliseconds(100))
             }
-            self?.refreshTerminal("failed",requestID:id,context:context,fields:["reason":"timeout"])
+            if let self {
+                let deadline=ProcessInfo.processInfo.systemUptime>=requestedMono+60 || Date().timeIntervalSince1970>=self.expiry
+                self.refreshTerminal("abandoned",requestID:id,context:context,
+                    fields:["cause":deadline ? "deadline" : "stop"])
+            }
         }
-        return { [weak self, weak composition] result in
-            guard let self, let composition else { return }
+        }
+        return RefreshObservation(prepared:prepared,result: { [weak self, weak composition] result in
+            guard let self, let composition,!self.terminalRefreshIDs.contains(id) else { return }
             switch result {
             case .failure(let error):
                 self.refreshTerminal("failed", requestID:id, context:context,fields:["reason":Self.refreshReason(error)])
-            case .success:
+            case .success(let reply):
+                let dispositions=Dictionary(reply.scheduled.map { ($0.scope,$0.disabledReason?.rawValue ?? "scheduled") },uniquingKeysWith: { first,_ in first })
+                let encoded=(try? JSONEncoder().encode(reply.engineRequestID)).flatMap { try? JSONSerialization.jsonObject(with:$0,options:.fragmentsAllowed) } ?? "unknown"
+                self.emitObject("refresh",fields:["kind":"refresh","phase":"accepted","requestId":id,
+                    "engineRequestID":encoded,"dispositions":dispositions,"menuObjectID":context.objectID,"sessionID":context.sessionID])
+                if dispositions["copilot.runtime_usage"] != "scheduled" {
+                    self.refreshTerminal("deferred",requestID:id,context:context,fields:[:]);return
+                }
                 Task { await self.waitForRefreshedRows(composition:composition, before:before, requestID:id,
                     requestedMono:requestedMono,context:context) }
             }
-        }
+        })
     }
     private func waitForRefreshedRows(composition: EngineDockMenuComposition, before: UInt64, requestID: String,
                                      requestedMono:Double,context:(requestID:UUID,objectID:String,sessionID:String)) async {
         while isLive() && ProcessInfo.processInfo.systemUptime<requestedMono+60 {
-            if let after = composition.store.snapshot.rows?.sequence, after > before {
-                refreshTerminal("completed", requestID:requestID,context:context,fields:["rowsSequenceAfter":after]); return
+            if let projection=composition.store.snapshot.rows,projection.sequence>before,
+               let row=projection.projection.rows.first(where: { $0.id=="copilot" }),!row.accounts.isEmpty,
+               let digest=try? U6ReadingFingerprint.sha256(row.accounts) {
+                refreshTerminal("completed", requestID:requestID,context:context,
+                    fields:["rowsSequenceAfter":projection.sequence,"copilotAccountsAfter":row.accounts.count,"readingSHA256":digest]); return
             }
             try? await Task.sleep(for: .milliseconds(100))
         }
-        refreshTerminal("failed", requestID:requestID,context:context,fields:["reason":"timeout"])
+        let deadline=ProcessInfo.processInfo.systemUptime>=requestedMono+60 || Date().timeIntervalSince1970>=expiry
+        refreshTerminal("abandoned",requestID:requestID,context:context,
+            fields:["cause":deadline ? "deadline" : "stop"])
     }
     private func refreshTerminal(_ phase: String, requestID: String,
                                  context:(requestID:UUID,objectID:String,sessionID:String), fields: [String: Any]) {
@@ -250,15 +279,12 @@ import CryptoKit
     private func emitObject(_ event: String, fields: [String: Any]) {
         observationSequence &+= 1
         let now = Date().timeIntervalSince1970
-        let base: [String: Any] = ["runID":runID,"epoch":epoch,"pid":ProcessInfo.processInfo.processIdentifier,
-                                   "seq":observationSequence,"mono":ProcessInfo.processInfo.systemUptime,"at":now]
-        let object: [String: Any] = event == "refresh"
-            ? fields.merging(base) { _, bound in bound }
-            : base.merging(["event":event,"timestamp":now,"checks":fields]) { _, added in added }
-        guard let data = try? JSONSerialization.data(withJSONObject:object,options:[.sortedKeys]) else { return }
+        guard let data = try? U6NativeReceiptSerializer.encode(event:event,fields:fields,runID:runID,epoch:epoch,
+            pid:ProcessInfo.processInfo.processIdentifier,seq:observationSequence,
+            mono:ProcessInfo.processInfo.systemUptime,at:now) else { return }
         if !FileManager.default.fileExists(atPath:observations.path) { FileManager.default.createFile(atPath:observations.path,contents:nil) }
         guard let handle = try? FileHandle(forWritingTo: observations) else { return }
-        defer { try? handle.close() }; try? handle.seekToEnd(); try? handle.write(contentsOf:data + Data([10]))
+        defer { try? handle.close() }; _ = try? handle.seekToEnd(); try? handle.write(contentsOf:data)
     }
     func recordClearInitiated(_ invalidation: EngineInvalidation) {
         guard let floor=invalidation.nextFloor else { return }
@@ -279,7 +305,7 @@ import CryptoKit
             "generationAfter":clear.floor.generation,"scrubbedSessionIDs":scrubbed,
             "priorPrivateContent":priorPrivateContent,"trackingClosed":trackedMenus.isEmpty])
         for session in clear.openSessions {
-            guard let items=privateBySession[session],!items.isEmpty else { continue }
+            guard let items=privateBySession[session],!items.isEmpty,let objectID=objectBySession[session] else { continue }
             let hash=privateTitleHashBySession[session]
             let current=currentStatusMenu?()?.items ?? []
             func matchesPrivateHash(_ value:String?) -> Bool {
@@ -296,7 +322,7 @@ import CryptoKit
                     + (matchesPrivateHash(item.identifier?.rawValue) ? 1 : 0)
             }
             emitObject("menu-scrubbed",fields:["clearID":clear.id,"sessionID":session,
-                "menuObjectID":objectBySession[session] ?? "","privateTitlePresent":titlePresent,
+                "menuObjectID":objectID,"privateTitlePresent":titlePresent,
                 "privateAttributeCount":privateAttributes,
                 "itemStates":items.map { ["id":$0.id,"state":$0.state] }])
         }

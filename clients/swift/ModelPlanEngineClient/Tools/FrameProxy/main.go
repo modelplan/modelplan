@@ -264,6 +264,11 @@ func main() {
 				continue
 			}
 		}
+		if p.plan.Mode == "rows-busy-once" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
+			p.triggered = true
+			env := object(m["result"])
+			m = map[string]any{"jsonrpc": "2.0", "id": m["id"], "error": map[string]any{"code": -32013, "message": "busy", "data": map[string]any{"sessionId": env["sessionId"], "storeEpoch": env["storeEpoch"], "consentGeneration": env["consentGeneration"]}}}
+		}
 		if p.plan.Mode == "wrong-session-sequence" && method == "rows/subscribe" && m["result"] != nil && !p.triggered {
 			p.triggered = true
 			p.mu.Unlock()

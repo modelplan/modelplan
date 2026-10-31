@@ -138,11 +138,11 @@
     "costBasisId": "synthetic-reference",
     "publicationId": "synthetic-contract-publication",
     "resetAt": "2026-10-20T20:05:00Z",
-    "expiresAt": "2026-10-27T20:05:00Z",
+    "expiresAt": "2026-10-21T20:05:00Z",
     "message": "codex / synthetic-plan · Synthetic Z: past 3 weeks averaged 45%; your default could go up from ★Med to High (published reference cost ×1.50)."
   },
   "recording": true,
   "note": "Built on this machine from what the harnesses write locally; never sent anywhere. Public recommendations are in the verified publication, which clients read themselves.",
   "dataRevision": "sha256:decf299a87c9b86cb625818d76652323",
-  "validUntil": "2026-10-22T21:04:00Z"
+  "validUntil": "2026-10-21T20:05:00Z"
 }

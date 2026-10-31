@@ -1,0 +1,49 @@
+name: Mac beta feedback
+description: Share feedback or report a problem with the ModelPlan Mac beta.
+title: "[Beta] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. **Never paste tokens, account emails, or raw provider responses.**
+        Review everything you share, including reproduction steps and diagnostics.
+  - type: input
+    id: app
+    attributes:
+      label: App version
+      description: The `app` value in Copy diagnostics, or the version shown in About.
+  - type: input
+    id: cli
+    attributes:
+      label: CLI version
+      description: The `cli` value in Copy diagnostics, if available.
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: The `macOS` value in Copy diagnostics, or the version shown in About This Mac.
+  - type: textarea
+    id: readers
+    attributes:
+      label: Which readers are on?
+      description: List the enabled readers, or use the `readers` value in Copy diagnostics. Do not include account details.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe what you saw and the steps to reproduce it, if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Copy diagnostics
+      description: |
+        In the app, open Settings → About → Copy diagnostics. Review and paste the output here. It uses the fields `app`, `cli`, `macOS`, `readers`, and `errors`. If the output is unavailable, leave this blank.
+      render: text

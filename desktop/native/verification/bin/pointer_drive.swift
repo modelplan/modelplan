@@ -160,6 +160,13 @@ final class ButtonGuard: @unchecked Sendable {
     }
     static func entry() throws {
         let args = CommandLine.arguments
+        if args.count == 3 && args[1] == "--fixture-receipts" {
+            // Serialization capture only: no live(), permission(), CGEvent or AX call.
+            let data=try Data(contentsOf:URL(fileURLWithPath:args[2]))
+            guard let rows=try JSONSerialization.jsonObject(with:data) as? [[String:Any]] else { throw DriveError.invalidPlan }
+            for row in rows { try append(row,to:FileHandle.standardOutput) }
+            return
+        }
         if args.count == 2 && args[1] == "--self-test" {
             try StatusMenuDrive.selfTest() // Decode/validate only; no AX query, I/O or input.
             func fixture(_ profile: String = "synthetic", _ seconds: Double = 1) -> PointerPlan {

@@ -23,7 +23,7 @@ class U6ResetTests(unittest.TestCase):
                 subjectPidPath=str(root/'subject.json'),argv=[str(binary)],helperSHA256=hashlib.sha256(b'helper').hexdigest(),
                 expectedLease=dict(runID='run',epoch='epoch'))
             original=reset.cleanup.matches
-            reset.load_and_admit=lambda _:True
+            reset.still_admitted=lambda _:True
             reset.identity=lambda _:dict(pid=42)
             reset.cleanup.matches=lambda *_:True
             reset.launcher_lost=lambda _:False

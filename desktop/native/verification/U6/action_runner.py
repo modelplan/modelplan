@@ -7,11 +7,11 @@ BIN=Path(__file__).resolve().parents[1]/'bin'
 U6=Path(__file__).resolve().parent
 sys.path.insert(0,str(BIN))
 sys.path.insert(0,str(U6))
-from admission import load_and_admit
+from admission import still_admitted # launch admission checked the full budget once; every action rechecks this
 from guardian import reason_code,BOUNDED_CODES
 from u6_clock import system_uptime
 
-uptime=system_uptime
+uptime=system_uptime # ProcessInfo.systemUptime's clock on macOS; time.monotonic on Linux test hosts
 def native(batch,run,epoch,pid):
     try:
         return [r for line in (batch/'native-observations.jsonl').read_text().splitlines() if line.strip()
@@ -25,7 +25,7 @@ def await_row(batch,run,epoch,pid,predicate,seconds):
         time.sleep(.05)
     raise ValueError('not-delivered')
 def command(args,config,timeout=20):
-    load_and_admit(config)
+    still_admitted(config)
     env=os.environ.copy();env['PYTHONDONTWRITEBYTECODE']='1'
     result=subprocess.run(args,env=env,text=True,capture_output=True,timeout=timeout)
     if result.returncode:raise ValueError('not-delivered')
@@ -49,7 +49,7 @@ def run(config_path,pointer_binary):
     current='dock'
     def py(path,*args):return command([sys.executable,'-B',str(path),*map(str,args)],config)
     try:
-        load_and_admit(config)
+        still_admitted(config)
         reg=json.loads(Path(config['subjectPidPath']).read_text());pid=reg.get('pid')
         if type(pid) is not int or pid<=0 or reg.get('runID')!=run or reg.get('epoch')!=epoch:raise ValueError('registered-subject-invalid')
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='started',15)
@@ -66,9 +66,15 @@ def run(config_path,pointer_binary):
         a_session=a['checks']['sessionID'];steps['menuA']='pass';current='refresh'
         py(U6/'prepare_menu_plan.py','--config',config_path)
         command([str(pointer_binary),'--status-menu-plan',str(batch/'menu-plan.json')],config,timeout=10)
-        refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed')
+        refresh=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase') in ('completed','failed','deferred','abandoned')
                           and r.get('sessionID')==a_session,60)
-        if refresh.get('phase')!='completed':raise ValueError('engine-error')
+        if refresh.get('phase')=='deferred':
+            reply=await_row(batch,run,epoch,pid,lambda r:r.get('kind')=='refresh' and r.get('phase')=='accepted'
+                            and r.get('requestId')==refresh.get('requestId'),1)
+            disposition=reply.get('dispositions',{}).get('copilot.runtime_usage')
+            raise ValueError('cooldown' if disposition=='cooldown' else 'consent-required' if disposition=='policy_pending' else 'engine-disabled')
+        if refresh.get('phase')=='abandoned':raise ValueError('timeout' if refresh.get('cause')=='deadline' else 'not-delivered')
+        if refresh.get('phase')=='failed':raise ValueError(reason_code(refresh.get('reason'),BOUNDED_CODES))
         await_row(batch,run,epoch,pid,lambda r:r.get('event')=='menu-end' and r.get('checks',{}).get('sessionID')==a_session,5)
         steps['refresh']='pass';current='menuB'
 

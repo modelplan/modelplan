@@ -56,7 +56,9 @@ class U6DriveAdmissionTests(unittest.TestCase):
         c['syntheticHomeSeed']=str(Path(c['scratch'])/'profile')
         with self.assertRaisesRegex(ValueError,'home-seed-path-mismatch'):drive.admit(c,110)
     def test_registry_entry_matches_this_driver(self):
-        self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True))
+        self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True,
+            config='../U6/prepare_config.py',observations='native-observations.jsonl',actions='../U6/action_runner.py',
+            unit='U6',bookingScenario='U6-DockMenu-synthetic'))
     def test_registration_scenario_and_prepared_receipt_paths_required(self):
         c=config(self.root,100);c['scenario']='other'
         with self.assertRaisesRegex(ValueError,'scenario-must-be-u6'):drive.admit(c,110)
@@ -142,7 +144,7 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         threading.Thread(target=watch,daemon=True).start()
     def run_drive(self,c=None,disk=DISK):
         c=c or self.c;path=Path(c['batch'])/'run.json';path.write_text(json.dumps(c))
-        with patch.object(drive,'load_and_admit',return_value={}),patch.object(drive,'REGISTER_SECONDS',.4),patch.object(drive,'CLOSE_SECONDS',1), \
+        with patch.object(drive,'still_admitted',return_value={}),patch.object(drive,'load_and_admit',side_effect=AssertionError('full admission after launch')),patch.object(drive,'REGISTER_SECONDS',.4),patch.object(drive,'CLOSE_SECONDS',1), \
              patch.object(drive.shutil,'disk_usage',return_value=disk),patch.object(subprocess,'Popen',no_spawn), \
              patch.object(os,'kill',main_thread_never_signals),patch.object(os,'killpg',main_thread_never_signals):
             status=drive.main(['drive','--config',str(path)])
@@ -219,6 +221,18 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         source=(BASE/'drive-u6.py').read_text()
         for word in ('subprocess','Popen','killpg','os.kill','signal.'):self.assertNotIn(word,source)
 class U6ReasonTests(unittest.TestCase):
+    def test_runtime_call_proof_survives_home_cleanup_with_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            c=config(Path(directory));home=Path(c['syntheticHome']);home.mkdir()
+            (home/'.modelplan-stub').mkdir()
+            (home/'.modelplan-stub/runtime-calls.jsonl').write_text(json.dumps(dict(schema='runtime-calls/1',runID='run',epoch='epoch',method='account.getQuota',pid=51,ppid=42,mono=100,seq=1))+'\n')
+            digest=drive.preserve_runtime_calls(c,'run','epoch',42)
+            target=Path(c['batch'])/'runtime-calls.jsonl'
+            self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(),digest)
+            proof=json.loads(target.read_text());self.assertEqual(proof['epoch'],'epoch')
+            self.assertEqual(proof['method'],'account.getQuota')
+            (home/'.modelplan-stub/runtime-calls.jsonl').unlink();(home/'.modelplan-stub').rmdir();home.rmdir()
+            self.assertTrue(target.is_file())
     def test_unknown_exception_text_never_enters_receipts(self):
         self.assertEqual(drive.failure(RuntimeError('/synthetic/private/path: arbitrary engine text')),'unknown')
         self.assertEqual(drive.failure(RuntimeError('resource-busy-before-launch')),'not-delivered')

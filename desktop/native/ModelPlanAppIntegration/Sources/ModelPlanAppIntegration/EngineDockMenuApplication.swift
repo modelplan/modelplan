@@ -125,13 +125,13 @@ import ModelPlanMenuVerification
             #if MODELPLAN_U6_DRIVE
             if let driveGuard {
                 // The product handler owns the one RPC; the test hook only observes its result.
-                var observer: (@MainActor (Result<Void,Error>) -> Void)?
+                var observer: U6DriveGuard.RefreshObservation?
                 for _ in 0..<25 where observer == nil {
                     observer = driveGuard.beginProductRefresh(composition: composition)
                     if observer == nil { try? await Task.sleep(for: .milliseconds(20)) }
                 }
                 guard let observer else { return }
-                await composition.refresh(onResult: observer)
+                await composition.refresh(prepared: observer.prepared, onResult: observer.result)
                 return
             }
             #endif

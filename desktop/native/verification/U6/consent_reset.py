@@ -5,7 +5,7 @@ from pathlib import Path
 
 BIN=Path(__file__).resolve().parents[1]/'bin';sys.path.insert(0,str(BIN))
 sys.path.insert(0,str(Path(__file__).resolve().parent))
-from admission import load_and_admit
+from admission import still_admitted # action phase: launch admission already checked the full budget
 from guardian import cleanup,identity,launcher_lost
 from u6_clock import system_uptime
 
@@ -31,7 +31,7 @@ def open_status_session(batch,run,epoch,pid):
     return current
 
 def reset(config,run_helper=subprocess.run,now=uptime):
-    load_and_admit(config)
+    still_admitted(config)
     batch=Path(config['batch']);run=config['expectedLease'];scratch=Path(config['scratch']).resolve()
     home_arg=Path(config['syntheticHome']);tmp_arg=Path(config['syntheticTmp'])
     home=home_arg.resolve();tmp=tmp_arg.resolve()

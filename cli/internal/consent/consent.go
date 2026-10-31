@@ -400,21 +400,69 @@ func LocalWrite(tool string, write func() error) error {
 	return Publish(s.Fence(), write)
 }
 
+// ErrBusy means the consent lock is held; ErrChanged means the consent state
+// could not be loaded or no longer matches the admission fence.
+var (
+	ErrBusy    = errors.New("consent/reader admission busy; retry")
+	ErrChanged = errors.New("consent changed; reading not published")
+)
+
 // Publish serializes generation validation and the short cache commit with
 // consent changes. No credential or provider I/O belongs inside this callback.
 func Publish(f Fence, write func() error) error {
+	return publish(context.Background(), f, write, false)
+}
+
+// PublishContext waits at most one second for the lock, without retrying write.
+// A caller's shorter deadline or cancellation takes precedence over that bound.
+func PublishContext(ctx context.Context, f Fence, write func() error) error {
+	return publish(ctx, f, write, true)
+}
+
+func publish(ctx context.Context, f Fence, write func() error, wait bool) error {
 	file := Path() + ".lock"
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return err
 	}
-	unlock, err := lockFile(file)
-	if err != nil {
-		return errors.New("consent busy; reading not published")
+	var timer *time.Timer
+	if wait {
+		timer = time.NewTimer(time.Second)
+		defer timer.Stop()
+	}
+	var unlock func()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var err error
+		unlock, err = lockFile(file)
+		if err == nil {
+			break
+		}
+		if !wait || !errors.Is(err, ErrBusy) {
+			return err
+		}
+		pause := time.NewTimer(10 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			pause.Stop()
+			return ctx.Err()
+		case <-timer.C:
+			pause.Stop()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return ErrBusy
+		case <-pause.C:
+		}
 	}
 	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s, err := Load(Path())
 	if err != nil || s.Fence() != f {
-		return errors.New("consent changed; reading not published")
+		return ErrChanged
 	}
 	return write()
 }
