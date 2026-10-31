@@ -25,7 +25,7 @@ def run_config(root):
     scratch = root / 'scratch'; scratch.mkdir()
     binary = root / 'subject'; binary.write_bytes(b'synthetic')
     now = time.time()
-    return dict(profile='synthetic', head='a'*40, binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
+    return dict(profile='synthetic', scenario='u6', head='a'*40, binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
                 argv=[str(binary), drive.FLAG, str(scratch / 'native-guard.json')],
                 expectedLease=dict(runID='run', epoch='epoch', notBefore=now - 10, expiresAt=now + 290),
                 syntheticHome=str(scratch / 'home'), syntheticTmp=str(scratch / 'tmp'), scratch=str(scratch),

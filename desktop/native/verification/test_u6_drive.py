@@ -4,14 +4,14 @@ from pathlib import Path
 from unittest.mock import patch
 BASE=Path(__file__).parent/'bin';sys.path.insert(0,str(BASE))
 spec=importlib.util.spec_from_file_location('u6drive',BASE/'drive-u6.py');drive=importlib.util.module_from_spec(spec);spec.loader.exec_module(drive)
-import launch
+import launch,scenario
 DISK=type('Disk',(),{'free':30*1024**3})();LOW=type('Disk',(),{'free':1})()
 REAL_KILL=os.kill
 def config(root,now=None,name=''):
     now=time.time() if now is None else now;batch=root/(name+'batch');scratch=root/(name+'scratch')
     for d in (batch,scratch,root/'locks'):d.mkdir(exist_ok=True)
     binary=root/'subject';binary.write_bytes(b'synthetic')
-    return dict(profile='synthetic',head='a'*40,binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
+    return dict(profile='synthetic',scenario='u6',head='a'*40,binarySHA256=hashlib.sha256(b'synthetic').hexdigest(),
                 argv=[str(binary),drive.FLAG,str(scratch/'native-guard.json')],
                 expectedLease=dict(runID='run',epoch='epoch',notBefore=now-10,expiresAt=now+600),
                 syntheticHome=str(scratch/'home'),syntheticTmp=str(scratch/'tmp'),scratch=str(scratch),batch=str(batch),
@@ -50,8 +50,12 @@ class U6DriveAdmissionTests(unittest.TestCase):
         for argv in [lambda c:c['argv'][:1],lambda c:[c['argv'][0],'--other',c['argv'][2]],lambda c:[c['argv'][0],drive.FLAG,str(self.root/'elsewhere.json')]]:
             c=config(self.root,100);c['argv']=argv(c)
             with self.assertRaisesRegex(ValueError,'u6-argv-mismatch'):drive.admit(c,110)
-    def test_registration_and_prepared_receipt_paths_required(self):
-        for key in ('subjectPidPath','preparedReceiptPath'):
+    def test_registry_entry_matches_this_driver(self):
+        self.assertEqual(scenario.load()['u6'],dict(argvFlag=drive.FLAG,prepare='drive-u6.py prepare',drive='drive-u6.py drive',receipt=True))
+    def test_registration_scenario_and_prepared_receipt_paths_required(self):
+        c=config(self.root,100);c['scenario']='other'
+        with self.assertRaisesRegex(ValueError,'scenario-must-be-u6'):drive.admit(c,110)
+        for key in ('subjectPidPath','preparedReceiptPath','scenario'):
             c=config(self.root,100);del c[key]
             with self.assertRaises(ValueError):drive.admit(c,110)
 class U6PrepareTests(unittest.TestCase):
@@ -82,6 +86,19 @@ class U6PrepareTests(unittest.TestCase):
     def test_bad_hash_refusal_and_launch_refuses(self):
         with self.assertRaisesRegex(ValueError,'binary identity changed'):prepare(self.c,binary=b'changed')
         self.assert_refused_and_unlaunchable('ValueError')
+    def test_launch_requires_the_receipt_however_the_u6_config_is_edited(self):
+        prepare(self.c) # a valid receipt exists, but each edited config must still refuse before HOME or spawn
+        cases=[('absent',lambda c:c.pop('preparedReceiptPath'),'preparation receipt required'),
+               ('blanked',lambda c:c.update(preparedReceiptPath=''),'preparation receipt required'),
+               ('scenario dropped, flag remains',lambda c:(c.pop('scenario'),c.pop('preparedReceiptPath')),'preparation receipt required'),
+               ('flag under another scenario name',lambda c:c.update(scenario='other'),'unknown scenario'),
+               ('scenario blanked',lambda c:c.update(scenario=''),'unknown scenario'),
+               ('u6 without its flag',lambda c:c.update(argv=c['argv'][:1]),'scenario/argv mismatch')]
+        for label,edit,error in cases:
+            with self.subTest(label):
+                c=json.loads(json.dumps(self.c));edit(c)
+                with self.assertRaisesRegex(ValueError,error):launch_execute(c,self.root)
+                self.assertFalse(Path(c['syntheticHome']).exists())
     def test_success_writes_receipt_launch_accepts_only_while_its_locks_are_held(self):
         prepare(self.c);receipt=json.loads(Path(self.c['preparedReceiptPath']).read_text())
         self.assertEqual(locks_of(self.c),{name:receipt['attempt'] for name in drive.LOCKS})

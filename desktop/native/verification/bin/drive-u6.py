@@ -19,6 +19,7 @@ def native_contract(c):return Path(c['scratch']).resolve()/'native-guard.json'
 def failure(e):return str(e) if isinstance(e,RuntimeError) else type(e).__name__ # OS messages can carry paths
 def admit(c,now):
     if c.get('profile')!='synthetic':raise ValueError('synthetic-profile-required')
+    if c.get('scenario')!='u6':raise ValueError('scenario-must-be-u6') # bin/scenarios.json entry
     e=c.get('expectedLease');start,end=(e.get('notBefore'),e.get('expiresAt')) if isinstance(e,dict) else (None,None)
     if any(type(x) not in (int,float) for x in (start,end)) or not start<=now<end or not 0<end-start<=1200:raise ValueError('invalid-window')
     for name,n in [('head',40),('binarySHA256',64)]:

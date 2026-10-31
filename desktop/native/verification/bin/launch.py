@@ -4,6 +4,7 @@ import argparse,hashlib,json,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
 from guardian import register,mark_launching
+from scenario import resolve
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
     c=json.loads(a.config.read_text())
@@ -40,10 +41,13 @@ def main():
     print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason}))
     raise SystemExit(0 if reason is None else 3)
 def check_prepared(c):
-    """Optional scenario preparation: a run config naming `preparedReceiptPath` launches only on that receipt
-    (same run/epoch and binary), while every lock it lists is still held by the receipt's attempt token."""
-    if 'preparedReceiptPath' not in c:return
-    try:r=json.loads(Path(c['preparedReceiptPath']).read_text())
+    """Scenario preparation. A registered receipt scenario (bin/scenarios.json, named by `scenario` or by its argv
+    flag) launches only on its receipt: same run/epoch and binary, every listed lock still held by the receipt's
+    attempt token. Unregistered launches keep the receipt optional (checked only when named)."""
+    found=resolve(c);path=c.get('preparedReceiptPath')
+    if found and found[1]['receipt'] and (not isinstance(path,str) or not path):raise ValueError('preparation receipt required')
+    if path is None and not (found and found[1]['receipt']):return
+    try:r=json.loads(Path(path).read_text())
     except (OSError,ValueError,TypeError):raise ValueError('preparation receipt missing')
     if not isinstance(r,dict) or r.get('prepared') is not True or r.get('runID')!=c['lease'].get('runID') or r.get('epoch')!=c['lease'].get('epoch') \
             or r.get('binarySHA256')!=c['binarySHA256'] or not isinstance(r.get('attempt'),str) or not r['attempt'] or not isinstance(r.get('locks'),list) or not r['locks']:

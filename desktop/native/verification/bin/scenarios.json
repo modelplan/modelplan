@@ -1,0 +1,8 @@
+{
+  "u6": {
+    "argvFlag": "--u6-drive-contract",
+    "prepare": "drive-u6.py prepare",
+    "drive": "drive-u6.py drive",
+    "receipt": true
+  }
+}

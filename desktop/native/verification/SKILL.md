@@ -33,22 +33,27 @@ python3 desktop/native/verification/bin/release.py \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
 # Exactly ONE controller per booking starts subjects; the guardian's registration lock refuses a
 # second one. Set CONTROLLER_MODE explicitly:
-#  launch: launch.py starts the app and drive-u6.py drives the subject it registered. drive-u6.py prepare
-#          runs first in the foreground (admission, slots, disk floor); only its success writes the
-#          preparedReceiptPath receipt that launch.py requires, so a refusal leaves nothing launchable
+#  launch: launch.py starts the app and the scenario drives an app it did not start (e.g. drive-u6.py).
+#          A scenario registered in bin/scenarios.json (run config `scenario`) runs its `prepare` in the
+#          foreground first and its `drive` below; launch.py refuses a receipt scenario without its prepared
+#          receipt. An unregistered launch (no `scenario`, no registered argv flag) keeps the general flow.
 #  drive:  drive-scenario.py starts its own subjects (do NOT run launch.py); its cleanup result is read
 #          from the batch named in $RUN_CONFIG itself
 # Both stay attached and use subjectPidPath=$SUBJECT_PID_PATH from the run config.
+SCENARIO=""
 case "$CONTROLLER_MODE" in
-  launch) python3 desktop/native/verification/bin/drive-u6.py prepare --config "$RUN_CONFIG"
+  launch) SCENARIO=$(python3 desktop/native/verification/bin/scenario.py name --config "$RUN_CONFIG")
+          [ -z "$SCENARIO" ] || python3 desktop/native/verification/bin/scenario.py prepare --config "$RUN_CONFIG"
           python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute & ;;
   drive)  python3 desktop/native/verification/bin/drive-scenario.py --config "$RUN_CONFIG" & ;;
   *) echo "CONTROLLER_MODE must be launch or drive" >&2; exit 2 ;;
 esac
 CONTROLLER_PID=$!
-SCENARIO_STATUS=0  # launch mode: drive the registered subject; exit 0 only when its closure was observed
-if [ "$CONTROLLER_MODE" = launch ]; then
-  python3 desktop/native/verification/bin/drive-u6.py drive --config "$RUN_CONFIG" || SCENARIO_STATUS=$?
+SCENARIO_STATUS=0  # a registered scenario's drive exits 0 only when it observed closure
+if [ -n "$SCENARIO" ]; then
+  python3 desktop/native/verification/bin/scenario.py drive --config "$RUN_CONFIG" || SCENARIO_STATUS=$?
+else
+  : # ... in launch mode, drive the scenario against the launched subject here ...
 fi
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
 # confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
