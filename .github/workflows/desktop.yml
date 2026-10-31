@@ -162,7 +162,7 @@ jobs:
         os:
         - macos-14
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@20ad90d9bb030703645140b9f067f2ae98df36dc
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cdaf222b4c25645aed15b6a6c99982525d7d1852
     with:
       task: native
       os: ${{ matrix.os }}
@@ -212,7 +212,7 @@ jobs:
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@20ad90d9bb030703645140b9f067f2ae98df36dc
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cdaf222b4c25645aed15b6a6c99982525d7d1852
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest
