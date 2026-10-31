@@ -20,7 +20,7 @@ on:
         type: boolean
         default: false
       candidate_run_id:
-        description: Successful exact-main official assembly run ID (empty skips preparation)
+        description: Successful exact-main official assembly run ID (required for preparation)
         type: string
         default: ""
 permissions:

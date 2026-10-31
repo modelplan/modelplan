@@ -357,7 +357,7 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
-    ET.SubElement(item, 'description').text = 'Universal binary. Apple silicon tested; Intel untested; 3D may stutter.'
+    ET.SubElement(item, 'description').text = 'Universal macOS 14+ binary. Intel execution untested; 3D may stutter.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
     for old in sorted(old_items, key=lambda item: build_version(item.findtext(f'{{{NS}}}version')), reverse=True):
@@ -468,6 +468,16 @@ def publish_beta(output):
         raise ValueError('Beta payload checksum mismatch')
     # The publishing step receives only GITHUB_TOKEN, never signing secrets.
     command_env = {k: v for k, v in env.items() if k not in SIGNING + NOTARY + SPARKLE + ADHOC_BETA}
+    # --target is ignored for existing tags. Refuse them instead of attaching this
+    # exact-source payload to a tag that could name another commit.
+    tag = subprocess.run(['gh', 'api', '--include', '--method', 'GET',
+                          'repos/modelplan/modelplan/git/ref/tags/' + metadata['tag_name']],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=command_env)
+    if tag.returncode == 0:
+        raise ValueError('Beta tag already exists; inspect it before retrying')
+    status = (tag.stdout or b'').splitlines()
+    if not status or len(status[0].split()) < 2 or status[0].split()[1] != b'404':
+        raise RuntimeError('Cannot confirm that the beta tag is unused; no release created')
     result = subprocess.run(['gh', 'release', 'create', metadata['tag_name'],
                              *(str(output / name) for name in (*names, 'SHA256SUMS', 'draft-release.json')),
                              '--repo', 'modelplan/modelplan', '--target', env['GITHUB_SHA'],

@@ -214,17 +214,29 @@ class DraftPublicationTests(unittest.TestCase):
         (self.root / 'SHA256SUMS').write_text(''.join(f'{release.sha256(self.root / name)}  {name}\n' for name in names))
 
     def test_publication_only_creates_draft_prerelease_never_latest_or_overwrites(self):
-        with patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as command:
+        missing = subprocess.CompletedProcess([], 1, stdout=b'HTTP/2.0 404 Not Found\n')
+        with patch.object(release.subprocess, 'run', side_effect=[missing, subprocess.CompletedProcess([], 0)]) as command:
             release.publish_beta(self.root)
+        self.assertEqual(command.call_count, 2)
         args = command.call_args.args[0]
         self.assertEqual(args[:4], ['gh', 'release', 'create', 'macos-beta-42'])
         for flag in ('--draft', '--prerelease', '--latest=false'):
             self.assertIn(flag, args)
         self.assertEqual(command.call_args.kwargs['env']['GH_TOKEN'], 'synthetic-github-token')
         self.assertNotIn('SPARKLE_ED25519_PRIVATE_KEY', command.call_args.kwargs['env'])
-        with patch.object(release.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)):
+        with patch.object(release.subprocess, 'run', side_effect=[missing, subprocess.CompletedProcess([], 1)]):
             with self.assertRaisesRegex(RuntimeError, 'never overwritten'):
                 release.publish_beta(self.root)
+
+    def test_existing_tag_or_failed_tag_lookup_prevents_release_creation(self):
+        for response in (subprocess.CompletedProcess([], 0, stdout=b'HTTP/2.0 200 OK\n'),
+                         subprocess.CompletedProcess([], 1, stdout=b'HTTP/2.0 403 Forbidden\n'),
+                         subprocess.CompletedProcess([], 1, stdout=b'')):
+            with self.subTest(response=response), patch.object(release.subprocess, 'run', return_value=response) as command:
+                with self.assertRaises((ValueError, RuntimeError)):
+                    release.publish_beta(self.root)
+                self.assertEqual(command.call_count, 1)
+                self.assertEqual(command.call_args.args[0][:2], ['gh', 'api'])
 
     def test_stable_release_wrong_tag_commit_or_untrusted_trigger_refused(self):
         for name, value in (('draft', False), ('prerelease', False), ('tag_name', 'v42'),
