@@ -34,9 +34,11 @@ def copy_into(c,home):
     v=check(c)
     if v is None:return
     seed,want=v
+    modes=[]
     for dirpath,dirs,files in os.walk(seed,followlinks=False):
         rel=Path(dirpath).relative_to(seed);dst=home/rel
         dst.mkdir(mode=0o700,exist_ok=True)
-        if rel!=Path('.'):os.chmod(dst,Path(dirpath).stat().st_mode & 0o777) # same directory modes as the pinned seed
+        if rel!=Path('.'):modes.append((dst,Path(dirpath).stat().st_mode & 0o777))
         for name in files:shutil.copy2(Path(dirpath)/name,dst/name,follow_symlinks=False)
+    for dst,mode in reversed(modes):os.chmod(dst,mode) # seed directory modes last, deepest first, so read-only dirs still copy (macrev-332-3)
     if tree_sha256(home)!=want:raise ValueError('home seed copy mismatch')

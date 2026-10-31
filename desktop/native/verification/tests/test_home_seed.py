@@ -82,6 +82,19 @@ class HomeSeed(unittest.TestCase):
         (self.seed / 'Library' / 'Empty').mkdir()
         self.assertNotEqual(before, homeseed.tree_sha256(self.seed))
 
+    def test_read_only_seed_directory_copies(self):
+        ro = self.seed / 'Library' / 'Prefs'; os.chmod(ro, 0o555)
+        try:
+            c = self.config()
+            status, _ = self.execute(c)
+            self.assertEqual(status, 0)
+            self.assertEqual((self.root / 'home' / 'Library' / 'Prefs' / 'menu.json').read_text(), '{"tracked":["private"]}')
+            self.assertEqual((self.root / 'home' / 'Library' / 'Prefs').stat().st_mode & 0o777, 0o555)
+        finally:
+            os.chmod(ro, 0o755)
+            p = self.root / 'home' / 'Library' / 'Prefs'
+            if p.exists(): os.chmod(p, 0o755)
+
     def test_no_seed_keeps_the_empty_home(self):
         c = self.config(); del c['syntheticHomeSeed']; del c['syntheticHomeSeedSHA256']
         status, _ = self.execute(c)
