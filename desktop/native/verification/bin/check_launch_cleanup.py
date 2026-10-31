@@ -332,10 +332,11 @@ def lease_window_ok(receipt):
             and within(receipt['subjectStartedAt'], receipt['leaseNotBefore'], receipt['leaseExpiresAt']))
 
 
-def check(c, controller=None, guardian_status=None, scenario_status=None, lookup=None, now=None):
+def check(c, controller=None, guardian_status=None, scenario_status=None, lookup=None, now=None, clock=time.time):
     """The launch-cleanup/1 receipt (pinned fields plus the timing inputs, consumed by the U6 evidence builder)."""
-    now = time.time() if now is None else now
     run, failures = evaluate(c, controller, guardian_status, scenario_status, lookup)
+    # Sample the closure time only after evaluate() observed the subject gone, never before (macrev-332-15).
+    now = clock() if now is None else now
     not_before, expires_at = lease_window(c)
     started_at = subject_started_at(c, run)
     try:

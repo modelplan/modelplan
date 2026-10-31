@@ -240,6 +240,19 @@ class LaunchCleanupTests(unittest.TestCase):
         unknown, _ = self.run_check()
         self.assertEqual((unknown['leaseNotBefore'], unknown['leaseExpiresAt'], unknown['closedWithinLease']), (None, None, False))
 
+
+    def test_closure_time_is_sampled_after_the_subject_is_observed_gone(self):  # macrev-332-15
+        not_before, expires_at = self.window
+        t = [expires_at - 1.0]  # the check starts one second before expiry
+        real = guardian.identity
+        def slow_lookup(pid):
+            t[0] = expires_at + 5.0  # the subject's absence is only observed after expiry
+            return real(pid)
+        receipt, _ = check.check(self.c, 3, 0, 0, lookup=slow_lookup, clock=lambda: t[0])
+        check.validate_receipt(receipt)
+        self.assertEqual(receipt['closedAt'], expires_at + 5.0)
+        self.assertIs(receipt['closedWithinLease'], False)
+        self.assertFalse(check.lease_window_ok(receipt))
     def test_guardian_status_still_fails_without_a_stop_path(self):
         c = {k: v for k, v in self.c.items() if k != 'stopPath'}
         receipt, reasons = self.run_check(c, controller=0, guardian_status=3)
