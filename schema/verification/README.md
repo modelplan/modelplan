@@ -315,7 +315,9 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 
 Current integration is **incomplete; no runnable kit or GO**. The legacy C2.3 fixtures are retired with
 replacement coverage as explained below. Producer fixture capture, head-built package-level CI proof and
-the complete cooldown regression are still pending. The divergence table
+the head-built CI result are still pending. The package regression now separately proves warmed-HOME
+refusal, the real cooldown reply and 61 seconds without sequence advance, and synthetic deferred outcomes;
+it has passed with the pinned released helper as development validation, not as head-built CI proof. The divergence table
 below records the historical baseline (6a063beb); `test_disagreement_table_is_exact` keeps each expected outcome
 as a regression against both the independent oracle and the final CLI.
 

@@ -14,7 +14,8 @@ sys.path[:0]=[str(VERIFICATION/'U6'),str(VERIFICATION/'bin'),str(ROOT/'tools/u14
 import synthetic_batch as sb
 from prepare_config import prepare
 from homeseed import copy_into
-from engine_process import EngineProcess
+from engine_process import EngineProcess,EngineTimeout
+import seed_probe
 from reading_fingerprint import reading_sha256
 from u6_clock import system_uptime
 
@@ -30,6 +31,28 @@ def rows(engine):
     raise AssertionError('rows-publication-deadline')
 
 class U6PackageTests(unittest.TestCase):
+    def test_warmed_before_count_is_failure_even_with_cooldown(self):
+        sys.path.insert(0,str(VERIFICATION/'tests'))
+        import test_u6_receipt_schema as matrix
+        trace=sb.valid(closure_receipt=matrix.CLOSURE)
+        trace.one('refresh',phase='requested')['copilotAccountsBefore']=1
+        trace.one('refresh',phase='accepted')['dispositions']['copilot.runtime_usage']='cooldown'
+        terminal=trace.one('refresh',phase='completed');terminal['phase']='deferred'
+        for key in ('rowsSequenceAfter','copilotAccountsAfter','readingSHA256'):terminal.pop(key)
+        verdict=matrix.evidence_u6(sb.context(),trace.files())
+        self.assertEqual(verdict['outcome'],'fail')
+    def test_synthetic_deferred_dispositions_through_real_final_entry(self):
+        sys.path.insert(0,str(VERIFICATION/'tests'))
+        import test_u6_receipt_schema as matrix
+        for disposition,reason in (('cooldown','cooldown'),('read_only','engine-disabled'),
+                                   ('offline','engine-disabled'),('policy_pending','consent-required')):
+            with self.subTest(disposition=disposition):
+                trace=sb.valid(closure_receipt=matrix.CLOSURE)
+                trace.one('refresh',phase='accepted')['dispositions']['copilot.runtime_usage']=disposition
+                terminal=trace.one('refresh',phase='completed');terminal['phase']='deferred'
+                for key in ('rowsSequenceAfter','copilotAccountsAfter','readingSHA256'):terminal.pop(key)
+                verdict=matrix.evidence_u6(sb.context(),trace.files())
+                self.assertEqual((verdict['outcome'],verdict['reason']),('not-run',reason))
     def test_first_attempt_producers_through_real_final_entry(self):
         helper=os.environ.get('MODELPLAN_U6_TEST_CLI')
         if not helper:self.skipTest('CI must supply the head-built public CLI; no local Go build')
@@ -87,6 +110,34 @@ class U6PackageTests(unittest.TestCase):
                 # Observe the real cooldown without waiting it out or altering rate state.
                 cooldown=engine.request('refresh/request')['result']['data']
                 self.assertEqual(next(r for r in cooldown if r['scope']=='copilot.runtime_usage')['disabledReason'],'cooldown')
+            # Option (a): a genuine warmed twin is rejected before launch, rather
+            # than relabelled as an empty first attempt. Preserve all stored times.
+            twin=root/'warmed-twin';shutil.copytree(home,twin)
+            twin_log=twin/'.modelplan-stub/runtime-calls.jsonl';twin_log_digest=digest(twin_log)
+            with self.assertRaisesRegex(ValueError,'first-attempt-reading-or-cooldown-present'):
+                seed_probe.probe_seed(bundled,twin,Path(config['syntheticTmp']),mode='first',expected_stub_hash=seed['stubSHA256'])
+            refused_scratch=root/'refused-scratch';refused_scratch.mkdir()
+            refused_batch=root/'refused-batch';refused_batch.mkdir()
+            shutil.copytree(twin,refused_scratch/'home-seed')
+            refused=argparse.Namespace(**dict(vars(args),scratch=str(refused_scratch),batch=str(refused_batch),config=str(refused_batch/'run.json')))
+            made=[]
+            def must_not_build(*arguments):made.append(arguments);raise AssertionError('warmed seed must refuse before provider setup')
+            with self.assertRaisesRegex(ValueError,'run-path-not-fresh'):prepare(refused,make_home=must_not_build)
+            self.assertEqual(made,[]);self.assertFalse((refused_batch/'run.json').exists())
+            twin_engine=EngineProcess(bundled,twin,'u6-package-cooldown')
+            twin_engine.environment=dict(engine.environment,HOME=str(twin))
+            with twin_engine:
+                twin_engine.initialize();twin_before=rows(twin_engine)
+                self.assertEqual(len(next(r for r in twin_before['projection']['rows'] if r['id']=='copilot')['accounts']),1)
+                second=twin_engine.request('refresh/request')['result']['data']
+                self.assertEqual(next(r for r in second if r['scope']=='copilot.runtime_usage')['disabledReason'],'cooldown')
+                started_wait=time.monotonic()
+                with self.assertRaises(EngineTimeout):
+                    twin_engine._find(lambda message:message.get('method')=='rows/changed'
+                        and message.get('params',{}).get('data',{}).get('sequence',0)>twin_before['sequence'],timeout=61)
+                self.assertGreaterEqual(time.monotonic()-started_wait,61)
+                self.assertEqual(rows(twin_engine)['sequence'],twin_before['sequence'])
+            self.assertEqual(digest(twin_log),twin_log_digest,'cooldown must not call the provider')
             spec=importlib.util.spec_from_file_location('package_drive',VERIFICATION/'bin/drive-u6.py')
             drive=importlib.util.module_from_spec(spec);spec.loader.exec_module(drive)
             copied_digest=drive.preserve_runtime_calls(config,sb.RUN,sb.EPOCH,sb.PID)
