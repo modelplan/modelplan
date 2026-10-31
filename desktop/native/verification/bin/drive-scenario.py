@@ -3,6 +3,7 @@
 import argparse,ctypes,functools,hashlib,re,http.server,importlib.util,json,os,selectors,signal,subprocess,sys,threading,time,uuid
 from pathlib import Path
 from admission import load_and_admit
+from guardian import update_lease,Revoked
 from check_inputs import check
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
@@ -24,9 +25,17 @@ def guardian(config):
         while time.time()<c['expiresAt'] and not stop.exists():
             try:os.kill(c['controllerPID'],0)
             except ProcessLookupError:break
-            write(lease,dict(runID=c['runID'],epoch=c['epoch'],exclusive=True,ownerPreempted=False,notBefore=c['start'],expiresAt=c['expiresAt'],guardianHeartbeatAt=time.time()))
+            if not lease.exists():write(lease,dict(runID=c['runID'],epoch=c['epoch'],exclusive=True,ownerPreempted=False,notBefore=c['start'],expiresAt=c['expiresAt'],guardianHeartbeatAt=time.time(),guardian=True))
+            else:update_lease(lease,lambda r:beat_record(r,c)) # Locked conditional update shared with bin/guardian.py.
             time.sleep(.25)
-    finally:write(lease,dict(runID=c['runID'],epoch=c['epoch'],exclusive=False,ownerPreempted=True,notBefore=c['start'],expiresAt=c['expiresAt'],guardianHeartbeatAt=time.time(),stage='revoked'))
+    except Revoked:pass
+    finally:
+        try:update_lease(lease,lambda r:r|dict(exclusive=False,ownerPreempted=True,stage='revoked'))
+        except (OSError,ValueError):pass
+def beat_record(r,c):
+    if [r.get(k) for k in ('runID','epoch','notBefore','expiresAt')]!=[c['runID'],c['epoch'],c['start'],c['expiresAt']]:raise Revoked('lease identity changed')
+    if r.get('ownerPreempted') is not False or r.get('exclusive') is not True:raise Revoked('lease revoked')
+    return r|dict(guardianHeartbeatAt=time.time(),guardian=True)
 
 class Files(http.server.SimpleHTTPRequestHandler):
     def log_message(self,*args):pass

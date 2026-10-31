@@ -16,12 +16,16 @@ Run it in the background right after `book.py start`, before `release.py` and `l
 import argparse
 import contextlib
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
 import signal
 import sys
 import time
+
+_spec = importlib.util.spec_from_file_location('cleanup', Path(__file__).with_name('cleanup-run.py'))
+cleanup = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(cleanup)
 
 IDENTITY = ('runID', 'epoch', 'notBefore', 'expiresAt')
 
@@ -73,30 +77,54 @@ def stop(stop_path, reason, now):
         write_atomic(stop_path, dict(stop=True, reason=reason, at=now))
 
 
-def alive(pid):
+def identity(pid):
+    """Owned process identity: positive PID plus start time (macOS libproc; /proc elsewhere)."""
+    if type(pid) is not int or pid <= 0:
+        return None
+    if sys.platform == 'darwin':
+        return cleanup.identity(pid)
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+    except OSError:
+        return None
+    if fields[0] in ('Z', 'X'):
+        return None  # exited, awaiting reaping by its parent
+    return dict(pid=pid, startSeconds=int(fields[19]), startMicroseconds=0)
 
 
-def terminate(pid_file, grace=10.0, clock=time.monotonic, sleep=time.sleep):
-    """Stop the owned subject and confirm it is gone. Returns True when closure is verified."""
+def register(pid_file, pid):
+    """launch.py: record the owned subject. Raises if the identity cannot be established."""
+    ident = identity(pid)
+    if ident is None:
+        raise ValueError('subject identity unavailable')
+    write_atomic(pid_file, dict(state='running', **ident))
+    return ident
+
+
+def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.monotonic, sleep=time.sleep):
+    """Stop the owned subject and confirm it is gone. Returns True only when closure is verified.
+
+    No file means nothing was ever launched. A 'launching' marker or an unreadable file is
+    unconfirmed. A PID whose start identity no longer matches is never signalled; the original
+    subject is gone only if nothing matching it is alive.
+    """
     if pid_file is None or not pid_file.exists():
         return True
-    pid = int(json.loads(pid_file.read_text())['pid'])
+    try:
+        record = json.loads(pid_file.read_text())
+    except (OSError, ValueError):
+        return False
+    if record.get('state') != 'running' or type(record.get('pid')) is not int or record['pid'] <= 0:
+        return False
     for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
-        if not alive(pid):
-            return True
+        if not cleanup.matches(lookup(record['pid']), record):
+            return True  # the owned subject no longer exists (a reused PID is not ours)
         with contextlib.suppress(ProcessLookupError):
-            os.kill(pid, sig)
+            send(record['pid'], sig)
         end = clock() + wait
-        while clock() < end and alive(pid):
+        while clock() < end and cleanup.matches(lookup(record['pid']), record):
             sleep(0.1)
-    return not alive(pid)
+    return not cleanup.matches(lookup(record['pid']), record)
 
 
 def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
@@ -122,7 +150,10 @@ def run(lease_path, stop_path, interval=1.0, reserve=15.0, pid_file=None,
     except Revoked:
         outcome = 'revoked'
     finally:
-        stop(stop_path, 'guardian-' + outcome, clock())
+        try:
+            stop(stop_path, 'guardian-' + outcome, clock())
+        except OSError:
+            pass  # still stop the subject; launch.py also stops on a stale heartbeat
         closed = kill(pid_file)
     return outcome, closed
 
@@ -131,7 +162,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--lease', type=Path, required=True)
     parser.add_argument('--stop', type=Path, required=True)
-    parser.add_argument('--subject-pid-file', type=Path, help='written by launch.py; the subject is stopped on exit')
+    parser.add_argument('--subject-pid-file', type=Path, required=True, help='written by launch.py; the subject is stopped on exit')
     parser.add_argument('--interval', type=float, default=1.0)
     parser.add_argument('--reserve', type=float, default=15.0, help='seconds kept for cleanup before expiresAt')
     args = parser.parse_args(argv)

@@ -389,7 +389,8 @@ class Bookings(unittest.TestCase):
         c['syntheticHome'] += '-allowed'; c['syntheticTmp'] += '-allowed'
         config.write_text(json.dumps(c))
         child = Mock(pid=123, returncode=0); child.poll.return_value = 0  # the child exits by itself
-        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=child) as popen:
+        c['subjectPidPath'] = str(self.root / 'subject.pid'); config.write_text(json.dumps(c))
+        with patch.object(sys, 'argv', ['launch', '--config', str(config), '--execute']), patch.object(launch.subprocess, 'Popen', return_value=child) as popen, patch.object(launch, 'register', return_value={}):
             with self.assertRaises(SystemExit) as done:
                 launch.main()
             popen.assert_called_once()
