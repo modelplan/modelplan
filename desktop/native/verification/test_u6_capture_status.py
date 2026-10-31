@@ -38,7 +38,9 @@ class StatusCaptureTests(unittest.TestCase):
         self.assertFalse((self.root/'status-preclick.png').exists())
         self.assertTrue((self.root/'status-preclick/status-preclick.png').is_file())
         from capture_artifacts import approved_images
-        allowed,problems=approved_images(self.config,self.root)
+        # The Mac lane also runs Python without hashlib.file_digest (3.11+).
+        with patch.object(hashlib,'file_digest',None,create=True):
+            allowed,problems=approved_images(self.config,self.root)
         self.assertEqual(allowed,{'status-preclick/status-preclick.png'});self.assertEqual(problems,[])
     def test_unsettled_or_oversized_never_invokes_capture(self):
         for changes in [dict(settled=False),dict(height=44),dict(frameGeneration=3)]:

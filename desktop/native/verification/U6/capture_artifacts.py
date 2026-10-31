@@ -40,7 +40,10 @@ def approved_images(config,batch):
         if path.is_symlink() or unpublished(rel) or len(candidates.get(path,[]))!=1:
             problems.append('orphan-image');continue
         try:
-            with path.open('rb') as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
+            digest_state=hashlib.sha256()
+            with path.open('rb') as stream:
+                for chunk in iter(lambda:stream.read(1024*1024),b''):digest_state.update(chunk)
+            digest=digest_state.hexdigest()
         except OSError:problems.append('capture-image-unreadable');continue
         if digest!=candidates[path][0]:
             problems.append('capture-image-mismatch');continue
