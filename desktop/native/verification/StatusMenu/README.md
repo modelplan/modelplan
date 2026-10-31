@@ -56,3 +56,9 @@ The locator starts at `AXExtrasMenuBar` on the supplied PID and checks every tra
 Arrival proves that AppKit dispatched the owned item's action to its target. U6 must still wait for its existing post-action provider/refresh completion receipt to prove refreshed product state. This package does not assert that asynchronous refresh succeeded.
 
 Receipts contain fixed codes/IDs and timing only: no menu title, readings, selector, URL, argv or other-app inventory. Tests cover own-menu dispatch, duplicate suppression, stale/wrong correlation, disabled/ambiguous/foreign targets and bounds. Hosted checks compile the actual pointer entry and run the package tests without a menu popup, AX query or posted input. A live U6 run remains M4's separate admitted scenario after merge.
+
+## What arrival evidence proves (threat model)
+
+An `arrived` result means a row matching the exact run, epoch, subject PID, request UUID and action appeared in the subject's native observation file after the press. It is evidence against **self-certifying tooling**: the driver and every other verification tool open that file read-only, and `tests/test_arrival_writers.py` fails the build if any tool under `bin/` gains a code path that writes to it. Only the in-app `StatusMenuArrivalObserver`, through the subject's own JSONL writer, produces arrival rows.
+
+It is not a defence against a hostile process running as the same user that appends a forged row. Without an OS-attested identity (an audit token or a signed peer), no file-based receipt can tell those writers apart, and verification runs use synthetic profiles on a dedicated machine. If an observer is missing or disabled, no row appears and the driver reports `not-run` after its timeout. It never reports `arrived`.
