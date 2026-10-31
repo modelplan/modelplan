@@ -43,6 +43,9 @@ def load_and_admit(config):
     current['lease'] = json.loads(Path(config['leasePath']).read_text())
     current['release'] = json.loads(Path(config['releasePath']).read_text())
     current['stop'] = Path(config['stopPath']).exists()
+    if current['lease'].get('guardian') is not True:
+        # book.py start issues only an initial heartbeat; execution needs a live guardian (bin/guardian.py).
+        raise ValueError('guardian not running')
     validate(current, time.time())
     book.admit(current)
     return current
