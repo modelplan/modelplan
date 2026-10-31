@@ -220,6 +220,17 @@ class U6DriveRegisteredSubjectTests(unittest.TestCase):
         source=(BASE/'drive-u6.py').read_text()
         for word in ('subprocess','Popen','killpg','os.kill','signal.'):self.assertNotIn(word,source)
 class U6ReasonTests(unittest.TestCase):
+    def test_runtime_call_proof_survives_home_cleanup_with_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            c=config(Path(directory));home=Path(c['syntheticHome']);home.mkdir()
+            (home/'runtime-calls').write_text('connect\nauth.getStatus\naccount.getQuota\n')
+            digest=drive.preserve_runtime_calls(c,'run','epoch',42)
+            target=Path(c['batch'])/'runtime-calls.json'
+            self.assertEqual(hashlib.sha256(target.read_bytes()).hexdigest(),digest)
+            proof=json.loads(target.read_text());self.assertEqual(proof['targetPID'],42)
+            self.assertIn('account.getQuota',proof['calls'])
+            (home/'runtime-calls').unlink();home.rmdir()
+            self.assertTrue(target.is_file())
     def test_unknown_exception_text_never_enters_receipts(self):
         self.assertEqual(drive.failure(RuntimeError('/synthetic/private/path: arbitrary engine text')),'unknown')
         self.assertEqual(drive.failure(RuntimeError('resource-busy-before-launch')),'not-delivered')

@@ -121,6 +121,16 @@ def closed(pid_path):
     except FileNotFoundError:return True
     except (OSError,ValueError):return False
     return isinstance(record,dict) and record.get('state')=='running' and type(record.get('pid')) is int and not alive(record)
+def preserve_runtime_calls(c,run,epoch,pid):
+    source=Path(c['syntheticHome'])/'runtime-calls';target=Path(c['batch'])/'runtime-calls.json'
+    if target.exists():raise ValueError('runtime-log-not-fresh')
+    calls=[]
+    if source.exists():
+        if source.is_symlink() or not source.is_file() or source.stat().st_size>65536:raise ValueError('runtime-log-invalid')
+        calls=source.read_text().splitlines()
+        if any(value not in ('connect','auth.getStatus','account.getQuota') for value in calls):raise ValueError('runtime-log-invalid')
+    write(target,dict(schema='u6-runtime-calls/1',runID=run,epoch=epoch,targetPID=pid,calls=calls))
+    return hashlib.sha256(target.read_bytes()).hexdigest()
 def drive(c,now,poll=.2,sleep=time.sleep):
     admit(c,now);run,epoch,_,end=run_identity(c)
     out=Path(c['batch']);scratch=Path(c['scratch']);stop=Path(c['stopPath']);finish=out/'operator-finish.json';pid_path=Path(c['subjectPidPath'])
@@ -145,6 +155,9 @@ def drive(c,now,poll=.2,sleep=time.sleep):
         deadline=time.monotonic()+CLOSE_SECONDS+quit_grace(c.get('quitGraceSeconds')) # the subject's own quit comes first
         while not closed(pid_path) and time.monotonic()<deadline:sleep(.2)
         gone=closed(pid_path);removed=[];r=prepared(c);prep=(r['locks'],r['attempt']) if r else None
+        if gone: # preserve the synthetic stub proof before any HOME removal
+            try:result['runtimeCallsSHA256']=preserve_runtime_calls(c,run,epoch,record['pid'] if result['appStarted'] else 0)
+            except (OSError,ValueError):result['runtimeCallsReason']='unknown'
         if gone: # resources and scratch are released only after closure is observed; otherwise they stay held
             try:removed=cleanup.remove_scratch(scratch,scratch_names(c))
             except (OSError,ValueError):pass

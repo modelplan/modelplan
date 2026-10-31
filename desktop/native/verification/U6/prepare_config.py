@@ -24,6 +24,13 @@ def default_cache_dir(home,platform=sys.platform):
     if platform.startswith('linux'):return Path(home)/'.cache/modelplan'
     raise ValueError('unsupported-seed-platform')
 
+def relocate_cache(seed):
+    custom=seed/'cache';default=default_cache_dir(seed)
+    if custom.is_symlink() or default.exists():raise ValueError('seed-cache-invalid')
+    default.parent.mkdir(parents=True,exist_ok=True)
+    if custom.is_dir():shutil.move(str(custom),str(default))
+    else:default.mkdir()
+
 def prepare(args,make_home=Home,probe=probe_seed):
     names=('config','scratch','batch','ledger','lease','release','subject_pid','locks','resource_root','binary','package','kit_manifest')
     paths={name:absolute(getattr(args,name)) for name in names}
@@ -49,16 +56,19 @@ def prepare(args,make_home=Home,probe=probe_seed):
     if tool!='copilot' or tool not in profile.get('tools',[]):raise ValueError('private-tool-not-in-approved-profile')
     seed=scratch/'home-seed'
     synthetic=make_home(seed,helper,'http://127.0.0.1:1',profile)
-    synthetic.allow();refresh=synthetic.refresh() # the approved Copilot runtime row is part of the seed
-    if refresh.returncode!=0 or 'account.getQuota' not in synthetic.calls():
-        raise ValueError('synthetic-private-reading-not-seeded')
-    custom=seed/'cache';default=default_cache_dir(seed)
-    if not custom.is_dir() or custom.is_symlink() or default.exists():raise ValueError('seed-cache-invalid')
-    default.parent.mkdir(parents=True,exist_ok=True)
-    shutil.move(str(custom),str(default))
+    synthetic.allow();relocate_cache(seed) # never refresh the real seed or edit its rate-limit state
     probe_tmp=scratch/'seed-probe-tmp';probe_tmp.mkdir()
-    try:title=probe(helper,seed,probe_tmp,tool)
-    finally:shutil.rmtree(probe_tmp)
+    twin=scratch/'title-twin'
+    try:
+        other=make_home(twin,helper,'http://127.0.0.1:1',profile);other.allow();refresh=other.refresh()
+        if refresh.returncode!=0 or 'account.getQuota' not in other.calls():raise ValueError('twin-reading-missing')
+        relocate_cache(twin)
+        title=probe(helper,twin,probe_tmp,tool,mode='refreshed')
+        title_hash=hashlib.sha256(title.encode()).hexdigest()
+        probe(helper,seed,probe_tmp,tool,mode='first',expected_title_hash=title_hash)
+    finally:
+        shutil.rmtree(probe_tmp)
+        if twin.exists():shutil.rmtree(twin)
     digest=tree_sha256(seed)
     config=dict(scenario='u6',profile='synthetic',head=args.head,binarySHA256=manifest['binarySHA256'],
         packageSHA256=manifest['packageSHA256'],helperSHA256=manifest['helperSHA256'],
@@ -71,7 +81,7 @@ def prepare(args,make_home=Home,probe=probe_seed):
         booking=dict(id=args.booking_id,lane='M1',unit='U6',scenario='U6-DockMenu-synthetic',ledger=str(paths['ledger'])),
         expectedLease=dict(runID=run,epoch=epoch)) # the sequence adds notBefore/expiresAt from the started lease
     seed_receipt=dict(schema='u6-seed/1',runID=run,epoch=epoch,homeSeedSHA256=digest,
-        toolID=tool,titleSHA256=hashlib.sha256(title.encode()).hexdigest(),profileSHA256=sha(profile_path))
+        toolID=tool,titleSHA256=title_hash,profileSHA256=sha(profile_path),firstAttempt=True)
     with (batch/'synthetic-seed.json').open('x') as stream:json.dump(seed_receipt,stream,sort_keys=True);stream.write('\n')
     with (batch/'run.json').open('x') as stream:json.dump(config,stream,indent=2);stream.write('\n')
     print(json.dumps(dict(runID=run,epoch=epoch,head=args.head,seedSHA256=digest)))

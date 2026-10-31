@@ -32,15 +32,19 @@ class U6PrepareConfigTests(unittest.TestCase):
                 head='a'*40,private_tool='copilot')
             class FakeHome:
                 def __init__(self,seed,*_):self.seed=seed
-                def allow(self):self.seed.mkdir();(self.seed/'synthetic.txt').write_text('synthetic')
+                def allow(self):
+                    self.seed.mkdir();(self.seed/'synthetic.txt').write_text('synthetic');(self.seed/'cache').mkdir()
                 def refresh(self):
-                    (self.seed/'cache').mkdir();(self.seed/'cache/runtime.txt').write_text('synthetic-runtime')
+                    (self.seed/'cache/runtime.txt').write_text('synthetic-runtime')
                     return types.SimpleNamespace(returncode=0)
                 def calls(self):return 'account.getQuota'
-            def probe(helper,home,tmp,tool):
+            modes=[]
+            def probe(helper,home,tmp,tool,mode='first',expected_title_hash=None):
                 self.assertEqual(tool,'copilot')
-                self.assertTrue((prepare.default_cache_dir(home)/'runtime.txt').is_file())
+                self.assertEqual((prepare.default_cache_dir(home)/'runtime.txt').is_file(),mode=='refreshed')
                 self.assertFalse((home/'cache').exists())
+                modes.append(mode)
+                if expected_title_hash:self.assertEqual(expected_title_hash,hashlib.sha256(b'GitHub Copilot').hexdigest())
                 return 'GitHub Copilot'
             prepare.prepare(args,make_home=FakeHome,probe=probe)
             config=json.loads((batch/'run.json').read_text());seed=json.loads((batch/'synthetic-seed.json').read_text())
@@ -48,6 +52,9 @@ class U6PrepareConfigTests(unittest.TestCase):
             self.assertEqual(config['packageSHA256'],hashlib.sha256(package.read_bytes()).hexdigest())
             self.assertEqual(seed['titleSHA256'],hashlib.sha256(b'GitHub Copilot').hexdigest())
             self.assertEqual(seed['homeSeedSHA256'],config['syntheticHomeSeedSHA256'])
+            self.assertEqual(modes,['refreshed','first'])
+            self.assertFalse((scratch/'title-twin').exists())
+            self.assertTrue(seed['firstAttempt'])
             self.assertEqual((seed['runID'],seed['epoch']),('run','epoch'))
             self.assertEqual(config['expectedLease'],dict(runID='run',epoch='epoch')) # completed from the lease after start
             self.assertEqual(config['leasePath'],str(lease));self.assertFalse(lease.exists())
