@@ -10,7 +10,9 @@ def tree_sha256(root):
     for dirpath,dirs,files in os.walk(root,followlinks=False):
         dirs.sort();base=Path(dirpath)
         for name in dirs:
-            if (base/name).is_symlink():raise ValueError('home seed contains a symlink')
+            d=base/name
+            if d.is_symlink():raise ValueError('home seed contains a symlink')
+            h.update(f'{d.relative_to(root).as_posix()}/\0{d.stat().st_mode & 0o777:o}\0'.encode()) # directories count too
         for name in sorted(files):
             f=base/name
             if f.is_symlink() or not f.is_file():raise ValueError('home seed contains a non-regular file')
@@ -18,8 +20,10 @@ def tree_sha256(root):
     return h.hexdigest()
 def check(c):
     """None when the config names no seed; otherwise the verified (seed path, digest)."""
-    if 'syntheticHomeSeed' not in c:return None
-    seed=Path(c['syntheticHomeSeed']);want=c.get('syntheticHomeSeedSHA256')
+    path,want=c.get('syntheticHomeSeed'),c.get('syntheticHomeSeedSHA256')
+    if path is None and want is None:return None
+    if not path or not want:raise ValueError('home seed path and digest must be set together') # e.g. a dropped path with a pinned digest
+    seed=Path(path)
     scratch=Path(c['syntheticHome']).parent.resolve()
     if not isinstance(want,str) or len(want)!=64:raise ValueError('home seed digest missing')
     if seed.resolve().parent!=scratch or seed.resolve()==Path(c['syntheticHome']).resolve():raise ValueError('home seed must sit beside the synthetic HOME in the run scratch')
@@ -33,5 +37,6 @@ def copy_into(c,home):
     for dirpath,dirs,files in os.walk(seed,followlinks=False):
         rel=Path(dirpath).relative_to(seed);dst=home/rel
         dst.mkdir(mode=0o700,exist_ok=True)
+        if rel!=Path('.'):os.chmod(dst,Path(dirpath).stat().st_mode & 0o777) # same directory modes as the pinned seed
         for name in files:shutil.copy2(Path(dirpath)/name,dst/name,follow_symlinks=False)
     if tree_sha256(home)!=want:raise ValueError('home seed copy mismatch')

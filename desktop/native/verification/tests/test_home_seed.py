@@ -65,8 +65,22 @@ class HomeSeed(unittest.TestCase):
 
     def test_missing_digest_is_refused(self):
         c = self.config(); del c['syntheticHomeSeedSHA256']
-        with self.assertRaisesRegex(ValueError, 'digest missing'):
+        with self.assertRaisesRegex(ValueError, 'set together'):
             homeseed.check(c)
+
+    def test_dropping_only_the_seed_path_refuses_before_home(self):
+        for blank in (None, ''):
+            c = self.config()
+            if blank is None: del c['syntheticHomeSeed']
+            else: c['syntheticHomeSeed'] = blank
+            with self.assertRaisesRegex(ValueError, 'set together'):
+                self.execute(c)
+            self.assertFalse((self.root / 'home').exists())
+
+    def test_empty_directories_change_the_digest(self):
+        before = homeseed.tree_sha256(self.seed)
+        (self.seed / 'Library' / 'Empty').mkdir()
+        self.assertNotEqual(before, homeseed.tree_sha256(self.seed))
 
     def test_no_seed_keeps_the_empty_home(self):
         c = self.config(); del c['syntheticHomeSeed']; del c['syntheticHomeSeedSHA256']
