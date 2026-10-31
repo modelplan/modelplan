@@ -105,7 +105,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        machine only from log timestamps and token counts
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan history --effort-suggestion dismiss|off|on
-                                       control local weekly effort suggestions (never changes settings)
+                                       control local weekly effort suggestions (default off; never changes settings)
   modelplan declare <planId> [generation] [--region ID]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -125,7 +125,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
-     MODELPLAN_EFFORT_SUGGESTION=off (no local weekly effort suggestions),
+     MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
@@ -1001,10 +1001,8 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 			parts = append(parts, style.QuotaNotice(fact))
 		}
 	}
-	// Personal history advice belongs only in the user message, never in parts.
-	if v := history.NotifyEffortSuggestion(st.Dir, d, now); v != nil {
-		shown = append(shown, style.EffortSuggestionLine(v))
-	}
+	// Personal default-effort suggestions stay in text history and the status
+	// line. Hooks must neither expose them to plugins nor consume their notice.
 	if len(parts) > 0 || len(shown) > 0 {
 		out := map[string]any{}
 		if len(shown) > 0 {
@@ -1114,21 +1112,14 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		connectionEnv := connections.Local(paths)
 		connectionEnv.Gemini = &localUsage
 		connectionEnv.Qwen = &qwenLocal
-		fv := history.ReadEffortSuggestion(st.Dir, d, now)
-		if fv.Suggestion != nil {
-			style := render.Style{T: render.ZH}
-			if c.lang == "en" {
-				style.T = render.EN
-			}
-			fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
-		}
-		boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
+		// This machine-readable feed is also consumed by plugins. Keep personal
+		// default-effort suggestions out, even when explicitly enabled locally.
+		boundaries := advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now})
 		return snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistoriesWithAdmission(home, st.Dir, true, now, admission), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
 			Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 			QwenUsage:   qwenExport,
 			Connections: connections.DiagnoseWithAdmission(connectionEnv, report, admission),
 			Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
-			EffortSuggestion: fv.Suggestion, EffortSuggestionRevision: fv.Revision,
 			Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now})
 	}, func(admission consent.Admission) snapshot.Snapshot {
 		// A second change publishes only the user's own declarations. No tool

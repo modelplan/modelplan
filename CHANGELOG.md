@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
+  C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
+
 - Accept the optional published `provisional: true` on a model's effort in the CLI, the public reader and the Codex plugin. `modelplan effort` marks that ability as provisional (`暂定`), `--json` carries the flag only when set, and quota hints never offer a provisional configuration as another model's alternative, nor compare a provisional current configuration across models. Other unknown effort fields are still rejected.
   CLI、公开读取器和 Codex 插件接受发布数据中档位的可选字段 `provisional: true`。`modelplan effort` 会把该档能力标为「暂定」，`--json` 仅在设置时带上该字段；额度提示不会把暂定档位当作其他模型的替代，也不会拿暂定的当前档位跨模型比较。其他未知档位字段仍会被拒绝。
 
