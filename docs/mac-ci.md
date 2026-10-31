@@ -19,7 +19,7 @@ The reusable workflow accepts a fixed task selector and OS selector, not shell
 commands, checkout paths, credentials, environment overrides or arbitrary refs.
 Checkout uses the caller's GitHub-provided subject SHA with persisted Git
 credentials disabled. Signing, publication and packaging stay hosted; the
-macOS 14 compatibility job stays hosted as well.
+macOS 14 is not tested in CI and not guaranteed (2026-11-02).
 
 The runner's pre-job gate separately checks authenticated owner identity,
 repository, event, PR head repository and PR author. `github.workflow_ref` is

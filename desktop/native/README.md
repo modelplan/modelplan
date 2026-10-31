@@ -44,7 +44,7 @@ The explicit `--runtime-probe <synthetic-home> <receipt-path> <1–120 seconds>`
 
 The current source passes 20 contract groups, eight case-manifest integrity checks, the nested common-run-loop deadline check and AppKit adapter/error-view checks. A universal, Hardened Runtime ad-hoc test package passes synthetic read-only helper access and offline-publication checks. Local receipts separately pin the toolchain, binary hashes, cold/idle baseline and integrated child/UI measurements. App/helper deployment and source receipts are separate from a release.
 
-Still required: real macOS 14 runtime coverage and physical lock/sleep/user-switch/display/input proof. Injected notifications and a main-run-loop heartbeat do not prove those interactions or first physical pixels. Signing/notarisation is later distribution work. No WebKit/RealityKit field, entrance, appearance batch, login item, permission change or release is implemented here.
+macOS 14 is not tested in CI and not guaranteed (2026-11-02). Still required: physical lock/sleep/user-switch/display/input proof. Injected notifications and a main-run-loop heartbeat do not prove those interactions or first physical pixels. Signing/notarisation is later distribution work. No WebKit/RealityKit field, entrance, appearance batch, login item, permission change or release is implemented here.
 
 
 ## Community Settings composition

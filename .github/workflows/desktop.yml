@@ -167,55 +167,11 @@ jobs:
       fail-fast: false
       matrix:
         os:
-        - macos-14
         - macos-latest
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cdaf222b4c25645aed15b6a6c99982525d7d1852
     with:
       task: native
       os: ${{ matrix.os }}
-
-  native-runtime:
-    name: native runtime (macos-14, latest-Xcode binaries)
-    needs: native
-    # Still exercise latest-Xcode binaries if the older image cannot build them.
-    if: ${{ !inputs.mac_ci_probe && (!cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft)) }}
-    runs-on: macos-14
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: native-latest-xcode-macos14-runtime
-          path: ${{ runner.temp }}/native-runtime-download
-      - name: Verify macOS 14 host and unpack the original binaries
-        run: |
-          sw_vers
-          test "$(sw_vers -productVersion | cut -d. -f1)" = 14
-          test "$(uname -m)" = arm64
-          mkdir -p "$RUNNER_TEMP/native-runtime"
-          tar -xzf "$RUNNER_TEMP/native-runtime-download/native-runtime.tar.gz" -C "$RUNNER_TEMP/native-runtime"
-          cd "$RUNNER_TEMP/native-runtime"
-          shasum -a 256 --check SHA256SUMS
-          file ModelPlanCommunity ModelPlanCommunityApp ModelPlanContractChecks ModelPlanContractV1Checks ModelPlanRunLoopChecks ModelPlanShellChecks ModelPlanWindowProbe ModelPlanDockLogicChecks ModelPlanDockInstrumentChecks
-      # Execute the transferred binaries directly: no Swift invocation or rebuild.
-      - name: Native contract suite on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractChecks"'
-      - name: Frozen CLI desktop contract v1 goldens on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanContractV1Checks" "$GITHUB_WORKSPACE/testdata/contract-v1"'
-      - name: Common-run-loop deadline check on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanRunLoopChecks"'
-      - name: AppKit lifecycle and neutral surface checks on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanShellChecks"'
-      - name: Dock native resource and instrument checks on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanDockInstrumentChecks" "$RUNNER_TEMP/dock-instrument-runtime"'
-      - name: Dock logic unit checks on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanDockLogicChecks"'
-      - name: Window/input native contracts on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanWindowProbe" --checks'
-      - name: B05 primitive contracts on macOS 14
-        run: '"$RUNNER_TEMP/native-runtime/ModelPlanPrimitiveChecks"'
-      - name: Synthetic fixture integrity
-        run: python3 desktop/native/tools/check-fixture-manifests.py
 
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}

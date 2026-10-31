@@ -2,7 +2,7 @@
 
 [简体中文](mac-beta-install.zh-CN.md)
 
-Requires **macOS 14 or later**. Apple silicon is tested; Intel is untested and 3D may stutter.
+Requires **macOS 14 or later**. macOS 14 is not tested in CI and not guaranteed (2026-11-02). Apple silicon is tested; Intel is untested and 3D may stutter.
 
 ## Download and install
 
