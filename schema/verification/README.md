@@ -314,8 +314,8 @@ Observation, outside the schema: with the guard attached, `EngineDockMenuApplica
 ## evidence-u6 changes required by C2.7
 
 Current integration is **incomplete; no runnable kit or GO**. The legacy C2.3 fixtures are retired with
-replacement coverage as explained below. Producer fixture capture, head-built package-level CI proof and
-the head-built CI result are still pending. The package regression now separately proves warmed-HOME
+replacement coverage as explained below. Producer fixture capture and head-built package-level CI proof
+are still pending. The package regression now separately proves warmed-HOME
 refusal, the real cooldown reply and 61 seconds without sequence advance, and synthetic deferred outcomes;
 it has passed with the pinned released helper as development validation, not as head-built CI proof. The divergence table
 below records the historical baseline (6a063beb); `test_disagreement_table_is_exact` keeps each expected outcome
