@@ -8,6 +8,19 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+# U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
+credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
+credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
+credential_tools="$native_root/ModelPlanCredentialAgent/tools"
+# Reject missing or mismatched pins before starting either App compilation.
+if [[ ! "$credential_sha" =~ ^[0-9a-f]{64}$ ]]; then echo 'Invalid credential helper pin' >&2; exit 1; fi
+if [ ! -d "$credential_artifact" ] || [ -L "$credential_artifact" ] || \
+   [ ! -f "$credential_artifact/credential-agent.json" ] || [ -L "$credential_artifact/credential-agent.json" ] || \
+   [ ! -f "$credential_artifact/modelplan-credential-agent" ] || [ -L "$credential_artifact/modelplan-credential-agent" ]; then
+    echo 'Missing or linked credential helper artifact/pin' >&2; exit 1
+fi
+credential_actual=$(shasum -a 256 "$credential_artifact/modelplan-credential-agent" | awk '{print $1}')
+if [ "$credential_actual" != "$credential_sha" ]; then echo 'Credential helper pin mismatch' >&2; exit 1; fi
 case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
@@ -69,6 +82,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 PLIST
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
+python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
+    --expected-sha256 "$credential_sha" --universal "$app"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \
@@ -76,4 +91,6 @@ python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_
     --x86-64-input "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan"
 codesign --force --sign - --options runtime "$app"
 codesign --verify --deep --strict "$app"
+python3 "$credential_tools/check_embedded_agent.py" --pin "$credential_artifact/credential-agent.json" \
+    --expected-sha256 "$credential_sha" --single "$app"
 printf '%s\n' "$app"

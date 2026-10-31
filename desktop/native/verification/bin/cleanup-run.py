@@ -8,6 +8,7 @@ def identity(pid):
     if type(pid) is not int or pid<=0:return None
     lib=ctypes.CDLL('/usr/lib/libproc.dylib');info=BSDInfo()
     if lib.proc_pidinfo(pid,3,0,ctypes.byref(info),ctypes.sizeof(info))!=ctypes.sizeof(info):return None
+    if info.header[3]!=pid or info.header[5]!=os.geteuid():return None
     return dict(pid=pid,startSeconds=info.startSeconds,startMicroseconds=info.startMicroseconds)
 def matches(actual,expected):return actual is not None and all(actual.get(k)==expected.get(k) for k in ('pid','startSeconds','startMicroseconds'))
 def stop_owned(expected,lookup=identity,send=os.kill):

@@ -57,6 +57,9 @@ jobs:
           python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
           python3 -m unittest discover -s tools/u14/tests -p test_harness.py -v
   candidate:
+    permissions:
+      contents: read
+      actions: read
     # Drafts run portable contracts first; macOS starts when ready, or by manual dispatch.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     needs: contracts
@@ -95,6 +98,8 @@ jobs:
               output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
           PY
       - name: Assemble and seal candidate, archive, and generate U14 manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p .tmp/tmp
           export TMPDIR="$GITHUB_WORKSPACE/.tmp/tmp"

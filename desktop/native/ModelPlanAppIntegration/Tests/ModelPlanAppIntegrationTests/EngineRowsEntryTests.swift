@@ -194,10 +194,14 @@ private actor RowsEntryClient: EngineClient {
         let hash = SHA256.hash(data: helper).map { String(format: "%02x", $0) }.joined()
         try helper.write(to: helpers.appendingPathComponent("modelplan"))
         try Data(hash.utf8).write(to: resources.appendingPathComponent("modelplan.sha256"))
+        var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<3 { native.deleteLastPathComponent() }
+        let pin = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: native.appendingPathComponent("consent-cli-pin.json"))) as? [String: Any])
+        let sources = try XCTUnwrap(pin["sourceSHA256ByArchitecture"] as? [String: String])
         let info: [String: Any] = ["CFBundleShortVersionString": "3.2.1", "ModelPlanPublicSource": String(repeating: "a", count: 40),
             "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version,
             "ModelPlanBundledHelperSHA256": hash,
-            "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture]
+            "ModelPlanSourceHelperSHA256ByArchitecture": sources]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
         try Data("Synthetic MIT notice".utf8).write(to: resources.appendingPathComponent("LICENSE.txt"))
         try Data("Synthetic dependency notices".utf8).write(to: resources.appendingPathComponent("CLI-THIRD-PARTY-NOTICES.md"))

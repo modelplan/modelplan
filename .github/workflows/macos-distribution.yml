@@ -31,6 +31,9 @@ concurrency:
 
 jobs:
   neutral-build:
+    permissions:
+      contents: read
+      actions: read
     # No secrets or protected environment in the PR/build job.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -60,6 +63,10 @@ jobs:
           PY
       - name: Test release gates with synthetic values only
         run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
+      - name: Fetch the approved prebuilt credential helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
       - name: Fetch CLI archives from the reviewed native consent pin
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
       - name: Build universal neutral app (ad-hoc only)

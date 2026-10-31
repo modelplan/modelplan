@@ -67,4 +67,72 @@ python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py'
 node scripts/check-source-policy.mjs
 ```
 
-Tests generate and discard a throwaway Ed25519 key inside the test (CryptoKit on macOS; OpenSSL on Linux). They verify serialized enclosure signatures, numeric ordering, beta isolation, history bootstrap refusal, missing-key failure, draft-only publication guards, candidate validation and signing/hash order. No owner key, account, credential discovery or real release is used. The native consent pin remains independent of plugin pins; `test_consent_input.py` checks workflow/runtime/producer agreement without executing the helper.
+The release-gate tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering (including all beta-setting combinations), trusted-trigger denial, archive traversal/link rejection, community/official separation, distinct feed files, beta signing order/helper hash refresh and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
+
+The beta-pipeline tests generate and discard a throwaway Ed25519 key inside the test (CryptoKit on macOS; OpenSSL on Linux). They verify serialized enclosure signatures, numeric ordering, beta isolation, history bootstrap refusal, missing-key failure, draft-only publication guards, candidate validation and signing/hash order. No owner key, account, credential discovery or real release is used.
+
+References: [Sparkle publishing](https://sparkle-project.org/documentation/publishing/) (archive preservation, signed enclosure and version fields), [Sparkle security](https://sparkle-project.org/documentation/security-and-reliability/) (stdin key handling), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+
+The native consent archive pin is independent of plugin CLI pins. It must match both the runtime consent identity and its metadata producer; plugin updates do not implicitly upgrade the App helper. The focused `test_consent_input.py` follows the real workflow input and checks that three-part contract without executing a helper, package or signing command. Bumping the native pin requires a reviewed identity update in the same change.
+
+## Prebuilt credential-helper input
+
+`package-neutral.sh` requires `MODELPLAN_CREDENTIAL_AGENT_ARTIFACT` and
+`MODELPLAN_CREDENTIAL_AGENT_SHA256` for every mode, including synthetic smoke.
+The directory is the independently approved universal artifact from the U7
+builder: `modelplan-credential-agent`, `credential-agent.json`, and `proof.json`.
+The external SHA must be approved independently, not derived from an untrusted
+artifact directory as an automatic approval. Different compiler/SDK inputs need
+their own reviewed artifact; no cross-environment digest equivalence is assumed.
+
+Missing/linked inputs or a binary digest mismatch fail before App compilation.
+The canonical U7 embed tool then enforces its pin, universal architecture and
+existing signature checks before the outer App seal; the canonical final checker
+validates the embedded pin after sealing. Packaging never calls the credential
+helper builder, executes the helper, or re-signs it. Existing CLI signing is
+separate. `--single` proves one final App's pin, not two-App, Keychain or A14 proof.
+The helper remains R2 default-deny.
+
+The canonical U7 tools are supplied by prerequisite public #376; App wiring stays
+in #369. Packaging callers must provide
+their reviewed artifact inputs before enabling this hook; there is no silent
+fallback. The shell fixture tests use inert build/signing/verifier boundaries and
+prove orchestration and failure propagation only.
+
+U10 modifies and re-seals its outer App after the neutral scaffold; it therefore
+runs the same `--single` checker again after its final seal/archive identity
+checks, before writing delivery checksums. It consumes the same approved inputs.
+
+## Coordinator-approved producer-run binding
+
+The reviewed triple lives at `desktop/native/credential-agent-artifact-pin.json`
+with exactly three string fields: `runID`, `artifactName`, and `sha256`. The last
+field is the credential-helper **binary** SHA-256, not GitHub's ZIP digest. This
+file is added or updated only after the coordinator approves that exact triple;
+no placeholder approval or build-derived automatic approval is supplied.
+
+`fetch_credential_artifact.py` resolves only that run in `modelplan/modelplan`,
+requires a successful completed main push/manual run from the same repository,
+selects the unique unexpired named artifact in that run, safely reads its ZIP,
+and checks the binary and descriptor against the independently approved digest.
+It exports the artifact directory/digest only after verification. There is no
+latest-run fallback or helper builder call. Missing approvals, wrong run/name,
+expired or ambiguous artifacts, unsafe members and digest mismatches fail closed.
+The canonical U7 embed/final tools still own universal/signature/full-pin checks.
+
+macos-distribution and desktop app-smoke use the CLI's `--github-env` output.
+U10 and the e2e builder call the same downloader before CLI/App compilation,
+passing the verified binding explicitly to `package-neutral.sh`; e2e does not
+create a second helper. Their artifact-consuming jobs add only `actions: read`
+to `contents: read`. The ephemeral download token is not exported in the binding
+or passed by the Python callers to packaging children. No signing secret or
+release permission is added. The producer workflow remains M3-owned.
+
+The producer artifact also carries `SHA256SUMS` and `LICENSE.txt`; the downloader
+retains both alongside the binary, pin and proof. These audit checksums do not
+replace the coordinator-approved independent binary digest.
+
+U14 macOS `build_app` is also a production packaging caller: it obtains the same
+approved input before its CLI compilation, passes only the verified binding to
+the packager, and removes download auth from build environments. Its scenario,
+watchdog, synthetic profile and evidence semantics are unchanged.
