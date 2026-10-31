@@ -42,7 +42,7 @@ func TestSparseDaySnapshotBurstMatchesSkillReaders(t *testing.T) {
 	if err != nil || json.Unmarshal(data, &snapshot) != nil || len(snapshot.Recent["weekly"]) <= 64 {
 		t.Fatal("fixture must exercise truncated sparse-day history", err)
 	}
-	accounts, status := readClaudeCode(cache, "")
+	accounts, status := readClaudeCode(cache, "", now)
 	if status.Status != "ok" || len(accounts) != 1 {
 		t.Fatal(status)
 	}

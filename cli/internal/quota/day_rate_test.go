@@ -104,7 +104,7 @@ func TestStatuslineKeepsSparseDayWithinSnapshotBudget(t *testing.T) {
 	if err != nil || len(b) >= 64<<10 {
 		t.Fatal("snapshot read budget exceeded", len(b), err)
 	}
-	accounts, _ := readClaudeCode(cache, "")
+	accounts, _ := readClaudeCode(cache, "", now)
 	if len(accounts) != 1 {
 		t.Fatal("snapshot unreadable")
 	}
